@@ -56,7 +56,8 @@ func discriminate(_ s: DemodScratch, count n: Int, scale: Float) {
 let demodulatorMaxBlock = 16384
 
 /// Narrow-band FM: discriminator (±5 kHz → ±1.0, full scale), 300 Hz two-pole high-pass (removes
-/// CTCSS/PL tones and any DC offset), 1-pole audio LPF ≈ 4 kHz, no de-emphasis, output clipped to ±1.
+/// CTCSS/PL tones and any DC offset), 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, the TIA-603
+/// voice response; transmitters pre-emphasize) with ×2 make-up gain, 1-pole LPF ≈ 4 kHz, output clipped to ±1.
 public final class NFMDemodulator: Demodulator {
     public let mode: DemodMode = .nfm
     public private(set) var outputRate: UInt32 = 0
@@ -69,6 +70,10 @@ public final class NFMDemodulator: Demodulator {
     private var hpfCoefficient: Float = 0
     private var hpfPrevIn: (Float, Float) = (0, 0)
     private var hpfPrevOut: (Float, Float) = (0, 0)
+    /// De-emphasis: one-pole low-pass at 300 Hz followed by ×2 make-up gain (unity near 520 Hz).
+    private var deemphasisCoefficient: Float = 1
+    private var deemphasisState: Float = 0
+    private static let deemphasisMakeup: Float = 2
 
     public init() {}
 
@@ -79,6 +84,7 @@ public final class NFMDemodulator: Demodulator {
         lpfCoefficient = Kernels.onePoleCoefficient(cutoffHz: 4_000, rate: Double(inputRate))
         let rc = 1 / (2 * Double.pi * 300)
         hpfCoefficient = Float(rc / (rc + 1 / Double(inputRate)))
+        deemphasisCoefficient = Kernels.onePoleCoefficient(cutoffHz: 300, rate: Double(inputRate))
         if scratch == nil { scratch = DemodScratch(maxBlock: maxBlock) }
         reset()
     }
@@ -91,6 +97,8 @@ public final class NFMDemodulator: Demodulator {
         let out = output.base.assumingMemoryBound(to: Float.self)
         Kernels.onePoleLowPass(s.real, to: out, count: n, coefficient: lpfCoefficient, state: &lpfState)
         highPass(out, count: n)
+        Kernels.onePoleLowPass(out, to: out, count: n, coefficient: deemphasisCoefficient, state: &deemphasisState)
+        Kernels.scaleAdd(out, scale: Self.deemphasisMakeup, offset: 0, to: out, count: n)
         // Unsquelched noise produces uniform ±π phase steps (≈ ±4.8 after scaling): hard-limit to full scale.
         Kernels.clip(out, lo: -1, hi: 1, to: out, count: n)
         return n
@@ -118,6 +126,7 @@ public final class NFMDemodulator: Demodulator {
         lpfState = 0
         hpfPrevIn = (0, 0)
         hpfPrevOut = (0, 0)
+        deemphasisState = 0
     }
 }
 
