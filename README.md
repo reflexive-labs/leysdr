@@ -5,17 +5,56 @@ hardware and does all the DSP; the `ley` CLI/TUI (Go), the Mac app (SwiftUI) and
 are peers speaking one gRPC contract, `leyline.v1`, over a Unix socket.
 
 Status: **v0 in progress** — daemon + CLI. Works today against an RTL-SDR (e.g. a Nooelec NESDR)
-and against IQ files. Start at [`docs/dev-setup.md`](docs/dev-setup.md).
+and against IQ files. Building it is in [`docs/dev-setup.md`](docs/dev-setup.md); using it is in
+[`docs/cli-guide.md`](docs/cli-guide.md).
 
-```sh
-brew install librtlsdr go && make go swift-release
-./engine/.build/release/leylined &                # or: ley daemon install --bin ...
-ley devices
-ley tune 162.55M --mode nfm                       # capture + channel + speakers, one verb
-ley set squelch -45                               # from another terminal, while listening
-ley fft --bins 1024 --rate 10 --json | head -3
-ley play fixtures/nfm_tone.cf32                   # the same pipeline from an IQ file
+## Quickstart
+
+You need an RTL-SDR plugged in and the two binaries built (`brew install librtlsdr go && make go
+swift-release`; see dev-setup). `ley daemon start` looks for `leylined` via `--bin`,
+`$LEYLINE_DAEMON_BIN`, next to `ley`, then `PATH`; from a fresh checkout pass
+`--bin engine/.build/release/leylined` once (or `ley daemon install --bin ...` to start it at
+login). Five commands take you from nothing to a station playing. The output below is what
+`ley` prints (recorded against the contract fake daemon, so your ids, model and levels will
+differ).
+
+```console
+$ ley daemon start                      # 1. start the background process that owns the radio
+started leylined (pid 4242); check with: ley daemon status
+
+$ ley devices                           # 2. is my radio visible?
+ID                              DRIVER  MODEL                     SERIAL    STATE      RANGE                 RATES                GAIN
+dev_01M1S9TR56S46QTCK0SZS2YPJA  rtlsdr  Generic RTL2832U (R820T)  00000001  AVAILABLE  24.000 MHz-1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
+
+$ ley tune 146.52                       # 3. listen: a bare number is MHz, mode and squelch are chosen for you
+using NFM: 2 m amateur band default
+Listening to 146.520 MHz (NFM, 2 m amateur) on Generic RTL2832U (R820T), gain auto. Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS). Ctrl-C stops.
+From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum
+146.520 MHz NFM  signal -39 dBFS  audio
 ```
+
+Leave that running and open a second terminal:
+
+```console
+$ ley set squelch -45                   # 4. adjust it while it plays
+channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS ACTIVE 146.520 MHz nfm bw 12500 squelch -45.0 dB
+
+$ ley spectrum                          # 5. see the band the radio is tuned to
+146.520 MHz, span 2.400 MHz (145.320 MHz to 147.720 MHz), 1024 bins of 2.344 kHz, floor -100 dB
+ -41 |                                   #
+ ...
+ -99 |#################################################################
+     +-----------------------------------------------------------------
+      145.320 MHz                146.520 MHz                147.720 MHz
+loudest bins: 146.622 MHz -41 dB, 146.313 MHz -97 dB, ...
+```
+
+No radio? `ley play fixtures/nfm_tone.cf32` runs the same pipeline from a recording. Bare `ley`
+tells you where things stand and what to type next; `ley help glossary` explains the words
+(capture, channel, dBFS, FFT, squelch); `ley help presets` lists names like `noaa` and `calling`
+that `tune` accepts in place of a frequency. The task-by-task walkthrough, including `--json` and
+exit codes for scripts and what to do when something fails, is
+[`docs/cli-guide.md`](docs/cli-guide.md).
 
 ## Layout
 

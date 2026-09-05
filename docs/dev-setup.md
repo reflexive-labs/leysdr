@@ -41,6 +41,9 @@ ley state
 No RF? `ley play fixtures/nfm_tone.cf32` runs the same pipeline from an IQ file and you should hear a
 1 kHz tone. `ley play --persistent` leaves the file device attached; `ley devices detach <id>` removes it.
 
+How to *use* `ley` — presets, auto squelch, `ley spectrum`, `--json` and exit codes for scripts, what
+each error means — is in [`cli-guide.md`](cli-guide.md) and in `ley help <topic>`.
+
 ### Remote dongle over rtl_tcp
 
 A dongle plugged into another machine (a Raspberry Pi on the roof, a Linux box in the shack) can be
