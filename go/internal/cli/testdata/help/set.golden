@@ -1,0 +1,39 @@
+set changes one setting of the channel that is playing and reports the value
+the radio actually applied. With no arguments it shows the current settings.
+
+Parameters:
+  freq     move to a frequency; retunes the radio when it is out of the current span (146.52 (MHz), 1010k, 146520000)
+  mode     how to decode (nfm, am, wfm, usb, lsb, cw, fm, ssb)
+  bw       channel bandwidth (12.5 (kHz), 200k, 12500)
+  squelch  mute the audio when the signal is weaker than this level (-40, -40dB, off, auto)
+  gain     radio gain (--element picks the gain stage) (30, 30dB, auto)
+  volume   speaker volume (0.5, 50%)
+
+Which channel (a channel is one station picked out of what the radio hears:
+frequency, mode, squelch): the only active one; among several, the one a
+ley command made when there is just one, and set says which; otherwise
+--channel with an id, id prefix, row number from 'ley state' or frequency.
+--capture targets a capture (the radio's tuning and gain) directly for freq
+and gain. Longer explanations: ley help squelch, modes, gain.
+
+Usage:
+  ley set [parameter value] [flags]
+
+Examples:
+  ley set                    show the current settings
+  ley set squelch -45        mute below -45 dBFS
+  ley set squelch auto       measure the noise floor and sit 10 dB above it
+  ley set gain 30
+  ley set freq 146.62
+  ley set volume 50%
+  ley set mode am --channel 2
+
+Flags:
+      --capture string   which capture (a radio tuned to a band), for freq and gain: id, prefix, row number or frequency (default: the channel's)
+      --channel string   which channel: an id (chan_...), id prefix, row number from 'ley state' or frequency, e.g. --channel 146.62 (default: the active one)
+      --element string   which gain stage, for radios with more than one; names from 'ley devices', e.g. --element IF (default: the radio's first)
+  -h, --help             help for set
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

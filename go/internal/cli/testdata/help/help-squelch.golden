@@ -1,0 +1,29 @@
+Squelch mutes the audio while the signal is weaker than a level you choose,
+so between transmissions you hear silence instead of static.
+
+Levels are dBFS (decibels relative to full scale): 0 is the loudest the
+radio can represent and every real signal is below that, so the numbers are
+negative. An empty channel (noise only) sits around -100 dBFS on an RTL-SDR;
+a strong local station reaches -30 or better. The level is the strength of
+the signal at the antenna, not the loudness in the speakers (that is
+volume).
+
+  auto   measure the band's noise floor and mute below floor + 10 dB.
+         'ley tune' does this by itself for NFM and AM; 'ley set squelch
+         auto' repeats the measurement, e.g. after moving to another band.
+  off    never mute. WFM broadcast, SSB and CW default to off: broadcast
+         carries a signal all the time, and on SSB the noise is part of
+         finding the station.
+  -40    a fixed level (also -40dB, -40dBFS). Lower, more negative, lets
+         weaker signals and more noise through; higher mutes more.
+
+Reading the meter line 'ley tune' prints:
+  146.520 MHz NFM  signal -42 dBFS  muted, waiting for a signal
+'signal' is the current level; 'muted' means it is below the squelch level
+and 'audio' means you are hearing it. Static between transmissions: raise
+the squelch (ley set squelch -50). A station that cuts in and out: lower it
+(ley set squelch -70), or give the radio more gain (ley help gain).
+
+  ley tune 146.52              squelch auto; the banner prints the level
+  ley set squelch -45          mute below -45 dBFS
+  ley set squelch off          hear everything, noise included

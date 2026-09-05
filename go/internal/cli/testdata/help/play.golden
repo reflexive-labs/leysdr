@@ -1,0 +1,35 @@
+play attaches an IQ recording (a .cf32 file: the raw samples a radio
+produced, the kind the daemon writes and the fixtures directory contains) as
+a pretend radio, then tunes on it exactly as 'tune' would, so every other
+command works the same: ley set adjusts it, ley spectrum shows it.
+
+The frequency defaults to the file's centre (from the .json sidecar beside
+the file: center_hz plus the first 'expect' offset when present) and the
+mode to the first 'expect' entry's mode; --mode and --freq override. The
+pretend radio is removed on exit unless --persistent is given, in which
+case the channel and the device outlive the command; remove them later with
+'ley devices detach <id>'. No hardware is needed.
+
+Usage:
+  ley play <file.cf32> [flags]
+
+Examples:
+  ley play fixtures/nfm-tone.cf32              # decode a fixture and listen
+  ley play recording.cf32 --loop               # keep playing until Ctrl-C
+  ley play recording.cf32 --freq 146.52 --mode nfm
+  ley play recording.cf32 --persistent --json  # leave it running, print ids
+
+Flags:
+      --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
+      --freq string      frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)
+  -h, --help             help for play
+      --loop             start over when the file ends, until Ctrl-C (default: stop at the end)
+      --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
+      --no-audio         decode but do not play through the speakers (use with --persistent or --json)
+      --persistent       leave the channel running after the command exits and print its ids (for scripts)
+      --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
+      --volume string    speaker volume: 0 to 1, or a percentage like 50% (default: full) (default "1")
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

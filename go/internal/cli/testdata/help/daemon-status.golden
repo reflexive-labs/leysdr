@@ -1,0 +1,19 @@
+status prints the daemon's pid, version and socket when it answers, and
+exits 3 with the command to start it when it does not. Scripts can use the
+exit code alone.
+
+Usage:
+  ley daemon status [flags]
+
+Examples:
+  ley daemon status
+  ley daemon status --json # a DaemonInfo message; only socketPath when not running
+
+Flags:
+  -h, --help   help for status
+
+Global Flags:
+      --bin string      path to the leylined binary
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --log string      daemon log file (default: ~/Library/Logs/Leyline/leylined.log)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

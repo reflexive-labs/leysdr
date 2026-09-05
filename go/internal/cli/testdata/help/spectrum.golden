@@ -1,0 +1,37 @@
+spectrum draws the band around a frequency as a bar chart: left to right is
+frequency, taller is louder. Under the chart it lists the loudest bins so
+you can read a frequency straight off. Levels are dBFS (0 is the loudest
+the radio can hear; the noise floor is usually around -100).
+
+Without a frequency it shows the band the device is already tuned to (what
+'ley tune' is listening to). With a frequency it needs the device to be
+free, or already tuned to a band that covers it; a capture is created for
+the run and removed when spectrum exits.
+
+It draws once by default. --watch keeps redrawing (--rate times a second)
+until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
+prints the same rows as numbers for tools.
+
+Usage:
+  ley spectrum [frequency] [flags]
+
+Examples:
+  ley spectrum 101.1          # the FM broadcast band around 101.1 MHz
+  ley spectrum                # the band ley tune is listening to
+  ley spectrum 146.52 -w      # keep redrawing until Ctrl-C
+  ley spectrum 7.1 --span 200k --bins 2048
+  ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, peaks}
+
+Flags:
+      --bins uint32     number of bins across the band (the daemon may round it) (default 1024)
+      --count int       with --watch: stop after N rows (0 = until Ctrl-C)
+      --device string   device: an id, id prefix, list index or frequency (default: the first real radio)
+  -h, --help            help for spectrum
+      --rate float      redraws per second with --watch (default 2)
+      --span string     width of the band to show, e.g. 2.4M or 200k (default: the device's default rate)
+  -w, --watch           keep redrawing until Ctrl-C
+      --width int       chart width in columns (default: the terminal's, or 80 when piped)
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

@@ -1,0 +1,29 @@
+Every command that takes a frequency reads it the same way, and prints
+the frequency it understood so a slip is easy to spot.
+
+  146.52       a bare number is MHz: 146.520 MHz
+  7.040        also MHz: 7.040 MHz (40 m amateur band)
+  1010k        k, M and G suffixes mean kHz, MHz and GHz: 1010 kHz
+  146.52M      the same as 146.52
+  146520000    a number of 100 000 or more is plain Hz
+  1.4652e8     scientific notation is Hz
+  noaa         'ley tune' also takes a preset name (ley help presets)
+
+Suffixes are case-insensitive (1010K, 146.52m, 146.52 MHz) and may be
+spelled out (146.52 mhz, 1010 khz). Commas are not accepted: write 146.52,
+not 146,52, and 146520000, not 146,520,000.
+
+Out-of-range errors print the radio's tuning range and, when re-reading
+your number as kHz lands inside a band ley knows, the exact form to type
+("did you mean 1.010 MHz (AM broadcast)? write 1010k"). An RTL-SDR tunes
+roughly 24 MHz to 1.7 GHz; AM broadcast and shortwave below that need an
+upconverter, and the error says so instead of guessing.
+
+Printed frequencies always carry a unit and three decimals: 146.520 MHz,
+1.010 MHz, 500 Hz. Bands ley recognises (they choose the default mode and
+bandwidth) are listed by 'ley help presets'.
+
+  ley tune 146.52              146.520 MHz, 2 m amateur band
+  ley tune 1010k               1.010 MHz, AM broadcast (needs an upconverter)
+  ley spectrum 101.1           the FM broadcast band around 101.100 MHz
+  ley set freq 146.62          move the playing channel

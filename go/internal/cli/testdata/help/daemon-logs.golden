@@ -1,0 +1,19 @@
+logs prints the daemon's log file (where it reports the radios it found,
+what it is doing and why something failed). -f keeps printing as it grows.
+
+Usage:
+  ley daemon logs [flags]
+
+Examples:
+  ley daemon logs          # the whole log so far
+  ley daemon logs -f       # follow it while you try something
+
+Flags:
+  -f, --follow   keep printing as the log grows
+  -h, --help     help for logs
+
+Global Flags:
+      --bin string      path to the leylined binary
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --log string      daemon log file (default: ~/Library/Logs/Leyline/leylined.log)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

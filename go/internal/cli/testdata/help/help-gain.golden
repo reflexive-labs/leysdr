@@ -1,0 +1,24 @@
+Gain is how much the radio amplifies what the antenna picks up before it
+turns the signal into numbers, in dB. More gain makes weak signals
+audible. Too much gain overloads the radio, and then everything gets worse
+at once: the noise floor rises, stations appear at frequencies where there
+is nothing (images), and a strong station splatters across its neighbours.
+
+The numbers are the radio's own. An RTL-SDR offers about 0 to 49.6 dB in
+fixed steps; ley snaps a value to the nearest step and prints the value the
+radio applied. 'ley devices' lists each radio's gain elements (stages) with
+their ranges.
+
+  auto  let the radio choose. The default, and right for most listening.
+  30    a fixed gain in dB (30dB is accepted too). Negative values are
+        rejected with the element's range.
+
+Rules of thumb: start with auto. If a distant station is faint and the
+noise floor in 'ley spectrum' is low, raise the gain about 5 dB at a time.
+If the floor rises as fast as the signal, or ghost stations appear, lower
+it. Radios with more than one gain stage take --element to pick one; the
+first stage is used otherwise.
+
+  ley set gain 30              fixed 30 dB, snapped to the radio's step
+  ley set gain auto            back to automatic
+  ley set gain 20 --element IF one stage of a multi-stage radio

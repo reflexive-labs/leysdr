@@ -1,0 +1,19 @@
+state prints the daemon's whole picture: the daemon itself, every radio,
+every capture (a radio tuned to a band), every channel (one station picked
+out of a capture: frequency, mode, squelch) and every sink (where the audio
+goes). It is the place to look when something is not doing what you expect,
+and 'ley state --json' is the snapshot scripts and agents should read.
+
+Usage:
+  ley state [flags]
+
+Examples:
+  ley state                # the whole picture, as tables
+  ley state --json         # the same as proto3 JSON (GetStateResponse)
+
+Flags:
+  -h, --help   help for state
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

@@ -1,0 +1,16 @@
+version prints the version of this ley binary and the Go toolchain it was
+built with. The daemon's own version is in 'ley daemon status'.
+
+Usage:
+  ley version [flags]
+
+Examples:
+  ley version              # ley 0.1.0 (go1.25 darwin/arm64)
+  ley version --json       # {"version": ..., "go": ..., "os": ..., "arch": ...}
+
+Flags:
+  -h, --help   help for version
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

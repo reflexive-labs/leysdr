@@ -1,0 +1,53 @@
+ley drives the Leyline daemon, the background process that owns your SDR
+(software-defined radio). Run it with no arguments to see where things
+stand, 'ley tune <frequency>' to hear a station, 'ley set' to adjust it
+while it plays, 'ley spectrum' to see what is on the air, and 'ley help
+<topic>' for the longer explanations (squelch, frequencies, modes, ...).
+
+Usage:
+  ley [flags]
+  ley [command]
+
+Examples:
+  ley                      # what is the daemon doing right now?
+  ley devices              # is my radio visible?
+  ley tune 146.52          # listen to 146.520 MHz (a bare number is MHz)
+  ley spectrum 101.1       # what is on the air around the FM broadcast band?
+
+Listening:
+  play        Listen to a recording as if it were a radio
+  tune        Listen to a frequency through the speakers
+
+Adjusting:
+  set         Adjust what is playing, while it plays
+
+Looking around:
+  devices     List the radios the daemon can see
+  help        Help for a command, or a longer explanation of a topic
+  spectrum    Show what is on the air around a frequency
+  state       Show everything the daemon knows right now
+
+Data for tools:
+  completion  Generate the autocompletion script for the specified shell
+  fft         Stream spectrum rows as numbers, for tools
+
+Daemon:
+  daemon      Start, stop and check the process that owns the radio
+  version     Print the ley version
+
+Flags:
+  -h, --help            help for ley
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Help topics ("ley help <topic>"):
+  squelch      Muting the static between transmissions, and the dBFS scale
+  frequencies  How to write a frequency (a bare number is MHz)
+  modes        NFM, WFM, AM, USB, LSB, CW: which one to use where
+  gain         What the gain numbers mean and how to spot overload
+  presets      Named frequencies and the bands ley recognises
+  glossary     Capture, channel, dBFS, FFT, sample rate, sink and friends
+  scripting    --json output, exit codes and how long a channel lives
+  roadmap      Verbs that are planned but not in this build
+
+Use "ley [command] --help" for more information about a command.

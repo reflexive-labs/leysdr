@@ -1,0 +1,28 @@
+devices lists every radio (SDR) the daemon has found, with its tuning range,
+sample rates (how wide a band it can take in at once) and gain elements
+(the amplifier stages 'ley set gain' adjusts). An empty list on a terminal
+is followed by a checklist of what to try. --watch keeps running and prints
+a line whenever a radio is plugged in or removed. Row numbers from this
+list are accepted wherever a device id is (ley tune --device 2).
+
+Usage:
+  ley devices [flags]
+  ley devices [command]
+
+Examples:
+  ley devices              # is my radio visible?
+  ley devices --watch      # print a line on plug and unplug
+  ley devices detach 2     # remove the second listed file playback device
+
+Available Commands:
+  detach      Remove a file playback device left behind by ley play
+
+Flags:
+  -h, --help    help for devices
+      --watch   keep running and print a line when a radio is plugged in or removed
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Use "ley devices [command] --help" for more information about a command.

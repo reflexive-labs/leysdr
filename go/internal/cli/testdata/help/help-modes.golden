@@ -1,0 +1,32 @@
+The mode is how the radio turns a signal into sound (demodulation). Pick
+the one the station uses: the wrong mode gives garbled or silent audio, not
+an error.
+
+  nfm   narrow FM: two-way voice. 2 m and 70 cm amateur, marine VHF, NOAA
+        weather, most handheld radios. Bandwidth 12.5 kHz.
+  wfm   wide FM: broadcast stations, 87.5 to 108 MHz. Bandwidth 200 kHz.
+  am    amplitude modulation: airband (aircraft and towers, 118 to 137 MHz),
+        AM broadcast (530 to 1700 kHz), CB. Bandwidth 10 kHz.
+  usb   upper sideband: single-sideband voice, the amateur convention at
+        and above 10 MHz (20 m, 15 m, 10 m). Bandwidth 2.8 kHz.
+  lsb   lower sideband: single-sideband voice below 10 MHz (160 m, 80 m,
+        40 m). Bandwidth 2.8 kHz.
+  cw    Morse code: a 500 Hz filter and a tone for the carrier.
+  raw   no demodulation: raw IQ samples for tools, no audio.
+
+Two names pick by frequency, and ley prints which one it chose:
+  fm    WFM when the frequency is inside the FM broadcast band, 87.500 MHz
+        to 108.000 MHz inclusive; NFM everywhere else.
+  ssb   USB at 10.000 MHz and above; LSB below 10.000 MHz.
+  nbfm and narrowfm mean nfm; wbfm, widefm and broadcast mean wfm. Names
+  are case-insensitive.
+
+Without --mode, 'ley tune' uses the usual mode of the band (ley help presets
+lists the bands with their modes) and NFM when the frequency is in no
+known band; it prints one line saying what it chose and why. Scripts should
+pass --mode so a change to the band table cannot surprise them.
+
+  ley tune 101.1 --mode fm     WFM: 101.100 MHz is on the broadcast band
+  ley tune 7.040 --mode ssb    LSB: below 10 MHz
+  ley tune 121.5               AM without asking: airband
+  ley set mode am              switch the playing channel to AM

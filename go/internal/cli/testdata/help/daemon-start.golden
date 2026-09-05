@@ -1,0 +1,19 @@
+start launches the daemon and prints its pid (process id). With a LaunchAgent
+installed it asks launchd; otherwise it spawns leylined in the background
+with its output in the log file. Already running is not an error.
+
+Usage:
+  ley daemon start [flags]
+
+Examples:
+  ley daemon start         # started leylined (pid 12345); check with: ley daemon status
+  ley daemon start --log /tmp/leylined.log
+
+Flags:
+  -h, --help   help for start
+
+Global Flags:
+      --bin string      path to the leylined binary
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --log string      daemon log file (default: ~/Library/Logs/Leyline/leylined.log)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

@@ -1,0 +1,40 @@
+The daemon (leylined) is the background process that owns your SDR and does
+all the radio work; every ley command talks to it. 'start' launches it,
+'status' says whether it is answering, 'logs' shows what it has been doing.
+
+On macOS 'install' writes a LaunchAgent (~/Library/LaunchAgents/
+com.leyline.daemon.plist) so the daemon starts at login; start and stop then
+drive launchctl. Without a LaunchAgent, start spawns leylined detached
+(stdout/stderr to the log file, pid in the pidfile beside the socket) and stop
+sends SIGTERM via the pidfile.
+
+The daemon binary is found from --bin, $LEYLINE_DAEMON_BIN, a 'leylined' next
+to the ley executable, then PATH.
+
+Usage:
+  ley daemon [command]
+
+Examples:
+  ley daemon start         # start it now
+  ley daemon status        # is it running? (exit 3 when not)
+  ley daemon logs -f       # follow the log
+  ley daemon install       # macOS: start at login
+
+Available Commands:
+  install     Start the daemon at login (macOS LaunchAgent)
+  logs        Print the daemon's log
+  start       Start the daemon
+  status      Say whether the daemon is running (exit 3 when not)
+  stop        Stop the daemon (and clear a stale socket)
+  uninstall   Stop starting the daemon at login (macOS)
+
+Flags:
+      --bin string   path to the leylined binary
+  -h, --help         help for daemon
+      --log string   daemon log file (default: ~/Library/Logs/Leyline/leylined.log)
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Use "ley daemon [command] --help" for more information about a command.

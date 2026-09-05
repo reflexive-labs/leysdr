@@ -1,0 +1,33 @@
+daemon       leylined, the background process that owns the radio and does all
+             the radio work. Every ley command talks to it (ley daemon start).
+device       a radio the daemon can see: an RTL-SDR, or a file 'ley play'
+             attached as a pretend radio. 'ley devices' lists them.
+capture      a radio tuned to a band: a centre frequency and a sample rate.
+             One capture per radio; several channels can share it, which is
+             why a second terminal can listen without 'device busy'.
+channel      one station picked out of a capture: an offset from the
+             centre, a bandwidth and a mode. 'ley tune' makes one and
+             removes it on exit; 'ley set' adjusts it.
+sink         where a channel's audio goes: the speakers (an audio sink), a
+             file, or a stream to a client.
+mode         how a channel turns the signal into sound: nfm, wfm, am, usb,
+             lsb, cw (ley help modes).
+bandwidth    how wide a slice of spectrum the channel listens to; each mode
+             has a usual width (12.5 kHz for NFM, 200 kHz for WFM).
+sample rate  how many samples per second the radio delivers, which is also
+             how wide a band one capture covers (2.4 MSPS = 2.4 MHz).
+dBFS         decibels relative to full scale: 0 is the loudest the radio can
+             represent, a quiet band is around -100, a strong station -30.
+             Signal levels, squelch levels and spectrum bins are all dBFS.
+squelch      mute the audio while the signal is weaker than a level
+             (ley help squelch).
+gain         how much the radio amplifies the antenna signal, in dB
+             (ley help gain).
+FFT          fast Fourier transform: the daemon's measurement of how loud
+             each narrow slice (bin) of the band is. 'ley spectrum' draws
+             one such row as a chart; 'ley fft' prints rows as numbers.
+spectrum     the picture of a band: frequency left to right, loudness up.
+preset       a name for a frequency and mode, e.g. noaa (ley help presets).
+id           every object has one: dev_..., cap_..., chan_.... ley also
+             accepts an id prefix, a row number from the listing, or a
+             frequency wherever an id is expected.

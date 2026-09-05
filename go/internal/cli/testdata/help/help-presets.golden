@@ -1,0 +1,38 @@
+Presets are names 'ley tune' accepts in place of a frequency. Each one is a
+fixed frequency and mode; ley does not probe or scan for the best channel
+(that is 'ley scan', see ley help roadmap). Names are case-insensitive.
+
+  noaa1     162.550 MHz  nfm  NOAA weather WX1                                also: noaa, wx1, weather
+  noaa2     162.400 MHz  nfm  NOAA weather WX2                                also: wx2
+  noaa3     162.475 MHz  nfm  NOAA weather WX3                                also: wx3
+  noaa4     162.425 MHz  nfm  NOAA weather WX4                                also: wx4
+  noaa5     162.450 MHz  nfm  NOAA weather WX5                                also: wx5
+  noaa6     162.500 MHz  nfm  NOAA weather WX6                                also: wx6
+  noaa7     162.525 MHz  nfm  NOAA weather WX7                                also: wx7
+  calling   146.520 MHz  nfm  2 m amateur national simplex calling frequency  also: 2m-calling, simplex
+  marine16  156.800 MHz  nfm  marine VHF channel 16, distress and calling     also: ch16, marine
+  guard     121.500 MHz  am   aviation emergency guard frequency              also: aircraft-guard, 121.5
+
+Bands ley recognises. Without --mode, tune uses the band's mode and
+bandwidth; outside every band it uses NFM and says "no band recognised".
+usb/lsb means the sideband follows the amateur convention: USB at and above
+10 MHz, LSB below (ley help modes).
+
+  AM broadcast   530.000 kHz to 1.700 MHz    am       10 kHz    medium-wave broadcast stations
+  160 m amateur  1.800 MHz to 2.000 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
+  80 m amateur   3.500 MHz to 4.000 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
+  40 m amateur   7.000 MHz to 7.300 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
+  20 m amateur   14.000 MHz to 14.350 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
+  15 m amateur   21.000 MHz to 21.450 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
+  CB             26.965 MHz to 27.405 MHz    am       10 kHz    citizens band, channel 1 to 40
+  10 m amateur   28.000 MHz to 29.700 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
+  FM broadcast   87.500 MHz to 108.000 MHz   wfm      200 kHz   wideband FM radio stations
+  airband        118.000 MHz to 137.000 MHz  am       10 kHz    aircraft and towers, AM voice
+  2 m amateur    144.000 MHz to 148.000 MHz  nfm      12.5 kHz  amateur radio, FM voice and repeaters
+  marine VHF     156.000 MHz to 162.025 MHz  nfm      12.5 kHz  ship and coast stations; channel 16 is 156.800
+  NOAA weather   162.400 MHz to 162.550 MHz  nfm      12.5 kHz  continuous weather broadcasts, WX1 to WX7
+  70 cm amateur  420.000 MHz to 450.000 MHz  nfm      12.5 kHz  amateur radio, FM voice and repeaters
+
+  ley tune noaa                noaa is an alias of noaa1, 162.550 MHz
+  ley tune calling             146.520 MHz, 2 m simplex calling
+  ley tune guard               121.500 MHz, AM

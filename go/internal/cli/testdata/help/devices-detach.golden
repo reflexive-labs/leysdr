@@ -1,0 +1,17 @@
+detach removes a file playback device (one 'ley play --persistent' left
+behind) together with its capture and channels. The device can be given as
+its id, an unambiguous id prefix, or its row number in 'ley devices'.
+
+Usage:
+  ley devices detach <device> [flags]
+
+Examples:
+  ley devices detach dev_01J...   # by id
+  ley devices detach 2            # the second row of ley devices
+
+Flags:
+  -h, --help   help for detach
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

@@ -1,0 +1,27 @@
+help prints a command's help (the same as 'ley <command> --help')
+or one of the topics below.
+
+Topics:
+  squelch      Muting the static between transmissions, and the dBFS scale
+  frequencies  How to write a frequency (a bare number is MHz)
+  modes        NFM, WFM, AM, USB, LSB, CW: which one to use where
+  gain         What the gain numbers mean and how to spot overload
+  presets      Named frequencies and the bands ley recognises
+  glossary     Capture, channel, dBFS, FFT, sample rate, sink and friends
+  scripting    --json output, exit codes and how long a channel lives
+  roadmap      Verbs that are planned but not in this build
+
+Usage:
+  ley help [command or topic] [flags]
+
+Examples:
+  ley help tune            # the same as ley tune --help
+  ley help squelch         # what squelch is and how to set it
+  ley help presets         # the named frequencies and bands
+
+Flags:
+  -h, --help   help for help
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

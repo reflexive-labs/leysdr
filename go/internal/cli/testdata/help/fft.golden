@@ -1,0 +1,43 @@
+fft is the number feed behind 'ley spectrum'. The daemon slices the band a
+device is tuned to into bins (a bin is one narrow slice of frequency, a few
+kHz wide) and measures how loud each one is; one such measurement across
+the whole band is a row. fft prints those rows as they arrive, --rate times
+a second, until --count rows or Ctrl-C. To look at the band yourself, use
+'ley spectrum': it draws the same rows as a chart.
+
+If the device has no capture, --freq is required and a capture is created
+for the run (destroyed on exit).
+
+--format json: one row per line
+               {seq, sample_index, center_hz, span_hz, bins:[dB...]}
+               Bulk rows have no proto message, so this shape (and the
+               matching 'spectrum --json') is the documented exception to
+               ley's proto3 JSON rule; see docs/interfaces.md.
+--format bin:  one record per row: a 16-byte little-endian header
+               magic "LEYF" | u32 bins | u64 seq
+               followed by the payload as delivered by the daemon
+               (bins x f32 dB little-endian, or bins x u8 with --u8, where
+               u8 = clamp(round((dB + 120) * 2), 0, 255)).
+
+Usage:
+  ley fft [flags]
+
+Examples:
+  ley fft --freq 101.1M --count 1          # one row of the FM broadcast band
+  ley fft --rate 10 | jq .bins[0]           # ten rows a second into a tool
+  ley fft --format bin --u8 > rows.bin      # compact binary records
+  ley spectrum 101.1                        # the same rows, drawn
+
+Flags:
+      --bins uint32     number of bins (slices) across the band, e.g. 1024; the daemon may round it to a size it supports (default 1024)
+      --count int       stop after this many rows, e.g. 1 (default: until Ctrl-C)
+      --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --format string   output format: json (one row per line) or bin (binary records, see below) (default "json")
+      --freq string     centre frequency when the radio is not tuned yet; a bare number is MHz, e.g. 101.1
+  -h, --help            help for fft
+      --rate float      rows per second, e.g. 10 (default 10)
+      --u8              ask for 1-byte bins (DB_U8) instead of 4-byte floats (DB_F32); smaller, coarser
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

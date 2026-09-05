@@ -1,0 +1,12 @@
+Planned, not in this build. Running one of these verbs exits 2 with the
+same line as below.
+
+  record   Record a channel or the raw capture to a file (Milestone C.12)
+           today: ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build
+  scan     Find active signals in a band and list them (Milestone D)
+           today: ley spectrum <frequency> shows the band and its loudest bins; picking signals out of it is up to you for now
+  watch    Live dashboard: devices, channels and spectrum in one terminal (V0.5)
+           today: bare ley shows where things stand; ley state --json is the full snapshot
+
+The daemon-side relative squelch (mute at 'noise floor + N dB' measured by
+the daemon rather than by ley) is the recorded follow-up to auto squelch.
