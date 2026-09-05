@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# SwiftPM / Xcode
+engine/.build/
+engine/Package.resolved.bak
+.swiftpm/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+
+# Go
+go/bin/
+go/dist/
+*.test
+*.out
+
+# Generated IQ fixtures and sidecars (reproducible via `make fixtures`)
+fixtures/*.cf32
+fixtures/*.cu8
+fixtures/*.iq
+fixtures/*.json
+
+# Local daemon state / logs
+*.sock
+*.pid
+*.log

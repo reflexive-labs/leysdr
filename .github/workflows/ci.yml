@@ -1,0 +1,109 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  proto-and-go:
+    name: proto validation + Go clients
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      # protoc is pinned: protoc-gen-go embeds its version in every generated header, so the
+      # drift check below only means something against the exact version the checked-in code
+      # records (scripts/gen-proto.sh, docs/dev-setup.md).
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: generated Go code is current
+        run: |
+          ./scripts/gen-proto.sh
+          git diff --exit-code -- go/gen
+      - name: go.mod / go.sum are tidy
+        working-directory: go
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: build, vet, test
+        working-directory: go
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./...
+      - name: lint
+        working-directory: go
+        run: |
+          go install mvdan.cc/gofumpt@latest
+          test -z "$(gofumpt -l .)"
+
+  swift-linux:
+    name: engine on Linux (compile + portable DSP tests + contract e2e)
+    runs-on: ubuntu-24.04
+    env:
+      FIXTURE_DURATION: "0.5"   # make fixtures / swift-test / e2e: short fixtures, same catalog
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: librtlsdr (enumerates nothing on the runner; needed to link)
+        run: sudo apt-get update && sudo apt-get install -y librtlsdr-dev
+      - name: build + test (portable DSP kernels, fixture round-trips; generates fixtures/)
+        run: make swift swift-test
+      - name: cross-language e2e (ley driving the Linux-built leylined)
+        run: make e2e
+
+  swift-macos:
+    name: engine on macOS (the product)
+    runs-on: macos-26
+    env:
+      FIXTURE_DURATION: "0.5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: librtlsdr
+        run: brew install librtlsdr
+      - name: build + test (Accelerate kernels, parity tests, fixture round-trips; generates fixtures/)
+        run: make swift swift-test
+      # Swift generation drift. The Go job proves go/gen is current; nothing else regenerates
+      # LeylineProto, so a proto change that only regenerated Go would otherwise pass. Same
+      # pinned protoc (25.1) and plugin versions as scripts/gen-proto.sh / docs/dev-setup.md.
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Swift protoc plugins (swift-protobuf from brew, grpc-swift-protobuf 2.4.1 from source)
+        run: |
+          brew install swift-protobuf
+          git clone --depth 1 -b 2.4.1 https://github.com/grpc/grpc-swift-protobuf "$RUNNER_TEMP/gsp"
+          (cd "$RUNNER_TEMP/gsp" && swift build -c release --product protoc-gen-grpc-swift-2)
+          echo "$RUNNER_TEMP/gsp/.build/release" >> "$GITHUB_PATH"
+      - name: generated Swift code is current
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          export PATH="$HOME/go/bin:$PATH"
+          REQUIRE_SWIFT=1 ./scripts/gen-proto.sh
+          git diff --exit-code -- engine/Sources/LeylineProto go/gen
