@@ -14,7 +14,7 @@ Usage:
   ley play <file.cf32> [flags]
 
 Examples:
-  ley play fixtures/nfm-tone.cf32              # decode a fixture and listen
+  ley play fixtures/nfm_tone.cf32              # decode a fixture and listen
   ley play recording.cf32 --loop               # keep playing until Ctrl-C
   ley play recording.cf32 --freq 146.52 --mode nfm
   ley play recording.cf32 --persistent --json  # leave it running, print ids
@@ -22,6 +22,7 @@ Examples:
 Flags:
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
       --freq string      frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)
+      --gain string      receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)
   -h, --help             help for play
       --loop             start over when the file ends, until Ctrl-C (default: stop at the end)
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)

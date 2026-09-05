@@ -6,7 +6,9 @@ the radio can hear; the noise floor is usually around -100).
 Without a frequency it shows the band the device is already tuned to (what
 'ley tune' is listening to). With a frequency it needs the device to be
 free, or already tuned to a band that covers it; a capture is created for
-the run and removed when spectrum exits.
+the run and removed when spectrum exits. When other channels are listening
+on a band that does not cover the frequency, spectrum refuses to move the
+radio unless --retune is given.
 
 It draws once by default. --watch keeps redrawing (--rate times a second)
 until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
@@ -28,6 +30,7 @@ Flags:
       --device string   device: an id, id prefix, list index or frequency (default: the first real radio)
   -h, --help            help for spectrum
       --rate float      redraws per second with --watch (default 2)
+      --retune          move the radio to the frequency even when other channels are listening on it (they fall silent)
       --span string     width of the band to show, e.g. 2.4M or 200k (default: the device's default rate)
   -w, --watch           keep redrawing until Ctrl-C
       --width int       chart width in columns (default: the terminal's, or 80 when piped)

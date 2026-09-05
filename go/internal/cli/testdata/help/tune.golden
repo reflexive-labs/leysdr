@@ -1,7 +1,7 @@
 tune picks a radio, tunes it to the frequency (or a preset such as noaa or
 calling; see ley help presets), decodes it and plays the audio until Ctrl-C.
 
-A bare number is MHz (146.52, 7.040, 1010); add a unit to be exact (1010k,
+A bare number is MHz (146.52, 7.040, 121.5); add a unit to be exact (1010k,
 146520000). The mode (how the signal is decoded: nfm, am, wfm, ...) is
 chosen from the band when --mode is not given, and the squelch (mute the
 audio while the signal is weaker than a level) is measured from the band's
@@ -9,6 +9,10 @@ noise floor unless you set one. tune prints every decision it made so a
 wrong guess is easy to correct with 'ley set' from another terminal. With
 --persistent the channel keeps running after tune exits and its ids are
 printed for scripts. Longer explanations: ley help squelch, modes, gain.
+
+When the radio is already tuned for someone else and the new frequency falls
+outside the band it covers, tune refuses rather than silence them; --retune
+moves it anyway.
 
 Usage:
   ley tune <frequency|preset> [flags]
@@ -19,15 +23,18 @@ Examples:
   ley tune 101.1 --mode fm   FM broadcast (fm means WFM here)
   ley tune 7.040 --mode lsb  40 m amateur band, lower sideband
   ley tune 162.55 --squelch -50 --volume 50%
+  ley tune 101.1 --gain 30 --retune   set the gain; move a radio others are using
 
 Flags:
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
       --device string    which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)
+      --gain string      receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)
   -h, --help             help for tune
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
       --no-audio         decode but do not play through the speakers (use with --persistent or --json)
       --persistent       leave the channel running after the command exits and print its ids (for scripts)
       --rate uint        sample rate in Hz when the radio is first tuned, e.g. 2400000; also the width of band it covers (default: the radio's own)
+      --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
       --volume string    speaker volume: 0 to 1, or a percentage like 50% (default: full) (default "1")
 

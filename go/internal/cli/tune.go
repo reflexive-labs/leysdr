@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -15,9 +16,9 @@ import (
 
 // tuneFlags holds the raw flag values before parsing.
 type tuneFlags struct {
-	mode, device, squelch, bw, volume string
-	rate                              uint64
-	noAudio, persistent               bool
+	mode, device, squelch, bw, volume, gain string
+	rate                                    uint64
+	noAudio, persistent, retune             bool
 }
 
 // addTuneFlags registers the tune flag set on cmd (shared with play).
@@ -27,7 +28,9 @@ func addTuneFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
 	if withDevice {
 		cmd.Flags().StringVar(&f.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)")
 		cmd.Flags().Uint64Var(&f.rate, "rate", 0, "sample rate in Hz when the radio is first tuned, e.g. 2400000; also the width of band it covers (default: the radio's own)")
+		cmd.Flags().BoolVar(&f.retune, "retune", false, "move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening")
 	}
+	cmd.Flags().StringVar(&f.gain, "gain", "", "receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)")
 	cmd.Flags().StringVar(&f.squelch, "squelch", "", "mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)")
 	cmd.Flags().BoolVar(&f.noAudio, "no-audio", false, "decode but do not play through the speakers (use with --persistent or --json)")
 	cmd.Flags().BoolVar(&f.persistent, "persistent", false, "leave the channel running after the command exits and print its ids (for scripts)")
@@ -47,7 +50,12 @@ type modeDefault struct {
 // only when the mode was inferred. Squelch: explicit flag, else auto for NFM
 // and AM in interactive runs, else off.
 func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) (*tuneOptions, error) {
-	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN()}
+	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
+	if f.gain != "" {
+		if _, _, err := leyline.ParseGain(f.gain); err != nil {
+			return nil, fmt.Errorf("--gain: %w", err)
+		}
+	}
 	o.band = leyline.BandFor(freq)
 	switch {
 	case f.mode != "":
@@ -118,19 +126,24 @@ func newTuneCommand(app *App) *cobra.Command {
 		Long: `tune picks a radio, tunes it to the frequency (or a preset such as noaa or
 calling; see ley help presets), decodes it and plays the audio until Ctrl-C.
 
-A bare number is MHz (146.52, 7.040, 1010); add a unit to be exact (1010k,
+A bare number is MHz (146.52, 7.040, 121.5); add a unit to be exact (1010k,
 146520000). The mode (how the signal is decoded: nfm, am, wfm, ...) is
 chosen from the band when --mode is not given, and the squelch (mute the
 audio while the signal is weaker than a level) is measured from the band's
 noise floor unless you set one. tune prints every decision it made so a
 wrong guess is easy to correct with 'ley set' from another terminal. With
 --persistent the channel keeps running after tune exits and its ids are
-printed for scripts. Longer explanations: ley help squelch, modes, gain.`,
+printed for scripts. Longer explanations: ley help squelch, modes, gain.
+
+When the radio is already tuned for someone else and the new frequency falls
+outside the band it covers, tune refuses rather than silence them; --retune
+moves it anyway.`,
 		Example: `  ley tune 146.52            2 m calling frequency, NFM, squelch auto
   ley tune noaa              nearest NOAA weather preset
   ley tune 101.1 --mode fm   FM broadcast (fm means WFM here)
   ley tune 7.040 --mode lsb  40 m amateur band, lower sideband
-  ley tune 162.55 --squelch -50 --volume 50%`,
+  ley tune 162.55 --squelch -50 --volume 50%
+  ley tune 101.1 --gain 30 --retune   set the gain; move a radio others are using`,
 		GroupID: GroupListening,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -163,10 +176,30 @@ printed for scripts. Longer explanations: ley help squelch, modes, gain.`,
 
 // runTune performs the tune lifecycle on an open session whose device is set.
 func runTune(ctx context.Context, s *session, o *tuneOptions) error {
+	// An impossible frequency fails before any decision is announced, so the
+	// error is the whole story. The capture centre is what the device tunes.
+	target := o.freq
+	if o.captureCenter != 0 {
+		target = o.captureCenter
+	}
+	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
+		if err := s.checkRange(o.input, target); err != nil {
+			return err
+		}
+	}
+	if warn := bandWarning(o.input, o.freq); warn != "" {
+		fmt.Fprintln(s.app.Stderr, warn)
+	}
 	if o.modeReason != "" {
 		s.say("using %s: %s\n", strings.ToUpper(leyline.ModeName(o.mode)), o.modeReason)
 	}
 	if err := s.ensureCapture(ctx, o); err != nil {
+		return err
+	}
+	if err := s.applyGain(ctx, o); err != nil {
+		if s.createdCapture {
+			s.teardown()
+		}
 		return err
 	}
 	if err := s.createChannel(ctx, o); err != nil {
@@ -186,6 +219,26 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 	}
 	defer s.teardown()
 	return s.live(ctx, o)
+}
+
+// bandWarning catches the classic slip of typing a kHz figure as MHz: when
+// the MHz reading falls in no known band but the same digits read as kHz do,
+// it returns a one-line warning naming the kHz spelling; "" otherwise.
+func bandWarning(input string, hz uint64) string {
+	input = strings.TrimSpace(input)
+	if input == "" || strings.IndexFunc(input, func(r rune) bool { return !unicode.IsDigit(r) && r != '.' }) >= 0 {
+		return ""
+	}
+	v, err := strconv.ParseFloat(input, 64)
+	if err != nil || v <= 0 || leyline.BandFor(hz) != nil {
+		return ""
+	}
+	khz := uint64(math.Round(v * 1e3))
+	b := leyline.BandFor(khz)
+	if b == nil || khz == hz {
+		return ""
+	}
+	return fmt.Sprintf("%s MHz is not a band I know; for %s kHz %s type %sk", input, input, b.Name, input)
 }
 
 // printCreated reports the created objects (persistent mode).

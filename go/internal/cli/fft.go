@@ -70,9 +70,9 @@ for the run (destroyed on exit).
 			}
 			var hz uint64
 			if freq != "" {
-				v, err := leyline.ParseFrequency(freq)
+				v, err := leyline.ParseUserFrequency(freq)
 				if err != nil {
-					return err
+					return usageErrorf("--freq: %v", err)
 				}
 				hz = v
 			}
@@ -112,7 +112,7 @@ func runFFT(ctx context.Context, s *session, o fftOptions) error {
 		s.capture = cap
 	} else {
 		if o.freq == 0 {
-			return fmt.Errorf("device %s has no capture; pass --freq to create one", s.device.DeviceId)
+			return usageErrorf("the radio is idle; give a frequency: ley fft --freq 101.1 --count 1")
 		}
 		cap, err := s.client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: o.freq})
 		if err != nil {

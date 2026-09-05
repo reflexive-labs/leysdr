@@ -2,11 +2,9 @@ package cli
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +36,10 @@ type tuneOptions struct {
 	noAudio     bool
 	persistent  bool
 	volume      float64
+	// retune allows moving a shared capture even when other channels ride on it.
+	retune bool
+	// gain, when non-empty, is applied to the capture once it exists ("auto" or dB).
+	gain string
 }
 
 // session is one tune lifecycle: the capture (created or reused), the channel
@@ -274,6 +276,10 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		if err := s.checkRange(o.input, o.freq); err != nil {
 			return err
 		}
+		if n := s.activeChannels(cap.CaptureId); n > 0 && !o.retune {
+			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. Add --retune to move it anyway, or free %s with: ley stop --all",
+				leyline.FormatFrequency(cap.CenterHz), plural(n, "channel"), leyline.FormatFrequency(o.freq), themOrIt(n), themOrIt(n))
+		}
 		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
 		sum, err := s.client.WriteParams(ctx, w)
@@ -352,6 +358,89 @@ func (s *session) checkRange(input string, hz uint64) error {
 	}, input, hz)
 }
 
+// activeChannels counts the ACTIVE channels riding on a capture in the mirror.
+func (s *session) activeChannels(captureID string) int {
+	n := 0
+	for _, ch := range s.state.GetChannels() {
+		if ch.CaptureId == captureID && ch.State == leylinev1.ChannelState_CHANNEL_ACTIVE {
+			n++
+		}
+	}
+	return n
+}
+
+// plural renders "1 channel" / "2 channels".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+func themOrIt(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "them"
+}
+
+// applyGain writes --gain to the capture's first gain element and waits for
+// the confirming capture event so the banner shows the value the daemon
+// settled on (the daemon snaps to the element's table, as set.go mirrors).
+func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
+	if o.gain == "" {
+		return nil
+	}
+	db, auto, err := leyline.ParseGain(o.gain)
+	if err != nil {
+		return fmt.Errorf("--gain: %w", err)
+	}
+	if len(s.device.GainElements) == 0 {
+		return fmt.Errorf("--gain: %s reports no gain stages; leave --gain off", deviceName(s.device))
+	}
+	el := s.device.GainElements[0]
+	tol := 1.0
+	if !auto {
+		if err := leyline.CheckGain(db, el); err != nil {
+			return fmt.Errorf("--gain: %w", err)
+		}
+		db, tol = snapGain(el, db)
+	}
+	g := &leylinev1.GainWrite{Element: el.Name}
+	if auto {
+		g.Value = &leylinev1.GainWrite_Auto{Auto: true}
+	} else {
+		g.Value = &leylinev1.GainWrite_Db{Db: db}
+	}
+	w := &leylinev1.ParamWrite{Tag: 3, TargetId: s.capture.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: g}}
+	if _, err := s.client.WriteParams(ctx, w); err != nil {
+		return fmt.Errorf("--gain: %w", err)
+	}
+	ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
+		switch b := ev.Body.(type) {
+		case *leylinev1.Event_Capture:
+			if b.Capture.CaptureId != s.capture.CaptureId {
+				return false
+			}
+			for _, gs := range b.Capture.Gains {
+				if gs.Element == el.Name && (auto && gs.Auto || !auto && !gs.Auto && math.Abs(gs.Db-db) <= tol) {
+					return true
+				}
+			}
+		case *leylinev1.Event_WriteRejected:
+			return s.mine(ev) && b.WriteRejected.Tag == 3
+		}
+		return false
+	})
+	if err != nil {
+		return fmt.Errorf("--gain: %w", err)
+	}
+	if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
+		return fmt.Errorf("--gain: %w", rejectedError(r.WriteRejected))
+	}
+	return nil
+}
+
 // rejectedError turns a WriteRejected event into a *leyline.Error so callers
 // can key on its code like any RPC failure.
 func rejectedError(r *leylinev1.WriteRejected) error {
@@ -426,17 +515,13 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 	case <-sctx.Done():
 		return 0, 0, fmt.Errorf("no spectrum row arrived within %s", squelchProbeTimeout)
 	}
-	bins := sub.Descriptor.GetFft().GetBins()
-	if sub.Descriptor.GetFft().GetBinFormat() != leylinev1.FftBinFormat_DB_F32 || bins == 0 || len(fr.Payload) < int(bins)*4 {
+	u8 := sub.Descriptor.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
+	vals := decodeBins(fr.Payload, u8)
+	if len(vals) == 0 {
 		return 0, 0, fmt.Errorf("spectrum row in an unexpected format")
 	}
-	vals := make([]float64, bins)
-	for i := range vals {
-		vals[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(fr.Payload[i*4:])))
-	}
-	sort.Float64s(vals)
-	median := vals[len(vals)/2]
-	binWidth := float64(cap.SampleRate) / float64(bins)
+	median := medianDb(vals)
+	binWidth := float64(cap.SampleRate) / float64(len(vals))
 	floor = median + 10*math.Log10(float64(bw)/binWidth)
 	return math.Round(floor + 10), floor, nil
 }

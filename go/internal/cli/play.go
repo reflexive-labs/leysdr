@@ -63,7 +63,7 @@ mode to the first 'expect' entry's mode; --mode and --freq override. The
 pretend radio is removed on exit unless --persistent is given, in which
 case the channel and the device outlive the command; remove them later with
 'ley devices detach <id>'. No hardware is needed.`,
-		Example: `  ley play fixtures/nfm-tone.cf32              # decode a fixture and listen
+		Example: `  ley play fixtures/nfm_tone.cf32              # decode a fixture and listen
   ley play recording.cf32 --loop               # keep playing until Ctrl-C
   ley play recording.cf32 --freq 146.52 --mode nfm
   ley play recording.cf32 --persistent --json  # leave it running, print ids`,
@@ -124,7 +124,7 @@ case the channel and the device outlive the command; remove them later with
 			}
 			if freq != "" {
 				if hz, err = leyline.ParseUserFrequency(freq); err != nil {
-					return err
+					return usageErrorf("--freq: %v", err)
 				}
 			}
 			o, err := f.parse(app, freq, hz, def)
@@ -136,17 +136,13 @@ case the channel and the device outlive the command; remove them later with
 				// A recording is played as it is: squelch stays off unless asked for.
 				o.squelchAuto = false
 			}
-			if !app.JSON {
-				fmt.Fprintf(app.Stdout, "playing %s as device %s\n", filepath.Base(path), dev.DeviceId)
-			}
+			s.say("playing %s as device %s\n", filepath.Base(path), dev.DeviceId)
 			if err := runTune(cmd.Context(), s, o); err != nil {
 				return err
 			}
 			if f.persistent {
 				keep = true
-				if !app.JSON {
-					fmt.Fprintf(app.Stdout, "file device %s stays attached; detach with: ley devices detach %s\n", dev.DeviceId, dev.DeviceId)
-				}
+				s.say("file device %s stays attached; detach with: ley devices detach %s\n", dev.DeviceId, dev.DeviceId)
 			}
 			return nil
 		},

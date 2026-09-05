@@ -45,6 +45,7 @@ type spectrumOptions struct {
 	rate         float64
 	count, width int
 	watch        bool
+	retune       bool
 	device       string
 }
 
@@ -62,7 +63,9 @@ the radio can hear; the noise floor is usually around -100).
 Without a frequency it shows the band the device is already tuned to (what
 'ley tune' is listening to). With a frequency it needs the device to be
 free, or already tuned to a band that covers it; a capture is created for
-the run and removed when spectrum exits.
+the run and removed when spectrum exits. When other channels are listening
+on a band that does not cover the frequency, spectrum refuses to move the
+radio unless --retune is given.
 
 It draws once by default. --watch keeps redrawing (--rate times a second)
 until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
@@ -82,7 +85,7 @@ prints the same rows as numbers for tools.`,
 			var err error
 			if freq != "" {
 				if o.freq, err = leyline.ParseUserFrequency(freq); err != nil {
-					return usageErrorf("frequency: %v. Example: ley spectrum 101.1 (MHz) or ley spectrum 1010k", err)
+					return usageErrorf("%v. Example: ley spectrum 101.1 (MHz) or ley spectrum 1010k", err)
 				}
 			}
 			if span != "" {
@@ -108,6 +111,7 @@ prints the same rows as numbers for tools.`,
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "redraws per second with --watch")
 	cmd.Flags().IntVar(&o.count, "count", 0, "with --watch: stop after N rows (0 = until Ctrl-C)")
 	cmd.Flags().StringVar(&o.device, "device", "", "device: an id, id prefix, list index or frequency (default: the first real radio)")
+	cmd.Flags().BoolVar(&o.retune, "retune", false, "move the radio to the frequency even when other channels are listening on it (they fall silent)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "chart width in columns (default: the terminal's, or 80 when piped)")
 	return cmd
 }
@@ -123,16 +127,11 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if s.device, err = pickDevice(s.state, o.device); err != nil {
 		return err
 	}
-	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap != nil {
-		if o.freq != 0 && !leyline.CaptureCovers(cap, o.freq) {
-			return fmt.Errorf("%s is already tuned to %s (span %s) and %s is outside that band. Run 'ley spectrum' without a frequency to see it, or stop what is using it first",
-				deviceName(s.device), leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(cap.SampleRate), leyline.FormatFrequency(o.freq))
-		}
-		s.capture = cap
-	} else {
-		if o.freq == 0 {
-			return usageErrorf("%s is not tuned to anything yet; say where to look, e.g.: ley spectrum 101.1", deviceName(s.device))
-		}
+	cap := leyline.FindCapture(s.state, s.device.DeviceId)
+	if cap == nil && o.freq == 0 {
+		return usageErrorf("%s is not tuned to anything yet; say where to look, e.g.: ley spectrum 101.1", deviceName(s.device))
+	}
+	if o.freq != 0 && (cap == nil || !leyline.CaptureCovers(cap, o.freq)) {
 		if !leyline.InRanges(o.freq, s.device.TuningRanges) && len(s.device.TuningRanges) > 0 {
 			msg := fmt.Sprintf("%s is outside %s's range (%s)", leyline.FormatFrequency(o.freq), deviceName(s.device), leyline.FormatRanges(s.device.TuningRanges))
 			if hint := leyline.FrequencyHint(o.freqInput, o.freq, s.device.TuningRanges); hint != "" {
@@ -140,11 +139,18 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			}
 			return usageErrorf("%s", msg)
 		}
-		cap, err := s.client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: o.freq, SampleRate: o.span})
-		if err != nil {
-			return err
-		}
-		s.capture, s.createdCapture = cap, true
+	}
+	// ensureCapture reuses a capture that covers the frequency, refuses to
+	// move one other channels ride on (unless --retune), and creates one
+	// otherwise; the capture created for this run is removed on exit.
+	freq := o.freq
+	if freq == 0 {
+		freq = cap.CenterHz
+	}
+	if err := s.ensureCapture(ctx, &tuneOptions{freq: freq, input: o.freqInput, rate: o.span, retune: o.retune}); err != nil {
+		return err
+	}
+	if s.createdCapture {
 		defer s.teardown()
 	}
 	sctx, cancel := context.WithCancel(ctx)
@@ -169,7 +175,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			continue
 		}
 		bins := decodeBins(fr.Payload, u8)
-		peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks)
+		peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
 		if app.JSON {
 			row := SpectrumRow{FFTRow: FFTRow{Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), CenterHz: desc.CenterHz, SpanHz: desc.SpanHz, Bins: bins}, Peaks: peaks}
 			b, err := json.Marshal(row)
@@ -211,9 +217,14 @@ func deviceName(d *leylinev1.DeviceDescriptor) string {
 	return d.DeviceId
 }
 
-// loudestBins returns the n loudest local maxima of the row, loudest first,
-// as bin-centre frequencies. A run of equal-height bins counts once.
-func loudestBins(bins []float64, centerHz, spanHz uint64, n int) []Peak {
+// peakAboveFloorDb is how far above the noise floor (the row's median) a
+// bin must be to count as a peak; below that it is noise, not a signal.
+const peakAboveFloorDb = 6
+
+// loudestBins returns up to n of the loudest local maxima at or above minDb,
+// loudest first, as bin-centre frequencies. A run of equal-height bins
+// counts once; a row with nothing above minDb yields an empty list.
+func loudestBins(bins []float64, centerHz, spanHz uint64, n int, minDb float64) []Peak {
 	if len(bins) == 0 {
 		return []Peak{}
 	}
@@ -221,6 +232,9 @@ func loudestBins(bins []float64, centerHz, spanHz uint64, n int) []Peak {
 	left := float64(centerHz) - float64(spanHz)/2
 	var peaks []Peak
 	for i, v := range bins {
+		if v < minDb {
+			continue
+		}
 		if i > 0 && bins[i-1] >= v {
 			continue
 		}
@@ -306,12 +320,14 @@ func renderSpectrum(bins []float64, peaks []Peak, centerHz, spanHz uint64, width
 		pad = 2
 	}
 	fmt.Fprintf(&b, "      %s%s%s%s%s\n", l, strings.Repeat(" ", pad/2), m, strings.Repeat(" ", pad-pad/2), h)
-	if len(peaks) > 0 {
-		parts := make([]string, len(peaks))
-		for i, p := range peaks {
-			parts[i] = fmt.Sprintf("%s %.0f dB", leyline.FormatFrequency(p.CenterHz), p.Db)
-		}
-		b.WriteString("loudest bins: " + strings.Join(parts, ", ") + "\n")
+	if len(peaks) == 0 {
+		b.WriteString("loudest bins: nothing above the floor\n")
+		return b.String()
 	}
+	parts := make([]string, len(peaks))
+	for i, p := range peaks {
+		parts[i] = fmt.Sprintf("%s %.0f dB", leyline.FormatFrequency(p.CenterHz), p.Db)
+	}
+	b.WriteString("loudest bins: " + strings.Join(parts, ", ") + "\n")
 	return b.String()
 }

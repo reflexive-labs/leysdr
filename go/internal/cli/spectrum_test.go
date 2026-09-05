@@ -35,7 +35,9 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[0]), &typed); err != nil {
 		t.Fatal(err)
 	}
-	if typed.CenterHz != 146_520_000 || len(typed.Bins) != 256 || len(typed.Peaks) != spectrumPeaks {
+	// The fake's row is a flat floor with one -40 dB peak: peaks lists only
+	// bins clear of the floor, so exactly one, never padded with noise.
+	if typed.CenterHz != 146_520_000 || len(typed.Bins) != 256 || len(typed.Peaks) != 1 {
 		t.Fatalf("row: center %d bins %d peaks %d", typed.CenterHz, len(typed.Bins), len(typed.Peaks))
 	}
 	binWidth := float64(typed.SpanHz) / 256
@@ -73,6 +75,29 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if _, _, err := run(t, context.Background(), sock, "spectrum", "--bins", "256", "--width", "60"); err != nil {
 		t.Fatalf("second run must not have torn down the daemon's capture: %v", err)
 	}
+	// A frequency outside the band while a channel listens: refused with the
+	// fix, exit 1, and the capture stays where it was; --retune moves it.
+	_, _, err := run(t, context.Background(), sock, "spectrum", "101.1", "--bins", "256")
+	if exitCode(err) != 1 || !strings.Contains(err.Error(), "the radio is on 146.520 MHz with 1 channel listening") || !strings.Contains(err.Error(), "--retune") {
+		t.Fatalf("shared capture: exit %d %v", exitCode(err), err)
+	}
+	st, _ := c.State(context.Background())
+	if st.Captures[0].CenterHz != 146_520_000 {
+		t.Fatalf("refusal moved the capture: %v", st.Captures[0])
+	}
+	out = mustRun(t, sock, "--json", "spectrum", "101.1", "--retune", "--bins", "256")
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &typed); err != nil || typed.CenterHz != 101_100_000 {
+		t.Fatalf("--retune row: %v %+v", err, typed)
+	}
+	st, _ = c.State(context.Background())
+	if st.Captures[0].CenterHz != 101_100_000 || len(st.Channels) != 1 {
+		t.Fatalf("--retune should move the shared capture and keep the channel: %v %v", st.Captures, st.Channels)
+	}
+	// A comma is rejected once, without a doubled "frequency:" prefix.
+	_, _, err = run(t, context.Background(), sock, "spectrum", "101,1")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "comma") || strings.Contains(err.Error(), "frequency: frequency:") {
+		t.Fatalf("comma error: %v", err)
+	}
 }
 
 func TestSpectrumWatchCountAndCapture(t *testing.T) {
@@ -99,6 +124,10 @@ func TestSpectrumWatchCountAndCapture(t *testing.T) {
 	text := mustRun(t, sock, "spectrum", "101.1", "--watch", "--count", "2", "--rate", "30", "--width", "50")
 	if got := strings.Count(text, "loudest bins:"); got != 2 {
 		t.Fatalf("piped --watch should append 2 charts, got %d:\n%s", got, text)
+	}
+	// No channel: the fake's row is floor only, and spectrum says so instead of listing noise.
+	if !strings.Contains(text, "loudest bins: nothing above the floor") {
+		t.Fatalf("a flat row should report nothing above the floor:\n%s", text)
 	}
 	if strings.Contains(text, "\x1b[") {
 		t.Fatalf("piped output must not carry cursor moves:\n%s", text)

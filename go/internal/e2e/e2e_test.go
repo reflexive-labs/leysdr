@@ -123,13 +123,19 @@ func list(m map[string]any, key string) []any {
 	return v
 }
 
+// liveOutput is what a long-running verb wrote, stdout and stderr apart:
+// under --json stdout must be NDJSON only, so the two are never merged.
+type liveOutput struct {
+	out, errOut bytes.Buffer
+}
+
 // startLive launches a long-running ley verb (play/tune) and returns a stop func
 // that sends SIGINT and waits, returning the exit error.
-func (e *env) startLive(args ...string) (stop func() error, out *bytes.Buffer) {
+func (e *env) startLive(args ...string) (stop func() error, out *liveOutput) {
 	e.t.Helper()
 	cmd := exec.Command(e.ley, append([]string{"--socket", e.socket}, args...)...)
-	out = &bytes.Buffer{}
-	cmd.Stdout, cmd.Stderr = out, out
+	out = &liveOutput{}
+	cmd.Stdout, cmd.Stderr = &out.out, &out.errOut
 	if err := cmd.Start(); err != nil {
 		e.t.Fatalf("start ley %v: %v", args, err)
 	}
@@ -253,10 +259,10 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 	e.waitChannels(2)
 	time.Sleep(2 * time.Second)
 	if err := stopTune(); err != nil {
-		t.Fatalf("tune exit: %v\n%s", err, tuneOut.String())
+		t.Fatalf("tune exit: %v\n%s\n%s", err, tuneOut.out.String(), tuneOut.errOut.String())
 	}
-	if !strings.Contains(tuneOut.String(), "dBFS") {
-		t.Fatalf("tune printed no meter line:\n%s", tuneOut.String())
+	if !strings.Contains(tuneOut.out.String(), "dBFS") {
+		t.Fatalf("tune printed no meter line:\n%s", tuneOut.out.String())
 	}
 	st = e.waitChannels(1)
 	if got := list(st, "channels")[0].(map[string]any)["channelId"]; got != playChanID {
@@ -268,7 +274,11 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 
 	// SIGINT play: it destroys its channel, the capture it created and detaches the file device.
 	if err := stopPlay(); err != nil {
-		t.Fatalf("play exit: %v\n%s", err, playOut.String())
+		t.Fatalf("play exit: %v\n%s\n%s", err, playOut.out.String(), playOut.errOut.String())
+	}
+	// Prose (the mode decision, the banner) went to stderr, not into the NDJSON.
+	if !strings.Contains(playOut.errOut.String(), "using NFM: the recording's sidecar says NFM") || !strings.Contains(playOut.errOut.String(), "Listening to") {
+		t.Fatalf("play --json prose should be on stderr:\n%s", playOut.errOut.String())
 	}
 	st = e.state()
 	if len(list(st, "channels")) != 0 || len(list(st, "captures")) != 0 || len(list(st, "devices")) != 0 {
@@ -277,7 +287,7 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 	// play --json printed NDJSON: Events (seq + caused_by) interleaved with
 	// TelemetryMsgs (seq + sample time on this capture).
 	var events, meters int
-	for _, line := range strings.Split(strings.TrimSpace(playOut.String()), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(playOut.out.String()), "\n") {
 		msg := parseJSON(t, line)
 		if _, ok := msg["seq"]; !ok {
 			t.Fatalf("play line without seq: %v", msg)
