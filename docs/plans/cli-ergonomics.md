@@ -1,6 +1,6 @@
 # Plan: CLI ergonomics and documentation for newcomers
 
-Status: in progress (2026-09-05). Scope: `ley` and its docs. The wire contract, engine and daemon
+Status: implemented 2026-09-05 (see the implementation log at the end). Scope: `ley` and its docs. The wire contract, engine and daemon
 are out of scope except where a client convenience needs a value the daemon already provides.
 
 ## Goal
@@ -177,3 +177,19 @@ input, exit codes and the bulk-row JSON exception are written contracts, and the
 (root Run with suggestions, help-topic dispatch, groups) are called out. Invariants: no
 client-side DSP (a median over a daemon row and top-N bins are presentation), state stays in the
 daemon, `--json` stays proto3 except the documented bulk rows.
+
+## Implementation log
+
+Landed on `v0-bootstrap` as one commit per item (parsers and tables; tune; set; spectrum;
+orientation/exit codes/stubs; help and goldens; docs; walkthrough fixes; stable row numbers).
+Deviations from the plan, all deliberate:
+
+- `ley stop [channel|all]` was added (not in the plan): the walkthrough found no way to end a
+  persistent channel or free a real radio from the CLI.
+- `tune`/`spectrum` refuse to move a shared capture that other channels ride on unless `--retune`
+  is given; the plan only said "retune when it does not cover". Last-write-wins remains the daemon
+  rule; this is a client-side guard for the human path.
+- `tune` and `play` gained `--gain`; `set` accepts `filter` and `frequency` as aliases.
+- Row numbers are stable only because the client sorts state lists by id and both daemons mint
+  monotonic ULIDs; the plan assumed daemon order was stable.
+- Selector misses (`--channel 147` with no match) exit 1, not 2: they depend on daemon state.
