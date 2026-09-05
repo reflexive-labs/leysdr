@@ -25,3 +25,6 @@ fixtures/*.json
 *.sock
 *.pid
 *.log
+
+# Local RF recordings made while testing (WAV dumps)
+rf-captures/

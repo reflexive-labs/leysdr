@@ -36,9 +36,9 @@ ley play fixtures/nfm_tone.cf32                   # the same pipeline from an IQ
   alongside NFM (fixture-gated); recording/resources are not started.
 - Milestones D (detector, TUI, jobs, MCP) not started.
 - Spikes: S3 decided (`docs/decisions/`), S2 harness ready (`swift run s2-throughput`), S1 pending the app.
-- **Not yet verified on macOS.** Everything above was built and tested on Linux (portable DSP kernels,
-  a stub librtlsdr, the control plane end to end). The Apple-only code — vDSP kernels, the CoreAudio
-  sink, real librtlsdr streaming — has been reviewed but never compiled; the first `make swift` on a
-  Mac and the first `ley devices` against a dongle are the next milestone, not a formality.
+- **Verified on real RF** (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
+  audio confirmed by ear), and from Linux over `rtl_tcp` — FFT peaks on known broadcasters, WFM audio
+  with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered
+  from a handheld on 147.555 MHz, live `ley set` from a second terminal.
 
 CLAUDE.md is the review checklist; `docs/engine-internals.md` says how the engine keeps its invariants.
