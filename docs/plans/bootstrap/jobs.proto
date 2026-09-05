@@ -1,0 +1,131 @@
+// leyline.v1 — jobs and resources
+// A job is a daemon-owned persistent intent. Persistence follows intent: job outputs are
+// durable resources; interactive actions are ephemeral unless explicitly kept.
+// This is a table of watches, not a workflow engine — no retry DAG, no replay.
+syntax = "proto3";
+package leyline.v1;
+import "common.proto";
+import "control.proto";
+import "telemetry.proto";
+
+// ---------- Jobs ----------
+
+message Job {
+  string job_id = 1;
+  JobState state = 2;
+  int64 created_at_ns = 3;
+  ClientInfo created_by = 4;
+  oneof config {
+    WatchConfig watch = 5;
+    ScanConfig scan = 6;
+    RecordConfig record = 7;
+  }
+  repeated string result_uris = 8;  // ley:// resources produced so far
+  string status_detail = 9;         // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
+}
+
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  RUNNING = 1;
+  DEGRADED = 2;   // e.g. watch channel OUT_OF_CAPTURE — logging gaps, will rebind
+  COMPLETED = 3;
+  CANCELLED = 4;
+  FAILED = 5;
+}
+
+// "Watch 146.52 and log anything heard." Owns a persistent channel; produces a transcript.
+message WatchConfig {
+  uint64 frequency_hz = 1;
+  DemodMode mode = 2;
+  bool record_clips = 3;
+  int64 end_at_ns = 4;      // 0 = until cancelled
+}
+
+// Sweep -> persisted Scan resource. Respects don't-disturb: idle device or decline with reason.
+message ScanConfig {
+  FrequencyRange range = 1;
+  uint32 step_hz = 2;
+  uint32 dwell_ms = 3;
+  oneof schedule { bool once = 4; string recurring = 5; } // recurring: cron expression
+}
+
+message RecordConfig {
+  uint64 frequency_hz = 1;
+  DemodMode mode = 2;       // RAW_IQ records IQ
+  int64 start_at_ns = 3;    // 0 = now
+  int64 duration_ms = 4;
+}
+
+// ---------- Derived products ----------
+
+// Contiguous squelch-open interval on a watched channel. The building block of transcripts.
+message ActivitySegment {
+  SampleTime start = 1;
+  SampleTime end = 2;
+  double peak_dbfs = 3;
+  double mean_dbfs = 4;
+  string clip_uri = 5;      // empty if clips weren't recorded
+}
+
+message Transcript {
+  string job_id = 1;
+  repeated ActivitySegment segments = 2;
+  repeated Gap coverage_gaps = 3;   // out-of-capture or daemon downtime; honesty over completeness
+}
+
+message Scan {
+  string scan_id = 1;
+  ScanConfig config = 2;
+  repeated Detection detections = 3;
+  repeated NoiseFloorSegment noise_floor = 4;
+  int64 started_at_ns = 5;
+  int64 completed_at_ns = 6;
+}
+message NoiseFloorSegment { FrequencyRange range = 1; double floor_dbfs = 2; }
+
+// ---------- Resources ----------
+// URIs: ley://recordings/<id>, ley://scans/<id>, ley://snapshots/<id>, ley://watches/<id>/transcript
+// The store is a plain directory Finder can see; content retrieval locally is a file path.
+
+message Resource {
+  string uri = 1;
+  ResourceKind kind = 2;
+  int64 created_at_ns = 3;
+  uint64 size_bytes = 4;
+  string originating_job_id = 5;    // empty for explicit keeps
+  map<string, string> metadata = 6; // frequency, mode, duration, anchor — queryable
+}
+
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RECORDING = 1;
+  SCAN = 2;
+  SNAPSHOT = 3;
+  TRANSCRIPT = 4;
+}
+
+service Jobs {
+  rpc StartJob(StartJobRequest) returns (Job);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc GetJob(JobRef) returns (Job);
+  rpc CancelJob(JobRef) returns (Job);
+  rpc GetTranscript(TranscriptRequest) returns (Transcript);
+  rpc GetScan(ScanRef) returns (Scan);
+}
+
+service Resources {
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc GetResource(ResourceRef) returns (Resource);
+  rpc ResolveLocalPath(ResourceRef) returns (LocalPath); // UDS clients read the file directly
+}
+
+message StartJobRequest { oneof config { WatchConfig watch = 1; ScanConfig scan = 2; RecordConfig record = 3; } }
+message ListJobsRequest { repeated JobState states = 1; } // empty = all
+message ListJobsResponse { repeated Job jobs = 1; }
+message JobRef { string job_id = 1; }
+message TranscriptRequest { string job_id = 1; StreamPosition from = 2; } // from: bounded reads of long watches
+message ScanRef { string scan_id = 1; }
+message ListResourcesRequest { ResourceKind kind = 1; map<string, string> metadata_filter = 2; }
+message ListResourcesResponse { repeated Resource resources = 1; }
+message ResourceRef { string uri = 1; }
+message LocalPath { string path = 1; }

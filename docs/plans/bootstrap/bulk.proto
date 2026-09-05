@@ -1,0 +1,82 @@
+// leyline.v1 — bulk plane
+// Sample-bearing streams. Offer/answer negotiation; the answer is authoritative.
+// Payloads are opaque bytes in the negotiated format — samples are never protobuf-encoded per element.
+// No lossless network stream exists: lossless work is a daemon-side FileSink.
+syntax = "proto3";
+package leyline.v1;
+import "common.proto";
+import "control.proto";
+
+// ---------- Negotiation ----------
+
+message SubscribeRequest {
+  oneof source {
+    string capture_id = 1;  // IQ / FFT of the whole capture
+    string channel_id = 2;  // audio / decoded / channel-filtered IQ
+  }
+  StreamKind kind = 3;
+  DeliveryPolicy policy = 4;     // default LATEST_WINS
+  StreamPosition start = 5;      // v0: LIVE only
+  Transport transport = 6;       // default GRPC; SHM_RING local-only
+  // Desired parameters; daemon may downgrade, never upgrade.
+  oneof params {
+    IqParams iq = 7;
+    FftParams fft = 8;
+    AudioParams audio = 9;
+  }
+}
+
+enum StreamKind { STREAM_KIND_UNSPECIFIED = 0; IQ = 1; FFT = 2; AUDIO = 3; DECODED = 4; }
+enum Transport { TRANSPORT_UNSPECIFIED = 0; GRPC = 1; SHM_RING = 2; }
+
+message IqParams { uint64 sample_rate = 1; SampleFormat format = 2; }
+message FftParams {
+  uint32 bins = 1;               // daemon serves from a fixed power-of-two ladder
+  FftBinFormat bin_format = 2;
+  double rows_per_second = 3;
+}
+enum FftBinFormat { FFT_BIN_FORMAT_UNSPECIFIED = 0; DB_U8 = 1; DB_F32 = 2; }
+message AudioParams { uint32 sample_rate = 1; AudioSampleFormat format = 2; }
+enum AudioSampleFormat { AUDIO_SAMPLE_FORMAT_UNSPECIFIED = 0; S16 = 1; F32 = 2; }
+
+// The authoritative answer. Clients interpret frames from this alone.
+message StreamDescriptor {
+  string stream_id = 1;
+  StreamKind kind = 2;
+  DeliveryPolicy policy = 3;
+  oneof params { IqParams iq = 4; FftParams fft = 5; AudioParams audio = 6; }
+  uint64 center_hz = 7;          // FFT/IQ context
+  uint64 span_hz = 8;
+  oneof transport {
+    bool grpc = 9;               // pull via Stream(stream_id)
+    ShmRing shm = 10;
+  }
+}
+
+// Local fast path. Ring layout (native byte order):
+//   header: magic "LEYR", u32 version, u64 write_seq (monotonic), u32 slot_size, u32 slot_count,
+//           serialized StreamDescriptor
+//   slot:   u64 seq, u64 sample_index, u32 payload_len, payload
+// Readers chase write_seq; falling behind is detected by seq check -> resync (latest-wins by construction).
+message ShmRing {
+  string path = 1;       // POSIX shm name
+  uint32 slot_size = 2;
+  uint32 slot_count = 3;
+}
+
+// ---------- Frames (gRPC transport) ----------
+
+message Frame {
+  string stream_id = 1;
+  uint64 seq = 2;
+  SampleTime time = 3;
+  Gap gap = 4;           // present only under GAP_MARKED after a drop
+  bytes payload = 5;     // format per StreamDescriptor
+}
+
+service Bulk {
+  rpc Subscribe(SubscribeRequest) returns (StreamDescriptor);
+  rpc Stream(StreamRef) returns (stream Frame);   // GRPC transport only
+  rpc Unsubscribe(StreamRef) returns (Empty);
+}
+message StreamRef { string stream_id = 1; }

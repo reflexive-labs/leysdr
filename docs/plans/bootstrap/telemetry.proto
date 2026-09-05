@@ -1,0 +1,73 @@
+// leyline.v1 — telemetry plane
+// Low-rate structured observations: what the radio sees, as opposed to state someone changed.
+// Full protobuf messages (unlike bulk payloads); all carry the sample timebase.
+// Delivery is latest-wins with sequence numbers.
+syntax = "proto3";
+package leyline.v1;
+import "common.proto";
+
+message TelemetrySubscription {
+  oneof scope { bool daemon = 1; string capture_id = 2; string channel_id = 3; }
+  repeated TelemetryType types = 4; // empty = all
+}
+
+enum TelemetryType {
+  TELEMETRY_TYPE_UNSPECIFIED = 0;
+  METER = 1;
+  SQUELCH_TRANSITION = 2;
+  DETECTION = 3;
+  CAPTURE_ACTIVITY = 4;
+}
+
+message TelemetryMsg {
+  uint64 seq = 1;
+  SampleTime time = 2;
+  oneof body {
+    Meter meter = 3;
+    SquelchTransition squelch = 4;
+    Detection detection = 5;
+    CaptureActivityMsg activity = 6;
+  }
+}
+
+// Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
+message Meter {
+  string channel_id = 1;
+  double power_dbfs = 2;
+  double snr_db = 3;       // NaN if noise floor not yet estimated
+  bool squelch_open = 4;
+}
+
+// Edge-triggered, exact in sample time — transcript features key on this, not on Meter.
+message SquelchTransition {
+  string channel_id = 1;
+  bool open = 2;
+}
+
+// The atom of the semantic tier. v0 detector: energy detection over the FFT ladder.
+message Detection {
+  string detection_id = 1;
+  string capture_id = 2;
+  uint64 center_hz = 3;
+  uint32 bandwidth_hz = 4;
+  double snr_db = 5;
+  SampleTime first_seen = 6;
+  SampleTime last_seen = 7;
+  // Sparse in v0: cheap heuristics only (bandwidth class, carrier presence) or absent.
+  // A real classifier slots in here later without schema change.
+  string modulation_guess = 8;
+  double guess_confidence = 9; // 0 when guess is absent
+}
+
+message CaptureActivityMsg {
+  string capture_id = 1;
+  CaptureActivitySnapshot snapshot = 2;
+}
+message CaptureActivitySnapshot {
+  int64 last_interactive_write_ns = 1;
+  uint32 live_audio_sinks = 2;
+}
+
+service Telemetry {
+  rpc Subscribe(TelemetrySubscription) returns (stream TelemetryMsg);
+}

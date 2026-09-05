@@ -1,0 +1,58 @@
+// leyline.v1 — shared types
+// IDs are prefixed ULIDs: dev_, cap_, chan_, sink_, job_, scan_, rec_, snap_, strm_
+syntax = "proto3";
+package leyline.v1;
+
+// Sample-indexed timebase. Wall clock is derived via CaptureAnchor, never carried per-frame.
+// capture_id scopes the timeline; future non-capture timelines (e.g. tx_ transmissions)
+// reuse this field with their own IDs — do not assume it always names a Capture.
+message SampleTime {
+  string capture_id = 1;
+  uint64 sample_index = 2; // samples since capture start, at the capture's rate
+}
+
+// One per capture: maps sample 0 to host time.
+message CaptureAnchor {
+  string capture_id = 1;
+  int64 host_time_ns = 2;   // CLOCK_REALTIME at sample 0
+  uint64 sample_rate = 3;
+  double drift_ppm = 4;      // measured, 0 if unknown
+}
+
+message FrequencyRange {
+  uint64 min_hz = 1;
+  uint64 max_hz = 2;
+}
+
+// Attribution — every event names the client that caused it (arbitration by visibility).
+message ClientInfo {
+  string client_id = 1;   // daemon-assigned per connection
+  string kind = 2;        // "app" | "cli" | "mcp" | "job" | other
+  string label = 3;       // human-readable, client-supplied
+}
+
+enum DeliveryPolicy {
+  DELIVERY_POLICY_UNSPECIFIED = 0;
+  LATEST_WINS = 1; // drop oldest silently; sequence numbers expose gaps
+  GAP_MARKED = 2;  // drops preceded by an explicit gap record
+}
+
+message Gap {
+  uint64 from_sample = 1; // inclusive
+  uint64 to_sample = 2;   // exclusive
+}
+
+// Subscription start position. v0 implements LIVE only; others return UNIMPLEMENTED.
+message StreamPosition {
+  oneof position {
+    bool live = 1;
+    SampleTime at_sample = 2;
+    int64 at_host_time_ns = 3;
+  }
+}
+
+message ErrorDetail {
+  string code = 1;    // stable machine string, e.g. "FREQ_OUT_OF_RANGE"
+  string message = 2;
+  string target = 3;  // id of the object the error concerns
+}

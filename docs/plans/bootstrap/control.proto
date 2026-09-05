@@ -1,0 +1,177 @@
+// leyline.v1 — control plane
+// State and intent. Low-rate except WriteParams, which is coalesced fire-and-forget.
+syntax = "proto3";
+package leyline.v1;
+import "common.proto";
+
+// ---------- Capability model ----------
+
+message DeviceDescriptor {
+  string device_id = 1;          // dev_<ulid>, stable across replug by serial
+  string driver = 2;             // "rtlsdr" | "hackrf" | "airspy" | "sdrplay" | "file" | "composite" | ...
+  string model = 3;
+  string serial = 4;
+  string usb_location = 5;       // empty for virtual devices
+  DeviceState state = 6;
+  repeated FrequencyRange tuning_ranges = 7;
+  repeated uint64 sample_rates = 8;
+  SampleFormat native_format = 9;
+  repeated GainElement gain_elements = 10; // ordered as in the signal path
+  bool provides_timestamps = 11;
+  // Escape hatch: vendor features without schema changes. Cross-device concepts get first-class fields.
+  // Well-known keys include "bias_tee", "direct_sampling", "tx_capable", "full_duplex"
+  // (half-duplex TX devices like HackRF suspend capture to emit).
+  map<string, FeatureValue> features = 12;
+}
+
+enum DeviceState { DEVICE_STATE_UNSPECIFIED = 0; AVAILABLE = 1; IN_USE = 2; DISCONNECTED = 3; }
+enum SampleFormat { SAMPLE_FORMAT_UNSPECIFIED = 0; CS8 = 1; CS16 = 2; CF32 = 3; }
+
+message GainElement {
+  string name = 1;    // e.g. "LNA", "VGA", "TUNER"
+  double min_db = 2;
+  double max_db = 3;
+  double step_db = 4;
+  bool supports_auto = 5;
+}
+
+message FeatureValue {
+  oneof value { bool flag = 1; int64 integer = 2; double number = 3; string text = 4; }
+}
+
+// ---------- Session model: capture -> channel -> sink ----------
+
+message Capture {
+  string capture_id = 1;
+  string device_id = 2;          // exactly one device per capture (composite devices absorb multi-SDR)
+  uint64 center_hz = 3;
+  uint64 sample_rate = 4;
+  CaptureState state = 5;
+  CaptureAnchor anchor = 6;
+  CaptureActivity activity = 7;  // the don't-disturb signal
+  ClientInfo created_by = 8;
+}
+
+enum CaptureState { CAPTURE_STATE_UNSPECIFIED = 0; CAPTURE_ACTIVE = 1; CAPTURE_DETACHED = 2; }
+
+message CaptureActivity {
+  int64 last_interactive_write_ns = 1; // 0 if never
+  uint32 live_audio_sinks = 2;
+}
+
+message Channel {
+  string channel_id = 1;
+  string capture_id = 2;
+  int64 offset_hz = 3;           // from capture center; absolute freq = center + offset
+  uint32 bandwidth_hz = 4;
+  DemodMode mode = 5;
+  double squelch_db = 6;         // dBFS threshold; NaN = squelch off
+  GainMode agc = 7;
+  ChannelState state = 8;
+  bool persistent = 9;           // survives owner disconnect; jobs set this
+  uint64 required_hz = 10;       // set by jobs: rebind target when OUT_OF_CAPTURE
+  ClientInfo owner = 11;
+}
+
+enum DemodMode { DEMOD_MODE_UNSPECIFIED = 0; AM = 1; NFM = 2; WFM = 3; USB = 4; LSB = 5; CW = 6; RAW_IQ = 7; }
+enum GainMode { GAIN_MODE_UNSPECIFIED = 0; MANUAL = 1; AUTO = 2; }
+enum ChannelState { CHANNEL_STATE_UNSPECIFIED = 0; CHANNEL_ACTIVE = 1; OUT_OF_CAPTURE = 2; }
+
+message Sink {
+  string sink_id = 1;
+  string channel_id = 2;
+  oneof kind {
+    SystemAudioSink system_audio = 3;  // daemon plays via CoreAudio
+    StreamSink stream = 4;             // client pulls over bulk plane
+    FileSink file = 5;                 // daemon records; lossless lives here, never on the network
+  }
+}
+
+message SystemAudioSink { string audio_device_uid = 1; double volume = 2; }
+message StreamSink { string stream_id = 1; }
+message FileSink {
+  FileSinkKind kind = 1;
+  string resource_uri = 2; // ley://recordings/<id>, assigned by daemon
+}
+enum FileSinkKind { FILE_SINK_KIND_UNSPECIFIED = 0; RECORD_IQ = 1; RECORD_AUDIO = 2; }
+
+// ---------- Coalesced parameter writes ----------
+// Client-streams writes; daemon coalesces last-value-per-parameter per tick, applies, emits state
+// events. No per-write ack. Rejections come back as WriteRejected events carrying the client tag.
+
+message ParamWrite {
+  uint64 tag = 1;       // client-assigned, echoed in WriteRejected
+  string target_id = 2; // capture_id or channel_id
+  oneof param {
+    uint64 center_hz = 3;        // capture
+    uint64 capture_sample_rate = 4;
+    int64 offset_hz = 5;         // channel
+    uint32 bandwidth_hz = 6;
+    DemodMode mode = 7;
+    double squelch_db = 8;
+    GainWrite gain = 9;          // device gain element, addressed via the capture
+    double sink_volume = 10;     // target_id = sink_id
+  }
+}
+message GainWrite { string element = 1; oneof value { double db = 2; bool auto = 3; } }
+message WriteSummary { uint64 writes_received = 1; uint64 writes_applied = 2; }
+
+// ---------- Events ----------
+// Full new state of the changed object, never deltas. Per-stream sequence numbers;
+// reconnect = fetch state, resume live.
+
+message Event {
+  uint64 seq = 1;
+  ClientInfo caused_by = 2;
+  oneof body {
+    DeviceDescriptor device = 3;      // arrival/removal/state change
+    Capture capture = 4;
+    Channel channel = 5;
+    Sink sink = 6;
+    WriteRejected write_rejected = 7;
+    CaptureAnchor anchor = 8;
+  }
+}
+message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
+
+message EventScope {
+  oneof scope { bool daemon = 1; string capture_id = 2; }
+}
+
+// ---------- Service ----------
+
+service Control {
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  rpc WatchEvents(EventScope) returns (stream Event);
+  rpc GetState(GetStateRequest) returns (GetStateResponse); // snapshot for reconnect
+
+  rpc CreateCapture(CreateCaptureRequest) returns (Capture);
+  rpc DestroyCapture(DestroyCaptureRequest) returns (Empty);
+  rpc CreateChannel(CreateChannelRequest) returns (Channel);
+  rpc DestroyChannel(DestroyChannelRequest) returns (Empty);
+  rpc AttachSink(AttachSinkRequest) returns (Sink);
+  rpc DetachSink(DetachSinkRequest) returns (Empty);
+
+  rpc WriteParams(stream ParamWrite) returns (WriteSummary);
+}
+
+message Empty {}
+message ListDevicesRequest {}
+message ListDevicesResponse { repeated DeviceDescriptor devices = 1; }
+message GetStateRequest { EventScope scope = 1; }
+message GetStateResponse {
+  repeated DeviceDescriptor devices = 1;
+  repeated Capture captures = 2;
+  repeated Channel channels = 3;
+  repeated Sink sinks = 4;
+  uint64 event_seq = 5; // events after this seq are newer than this snapshot
+}
+message CreateCaptureRequest { string device_id = 1; uint64 center_hz = 2; uint64 sample_rate = 3; }
+message DestroyCaptureRequest { string capture_id = 1; }
+message CreateChannelRequest {
+  string capture_id = 1; int64 offset_hz = 2; uint32 bandwidth_hz = 3;
+  DemodMode mode = 4; bool persistent = 5; uint64 required_hz = 6;
+}
+message DestroyChannelRequest { string channel_id = 1; }
+message AttachSinkRequest { string channel_id = 1; Sink sink = 2; } // sink_id ignored on input
+message DetachSinkRequest { string sink_id = 1; }
