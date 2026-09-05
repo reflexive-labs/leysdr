@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -14,74 +15,134 @@ import (
 
 // tuneFlags holds the raw flag values before parsing.
 type tuneFlags struct {
-	mode, device, squelch string
-	bw                    uint32
-	rate                  uint64
-	noAudio, persistent   bool
-	volume                float64
+	mode, device, squelch, bw, volume string
+	rate                              uint64
+	noAudio, persistent               bool
 }
 
 // addTuneFlags registers the tune flag set on cmd (shared with play).
 func addTuneFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
-	cmd.Flags().StringVar(&f.mode, "mode", "", "demod mode: nfm|am|wfm|usb|lsb|cw (default nfm)")
-	cmd.Flags().Uint32Var(&f.bw, "bw", 0, "channel bandwidth in Hz (default: mode default)")
+	cmd.Flags().StringVar(&f.mode, "mode", "", "how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)")
+	cmd.Flags().StringVar(&f.bw, "bw", "", "how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)")
 	if withDevice {
-		cmd.Flags().StringVar(&f.device, "device", "", "device ID (default: first non-file device)")
-		cmd.Flags().Uint64Var(&f.rate, "rate", 0, "capture sample rate when creating a capture (default: device default)")
+		cmd.Flags().StringVar(&f.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)")
+		cmd.Flags().Uint64Var(&f.rate, "rate", 0, "sample rate in Hz when the radio is first tuned, e.g. 2400000; also the width of band it covers (default: the radio's own)")
 	}
-	cmd.Flags().StringVar(&f.squelch, "squelch", "", "squelch threshold in dBFS, or 'off'")
-	cmd.Flags().BoolVar(&f.noAudio, "no-audio", false, "do not attach a system_audio sink")
-	cmd.Flags().BoolVar(&f.persistent, "persistent", false, "create a persistent channel, print its IDs and exit")
-	cmd.Flags().Float64Var(&f.volume, "volume", 1, "system audio volume 0..1")
+	cmd.Flags().StringVar(&f.squelch, "squelch", "", "mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)")
+	cmd.Flags().BoolVar(&f.noAudio, "no-audio", false, "decode but do not play through the speakers (use with --persistent or --json)")
+	cmd.Flags().BoolVar(&f.persistent, "persistent", false, "leave the channel running after the command exits and print its ids (for scripts)")
+	cmd.Flags().StringVar(&f.volume, "volume", "1", "speaker volume: 0 to 1, or a percentage like 50% (default: full)")
 }
 
-// parse converts raw flags into tuneOptions; mode "" falls back to defMode.
-func (f *tuneFlags) parse(freq uint64, defMode leylinev1.DemodMode) (*tuneOptions, error) {
-	o := &tuneOptions{freq: freq, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, volume: f.volume, squelch: math.NaN()}
-	o.mode = defMode
-	if f.mode != "" {
-		m, err := leyline.ParseMode(f.mode)
+// modeDefault is what a caller knows about the mode before the flags are
+// read: play passes the sidecar's mode, tune passes a preset's mode (or
+// UNSPECIFIED to fall back to the band table). reason explains it.
+type modeDefault struct {
+	mode   leylinev1.DemodMode
+	reason string
+}
+
+// parse converts raw flags into tuneOptions. Mode precedence: explicit
+// --mode > def (sidecar/preset) > band default > NFM; the rationale is kept
+// only when the mode was inferred. Squelch: explicit flag, else auto for NFM
+// and AM in interactive runs, else off.
+func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) (*tuneOptions, error) {
+	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN()}
+	o.band = leyline.BandFor(freq)
+	switch {
+	case f.mode != "":
+		m, reason, err := leyline.ResolveMode(f.mode, freq)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("--mode: %w", err)
 		}
+		o.mode, o.modeReason = m, reason
+	case def.mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED:
+		o.mode, o.modeReason = def.mode, def.reason
+	default:
+		m, band := leyline.DefaultMode(freq)
 		o.mode = m
+		if band != nil {
+			o.modeReason = band.Name + " band default"
+		} else {
+			o.modeReason = "no band recognised, using NFM"
+		}
 	}
-	if o.mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
-		o.mode = leylinev1.DemodMode_NFM
-	}
-	o.bw = f.bw
-	if o.bw == 0 {
-		o.bw = leyline.DefaultBandwidth(o.mode)
+	if f.bw != "" {
+		bw, err := leyline.ParseBandwidth(f.bw)
+		if err != nil {
+			return nil, fmt.Errorf("--bw: %w (examples: 12.5, 12.5k, 200k, 12500)", err)
+		}
+		o.bw = bw
+	} else {
+		o.bw = leyline.BandwidthFor(freq, o.mode)
 	}
 	if f.squelch != "" {
-		db, err := leyline.ParseSquelch(f.squelch)
+		db, auto, err := leyline.ParseSquelch(f.squelch)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("--squelch: %w (examples: -40, -40dB, off, auto)", err)
 		}
-		o.squelch = db
+		o.squelch, o.squelchAuto = db, auto
+	} else if !app.JSON && !f.persistent && (o.mode == leylinev1.DemodMode_NFM || o.mode == leylinev1.DemodMode_AM) {
+		o.squelchAuto = true
 	}
-	if o.volume < 0 || o.volume > 1 {
-		return nil, fmt.Errorf("--volume must be within 0..1")
+	v, err := leyline.ParseVolume(f.volume)
+	if err != nil {
+		return nil, fmt.Errorf("--volume: %w (examples: 0.5, 50%%)", err)
 	}
+	o.volume = v
 	return o, nil
+}
+
+// resolveTuneTarget reads tune's positional: a frequency (bare numbers are MHz)
+// first, then a preset name; anything else lists the nearest presets.
+func resolveTuneTarget(arg string) (hz uint64, def modeDefault, err error) {
+	if arg == "" {
+		return 0, def, fmt.Errorf("tune needs a frequency or preset: ley tune 146.52, ley tune noaa (ley help presets lists them)")
+	}
+	if r := rune(arg[0]); unicode.IsDigit(r) || r == '.' || r == '-' || r == '+' {
+		hz, err = leyline.ParseUserFrequency(arg)
+		return hz, def, err
+	}
+	p, err := leyline.ResolvePreset(arg)
+	if err != nil {
+		return 0, def, fmt.Errorf("%w; or give a frequency such as 146.52 (MHz)", err)
+	}
+	return p.Hz, modeDefault{mode: p.Mode, reason: "preset " + p.Name + ": " + p.Description}, nil
 }
 
 func newTuneCommand(app *App) *cobra.Command {
 	var f tuneFlags
 	cmd := &cobra.Command{
-		Use:   "tune <freq>",
-		Short: "Create a capture, channel and system-audio sink for a frequency and hold it live",
-		Long: `tune picks a device, reuses or creates its capture, creates a demod channel at
-<freq> and attaches a system_audio sink. It then prints a live meter line until
-Ctrl-C, at which point the channel (and any capture this run created) is destroyed.
-With --persistent the channel outlives the command.`,
-		Args: cobra.ExactArgs(1),
+		Use:   "tune <frequency|preset>",
+		Short: "Listen to a frequency through the speakers",
+		Long: `tune picks a radio, tunes it to the frequency (or a preset such as noaa or
+calling; see ley help presets), decodes it and plays the audio until Ctrl-C.
+
+A bare number is MHz (146.52, 7.040, 1010); add a unit to be exact (1010k,
+146520000). The mode (how the signal is decoded: nfm, am, wfm, ...) is
+chosen from the band when --mode is not given, and the squelch (mute the
+audio while the signal is weaker than a level) is measured from the band's
+noise floor unless you set one. tune prints every decision it made so a
+wrong guess is easy to correct with 'ley set' from another terminal. With
+--persistent the channel keeps running after tune exits and its ids are
+printed for scripts. Longer explanations: ley help squelch, modes, gain.`,
+		Example: `  ley tune 146.52            2 m calling frequency, NFM, squelch auto
+  ley tune noaa              nearest NOAA weather preset
+  ley tune 101.1 --mode fm   FM broadcast (fm means WFM here)
+  ley tune 7.040 --mode lsb  40 m amateur band, lower sideband
+  ley tune 162.55 --squelch -50 --volume 50%`,
+		GroupID: GroupListening,
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			freq, err := leyline.ParseFrequency(args[0])
+			arg := ""
+			if len(args) == 1 {
+				arg = args[0]
+			}
+			freq, def, err := resolveTuneTarget(arg)
 			if err != nil {
 				return err
 			}
-			o, err := f.parse(freq, leylinev1.DemodMode_NFM)
+			o, err := f.parse(app, arg, freq, def)
 			if err != nil {
 				return err
 			}
@@ -102,6 +163,9 @@ With --persistent the channel outlives the command.`,
 
 // runTune performs the tune lifecycle on an open session whose device is set.
 func runTune(ctx context.Context, s *session, o *tuneOptions) error {
+	if o.modeReason != "" {
+		s.say("using %s: %s\n", strings.ToUpper(leyline.ModeName(o.mode)), o.modeReason)
+	}
 	if err := s.ensureCapture(ctx, o); err != nil {
 		return err
 	}
@@ -142,7 +206,27 @@ func (s *session) printCreated() error {
 	if s.sink != nil {
 		fmt.Fprintf(s.app.Stdout, "sink %s\n", s.sink.SinkId)
 	}
+	fmt.Fprintf(s.app.Stdout, "adjust with: ley set squelch -40 --channel %s\n", s.channel.ChannelId)
 	return nil
+}
+
+// banner is the first line of a live run: what is playing, on what, and how
+// to adjust it from another terminal.
+func (s *session) banner(o *tuneOptions) string {
+	where := strings.ToUpper(leyline.ModeName(o.mode))
+	if o.band != nil {
+		where += ", " + o.band.Name
+	}
+	squelch := s.squelchNote
+	if squelch == "" {
+		if math.IsNaN(o.squelch) {
+			squelch = "Squelch off."
+		} else {
+			squelch = fmt.Sprintf("Squelch %.0f dBFS.", o.squelch)
+		}
+	}
+	return fmt.Sprintf("Listening to %s (%s) on %s, %s. %s Ctrl-C stops.\nFrom another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum\n",
+		leyline.FormatFrequency(o.freq), where, s.device.Model, gainString(s.capture), squelch)
 }
 
 // telemetryPump opens Telemetry.Subscribe on the channel and pumps messages
@@ -182,6 +266,7 @@ func telemetryPump(ctx context.Context, c *leyline.Client, channelID string) (<-
 
 // live holds the session open, refreshing the meter line in place and
 // printing events caused by other clients, until ctx is cancelled (Ctrl-C).
+// Under --json stdout carries NDJSON only; the banner goes to stderr.
 func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	tctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -189,10 +274,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	if err != nil {
 		return err
 	}
-	if !s.app.JSON {
-		fmt.Fprintf(s.app.Stdout, "tuned %s %s on channel %s (capture %s); Ctrl-C to stop\n",
-			leyline.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), s.channel.ChannelId, s.capture.CaptureId)
-	}
+	s.say("%s", s.banner(o))
 	lastLen := 0
 	clear := func() {
 		if lastLen > 0 {
@@ -233,7 +315,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			s.apply(ev)
 			if ch, gone := ev.Body.(*leylinev1.Event_Channel); gone && ch.Channel.ChannelId == s.channel.ChannelId && ch.Channel.State == leylinev1.ChannelState_OUT_OF_CAPTURE && !s.mine(ev) {
 				clear()
-				fmt.Fprintln(s.app.Stderr, "channel moved out of capture by another client")
+				fmt.Fprintln(s.app.Stderr, "another client retuned the radio away from this channel; ley state shows who, ley tune again to follow")
 			}
 			if s.app.JSON {
 				if err := s.app.printJSON(ev); err != nil {

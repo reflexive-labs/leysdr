@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
 
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
@@ -27,6 +29,10 @@ func TestTunePersistent(t *testing.T) {
 	if st.Captures[0].CenterHz != 146_520_000 || st.Channels[0].OffsetHz != 0 || leyline.ModeName(st.Channels[0].Mode) != "nfm" {
 		t.Fatalf("channel: %v", st.Channels[0])
 	}
+	// Persistent runs leave squelch off (scripts get the old behaviour).
+	if !math.IsNaN(st.Channels[0].SquelchDb) {
+		t.Fatalf("persistent tune should not set squelch: %v", st.Channels[0].SquelchDb)
+	}
 	// A second persistent tune inside the span reuses the capture with an offset.
 	out = mustRun(t, sock, "--json", "tune", "146.6M", "--no-audio", "--persistent", "--mode", "am", "--squelch", "-50")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -41,8 +47,9 @@ func TestTunePersistent(t *testing.T) {
 	if len(st.Captures) != 1 || len(st.Channels) != 2 {
 		t.Fatalf("expected capture reuse: %d captures %d channels", len(st.Captures), len(st.Channels))
 	}
-	// Out of span: the capture is retuned and the run reports it.
-	out = mustRun(t, sock, "tune", "150M", "--no-audio", "--persistent")
+	// Out of span: the capture is retuned and the run reports it. A bare
+	// number is MHz.
+	out = mustRun(t, sock, "tune", "150", "--no-audio", "--persistent")
 	if !strings.Contains(out, "retuning capture") {
 		t.Fatalf("expected retune notice:\n%s", out)
 	}
@@ -52,17 +59,18 @@ func TestTunePersistent(t *testing.T) {
 	}
 }
 
-func TestTuneLifecycle(t *testing.T) {
-	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+// liveTune runs tune in the background until the channel exists plus settle,
+// then cancels and returns the captured stdout/stderr.
+func liveTune(t *testing.T, sock string, c *leyline.Client, settle time.Duration, args ...string) (string, string) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	var out string
+	var out, errOut string
 	go func() {
-		o, _, err := run(t, ctx, sock, "tune", "146.52M", "--no-audio", "--squelch", "-40")
-		out = o
+		o, e, err := run(t, ctx, sock, args...)
+		out, errOut = o, e
 		done <- err
 	}()
-	// Wait for the channel to exist and a meter to be printed.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		st, err := c.State(context.Background())
@@ -70,22 +78,38 @@ func TestTuneLifecycle(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
+			cancel()
 			t.Fatalf("channel never appeared")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(settle)
 	cancel()
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("tune returned error on cancel: %v", err)
+			t.Fatalf("tune returned error on cancel: %v\n%s\n%s", err, out, errOut)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("tune did not exit after cancel")
 	}
-	if !strings.Contains(out, "dBFS") || !strings.Contains(out, "NFM") {
-		t.Fatalf("no meter line printed:\n%s", out)
+	return out, errOut
+}
+
+func TestTuneLifecycle(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	out, _ := liveTune(t, sock, c, 150*time.Millisecond, "tune", "146.52", "--no-audio", "--squelch", "-40")
+	for _, want := range []string{"Listening to 146.520 MHz (NFM, 2 m amateur)", "gain auto", "Squelch -40 dBFS.", "Ctrl-C stops", "From another terminal: ley set squelch -50", "146.520 MHz NFM  signal ", " dBFS  "} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("live output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "OPEN") || strings.Contains(out, "CLOSED") {
+		t.Fatalf("OPEN/CLOSED belong to --json only:\n%s", out)
+	}
+	// The band default was not needed (explicit squelch, inferred mode is still announced once).
+	if strings.Count(out, "using NFM: 2 m amateur band default") != 1 {
+		t.Fatalf("expected one rationale line:\n%s", out)
 	}
 	st, err := c.State(context.Background())
 	if err != nil {
@@ -100,7 +124,7 @@ func TestTuneJSONMeter(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
-	out, _, err := run(t, ctx, sock, "--json", "tune", "146.52M", "--no-audio")
+	out, errOut, err := run(t, ctx, sock, "--json", "tune", "146.52M", "--no-audio")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,5 +140,158 @@ func TestTuneJSONMeter(t *testing.T) {
 	}
 	if !sawMeter {
 		t.Fatalf("no meter JSON:\n%s", out)
+	}
+	// Prose goes to stderr under --json.
+	if !strings.Contains(errOut, "Listening to 146.520 MHz") || !strings.Contains(errOut, "using NFM") {
+		t.Fatalf("banner should be on stderr under --json:\n%s", errOut)
+	}
+}
+
+// The fake's spectrum is a -100 dB floor (±3 dB) so the auto threshold is
+// deterministic: -100 + 10·log10(12.5 kHz / (2.4 MHz / 2048)) + 10 ≈ -80.
+func TestTuneAutoSquelch(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	var out string
+	go func() {
+		o, _, err := run(t, ctx, sock, "tune", "146.52", "--no-audio")
+		out = o
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := c.State(context.Background())
+		if err == nil && len(st.Channels) == 1 && !math.IsNaN(st.Channels[0].SquelchDb) {
+			if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
+				t.Fatalf("auto squelch: got %v, want about -80", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("auto squelch never applied")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("tune: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Squelch auto → -80 dBFS (10 dB above the band's noise floor") {
+		t.Fatalf("banner should report the measured squelch:\n%s", out)
+	}
+}
+
+func TestTuneModePrecedence(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	cases := []struct {
+		args       []string
+		mode, said string
+	}{
+		{[]string{"tune", "101.1", "--mode", "fm"}, "wfm", "using WFM: fm on the FM broadcast band means WFM"},
+		{[]string{"tune", "146.52", "--mode", "fm"}, "nfm", "using NFM: fm outside the FM broadcast band means NFM"},
+		{[]string{"tune", "101.1"}, "wfm", "using WFM: FM broadcast band default"},
+		{[]string{"tune", "500"}, "nfm", "using NFM: no band recognised, using NFM"},
+		{[]string{"tune", "121.5"}, "am", "using AM: airband band default"},
+		{[]string{"tune", "146.52", "--mode", "am"}, "am", ""},
+		{[]string{"tune", "guard"}, "am", "using AM: preset guard: aviation emergency guard frequency (121.500 MHz)"},
+	}
+	for _, tc := range cases {
+		out := mustRun(t, sock, append(tc.args, "--no-audio", "--persistent")...)
+		st, _ := c.State(context.Background())
+		ch := st.Channels[len(st.Channels)-1]
+		if leyline.ModeName(ch.Mode) != tc.mode {
+			t.Errorf("%v: mode %s, want %s", tc.args, leyline.ModeName(ch.Mode), tc.mode)
+		}
+		if tc.said == "" && strings.Contains(out, "using ") {
+			t.Errorf("%v: explicit mode should print no rationale:\n%s", tc.args, out)
+		}
+		if tc.said != "" && !strings.Contains(out, tc.said) {
+			t.Errorf("%v: want %q in:\n%s", tc.args, tc.said, out)
+		}
+	}
+	st, _ := c.State(context.Background())
+	// FM broadcast default bandwidth follows the band table; --bw is parsed
+	// with ParseBandwidth (bare numbers are kHz).
+	if st.Channels[2].BandwidthHz != 200_000 {
+		t.Errorf("wfm bandwidth: %d", st.Channels[2].BandwidthHz)
+	}
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--bw", "25", "--volume", "50%")
+	st, _ = c.State(context.Background())
+	if st.Channels[len(st.Channels)-1].BandwidthHz != 25_000 {
+		t.Errorf("--bw 25 should be 25 kHz: %d", st.Channels[len(st.Channels)-1].BandwidthHz)
+	}
+	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--bw", "wide"); err == nil || !strings.Contains(err.Error(), "--bw") || !strings.Contains(err.Error(), "12.5k") {
+		t.Errorf("bad --bw error: %v", err)
+	}
+	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--volume", "loud"); err == nil || !strings.Contains(err.Error(), "--volume") {
+		t.Errorf("bad --volume error: %v", err)
+	}
+}
+
+func TestTunePresetsAndErrors(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "tune", "NOAA", "--no-audio", "--persistent")
+	st, _ := c.State(context.Background())
+	if st.Captures[0].CenterHz != 162_550_000 || leyline.ModeName(st.Channels[0].Mode) != "nfm" {
+		t.Fatalf("preset noaa: %v %v\n%s", st.Captures[0], st.Channels[0], out)
+	}
+	// Unknown preset: the nearest names, and the frequency alternative.
+	_, _, err := run(t, context.Background(), sock, "tune", "nooa", "--no-audio")
+	if err == nil || !strings.Contains(err.Error(), "noaa") || !strings.Contains(err.Error(), "146.52") {
+		t.Fatalf("unknown preset error: %v", err)
+	}
+	if _, _, err := run(t, context.Background(), sock, "tune", "--no-audio"); err == nil || !strings.Contains(err.Error(), "ley tune 146.52") {
+		t.Fatalf("missing positional error: %v", err)
+	}
+	// Commas are rejected with a hint rather than misread.
+	if _, _, err := run(t, context.Background(), sock, "tune", "146,520"); err == nil || !strings.Contains(err.Error(), "comma") {
+		t.Fatalf("comma error: %v", err)
+	}
+	// Out of range: the device range, plus the kHz re-read hint when that lands in a band.
+	_, _, err = run(t, context.Background(), sock, "tune", "1800", "--no-audio", "--persistent")
+	if err == nil || leyline.Code(err) != leyline.CodeFreqOutOfRange {
+		t.Fatalf("expected FREQ_OUT_OF_RANGE, got %v", err)
+	}
+	for _, want := range []string{"1.800 GHz", "Generic RTL2832U (R820T)", "24.000 MHz", "1.766 GHz", "did you mean 1.800 MHz (160 m amateur)? write 1800k"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("out-of-range error lacks %q: %v", want, err)
+		}
+	}
+	_, _, err = run(t, context.Background(), sock, "tune", "5", "--no-audio", "--persistent")
+	if err == nil || !strings.Contains(err.Error(), "cannot tune below 24.000 MHz") || !strings.Contains(err.Error(), "upconverter") {
+		t.Errorf("HF error should give the honest reason: %v", err)
+	}
+	// Device selectors: row number and prefix.
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--device", "1")
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--device", st.Devices[0].DeviceId[:8])
+	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio", "--device", "9"); err == nil || !strings.Contains(err.Error(), "device") {
+		t.Errorf("bad device selector: %v", err)
+	}
+}
+
+func TestTuneNoDevice(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
+	_, _, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio")
+	if err == nil {
+		t.Fatal("expected an error with no device")
+	}
+	for _, want := range []string{"no radio found", "plugged in", "rtl_test", "ley daemon logs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("no-device checklist lacks %q: %v", want, err)
+		}
+	}
+}
+
+func TestMeterLine(t *testing.T) {
+	m := &leylinev1.Meter{PowerDbfs: -42.4, SquelchOpen: false}
+	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m); got != "146.620 MHz NFM  signal -42 dBFS  muted, waiting for a signal" {
+		t.Errorf("closed: %q", got)
+	}
+	m.SquelchOpen = true
+	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m); got != "146.620 MHz NFM  signal -42 dBFS  audio" {
+		t.Errorf("open: %q", got)
 	}
 }

@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,20 +17,27 @@ import (
 // confirmTimeout bounds how long verbs wait for the daemon's confirming event.
 const confirmTimeout = 2 * time.Second
 
-// tuneOptions are the flags shared by `tune` and `play`.
+// tuneOptions are the settings shared by `tune` and `play`, after parsing.
 type tuneOptions struct {
 	freq uint64
+	// input is the frequency as the user typed it (for hints on errors).
+	input string
 	// captureCenter, when non-zero, is the centre used for a new capture
 	// (play: the file's centre, since a playback device tunes nowhere else).
 	captureCenter uint64
 	mode          leylinev1.DemodMode
-	bw            uint32
-	device        string
-	rate          uint64
-	squelch       float64 // NaN = off
-	noAudio       bool
-	persistent    bool
-	volume        float64
+	// modeReason is the one-line rationale when the mode was inferred ("" when explicit).
+	modeReason string
+	band       *leyline.Band
+	bw         uint32
+	device     string
+	rate       uint64
+	squelch    float64 // NaN = off (unless squelchAuto)
+	// squelchAuto asks for a threshold measured from the capture's spectrum.
+	squelchAuto bool
+	noAudio     bool
+	persistent  bool
+	volume      float64
 }
 
 // session is one tune lifecycle: the capture (created or reused), the channel
@@ -46,20 +55,25 @@ type session struct {
 	events         <-chan *leylinev1.Event
 	eventErrs      <-chan error
 	cancelEvents   context.CancelFunc
+	// squelchNote is the banner's squelch sentence once the channel exists.
+	squelchNote string
 }
 
-// pickDevice chooses --device, else the first non-file device, else the first.
-func pickDevice(state *leylinev1.GetStateResponse, id string) (*leylinev1.DeviceDescriptor, error) {
+// noDeviceChecklist is what to try when the daemon lists no radios.
+const noDeviceChecklist = `no radio found. Check, in order:
+  1. the SDR is plugged in (try another USB port or cable)
+  2. rtl_test sees it (or the vendor's own test tool)
+  3. nothing else has it open (SDR apps, another daemon)
+  4. ley daemon logs, for driver errors`
+
+// pickDevice chooses --device (a full id, id prefix, row number or frequency),
+// else the first non-file device, else the first.
+func pickDevice(state *leylinev1.GetStateResponse, sel string) (*leylinev1.DeviceDescriptor, error) {
 	if len(state.Devices) == 0 {
-		return nil, errors.New("no devices available")
+		return nil, errors.New(noDeviceChecklist)
 	}
-	if id != "" {
-		for _, d := range state.Devices {
-			if d.DeviceId == id {
-				return d, nil
-			}
-		}
-		return nil, fmt.Errorf("device %s not found", id)
+	if sel != "" {
+		return leyline.ResolveDevice(state, sel)
 	}
 	for _, d := range state.Devices {
 		if d.Driver != "file" && d.State != leylinev1.DeviceState_DISCONNECTED {
@@ -67,6 +81,47 @@ func pickDevice(state *leylinev1.GetStateResponse, id string) (*leylinev1.Device
 		}
 	}
 	return state.Devices[0], nil
+}
+
+// friendlyError carries a plain-words message while keeping the daemon error
+// (and so its machine code) reachable through errors.As/Unwrap.
+type friendlyError struct {
+	msg   string
+	cause error
+}
+
+func (e *friendlyError) Error() string { return e.msg }
+func (e *friendlyError) Unwrap() error { return e.cause }
+
+// friendly rewrites the daemon errors a newcomer is likely to hit into one
+// sentence that says what to do next. input/hz describe the frequency the
+// user asked for (hz 0 when none). Other errors pass through unchanged.
+func (s *session) friendly(err error, input string, hz uint64) error {
+	if err == nil {
+		return nil
+	}
+	var fe *friendlyError
+	if errors.As(err, &fe) {
+		return err
+	}
+	switch leyline.Code(err) {
+	case leyline.CodeDeviceBusy:
+		return &friendlyError{msg: "the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits", cause: err}
+	case leyline.CodeFreqOutOfRange:
+		var ranges []*leylinev1.FrequencyRange
+		model := "this device"
+		if s.device != nil {
+			ranges, model = s.device.TuningRanges, s.device.Model
+		}
+		msg := fmt.Sprintf("%s is outside what %s can tune (%s)", leyline.FormatFrequency(hz), model, leyline.FormatRanges(ranges))
+		if hint := leyline.FrequencyHint(input, hz, ranges); hint != "" {
+			msg += "; " + hint
+		}
+		return &friendlyError{msg: msg, cause: err}
+	case leyline.CodePlatformUnsupported:
+		return &friendlyError{msg: "system audio is not available on this host; use --no-audio, or stream the audio with ley --json (see ley help scripting)", cause: err}
+	}
+	return err
 }
 
 // covers reports whether freq±bw/2 lies inside the capture's span.
@@ -216,13 +271,14 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		if covers(cap, o.freq, o.bw) {
 			return nil
 		}
-		if !s.app.JSON {
-			fmt.Fprintf(s.app.Stdout, "retuning capture %s from %s to %s\n", cap.CaptureId, leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(o.freq))
+		if err := s.checkRange(o.input, o.freq); err != nil {
+			return err
 		}
+		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
 		sum, err := s.client.WriteParams(ctx, w)
 		if err != nil {
-			return err
+			return s.friendly(err, o.input, o.freq)
 		}
 		rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
 		ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
@@ -241,7 +297,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 			return err
 		}
 		if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
-			return fmt.Errorf("retune rejected: %s: %s", r.WriteRejected.Error.GetCode(), r.WriteRejected.Error.GetMessage())
+			return s.friendly(rejectedError(r.WriteRejected), o.input, o.freq)
 		}
 		return nil
 	}
@@ -252,7 +308,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 	cap, err := s.client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: center, SampleRate: o.rate})
 	if err != nil {
 		if leyline.Code(err) != leyline.CodeDeviceBusy {
-			return err
+			return s.friendly(err, o.input, o.freq)
 		}
 		// Another client is creating (or has just created) this device's capture; wait for it
 		// to appear in the state and then reuse or retune it like any existing capture.
@@ -267,7 +323,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 				return s.ensureCapture(ctx, o)
 			}
 			if time.Now().After(deadline) {
-				return err
+				return s.friendly(err, o.input, o.freq)
 			}
 			select {
 			case <-ctx.Done():
@@ -282,18 +338,58 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 	return nil
 }
 
+// checkRange mirrors the daemon's tuning-range check for the session's device
+// so an impossible frequency fails with the friendly message before a write
+// is attempted (the daemon remains the authority; it rejects anything the
+// mirror lets through). Devices with unknown ranges are not checked.
+func (s *session) checkRange(input string, hz uint64) error {
+	if s.device == nil || len(s.device.TuningRanges) == 0 || leyline.InRanges(hz, s.device.TuningRanges) {
+		return nil
+	}
+	return s.friendly(&leyline.Error{
+		Code: leyline.CodeFreqOutOfRange, Target: s.device.DeviceId,
+		Message: fmt.Sprintf("%d Hz is outside the device tuning range", hz),
+	}, input, hz)
+}
+
+// rejectedError turns a WriteRejected event into a *leyline.Error so callers
+// can key on its code like any RPC failure.
+func rejectedError(r *leylinev1.WriteRejected) error {
+	return &leyline.Error{Code: r.GetError().GetCode(), Message: r.GetError().GetMessage(), Target: r.GetError().GetTarget()}
+}
+
+// say prints prose to stdout in human mode and to stderr under --json, so
+// stdout stays NDJSON-only for scripts.
+func (s *session) say(format string, args ...any) {
+	if s.app.JSON {
+		fmt.Fprintf(s.app.Stderr, format, args...)
+		return
+	}
+	fmt.Fprintf(s.app.Stdout, format, args...)
+}
+
 // createChannel creates the demod channel at freq relative to the capture and
-// applies the initial squelch when one was requested.
+// applies the initial squelch: an explicit level, or the measured one when
+// the run asked for auto (a failed measurement leaves squelch off and says so).
 func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 	offset := int64(o.freq) - int64(s.capture.CenterHz)
 	ch, err := s.client.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
 		CaptureId: s.capture.CaptureId, OffsetHz: offset, BandwidthHz: o.bw, Mode: o.mode, Persistent: o.persistent,
 	})
 	if err != nil {
-		return err
+		return s.friendly(err, o.input, o.freq)
 	}
 	s.channel = ch
 	replaceChannel(s.state, ch)
+	if o.squelchAuto {
+		db, floor, err := s.measureSquelch(ctx, s.capture, ch.BandwidthHz)
+		if err != nil {
+			s.squelchNote = fmt.Sprintf("Squelch auto: %v; squelch stays off (set one with: ley set squelch -40).", err)
+			return nil
+		}
+		o.squelch = db
+		s.squelchNote = fmt.Sprintf("Squelch auto → %.0f dBFS (10 dB above the band's noise floor, %.0f dBFS).", db, floor)
+	}
 	if !math.IsNaN(o.squelch) {
 		w := &leylinev1.ParamWrite{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: o.squelch}}
 		if _, err := s.client.WriteParams(ctx, w); err != nil {
@@ -301,6 +397,48 @@ func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 		}
 	}
 	return nil
+}
+
+// squelchProbeTimeout bounds the wait for the spectrum row auto squelch needs.
+const squelchProbeTimeout = 2 * time.Second
+
+// measureSquelch derives a squelch threshold from one FFT row of the capture:
+// the row's median bin is the noise floor per bin (a median is presentation,
+// the spectrum itself is the daemon's), scaled to the channel bandwidth with
+// 10·log10(bw / bin width); the threshold sits 10 dB above that. It returns
+// an error when no row arrives within squelchProbeTimeout so callers can
+// leave squelch off and say so.
+func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw uint32) (threshold, floor float64, err error) {
+	sctx, cancel := context.WithTimeout(ctx, squelchProbeTimeout)
+	defer cancel()
+	sub, err := s.client.SubscribeFFT(sctx, cap.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("no spectrum available (%v)", err)
+	}
+	defer sub.Close()
+	var fr *leylinev1.Frame
+	select {
+	case f, ok := <-sub.Frames:
+		if !ok {
+			return 0, 0, fmt.Errorf("spectrum stream ended before a row arrived")
+		}
+		fr = f
+	case <-sctx.Done():
+		return 0, 0, fmt.Errorf("no spectrum row arrived within %s", squelchProbeTimeout)
+	}
+	bins := sub.Descriptor.GetFft().GetBins()
+	if sub.Descriptor.GetFft().GetBinFormat() != leylinev1.FftBinFormat_DB_F32 || bins == 0 || len(fr.Payload) < int(bins)*4 {
+		return 0, 0, fmt.Errorf("spectrum row in an unexpected format")
+	}
+	vals := make([]float64, bins)
+	for i := range vals {
+		vals[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(fr.Payload[i*4:])))
+	}
+	sort.Float64s(vals)
+	median := vals[len(vals)/2]
+	binWidth := float64(cap.SampleRate) / float64(bins)
+	floor = median + 10*math.Log10(float64(bw)/binWidth)
+	return math.Round(floor + 10), floor, nil
 }
 
 // attachAudio attaches a system_audio sink; PLATFORM_UNSUPPORTED is reported
@@ -312,7 +450,7 @@ func (s *session) attachAudio(ctx context.Context, o *tuneOptions) error {
 	})
 	if err != nil {
 		if leyline.Code(err) == leyline.CodePlatformUnsupported {
-			fmt.Fprintln(s.app.Stderr, "warning: system audio unavailable on this host; continuing without audio")
+			fmt.Fprintln(s.app.Stderr, "warning: system audio is not available on this host; continuing without audio (ley --json tune streams meters; see ley help scripting)")
 			return nil
 		}
 		return err
@@ -343,15 +481,24 @@ func (s *session) teardown() {
 	}
 }
 
-// meterLine renders the in-place status line.
+// meterLine renders the in-place status line in plain words: the signal
+// level and whether audio is passing. OPEN/CLOSED live in --json only.
 func meterLine(freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter) string {
-	gate := "[CLOSED]"
+	gate := "muted, waiting for a signal"
 	if m.SquelchOpen {
-		gate = "[OPEN]"
+		gate = "audio"
 	}
-	snr := "--"
-	if !math.IsNaN(m.SnrDb) {
-		snr = fmt.Sprintf("%.0f dB", m.SnrDb)
+	return fmt.Sprintf("%s %s  signal %.0f dBFS  %s", leyline.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, gate)
+}
+
+// gainString renders a capture's first gain element as "gain auto" / "gain 29.7 dB".
+func gainString(cap *leylinev1.Capture) string {
+	if cap == nil || len(cap.Gains) == 0 {
+		return "gain unknown"
 	}
-	return fmt.Sprintf("%s %s  %.1f dBFS  SNR %s  %s", leyline.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, snr, gate)
+	g := cap.Gains[0]
+	if g.Auto {
+		return "gain auto"
+	}
+	return fmt.Sprintf("gain %.1f dB", g.Db)
 }

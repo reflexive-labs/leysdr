@@ -88,8 +88,39 @@ func TestPlayWithSidecar(t *testing.T) {
 	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
 		t.Fatalf("play did not detach/tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
 	}
-	if !strings.Contains(out, "146.620 MHz AM") {
+	if !strings.Contains(out, "146.620 MHz AM  signal ") {
 		t.Fatalf("meter line: %s", out)
+	}
+	// Mode precedence for play: the sidecar beats the band table and says so;
+	// squelch stays off for a recording unless asked.
+	if !strings.Contains(out, "using AM: the recording's sidecar says AM") || !strings.Contains(out, "Squelch off.") {
+		t.Fatalf("play banner: %s", out)
+	}
+}
+
+func TestPlayExplicitModeBeatsSidecar(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	dir := t.TempDir()
+	iq := filepath.Join(dir, "tone.cf32")
+	if err := os.WriteFile(iq, make([]byte, 8*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	side := `{"format":"cf32","sample_rate":2400000,"center_hz":146520000,
+	  "expect":[{"mode":"AM","offset_hz":100000,"bandwidth_hz":10000}]}`
+	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent", "--mode", "nfm", "--bw", "12.5", "--freq", "146.6")
+	if err != nil {
+		t.Fatalf("play: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "using ") {
+		t.Fatalf("explicit mode should print no rationale:\n%s", out)
+	}
+	st, _ := c.State(context.Background())
+	ch := st.Channels[0]
+	if ch.Mode.String() != "NFM" || ch.BandwidthHz != 12_500 || ch.OffsetHz != 80_000 {
+		t.Fatalf("explicit flags not honoured: %v", ch)
 	}
 }
 
@@ -150,7 +181,7 @@ func TestDaemonStartStop(t *testing.T) {
 	}
 
 	out := mustRun(t, sock, "daemon", "start", "--bin", script, "--log", logPath)
-	if !strings.Contains(out, "daemon fake-0.1 pid") {
+	if !strings.Contains(out, "started leylined") || !strings.Contains(out, "pid") {
 		t.Fatalf("start output: %s", out)
 	}
 	pidBytes, err := os.ReadFile(filepath.Join(dir, "leylined.pid"))

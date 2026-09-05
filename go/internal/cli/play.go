@@ -51,13 +51,24 @@ func newPlayCommand(app *App) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "play <file.cf32>",
-		Short: "Play an IQ recording through the full pipeline",
-		Long: `play attaches the file as a playback device, then tunes on it exactly as
-'tune' would. The frequency defaults to the file's centre (sidecar center_hz plus
-the first 'expect' offset when present); the mode defaults to the first 'expect'
-entry's mode. The device is detached on exit unless --persistent is given, in which
-case the channel and the file device outlive the command (detach with "ley devices detach <id>").`,
-		Args: cobra.ExactArgs(1),
+		Short: "Listen to a recording as if it were a radio",
+		Long: `play attaches an IQ recording (a .cf32 file: the raw samples a radio
+produced, the kind the daemon writes and the fixtures directory contains) as
+a pretend radio, then tunes on it exactly as 'tune' would, so every other
+command works the same: ley set adjusts it, ley spectrum shows it.
+
+The frequency defaults to the file's centre (from the .json sidecar beside
+the file: center_hz plus the first 'expect' offset when present) and the
+mode to the first 'expect' entry's mode; --mode and --freq override. The
+pretend radio is removed on exit unless --persistent is given, in which
+case the channel and the device outlive the command; remove them later with
+'ley devices detach <id>'. No hardware is needed.`,
+		Example: `  ley play fixtures/nfm-tone.cf32              # decode a fixture and listen
+  ley play recording.cf32 --loop               # keep playing until Ctrl-C
+  ley play recording.cf32 --freq 146.52 --mode nfm
+  ley play recording.cf32 --persistent --json  # leave it running, print ids`,
+		GroupID: GroupListening,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := filepath.Abs(args[0])
 			if err != nil {
@@ -70,13 +81,15 @@ case the channel and the file device outlive the command (detach with "ley devic
 			if err != nil {
 				return err
 			}
-			defMode := leylinev1.DemodMode_NFM
+			// Precedence for play: explicit --mode > the sidecar's first expect
+			// entry > the band table (inside parse). Bandwidth likewise.
+			var def modeDefault
 			if len(sc.Expect) > 0 {
 				if m, err := leyline.ParseMode(sc.Expect[0].Mode); err == nil {
-					defMode = m
+					def = modeDefault{mode: m, reason: "the recording's sidecar says " + strings.ToUpper(leyline.ModeName(m))}
 				}
-				if f.bw == 0 && sc.Expect[0].BandwidthHz > 0 {
-					f.bw = sc.Expect[0].BandwidthHz
+				if f.bw == "" && sc.Expect[0].BandwidthHz > 0 {
+					f.bw = fmt.Sprintf("%d", sc.Expect[0].BandwidthHz)
 				}
 			}
 			s, err := openSession(cmd.Context(), app)
@@ -110,15 +123,19 @@ case the channel and the file device outlive the command (detach with "ley devic
 				hz = uint64(int64(hz) + sc.Expect[0].OffsetHz)
 			}
 			if freq != "" {
-				if hz, err = leyline.ParseFrequency(freq); err != nil {
+				if hz, err = leyline.ParseUserFrequency(freq); err != nil {
 					return err
 				}
 			}
-			o, err := f.parse(hz, defMode)
+			o, err := f.parse(app, freq, hz, def)
 			if err != nil {
 				return err
 			}
 			o.captureCenter = center
+			if f.squelch == "" {
+				// A recording is played as it is: squelch stays off unless asked for.
+				o.squelchAuto = false
+			}
 			if !app.JSON {
 				fmt.Fprintf(app.Stdout, "playing %s as device %s\n", filepath.Base(path), dev.DeviceId)
 			}
@@ -135,7 +152,7 @@ case the channel and the file device outlive the command (detach with "ley devic
 		},
 	}
 	addTuneFlags(cmd, &f, false)
-	cmd.Flags().BoolVar(&loop, "loop", false, "loop the file")
-	cmd.Flags().StringVar(&freq, "freq", "", "frequency to tune (default: file centre + first expect offset)")
+	cmd.Flags().BoolVar(&loop, "loop", false, "start over when the file ends, until Ctrl-C (default: stop at the end)")
+	cmd.Flags().StringVar(&freq, "freq", "", "frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)")
 	return cmd
 }
