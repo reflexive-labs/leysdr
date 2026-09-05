@@ -1,0 +1,113 @@
+# Leyline (leysdr) — moat container config.
+# https://majorcontext.com/moat
+#
+# Scope note: moat containers are Debian Linux, and Swift is not in moat's
+# dependency registry. The Swift engine and the Mac app cannot build or run in
+# here — vDSP/CoreAudio/Metal/IOUSBHost don't exist on Linux, and the daemon
+# owns real USB hardware. Build and test those on the host.
+#
+# What this container is for: the Go half of the contract (`ley` CLI/TUI, the
+# MCP adapter, the shared Go client lib), the `proto/leyline.v1` sources and
+# their codegen, fixture generation, and docs/planning work. Per CLAUDE.md the
+# Go clients are the living proof of the cross-language contract, so this is
+# where a lot of the parity work happens.
+
+name: leysdr
+agents: [claude, codex]   # claude is primary; `moat join <run> codex` for the second seat
+
+# ---------------------------------------------------------------------------
+# Credentials — injected at the network layer by the proxy, never as env vars.
+# `moat grant add github` / `claude` / `openai` on the host to populate these.
+# ---------------------------------------------------------------------------
+grants:
+  - github      # api.github.com + git smart-HTTP over https://github.com (gh CLI, push/pull)
+  - claude      # Claude subscription OAuth. Swap for `anthropic` if you'd rather bill the API key.
+  - openai      # Codex CLI (api.openai.com + chatgpt.com)
+  - ssh:github.com  # agent-forwarded key, for git@github.com: remotes
+
+# ---------------------------------------------------------------------------
+# Toolchain
+# claude-code and codex-cli come in automatically via `agents:`.
+# `language_servers: [go]` pulls in go + gopls, so go isn't listed twice.
+# ---------------------------------------------------------------------------
+dependencies:
+  - go@1.25
+  - protobuf         # meta: protoc, protoc-gen-go, protoc-gen-go-grpc, protoc-gen-validate, protoc-gen-doc
+  - golangci-lint
+  - go-extras        # meta: gofumpt, govulncheck, goreleaser
+  - cli-essentials   # meta: jq, yq, fzf, ripgrep, fd, bat
+  - git
+  - gh
+
+# protoc-gen-swift has no Linux package in the registry and Swift isn't available
+# here, so the Swift side of codegen stays a host-side step. Only the Go plugins
+# run in-container; CI is the place that must run both.
+
+language_servers:
+  - go
+
+# ---------------------------------------------------------------------------
+# Caches — bind-mounted from ~/.moat/volumes, so they skip the shared
+# workspace filesystem and survive across runs.
+# ---------------------------------------------------------------------------
+volumes:
+  - name: gomodcache
+    target: /home/moatuser/go/pkg/mod
+  - name: gobuildcache
+    target: /home/moatuser/.cache/go-build
+
+hooks:
+  # Guarded: the repo is still docs-only, so go.mod may not exist yet.
+  pre_run: |
+    set -e
+    for m in . go ley clients/go; do
+      if [ -f "$m/go.mod" ]; then (cd "$m" && go mod download); fi
+    done
+
+# ---------------------------------------------------------------------------
+# Network. Permissive by default — credential injection already keeps tokens
+# out of the container, and a greenfield project does a lot of doc-fetching.
+# The deny rules below are the guardrails worth having with a GitHub token in
+# play: no repo/branch deletion from inside the sandbox.
+#
+# To harden into deny-by-default, flip policy to `strict`. Grant hosts
+# (github.com, api.github.com, api.anthropic.com, api.openai.com) are allowed
+# automatically; the listed hosts are what the Go toolchain additionally needs.
+# ---------------------------------------------------------------------------
+network:
+  policy: permissive
+  rules:
+    - "api.github.com":
+        - "deny DELETE /repos/*/*"
+        - "deny DELETE /repos/*/*/git/refs/**"
+    # Uncomment along with `policy: strict`:
+    # - "proxy.golang.org"
+    # - "sum.golang.org"
+    # - "storage.googleapis.com"
+    # - "*.githubusercontent.com"
+    # - "codeload.github.com"
+    # - "registry.npmjs.org"
+    # - "pkg.go.dev"
+    # - "go.dev"
+
+claude:
+  sync_logs: true
+
+codex:
+  sync_logs: true
+  shared_sessions: false   # keep Codex transcripts scoped to this workspace
+
+snapshots:
+  exclude:
+    additional:
+      - .build/            # SwiftPM
+      - DerivedData/       # Xcode
+      - fixtures/*.iq      # generated IQ, large and reproducible
+      - fixtures/*.cf32
+
+# No `ports:` — the daemon listens on a UDS only (invariant 1), and `ley` is a
+# terminal client. Add one here if a debug HTTP endpoint ever shows up.
+#
+# No `container:` overrides — moat's AI-agent defaults apply. Bump memory/cpus
+# here if 20 MSPS synthetic-throughput work (spike S2) ever runs in-container,
+# though S2's acceptance numbers are only meaningful on bare macOS.
