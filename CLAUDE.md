@@ -1,6 +1,6 @@
 # CLAUDE.md — Leyline
 
-Native macOS SDR engine + app. Read `docs/design-*.md` before structural changes — every invariant below has a rationale there. This file is the enforcement summary.
+Native macOS SDR engine + app. Read `docs/design-*.md` before structural changes — every invariant below has a rationale there; `docs/engine-internals.md` is the implementation contract (threads, hot path, pipeline math, daemon rules). This file is the enforcement summary.
 
 ## What this is
 
@@ -20,7 +20,7 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` C
 10. **One device per capture.** Multi-SDR coherence, if ever, is a composite *device*.
 11. **TX is a sibling, never a retrofit.** Transmissions arrive as their own concept beside Capture, with their own timeline IDs and an emission lease. Never bolt TX onto Channel, Sink, or RadioDevice; TX-capable hardware composes a separate protocol. See the control-plane doc's TX forward-compatibility entry.
 12. **The detector stays honest.** `modulation_guess` is empty or cheap-heuristic with stated confidence. No dressed-up guessing.
-13. **The wire contract is generated; engine protocols are not.** Never hand-edit generated code; never generate `engine/CoreProtocols.swift`.
+13. **The wire contract is generated; engine protocols are not.** Never hand-edit generated code (`go/gen`, `engine/Sources/LeylineProto` — run `make proto`); never generate `engine/Sources/EngineCore/CoreProtocols.swift`.
 
 ## Conventions
 

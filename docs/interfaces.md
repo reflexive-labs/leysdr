@@ -22,7 +22,7 @@ MCP resources = `ley://` URIs one-to-one. Enforcement of don't-disturb is daemon
 
 ```
 ley
-├── devices                          # list; --watch for hot-plug events
+├── devices [detach <id>]            # list; --watch for hot-plug events; detach removes a file device
 ├── tune <freq> [--mode nfm] [--bw N] [--device ID]
 │                                    # capture+channel+system-audio sink in one verb
 ├── set <param> <value>              # live adjust: gain, squelch, bw, mode (streams WriteParams)
@@ -39,5 +39,7 @@ ley
 ```
 
 Global flags: `--json` everywhere; `--socket PATH` (default the user daemon's UDS).
+
+`--json` is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`, `centerHz`; 64-bit integers as strings). Exit status: 0 on success, 1 on error, 130 when interrupted by Ctrl-C before the verb's live phase (a Ctrl-C that ends a live `tune`/`play`/`fft` session is the normal exit and returns 0), 3 from `daemon status` when no daemon answers. `daemon status --json` always prints a `DaemonInfo`; when the daemon is not running it carries only `socketPath` (no `pid`) and the status is 3. `daemon stop` exits 0 once the socket has stopped answering; under launchd the LaunchAgent uses `KeepAlive.SuccessfulExit=false`, so a clean stop stays stopped while a crash is relaunched.
 
 Deliberate omissions at v0: no remote flags (UDS-only), no TX verbs, no decode verbs (arrive with digital modes).
