@@ -43,3 +43,14 @@ Global flags: `--json` everywhere; `--socket PATH` (default the user daemon's UD
 `--json` is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`, `centerHz`; 64-bit integers as strings). Exit status: 0 on success, 1 on error, 130 when interrupted by Ctrl-C before the verb's live phase (a Ctrl-C that ends a live `tune`/`play`/`fft` session is the normal exit and returns 0), 3 from `daemon status` when no daemon answers. `daemon status --json` always prints a `DaemonInfo`; when the daemon is not running it carries only `socketPath` (no `pid`) and the status is 3. `daemon stop` exits 0 once the socket has stopped answering; under launchd the LaunchAgent uses `KeepAlive.SuccessfulExit=false`, so a clean stop stays stopped while a crash is relaunched.
 
 Deliberate omissions at v0: no remote flags (UDS-only), no TX verbs, no decode verbs (arrive with digital modes).
+
+## Client requirements
+
+The daemon's HTTP/2 stack (swift-nio-http2) drops a connection with `GOAWAY ENHANCE_YOUR_CALM` when
+a client sends more than 200 control frames (PING, SETTINGS, PRIORITY) in 30 s, and the gRPC
+transport does not expose that limit. Clients that ping for bandwidth estimation on every data frame
+(grpc-go's default dynamic windows, grpc-python's BDP probing) therefore lose every busy bulk stream
+after about a second. Use fixed flow-control windows instead: the Go client library dials with 1 MiB
+initial stream and connection windows, which disables grpc-go's estimator. Other clients must do
+the equivalent (grpc-go: `WithInitialWindowSize`/`WithInitialConnWindowSize` above 64 KiB;
+grpc-core: `grpc.http2.bdp_probe=0`).

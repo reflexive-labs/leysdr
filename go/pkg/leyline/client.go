@@ -94,6 +94,11 @@ func Dial(ctx context.Context, socketPath string, opts ...Option) (*Client, erro
 	}
 	dialOpts := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// Fixed 1 MiB windows: enough for full-rate bulk streams over the local socket, and a
+		// window above 64 KiB disables grpc-go's bandwidth-estimation PINGs, which otherwise fire
+		// on every data frame of a busy stream.
+		grpc.WithInitialWindowSize(1 << 20),
+		grpc.WithInitialConnWindowSize(1 << 20),
 		grpc.WithChainUnaryInterceptor(c.unaryInterceptor),
 		grpc.WithChainStreamInterceptor(c.streamInterceptor),
 	}, c.dialOpts...)

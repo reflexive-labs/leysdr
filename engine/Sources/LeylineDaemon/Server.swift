@@ -58,8 +58,15 @@ final class Daemon: @unchecked Sendable {
         let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath)
         store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs)
         streams = StreamRegistry(store: store)
+        // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
+        // client PING arriving sooner than five minutes after the previous one as a strike while a
+        // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
+        // estimation whenever data flows, so a busy bulk stream got its connection dropped after
+        // about a second. Pings are harmless here; allow them at any rate.
+        var transport = HTTP2ServerTransport.Posix.Config.defaults
+        transport.connection.keepalive.clientBehavior = .init(minPingIntervalWithoutCalls: .zero, allowWithoutCalls: true)
         server = GRPCServer(
-            transport: .http2NIOPosix(address: .unixDomainSocket(path: config.socketPath), transportSecurity: .plaintext),
+            transport: .http2NIOPosix(address: .unixDomainSocket(path: config.socketPath), transportSecurity: .plaintext, config: transport),
             services: [
                 ControlService(store: store),
                 TelemetryService(store: store),
