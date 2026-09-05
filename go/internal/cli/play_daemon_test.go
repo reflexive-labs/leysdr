@@ -1,0 +1,231 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
+)
+
+// fakeDaemonEnv makes the test binary serve a fake daemon (used by the shell
+// "leylined" that daemon start spawns).
+const fakeDaemonEnv = "LEY_TEST_FAKE_DAEMON"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(fakeDaemonEnv) == "1" {
+		sock := ""
+		for i, a := range os.Args {
+			if a == "--socket" && i+1 < len(os.Args) {
+				sock = os.Args[i+1]
+			}
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+		defer stop()
+		fmt.Println("fake leylined starting on", sock)
+		if err := fakedaemon.New(fakedaemon.Options{}).Serve(ctx, sock); err != nil {
+			fmt.Println("serve:", err)
+			os.Exit(1)
+		}
+		fmt.Println("fake leylined stopped")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func TestPlayWithSidecar(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	dir := t.TempDir()
+	iq := filepath.Join(dir, "nfm_tone.cf32")
+	if err := os.WriteFile(iq, make([]byte, 8*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	side := `{"format":"cf32","sample_rate":2400000,"center_hz":146520000,
+	  "expect":[{"mode":"AM","offset_hz":100000,"bandwidth_hz":10000}]}`
+	if err := os.WriteFile(filepath.Join(dir, "nfm_tone.json"), []byte(side), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	var out string
+	go func() {
+		o, _, err := run(t, ctx, sock, "play", iq, "--no-audio")
+		out = o
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := c.State(context.Background())
+		if err == nil && len(st.Channels) == 1 {
+			ch := st.Channels[0]
+			if ch.OffsetHz != 100_000 || ch.Mode.String() != "AM" || ch.BandwidthHz != 10000 {
+				t.Fatalf("channel from sidecar: %v", ch)
+			}
+			if len(st.Devices) != 2 || st.Captures[0].CenterHz != 146_520_000 {
+				t.Fatalf("file device/capture: %v %v", st.Devices, st.Captures)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("play never created its channel")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("play: %v\n%s", err, out)
+	}
+	st, _ := c.State(context.Background())
+	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
+		t.Fatalf("play did not detach/tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
+	}
+	if !strings.Contains(out, "146.620 MHz AM") {
+		t.Fatalf("meter line: %s", out)
+	}
+}
+
+func TestDaemonStatus(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "daemon", "status")
+	if !strings.Contains(out, "daemon fake-0.1 pid") {
+		t.Fatalf("status: %s", out)
+	}
+	dead := filepath.Join(t.TempDir(), "dead.sock")
+	out, _, err := run(t, context.Background(), dead, "daemon", "status")
+	var ee *ExitError
+	if !strings.Contains(out, "not running") || !errors.As(err, &ee) || ee.Code != ExitNotRunning {
+		t.Fatalf("dead status: %s %v", out, err)
+	}
+	// Not running: the same DaemonInfo shape with pid absent, exit status 3.
+	out, _, err = run(t, context.Background(), dead, "--json", "daemon", "status")
+	if !errors.As(err, &ee) || ee.Code != ExitNotRunning || ee.Message != "" {
+		t.Fatalf("dead status exit: %v", err)
+	}
+	var js map[string]any
+	if err := json.Unmarshal([]byte(out), &js); err != nil || js["socketPath"] != dead || js["pid"] != nil || js["running"] != nil {
+		t.Fatalf("json dead status: %v %s", err, out)
+	}
+	out, _, err = run(t, context.Background(), sock, "--json", "daemon", "status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(out), &js); err != nil || js["socketPath"] != sock || js["pid"] == nil {
+		t.Fatalf("json live status: %v %s", err, out)
+	}
+}
+
+func TestDaemonStartStop(t *testing.T) {
+	dir := t.TempDir()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "leylined")
+	body := "#!/bin/sh\nexec env " + fakeDaemonEnv + "=1 " + exe + " \"$@\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(dir, "d.sock")
+	logPath := filepath.Join(dir, "leylined.log")
+	// Discovery via the binary beside the ley executable.
+	app := &App{Stdout: os.Stdout, Stderr: os.Stderr, Executable: filepath.Join(dir, "ley"), LookupEnv: func(string) (string, bool) { return "", false }}
+	if bin, err := app.findDaemonBin(""); err != nil || bin != script {
+		t.Fatalf("discovery beside ley: %q %v", bin, err)
+	}
+	app.LookupEnv = func(k string) (string, bool) { return "/nope/leylined", k == daemonBinEnv }
+	if bin, _ := app.findDaemonBin(""); bin != "/nope/leylined" {
+		t.Fatalf("env discovery: %q", bin)
+	}
+	if bin, _ := app.findDaemonBin("/flag/leylined"); bin != "/flag/leylined" {
+		t.Fatalf("flag discovery: %q", bin)
+	}
+
+	out := mustRun(t, sock, "daemon", "start", "--bin", script, "--log", logPath)
+	if !strings.Contains(out, "daemon fake-0.1 pid") {
+		t.Fatalf("start output: %s", out)
+	}
+	pidBytes, err := os.ReadFile(filepath.Join(dir, "leylined.pid"))
+	if err != nil || len(pidBytes) == 0 {
+		t.Fatalf("pidfile: %v", err)
+	}
+	if out := mustRun(t, sock, "daemon", "start", "--bin", script, "--log", logPath); !strings.Contains(out, "already running") {
+		t.Fatalf("second start: %s", out)
+	}
+	if out := mustRun(t, sock, "daemon", "logs", "--log", logPath); !strings.Contains(out, "fake leylined starting on "+sock) {
+		t.Fatalf("logs: %s", out)
+	}
+	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "stopped") {
+		t.Fatalf("stop: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "leylined.pid")); !os.IsNotExist(err) {
+		t.Fatalf("pidfile not removed: %v", err)
+	}
+	if out, _, err := run(t, context.Background(), sock, "daemon", "status"); !strings.Contains(out, "not running") || err == nil {
+		t.Fatalf("status after stop: %s %v", out, err)
+	}
+	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "not running") {
+		t.Fatalf("second stop: %s", out)
+	}
+}
+
+func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	dir := t.TempDir()
+	iq := filepath.Join(dir, "tone.cf32")
+	if err := os.WriteFile(iq, make([]byte, 8*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	side := `{"format":"cf32","sample_rate":2400000,"center_hz":146520000,
+	  "expect":[{"mode":"NFM","offset_hz":100000,"bandwidth_hz":12500}]}`
+	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent")
+	if err != nil {
+		t.Fatalf("play --persistent: %v\n%s", err, out)
+	}
+	st, err := c.State(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Devices) != 2 || len(st.Captures) != 1 || len(st.Channels) != 1 || !st.Channels[0].Persistent {
+		t.Fatalf("persistent play must leave device+capture+channel: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
+	}
+	var fileDev string
+	for _, d := range st.Devices {
+		if d.Driver == "file" {
+			fileDev = d.DeviceId
+		}
+	}
+	if fileDev == "" || !strings.Contains(out, "ley devices detach "+fileDev) {
+		t.Fatalf("expected detach hint for %q in output:\n%s", fileDev, out)
+	}
+	if out, _, err := run(t, context.Background(), sock, "devices", "detach", fileDev); err != nil {
+		t.Fatalf("devices detach: %v\n%s", err, out)
+	}
+	st, _ = c.State(context.Background())
+	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
+		t.Fatalf("detach did not tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
+	}
+	if _, _, err := run(t, context.Background(), sock, "devices", "detach", fileDev); err == nil {
+		t.Fatalf("second detach should fail")
+	}
+	// A persistent play whose tune fails (frequency outside the file's span)
+	// must not leave an orphan file device behind.
+	if _, _, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent", "--freq", "900M"); err == nil {
+		t.Fatalf("play outside span should fail")
+	}
+	st, _ = c.State(context.Background())
+	if len(st.Devices) != 1 {
+		t.Fatalf("failed persistent play left a file device: %v", st.Devices)
+	}
+}
