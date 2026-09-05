@@ -1,0 +1,130 @@
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func sha(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
+}
+
+func TestGenerateDeterministic(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	o := genOptions{rate: 240_000, duration: 0.05, seed: 7, only: []string{"nfm_tone", "cw", "noise_floor"}}
+	for _, d := range []string{a, b} {
+		o.out = d
+		if err := generate(o, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range o.only {
+		ha, hb := sha(t, filepath.Join(a, n+".cf32")), sha(t, filepath.Join(b, n+".cf32"))
+		if ha != hb {
+			t.Fatalf("%s: samples differ between runs", n)
+		}
+		if sha(t, filepath.Join(a, n+".json")) != sha(t, filepath.Join(b, n+".json")) {
+			t.Fatalf("%s: sidecars differ between runs", n)
+		}
+	}
+	// Different seed changes the noise, so samples must differ.
+	o.out, o.seed = t.TempDir(), 8
+	if err := generate(o, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if sha(t, filepath.Join(a, "noise_floor.cf32")) == sha(t, filepath.Join(o.out, "noise_floor.cf32")) {
+		t.Fatal("seed did not change noise")
+	}
+}
+
+func TestGenerateRejectsMisfit(t *testing.T) {
+	o := genOptions{out: t.TempDir(), rate: 240_000, duration: 0.01, seed: 1, only: []string{"wfm_tone"}}
+	if err := generate(o, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected error for wfm_tone at 240 kHz")
+	}
+	o.only = []string{"nope"}
+	if err := generate(o, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected error for unknown fixture")
+	}
+}
+
+func TestCheckReducedGeneration(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	if err := runGenerate([]string{"--out", dir, "--rate", "240000", "--duration", "0.25"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runCheck([]string{dir}, &out); err != nil {
+		t.Fatalf("check failed: %v\n%s", err, out.String())
+	}
+	got := out.String()
+	for _, n := range []string{"nfm_tone", "usb_tone", "cw", "noise_floor"} {
+		if !strings.Contains(got, "PASS "+n+".json[0]") {
+			t.Fatalf("missing PASS for %s:\n%s", n, got)
+		}
+	}
+	if strings.Contains(got, "FAIL") {
+		t.Fatalf("unexpected FAIL:\n%s", got)
+	}
+	out.Reset()
+	if err := runInfo([]string{filepath.Join(dir, "cw.cf32")}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "duration:     0.250000 s") {
+		t.Fatalf("info output:\n%s", out.String())
+	}
+}
+
+func TestCheckDetectsWrongExpectation(t *testing.T) {
+	dir := t.TempDir()
+	if err := runGenerate([]string{"--out", dir, "--rate", "240000", "--duration", "0.25", "--only", "usb_tone"}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "usb_tone.json")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The generator block also carries tone_hz; the expect entry is the last one.
+	i := bytes.LastIndex(b, []byte(`"tone_hz": 1000`))
+	if i < 0 {
+		t.Fatal("tone_hz not found in sidecar")
+	}
+	b = append(b[:i:i], append([]byte(`"tone_hz": 1200`), b[i+len(`"tone_hz": 1000`):]...)...)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runCheck([]string{p}, &out); err == nil {
+		t.Fatalf("expected failure:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "FAIL usb_tone.json[0]") {
+		t.Fatalf("output:\n%s", out.String())
+	}
+}
+
+func TestMorseTiming(t *testing.T) {
+	spans, period := morseTiming("CQ", 10)
+	if len(spans) != 8 {
+		t.Fatalf("spans %d", len(spans))
+	}
+	dit := 0.12
+	if d := period - 34*dit; d > 1e-9 || d < -1e-9 {
+		t.Fatalf("period %v", period)
+	}
+	if d := spans[0].end - spans[0].start - 3*dit; d > 1e-9 || d < -1e-9 {
+		t.Fatalf("first element should be a dah: %v", spans[0])
+	}
+}
