@@ -172,6 +172,7 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"fft", "--format", "xml"}, "--format must be json or bin"},
 		{[]string{"spectrum", "146,52"}, "frequency:"},
 		{[]string{"record"}, "record is not implemented yet (Milestone C.12). Today:"},
+		{[]string{"record", "--audio", "--duration", "10"}, "record is not implemented yet (Milestone C.12). Today:"},
 		{[]string{"scan", "146.52"}, "scan is not implemented yet (Milestone D). Today: ley spectrum"},
 		{[]string{"watch"}, "watch is not implemented yet (V0.5)"},
 	}

@@ -579,7 +579,7 @@ func meterLine(freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter) string
 // gainString renders a capture's first gain element as "gain auto" / "gain 29.7 dB".
 func gainString(cap *leylinev1.Capture) string {
 	if cap == nil || len(cap.Gains) == 0 {
-		return "gain unknown"
+		return "no gain control"
 	}
 	g := cap.Gains[0]
 	if g.Auto {

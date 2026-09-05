@@ -53,6 +53,9 @@ func newStubCommands(_ *App) []*cobra.Command {
 			Hidden:  true,
 			GroupID: GroupLooking,
 			Args:    cobra.ArbitraryArgs,
+			// Whatever flags the newcomer typed (ley record --audio) must reach the message,
+			// not Cobra's "unknown flag".
+			DisableFlagParsing: true,
 			RunE: func(_ *cobra.Command, _ []string) error {
 				return &ExitError{Code: ExitUsage, Message: stubMessage(s)}
 			},
