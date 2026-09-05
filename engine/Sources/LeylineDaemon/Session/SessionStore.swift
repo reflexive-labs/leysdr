@@ -112,6 +112,8 @@ actor SessionStore {
 
     private(set) var devices: [DeviceID: DeviceDescriptor] = [:]
     private(set) var captures: [CaptureID: CaptureEntry] = [:]
+    /// Devices whose capture is still starting (see createCapture).
+    private var startingDevices: Set<DeviceID> = []
     private(set) var channels: [ChannelID: ChannelEntry] = [:]
     private(set) var sinks: [SinkID: SinkEntry] = [:]
     private(set) var seq: UInt64 = 0
@@ -350,7 +352,9 @@ actor SessionStore {
             throw EngineError.deviceNotFound(deviceID.string)
         }
         if desc.state == .disconnected { throw EngineError.deviceDetached(deviceID.string) }
-        if captures.values.contains(where: { $0.deviceID == deviceID }) { throw EngineError.deviceBusy(deviceID.string) }
+        if captures.values.contains(where: { $0.deviceID == deviceID }) || startingDevices.contains(deviceID) {
+            throw EngineError.deviceBusy(deviceID.string)
+        }
         guard desc.canTune(centerHz) else { throw EngineError.freqOutOfRange(centerHz, target: deviceID.string) }
         var rate = sampleRate
         if rate == 0 {
@@ -360,6 +364,11 @@ actor SessionStore {
             throw EngineError.rateUnsupported(rate, target: deviceID.string)
         }
         let engine = DefaultCaptureEngine(device: device, centerHz: centerHz, sampleRate: rate)
+        // Reserve the device across the suspension: `engine.start()` opens hardware (or a network
+        // source) and can take seconds, during which a second CreateCapture would otherwise pass
+        // the one-capture-per-device check and race the device open.
+        startingDevices.insert(deviceID)
+        defer { startingDevices.remove(deviceID) }
         try await engine.start()
         let id = engine.id
         var entry = CaptureEntry(engine: engine, deviceID: deviceID,

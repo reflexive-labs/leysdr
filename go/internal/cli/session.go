@@ -251,7 +251,30 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 	}
 	cap, err := s.client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: center, SampleRate: o.rate})
 	if err != nil {
-		return err
+		if leyline.Code(err) != leyline.CodeDeviceBusy {
+			return err
+		}
+		// Another client is creating (or has just created) this device's capture; wait for it
+		// to appear in the state and then reuse or retune it like any existing capture.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			st, serr := s.client.State(ctx)
+			if serr != nil {
+				return serr
+			}
+			s.state = st
+			if leyline.FindCapture(st, s.device.DeviceId) != nil {
+				return s.ensureCapture(ctx, o)
+			}
+			if time.Now().After(deadline) {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
 	}
 	s.capture = cap
 	s.createdCapture = true
