@@ -6,19 +6,30 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 func newDevicesCommand(app *App) *cobra.Command {
 	var watch bool
 	cmd := &cobra.Command{
 		Use:   "devices",
-		Short: "List SDR devices known to the daemon",
-		Args:  cobra.NoArgs,
+		Short: "List the radios the daemon can see",
+		Long: `devices lists every radio (SDR) the daemon has found, with its tuning range,
+sample rates (how wide a band it can take in at once) and gain elements
+(the amplifier stages 'ley set gain' adjusts). An empty list on a terminal
+is followed by a checklist of what to try. --watch keeps running and prints
+a line whenever a radio is plugged in or removed. Row numbers from this
+list are accepted wherever a device id is (ley tune --device 2).`,
+		Example: `  ley devices              # is my radio visible?
+  ley devices --watch      # print a line on plug and unplug
+  ley devices detach 2     # remove the second listed file playback device`,
+		GroupID: GroupLooking,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDevices(cmd, app, watch)
 		},
 	}
-	cmd.Flags().BoolVar(&watch, "watch", false, "keep running and print device events (hot-plug)")
+	cmd.Flags().BoolVar(&watch, "watch", false, "keep running and print a line when a radio is plugged in or removed")
 	cmd.AddCommand(newDevicesDetachCommand(app))
 	return cmd
 }
@@ -27,9 +38,14 @@ func newDevicesCommand(app *App) *cobra.Command {
 // left behind by `ley play --persistent`). Its capture and channels are destroyed with it.
 func newDevicesDetachCommand(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "detach <device-id>",
-		Short: "Detach a file playback device (destroys its capture and channels)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "detach <device>",
+		Short: "Remove a file playback device left behind by ley play",
+		Long: `detach removes a file playback device (one 'ley play --persistent' left
+behind) together with its capture and channels. The device can be given as
+its id, an unambiguous id prefix, or its row number in 'ley devices'.`,
+		Example: `  ley devices detach dev_01J...   # by id
+  ley devices detach 2            # the second row of ley devices`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			c, err := app.dial(ctx)
@@ -37,13 +53,21 @@ func newDevicesDetachCommand(app *App) *cobra.Command {
 				return app.notRunning(err)
 			}
 			defer c.Close()
-			if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: args[0]}); err != nil {
+			st, err := c.State(ctx)
+			if err != nil {
+				return app.notRunning(err)
+			}
+			d, err := leyline.ResolveDevice(st, args[0])
+			if err != nil {
+				return fmt.Errorf("%w. Run: ley devices", err)
+			}
+			if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: d.DeviceId}); err != nil {
 				return err
 			}
 			if app.JSON {
 				return app.printJSON(&leylinev1.Empty{})
 			}
-			fmt.Fprintf(app.Stdout, "detached %s\n", args[0])
+			fmt.Fprintf(app.Stdout, "detached %s\n", d.DeviceId)
 			return nil
 		},
 	}
@@ -71,6 +95,9 @@ func runDevices(cmd *cobra.Command, app *App, watch bool) error {
 		}
 	} else {
 		printDeviceTable(app, resp.Devices)
+		if len(resp.Devices) == 0 && app.IsTTY() {
+			fmt.Fprintln(app.Stdout, noDeviceChecklist)
+		}
 	}
 	if !watch {
 		return nil

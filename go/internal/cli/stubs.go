@@ -1,0 +1,62 @@
+package cli
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+// stub describes a verb on the roadmap that does not exist yet. Stubs are
+// hidden from --help (they are listed by `ley help roadmap`), exit 2 with the
+// milestone and today's workaround, and never talk to the daemon.
+type stub struct {
+	use, short, milestone, today string
+}
+
+// Stubs is the roadmap table: verbs that are planned but not implemented.
+var Stubs = []stub{
+	{
+		use:       "record",
+		short:     "Record a channel or the raw capture to a file",
+		milestone: "Milestone C.12",
+		today:     "ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build",
+	},
+	{
+		use:       "scan",
+		short:     "Find active signals in a band and list them",
+		milestone: "Milestone D",
+		today:     "ley spectrum <frequency> shows the band and its loudest bins; picking signals out of it is up to you for now",
+	},
+	{
+		use:       "watch",
+		short:     "Live dashboard: devices, channels and spectrum in one terminal",
+		milestone: "V0.5",
+		today:     "bare ley shows where things stand; ley state --json is the full snapshot",
+	},
+}
+
+// stubMessage is the exit-2 line a stub prints.
+func stubMessage(s stub) string {
+	return fmt.Sprintf("%s is not implemented yet (%s). Today: %s", s.use, s.milestone, s.today)
+}
+
+// newStubCommands builds the hidden roadmap verbs.
+func newStubCommands(_ *App) []*cobra.Command {
+	var cmds []*cobra.Command
+	for _, s := range Stubs {
+		s := s
+		cmds = append(cmds, &cobra.Command{
+			Use:     s.use,
+			Short:   s.short + " (not yet: " + s.milestone + ")",
+			Long:    stubMessage(s) + ".",
+			Example: "  ley help roadmap        # what is planned and when",
+			Hidden:  true,
+			GroupID: GroupLooking,
+			Args:    cobra.ArbitraryArgs,
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return &ExitError{Code: ExitUsage, Message: stubMessage(s)}
+			},
+		})
+	}
+	return cmds
+}

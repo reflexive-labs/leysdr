@@ -33,31 +33,52 @@ func newDaemonCommand(app *App) *cobra.Command {
 	var f daemonFlags
 	cmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Install, start, stop and inspect the leylined daemon",
-		Long: `daemon manages the engine process. On macOS 'install' writes a LaunchAgent
-(~/Library/LaunchAgents/com.leyline.daemon.plist) and bootstraps it; start/stop
-then drive launchctl. Without a LaunchAgent, start spawns leylined detached
+		Short: "Start, stop and check the process that owns the radio",
+		Long: `The daemon (leylined) is the background process that owns your SDR and does
+all the radio work; every ley command talks to it. 'start' launches it,
+'status' says whether it is answering, 'logs' shows what it has been doing.
+
+On macOS 'install' writes a LaunchAgent (~/Library/LaunchAgents/
+com.leyline.daemon.plist) so the daemon starts at login; start and stop then
+drive launchctl. Without a LaunchAgent, start spawns leylined detached
 (stdout/stderr to the log file, pid in the pidfile beside the socket) and stop
 sends SIGTERM via the pidfile.
 
 The daemon binary is found from --bin, $LEYLINE_DAEMON_BIN, a 'leylined' next
 to the ley executable, then PATH.`,
+		Example: `  ley daemon start         # start it now
+  ley daemon status        # is it running? (exit 3 when not)
+  ley daemon logs -f       # follow the log
+  ley daemon install       # macOS: start at login`,
+		GroupID: GroupDaemon,
 	}
 	cmd.PersistentFlags().StringVar(&f.bin, "bin", "", "path to the leylined binary")
 	cmd.PersistentFlags().StringVar(&f.log, "log", "", "daemon log file (default: ~/Library/Logs/Leyline/leylined.log)")
-	sub := func(use, short string, run func(context.Context, *daemonFlags) error) *cobra.Command {
-		return &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	sub := func(use, short, long, example string, run func(context.Context, *daemonFlags) error) *cobra.Command {
+		return &cobra.Command{Use: use, Short: short, Long: long, Example: example, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd.Context(), &f)
 		}}
 	}
-	logs := sub("logs", "Print the daemon log", app.daemonLogs)
+	logs := sub("logs", "Print the daemon's log",
+		"logs prints the daemon's log file (where it reports the radios it found,\nwhat it is doing and why something failed). -f keeps printing as it grows.",
+		"  ley daemon logs          # the whole log so far\n  ley daemon logs -f       # follow it while you try something", app.daemonLogs)
 	logs.Flags().BoolVarP(&f.follow, "follow", "f", false, "keep printing as the log grows")
 	cmd.AddCommand(
-		sub("install", "Install and bootstrap the LaunchAgent (macOS)", app.daemonInstall),
-		sub("uninstall", "Boot out and remove the LaunchAgent (macOS)", app.daemonUninstall),
-		sub("start", "Start the daemon", app.daemonStart),
-		sub("stop", "Stop the daemon", app.daemonStop),
-		sub("status", "Show whether the daemon is running", app.daemonStatus),
+		sub("install", "Start the daemon at login (macOS LaunchAgent)",
+			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leyline.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes.",
+			"  ley daemon install       # start at login from now on\n  ley daemon install --bin /opt/leyline/bin/leylined", app.daemonInstall),
+		sub("uninstall", "Stop starting the daemon at login (macOS)",
+			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.",
+			"  ley daemon uninstall", app.daemonUninstall),
+		sub("start", "Start the daemon",
+			"start launches the daemon and prints its pid (process id). With a LaunchAgent\ninstalled it asks launchd; otherwise it spawns leylined in the background\nwith its output in the log file. Already running is not an error.",
+			"  ley daemon start         # started leylined (pid 12345); check with: ley daemon status\n  ley daemon start --log /tmp/leylined.log", app.daemonStart),
+		sub("stop", "Stop the daemon (and clear a stale socket)",
+			"stop asks the daemon to exit and waits until the socket stops answering.\nA socket file left behind by a crashed daemon is removed so the next start\nis clean.",
+			"  ley daemon stop\n  ley daemon stop && ley daemon start   # restart", app.daemonStop),
+		sub("status", "Say whether the daemon is running (exit 3 when not)",
+			"status prints the daemon's pid, version and socket when it answers, and\nexits 3 with the command to start it when it does not. Scripts can use the\nexit code alone.",
+			"  ley daemon status\n  ley daemon status --json # a DaemonInfo message; only socketPath when not running", app.daemonStatus),
 		logs,
 	)
 	return cmd
@@ -244,7 +265,7 @@ func (a *App) reachable(ctx context.Context) bool {
 
 func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	if a.reachable(ctx) {
-		fmt.Fprintln(a.Stdout, "already running")
+		fmt.Fprintf(a.Stdout, "already running%s; check with: ley daemon status\n", a.pidSuffix(ctx))
 		return nil
 	}
 	if launchAgentInstalled() {
@@ -283,17 +304,18 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if a.reachable(ctx) {
+			fmt.Fprintf(a.Stdout, "started leylined%s; check with: ley daemon status\n", a.pidSuffix(ctx))
 			return a.daemonStatus(ctx, f)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("daemon did not answer on %s within 5 s (see %s)", a.socketPath(), a.logPath(f))
+	return fmt.Errorf("leylined did not answer on %s within 5 s. Look at its log: ley daemon logs (%s)", a.socketPath(), a.logPath(f))
 }
 
 func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 	if launchAgentInstalled() {
 		if !a.reachable(ctx) {
-			fmt.Fprintln(a.Stdout, "not running")
+			a.reportNotRunningForStop()
 			return nil
 		}
 		if err := launchctl(ctx, "kill", "SIGTERM", launchTarget()); err != nil {
@@ -311,7 +333,7 @@ func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 	} else {
 		pid := a.readPid()
 		if pid == 0 {
-			fmt.Fprintln(a.Stdout, "not running")
+			a.reportNotRunningForStop()
 			return nil
 		}
 		if err := a.stopPid(pid); err != nil {
@@ -359,7 +381,7 @@ func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
 			return err
 		}
 	} else {
-		fmt.Fprintf(a.Stdout, "not running (socket %s)\n", a.socketPath())
+		fmt.Fprintln(a.Stdout, a.notRunningMessage())
 	}
 	return &ExitError{Code: ExitNotRunning}
 }
@@ -387,4 +409,33 @@ func (a *App) daemonLogs(ctx context.Context, f *daemonFlags) error {
 			return err
 		}
 	}
+}
+
+// pidSuffix is " (pid N)" when the running daemon reports one.
+func (a *App) pidSuffix(ctx context.Context) string {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	c, err := a.dial(ctx)
+	if err != nil {
+		return ""
+	}
+	defer c.Close()
+	st, err := c.State(ctx)
+	if err != nil || st.GetDaemon().GetPid() == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (pid %d)", st.Daemon.Pid)
+}
+
+// reportNotRunningForStop prints the stop verdict when nothing is running and
+// clears a socket file a dead daemon left behind, so the next start is clean.
+func (a *App) reportNotRunningForStop() {
+	sock := a.socketPath()
+	if _, err := os.Stat(sock); err == nil {
+		if err := os.Remove(sock); err == nil {
+			fmt.Fprintf(a.Stdout, "not running; removed the stale socket %s. Start it with: ley daemon start\n", sock)
+			return
+		}
+	}
+	fmt.Fprintln(a.Stdout, "not running. Start it with: ley daemon start")
 }

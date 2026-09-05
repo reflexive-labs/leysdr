@@ -13,8 +13,16 @@ import (
 func newStateCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "state",
-		Short: "Dump the daemon's full state snapshot (the debugging entry point)",
-		Args:  cobra.NoArgs,
+		Short: "Show everything the daemon knows right now",
+		Long: `state prints the daemon's whole picture: the daemon itself, every radio,
+every capture (a radio tuned to a band), every channel (one station picked
+out of a capture: frequency, mode, squelch) and every sink (where the audio
+goes). It is the place to look when something is not doing what you expect,
+and 'ley state --json' is the snapshot scripts and agents should read.`,
+		Example: `  ley state                # the whole picture, as tables
+  ley state --json         # the same as proto3 JSON (GetStateResponse)`,
+		GroupID: GroupLooking,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			c, err := app.dial(ctx)

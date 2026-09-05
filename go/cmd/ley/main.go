@@ -21,9 +21,12 @@ func main() {
 	os.Exit(exitStatus(ctx, cli.Execute(ctx, app, os.Args[1:])))
 }
 
-// exitStatus maps Execute's error to a process status: Ctrl-C is 130 whether
-// it landed during setup or the live phase, verbs may carry their own code
-// via cli.ExitError, everything else is 1.
+// exitStatus maps Execute's error to a process status, per the taxonomy in
+// docs/interfaces.md and `ley help scripting`: 0 ok, 1 daemon/runtime error,
+// 2 usage error (bad flag, unknown verb or parameter), 3 daemon not running,
+// 130 interrupted by Ctrl-C before the live phase (a verb whose live phase
+// was interrupted returns nil and so exits 0). Verbs carry 2 and 3 as
+// cli.ExitError; everything else is 1.
 func exitStatus(ctx context.Context, err error) int {
 	if err == nil {
 		return 0

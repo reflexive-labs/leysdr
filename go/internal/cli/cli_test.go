@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
@@ -102,5 +106,211 @@ func TestState(t *testing.T) {
 	}
 	if out := mustRun(t, sock, "version"); !strings.HasPrefix(out, "ley ") {
 		t.Fatalf("version: %s", out)
+	}
+}
+
+// runApp executes ley in-process with a caller-built App (captured writers
+// are installed) and returns stdout, stderr and the error.
+func runApp(t *testing.T, app *App, args ...string) (string, string, error) {
+	t.Helper()
+	var out, errb bytes.Buffer
+	app.Stdout, app.Stderr = &out, &errb
+	if app.LookupEnv == nil {
+		app.LookupEnv = func(string) (string, bool) { return "", false }
+	}
+	if app.Socket != "" {
+		args = append([]string{"--socket", app.Socket}, args...)
+	}
+	err := Execute(context.Background(), app, args)
+	return out.String(), errb.String(), err
+}
+
+// ttyApp is an App that believes stdout is an 80-column terminal.
+func ttyApp(sock string) *App {
+	return &App{Socket: sock, IsTTY: func() bool { return true }, TermWidth: func() int { return 80 }}
+}
+
+// exitCode extracts the ExitError code; plain errors are 1, nil is 0.
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ee *ExitError
+	if errors.As(err, &ee) {
+		return ee.Code
+	}
+	return 1
+}
+
+// listening puts the fake daemon in the "one persistent channel" state.
+func listening(t *testing.T, c *leyline.Client) {
+	t.Helper()
+	ctx := context.Background()
+	st, err := c.State(ctx)
+	if err != nil || len(st.Devices) == 0 {
+		t.Fatalf("state: %v", err)
+	}
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_520_000})
+	if err != nil {
+		t.Fatalf("create capture: %v", err)
+	}
+	if _, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, Mode: leylinev1.DemodMode_NFM, BandwidthHz: 12_500, Persistent: true}); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+}
+
+func TestExitCodesUsage(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"nosuchverb"}, `unknown command "nosuchverb"`},
+		{[]string{"spectrun"}, "Did you mean this?\n\tspectrum"},
+		{[]string{"state", "extra"}, "unknown command \"extra\""},
+		{[]string{"devices", "--bogus"}, "unknown flag: --bogus"},
+		{[]string{"fft", "--format", "xml"}, "--format must be json or bin"},
+		{[]string{"spectrum", "146,52"}, "frequency:"},
+		{[]string{"record"}, "record is not implemented yet (Milestone C.12). Today:"},
+		{[]string{"scan", "146.52"}, "scan is not implemented yet (Milestone D). Today: ley spectrum"},
+		{[]string{"watch"}, "watch is not implemented yet (V0.5)"},
+	}
+	for _, tc := range cases {
+		_, _, err := run(t, context.Background(), sock, tc.args...)
+		if exitCode(err) != ExitUsage {
+			t.Errorf("ley %v: exit %d (%v), want %d", tc.args, exitCode(err), err, ExitUsage)
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ley %v: message %q lacks %q", tc.args, err, tc.want)
+		}
+	}
+	// Runtime errors from the daemon stay exit 1.
+	_, _, err := run(t, context.Background(), sock, "devices", "detach", "dev_nope")
+	if exitCode(err) != 1 {
+		t.Errorf("runtime error: exit %d (%v), want 1", exitCode(err), err)
+	}
+}
+
+func TestExitCodeNotRunning(t *testing.T) {
+	dead := filepath.Join(t.TempDir(), "nobody.sock")
+	for _, args := range [][]string{{"state"}, {"devices"}, {"spectrum", "101.1"}, {"fft", "--freq", "101.1M"}, {"daemon", "status"}} {
+		_, _, err := run(t, context.Background(), dead, args...)
+		if exitCode(err) != ExitNotRunning {
+			t.Errorf("ley %v: exit %d (%v), want %d", args, exitCode(err), err, ExitNotRunning)
+		}
+		if args[0] != "daemon" {
+			want := "the Leyline daemon is not running (socket " + dead + "). Start it with: ley daemon start"
+			if err == nil || err.Error() != want {
+				t.Errorf("ley %v: message %q, want %q", args, err, want)
+			}
+		}
+	}
+	// A socket file nobody answers on is the stale variant.
+	stale := filepath.Join(t.TempDir(), "stale.sock")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := run(t, context.Background(), stale, "state")
+	if exitCode(err) != ExitNotRunning || !strings.Contains(err.Error(), "stale socket "+stale) || !strings.Contains(err.Error(), "ley daemon stop && ley daemon start") {
+		t.Errorf("stale socket: exit %d, message %q", exitCode(err), err)
+	}
+	out, _, err := run(t, context.Background(), stale, "daemon", "status")
+	if exitCode(err) != ExitNotRunning || err.Error() != "" || !strings.Contains(out, "stale socket") {
+		t.Errorf("daemon status stale: %d %q out %q", exitCode(err), err, out)
+	}
+	out, _, err = run(t, context.Background(), stale, "daemon", "stop")
+	if err != nil || !strings.Contains(out, "removed the stale socket") {
+		t.Errorf("daemon stop stale: %v out %q", err, out)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale socket not removed")
+	}
+}
+
+func TestDevicesEmptyChecklist(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
+	out, _, err := runApp(t, ttyApp(sock), "devices")
+	if err != nil || !strings.Contains(out, "rtl_test") || !strings.Contains(out, "ley daemon logs") {
+		t.Fatalf("tty checklist: %v\n%s", err, out)
+	}
+	out, _, err = run(t, context.Background(), sock, "devices")
+	if err != nil || strings.Contains(out, "rtl_test") {
+		t.Fatalf("piped output must not carry the checklist: %v\n%s", err, out)
+	}
+	out, _, err = runApp(t, &App{Socket: sock, IsTTY: func() bool { return true }}, "--json", "devices")
+	if err != nil || strings.Contains(out, "rtl_test") || !strings.HasPrefix(out, "{") {
+		t.Fatalf("--json must stay JSON: %v\n%s", err, out)
+	}
+}
+
+func TestOrientationPerState(t *testing.T) {
+	dead := filepath.Join(t.TempDir(), "nobody.sock")
+	out, _, err := runApp(t, ttyApp(dead))
+	if err != nil || !strings.Contains(out, "Daemon    not running") || !strings.Contains(out, "ley daemon start") {
+		t.Fatalf("no daemon: %v\n%s", err, out)
+	}
+
+	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
+	out, _, err = runApp(t, ttyApp(sock))
+	if err != nil || !strings.Contains(out, "Devices   none found") || !strings.Contains(out, "rtl_test") || !strings.Contains(out, "ley devices") {
+		t.Fatalf("no device: %v\n%s", err, out)
+	}
+
+	sock, c := harness(t, fakedaemon.Options{})
+	out, _, err = runApp(t, ttyApp(sock))
+	if err != nil || !strings.Contains(out, "Playing   nothing") || !strings.Contains(out, "ley tune 146.52") || !strings.Contains(out, "ley spectrum") {
+		t.Fatalf("idle: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Daemon    daemon fake-0.1") || !strings.Contains(out, "Devices   ") {
+		t.Fatalf("idle header: %s", out)
+	}
+
+	listening(t, c)
+	out, _, err = runApp(t, ttyApp(sock))
+	if err != nil || !strings.Contains(out, "Playing   146.520 MHz NFM") || !strings.Contains(out, "ley set squelch") || !strings.Contains(out, "ley spectrum") {
+		t.Fatalf("listening: %v\n%s", err, out)
+	}
+
+	// Piped: the verb list. --json: a pointer to state --json, nothing on stdout.
+	out, _, err = run(t, context.Background(), sock)
+	if err != nil || !strings.Contains(out, "Available Commands") && !strings.Contains(out, "Listening:") {
+		t.Fatalf("piped: %v\n%s", err, out)
+	}
+	out, errOut, err := run(t, context.Background(), sock, "--json")
+	if err != nil || out != "" || !strings.Contains(errOut, "ley state --json") {
+		t.Fatalf("--json: %v out %q err %q", err, out, errOut)
+	}
+	// Bare ley never fails, whatever the daemon state.
+	if _, _, err := runApp(t, ttyApp(dead), "--json"); err != nil {
+		t.Fatalf("--json no daemon: %v", err)
+	}
+}
+
+func TestRenderOrientationStates(t *testing.T) {
+	if s := renderOrientation(nil, &ExitError{Code: ExitNotRunning, Message: "the Leyline daemon is not running (socket x). Start it with: ley daemon start"}); !strings.Contains(s, "ley daemon start") || !strings.Contains(s, "ley daemon logs") {
+		t.Errorf("not running:\n%s", s)
+	}
+	if s := renderOrientation(nil, errors.New("boom")); !strings.Contains(s, "Daemon    error: boom") {
+		t.Errorf("other error:\n%s", s)
+	}
+	st := &leylinev1.GetStateResponse{Daemon: &leylinev1.DaemonInfo{Version: "v", Pid: 1}}
+	if s := renderOrientation(st, nil); !strings.Contains(s, "none found") {
+		t.Errorf("no device:\n%s", s)
+	}
+}
+
+func TestStubsHiddenAndListed(t *testing.T) {
+	root := NewRootCommand(&App{})
+	for _, name := range []string{"record", "scan", "watch"} {
+		cmd, _, err := root.Find([]string{name})
+		if err != nil || cmd.Name() != name || !cmd.Hidden {
+			t.Errorf("stub %s: %v hidden=%v", name, err, cmd != nil && cmd.Hidden)
+		}
+	}
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"--help"})
+	if err := root.Execute(); err != nil || regexp.MustCompile(`(?m)^\s+(record|scan|watch)\s`).MatchString(out.String()) {
+		t.Errorf("stubs must be hidden from --help: %v\n%s", err, out.String())
 	}
 }
