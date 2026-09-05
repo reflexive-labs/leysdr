@@ -37,21 +37,36 @@ func newFFTCommand(app *App) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "fft",
-		Short: "Stream FFT rows from a capture",
-		Long: `fft subscribes to the FFT stream of the device's capture. If the device has no
-capture, --freq is required and a capture is created for the run (destroyed on
-exit).
+		Short: "Stream spectrum rows as numbers, for tools",
+		Long: `fft is the number feed behind 'ley spectrum'. The daemon slices the band a
+device is tuned to into bins (a bin is one narrow slice of frequency, a few
+kHz wide) and measures how loud each one is; one such measurement across
+the whole band is a row. fft prints those rows as they arrive, --rate times
+a second, until --count rows or Ctrl-C. To look at the band yourself, use
+'ley spectrum': it draws the same rows as a chart.
 
---format json: one row per line {seq, sample_index, center_hz, span_hz, bins:[dB...]}.
+If the device has no capture, --freq is required and a capture is created
+for the run (destroyed on exit).
+
+--format json: one row per line
+               {seq, sample_index, center_hz, span_hz, bins:[dB...]}
+               Bulk rows have no proto message, so this shape (and the
+               matching 'spectrum --json') is the documented exception to
+               ley's proto3 JSON rule; see docs/interfaces.md.
 --format bin:  one record per row: a 16-byte little-endian header
                magic "LEYF" | u32 bins | u64 seq
                followed by the payload as delivered by the daemon
-               (bins × f32 dB little-endian, or bins × u8 with --u8, where
+               (bins x f32 dB little-endian, or bins x u8 with --u8, where
                u8 = clamp(round((dB + 120) * 2), 0, 255)).`,
-		Args: cobra.NoArgs,
+		Example: `  ley fft --freq 101.1M --count 1          # one row of the FM broadcast band
+  ley fft --rate 10 | jq .bins[0]           # ten rows a second into a tool
+  ley fft --format bin --u8 > rows.bin      # compact binary records
+  ley spectrum 101.1                        # the same rows, drawn`,
+		GroupID: GroupData,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if format != "json" && format != "bin" {
-				return fmt.Errorf("--format must be json or bin")
+				return usageErrorf("--format must be json or bin")
 			}
 			var hz uint64
 			if freq != "" {
@@ -72,13 +87,13 @@ exit).
 			return runFFT(cmd.Context(), s, fftOptions{bins: bins, rate: rate, bin: format == "bin", count: count, u8: u8, freq: hz})
 		},
 	}
-	cmd.Flags().Uint32Var(&bins, "bins", 1024, "FFT size (daemon may snap to its ladder)")
-	cmd.Flags().Float64Var(&rate, "rate", 10, "rows per second")
-	cmd.Flags().StringVar(&format, "format", "json", "output format: json|bin")
-	cmd.Flags().StringVar(&device, "device", "", "device ID (default: first non-file device)")
-	cmd.Flags().IntVar(&count, "count", 0, "stop after N rows (0 = until Ctrl-C)")
-	cmd.Flags().BoolVar(&u8, "u8", false, "request DB_U8 bins instead of DB_F32")
-	cmd.Flags().StringVar(&freq, "freq", "", "centre frequency for a new capture when the device has none")
+	cmd.Flags().Uint32Var(&bins, "bins", 1024, "number of bins (slices) across the band, e.g. 1024; the daemon may round it to a size it supports")
+	cmd.Flags().Float64Var(&rate, "rate", 10, "rows per second, e.g. 10")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json (one row per line) or bin (binary records, see below)")
+	cmd.Flags().StringVar(&device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
+	cmd.Flags().IntVar(&count, "count", 0, "stop after this many rows, e.g. 1 (default: until Ctrl-C)")
+	cmd.Flags().BoolVar(&u8, "u8", false, "ask for 1-byte bins (DB_U8) instead of 4-byte floats (DB_F32); smaller, coarser")
+	cmd.Flags().StringVar(&freq, "freq", "", "centre frequency when the radio is not tuned yet; a bare number is MHz, e.g. 101.1")
 	return cmd
 }
 
