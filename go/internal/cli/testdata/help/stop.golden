@@ -1,0 +1,29 @@
+stop removes a channel the radio is decoding: one left running by
+'ley tune --persistent' or 'ley play --persistent', or one another client
+made. With no argument it picks the channel the way set does: the only
+active one, else the channel a ley command made when exactly one active
+channel is ley-made, else it lists them. A channel can be named by id, id
+prefix, row number from 'ley state' or frequency.
+
+'ley stop all' (or --all) removes every channel on one radio and the
+capture that holds it, so the radio is free for another program. With
+several radios in use, --device says which.
+
+Usage:
+  ley stop [channel|all] [flags]
+
+Examples:
+  ley stop                  the channel ley left running
+  ley stop 146.62           the channel on that frequency
+  ley stop 2                row 2 of ley state
+  ley stop all              everything; the radio is free afterwards
+  ley stop --all --device 2
+
+Flags:
+      --all             stop every channel on the radio and free it (same as 'ley stop all')
+      --device string   with --all: which radio, when several are in use (id, prefix, row number from 'ley devices' or frequency)
+  -h, --help            help for stop
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

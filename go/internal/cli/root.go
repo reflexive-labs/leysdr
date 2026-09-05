@@ -111,6 +111,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newDevicesCommand(app),
 		newTuneCommand(app),
 		newSetCommand(app),
+		newStopCommand(app),
 		newSpectrumCommand(app),
 		newFFTCommand(app),
 		newPlayCommand(app),
@@ -179,7 +180,34 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 func Execute(ctx context.Context, app *App, args []string) error {
 	root := NewRootCommand(app)
 	root.SetArgs(args)
-	return root.ExecuteContext(ctx)
+	return withCode(root.ExecuteContext(ctx))
+}
+
+// withCode gives a daemon error its final shape: "<message> [CODE]", the
+// code in brackets at the end so scripts can grep for it, as `ley help
+// scripting` promises. The *leyline.Error stays reachable through Unwrap.
+// Errors that already carry an exit status pass through unchanged.
+func withCode(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ee *ExitError
+	if errors.As(err, &ee) {
+		return err
+	}
+	var le *leyline.Error
+	if !errors.As(err, &le) || le.Code == "" {
+		return err
+	}
+	msg := strings.Replace(err.Error(), le.Code+": ", "", 1)
+	return &ExitError{Code: 1, Message: msg + " [" + le.Code + "]", Err: err}
+}
+
+// fileMissing is the error for a file a verb needs that is not there: the
+// path in plain words, then hint (what to do next). Callers use it for
+// os.ErrNotExist; other open failures keep their own reason.
+func fileMissing(path, hint string) error {
+	return fmt.Errorf("there is no file at %s; %s", path, hint)
 }
 
 // socketPath resolves the effective socket path.

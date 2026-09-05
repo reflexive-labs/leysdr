@@ -1,6 +1,7 @@
 package leyline
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,16 +24,30 @@ type SelectorError struct {
 	Selector   string
 	Ambiguous  bool
 	Candidates []string
+	// Rows, when set, describes each candidate for a person ("1  chan_…
+	// 146.620 MHz NFM": row number, id, frequency, mode) and is printed as a
+	// list instead of the bare ids.
+	Rows []string
 }
 
 func (e *SelectorError) Error() string {
+	list := strings.Join(e.Candidates, ", ")
+	if len(e.Rows) > 0 {
+		list = "\n  " + strings.Join(e.Rows, "\n  ")
+	}
 	if e.Ambiguous {
-		return fmt.Sprintf("%s %q matches more than one: %s; use a longer prefix or the row number", e.Kind, e.Selector, strings.Join(e.Candidates, ", "))
+		if len(e.Rows) > 0 {
+			return fmt.Sprintf("%s %q matches more than one; pick one by row number or a longer id prefix:%s", e.Kind, e.Selector, list)
+		}
+		return fmt.Sprintf("%s %q matches more than one: %s; use a longer prefix or the row number", e.Kind, e.Selector, list)
 	}
 	if len(e.Candidates) == 0 {
 		return fmt.Sprintf("no %ss; %s %q matches nothing", e.Kind, e.Kind, e.Selector)
 	}
-	return fmt.Sprintf("no %s matches %q; known: %s (a full id, id prefix, row number or frequency)", e.Kind, e.Selector, strings.Join(e.Candidates, ", "))
+	if len(e.Rows) > 0 {
+		return fmt.Sprintf("no %s matches %q (a full id, id prefix, row number or frequency); pick one:%s", e.Kind, e.Selector, list)
+	}
+	return fmt.Sprintf("no %s matches %q; known: %s (a full id, id prefix, row number or frequency)", e.Kind, e.Selector, list)
 }
 
 // resolveIndex applies the selector rules to ids. covers reports whether the
@@ -168,7 +183,27 @@ func ResolveChannel(state *leylinev1.GetStateResponse, sel string) (*leylinev1.C
 		return ChannelCovers(state, chans[i], hz)
 	})
 	if err != nil {
+		var se *SelectorError
+		if errors.As(err, &se) {
+			for _, id := range se.Candidates {
+				for row, c := range chans {
+					if c.GetChannelId() == id {
+						se.Rows = append(se.Rows, ChannelRow(state, row+1, c))
+					}
+				}
+			}
+		}
 		return nil, err
 	}
 	return chans[i], nil
+}
+
+// ChannelRow renders one channel the way selector lists show it:
+// "1  chan_01J…  146.620 MHz NFM" (row number, id, frequency, mode).
+func ChannelRow(state *leylinev1.GetStateResponse, row int, ch *leylinev1.Channel) string {
+	freq := "frequency unknown"
+	if hz, ok := ChannelFrequency(state, ch); ok {
+		freq = FormatFrequency(hz)
+	}
+	return fmt.Sprintf("%d  %s  %s %s", row, ch.GetChannelId(), freq, strings.ToUpper(ModeName(ch.GetMode())))
 }

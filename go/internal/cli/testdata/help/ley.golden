@@ -20,6 +20,7 @@ Listening:
 
 Adjusting:
   set         Adjust what is playing, while it plays
+  stop        Stop a channel, or everything on the radio (which frees it)
 
 Looking around:
   devices     List the radios the daemon can see

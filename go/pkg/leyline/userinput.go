@@ -44,7 +44,7 @@ func ParseSquelch(s string) (db float64, auto bool, err error) {
 	t := strings.ToLower(strings.TrimSpace(s))
 	switch t {
 	case "":
-		return 0, false, fmt.Errorf("squelch: empty; try -40, auto or off")
+		return 0, false, fmt.Errorf("empty; try -40, auto or off")
 	case "off", "none", "nan":
 		return math.NaN(), false, nil
 	case "auto":
@@ -52,10 +52,10 @@ func ParseSquelch(s string) (db float64, auto bool, err error) {
 	}
 	v, ok := parseNumber(trimUnit(t, "dbfs", "db"))
 	if !ok {
-		return 0, false, fmt.Errorf("squelch: cannot read %q; use a dBFS level such as -40, or auto, or off", s)
+		return 0, false, fmt.Errorf("cannot read %q; use a dBFS level such as -40, or auto, or off", s)
 	}
 	if v > 0 {
-		return 0, false, fmt.Errorf("squelch: %q is above full scale; levels are dBFS, 0 is loudest; try -40 or auto", s)
+		return 0, false, fmt.Errorf("%q is above full scale; levels are dBFS, 0 is loudest; try -40 or auto", s)
 	}
 	return v, false, nil
 }
@@ -67,16 +67,16 @@ func ParseGain(s string) (db float64, auto bool, err error) {
 	t := strings.ToLower(strings.TrimSpace(s))
 	switch t {
 	case "":
-		return 0, false, fmt.Errorf("gain: empty; try auto or a dB value such as 30")
+		return 0, false, fmt.Errorf("empty; try auto or a dB value such as 30")
 	case "auto", "agc":
 		return 0, true, nil
 	}
 	v, ok := parseNumber(trimUnit(t, "db"))
 	if !ok {
-		return 0, false, fmt.Errorf("gain: cannot read %q; use auto or a dB value such as 30", s)
+		return 0, false, fmt.Errorf("cannot read %q; use auto or a dB value such as 30", s)
 	}
 	if v < 0 {
-		return 0, false, fmt.Errorf("gain: %q is negative; gain is amplification in dB from 0 upwards; try auto or 30", s)
+		return 0, false, fmt.Errorf("%q is negative; gain is amplification in dB from 0 upwards; try auto or 30", s)
 	}
 	return v, false, nil
 }
@@ -92,7 +92,7 @@ func CheckGain(db float64, el *leylinev1.GainElement) error {
 		if el.GetSupportsAuto() {
 			hint = ", or auto"
 		}
-		return fmt.Errorf("gain: %g dB is outside %s's range %g to %g dB%s", db, el.GetName(), el.GetMinDb(), el.GetMaxDb(), hint)
+		return fmt.Errorf("%g dB is outside %s's range %g to %g dB%s", db, el.GetName(), el.GetMinDb(), el.GetMaxDb(), hint)
 	}
 	return nil
 }
@@ -103,10 +103,10 @@ func CheckGain(db float64, el *leylinev1.GainElement) error {
 func ParseBandwidth(s string) (uint32, error) {
 	t := strings.ToLower(strings.TrimSpace(s))
 	if t == "" {
-		return 0, fmt.Errorf("bandwidth: empty; try 12.5 (kHz) or 12500")
+		return 0, fmt.Errorf("empty; try 12.5 (kHz) or 12500")
 	}
 	if strings.Contains(t, ",") {
-		return 0, fmt.Errorf("bandwidth: %q contains a comma; use a dot for decimals (12.5) or a unit (12500)", s)
+		return 0, fmt.Errorf("%q contains a comma; use a dot for decimals (12.5) or a unit (12500)", s)
 	}
 	var hz float64
 	if v, ok := bareNumber(t); ok {
@@ -117,12 +117,12 @@ func ParseBandwidth(s string) (uint32, error) {
 	} else {
 		raw, err := ParseFrequency(t)
 		if err != nil {
-			return 0, fmt.Errorf("bandwidth: cannot read %q; try 12.5 (kHz), 12.5k or 12500", s)
+			return 0, fmt.Errorf("cannot read %q; try 12.5 (kHz), 12.5k or 12500", s)
 		}
 		hz = float64(raw)
 	}
 	if hz <= 0 || hz > math.MaxUint32 {
-		return 0, fmt.Errorf("bandwidth: %q is out of range; try 12.5 (kHz) or 200k", s)
+		return 0, fmt.Errorf("%q is out of range; try 12.5 (kHz) or 200k", s)
 	}
 	return uint32(math.Round(hz)), nil
 }
@@ -132,12 +132,12 @@ func ParseBandwidth(s string) (uint32, error) {
 func ParseVolume(s string) (float64, error) {
 	t := strings.ToLower(strings.TrimSpace(s))
 	if t == "" {
-		return 0, fmt.Errorf("volume: empty; try 50%% or 0.5")
+		return 0, fmt.Errorf("empty; try 50%% or 0.5")
 	}
 	pct := strings.HasSuffix(t, "%")
 	v, ok := parseNumber(strings.TrimSuffix(t, "%"))
 	if !ok {
-		return 0, fmt.Errorf("volume: cannot read %q; try 50%%, 0.5 or 100", s)
+		return 0, fmt.Errorf("cannot read %q; try 50%%, 0.5 or 100", s)
 	}
 	switch {
 	case pct:
@@ -146,7 +146,7 @@ func ParseVolume(s string) (float64, error) {
 		v /= 100
 	}
 	if v < 0 || v > 1 {
-		return 0, fmt.Errorf("volume: %q is out of range; use 0 to 1, 0%% to 100%%, or 1 to 100", s)
+		return 0, fmt.Errorf("%q is out of range; use 0 to 1, 0%% to 100%%, or 1 to 100", s)
 	}
 	return v, nil
 }
@@ -180,7 +180,7 @@ func ResolveMode(name string, hz uint64) (mode leylinev1.DemodMode, reason strin
 	}
 	m, err := ParseMode(name)
 	if err != nil {
-		return m, "", fmt.Errorf("%w; also accepted: fm, ssb, nbfm, wbfm", err)
+		return m, "", fmt.Errorf("%s; also accepted: fm, ssb, nbfm, wbfm", strings.TrimPrefix(err.Error(), "mode: "))
 	}
 	return m, "", nil
 }

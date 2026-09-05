@@ -27,7 +27,7 @@ func TestSetParams(t *testing.T) {
 		return st
 	}
 	out := mustRun(t, sock, "set", "squelch", "-40")
-	if !strings.Contains(out, "squelch -40.0 dB") {
+	if !strings.Contains(out, "squelch → -40 dBFS on 146.520 MHz NFM (channel 1, chan_") || strings.Contains(out, "cli:") {
 		t.Fatalf("squelch confirmation: %s", out)
 	}
 	if st := state(); st.Channels[0].SquelchDb != -40 {
@@ -51,21 +51,26 @@ func TestSetParams(t *testing.T) {
 	if st := state(); st.Captures[0].Gains[0].Db != 7.7 {
 		t.Fatalf("gain 6 not snapped to 7.7: %v", st.Captures[0].Gains)
 	}
-	if !strings.Contains(out, "gain TUNER 7.7 dB") {
+	if !strings.Contains(out, "gain → 7.7 dB on the radio (TUNER)") {
 		t.Fatalf("confirmation should show the snapped gain: %s", out)
 	}
 	mustRun(t, sock, "set", "gain", "46")
 	if st := state(); st.Captures[0].Gains[0].Db != 44.5 {
 		t.Fatalf("gain 46 not snapped to 44.5: %v", st.Captures[0].Gains)
 	}
-	mustRun(t, sock, "set", "gain", "auto")
+	if out = mustRun(t, sock, "set", "gain", "auto"); !strings.Contains(out, "gain → auto on the radio (TUNER)") {
+		t.Fatalf("gain auto confirmation: %s", out)
+	}
 	if st := state(); !st.Captures[0].Gains[0].Auto {
 		t.Fatalf("gain auto not applied: %v", st.Captures[0].Gains)
 	}
 	// freq inside the span moves the offset.
-	out = mustRun(t, sock, "set", "freq", "146.6M")
+	out = mustRun(t, sock, "set", "frequency", "146.6M") // alias of freq
 	if st := state(); st.Channels[0].OffsetHz != 80_000 || st.Captures[0].CenterHz != 146_520_000 {
 		t.Fatalf("freq offset: %v / %s", st.Channels[0], out)
+	}
+	if !strings.Contains(out, "frequency → 146.600 MHz NFM (channel 1, chan_") {
+		t.Fatalf("freq confirmation: %s", out)
 	}
 	// freq outside the span retunes the capture and zeroes the offset.
 	out = mustRun(t, sock, "set", "freq", "155M")
@@ -75,14 +80,18 @@ func TestSetParams(t *testing.T) {
 	if st := state(); st.Channels[0].OffsetHz != 0 || st.Captures[0].CenterHz != 155_000_000 {
 		t.Fatalf("freq retune: %v %v", st.Channels[0], st.Captures[0])
 	}
-	mustRun(t, sock, "set", "mode", "am")
-	mustRun(t, sock, "set", "bw", "8k")
+	if out = mustRun(t, sock, "set", "mode", "am"); !strings.Contains(out, "mode → AM on 155.000 MHz AM (channel 1, chan_") {
+		t.Fatalf("mode confirmation: %s", out)
+	}
+	if out = mustRun(t, sock, "set", "filter", "8k"); !strings.Contains(out, "bandwidth → 8.000 kHz on 155.000 MHz AM (channel 1") { // filter is an alias of bw
+		t.Fatalf("bw confirmation: %s", out)
+	}
 	if st := state(); st.Channels[0].Mode != leylinev1.DemodMode_AM || st.Channels[0].BandwidthHz != 8000 {
 		t.Fatalf("mode/bw: %v", st.Channels[0])
 	}
 	// A rejection is reported with its code.
 	_, _, err := run(t, context.Background(), sock, "set", "gain", "20", "--element", "nope")
-	if err == nil || !strings.Contains(err.Error(), "rejected") {
+	if err == nil || !strings.Contains(err.Error(), "rejected") || exitCode(err) != 1 {
 		t.Fatalf("expected rejection, got %v", err)
 	}
 	if _, _, err := run(t, context.Background(), sock, "set", "volume", "0.5"); err == nil || leyline.Code(err) != leyline.CodeSinkNotFound || !strings.Contains(err.Error(), "not playing through the speakers") {
@@ -108,6 +117,11 @@ func TestSetParams(t *testing.T) {
 	}
 	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40", "--channel", "9"); err == nil || !strings.Contains(err.Error(), "--channel") {
 		t.Fatalf("bad selector: %v", err)
+	}
+	// A frequency that matches no channel lists rows a person can pick from.
+	_, _, err = run(t, context.Background(), sock, "set", "squelch", "-40", "--channel", "162.55")
+	if err == nil || !strings.Contains(err.Error(), "pick one:\n  1  chan_") || !strings.Contains(err.Error(), "  2  chan_") || !strings.Contains(err.Error(), "  155.100 MHz NFM") {
+		t.Fatalf("no-match rows: %v", err)
 	}
 }
 
@@ -197,7 +211,7 @@ func TestSetNoArgsAndTargetRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	out = mustRun(t, sock, "set", "squelch", "-50")
-	if !strings.Contains(out, "using channel 1, 146.520 MHz NFM, chan_") || !strings.Contains(out, "(cli:ley) (the one ley made most recently)") {
+	if !strings.Contains(out, "using channel 1, 146.520 MHz NFM, chan_") || !strings.Contains(out, "(cli:ley) (the only active channel ley made)") {
 		t.Fatalf("expected the cli-owned channel to be chosen and announced:\n%s", out)
 	}
 	st, _ = c.State(context.Background())
@@ -264,6 +278,20 @@ func TestSetParameterErrors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("set %v: want %q in %v", args, want, err)
 		}
+		if exitCode(err) != ExitUsage {
+			t.Errorf("set %v: exit %d, want %d (usage error)", args, exitCode(err), ExitUsage)
+		}
+		if err != nil && strings.Contains(err.Error(), args[0]+": "+args[0]+": ") {
+			t.Errorf("set %v: doubled prefix in %v", args, err)
+		}
+	}
+	for _, args := range [][]string{{"set", "foo", "1"}, {"set", "squelch"}, {"set", "squelch", "-40", "extra"}} {
+		if _, _, err := run(t, context.Background(), dead, args...); exitCode(err) != ExitUsage {
+			t.Errorf("ley %v: exit %d (%v), want %d", args, exitCode(err), err, ExitUsage)
+		}
+	}
+	if _, _, err := run(t, context.Background(), sock, "set", "gain", "-5"); err == nil || !strings.Contains(err.Error(), "gain: \"-5\" is negative") {
+		t.Errorf("gain prefix once: %v", err)
 	}
 	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "5"); err == nil || !strings.Contains(err.Error(), "dBFS") {
 		t.Errorf("positive squelch should explain the scale: %v", err)

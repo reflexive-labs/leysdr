@@ -61,6 +61,9 @@ its id, an unambiguous id prefix, or its row number in 'ley devices'.`,
 			if err != nil {
 				return fmt.Errorf("%w. Run: ley devices", err)
 			}
+			if d.Driver != "file" {
+				return fmt.Errorf("%s is a real radio (%s), not a playback file; free it with: ley stop --all", d.DeviceId, d.Model)
+			}
 			if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: d.DeviceId}); err != nil {
 				return err
 			}

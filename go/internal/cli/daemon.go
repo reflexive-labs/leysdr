@@ -305,7 +305,7 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	for time.Now().Before(deadline) {
 		if a.reachable(ctx) {
 			fmt.Fprintf(a.Stdout, "started leylined%s; check with: ley daemon status\n", a.pidSuffix(ctx))
-			return a.daemonStatus(ctx, f)
+			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -389,8 +389,11 @@ func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
 func (a *App) daemonLogs(ctx context.Context, f *daemonFlags) error {
 	path := a.logPath(f)
 	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fileMissing(path, "the daemon writes it once started with: ley daemon start (or pass the file it logs to with --log)")
+	}
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot read the log %s: %v", path, err)
 	}
 	defer file.Close()
 	if _, err := io.Copy(a.Stdout, file); err != nil {

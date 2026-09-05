@@ -189,6 +189,37 @@ func TestExitCodesUsage(t *testing.T) {
 	if exitCode(err) != 1 {
 		t.Errorf("runtime error: exit %d (%v), want 1", exitCode(err), err)
 	}
+	// A real radio is not a playback file: detach says how to free it instead.
+	_, _, err = run(t, context.Background(), sock, "devices", "detach", "1")
+	if exitCode(err) != 1 || err == nil || !strings.Contains(err.Error(), "is a real radio") || !strings.Contains(err.Error(), "free it with: ley stop --all") || strings.Contains(err.Error(), "DEVICE_NOT_FOUND") {
+		t.Errorf("detach a real radio: exit %d (%v)", exitCode(err), err)
+	}
+	// A missing log file is said in plain words with the next step.
+	missing := filepath.Join(t.TempDir(), "none.log")
+	_, _, err = run(t, context.Background(), sock, "daemon", "logs", "--log", missing)
+	if exitCode(err) != 1 || err == nil || !strings.Contains(err.Error(), "there is no file at "+missing) || !strings.Contains(err.Error(), "ley daemon start") || strings.Contains(err.Error(), "no such file or directory") {
+		t.Errorf("daemon logs without a file: exit %d (%v)", exitCode(err), err)
+	}
+}
+
+// Daemon errors reach the user as "<message> [CODE]", the code last so
+// scripts can grep for it; exit 2/3 errors and plain errors pass through.
+func TestWithCode(t *testing.T) {
+	le := &leyline.Error{Code: leyline.CodeDeviceBusy, Message: "another client holds it", Target: "dev_1"}
+	got := withCode(le)
+	if got.Error() != "another client holds it (dev_1) [DEVICE_BUSY]" || exitCode(got) != 1 || leyline.Code(got) != leyline.CodeDeviceBusy {
+		t.Errorf("withCode(daemon error) = %q (exit %d, code %s)", got, exitCode(got), leyline.Code(got))
+	}
+	wrapped := withCode(&friendlyError{msg: "the radio is busy; ley state shows who", cause: le})
+	if wrapped.Error() != "the radio is busy; ley state shows who [DEVICE_BUSY]" {
+		t.Errorf("withCode(friendly) = %q", wrapped)
+	}
+	if e := usageErrorf("bad flag"); withCode(e) != e {
+		t.Errorf("withCode changed a usage error")
+	}
+	if e := errors.New("plain"); withCode(e) != e || withCode(nil) != nil {
+		t.Errorf("withCode changed a plain error")
+	}
 }
 
 func TestExitCodeNotRunning(t *testing.T) {

@@ -64,6 +64,10 @@ func TestResolveChannel(t *testing.T) {
 			t.Errorf("ResolveChannel(%q) = %v, %v; want %s", c.sel, got.GetChannelId(), err, c.want)
 		}
 	}
+	// A miss and an ambiguity list the candidates as rows a person can pick from.
+	if _, err := ResolveChannel(st, "146.7"); err == nil || !strings.Contains(err.Error(), "pick one:\n  1  chan_01AAAA  146.520 MHz ") {
+		t.Errorf("ResolveChannel(146.7) rows: %v", err)
+	}
 	if _, err := ResolveChannel(&leylinev1.GetStateResponse{}, "1"); err == nil || !strings.Contains(err.Error(), "no channels") {
 		t.Errorf("ResolveChannel(empty, 1) = %v", err)
 	}

@@ -66,7 +66,8 @@ func ResolvePreset(name string) (Preset, error) {
 	return Preset{}, fmt.Errorf("preset: unknown name %q; ley help presets lists them all", name)
 }
 
-// NearestPresetNames returns up to three preset names that look like input,
+// NearestPresetNames returns up to three preset names (or aliases, whichever
+// is closer) that look like input,
 // for error hints: prefix and substring matches first, then names within a
 // small edit distance. Empty when nothing is close.
 func NearestPresetNames(input string) []string {
@@ -80,7 +81,7 @@ func NearestPresetNames(input string) []string {
 	}
 	var cands []cand
 	for _, p := range presets {
-		best := -1
+		best, bestName := -1, p.Name
 		for _, n := range append([]string{p.Name}, p.Aliases...) {
 			r := -1
 			switch {
@@ -94,11 +95,11 @@ func NearestPresetNames(input string) []string {
 				}
 			}
 			if r >= 0 && (best < 0 || r < best) {
-				best = r
+				best, bestName = r, n
 			}
 		}
 		if best >= 0 {
-			cands = append(cands, cand{p.Name, best})
+			cands = append(cands, cand{bestName, best})
 		}
 	}
 	sort.SliceStable(cands, func(i, j int) bool { return cands[i].rank < cands[j].rank })

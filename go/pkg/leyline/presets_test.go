@@ -62,6 +62,9 @@ func TestNearestPresetNames(t *testing.T) {
 	if got := NearestPresetNames("caling"); len(got) == 0 || got[0] != "calling" {
 		t.Errorf("NearestPresetNames(caling) = %v", got)
 	}
+	if got := NearestPresetNames("nooa"); len(got) == 0 || got[0] != "noaa" {
+		t.Errorf("NearestPresetNames(nooa) = %v, want the noaa alias first", got)
+	}
 	if got := NearestPresetNames("xyzxyz"); len(got) != 0 {
 		t.Errorf("NearestPresetNames(xyzxyz) = %v, want none", got)
 	}

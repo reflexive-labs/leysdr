@@ -20,15 +20,21 @@ type setParam struct {
 
 // setParams is the parameter table, in help order.
 var setParams = []setParam{
-	{"freq", "move to a frequency; retunes the radio when it is out of the current span", "146.52 (MHz), 1010k, 146520000"},
+	{"freq", "move to a frequency ('frequency' works too); retunes the radio when it is out of the current span", "146.52 (MHz), 1010k, 146520000"},
 	{"mode", "how to decode", "nfm, am, wfm, usb, lsb, cw, fm, ssb"},
-	{"bw", "channel bandwidth", "12.5 (kHz), 200k, 12500"},
+	{"bw", "channel bandwidth (filter width; 'filter' works too)", "12.5 (kHz), 200k, 12500"},
 	{"squelch", "mute the audio when the signal is weaker than this level", "-40, -40dB, off, auto"},
 	{"gain", "radio gain (--element picks the gain stage)", "30, 30dB, auto"},
 	{"volume", "speaker volume", "0.5, 50%"},
 }
 
+// setAliases maps the words newcomers reach for onto the table's names.
+var setAliases = map[string]string{"filter": "bw", "frequency": "freq"}
+
 func setParamByName(name string) *setParam {
+	if a, ok := setAliases[name]; ok {
+		name = a
+	}
 	for i := range setParams {
 		if setParams[i].name == name {
 			return &setParams[i]
@@ -58,9 +64,10 @@ Parameters:
 ` + setParamList() + `
 
 Which channel (a channel is one station picked out of what the radio hears:
-frequency, mode, squelch): the only active one; among several, the one a
-ley command made when there is just one, and set says which; otherwise
---channel with an id, id prefix, row number from 'ley state' or frequency.
+frequency, mode, squelch): the only active one; among several, the channel
+a ley command made, but only when exactly one active channel is ley-made,
+and set says which; otherwise --channel with an id, id prefix, row number
+from 'ley state' or frequency.
 --capture targets a capture (the radio's tuning and gain) directly for freq
 and gain. Longer explanations: ley help squelch, modes, gain.`,
 		Example: `  ley set                    show the current settings
@@ -81,16 +88,21 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 			if err != nil || args == nil {
 				return err
 			}
+			// Bad words never reach the daemon: they are usage errors (exit 2).
 			switch {
 			case len(args) == 1:
 				if p := setParamByName(args[0]); p != nil {
-					return fmt.Errorf("set %s needs a value (%s): ley set %s %s", p.name, p.forms, p.name, strings.Split(p.forms, ",")[0])
+					return usageErrorf("set %s needs a value (%s): ley set %s %s", p.name, p.forms, p.name, strings.Split(p.forms, ",")[0])
 				}
 				return unknownParam(args[0])
 			case len(args) > 2:
-				return fmt.Errorf("set takes one parameter and one value, got %d words; e.g. ley set squelch -40", len(args))
-			case len(args) == 2 && setParamByName(args[0]) == nil:
-				return unknownParam(args[0])
+				return usageErrorf("set takes one parameter and one value, got %d words; e.g. ley set squelch -40", len(args))
+			case len(args) == 2:
+				p := setParamByName(args[0])
+				if p == nil {
+					return unknownParam(args[0])
+				}
+				args[0] = p.name
 			}
 			s, err := openSession(cmd.Context(), app)
 			if err != nil {
@@ -115,14 +127,13 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 
 // unknownParam is the error for a parameter name that is not in the table.
 func unknownParam(name string) error {
-	return fmt.Errorf("%q is not a setting. Settings:\n%s", name, setParamList())
+	return usageErrorf("%q is not a setting. Settings:\n%s", name, setParamList())
 }
 
 // resolveTarget picks the channel (and its capture) a set applies to. With
-// no selector: one active channel → it; several → the one a cli client made
-// most recently, when exactly one channel is cli-owned (the rest belong to
-// the app, an agent or a job), and the choice is printed; otherwise a
-// numbered list. Selectors accept an id, id prefix, row number or frequency.
+// no selector: one active channel → it; several → the cli-made one, but only
+// when exactly one active channel is cli-owned (the rest belong to the app,
+// an agent or a job), and the choice is printed; otherwise a numbered list. Selectors accept an id, id prefix, row number or frequency.
 func resolveTarget(s *session, channelSel, captureSel string) (*leylinev1.Channel, *leylinev1.Capture, error) {
 	st := s.state
 	var ch *leylinev1.Channel
@@ -162,7 +173,7 @@ func resolveTarget(s *session, channelSel, captureSel string) (*leylinev1.Channe
 				return nil, nil, fmt.Errorf("%d channels are playing; pick one with --channel:\n%s\ne.g. ley set squelch -40 --channel 2", len(active), channelTable(st, active))
 			}
 			ch = cli[0]
-			s.say("using channel %d, %s (the one ley made most recently)\n", channelRow(st, ch), channelSummary(st, ch))
+			s.say("using channel %d, %s (the only active channel ley made)\n", channelRow(st, ch), channelSummary(st, ch))
 		}
 	}
 	if cap == nil && ch != nil {
@@ -237,10 +248,11 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 	return nil
 }
 
-// paramErr wraps a parse failure with the parameter's accepted forms.
+// paramErr wraps a parse failure with the parameter's accepted forms. It is
+// a usage error (exit 2): nothing was sent to the daemon.
 func paramErr(name string, err error) error {
 	p := setParamByName(name)
-	return fmt.Errorf("%s: %w; accepted: %s", name, err, p.forms)
+	return usageError(fmt.Errorf("%s: %w; accepted: %s", name, err, p.forms))
 }
 
 // buildWrites turns (param, value) into the ParamWrites and a predicate that
@@ -359,12 +371,13 @@ func buildWrites(ctx context.Context, s *session, param, value, element string, 
 			return false
 		}, 0, nil
 	}
-	return buildChannelWrites(ctx, s, param, value, ch, cap, needChannel)
+	writes, confirmed, err = buildChannelWrites(ctx, s, param, value, ch, cap, needChannel)
+	return writes, confirmed, 0, err
 }
 
 // buildChannelWrites handles the channel-scoped parameters (squelch, bw,
 // mode, volume) for buildWrites.
-func buildChannelWrites(ctx context.Context, s *session, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, needChannel func() error) ([]*leylinev1.ParamWrite, func(*leylinev1.Event) bool, uint64, error) {
+func buildChannelWrites(ctx context.Context, s *session, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, needChannel func() error) ([]*leylinev1.ParamWrite, func(*leylinev1.Event) bool, error) {
 	channelEvent := func(match func(*leylinev1.Channel) bool) func(*leylinev1.Event) bool {
 		return func(ev *leylinev1.Event) bool {
 			c, ok := ev.Body.(*leylinev1.Event_Channel)
@@ -375,55 +388,55 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 	case "squelch":
 		db, auto, err := leyline.ParseSquelch(value)
 		if err != nil {
-			return nil, nil, 0, paramErr(param, err)
+			return nil, nil, paramErr(param, err)
 		}
 		if err := needChannel(); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		if auto {
 			if cap == nil {
-				return nil, nil, 0, fmt.Errorf("squelch auto needs the channel's capture, which is gone; ley state shows what is left")
+				return nil, nil, fmt.Errorf("squelch auto needs the channel's capture, which is gone; ley state shows what is left")
 			}
 			floor := 0.0
 			if db, floor, err = s.measureSquelch(ctx, cap, ch.BandwidthHz); err != nil {
-				return nil, nil, 0, fmt.Errorf("squelch auto: %w; set a level by hand: ley set squelch -40", err)
+				return nil, nil, fmt.Errorf("squelch auto: %w; set a level by hand: ley set squelch -40", err)
 			}
 			s.say("squelch auto → %.0f dBFS (10 dB above the band's noise floor, %.0f dBFS)\n", db, floor)
 		}
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: db}}
 		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool {
 			return leyline.SquelchOff(db) && leyline.SquelchOff(c.SquelchDb) || c.SquelchDb == db
-		}), 0, nil
+		}), nil
 	case "bw":
 		bw, err := leyline.ParseBandwidth(value)
 		if err != nil {
-			return nil, nil, 0, paramErr(param, err)
+			return nil, nil, paramErr(param, err)
 		}
 		if err := needChannel(); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_BandwidthHz{BandwidthHz: bw}}
-		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool { return c.BandwidthHz == bw }), 0, nil
+		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool { return c.BandwidthHz == bw }), nil
 	case "mode":
 		if err := needChannel(); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		m, reason, err := leyline.ResolveMode(value, channelFreq(ch, cap))
 		if err != nil {
-			return nil, nil, 0, paramErr(param, err)
+			return nil, nil, paramErr(param, err)
 		}
 		if reason != "" {
 			s.say("using %s: %s\n", strings.ToUpper(leyline.ModeName(m)), reason)
 		}
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_Mode{Mode: m}}
-		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool { return c.Mode == m }), 0, nil
+		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool { return c.Mode == m }), nil
 	case "volume":
 		v, err := leyline.ParseVolume(value)
 		if err != nil {
-			return nil, nil, 0, paramErr(param, err)
+			return nil, nil, paramErr(param, err)
 		}
 		if err := needChannel(); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		var sink *leylinev1.Sink
 		for _, sk := range s.state.Sinks {
@@ -432,7 +445,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 			}
 		}
 		if sink == nil {
-			return nil, nil, 0, &friendlyError{
+			return nil, nil, &friendlyError{
 				msg:   fmt.Sprintf("channel %s is not playing through the speakers (no system-audio sink), so there is no volume to set; ley tune without --no-audio plays audio", ch.ChannelId),
 				cause: &leyline.Error{Code: leyline.CodeSinkNotFound, Message: "no system_audio sink", Target: ch.ChannelId},
 			}
@@ -441,9 +454,9 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 		return []*leylinev1.ParamWrite{w}, func(ev *leylinev1.Event) bool {
 			c, ok := ev.Body.(*leylinev1.Event_Sink)
 			return ok && c.Sink.SinkId == sink.SinkId && c.Sink.GetSystemAudio().GetVolume() == v
-		}, 0, nil
+		}, nil
 	}
-	return nil, nil, 0, unknownParam(param)
+	return nil, nil, unknownParam(param)
 }
 
 // runSet writes, waits for confirmation (or a rejection) and prints the result.
@@ -480,8 +493,66 @@ func runSet(ctx context.Context, s *session, param, value, element string, ch *l
 	if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
 		return fmt.Errorf("rejected: %w", s.friendly(rejectedError(r.WriteRejected), value, hz))
 	}
-	fmt.Fprintln(s.app.Stdout, eventLine(ev, s.state))
+	fmt.Fprintln(s.app.Stdout, confirmLine(s.state, param, element, ev, ch, cap))
 	return nil
+}
+
+// confirmLine is the one plain line a successful set prints: the setting,
+// the value the daemon applied (read back from the confirming event) and
+// what it applies to, e.g. "squelch → -40 dBFS on 146.520 MHz NFM (channel
+// 1, chan_…)" or "gain → 29.7 dB on the radio (TUNER)".
+func confirmLine(st *leylinev1.GetStateResponse, param, element string, ev *leylinev1.Event, ch *leylinev1.Channel, cap *leylinev1.Capture) string {
+	if ch != nil {
+		if c := channelByID(st, ch.ChannelId); c != nil {
+			ch = c
+		}
+	}
+	if cap != nil {
+		if c := captureByID(st, cap.CaptureId); c != nil {
+			cap = c
+		}
+	}
+	target := "the radio"
+	if ch != nil {
+		target = fmt.Sprintf("%s %s (channel %d, %s)", leyline.FormatFrequency(channelFreq(ch, cap)), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(st, ch), ch.ChannelId)
+	} else if cap != nil {
+		target += " (" + cap.CaptureId + ")"
+	}
+	switch param {
+	case "freq":
+		if ch != nil {
+			return "frequency → " + target
+		}
+		return fmt.Sprintf("frequency → %s on %s", leyline.FormatFrequency(cap.GetCenterHz()), target)
+	case "gain":
+		if element == "" && len(cap.GetGains()) > 0 {
+			element = cap.Gains[0].Element
+		}
+		for _, g := range cap.GetGains() {
+			if g.Element == element {
+				if g.Auto {
+					return fmt.Sprintf("gain → auto on the radio (%s)", element)
+				}
+				return fmt.Sprintf("gain → %.1f dB on the radio (%s)", g.Db, element)
+			}
+		}
+		return fmt.Sprintf("gain → set on the radio (%s)", element)
+	case "squelch":
+		v := "off (audio always on)"
+		if !leyline.SquelchOff(ch.SquelchDb) {
+			v = fmt.Sprintf("%.0f dBFS", ch.SquelchDb)
+		}
+		return fmt.Sprintf("squelch → %s on %s", v, target)
+	case "bw":
+		return fmt.Sprintf("bandwidth → %s on %s", leyline.FormatFrequency(uint64(ch.BandwidthHz)), target)
+	case "mode":
+		return fmt.Sprintf("mode → %s on %s", strings.ToUpper(leyline.ModeName(ch.Mode)), target)
+	case "volume":
+		if sk, ok := ev.Body.(*leylinev1.Event_Sink); ok {
+			return fmt.Sprintf("volume → %.0f%% on %s", sk.Sink.GetSystemAudio().GetVolume()*100, target)
+		}
+	}
+	return fmt.Sprintf("%s → applied on %s", param, target)
 }
 
 // parseNegativeSafe parses flags for a command that disabled Cobra's flag

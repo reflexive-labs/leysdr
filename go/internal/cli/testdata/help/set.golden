@@ -2,17 +2,18 @@ set changes one setting of the channel that is playing and reports the value
 the radio actually applied. With no arguments it shows the current settings.
 
 Parameters:
-  freq     move to a frequency; retunes the radio when it is out of the current span (146.52 (MHz), 1010k, 146520000)
+  freq     move to a frequency ('frequency' works too); retunes the radio when it is out of the current span (146.52 (MHz), 1010k, 146520000)
   mode     how to decode (nfm, am, wfm, usb, lsb, cw, fm, ssb)
-  bw       channel bandwidth (12.5 (kHz), 200k, 12500)
+  bw       channel bandwidth (filter width; 'filter' works too) (12.5 (kHz), 200k, 12500)
   squelch  mute the audio when the signal is weaker than this level (-40, -40dB, off, auto)
   gain     radio gain (--element picks the gain stage) (30, 30dB, auto)
   volume   speaker volume (0.5, 50%)
 
 Which channel (a channel is one station picked out of what the radio hears:
-frequency, mode, squelch): the only active one; among several, the one a
-ley command made when there is just one, and set says which; otherwise
---channel with an id, id prefix, row number from 'ley state' or frequency.
+frequency, mode, squelch): the only active one; among several, the channel
+a ley command made, but only when exactly one active channel is ley-made,
+and set says which; otherwise --channel with an id, id prefix, row number
+from 'ley state' or frequency.
 --capture targets a capture (the radio's tuning and gain) directly for freq
 and gain. Longer explanations: ley help squelch, modes, gain.
 
