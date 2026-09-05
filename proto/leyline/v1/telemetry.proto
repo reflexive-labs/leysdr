@@ -4,7 +4,9 @@
 // Delivery is latest-wins with sequence numbers.
 syntax = "proto3";
 package leyline.v1;
-import "common.proto";
+
+option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+import "leyline/v1/common.proto";
 
 message TelemetrySubscription {
   oneof scope { bool daemon = 1; string capture_id = 2; string channel_id = 3; }

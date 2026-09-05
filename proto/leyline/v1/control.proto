@@ -2,7 +2,9 @@
 // State and intent. Low-rate except WriteParams, which is coalesced fire-and-forget.
 syntax = "proto3";
 package leyline.v1;
-import "common.proto";
+
+option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+import "leyline/v1/common.proto";
 
 // ---------- Capability model ----------
 
@@ -33,6 +35,9 @@ message GainElement {
   double max_db = 3;
   double step_db = 4;
   bool supports_auto = 5;
+  // Discrete valid settings when the element is not continuous (e.g. RTL-SDR tuner gain table).
+  // When non-empty, step_db is 0 and the daemon snaps writes to the nearest entry.
+  repeated double valid_db = 6;
 }
 
 message FeatureValue {
@@ -50,7 +55,11 @@ message Capture {
   CaptureAnchor anchor = 6;
   CaptureActivity activity = 7;  // the don't-disturb signal
   ClientInfo created_by = 8;
+  repeated GainState gains = 9;  // current setting of every GainElement, in descriptor order
 }
+
+// Confirmed gain of one element; the capture event carries all of them (full state, never deltas).
+message GainState { string element = 1; double db = 2; bool auto = 3; }
 
 enum CaptureState { CAPTURE_STATE_UNSPECIFIED = 0; CAPTURE_ACTIVE = 1; CAPTURE_DETACHED = 2; }
 
@@ -153,6 +162,11 @@ service Control {
   rpc DetachSink(DetachSinkRequest) returns (Empty);
 
   rpc WriteParams(stream ParamWrite) returns (WriteSummary);
+
+  // Virtual devices. Playback is a device whose tuning range is whatever the recording says;
+  // attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+  rpc AttachFileDevice(AttachFileDeviceRequest) returns (DeviceDescriptor);
+  rpc DetachFileDevice(DetachFileDeviceRequest) returns (Empty);
 }
 
 message Empty {}
@@ -165,6 +179,13 @@ message GetStateResponse {
   repeated Channel channels = 3;
   repeated Sink sinks = 4;
   uint64 event_seq = 5; // events after this seq are newer than this snapshot
+  DaemonInfo daemon = 6;
+}
+message DaemonInfo {
+  string version = 1;
+  int64 pid = 2;
+  int64 started_at_ns = 3;  // CLOCK_REALTIME
+  string socket_path = 4;
 }
 message CreateCaptureRequest { string device_id = 1; uint64 center_hz = 2; uint64 sample_rate = 3; }
 message DestroyCaptureRequest { string capture_id = 1; }
@@ -175,3 +196,8 @@ message CreateChannelRequest {
 message DestroyChannelRequest { string channel_id = 1; }
 message AttachSinkRequest { string channel_id = 1; Sink sink = 2; } // sink_id ignored on input
 message DetachSinkRequest { string sink_id = 1; }
+message AttachFileDeviceRequest {
+  string path = 1;   // local path to <name>.cf32 (+ <name>.json sidecar) or a ley://recordings/<id> URI
+  bool loop = 2;     // wrap at EOF instead of ending the capture
+}
+message DetachFileDeviceRequest { string device_id = 1; }

@@ -4,9 +4,11 @@
 // This is a table of watches, not a workflow engine — no retry DAG, no replay.
 syntax = "proto3";
 package leyline.v1;
-import "common.proto";
-import "control.proto";
-import "telemetry.proto";
+
+option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+import "leyline/v1/common.proto";
+import "leyline/v1/control.proto";
+import "leyline/v1/telemetry.proto";
 
 // ---------- Jobs ----------
 

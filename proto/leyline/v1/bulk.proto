@@ -4,8 +4,10 @@
 // No lossless network stream exists: lossless work is a daemon-side FileSink.
 syntax = "proto3";
 package leyline.v1;
-import "common.proto";
-import "control.proto";
+
+option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+import "leyline/v1/common.proto";
+import "leyline/v1/control.proto";
 
 // ---------- Negotiation ----------
 
