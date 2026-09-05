@@ -1,0 +1,219 @@
+package fakedaemon_test
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/pkg/leyline"
+)
+
+// harness starts a fake daemon on a temp UDS and dials it.
+func harness(t *testing.T, opts fakedaemon.Options) (*leyline.Client, string) {
+	t.Helper()
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	d := fakedaemon.New(opts)
+	served := make(chan error, 1)
+	go func() { served <- d.Serve(ctx, sock) }()
+	c, err := leyline.Dial(ctx, sock, leyline.WithKind("cli"), leyline.WithLabel("test"))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	// Wait for the listener.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := c.State(ctx); err == nil || time.Now().After(deadline) {
+			if err != nil {
+				t.Fatalf("daemon never came up: %v", err)
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		_ = c.Close()
+		cancel()
+		<-served
+	})
+	return c, sock
+}
+
+func TestStateAndDevices(t *testing.T) {
+	c, sock := harness(t, fakedaemon.Options{})
+	st, err := c.State(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Devices) != 1 || st.Devices[0].Driver != "rtlsdr" {
+		t.Fatalf("expected one rtlsdr device, got %v", st.Devices)
+	}
+	if st.Daemon.GetSocketPath() != sock || st.Daemon.GetVersion() == "" || st.Daemon.GetPid() == 0 {
+		t.Errorf("bad daemon info: %v", st.Daemon)
+	}
+	dev := st.Devices[0]
+	if len(dev.GainElements) != 1 || dev.GainElements[0].Name != "TUNER" || !dev.GainElements[0].SupportsAuto || len(dev.GainElements[0].ValidDb) == 0 {
+		t.Errorf("bad gain element: %v", dev.GainElements)
+	}
+	if leyline.FindCapture(st, dev.DeviceId) != nil || leyline.CurrentChannel(st, c.ClientID()) != nil {
+		t.Error("fresh daemon should have no capture/channel")
+	}
+}
+
+func TestLifecycleAndEvents(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, _ := c.State(ctx)
+	devID := st.Devices[0].DeviceId
+
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events, errs, err := c.Events(evCtx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond) // let the watcher register
+
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cap.SampleRate != 2_400_000 || cap.State != leylinev1.CaptureState_CAPTURE_ACTIVE || len(cap.Gains) != 1 {
+		t.Errorf("bad capture: %v", cap)
+	}
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 25_000, Mode: leylinev1.DemodMode_NFM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.BandwidthHz != 12_500 || ch.Owner.GetClientId() != c.ClientID() {
+		t.Errorf("bad channel: %v", ch)
+	}
+	sink, err := c.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{ChannelId: ch.ChannelId, Sink: &leylinev1.Sink{Kind: &leylinev1.Sink_SystemAudio{SystemAudio: &leylinev1.SystemAudioSink{}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ = c.State(ctx)
+	if got := leyline.FindCapture(st, devID); got == nil || got.Activity.LiveAudioSinks != 1 {
+		t.Errorf("capture activity not updated: %v", got)
+	}
+	if got := leyline.CurrentChannel(st, c.ClientID()); got == nil || got.ChannelId != ch.ChannelId {
+		t.Errorf("CurrentChannel = %v", got)
+	}
+	if st.Devices[0].State != leylinev1.DeviceState_IN_USE {
+		t.Errorf("device should be IN_USE")
+	}
+
+	// Every event so far must be attributed to us and carry full state.
+	var seen []*leylinev1.Event
+	var lastSeq uint64
+	timeout := time.After(2 * time.Second)
+	for len(seen) < 6 {
+		select {
+		case ev := <-events:
+			if ev.Seq <= lastSeq {
+				t.Errorf("seq not increasing: %d after %d", ev.Seq, lastSeq)
+			}
+			lastSeq = ev.Seq
+			if ev.CausedBy.GetClientId() != c.ClientID() || ev.CausedBy.GetKind() != "cli" || ev.CausedBy.GetLabel() != "test" {
+				t.Errorf("bad attribution: %v", ev.CausedBy)
+			}
+			seen = append(seen, ev)
+		case err := <-errs:
+			t.Fatalf("event stream ended: %v", err)
+		case <-timeout:
+			t.Fatalf("only %d events", len(seen))
+		}
+	}
+	var sawChannel bool
+	for _, ev := range seen {
+		if e := ev.GetChannel(); e != nil && e.ChannelId == ch.ChannelId && e.Mode == leylinev1.DemodMode_NFM && e.CaptureId == cap.CaptureId {
+			sawChannel = true
+		}
+	}
+	if !sawChannel {
+		t.Error("no full-state channel event")
+	}
+
+	if _, err := c.Control.DetachSink(ctx, &leylinev1.DetachSinkRequest{SinkId: sink.SinkId}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = c.State(ctx)
+	if len(st.Captures)+len(st.Channels)+len(st.Sinks) != 0 || st.Devices[0].State != leylinev1.DeviceState_AVAILABLE {
+		t.Errorf("state not empty after teardown: %v", st)
+	}
+	if _, err := c.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); leyline.Code(err) != leyline.CodeChannelNotFound {
+		t.Errorf("expected CHANNEL_NOT_FOUND, got %v", err)
+	}
+}
+
+func TestErrorMapping(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, _ := c.State(ctx)
+	devID := st.Devices[0].DeviceId
+
+	_, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 10_000})
+	var le *leyline.Error
+	if !errors.As(err, &le) {
+		t.Fatalf("errors.As failed for %T %v", err, err)
+	}
+	if le.Code != leyline.CodeFreqOutOfRange || le.Target != devID || le.Message == "" {
+		t.Errorf("bad mapped error: %+v", le)
+	}
+	if st, ok := status.FromError(err); !ok || st.Code() != codes.InvalidArgument {
+		t.Errorf("gRPC status not preserved: %v", err)
+	}
+	_, err = c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000, SampleRate: 123})
+	if leyline.Code(err) != leyline.CodeRateUnsupported {
+		t.Errorf("want RATE_UNSUPPORTED, got %v", err)
+	}
+	if _, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000})
+	if leyline.Code(err) != leyline.CodeDeviceBusy {
+		t.Errorf("want DEVICE_BUSY, got %v", err)
+	}
+	cap := leyline.FindCapture(mustState(t, c), devID)
+	_, err = c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 1_500_000})
+	if leyline.Code(err) != leyline.CodeOffsetOutOfCapture {
+		t.Errorf("want OFFSET_OUT_OF_CAPTURE, got %v", err)
+	}
+	_, err = c.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{})
+	if leyline.Code(err) != leyline.CodeUnimplemented {
+		t.Errorf("want UNIMPLEMENTED, got %v", err)
+	}
+	// Fallback: no trailer, only the "CODE: message" convention.
+	fb := leyline.FromStatus(status.Error(codes.NotFound, "SINK_NOT_FOUND: no such sink"))
+	if fb.Code != leyline.CodeSinkNotFound || fb.Message != "no such sink" {
+		t.Errorf("fallback parse: %+v", fb)
+	}
+	if fb := leyline.FromStatus(status.Error(codes.Unimplemented, "nope")); fb.Code != leyline.CodeUnimplemented {
+		t.Errorf("gRPC-code fallback: %+v", fb)
+	}
+	if leyline.Code(nil) != "" {
+		t.Error("Code(nil) should be empty")
+	}
+}
+
+func mustState(t *testing.T, c *leyline.Client) *leylinev1.GetStateResponse {
+	t.Helper()
+	st, err := c.State(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
