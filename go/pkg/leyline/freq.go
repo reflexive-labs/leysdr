@@ -60,38 +60,6 @@ func FormatFrequency(hz uint64) string {
 	}
 }
 
-// ParseGain parses a gain argument: "auto" (case-insensitive) yields auto=true,
-// otherwise a decimal dB value with an optional "dB" suffix.
-func ParseGain(s string) (db float64, auto bool, err error) {
-	t := strings.ToLower(strings.TrimSpace(s))
-	if t == "auto" || t == "agc" {
-		return 0, true, nil
-	}
-	t = strings.TrimSpace(strings.TrimSuffix(t, "db"))
-	v, perr := strconv.ParseFloat(t, 64)
-	if perr != nil || math.IsNaN(v) || math.IsInf(v, 0) {
-		return 0, false, fmt.Errorf("gain: expected \"auto\" or a dB value, got %q", s)
-	}
-	return v, false, nil
-}
-
-// ParseSquelch parses a squelch argument: "off" (or "none") yields NaN, which is
-// the wire encoding for squelch disabled; otherwise a dBFS threshold with an
-// optional "dB" suffix.
-func ParseSquelch(s string) (float64, error) {
-	t := strings.ToLower(strings.TrimSpace(s))
-	if t == "off" || t == "none" || t == "nan" {
-		return math.NaN(), nil
-	}
-	t = strings.TrimSpace(strings.TrimSuffix(t, "dbfs"))
-	t = strings.TrimSpace(strings.TrimSuffix(t, "db"))
-	v, err := strconv.ParseFloat(t, 64)
-	if err != nil || math.IsInf(v, 0) {
-		return 0, fmt.Errorf("squelch: expected \"off\" or a dB value, got %q", s)
-	}
-	return v, nil
-}
-
 // SquelchOff reports whether a squelch_db value means "squelch disabled".
 func SquelchOff(db float64) bool { return math.IsNaN(db) }
 
@@ -148,4 +116,121 @@ func DefaultBandwidth(m leylinev1.DemodMode) uint32 {
 	default:
 		return 0
 	}
+}
+
+// ParseUserFrequency parses a frequency the way a person at a radio would
+// write it. Units are honoured as in ParseFrequency ("146.52M", "7040k",
+// "1.2G", "146.52e6", "146520000Hz"); a bare number is read as MHz when it is
+// below 100 000 ("146.52", "7.040", "1010" → 1010 MHz) and as Hz otherwise
+// ("146520000"). Commas are rejected with a hint because "146,520" is
+// ambiguous between a decimal comma and a thousands separator. Library
+// callers that want Hz-strict input should use ParseFrequency.
+func ParseUserFrequency(s string) (uint64, error) {
+	orig := s
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("frequency: empty string; try 146.52 (MHz) or 146.52M")
+	}
+	if strings.Contains(s, ",") {
+		return 0, fmt.Errorf("frequency: %q contains a comma; use a dot for decimals (146.52) or a unit (146520k)", orig)
+	}
+	if v, ok := bareNumber(s); ok {
+		if v < 100_000 {
+			return ParseFrequency(strconv.FormatFloat(v, 'f', -1, 64) + "M")
+		}
+		return ParseFrequency(s)
+	}
+	hz, err := ParseFrequency(s)
+	if err != nil {
+		return 0, fmt.Errorf("frequency: cannot read %q; try 146.52 (MHz), 7040k or 146520000", orig)
+	}
+	return hz, nil
+}
+
+// bareNumber reports whether s is a plain decimal number with no unit or
+// exponent, returning its value.
+func bareNumber(s string) (float64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && r != '.' && r != '-' && r != '+' {
+			return 0, false
+		}
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+// InRanges reports whether hz falls inside any of the ranges.
+func InRanges(hz uint64, ranges []*leylinev1.FrequencyRange) bool {
+	for _, r := range ranges {
+		if r != nil && hz >= r.GetMinHz() && hz <= r.GetMaxHz() {
+			return true
+		}
+	}
+	return false
+}
+
+// FormatRanges renders device tuning ranges as "24.000 MHz – 1.766 GHz",
+// joined with ", " when there are several. Empty ranges render as "unknown".
+func FormatRanges(ranges []*leylinev1.FrequencyRange) string {
+	parts := make([]string, 0, len(ranges))
+	for _, r := range ranges {
+		if r == nil {
+			continue
+		}
+		parts = append(parts, FormatFrequency(r.GetMinHz())+" – "+FormatFrequency(r.GetMaxHz()))
+	}
+	if len(parts) == 0 {
+		return "unknown"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// FrequencyHint returns a one-line hint for a frequency the device rejected as
+// out of range, or "" when there is nothing useful to say. input is what the
+// user typed and hz what ParseUserFrequency made of it. The rule from the CLI
+// plan: when re-reading a bare number as kHz lands inside a device range or a
+// known band, suggest that spelling ("did you mean 1.010 MHz (AM broadcast)?
+// write 1010k"); otherwise give the honest reason ("this device cannot tune
+// below 24.000 MHz; HF needs an upconverter"). Callers print the device's
+// tuning range themselves; this hint never repeats it.
+func FrequencyHint(input string, hz uint64, ranges []*leylinev1.FrequencyRange) string {
+	if v, ok := bareNumber(strings.TrimSpace(input)); ok && v > 0 {
+		khz := uint64(math.Round(v * 1e3))
+		if khz != hz && (InRanges(khz, ranges) || BandFor(khz) != nil) {
+			label := FormatFrequency(khz)
+			if b := BandFor(khz); b != nil {
+				label += " (" + b.Name + ")"
+			}
+			return fmt.Sprintf("did you mean %s? write %sk", label, strconv.FormatFloat(v, 'f', -1, 64))
+		}
+	}
+	var minHz, maxHz uint64
+	for _, r := range ranges {
+		if r == nil {
+			continue
+		}
+		if minHz == 0 || r.GetMinHz() < minHz {
+			minHz = r.GetMinHz()
+		}
+		if r.GetMaxHz() > maxHz {
+			maxHz = r.GetMaxHz()
+		}
+	}
+	switch {
+	case minHz > 0 && hz < minHz:
+		s := "this device cannot tune below " + FormatFrequency(minHz)
+		if hz < 30_000_000 {
+			s += "; HF needs an upconverter or a device with direct sampling"
+		}
+		return s
+	case maxHz > 0 && hz > maxHz:
+		return "this device cannot tune above " + FormatFrequency(maxHz)
+	}
+	return ""
 }

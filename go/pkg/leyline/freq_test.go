@@ -2,6 +2,7 @@ package leyline
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
@@ -64,11 +65,11 @@ func TestParseGainSquelchMode(t *testing.T) {
 	if _, _, err := ParseGain("loud"); err == nil {
 		t.Error("ParseGain(loud): expected error")
 	}
-	if v, err := ParseSquelch("off"); err != nil || !math.IsNaN(v) {
-		t.Errorf("ParseSquelch(off) = %v %v", v, err)
+	if v, auto, err := ParseSquelch("off"); err != nil || auto || !math.IsNaN(v) {
+		t.Errorf("ParseSquelch(off) = %v %v %v", v, auto, err)
 	}
-	if v, err := ParseSquelch("-45 dB"); err != nil || v != -45 {
-		t.Errorf("ParseSquelch(-45 dB) = %v %v", v, err)
+	if v, auto, err := ParseSquelch("-45 dB"); err != nil || auto || v != -45 {
+		t.Errorf("ParseSquelch(-45 dB) = %v %v %v", v, auto, err)
 	}
 	for in, want := range map[string]leylinev1.DemodMode{
 		"nfm": leylinev1.DemodMode_NFM, "AM": leylinev1.DemodMode_AM, "Wfm": leylinev1.DemodMode_WFM,
@@ -85,5 +86,36 @@ func TestParseGainSquelchMode(t *testing.T) {
 	}
 	if _, err := ParseMode("dsb"); err == nil {
 		t.Error("ParseMode(dsb): expected error")
+	}
+}
+
+func TestFrequencyHint(t *testing.T) {
+	rtl := []*leylinev1.FrequencyRange{{MinHz: 24_000_000, MaxHz: 1_766_000_000}}
+	cases := []struct {
+		in   string
+		hz   uint64
+		want string
+	}{
+		{"1010", 1_010_000_000, "did you mean 1.010 MHz (AM broadcast)? write 1010k"},
+		{"146520", 146_520_000_000, "did you mean 146.520 MHz (2 m amateur)? write 146520k"},
+		{"7.1", 7_100_000, "this device cannot tune below 24.000 MHz; HF needs an upconverter"},
+		{"7.1M", 7_100_000, "this device cannot tune below 24.000 MHz; HF needs an upconverter"},
+		{"3000", 3_000_000_000, "this device cannot tune above 1.766 GHz"},
+		{"146.52", 146_520_000, ""},
+	}
+	for _, c := range cases {
+		got := FrequencyHint(c.in, c.hz, rtl)
+		if !strings.HasPrefix(got, c.want) || (c.want == "" && got != "") {
+			t.Errorf("FrequencyHint(%q, %d) = %q, want prefix %q", c.in, c.hz, got, c.want)
+		}
+	}
+	if got := FrequencyHint("2", 2_000_000, nil); got != "" {
+		t.Errorf("FrequencyHint with no ranges = %q, want empty", got)
+	}
+	if got := FormatRanges(rtl); got != "24.000 MHz – 1.766 GHz" {
+		t.Errorf("FormatRanges = %q", got)
+	}
+	if got := FormatRanges(nil); got != "unknown" {
+		t.Errorf("FormatRanges(nil) = %q", got)
 	}
 }
