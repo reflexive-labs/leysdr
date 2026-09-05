@@ -55,7 +55,8 @@ func discriminate(_ s: DemodScratch, count n: Int, scale: Float) {
 /// Default scratch size: one full capture block, which is the most any channel can hand a demodulator.
 let demodulatorMaxBlock = 16384
 
-/// Narrow-band FM: discriminator (±5 kHz → ±0.5), 1-pole audio LPF ≈ 4 kHz, no de-emphasis, output clipped to ±1.
+/// Narrow-band FM: discriminator (±5 kHz → ±1.0, full scale), 300 Hz two-pole high-pass (removes
+/// CTCSS/PL tones and any DC offset), 1-pole audio LPF ≈ 4 kHz, no de-emphasis, output clipped to ±1.
 public final class NFMDemodulator: Demodulator {
     public let mode: DemodMode = .nfm
     public private(set) var outputRate: UInt32 = 0
@@ -64,14 +65,20 @@ public final class NFMDemodulator: Demodulator {
     private var scale: Float = 0
     private var lpfCoefficient: Float = 1
     private var lpfState: Float = 0
+    /// High-pass: y[n] = a·(y[n−1] + x[n] − x[n−1]), two cascaded stages (≈ 12 dB/oct; −20 dB at 100 Hz).
+    private var hpfCoefficient: Float = 0
+    private var hpfPrevIn: (Float, Float) = (0, 0)
+    private var hpfPrevOut: (Float, Float) = (0, 0)
 
     public init() {}
 
     public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         outputRate = inputRate
-        scale = Float(0.5 * Double(inputRate) / (2 * Double.pi * 5_000))
+        scale = Float(1.0 * Double(inputRate) / (2 * Double.pi * 5_000))
         lpfCoefficient = Kernels.onePoleCoefficient(cutoffHz: 4_000, rate: Double(inputRate))
+        let rc = 1 / (2 * Double.pi * 300)
+        hpfCoefficient = Float(rc / (rc + 1 / Double(inputRate)))
         if scratch == nil { scratch = DemodScratch(maxBlock: maxBlock) }
         reset()
     }
@@ -83,14 +90,34 @@ public final class NFMDemodulator: Demodulator {
         discriminate(s, count: n, scale: scale)
         let out = output.base.assumingMemoryBound(to: Float.self)
         Kernels.onePoleLowPass(s.real, to: out, count: n, coefficient: lpfCoefficient, state: &lpfState)
-        // Unsquelched noise produces uniform ±π phase steps (≈ ±2.4 after scaling): hard-limit to full scale.
+        highPass(out, count: n)
+        // Unsquelched noise produces uniform ±π phase steps (≈ ±4.8 after scaling): hard-limit to full scale.
         Kernels.clip(out, lo: -1, hi: 1, to: out, count: n)
         return n
+    }
+
+    /// In-place two-stage one-pole high-pass. Plain loop: allocation-free and trivially cheap at audio rate.
+    private func highPass(_ x: UnsafeMutablePointer<Float>, count n: Int) {
+        let a = hpfCoefficient
+        var (pi0, pi1) = hpfPrevIn
+        var (po0, po1) = hpfPrevOut
+        for i in 0..<n {
+            let x0 = x[i]
+            let y0 = a * (po0 + x0 - pi0)
+            pi0 = x0; po0 = y0
+            let y1 = a * (po1 + y0 - pi1)
+            pi1 = y0; po1 = y1
+            x[i] = y1
+        }
+        hpfPrevIn = (pi0, pi1)
+        hpfPrevOut = (po0, po1)
     }
 
     public func reset() {
         scratch?.reset()
         lpfState = 0
+        hpfPrevIn = (0, 0)
+        hpfPrevOut = (0, 0)
     }
 }
 

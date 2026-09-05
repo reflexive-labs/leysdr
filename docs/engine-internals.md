@@ -128,7 +128,7 @@ Given capture rate `Fs` and mode:
 ### Demodulators (all vDSP-backed on macOS; see `DSP/Kernels.swift`)
 
 - **NFM**: quadrature discriminator `arg(x[n]·conj(x[n−1]))` (`vDSP_zvmul` conjugate + `vvatan2f`),
-  scaled so ±5 kHz deviation ≈ ±0.5; 1-pole audio LPF ≈ 4 kHz; no de-emphasis; output hard-limited
+  scaled so ±5 kHz deviation ≈ ±1.0 (full scale); 1-pole audio LPF ≈ 4 kHz; no de-emphasis; a 300 Hz two-pole high-pass strips CTCSS/PL tones before the audio reaches sinks; output hard-limited
   to ±1 (unsquelched noise otherwise reaches ±2.4).
 - **WFM**: same discriminator at `r1`, ±75 kHz deviation, 75 µs de-emphasis, FIR LPF 15 kHz +
   decimate by `D2`, output hard-limited to ±1. Mono in v0.

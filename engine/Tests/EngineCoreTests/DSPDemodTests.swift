@@ -67,7 +67,30 @@ final class DSPDemodTests: XCTestCase {
         XCTAssertEqual(rate, 48_000)
         let (snr, amp) = DSPTest.toneSNR(audio, toneHz: 1_000, rate: rate, skip: Int(rate * 0.05))
         XCTAssertGreaterThan(snr, 30)
-        XCTAssertEqual(amp, 0.3 * 0.97, accuracy: 0.03) // ±3 kHz of ±5 kHz → 0.3, minus 1-pole LPF droop
+        // ±3 kHz of ±5 kHz → 0.6 full-scale, minus 1-pole LPF droop (0.97) and the 300 Hz two-pole
+        // high-pass at 1 kHz (0.917).
+        XCTAssertEqual(amp, 0.6 * 0.97 * 0.917, accuracy: 0.03)
+    }
+
+    /// An HT-style signal: voice at ±3 kHz plus a 100 Hz CTCSS tone at ±0.7 kHz. The high-pass must
+    /// leave the voice alone and knock the sub-audible tone down by ≥ 20 dB relative to its raw level.
+    func testNFMHighPassRemovesCTCSS() throws {
+        let voice = DSPTest.fmTone(carrierHz: 100_000, audioHz: 1_000, deviationHz: 3_000, rate: fs, count: count)
+        let ctcss = DSPTest.fmTone(carrierHz: 0, audioHz: 100, deviationHz: 700, rate: fs, count: count)
+        var iq = [Float](repeating: 0, count: count * 2)
+        for n in 0 ..< count { // complex product: FM with both modulating tones on one carrier
+            let (a, b, c, d) = (voice[2 * n], voice[2 * n + 1], ctcss[2 * n], ctcss[2 * n + 1])
+            iq[2 * n] = a * c - b * d
+            iq[2 * n + 1] = a * d + b * c
+        }
+        let (audio, rate) = try run(mode: .nfm, offsetHz: 100_000, bandwidthHz: 12_500, iq: iq)
+        let skip = Int(rate * 0.2)
+        let (_, voiceAmp) = DSPTest.toneSNR(audio, toneHz: 1_000, rate: rate, skip: skip)
+        let (_, toneAmp) = DSPTest.toneSNR(audio, toneHz: 100, rate: rate, skip: skip)
+        XCTAssertEqual(voiceAmp, 0.6 * 0.97 * 0.917, accuracy: 0.04)
+        // Raw CTCSS would be 0.7/5 = 0.14; two one-pole stages at f/fc = 1/3 leave ≈ 0.1 of it.
+        XCTAssertLessThan(toneAmp, 0.02, "CTCSS at 100 Hz should be ≥ 20 dB down (got \(toneAmp))")
+        XCTAssertGreaterThan(20 * log10(voiceAmp / max(toneAmp, 1e-9)), 26, "voice must dominate the PL tone")
     }
 
     func testWFMRecoversTone() throws {
