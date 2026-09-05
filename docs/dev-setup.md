@@ -41,6 +41,29 @@ ley state
 No RF? `ley play fixtures/nfm_tone.cf32` runs the same pipeline from an IQ file and you should hear a
 1 kHz tone. `ley play --persistent` leaves the file device attached; `ley devices detach <id>` removes it.
 
+### Remote dongle over rtl_tcp
+
+A dongle plugged into another machine (a Raspberry Pi on the roof, a Linux box in the shack) can be
+served with osmocom's `rtl_tcp` and used by `leylined` as a virtual device:
+
+```sh
+# on the machine with the dongle
+rtl_tcp -a 0.0.0.0 -p 1234
+
+# on the Mac
+leylined --rtltcp pi.local:1234            # repeatable: --rtltcp a:1234 --rtltcp b:1234
+LEYLINE_RTLTCP=pi.local:1234,shack:1234 leylined   # same thing via the environment
+ley devices                                # shows driver rtltcp, model "rtl_tcp pi.local:1234 (R820T)"
+```
+
+The daemon connects at startup (5 s timeout); an unreachable server is logged and skipped, so a dead
+remote never stops local dongles from working. Tune, gain, sample rate, bias tee, ppm and AGC all
+work the same as on a local dongle (they are sent as rtl_tcp commands). `rtl_tcp` serves one client
+at a time and drops one that stops reading, so do not point two daemons at the same server. If the
+link drops, the device goes `disconnected` (its capture detaches); there is no automatic reconnect —
+restart the daemon, or `ley devices detach <id>` and attach again. Samples cross the network as raw
+8-bit I/Q (2.4 MSPS ≈ 4.8 MB/s), so a wired LAN or good Wi-Fi is needed.
+
 ### Running as a launchd agent
 
 ```sh

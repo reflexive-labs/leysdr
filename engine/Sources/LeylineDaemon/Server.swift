@@ -21,6 +21,28 @@ final class Daemon: @unchecked Sendable {
         /// Presence grace before non-persistent channels of absent clients are reaped.
         var presenceGraceNs: UInt64 = 5_000_000_000
         var registryPersistPath: String? = nil
+        /// Remote dongles (rtl_tcp servers) to attach at startup. Failures are logged, never fatal.
+        var rtltcp: [RTLTCPEndpoint] = []
+    }
+
+    /// A parsed `--rtltcp host:port`.
+    struct RTLTCPEndpoint: Equatable {
+        var host: String
+        var port: UInt16
+    }
+
+    /// Parses `host:port` / `[v6::addr]:port` strings. Throws INVALID_ARGUMENT on a malformed entry.
+    static func parseRTLTCPEndpoints(_ specs: [String]) throws -> [RTLTCPEndpoint] {
+        try specs.map { spec in
+            guard let colon = spec.lastIndex(of: ":"), colon != spec.startIndex,
+                  let port = UInt16(spec[spec.index(after: colon)...]), port > 0 else {
+                throw EngineError.invalidArgument("--rtltcp expects host:port, got \"\(spec)\"", target: spec)
+            }
+            var host = String(spec[..<colon])
+            if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+            guard !host.isEmpty else { throw EngineError.invalidArgument("--rtltcp expects host:port, got \"\(spec)\"", target: spec) }
+            return RTLTCPEndpoint(host: host, port: port)
+        }
     }
 
     let config: Config
@@ -98,6 +120,7 @@ final class Daemon: @unchecked Sendable {
             try "\(getpid())\n".write(toFile: pid, atomically: true, encoding: .utf8)
         }
         await registry.start()
+        await attachRemoteDongles()
         await store.startDeviceMirror()
         await streams.install()
         log.info("leylined \(leylinedVersion) listening on \(config.socketPath)")
@@ -106,6 +129,22 @@ final class Daemon: @unchecked Sendable {
             if let pid = config.pidfile { try? FileManager.default.removeItem(atPath: pid) }
         }
         try await server.serve()
+    }
+
+    /// Opens and attaches each configured rtl_tcp source. An unreachable server is logged and
+    /// skipped so one dead remote never keeps the daemon from serving local dongles.
+    func attachRemoteDongles() async {
+        for ep in config.rtltcp {
+            let device = RTLTCPDevice(host: ep.host, port: ep.port)
+            do {
+                try await device.open()
+                let d = try await registry.attachVirtualDevice(device)
+                log.info("attached rtl_tcp \(ep.host):\(ep.port) as \(d.id.string) (\(device.tunerName))")
+            } catch {
+                log.error("rtl_tcp \(ep.host):\(ep.port): \(error)")
+                await device.close()
+            }
+        }
     }
 
     /// Waits until the listener is accepting connections (for in-process tests).

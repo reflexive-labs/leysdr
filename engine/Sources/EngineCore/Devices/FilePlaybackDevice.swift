@@ -4,7 +4,7 @@
 import Foundation
 
 /// Replays `<name>.cf32|.cu8` + sidecar as a `RadioDevice`. See docs/engine-internals.md "Devices".
-public final class FilePlaybackDevice: RadioDevice, @unchecked Sendable {
+public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
     /// Samples per delivered block (docs/engine-internals.md "Block size").
     public static let blockSize = 16384
 

@@ -17,7 +17,7 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   ├── Model.swift           DeviceDescriptor, GainElement, ChannelConfig helpers, EngineError codes
 │   ├── Rings.swift           lock-free SPSC rings (audio floats, sample blocks)
 │   ├── Signposts.swift       os_signpost wrappers (no-op off macOS)
-│   ├── Devices/              DefaultDeviceRegistry, RTLSDRDevice, FilePlaybackDevice, IQFile (sidecar format)
+│   ├── Devices/              DefaultDeviceRegistry, RTLSDRDevice, RTLTCPDevice, FilePlaybackDevice, IQFile (sidecar format)
 │   ├── Capture/              DefaultCaptureEngine (actor façade) + CaptureDSPCore (hot path, DSP thread)
 │   ├── Channels/             DefaultChannelEngine (actor façade) + ChannelDSPCore (hot path)
 │   ├── DSP/                  Kernels (Accelerate + portable), FIR, NCO, Channelizer, Demodulators, FFT, SpectrumLadder
@@ -199,6 +199,42 @@ native `.cf32`, no gain elements, features `loop`, `duration_s`, `path`. Streami
 time by default (sleep per block); `realtime: false` (tests, `leyline` internal only) delivers as fast
 as the consumer drains. At EOF: loop if configured, else stop delivering and mark the device
 `disconnected` (the capture goes `detached`, exactly like an unplug).
+
+### RTLTCPDevice (remote dongle over rtl_tcp)
+
+A dongle served by osmocom's `rtl_tcp` on another machine, presented as a virtual device. Attached
+at startup by `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`, comma-separated) via
+`DeviceRegistry.attachVirtualDevice`; an unreachable server is logged and skipped, never fatal.
+
+- Transport: BSD sockets (no Network framework, so it builds and tests on Linux). `open()` connects
+  with a 5 s timeout, reads the 12-byte header (`"RTL0"`, u32be tuner type, u32be gain count), sends
+  the initial sample rate (`0x02`) and frequency (`0x01`), then starts one reader `Thread`
+  (`leyline.rtltcp.<host>:<port>`). Commands are 5-byte `opcode + u32be` frames, never acknowledged;
+  they are written from the control plane under the device lock and never contend with the reader.
+- Descriptor: driver `"rtltcp"`, model `rtl_tcp <host>:<port> (<tuner>)`, serial `<host>:<port>`
+  (the registry identity), empty `usbLocation`. Tuning ranges by tuner code use `RTLSDRDevice`'s
+  table; sample rates are `RTLSDRDevice.sampleRates`; native `.cu8`. Gain element `TUNER` carries
+  librtlsdr's fixed table for the reported tuner (R820T/R828D 29 entries, E4000 14, FC0012 5,
+  FC0013 23, FC2580 and unknown `{0}`); the header's gain count is only cross-checked against it
+  (a mismatch is logged — the remote is not stock librtlsdr). Features: `tuner`, `remote` (read-only),
+  `bias_tee` (`0x0e`), `direct_sampling` (`0x09`), `ppm_correction` (`0x05`), `rtl_agc` (`0x08`).
+  `setGain`: auto → `0x03/0`; dB → snap to the table, `0x03/1` then `0x04` tenths.
+- Streaming: the socket flows from the moment of connect (rtl_tcp serves one client and drops one
+  that stops reading), so the reader always drains. It recv's straight into one preallocated
+  32768-byte `SampleStorage` (exactly 16384 cu8 samples, partial reads accumulated) and, once per
+  full block, snapshots `(streaming, deliver, captureID, generation)` under the lock and calls
+  `deliver` with the lock released — or discards the block when not streaming. `startStreaming`
+  only arms delivery and restarts the sample index at 0; `stopStreaming` disarms it, waits for any
+  in-flight `deliver` call to return (the reader raises `inDeliver` in the same critical section
+  as the snapshot; the device lock is an `NSCondition`), and the connection stays up. `open()`
+  connects and reads the header with the lock released. No allocation and no Swift concurrency on
+  the reader.
+- Loss: a read that times out (5 s) or a peer close reports `.disconnected` through the same
+  state-change hook `FilePlaybackDevice` uses, so the registry publishes `changed` and the capture
+  detaches. No automatic reconnect: detach and re-attach (or restart the daemon). `close()` shuts
+  the socket down and joins the reader without waiting for a read timeout.
+- Retune, gain and sample-rate changes are sent live; the sample index does not reset on a rate
+  change.
 
 ## Daemon
 

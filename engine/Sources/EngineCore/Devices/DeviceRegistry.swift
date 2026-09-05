@@ -36,6 +36,14 @@ final class DeviceEventHub: @unchecked Sendable {
     }
 }
 
+/// Registry-side hooks every hosted virtual device implements: the registry assigns the stable id,
+/// records externally decided `.inUse`/`.available` state and installs the state-change hook.
+public protocol VirtualDevice: RadioDevice {
+    func assignID(_ id: DeviceID)
+    func setState(_ state: DeviceState)
+    func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?)
+}
+
 /// Persisted identity → DeviceID map (JSON object of `"serial|manufacturer|product[#n]": "dev_..."`).
 struct DeviceIDMap: Codable {
     var ids: [String: DeviceID] = [:]
@@ -143,11 +151,39 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         return descriptor
     }
 
+    /// Detaches any hosted virtual device (file playback or `attachVirtualDevice`).
     public func detachFileDevice(id: DeviceID) async throws {
         guard let entry = entries[id], entry.rtlIndex == nil else { throw EngineError.deviceNotFound(id.string) }
         entries[id] = nil
         await entry.device.close()
         publish(.removed(id))
+    }
+
+    // MARK: Virtual devices
+
+    /// Hosts any non-USB `RadioDevice` (e.g. `RTLTCPDevice`). Identity is `(serial, driver, model)`
+    /// of the device's own descriptor; the stable id is minted from that. Devices conforming to
+    /// `VirtualDevice` get the registry id assigned and the state-change hook installed so their
+    /// own `.disconnected` transitions publish `changed` like an unplug.
+    public func attachVirtualDevice(_ device: any RadioDevice) throws -> DeviceDescriptor {
+        let provisional = device.descriptor
+        let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: provisional.driver, product: provisional.model)
+        if let existing = entries.values.first(where: { $0.key == key && $0.rtlIndex == nil }) {
+            return existing.descriptor
+        }
+        let id = stableID(for: key)
+        if let v = device as? VirtualDevice {
+            v.assignID(id)
+            v.setOnStateChange { [weak self] state in
+                guard let self else { return }
+                // Fired from the device's I/O thread; hop to the actor to publish.
+                Task { await self.deviceStateChanged(id: id, state: state) }
+            }
+        }
+        let descriptor = device.descriptor
+        entries[id] = Entry(descriptor: descriptor, device: device, rtlIndex: nil, key: key)
+        publish(.arrived(descriptor))
+        return descriptor
     }
 
     /// Records a state flip reported by a device (e.g. file playback reaching EOF → `.disconnected`).
@@ -167,7 +203,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         guard entry.descriptor.state != state else { return }
         entry.descriptor.state = state
         entries[id] = entry
-        if let f = entry.device as? FilePlaybackDevice { f.setState(state) }
+        if let v = entry.device as? VirtualDevice { v.setState(state) }
         if let r = entry.device as? RTLSDRDevice { r.setState(state) }
         publish(.changed(entry.descriptor))
     }

@@ -79,7 +79,7 @@ public protocol RadioDevice: AnyObject, Sendable {
 }
 
 /// Discovers devices, tracks hot-plug, maps serials to stable DeviceIDs across replug.
-/// Also hosts virtual devices (file playback), which appear and disappear like hot-plugged hardware.
+/// Also hosts virtual devices (file playback, rtl_tcp), which appear and disappear like hot-plugged hardware.
 public protocol DeviceRegistry: AnyObject, Sendable {
     var devices: [DeviceDescriptor] { get async }
     func device(id: DeviceID) async -> (any RadioDevice)?
@@ -87,6 +87,11 @@ public protocol DeviceRegistry: AnyObject, Sendable {
     func events() -> AsyncStream<DeviceEvent>
 
     func attachFileDevice(path: String, loop: Bool) async throws -> DeviceDescriptor
+    /// Hosts an already-constructed virtual device (network source, synthetic source). The registry
+    /// assigns the stable id, installs its state-change hook and publishes `arrived`. Attaching a
+    /// device whose identity is already hosted returns the existing descriptor.
+    func attachVirtualDevice(_ device: any RadioDevice) async throws -> DeviceDescriptor
+    /// Detaches any virtual device (file or `attachVirtualDevice`): closes it and publishes `removed`.
     func detachFileDevice(id: DeviceID) async throws
 }
 

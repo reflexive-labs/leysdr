@@ -37,6 +37,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("poll-ms"), help: "Hot-plug enumeration period in milliseconds.")
     var pollMs: Int = 1000
 
+    @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port (repeatable; env LEYLINE_RTLTCP, comma-separated).")
+    var rtltcp: [String] = []
+
     func run() async throws {
         let level = Logger.Level(rawValue: logLevel) ?? .info
         LoggingSystem.bootstrap { label in
@@ -45,7 +48,8 @@ struct DaemonCommand: AsyncParsableCommand {
             return h
         }
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
-        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs))
+        let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
+        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, rtltcp: remotes))
         let signals = SignalWatcher([SIGTERM, SIGINT])
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
@@ -62,6 +66,12 @@ struct DaemonCommand: AsyncParsableCommand {
             throw ExitCode(2)
         }
     }
+}
+
+/// `LEYLINE_RTLTCP=host:port[,host:port...]` — appended to the `--rtltcp` flags.
+func rtltcpEndpointsFromEnvironment() -> [String] {
+    guard let env = ProcessInfo.processInfo.environment["LEYLINE_RTLTCP"], !env.isEmpty else { return [] }
+    return env.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
 }
 
 /// Resolves once any of the given signals arrives.

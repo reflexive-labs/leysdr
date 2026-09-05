@@ -195,6 +195,33 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
+    /// `tunerInfo` keyed by the raw librtlsdr enum value — the numbering rtl_tcp puts in its header
+    /// (0 unknown, 1 E4000, 2 FC0012, 3 FC0013, 4 FC2580, 5 R820T, 6 R828D).
+    static func tunerInfo(code: UInt32) -> (name: String, ranges: [FrequencyRange]) {
+        tunerInfo(rtlsdr_tuner(rawValue: code))
+    }
+
+    /// Gain tables librtlsdr hard-codes per tuner (rtl-sdr.c `rtlsdr_get_tuner_gains`), in dB.
+    /// Every tuner the driver knows has a fixed table; an unknown tuner reports the single entry 0.
+    static func knownGainTableDB(tuner: String) -> [Double] {
+        let tenths: [Int]
+        switch tuner {
+        case "R820T", "R828D":
+            tenths = [0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328,
+                      338, 364, 372, 386, 402, 421, 434, 439, 445, 480, 496]
+        case "E4000":
+            tenths = [-10, 15, 40, 65, 90, 115, 140, 165, 190, 215, 240, 290, 340, 420]
+        case "FC0012":
+            tenths = [-99, -40, 71, 179, 192]
+        case "FC0013":
+            tenths = [-99, -73, -65, -63, -60, -58, -54, 58, 61, 63, 65, 67, 68, 70, 71, 179, 181, 182,
+                      184, 186, 188, 191, 197]
+        default: // FC2580 and unknown tuners: librtlsdr returns { 0 }
+            tenths = [0]
+        }
+        return tenths.map { Double($0) / 10 }
+    }
+
     /// Enumerates attached dongles. USB strings need no open; tuner type and gain table need a brief
     /// open (a full USB reset + tuner init, 100–300 ms on real hardware), which is skipped for indexes
     /// in `claimed` (already open for streaming) and for any probe `shouldOpen` rejects (the registry
