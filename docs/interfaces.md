@@ -22,14 +22,17 @@ MCP resources = `ley://` URIs one-to-one. Enforcement of don't-disturb is daemon
 
 ```
 ley                                  # bare: orientation screen on a TTY (see below); the verb list when piped
-├── tune <freq|preset> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--device SEL] [--persistent]
-│                                    # capture+channel+system-audio sink in one verb; prints every decision it made
+├── tune <freq|preset> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
+│                                    # capture+channel+system-audio sink in one verb; prints every decision it made;
+│                                    # refuses to retune a capture other active channels ride on unless --retune
 ├── set [param value] [--channel SEL] [--capture SEL] [--element E]
-│                                    # live adjust: freq, mode, bw, squelch, gain, volume (streams WriteParams); no args = show
-├── spectrum [freq] [--span N] [--bins N] [--watch] [--rate N] [--count N] [--device SEL] [--width N]
-│                                    # one FFT row drawn as a bar chart + the loudest bins; the human view of fft
-├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8]
-├── play <file.cf32> [--freq F] [--mode M] [--loop] [--persistent]
+│                                    # live adjust: freq (frequency), mode, bw (filter), squelch, gain, volume (streams WriteParams); no args = show
+├── stop [channel|all] [--all] [--device SEL]
+│                                    # DestroyChannel for one channel (set's target rule); all/--all destroys every channel and the capture, freeing the radio
+├── spectrum [freq] [--span N] [--bins N] [--watch] [--rate N] [--count N] [--device SEL] [--width N] [--retune]
+│                                    # one FFT row drawn as a bar chart + the loudest bins (>= floor + 6 dB, else "nothing above the floor"); the human view of fft
+├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
+├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
 ├── devices [--watch] | devices detach <SEL>
 ├── state                            # GetState snapshot, the debugging entry point
@@ -64,9 +67,11 @@ presentation only, never called signals.
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`devices --watch` session; 1 when the daemon refused or
-failed (the message keeps the daemon's stable `ErrorDetail.code`); 2 usage error — bad flag or
-argument, unknown verb (with Cobra's "did you mean"), unknown setting or preset — nothing was
-sent to the daemon; 3 the daemon is not running, from any verb (`ley: the Leyline daemon is not
+failed (the line reads `ley: <message> [CODE]`, keeping the daemon's stable `ErrorDetail.code`,
+unless `ley` has a plainer sentence for that code); 2 usage error — bad flag or argument,
+unknown verb (with Cobra's "did you mean"), unknown setting, unparseable value or unknown
+preset — nothing was sent to the daemon (selector misses such as `--channel 9` depend on daemon
+state and exit 1); 3 the daemon is not running, from any verb (`ley: the Leyline daemon is not
 running (socket …). Start it with: ley daemon start`, or the stale-socket variant); 130
 interrupted by Ctrl-C before the verb's live phase. Error lines read `ley: <plain sentence>.
 <next command>`. `daemon status --json` always prints a `DaemonInfo`; when the daemon is not

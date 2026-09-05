@@ -354,13 +354,16 @@ Exit codes:
        Nothing was sent to the daemon.
   3    the daemon is not running (from any verb): ley daemon start
   130  interrupted before the live phase began
-Error lines read "ley: <what went wrong>. <what to do next>".
+Error lines read "ley: <what went wrong>. <what to do next>"; a daemon
+refusal reads "ley: <message> [CODE]".
 
 Presence: a channel made by ley lives as long as the ley command runs, and
 Ctrl-C removes it. --persistent (tune, play) leaves the channel running,
 prints the ids of what it made and exits; 'ley state' lists it, 'ley set
---channel <id>' adjusts it, and 'ley devices detach' removes a playback
-device together with its channels.
+--channel <id>' adjusts it, 'ley stop <id>' removes it, and 'ley stop all'
+removes every channel on the radio and the capture holding them, so the
+radio is free. 'ley devices detach' removes a playback device together
+with its channels.
 
 Defaults meant for people are off for scripts: under --json or
 --persistent, squelch defaults to off (pass --squelch auto or a level).

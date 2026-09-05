@@ -114,24 +114,24 @@ channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS on Generic RTL2832U (R820T)
 change one with: ley set squelch -50 · ley set gain 30 · ley set freq 146.62
 
 $ ley set squelch -45
-channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS ACTIVE 146.520 MHz nfm bw 12500 squelch -45.0 dB
+squelch → -45 dBFS on 146.520 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
 
 $ ley set squelch auto
 squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS)
-channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS ACTIVE 146.520 MHz nfm bw 12500 squelch -80.0 dB by cli:ley (cli_01M1S9VAAHVE7HE2RA7CR591E0)
+squelch → -80 dBFS on 146.520 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
 
 $ ley set gain 30
-capture cap_01M1S9VA2F2ZN0M4ZHKR7T6X42 ACTIVE 146.520 MHz @ 2.4 MSPS gain TUNER 29.7 dB by cli:ley (cli_01M1S9VADWBYSWJ2R620JHZP28)
+gain → 29.7 dB on the radio (TUNER)
 
 $ ley set freq 146.62
-channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS ACTIVE 146.620 MHz nfm bw 12500 squelch -80.0 dB
+frequency → 146.620 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
 ```
 
 Note the gain line: you asked for 30, the radio has 29.7, and that is what is printed. The
-parameters are `freq`, `mode`, `bw`, `squelch`, `gain` (with `--element` for radios that have
-more than one stage) and `volume`; `ley set --help` lists the forms each accepts. A wrong
-parameter name or value is refused before anything reaches the daemon, with the accepted forms
-in the message — `ley set squelch 5`, for example, explains that levels are dBFS and 0 is the
+parameters are `freq` (or `frequency`), `mode`, `bw` (or `filter`), `squelch`, `gain` (with
+`--element` for radios that have more than one stage) and `volume`; `ley set --help` lists the
+forms each accepts. A wrong parameter name or value is refused before anything reaches the
+daemon (exit 2), with the accepted forms in the message — `ley set squelch 5`, for example, explains that levels are dBFS and 0 is the
 loudest, so try `-40` or `auto`.
 
 Which channel does `set` change? The only active one; among several, the one a `ley` command
@@ -159,15 +159,18 @@ $ ley spectrum
  -99 |#################################################################
      +-----------------------------------------------------------------
       145.320 MHz                146.520 MHz                147.720 MHz
-loudest bins: 146.622 MHz -41 dB, 146.313 MHz -97 dB, 146.273 MHz -97 dB, 146.352 MHz -97 dB, 146.233 MHz -97 dB
+loudest bins: 146.622 MHz -41 dB
 ```
 
 A bin is one narrow slice of frequency (here 2.344 kHz); the floor is the median bin, which is
 what `auto` squelch measures against. With a frequency (`ley spectrum 101.1`) the radio must be
-free or already covering it; a capture is created for the run and removed on exit. `--watch`
-(`-w`) keeps redrawing until Ctrl-C, `--span 200k` narrows the view, `--bins 2048` sharpens it,
-`--width 72` fits a narrow terminal. The loudest bins are just that — `spectrum` does not call
-them signals or guess bandwidths; `scan` will do detection later (`ley help roadmap`).
+free or already covering it; a capture is created for the run and removed on exit. When other
+channels are listening on a band that does not cover the frequency, `spectrum` refuses to move
+the radio and says so; `--retune` moves it anyway (they fall silent). `--watch` (`-w`) keeps
+redrawing until Ctrl-C, `--span 200k` narrows the view, `--bins 2048` sharpens it, `--width 72`
+fits a narrow terminal. The loudest bins are just that — only bins at least 6 dB above the floor
+are listed, and a quiet band says `loudest bins: nothing above the floor`; `spectrum` does not
+call them signals or guess bandwidths; `scan` will do detection later (`ley help roadmap`).
 
 ## 5. Two channels on one radio
 
@@ -196,14 +199,30 @@ ley: 2 channels are playing; pick one with --channel:
 e.g. ley set squelch -40 --channel 2
 
 $ ley set squelch -40 --channel 2
-channel chan_01M1S9VB621DNPDV56D9NRD6NG ACTIVE 146.620 MHz nfm bw 12500 squelch -40.0 dB by cli:ley (cli_01M1S9VB6789J98SZE7AWYXZC5)
+squelch → -40 dBFS on 146.620 MHz NFM (channel 2, chan_01M1S9VB621DNPDV56D9NRD6NG)
+
+$ ley stop 2                        # remove one channel; the radio stays tuned
+stopped 146.620 MHz NFM (channel 2, chan_01M1S9VB621DNPDV56D9NRD6NG); the radio stays tuned, free it with: ley stop --all
+
+$ ley stop all                      # remove everything on the radio and free it
+stopped 1 channel and freed Generic RTL2832U (R820T) (dev_01M1S9TR56S46QTCK0SZS2YPJA)
 ```
+
+A third `tune` outside the band the capture covers (`ley tune 101.1` while 146.52 plays) is
+refused rather than silencing the channels already on it: `the radio is on 146.520 MHz with
+1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway,
+or free it with: ley stop --all`. `--retune` (on `tune` and `spectrum`) moves the radio and the
+others fall silent; a capture with no active channels is retuned without asking, and `tune`
+says so. `--gain 30` (or `auto`) on `tune` and `play` sets the receiver gain once the radio is
+tuned, and the banner shows the value the radio applied.
 
 `--channel`, `--capture` and `--device` all accept the same selectors: a full id, an id prefix,
 the row number from the printed list (`ley state`, `ley devices`) or a frequency
-(`--channel 146.62`). Scripts should use full ids. `ley state` shows every capture, channel and
-sink with its owner; a persistent channel lives until the daemon restarts or something removes
-it (`ley devices detach` for playback devices; the app or an agent for its own).
+(`--channel 146.62`); a selector that matches nothing, or more than one thing, lists the rows
+(`1  chan_…  146.620 MHz NFM`) to pick from. Scripts should use full ids. `ley state` shows every
+capture, channel and sink with its owner; a persistent channel lives until the daemon restarts or
+something removes it (`ley stop`, `ley devices detach` for playback devices; the app or an agent
+for its own).
 
 ## 6. Play a recording
 
@@ -222,8 +241,9 @@ From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum
 
 The frequency and mode come from the `.json` sidecar beside the file; `--freq` and `--mode`
 override, `--loop` starts over at the end. The pretend radio is removed on exit unless
-`--persistent`; then `ley devices` lists it as a `file` device and `ley devices detach <id>`
-(or its row number) removes it together with its channels.
+`--persistent`; then `ley devices` lists it as a `file` device, `ley stop` removes the channel
+and `ley devices detach <id>` (or its row number) removes the pretend radio together with its
+channels.
 
 Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12;
 `ley help roadmap`).
@@ -247,9 +267,11 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   defaults to `off` (pass `--squelch auto` or a level); pass `--mode` explicitly rather than
   relying on band defaults; give frequencies with a unit (`146.52M`).
 - **Exit codes:** 0 ok (including Ctrl-C during a live phase); 1 the daemon refused or failed,
-  and the message keeps the daemon's stable code (`DEVICE_BUSY`, `FREQ_OUT_OF_RANGE`, ...) unless `ley` has a plainer sentence for it; 2 usage error, nothing was sent to the
-  daemon; 3 the daemon is not running (any verb); 130 interrupted before the live phase began.
-  Error lines read `ley: <what went wrong>. <what to do next>`.
+  and the message keeps the daemon's stable code in brackets (`ley: <message> [DEVICE_BUSY]`)
+  unless `ley` has a plainer sentence for it; 2 usage error — a bad flag or argument, an unknown
+  verb, setting, value form or preset — nothing was sent to the daemon; 3 the daemon is not
+  running (any verb); 130 interrupted before the live phase began. Error lines read
+  `ley: <what went wrong>. <what to do next>`.
 
 ```console
 $ ley tune 146.52M --mode nfm --persistent --json        # ids on stdout, prose on stderr
@@ -275,6 +297,9 @@ meets first:
 | `ley: "foo" is not a setting. Settings: ...` | `set` got a parameter it does not know; the list follows | pick one from the list |
 | `ley: squelch: "5" is above full scale; levels are dBFS, 0 is loudest; try -40 or auto` | squelch levels are negative numbers | `ley set squelch -40` or `auto` |
 | `ley: 2 channels are playing; pick one with --channel: ...` | several channels, none clearly yours | `ley set squelch -40 --channel 2` |
+| `ley: no channel matches "3" (a full id, id prefix, row number or frequency); pick one:` then rows `1  chan_…  146.520 MHz NFM` | the selector fit nothing; the rows are what exists | pick a row number or id from the list |
+| `ley: the radio is on 146.520 MHz with 1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway, or free it with: ley stop --all` | another channel rides on the capture and your frequency is outside its band | `ley tune 101.1 --retune`, or `ley stop all` first |
+| `1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k` (a warning, tune continues) | a bare number is MHz, and 1010 MHz is nothing in particular | `ley tune 1010k` if you meant AM broadcast |
 | `ley: the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits` | another client holds the radio on a band that does not cover your frequency | `ley state` shows who; tune inside its band, or stop it |
 | `ley: unknown command "tunee" for "ley"` with `Did you mean this? tune` (exit 2) | a typo in the verb | take the suggestion |
 | full-scale static as soon as `tune` starts | squelch is off (scripts, `--persistent`, non-voice modes, or no spectrum row arrived) | `ley set squelch auto` |

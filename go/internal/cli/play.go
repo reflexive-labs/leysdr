@@ -61,8 +61,9 @@ The frequency defaults to the file's centre (from the .json sidecar beside
 the file: center_hz plus the first 'expect' offset when present) and the
 mode to the first 'expect' entry's mode; --mode and --freq override. The
 pretend radio is removed on exit unless --persistent is given, in which
-case the channel and the device outlive the command; remove them later with
-'ley devices detach <id>'. No hardware is needed.`,
+case the channel and the device outlive the command; 'ley stop' removes the
+channel and 'ley devices detach <id>' the pretend radio. No hardware is
+needed.`,
 		Example: `  ley play fixtures/nfm_tone.cf32              # decode a fixture and listen
   ley play recording.cf32 --loop               # keep playing until Ctrl-C
   ley play recording.cf32 --freq 146.52 --mode nfm

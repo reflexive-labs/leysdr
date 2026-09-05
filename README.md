@@ -37,7 +37,7 @@ Leave that running and open a second terminal:
 
 ```console
 $ ley set squelch -45                   # 4. adjust it while it plays
-channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS ACTIVE 146.520 MHz nfm bw 12500 squelch -45.0 dB
+squelch → -45 dBFS on 146.520 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
 
 $ ley spectrum                          # 5. see the band the radio is tuned to
 146.520 MHz, span 2.400 MHz (145.320 MHz to 147.720 MHz), 1024 bins of 2.344 kHz, floor -100 dB
@@ -46,7 +46,7 @@ $ ley spectrum                          # 5. see the band the radio is tuned to
  -99 |#################################################################
      +-----------------------------------------------------------------
       145.320 MHz                146.520 MHz                147.720 MHz
-loudest bins: 146.622 MHz -41 dB, 146.313 MHz -97 dB, ...
+loudest bins: 146.622 MHz -41 dB
 ```
 
 No radio? `ley play fixtures/nfm_tone.cf32` runs the same pipeline from a recording. Bare `ley`
