@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/dpup/leysdr/go/pkg/leyline"
+
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
@@ -99,6 +101,8 @@ func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateRespon
 			resp.Sinks = append(resp.Sinks, proto.Clone(s).(*leylinev1.Sink))
 		}
 	}
+	// Maps enumerate in random order; clients number rows by creation (id) order.
+	leyline.SortState(resp)
 	sortByID(resp.Devices, func(x *leylinev1.DeviceDescriptor) string { return x.DeviceId })
 	sortByID(resp.Captures, func(x *leylinev1.Capture) string { return x.CaptureId })
 	sortByID(resp.Channels, func(x *leylinev1.Channel) string { return x.ChannelId })

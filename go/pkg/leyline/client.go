@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -36,9 +37,19 @@ func ProcessClientID() string {
 	return processID
 }
 
-// NewID returns prefix + a fresh 26-character ULID (e.g. NewID("chan_")).
+// ulidEntropy is monotonic within a millisecond so ids minted back-to-back still sort in
+// creation order (row numbers depend on it); ulid.Monotonic is not safe for concurrent use.
+var (
+	ulidMu      sync.Mutex
+	ulidEntropy = ulid.Monotonic(rand.Reader, 0)
+)
+
+// NewID returns prefix + a fresh 26-character ULID (e.g. NewID("chan_")). Ids are monotonic:
+// two ids from the same process sort in the order they were made, even within one millisecond.
 func NewID(prefix string) string {
-	return prefix + ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
+	ulidMu.Lock()
+	defer ulidMu.Unlock()
+	return prefix + ulid.MustNew(ulid.Timestamp(time.Now()), ulidEntropy).String()
 }
 
 // Option configures Dial.
@@ -170,9 +181,27 @@ func (s *errStream) CloseSend() error    { return s.mapErr(s.ClientStream.CloseS
 
 // State fetches the daemon-scoped GetState snapshot.
 func (c *Client) State(ctx context.Context) (*leylinev1.GetStateResponse, error) {
-	return c.Control.GetState(ctx, &leylinev1.GetStateRequest{
+	st, err := c.Control.GetState(ctx, &leylinev1.GetStateRequest{
 		Scope: &leylinev1.EventScope{Scope: &leylinev1.EventScope_Daemon{Daemon: true}},
 	})
+	if err != nil {
+		return nil, err
+	}
+	SortState(st)
+	return st, nil
+}
+
+// SortState orders every list in a state snapshot by id. Ids are prefixed ULIDs, so this is
+// creation order, and it is what makes the row numbers ley prints ("channel 2") stable no
+// matter how a daemon happens to enumerate its tables.
+func SortState(st *leylinev1.GetStateResponse) {
+	if st == nil {
+		return
+	}
+	sort.SliceStable(st.Devices, func(i, j int) bool { return st.Devices[i].DeviceId < st.Devices[j].DeviceId })
+	sort.SliceStable(st.Captures, func(i, j int) bool { return st.Captures[i].CaptureId < st.Captures[j].CaptureId })
+	sort.SliceStable(st.Channels, func(i, j int) bool { return st.Channels[i].ChannelId < st.Channels[j].ChannelId })
+	sort.SliceStable(st.Sinks, func(i, j int) bool { return st.Sinks[i].SinkId < st.Sinks[j].SinkId })
 }
 
 // FindCapture returns the capture on deviceID (at most one exists), or nil.

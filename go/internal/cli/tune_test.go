@@ -192,12 +192,9 @@ func TestTuneLifecycle(t *testing.T) {
 
 func TestTuneJSONMeter(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
-	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
-	defer cancel()
-	out, errOut, err := run(t, ctx, sock, "--json", "tune", "146.52M", "--no-audio")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Wait for the first meter line, then cancel: a fixed deadline can fire during setup on a
+	// loaded machine and turn the run into DEADLINE_EXCEEDED.
+	out, errOut := liveTune(t, sock, `"meter"`, "--json", "tune", "146.52M", "--no-audio")
 	var sawMeter bool
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		var m map[string]any

@@ -133,3 +133,27 @@ func TestResolveDevice(t *testing.T) {
 		}
 	}
 }
+
+func TestSortStateOrdersByID(t *testing.T) {
+	st := &leylinev1.GetStateResponse{
+		Channels: []*leylinev1.Channel{{ChannelId: "chan_02"}, {ChannelId: "chan_01"}, {ChannelId: "chan_03"}},
+		Captures: []*leylinev1.Capture{{CaptureId: "cap_02"}, {CaptureId: "cap_01"}},
+		Devices:  []*leylinev1.DeviceDescriptor{{DeviceId: "dev_02"}, {DeviceId: "dev_01"}},
+	}
+	SortState(st)
+	if st.Channels[0].ChannelId != "chan_01" || st.Channels[2].ChannelId != "chan_03" || st.Captures[0].CaptureId != "cap_01" || st.Devices[0].DeviceId != "dev_01" {
+		t.Fatalf("not sorted: %v %v %v", st.Channels, st.Captures, st.Devices)
+	}
+	SortState(nil)
+}
+
+func TestNewIDIsMonotonic(t *testing.T) {
+	prev := NewID("chan_")
+	for i := 0; i < 2000; i++ {
+		id := NewID("chan_")
+		if id <= prev {
+			t.Fatalf("id %q does not sort after %q", id, prev)
+		}
+		prev = id
+	}
+}

@@ -6,7 +6,6 @@ package fakedaemon
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"net"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -146,9 +144,8 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 	}
 }
 
-func newID(prefix string) string {
-	return prefix + ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
-}
+// newID mints a monotonic prefixed ULID (creation order sorts, even within a millisecond).
+func newID(prefix string) string { return leyline.NewID(prefix) }
 
 // clientFrom parses the identity metadata; missing metadata gets a fresh id and
 // kind "unknown", as the Swift daemon does.
