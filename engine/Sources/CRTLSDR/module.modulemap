@@ -1,0 +1,5 @@
+module CRTLSDR [system] {
+    header "shim.h"
+    link "rtlsdr"
+    export *
+}
