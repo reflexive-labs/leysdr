@@ -3,7 +3,9 @@ so between transmissions you hear silence instead of static.
 
 Levels are dBFS (decibels relative to full scale): 0 is the loudest the
 radio can represent and every real signal is below that, so the numbers are
-negative. An empty channel (noise only) sits around -100 dBFS on an RTL-SDR;
+negative. Where an empty channel sits depends on the gain: on an RTL-SDR at
+auto gain it reads roughly -30 to -40 dBFS, at low gain -60 to -70 (squelch
+auto measures it for you);
 a strong local station reaches -30 or better. The level is the strength of
 the signal at the antenna, not the loudness in the speakers (that is
 volume).

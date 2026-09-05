@@ -139,7 +139,7 @@ When the radio is already tuned for someone else and the new frequency falls
 outside the band it covers, tune refuses rather than silence them; --retune
 moves it anyway.`,
 		Example: `  ley tune 146.52            2 m calling frequency, NFM, squelch auto
-  ley tune noaa              nearest NOAA weather preset
+  ley tune noaa              NOAA weather channel 1 (162.550 MHz); try noaa2..7
   ley tune 101.1 --mode fm   FM broadcast (fm means WFM here)
   ley tune 7.040 --mode lsb  40 m amateur band, lower sideband
   ley tune 162.55 --squelch -50 --volume 50%

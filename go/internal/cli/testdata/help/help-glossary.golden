@@ -17,7 +17,8 @@ bandwidth    how wide a slice of spectrum the channel listens to; each mode
 sample rate  how many samples per second the radio delivers, which is also
              how wide a band one capture covers (2.4 MSPS = 2.4 MHz).
 dBFS         decibels relative to full scale: 0 is the loudest the radio can
-             represent, a quiet band is around -100, a strong station -30.
+             represent; a quiet channel reads -30 to -70 depending on gain, a
+             strong local station -10 or better.
              Signal levels, squelch levels and spectrum bins are all dBFS.
 squelch      mute the audio while the signal is weaker than a level
              (ley help squelch).

@@ -1,7 +1,7 @@
 spectrum draws the band around a frequency as a bar chart: left to right is
 frequency, taller is louder. Under the chart it lists the loudest bins so
 you can read a frequency straight off. Levels are dBFS (0 is the loudest
-the radio can hear; the noise floor is usually around -100).
+the radio can hear; the header prints the noise floor, which depends on gain).
 
 Without a frequency it shows the band the device is already tuned to (what
 'ley tune' is listening to). With a frequency it needs the device to be

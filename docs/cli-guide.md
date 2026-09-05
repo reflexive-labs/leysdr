@@ -81,7 +81,7 @@ What was decided, and how to override it:
 - **Squelch** (mute the audio while the signal is weaker than a level) defaults to `auto` for
   voice modes: `tune` reads one row of the daemon's spectrum, takes the band's noise floor and
   sits 10 dB above it. `--squelch -50` sets a level (dBFS: 0 is the loudest the radio can hear,
-  the floor is usually around -100), `--squelch off` never mutes. If no spectrum row arrives
+  the floor depends on gain; the banner prints it), `--squelch off` never mutes. If no spectrum row arrives
   within two seconds squelch stays off and the banner says so. `ley help squelch`.
 - **Bandwidth** (`--bw`, a bare number is kHz) and **volume** (`--volume 50%`) have the mode's
   usual values. Gain starts on auto; `ley help gain`.
@@ -90,7 +90,7 @@ The last line is a live meter: the signal level, and whether audio is playing or
 waiting for a signal`. Ctrl-C stops and removes the channel (exit 0).
 
 ```console
-$ ley tune noaa                     # nearest NOAA weather preset (162.550 MHz)
+$ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try noaa2..7
 $ ley tune 101.1 --mode fm          # FM broadcast; fm means WFM here
 $ ley tune 7.040 --mode lsb         # 40 m amateur band, lower sideband
 $ ley tune 162.55 --squelch -50 --volume 50%

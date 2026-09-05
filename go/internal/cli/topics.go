@@ -124,7 +124,9 @@ so between transmissions you hear silence instead of static.
 
 Levels are dBFS (decibels relative to full scale): 0 is the loudest the
 radio can represent and every real signal is below that, so the numbers are
-negative. An empty channel (noise only) sits around -100 dBFS on an RTL-SDR;
+negative. Where an empty channel sits depends on the gain: on an RTL-SDR at
+auto gain it reads roughly -30 to -40 dBFS, at low gain -60 to -70 (squelch
+auto measures it for you);
 a strong local station reaches -30 or better. The level is the strength of
 the signal at the antenna, not the loudness in the speakers (that is
 volume).
@@ -319,7 +321,8 @@ bandwidth    how wide a slice of spectrum the channel listens to; each mode
 sample rate  how many samples per second the radio delivers, which is also
              how wide a band one capture covers (2.4 MSPS = 2.4 MHz).
 dBFS         decibels relative to full scale: 0 is the loudest the radio can
-             represent, a quiet band is around -100, a strong station -30.
+             represent; a quiet channel reads -30 to -70 depending on gain, a
+             strong local station -10 or better.
              Signal levels, squelch levels and spectrum bins are all dBFS.
 squelch      mute the audio while the signal is weaker than a level
              (ley help squelch).
