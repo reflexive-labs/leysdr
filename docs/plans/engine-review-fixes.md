@@ -140,7 +140,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 - Tests: a unit test for `BlockingWork.run` (value, thrown error, runs off the caller's thread). Existing
   device tests stay green; the stub librtlsdr path still throws `DEVICE_IO` from `open()`.
 
-### WI-10 `[ ]` Bulk IQ contract and coverage (#26 P2, #25 P2)
+### WI-10 `[x]` Bulk IQ contract and coverage (#26 P2, #25 P2)
 
 - `StreamRegistry.subscribe` `.iq` case: validate `req.iq.format` and `req.iq.sampleRate` per the decision
   above; reject with `INVALID_ARGUMENT`. Answer `cf32` at the capture rate as today.

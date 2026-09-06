@@ -106,6 +106,7 @@ final class DaemonTests: XCTestCase {
 
             try await self.checkTelemetry(c, capture: capture, channel: channel)
             try await self.checkFFT(c, capture: capture)
+            try await self.checkIQ(c, capture: capture)
             try await self.checkWrites(c, capture: capture, channel: channel, events: events)
             try await self.checkContractParity(c, capture: capture, channel: channel)
 
@@ -247,6 +248,95 @@ final class DaemonTests: XCTestCase {
         } catch {
             XCTAssertEqual(errorCode(error).code, "UNIMPLEMENTED")
         }
+    }
+
+    /// Bulk IQ (v0 contract): default params answer CF32 at the capture rate; payloads are whole
+    /// cf32 sample blocks (8 bytes each) that tile the sample timeline; CS16 or a foreign rate is
+    /// refused with INVALID_ARGUMENT instead of being overridden.
+    private func checkIQ(_ c: DaemonClients, capture: Leyline_V1_Capture) async throws {
+        var req = Leyline_V1_SubscribeRequest()
+        req.captureID = capture.captureID
+        req.kind = .iq
+        req.policy = .gapMarked
+        req.transport = .grpc
+        let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+        XCTAssertTrue(desc.streamID.hasPrefix("strm_"))
+        XCTAssertEqual(desc.kind, .iq)
+        XCTAssertEqual(desc.policy, .gapMarked)
+        XCTAssertEqual(desc.transport, .grpc(true))
+        XCTAssertEqual(desc.iq.format, .cf32)
+        XCTAssertEqual(desc.iq.sampleRate, capture.sampleRate)
+        XCTAssertEqual(desc.centerHz, capture.centerHz)
+        XCTAssertEqual(desc.spanHz, capture.sampleRate)
+        var ref = Leyline_V1_StreamRef()
+        ref.streamID = desc.streamID
+        let frames: [Leyline_V1_Frame] = try await c.bulk.stream(ref, metadata: testMetadata) { response in
+            var out: [Leyline_V1_Frame] = []
+            for try await f in response.messages {
+                out.append(f)
+                if out.count >= 3 { break }
+            }
+            return out
+        }
+        XCTAssertEqual(frames.count, 3)
+        XCTAssertEqual(frames.map(\.seq), [1, 2, 3])
+        for f in frames {
+            XCTAssertEqual(f.streamID, desc.streamID)
+            XCTAssertEqual(f.time.captureID, capture.captureID)
+            XCTAssertGreaterThan(f.payload.count, 0)
+            XCTAssertEqual(f.payload.count % 8, 0, "cf32 payloads are whole 8-byte samples")
+        }
+        // Consecutive frames tile the timeline: the sample span of frame N is exactly its cf32 block.
+        for (a, b) in zip(frames, frames.dropFirst()) where !b.hasGap {
+            let spanned = Int(b.time.sampleIndex - a.time.sampleIndex)
+            XCTAssertEqual(a.payload.count, spanned * 8)
+        }
+        // The -20 dBFS tone is visible as non-trivial magnitude in the raw samples.
+        let iq = frames[2].payload.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        let peakMag = stride(from: 0, to: iq.count, by: 2).map { hypot(iq[$0], iq[$0 + 1]) }.max()!
+        XCTAssertGreaterThan(peakMag, 0.01)
+        XCTAssertLessThanOrEqual(peakMag, 1.5)
+        _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+        do {
+            _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+            XCTFail("expected STREAM_NOT_FOUND")
+        } catch {
+            XCTAssertEqual(errorCode(error).code, "STREAM_NOT_FOUND")
+        }
+        do {
+            _ = try await c.bulk.stream(ref, metadata: testMetadata) { response in
+                for try await _ in response.messages {}
+            }
+            XCTFail("expected STREAM_NOT_FOUND")
+        } catch {
+            XCTAssertEqual(errorCode(error).code, "STREAM_NOT_FOUND")
+        }
+        // Integer formats and foreign rates are refused, never silently overridden.
+        var badFormat = req
+        badFormat.iq.format = .cs16
+        do {
+            _ = try await c.bulk.subscribe(badFormat, metadata: testMetadata)
+            XCTFail("expected INVALID_ARGUMENT for CS16")
+        } catch {
+            XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
+        }
+        var badRate = req
+        badRate.iq.sampleRate = capture.sampleRate / 2
+        do {
+            _ = try await c.bulk.subscribe(badRate, metadata: testMetadata)
+            XCTFail("expected INVALID_ARGUMENT for a foreign sample rate")
+        } catch {
+            XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
+        }
+        // Explicit CF32 at the capture rate is accepted verbatim.
+        var explicit = req
+        explicit.iq.format = .cf32
+        explicit.iq.sampleRate = capture.sampleRate
+        let desc2 = try await c.bulk.subscribe(explicit, metadata: testMetadata)
+        XCTAssertEqual(desc2.iq.format, .cf32)
+        XCTAssertEqual(desc2.iq.sampleRate, capture.sampleRate)
+        ref.streamID = desc2.streamID
+        _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
     }
 
     /// Rules the Go reference daemon also enforces: unknown capture scope fails, UNSPECIFIED mode

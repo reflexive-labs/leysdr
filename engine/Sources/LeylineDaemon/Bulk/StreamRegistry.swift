@@ -135,6 +135,19 @@ actor StreamRegistry {
             _ = chID
             source = .audio(audio, ch)
         case .iq:
+            // v0 IQ contract: raw CF32 at the capture's native rate only. The request is validated
+            // rather than silently overridden (bulk.proto: downgrade, never upgrade -- so refuse).
+            // Integer formats and decimated IQ are a documented v1 addition.
+            if req.iq.format != .unspecified, req.iq.format != .cf32 {
+                throw EngineError.invalidArgument(
+                    "iq format \(req.iq.format) unavailable; v0 serves CF32 only (request UNSPECIFIED or CF32)",
+                    target: captureID.string)
+            }
+            if req.iq.sampleRate != 0, req.iq.sampleRate != snap.sampleRate {
+                throw EngineError.invalidArgument(
+                    "iq sample_rate \(req.iq.sampleRate) unavailable; capture runs at \(snap.sampleRate) Hz (request 0 to accept it)",
+                    target: captureID.string)
+            }
             let ring = FrameRing(slots: Self.iqSlots, slotBytes: CaptureDSPCore.blockSize * 8)
             let tap = IQFrameTap(id: id, ring: ring)
             await capture.addTap(tap)

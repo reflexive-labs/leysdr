@@ -37,6 +37,7 @@ Subscription is an offer/answer over the control plane. The client states stream
 ### Stream types and formats
 
 - **IQ** — complex samples at negotiated rate; formats cs8, cs16, cf32. Native device format is offered first to avoid daemon-side conversion when the client doesn't need it.
+  - *v0 contract:* the daemon serves cf32 at the capture's native rate only. `Bulk.Subscribe(IQ)` validates the request instead of overriding it — `format` must be `UNSPECIFIED` or `CF32`, `sample_rate` must be `0` or the capture rate — and refuses anything else with `INVALID_ARGUMENT` ("downgrade, never upgrade" honoured by refusing). cs8/cs16 and decimated IQ are a v1 addition.
 - **FFT rows** — (bins, bin format db-u8 or db-f32, row rate, window id, center, span). Resolution and rate are negotiated per subscriber; the daemon computes from a shared internal ladder of sizes so N subscribers don't mean N FFT passes at arbitrary sizes.
 - **Audio** — demodulated output of a channel: negotiated rate (8/16/48 kHz), s16 or f32, mono. Compression (Opus) is an open question, gated until a remote-audio story demands it.
 - **Decoded bytes** — framed output of digital decoders when those arrive; the envelope is the same, payload semantics come from the channel's mode.

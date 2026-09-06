@@ -31,6 +31,11 @@ message SubscribeRequest {
 enum StreamKind { STREAM_KIND_UNSPECIFIED = 0; IQ = 1; FFT = 2; AUDIO = 3; DECODED = 4; }
 enum Transport { TRANSPORT_UNSPECIFIED = 0; GRPC = 1; SHM_RING = 2; }
 
+// v0 IQ contract: the daemon serves raw IQ as CF32 at the capture's native sample rate only.
+// A request must leave `format` UNSPECIFIED or CF32 and `sample_rate` 0 or the capture rate;
+// anything else is refused with INVALID_ARGUMENT (the message names the accepted values) rather
+// than silently overridden. The descriptor always answers CF32 at the capture rate. Integer
+// formats (CS8/CS16) and decimated IQ are additive v1 negotiation, not a v0 promise.
 message IqParams { uint64 sample_rate = 1; SampleFormat format = 2; }
 message FftParams {
   uint32 bins = 1;               // daemon serves from a fixed power-of-two ladder

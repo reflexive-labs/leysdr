@@ -406,6 +406,11 @@ func (*SubscribeRequest_Fft) isSubscribeRequest_Params() {}
 
 func (*SubscribeRequest_Audio) isSubscribeRequest_Params() {}
 
+// v0 IQ contract: the daemon serves raw IQ as CF32 at the capture's native sample rate only.
+// A request must leave `format` UNSPECIFIED or CF32 and `sample_rate` 0 or the capture rate;
+// anything else is refused with INVALID_ARGUMENT (the message names the accepted values) rather
+// than silently overridden. The descriptor always answers CF32 at the capture rate. Integer
+// formats (CS8/CS16) and decimated IQ are additive v1 negotiation, not a v0 promise.
 type IqParams struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SampleRate    uint64                 `protobuf:"varint,1,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`

@@ -283,6 +283,11 @@ public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
   fileprivate var _start: Leyline_V1_StreamPosition? = nil
 }
 
+/// v0 IQ contract: the daemon serves raw IQ as CF32 at the capture's native sample rate only.
+/// A request must leave `format` UNSPECIFIED or CF32 and `sample_rate` 0 or the capture rate;
+/// anything else is refused with INVALID_ARGUMENT (the message names the accepted values) rather
+/// than silently overridden. The descriptor always answers CF32 at the capture rate. Integer
+/// formats (CS8/CS16) and decimated IQ are additive v1 negotiation, not a v0 promise.
 public nonisolated struct Leyline_V1_IqParams: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
