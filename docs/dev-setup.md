@@ -63,9 +63,11 @@ The daemon connects at startup (5 s timeout); an unreachable server is logged an
 remote never stops local dongles from working. Tune, gain, sample rate, bias tee, ppm and AGC all
 work the same as on a local dongle (they are sent as rtl_tcp commands). `rtl_tcp` serves one client
 at a time and drops one that stops reading, so do not point two daemons at the same server. If the
-link drops, the device goes `disconnected` (its capture detaches); there is no automatic reconnect —
-restart the daemon, or `ley devices detach <id>` and attach again. Samples cross the network as raw
-8-bit I/Q (2.4 MSPS ≈ 4.8 MB/s), so a wired LAN or good Wi-Fi is needed.
+link drops, the device goes `disconnected` (its capture detaches) and the daemon retries the
+connection on every device poll (about once a second, 5 s timeout per attempt); once the server is
+back the device is `available` again under the same id and a detached capture rebinds to it by
+itself. Samples cross the network as raw 8-bit I/Q (2.4 MSPS ≈ 4.8 MB/s), so a wired LAN or good
+Wi-Fi is needed.
 
 ### Running as a launchd agent
 

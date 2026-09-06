@@ -138,16 +138,27 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         lock.lock(); _descriptor.state = state; lock.unlock()
     }
 
-    /// Device-originated transition (link lost → `.disconnected`): updates state, stops delivery
-    /// and fires the hook outside the lock.
-    private func transition(to state: DeviceState) {
+    /// Whether a connection is currently held (test hook; `open()` reconnects while this is false).
+    var isConnected: Bool { withLock { fd >= 0 } }
+
+    /// Called by the exiting reader thread when the link is lost (not a `close()`): releases the
+    /// socket and the thread slot so a later `open()` reconnects, transitions to `.disconnected`
+    /// and fires the hook outside the lock. Returns false if `close()` raced us and now owns the
+    /// socket — the reader then only signals `joined` as for a deliberate exit.
+    private func linkLost(_ sock: Int32) -> Bool {
         lock.lock()
-        let changed = _descriptor.state != state
-        _descriptor.state = state
-        if state == .disconnected { deliver = nil; streaming = false }
+        if closing { lock.unlock(); return false }
+        RTLTCPDevice.closeFD(sock)
+        fd = -1
+        thread = nil
+        deliver = nil
+        streaming = false
+        let changed = _descriptor.state != .disconnected
+        _descriptor.state = .disconnected
         let hook = _onStateChange
         lock.unlock()
-        if changed { hook?(state) }
+        if changed { hook?(.disconnected) }
+        return true
     }
 
     private func withLock<T>(_ body: () throws -> T) rethrows -> T {
@@ -432,13 +443,11 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// I/O thread body. No allocation, no Swift concurrency: recv straight into `storage`, snapshot
     /// the delivery state under the lock once per block, call `deliver` with the lock released.
     private func readLoop(_ sock: Int32) {
-        defer { joined.signal() }
         let bytesPerBlock = RTLTCPDevice.blockSize * SampleFormat.cu8.bytesPerSample
         let base = storage.base
         var filled = 0
         var index: UInt64 = 0
         var gen: UInt64 = 0
-        var lostLink = false
         var readErrno: Int32 = 0
         while true {
             let n = recv(sock, base + filled, bytesPerBlock - filled, 0)
@@ -446,8 +455,6 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
             if n <= 0 {
                 // 0: peer closed (or our own shutdown); <0: timeout (EAGAIN) or a socket error.
                 readErrno = n < 0 ? errno : 0
-                lock.lock(); let deliberate = closing; lock.unlock()
-                lostLink = !deliberate
                 break
             }
             filled += n
@@ -465,9 +472,12 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
             index &+= UInt64(RTLTCPDevice.blockSize)
             lock.lock(); inDeliver = false; lock.broadcast(); lock.unlock()
         }
-        if lostLink {
+        // Link loss (not a close()): drop the socket so open() can reconnect, then report it.
+        // A deliberate exit leaves the socket to close(), which is waiting on `joined`.
+        if linkLost(sock) {
             RTLTCPDevice.logger.warning("rtl_tcp \(host):\(port) link lost (\(readErrno == 0 ? "peer closed" : String(cString: strerror(readErrno))))")
-            transition(to: .disconnected)
+        } else {
+            joined.signal()
         }
     }
 }

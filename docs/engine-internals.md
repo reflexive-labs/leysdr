@@ -241,10 +241,16 @@ at startup by `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`, c
   as the snapshot; the device lock is an `NSCondition`), and the connection stays up. `open()`
   connects and reads the header with the lock released. No allocation and no Swift concurrency on
   the reader.
-- Loss: a read that times out (5 s) or a peer close reports `.disconnected` through the same
-  state-change hook `FilePlaybackDevice` uses, so the registry publishes `changed` and the capture
-  detaches. No automatic reconnect: detach and re-attach (or restart the daemon). `close()` shuts
-  the socket down and joins the reader without waiting for a read timeout.
+- Loss: a read that times out (5 s) or a peer close makes the exiting reader close the socket and
+  clear the fd/thread slots itself (a concurrent `close()` keeps ownership of the socket and the
+  reader only signals the join), then report `.disconnected` through the same state-change hook
+  `FilePlaybackDevice` uses, so the registry publishes `changed` and the capture detaches. `close()`
+  shuts the socket down and joins the reader without waiting for a read timeout.
+- Reconnect: `DefaultDeviceRegistry.poll()` gives every hosted `RTLTCPDevice` in `.disconnected` one
+  `open()` attempt per poll (a detached task, so the 5 s connect timeout never blocks the actor; at
+  most one attempt in flight per device). On success the entry is `.available` and `arrived` is
+  published under the same id, which `SessionStore` handles like any device arrival: a capture left
+  detached by the loss rebinds through `deviceRebound`. A failed attempt is retried on the next poll.
 - Retune, gain and sample-rate changes are sent live; the sample index does not reset on a rate
   change.
 

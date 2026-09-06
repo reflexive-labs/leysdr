@@ -72,6 +72,11 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     private var idMap = DeviceIDMap()
     private var pollTask: Task<Void, Never>?
     private var started = false
+    /// Hosted rtl_tcp devices with a reconnect attempt in flight (one per device at a time, so a
+    /// poll never stacks attempts behind a 5 s connect timeout).
+    private var reconnecting: Set<DeviceID> = []
+    /// Devices with a reconnect attempt in flight (test hook).
+    var reconnectingIDs: Set<DeviceID> { reconnecting }
 
     /// - Parameters:
     ///   - persistPath: JSON file that keeps the identity → id map across daemon restarts. nil = memory only.
@@ -262,6 +267,32 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             !probed.contains(DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product))
         }
         applyProbes(probes)
+        reconnectDisconnectedRemotes()
+    }
+
+    /// Link-loss recovery for hosted `RTLTCPDevice`s: every `.disconnected` entry gets one `open()`
+    /// attempt per poll (bounded by the device's connect timeout, run off the actor). On success the
+    /// entry is `.available` again and `arrived` is published under the same id so `SessionStore`
+    /// rebinds detached captures through its normal path; a failure is retried on the next poll.
+    private func reconnectDisconnectedRemotes() {
+        for (id, entry) in entries where entry.rtlIndex == nil && entry.descriptor.state == .disconnected {
+            guard let remote = entry.device as? RTLTCPDevice, !reconnecting.contains(id) else { continue }
+            reconnecting.insert(id)
+            Task.detached { [weak self] in
+                let ok: Bool
+                do { try await remote.open(); ok = true } catch { ok = false }
+                await self?.reconnectFinished(id: id, device: remote, ok: ok)
+            }
+        }
+    }
+
+    /// Actor-side tail of a reconnect attempt.
+    private func reconnectFinished(id: DeviceID, device: RTLTCPDevice, ok: Bool) {
+        reconnecting.remove(id)
+        guard ok, var entry = entries[id], entry.device === device, entry.descriptor.state == .disconnected else { return }
+        entry.descriptor = device.descriptor
+        entries[id] = entry
+        publish(.arrived(entry.descriptor))
     }
 
     /// Whether a probe carries real tuner data (the open succeeded).

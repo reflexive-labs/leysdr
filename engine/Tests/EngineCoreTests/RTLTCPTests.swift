@@ -24,7 +24,8 @@ final class FakeRTLTCPServer: @unchecked Sendable {
     private var threads: [Thread] = []
     private let accepted = DispatchSemaphore(value: 0)
 
-    init(tuner: UInt32 = 5, gainCount: UInt32 = 29) throws {
+    /// - Parameter port: 0 picks an ephemeral port; pass a previous server's `port` to "restart" it.
+    init(tuner: UInt32 = 5, gainCount: UInt32 = 29, port: UInt16 = 0) throws {
         self.tuner = tuner
         self.gainCount = gainCount
         #if os(Linux)
@@ -36,15 +37,15 @@ final class FakeRTLTCPServer: @unchecked Sendable {
         setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = 0
+        addr.sin_port = port.bigEndian
         addr.sin_addr.s_addr = UInt32(0x7f00_0001).bigEndian
         let l = listener
         let rc = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(l, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
-        guard rc == 0, listen(l, 1) == 0 else { throw EngineError.deviceIO("fake server bind failed") }
+        guard rc == 0, listen(l, 1) == 0 else { close(l); throw EngineError.deviceIO("fake server bind failed") }
         var bound = sockaddr_in()
         var len = socklen_t(MemoryLayout<sockaddr_in>.size)
         withUnsafeMutablePointer(to: &bound) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { _ = getsockname(l, $0, &len) } }
-        port = UInt16(bigEndian: bound.sin_port)
+        self.port = UInt16(bigEndian: bound.sin_port)
         let t = Thread { [self] in self.acceptLoop() }
         t.start()
         threads = [t]
@@ -351,6 +352,76 @@ final class RTLTCPDeviceTests: XCTestCase {
         XCTAssertEqual(sink.count, n)
         await dev.stopStreaming()
         await assertCode("DEVICE_DETACHED") { try await dev.startStreaming(captureID: CaptureID()) { _, _ in } }
+        await dev.close()
+    }
+
+    func testLinkLossReleasesSocketAndReopenReconnects() async throws {
+        var server = try FakeRTLTCPServer()
+        let port = server.port
+        let dev = RTLTCPDevice(host: "127.0.0.1", port: port)
+        try await dev.open()
+        let observed = StateLog()
+        dev.setOnStateChange { s in observed.record(s) }
+        let first = BlockCollector()
+        try await dev.startStreaming(captureID: CaptureID()) { buf, t in first.deliver(buf, t) }
+        XCTAssertTrue(waitUntil { first.count >= 1 })
+        // Server dies: the reader releases the socket and reports the loss.
+        server.stop()
+        XCTAssertTrue(waitUntil { observed.states == [.disconnected] })
+        XCTAssertTrue(waitUntil { !dev.isConnected }, "fd is cleared by the exiting reader")
+        XCTAssertEqual(dev.descriptor.state, .disconnected)
+        await dev.stopStreaming()
+        // Server back on the same port: open() reconnects and streaming resumes from index 0.
+        server = try FakeRTLTCPServer(port: port)
+        defer { server.stop() }
+        try await dev.open()
+        XCTAssertTrue(dev.isConnected)
+        XCTAssertEqual(dev.descriptor.state, .available)
+        XCTAssertEqual(dev.descriptor.model, "rtl_tcp 127.0.0.1:\(port) (R820T)")
+        XCTAssertTrue(waitUntil { server.commands.count >= 2 }, "sample rate + frequency re-pushed on reconnect")
+        let second = BlockCollector()
+        try await dev.startStreaming(captureID: CaptureID()) { buf, t in second.deliver(buf, t) }
+        XCTAssertTrue(waitUntil { second.count >= 2 })
+        XCTAssertEqual(second.blocks.first?.index, 0)
+        await dev.close()
+        XCTAssertFalse(dev.isConnected)
+        XCTAssertEqual(observed.states, [.disconnected], "open()/close() do not fire the hook")
+    }
+
+    func testRegistryReconnectsDisconnectedRemoteOnPoll() async throws {
+        var server = try FakeRTLTCPServer()
+        let port = server.port
+        let registry = DefaultDeviceRegistry()
+        let events = registry.events()
+        var iter = events.makeAsyncIterator()
+        let dev = RTLTCPDevice(host: "127.0.0.1", port: port)
+        try await dev.open()
+        let d = try await registry.attachVirtualDevice(dev)
+        guard case .arrived? = await iter.next() else { return XCTFail("expected arrived") }
+        server.stop()
+        guard case .changed(let gone)? = await iter.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(gone.state, .disconnected)
+        // Server still down: the poll's attempt fails and the entry stays disconnected.
+        await registry.poll()
+        for _ in 0..<1600 where await !registry.reconnectingIDs.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        let pending = await registry.reconnectingIDs
+        XCTAssertTrue(pending.isEmpty, "failed attempt settles")
+        var devices = await registry.devices
+        XCTAssertEqual(devices.map(\.state), [.disconnected])
+        // Server back: the next poll reconnects, marks available and re-announces the same id.
+        server = try FakeRTLTCPServer(port: port)
+        defer { server.stop() }
+        await registry.poll()
+        guard case .arrived(let back)? = await iter.next() else { return XCTFail("expected arrived") }
+        XCTAssertEqual(back.id, d.id)
+        XCTAssertEqual(back.state, .available)
+        devices = await registry.devices
+        XCTAssertEqual(devices.map(\.state), [.available])
+        XCTAssertTrue(dev.isConnected)
+        XCTAssertEqual(dev.descriptor.state, .available)
+        let hosted = await registry.device(id: d.id)
+        XCTAssertTrue(hosted === dev)
+        try await registry.detachFileDevice(id: d.id)
         await dev.close()
     }
 

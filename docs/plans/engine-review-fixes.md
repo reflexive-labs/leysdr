@@ -105,7 +105,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 - Tests (DaemonTests): DetachFileDevice with a virtual non-file device id and with an unknown id is
   rejected and an existing capture on that device survives (still CAPTURE_ACTIVE in GetState).
 
-### WI-7 `[ ]` rtl_tcp link-loss recovery (#9 P2)
+### WI-7 `[x]` rtl_tcp link-loss recovery (#9 P2)
 
 - `RTLTCPDevice.readLoop`: on link loss close the socket, clear `fd`/`thread` (join is already done by
   the exiting thread), then transition to `.disconnected`, so a later `open()` reconnects.
