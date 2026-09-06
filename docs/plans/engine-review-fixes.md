@@ -19,7 +19,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 
 ## Work items (dependency order)
 
-### WI-1 `[ ]` Capture lifecycle unwinding (#4 P1, #2 P2)
+### WI-1 `[x]` Capture lifecycle unwinding (#4 P1, #2 P2)
 
 - `DefaultCaptureEngine.start()` (DefaultCaptureEngine.swift:46-55): wrap everything after `device.open()`
   in do/catch. On failure: `core.stopThread()` if it was started, `await device.close()`, reset

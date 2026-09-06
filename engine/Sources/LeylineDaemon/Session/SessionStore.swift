@@ -369,7 +369,14 @@ actor SessionStore {
         // the one-capture-per-device check and race the device open.
         startingDevices.insert(deviceID)
         defer { startingDevices.remove(deviceID) }
-        try await engine.start()
+        do {
+            try await engine.start()
+        } catch {
+            // `start()` already unwound the device; `stop()` finishes the engine so nothing
+            // (anchor stream, DSP thread) outlives the failed create.
+            await engine.stop()
+            throw error
+        }
         let id = engine.id
         var entry = CaptureEntry(engine: engine, deviceID: deviceID,
                                  meta: .init(createdBy: by.proto, lastInteractiveWriteNs: 0, liveAudioSinks: 0), anchorTask: nil)

@@ -44,13 +44,27 @@ public actor DefaultCaptureEngine: CaptureEngine {
     // MARK: Lifecycle
 
     /// Opens and configures the device, starts the DSP thread and streaming. Idempotent once started.
+    ///
+    /// A failure after `open()` unwinds completely (stream stopped, DSP thread joined, device closed)
+    /// so the device can be handed out again and a later `start()` begins from scratch.
     public func start() async throws {
         guard !started else { return }
         try await device.open()
-        try await device.tune(centerHz: centerHz)
-        try await device.setSampleRate(sampleRate)
-        core.startThread()
-        try await beginStreaming()
+        do {
+            try await device.tune(centerHz: centerHz)
+            try await device.setSampleRate(sampleRate)
+            core.startThread()
+            try await beginStreaming()
+        } catch {
+            if streaming {
+                await device.stopStreaming()
+                streaming = false
+            }
+            core.stopThread()
+            await device.close()
+            started = false
+            throw error
+        }
         started = true
     }
 
@@ -105,13 +119,37 @@ public actor DefaultCaptureEngine: CaptureEngine {
             await device.stopStreaming()
             streaming = false
         }
-        try await device.setSampleRate(hz)
+        do {
+            try await device.setSampleRate(hz)
+        } catch {
+            // The device refused the rate: put the stream back at the old rate so the capture
+            // stays live, or report it detached if the device will not stream any more.
+            if wasStreaming { await restoreStreamingOrDetach() }
+            throw error
+        }
         sampleRate = hz
         core.sampleRate = hz
         for id in channelOrder {
             await channelTable[id]?.captureRateChanged(hz)
         }
-        if wasStreaming { try await beginStreaming() }
+        if wasStreaming {
+            do {
+                try await beginStreaming()
+            } catch {
+                await restoreStreamingOrDetach()
+                throw error
+            }
+        }
+    }
+
+    /// One attempt to bring the stream back after a failed rate change; on failure the capture is
+    /// marked detached so `snapshot` tells the truth about a device that no longer streams.
+    private func restoreStreamingOrDetach() async {
+        do {
+            try await beginStreaming()
+        } catch {
+            detached = true
+        }
     }
 
     public func setGain(element: String, value: GainValue) async throws {

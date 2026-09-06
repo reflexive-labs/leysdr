@@ -117,3 +117,117 @@ final class CaptureTests: XCTestCase {
         core.finish()
     }
 }
+
+/// A device whose `startStreaming` / `setSampleRate` throw `DEVICE_IO` while the matching flag is
+/// set. Counts lifecycle calls so tests can assert the engine unwound (or restored) properly.
+final class FailingDevice: RadioDevice, @unchecked Sendable {
+    let descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "failing", serial: "f",
+                                      tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
+                                      sampleRates: [2_400_000, 1_024_000], nativeFormat: .cf32)
+    var gains: [GainState] { [] }
+    let failStartStreaming = LockedValue(false)
+    let failSetSampleRate = LockedValue(false)
+    let opens = LockedValue(0)
+    let closes = LockedValue(0)
+    let streamStarts = LockedValue(0)
+    let streamStops = LockedValue(0)
+
+    func open() async throws { opens.value += 1 }
+    func close() async { closes.value += 1 }
+    func tune(centerHz: UInt64) async throws {}
+    func setSampleRate(_ hz: UInt64) async throws {
+        if failSetSampleRate.value { throw EngineError.deviceIO("rate refused", target: descriptor.id.description) }
+    }
+    func setGain(element: String, value: GainValue) async throws { throw EngineError.gainElementUnknown(element, target: "") }
+    func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
+        if failStartStreaming.value { throw EngineError.deviceIO("stream refused", target: descriptor.id.description) }
+        streamStarts.value += 1
+    }
+    func stopStreaming() async { streamStops.value += 1 }
+}
+
+final class CaptureLifecycleTests: XCTestCase {
+    func testFailedStartUnwindsAndRetrySucceeds() async throws {
+        let device = FailingDevice()
+        device.failStartStreaming.value = true
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        await assertCode("DEVICE_IO") { try await capture.start() }
+        XCTAssertFalse(capture.core.isRunning, "DSP thread joined after a failed start")
+        XCTAssertEqual(device.opens.value, 1)
+        XCTAssertEqual(device.closes.value, 1, "device closed after a failed start")
+        XCTAssertEqual(device.streamStarts.value, 0)
+        XCTAssertEqual(device.streamStops.value, 0, "no stopStreaming for a stream that never began")
+        var snap = await capture.snapshot
+        XCTAssertFalse(snap.detached)
+
+        // Fault cleared: the same engine starts from scratch.
+        device.failStartStreaming.value = false
+        try await capture.start()
+        XCTAssertTrue(capture.core.isRunning)
+        XCTAssertEqual(device.opens.value, 2)
+        XCTAssertEqual(device.streamStarts.value, 1)
+        snap = await capture.snapshot
+        XCTAssertFalse(snap.detached)
+        await capture.stop()
+        XCTAssertFalse(capture.core.isRunning)
+        XCTAssertEqual(device.streamStops.value, 1)
+        XCTAssertEqual(device.closes.value, 2)
+    }
+
+    func testStopIsSafeOnHalfStartedEngine() async throws {
+        let device = FailingDevice()
+        device.failStartStreaming.value = true
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        await assertCode("DEVICE_IO") { try await capture.start() }
+        await capture.stop()
+        XCTAssertFalse(capture.core.isRunning)
+        XCTAssertEqual(device.closes.value, 1, "stop() does not close a device start() already released")
+        XCTAssertEqual(device.streamStops.value, 0)
+    }
+
+    func testFailedSetSampleRateRestoresStream() async throws {
+        let device = FailingDevice()
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        XCTAssertEqual(device.streamStarts.value, 1)
+        device.failSetSampleRate.value = true
+        await assertCode("DEVICE_IO") { try await capture.setSampleRate(1_024_000) }
+        XCTAssertEqual(device.streamStops.value, 1)
+        XCTAssertEqual(device.streamStarts.value, 2, "stream restarted at the old rate")
+        let snap = await capture.snapshot
+        XCTAssertFalse(snap.detached)
+        XCTAssertEqual(snap.sampleRate, 2_400_000, "rate unchanged after the device refused it")
+        XCTAssertEqual(capture.core.sampleRate, 2_400_000)
+        XCTAssertTrue(capture.core.isRunning)
+        await capture.stop()
+        XCTAssertEqual(device.streamStops.value, 2)
+    }
+
+    func testFailedSetSampleRateWithDeadStreamDetaches() async throws {
+        let device = FailingDevice()
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        device.failSetSampleRate.value = true
+        device.failStartStreaming.value = true
+        await assertCode("DEVICE_IO") { try await capture.setSampleRate(1_024_000) }
+        XCTAssertEqual(device.streamStarts.value, 1, "restart was attempted and refused")
+        let snap = await capture.snapshot
+        XCTAssertTrue(snap.detached, "capture reports detached when the stream cannot be restored")
+        XCTAssertEqual(snap.sampleRate, 2_400_000)
+        await assertCode("DEVICE_DETACHED") { try await capture.setSampleRate(2_400_000) }
+        await capture.stop()
+        XCTAssertEqual(device.streamStops.value, 1, "no second stopStreaming for a stream that never restarted")
+    }
+
+    func testFailedRestartAfterRateChangeDetaches() async throws {
+        let device = FailingDevice()
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        device.failStartStreaming.value = true
+        await assertCode("DEVICE_IO") { try await capture.setSampleRate(1_024_000) }
+        let snap = await capture.snapshot
+        XCTAssertTrue(snap.detached)
+        XCTAssertEqual(snap.sampleRate, 1_024_000, "device accepted the rate; only the stream is gone")
+        await capture.stop()
+    }
+}
