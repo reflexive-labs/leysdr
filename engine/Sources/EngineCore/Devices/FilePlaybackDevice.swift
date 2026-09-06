@@ -7,6 +7,8 @@ import Foundation
 public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
     /// Samples per delivered block (docs/engine-internals.md "Block size").
     public static let blockSize = 16384
+    /// `DeviceDescriptor.driver` value every file-playback device reports.
+    public static let driverName = "file"
 
     public let path: String
     public let loop: Bool
@@ -39,7 +41,7 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
         let duration = rate > 0 ? Double(sampleCount) / Double(rate) : 0
         _descriptor = DeviceDescriptor(
             id: DeviceID(),
-            driver: "file",
+            driver: FilePlaybackDevice.driverName,
             model: URL(fileURLWithPath: reader.samplesPath).lastPathComponent,
             serial: FilePlaybackDevice.stableHash(abs),
             usbLocation: "",

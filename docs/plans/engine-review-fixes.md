@@ -96,7 +96,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   rate change -> OUT_OF_CAPTURE -> retune back; assert the channel's reported audio rate and the bulk
   audio descriptor follow the new rate (and an attached CallbackSink is rebuilt).
 
-### WI-6 `[ ]` DetachFileDevice validates before mutating (#18 P2)
+### WI-6 `[x]` DetachFileDevice validates before mutating (#18 P2)
 
 - `DefaultDeviceRegistry.isDetachableFileDevice(id:) -> Bool` (non-mutating: entry exists, `rtlIndex == nil`,
   driver is `file`). `SessionStore.detachFileDevice` throws `INVALID_ARGUMENT` (hardware / rtl_tcp ids) or

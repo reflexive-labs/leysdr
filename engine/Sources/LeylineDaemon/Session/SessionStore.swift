@@ -317,8 +317,14 @@ actor SessionStore {
         return d
     }
 
+    /// Detaches a client-attached file device. Validates before mutating: unknown ids are
+    /// `DEVICE_NOT_FOUND`, hardware and operator-configured (rtl_tcp) ids are `INVALID_ARGUMENT`,
+    /// and in both cases no capture on that device is touched.
     func detachFileDevice(id: DeviceID, by: ClientContext) async throws {
-        guard devices[id] != nil else { throw EngineError.deviceNotFound(id.string) }
+        guard let d = devices[id] else { throw EngineError.deviceNotFound(id.string) }
+        guard await registry.isDetachableFileDevice(id: id) else {
+            throw EngineError.invalidArgument("device is not a detachable file device (driver \(d.driver))", target: id.string)
+        }
         for (capID, entry) in captures where entry.deviceID == id {
             await destroyCapture(id: capID, by: by)
         }
