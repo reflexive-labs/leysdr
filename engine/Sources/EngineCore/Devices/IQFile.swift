@@ -121,17 +121,43 @@ public struct IQSidecar: Codable, Hashable, Sendable {
         }
     }
 
+    /// Sample rates the engine accepts from a sidecar (1 kSPS ... 100 MSPS). Anything outside is a
+    /// malformed file: a zero rate divides by zero downstream, an absurd one overflows plans.
+    public static let validSampleRates: ClosedRange<UInt64> = 1_000...100_000_000
+
+    /// Largest sidecar the loader reads; real sidecars are a few hundred bytes.
+    public static let maxSidecarBytes: UInt64 = 1 << 20
+
+    /// - Throws: `INVALID_ARGUMENT` when `sampleRate` is outside `validSampleRates`.
+    public func validate(target: String = "") throws {
+        guard IQSidecar.validSampleRates.contains(sampleRate) else {
+            throw EngineError.invalidArgument(
+                "sample_rate \(sampleRate) is outside \(IQSidecar.validSampleRates.lowerBound)...\(IQSidecar.validSampleRates.upperBound)",
+                target: target)
+        }
+    }
+
     /// Decode from a sidecar file. Accepts any member of the pair (`.cf32`, `.cu8` or `.json`).
+    /// - Throws: `INVALID_ARGUMENT` when the sidecar is not a regular file, exceeds
+    ///   `maxSidecarBytes`, fails to decode or carries an out-of-range `sample_rate`;
+    ///   `DEVICE_IO` when it cannot be read.
     public static func load(path: String) throws -> IQSidecar {
         let path = IQFilePaths.sidecarPath(path)
+        let size = try IQFilePaths.requireRegularFile(path, what: "sidecar")
+        guard size <= maxSidecarBytes else {
+            throw EngineError.invalidArgument("sidecar is \(size) bytes; limit is \(maxSidecarBytes)", target: path)
+        }
         let url = URL(fileURLWithPath: path)
         let data: Data
         do { data = try Data(contentsOf: url) } catch {
             throw EngineError.deviceIO("cannot read sidecar: \(error)", target: path)
         }
-        do { return try JSONDecoder().decode(IQSidecar.self, from: data) } catch {
+        let sc: IQSidecar
+        do { sc = try JSONDecoder().decode(IQSidecar.self, from: data) } catch {
             throw EngineError.invalidArgument("malformed sidecar: \(error)", target: path)
         }
+        try sc.validate(target: path)
+        return sc
     }
 
     /// Encode to a sidecar file (pretty-printed, sorted keys for stable diffs).
@@ -211,6 +237,39 @@ public enum IQFilePaths {
         if path.hasSuffix(".cu8") { return .cu8 }
         return nil
     }
+
+    /// `stat`s `path` and returns its size in bytes.
+    /// - Throws: `DEVICE_IO` when it does not exist or cannot be stat'ed; `INVALID_ARGUMENT` when
+    ///   it exists but is not a regular file (a FIFO would block `open`, a directory cannot be read).
+    @discardableResult
+    static func requireRegularFile(_ path: String, what: String) throws -> UInt64 {
+        var st = stat()
+        guard stat(path, &st) == 0 else {
+            throw EngineError.deviceIO("cannot stat \(what): \(String(cString: strerror(errno)))", target: path)
+        }
+        guard (st.st_mode & S_IFMT) == S_IFREG else {
+            throw EngineError.invalidArgument("\(what) is not a regular file", target: path)
+        }
+        return UInt64(max(0, st.st_size))
+    }
+
+    /// Opens `path` read-only without ever blocking (`O_NONBLOCK`, then cleared so reads behave
+    /// normally) and re-checks that the opened descriptor is a regular file, closing the race
+    /// between the caller's `stat` and `open`.
+    static func openRegularFileForReading(_ path: String, what: String) throws -> Int32 {
+        let fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else {
+            throw EngineError.deviceIO("cannot open \(what): \(String(cString: strerror(errno)))", target: path)
+        }
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
+            close(fd)
+            throw EngineError.invalidArgument("\(what) is not a regular file", target: path)
+        }
+        let flags = fcntl(fd, F_GETFL)
+        if flags >= 0 { _ = fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) }
+        return fd
+    }
 }
 
 // MARK: - Reader
@@ -234,21 +293,24 @@ public final class IQFileReader: @unchecked Sendable {
 
     /// Opens `path` (samples or sidecar path). `maxBlock` bounds a single `read` call.
     public init(path: String, maxBlock: Int = 16384) throws {
+        // Whatever the caller named must be a regular file (or absent, in which case the pair
+        // lookup below reports the missing member): a FIFO or directory is rejected up front.
+        var st = stat()
+        if stat(path, &st) == 0, (st.st_mode & S_IFMT) != S_IFREG {
+            throw EngineError.invalidArgument("IQ file is not a regular file", target: path)
+        }
         let sp = IQFilePaths.samplesPath(path)
         let sc = try IQSidecar.load(path: IQFilePaths.sidecarPath(path))
         guard let fmt = IQFilePaths.format(ofSamplesPath: sp) ?? sc.sampleFormat else {
             throw EngineError.invalidArgument("unsupported IQ format \(sc.format)", target: path)
         }
-        guard let h = FileHandle(forReadingAtPath: sp) else {
-            throw EngineError.deviceIO("cannot open IQ file", target: sp)
-        }
+        let bytes = try IQFilePaths.requireRegularFile(sp, what: "IQ file")
+        let rawFD = try IQFilePaths.openRegularFileForReading(sp, what: "IQ file")
         samplesPath = sp
         sidecar = sc
         sourceFormat = fmt
-        handle = h
-        fd = h.fileDescriptor
-        let attrs = try? FileManager.default.attributesOfItem(atPath: sp)
-        let bytes = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
+        handle = FileHandle(fileDescriptor: rawFD, closeOnDealloc: false)
+        fd = rawFD
         sampleCount = bytes / UInt64(fmt.bytesPerSample)
         scratchCapacity = max(1, maxBlock)
         scratch = UnsafeMutableRawPointer.allocate(byteCount: scratchCapacity * fmt.bytesPerSample, alignment: 16)

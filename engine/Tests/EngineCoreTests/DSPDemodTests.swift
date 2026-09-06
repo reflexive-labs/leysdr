@@ -50,6 +50,12 @@ final class DSPDemodTests: XCTestCase {
                 XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
             }
         }
+        // Capture rates above the documented ceiling are malformed input, not a plan.
+        XCTAssertEqual(ChannelPlan.maxCaptureRate, 100_000_000)
+        XCTAssertNoThrow(try ChannelPlan.plan(captureRate: ChannelPlan.maxCaptureRate, mode: .wfm, bandwidthHz: 200_000))
+        XCTAssertThrowsError(try ChannelPlan.plan(captureRate: ChannelPlan.maxCaptureRate + 1, mode: .wfm, bandwidthHz: 200_000)) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
         XCTAssertThrowsError(try Channelizer(captureRate: 2_400_000, offsetHz: 0, bandwidthHz: 50_000, mode: .nfm, maxBlock: 16)) {
             XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
         }

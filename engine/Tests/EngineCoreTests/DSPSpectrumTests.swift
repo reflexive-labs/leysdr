@@ -67,6 +67,28 @@ final class DSPSpectrumTests: XCTestCase {
         await ladder.cancel(sub)
         await ladder.cancel(sub2)
         XCTAssertEqual(ladder.subscriberCount, 0)
+        // Denormal / tiny rates clamp up to the floor rather than producing an unrepresentable interval.
+        XCTAssertEqual(DefaultSpectrumLadder.roundRate(1e-300), DefaultSpectrumLadder.minRowsPerSecond)
+        XCTAssertEqual(DefaultSpectrumLadder.roundRate(0.05), 0.1)
+        XCTAssertEqual(DefaultSpectrumLadder.roundRate(0.5), 0.5)
+        XCTAssertEqual(DefaultSpectrumLadder.roundRate(.nan), 30)
+        XCTAssertEqual(DefaultSpectrumLadder.roundRate(-.infinity), 30)
+        XCTAssertEqual(DefaultSpectrumLadder.roundRate(.infinity), 30)
+    }
+
+    /// A subscription at the floor rate over the widest span still gets its first row and a finite
+    /// schedule (the interval conversion saturates instead of trapping).
+    func testLadderTinyRateStillDeliversRows() async {
+        let ladder = DefaultSpectrumLadder()
+        let sink = CollectingSpectrumSink()
+        let sub = await ladder.subscribe(bins: 256, rowsPerSecond: 1e-300, policy: .latestWins, sink: sink)
+        XCTAssertEqual(sub.actualRate, 0.1)
+        let iq = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 256))
+        let cap = CaptureID()
+        ladder.process(block: iq.view(), at: SampleTime(captureID: cap, sampleIndex: 0), centerHz: 0, spanHz: UInt64.max)
+        ladder.process(block: iq.view(), at: SampleTime(captureID: cap, sampleIndex: 256), centerHz: 0, spanHz: UInt64.max)
+        XCTAssertEqual(sink.rows.count, 1, "first row immediately; the next is a saturated interval away")
+        await ladder.cancel(sub)
     }
 
     func testLadderRateLimitsBySampleTime() async {

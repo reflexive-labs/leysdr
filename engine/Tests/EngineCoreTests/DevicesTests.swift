@@ -415,3 +415,84 @@ final class DevicesRTLSDRTests: XCTestCase {
         XCTAssertEqual(d.sampleRates.count, 10)
     }
 }
+
+/// Malformed-input hardening for the file pair (engine-review WI-4: #10, #24).
+final class DevicesMalformedInputTests: XCTestCase {
+    private func writeSidecarJSON(dir: String, name: String, sampleRate: String) throws {
+        let json = #"{"format":"cf32","sample_rate":"# + sampleRate + #","center_hz":100000000}"#
+        try json.write(toFile: dir + "/" + name + ".json", atomically: true, encoding: .utf8)
+        try Data(repeating: 0, count: 8 * 16).write(to: URL(fileURLWithPath: dir + "/" + name + ".cf32"))
+    }
+
+    func testSidecarSampleRateOutOfRangeIsInvalidArgument() throws {
+        let dir = try DeviceFixtures.scratchDir()
+        try writeSidecarJSON(dir: dir, name: "zero", sampleRate: "0")
+        try writeSidecarJSON(dir: dir, name: "huge", sampleRate: "1000000000000000")
+        try writeSidecarJSON(dir: dir, name: "low", sampleRate: "999")
+        try writeSidecarJSON(dir: dir, name: "top", sampleRate: "100000000")
+        for name in ["zero", "huge", "low"] {
+            XCTAssertThrowsError(try IQSidecar.load(path: dir + "/\(name).json"), name) {
+                XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT", name)
+            }
+            XCTAssertThrowsError(try FilePlaybackDevice(path: dir + "/\(name).cf32", loop: false, realtime: false), name) {
+                XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT", name)
+            }
+        }
+        XCTAssertNoThrow(try IQSidecar.load(path: dir + "/top.json"))
+        XCTAssertThrowsError(try IQSidecar(sampleRate: 0, centerHz: 1).validate()) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+    }
+
+    func testOversizedSidecarIsInvalidArgument() throws {
+        let dir = try DeviceFixtures.scratchDir()
+        let padding = String(repeating: " ", count: Int(IQSidecar.maxSidecarBytes) + 1)
+        try (#"{"format":"cf32","sample_rate":48000,"center_hz":1}"# + padding)
+            .write(toFile: dir + "/big.json", atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try IQSidecar.load(path: dir + "/big.json")) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+    }
+
+    func testFIFOSamplesFileIsRejectedWithoutBlocking() throws {
+        let dir = try DeviceFixtures.scratchDir()
+        try IQSidecar(format: "cf32", sampleRate: 48_000, centerHz: 1).save(path: dir + "/fifo.json")
+        guard mkfifo(dir + "/fifo.cf32", 0o600) == 0 else { throw XCTSkip("mkfifo unavailable: \(errno)") }
+        let started = Date()
+        XCTAssertThrowsError(try IQFileReader(path: dir + "/fifo.cf32")) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+        XCTAssertThrowsError(try FilePlaybackDevice(path: dir + "/fifo.json", loop: false, realtime: false)) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2, "a FIFO must be rejected, not opened (which blocks)")
+    }
+
+    func testFIFOSidecarIsRejectedWithoutBlocking() throws {
+        let dir = try DeviceFixtures.scratchDir()
+        try Data(repeating: 0, count: 64).write(to: URL(fileURLWithPath: dir + "/sc.cf32"))
+        guard mkfifo(dir + "/sc.json", 0o600) == 0 else { throw XCTSkip("mkfifo unavailable: \(errno)") }
+        let started = Date()
+        XCTAssertThrowsError(try IQSidecar.load(path: dir + "/sc.cf32")) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+    }
+
+    func testDirectoryIsInvalidArgument() throws {
+        let dir = try DeviceFixtures.scratchDir()
+        try FileManager.default.createDirectory(atPath: dir + "/d.cf32", withIntermediateDirectories: true)
+        XCTAssertThrowsError(try FilePlaybackDevice(path: dir, loop: false, realtime: false)) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+        XCTAssertThrowsError(try FilePlaybackDevice(path: dir + "/d.cf32", loop: false, realtime: false)) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "INVALID_ARGUMENT")
+        }
+    }
+
+    func testMissingFileStaysDeviceIO() {
+        XCTAssertThrowsError(try FilePlaybackDevice(path: "/nonexistent/leyline/x.cf32", loop: false, realtime: false)) {
+            XCTAssertEqual(($0 as? EngineError)?.code, "DEVICE_IO")
+        }
+    }
+}

@@ -32,9 +32,17 @@ public struct ChannelPlan: Hashable, Sendable {
         return 0.9 * r1 / Double(max(1, Int((r1 / 48_000).rounded())))
     }
 
-    /// - Throws: `INVALID_ARGUMENT` when a narrow mode asks for more than `maxNarrowBandwidthHz`
-    ///   (the channel would silently be filtered narrower than it reports).
+    /// Highest capture rate a plan is computed for (100 MSPS). Above it the decimator ratios stop
+    /// being meaningful; anything larger is a malformed sidecar or device descriptor.
+    public static let maxCaptureRate: UInt64 = 100_000_000
+
+    /// - Throws: `INVALID_ARGUMENT` when `captureRate` exceeds `maxCaptureRate`, or when a narrow
+    ///   mode asks for more than `maxNarrowBandwidthHz` (the channel would silently be filtered
+    ///   narrower than it reports).
     public static func plan(captureRate: UInt64, mode: DemodMode, bandwidthHz: UInt32) throws -> ChannelPlan {
+        guard captureRate <= maxCaptureRate else {
+            throw EngineError.invalidArgument("capture rate \(captureRate) S/s exceeds \(maxCaptureRate) S/s")
+        }
         let fs = Double(captureRate)
         let d1 = max(1, Int(fs / 240_000))
         let r1 = fs / Double(d1)

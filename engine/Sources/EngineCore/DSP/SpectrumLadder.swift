@@ -15,10 +15,15 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         sizes.first { $0 >= bins } ?? sizes.last!
     }
 
-    /// Clamp a requested rate to `(0, 30]`.
+    /// Lowest row rate any subscriber receives; requests below it are clamped up so the row
+    /// interval stays representable and rows keep arriving.
+    public static let minRowsPerSecond: Double = 0.1
+
+    /// Clamp a requested rate to `[minRowsPerSecond, maxRowsPerSecond]`. Non-finite or
+    /// non-positive requests mean "as fast as allowed".
     public static func roundRate(_ rowsPerSecond: Double) -> Double {
         guard rowsPerSecond.isFinite, rowsPerSecond > 0 else { return maxRowsPerSecond }
-        return min(rowsPerSecond, maxRowsPerSecond)
+        return min(max(rowsPerSecond, minRowsPerSecond), maxRowsPerSecond)
     }
 
     final class Entry {
@@ -91,7 +96,8 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         for i in computed.indices { computed[i] = false }
         let now = time.sampleIndex
         for e in entries {
-            let interval = UInt64((Double(spanHz) / e.subscription.actualRate).rounded())
+            // Saturate before converting: a Double above UInt64.max traps in the initializer.
+            let interval = UInt64(min((Double(spanHz) / e.subscription.actualRate).rounded(), Double(UInt64.max / 2)))
             // A new anchor (rate change shrinks the interval) or a rewound/jumped timeline can
             // leave the due point more than one interval ahead of `now`; clamp so rows never stall.
             if e.nextDue > now &+ interval { e.nextDue = now &+ interval }

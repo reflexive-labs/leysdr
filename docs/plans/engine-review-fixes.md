@@ -65,7 +65,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   stream is open; assert rows keep arriving after the write.
 - docs/engine-internals.md: one paragraph on the capture-owned index base.
 
-### WI-4 `[ ]` Malformed-input hardening (#14, #11, #10, #24, all P2)
+### WI-4 `[x]` Malformed-input hardening (#14, #11, #10, #24, all P2)
 
 - #14 SessionStore.swift:487 `fits()`: use `offsetHz.magnitude` (or `Channelizer.checkOffset`). Also
   guard NaN/inf in the `.db` gain write (SessionStore.swift:618): `guard db.isFinite else { throw invalidArgument }`.

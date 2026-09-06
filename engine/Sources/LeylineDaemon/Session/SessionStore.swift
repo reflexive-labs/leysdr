@@ -491,7 +491,8 @@ actor SessionStore {
 
     /// `|offset| + bw/2 <= Fs/2`.
     static func fits(offsetHz: Int64, bandwidthHz: UInt32, sampleRate: UInt64) -> Bool {
-        Double(abs(offsetHz)) + Double(bandwidthHz) / 2 <= Double(sampleRate) / 2
+        // `magnitude`, not `abs`: `abs(Int64.min)` traps.
+        Double(offsetHz.magnitude) + Double(bandwidthHz) / 2 <= Double(sampleRate) / 2
     }
 
     func destroyChannelChecked(id: ChannelID, by: ClientContext) async throws {
@@ -619,6 +620,11 @@ actor SessionStore {
                 }
             case .gain(let g)?:
                 let (id, entry) = try captureTarget(w.targetID)
+                // Argument shape first, then the element: a NaN/inf level is malformed whatever
+                // the device offers (`snapped` would otherwise search the table with NaN).
+                if case .db(let db)? = g.value, !db.isFinite {
+                    throw EngineError.invalidArgument("gain db must be finite", target: w.targetID)
+                }
                 guard let d = devices[entry.deviceID], let el = d.gainElement(named: g.element) else {
                     throw EngineError.gainElementUnknown(g.element, target: w.targetID)
                 }
