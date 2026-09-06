@@ -93,12 +93,24 @@ device (cu8/cf32) ──deliver──▶ convert to cf32 ──▶ BlockRing ─
 
 ### Timebase and anchor
 
-`SampleTime.sampleIndex` is the count of samples the device has delivered on this capture's
-timeline since `startStreaming`. The `CaptureAnchor` is set when the first block arrives:
+`SampleTime.sampleIndex` is the count of samples delivered on this capture's timeline since the
+capture first streamed. The `CaptureAnchor` is set when the first block arrives:
 `hostTimeNsAtSampleZero = now − blockDuration`. Retune does not restart the stream and does not
 touch the anchor. Sample-rate change restarts the stream: the index continues monotonically (no
 reset) and a new anchor is published (`Event.anchor`). Device loss → `.detached`; rebind on
 matching-serial replug continues the same `CaptureID` and index and publishes a new anchor.
+
+**Capture-owned index base.** Devices number samples per stream: `RTLTCPDevice`, the rtl-sdr
+callback and `FilePlaybackDevice` all restart at 0 on every `startStreaming`. The capture, not the
+device, owns the timeline. `CaptureDSPCore` keeps an `indexBase`; `expectNewAnchor()` (called by
+`DefaultCaptureEngine` before every stream start) marks the next delivered block as the start of a
+new *device epoch*, and on that block the core sets `indexBase = lastDeliveredEnd − deviceIndex` so
+the committed index `deviceIndex + indexBase` continues exactly where the previous epoch ended. The
+anchor is computed from the rebased index, so `hostTimeNsAtSampleZero` and frame `SampleTime`s
+agree. Before installing a new rate `setSampleRate` waits for the DSP thread to drain the ring
+(`drainPending`) so no old-rate block is processed under the new plan, and the spectrum ladder
+clamps each subscriber's `nextDue` to at most one interval past the current index so a shrunken
+interval (or a rewound timeline from a misbehaving device) can never stall rows.
 
 ### Channelizer plan
 

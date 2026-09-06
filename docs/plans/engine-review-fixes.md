@@ -48,7 +48,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   test device; assert `snapshot.detached`, `started`, and that the DSP thread is reused (not respawned).
 - No production changes expected; if a small test hook is needed it must be additive.
 
-### WI-3 `[ ]` Sample timebase across stream restarts (#3 P1)
+### WI-3 `[x]` Sample timebase across stream restarts (#3 P1)
 
 - `CaptureDSPCore`: keep an `indexBase: UInt64`; `expectNewAnchor()` records that the next delivered
   block starts a new device epoch; on that block set `indexBase = lastDeliveredEnd &- deviceIndex` so

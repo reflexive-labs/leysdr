@@ -45,6 +45,13 @@ public final class CaptureDSPCore: @unchecked Sendable {
     private let blocksProcessed = Atomic<UInt64>(0)
     private let samplesProcessed = Atomic<UInt64>(0)
     private let needsAnchor = Atomic<Bool>(true)
+    /// Capture-owned index base. Devices restart their own index at 0 on every `startStreaming`;
+    /// the capture timeline must not. On the first block of each device epoch the base is set so
+    /// that `deviceIndex &+ indexBase` continues right after the last committed sample. Device
+    /// thread only (atomics because the device thread may differ between epochs).
+    private let indexBase = Atomic<UInt64>(0)
+    /// Capture-timeline index one past the last delivered sample (device thread only).
+    private let lastDeliveredEnd = Atomic<UInt64>(0)
     private let running = Atomic<Bool>(false)
     private let threadStarts = Atomic<Int>(0)
     private let lastOverrunLogNs = Atomic<Int64>(0)
@@ -90,8 +97,27 @@ public final class CaptureDSPCore: @unchecked Sendable {
                      overruns: ring.overruns)
     }
 
-    /// Ask for a fresh anchor on the next delivered block (stream restart, rebound).
+    /// Ask for a fresh anchor on the next delivered block (stream restart, rebound). That block
+    /// also starts a new device epoch: its device index is rebased onto the capture timeline so
+    /// committed `SampleTime`s keep increasing across the restart.
     public func expectNewAnchor() { needsAnchor.store(true, ordering: .relaxed) }
+
+    /// Capture-timeline index one past the last delivered sample. Diagnostics/tests.
+    public var deliveredEnd: UInt64 { lastDeliveredEnd.load(ordering: .relaxed) }
+
+    /// Waits until the DSP thread has released every block committed before the call. Control
+    /// plane only: used between `stopStreaming` and a new plan (sample-rate change) so blocks
+    /// captured under the old rate are never processed under the new one. Returns `false` if the
+    /// backlog did not clear within `timeoutMs` (or no DSP thread is running to clear it).
+    @discardableResult
+    public func drainPending(timeoutMs: Int = 500) async -> Bool {
+        let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, timeoutMs)) * 1_000_000
+        while ring.available > 0 {
+            guard isRunning, DispatchTime.now().uptimeNanoseconds < deadline else { return false }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return true
+    }
 
     /// Replace the channel table (control plane).
     public func setChannels(_ slots: [ChannelSlot]) {
@@ -116,11 +142,16 @@ public final class CaptureDSPCore: @unchecked Sendable {
         let sp = Signpost.begin(.blockIngest)
         defer { Signpost.end(.blockIngest, sp) }
         blocksReceived.wrappingAdd(1, ordering: .relaxed)
-        if needsAnchor.exchange(false, ordering: .relaxed) {
-            publishAnchor(firstIndex: time.sampleIndex, count: buffer.count)
-        }
-        var offset = 0
         let total = buffer.count
+        let newEpoch = needsAnchor.exchange(false, ordering: .relaxed)
+        if newEpoch {
+            // New device epoch: continue the capture timeline from where the last one ended.
+            indexBase.store(lastDeliveredEnd.load(ordering: .relaxed) &- time.sampleIndex, ordering: .relaxed)
+        }
+        let first = time.sampleIndex &+ indexBase.load(ordering: .relaxed)
+        lastDeliveredEnd.store(first &+ UInt64(total), ordering: .relaxed)
+        if newEpoch { publishAnchor(firstIndex: first, count: total) }
+        var offset = 0
         while offset < total {
             let n = min(Self.blockSize, total - offset)
             // Full ring: the block is dropped and counted by the ring (signpost included). No
@@ -142,7 +173,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
                 ring.noteOverrun()
                 return
             }
-            ring.commit(index: index, count: n, time: SampleTime(captureID: time.captureID, sampleIndex: time.sampleIndex &+ UInt64(offset)))
+            ring.commit(index: index, count: n, time: SampleTime(captureID: time.captureID, sampleIndex: first &+ UInt64(offset)))
             offset += n
         }
     }

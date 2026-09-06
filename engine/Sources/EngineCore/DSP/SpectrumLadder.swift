@@ -91,6 +91,10 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         for i in computed.indices { computed[i] = false }
         let now = time.sampleIndex
         for e in entries {
+            let interval = UInt64((Double(spanHz) / e.subscription.actualRate).rounded())
+            // A new anchor (rate change shrinks the interval) or a rewound/jumped timeline can
+            // leave the due point more than one interval ahead of `now`; clamp so rows never stall.
+            if e.nextDue > now &+ interval { e.nextDue = now &+ interval }
             guard now >= e.nextDue else { continue }
             let analyzer = analyzers[e.sizeIndex]
             guard block.count >= analyzer.size else { continue }
@@ -99,7 +103,6 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
                 analyzer.analyze(block, into: row)
                 computed[e.sizeIndex] = true
             }
-            let interval = UInt64((Double(spanHz) / e.subscription.actualRate).rounded())
             // Schedule from the previous due point so rate stays exact under jitter, but never
             // fall more than one interval behind (LATEST_WINS semantics for skipped ticks).
             let scheduled = e.nextDue &+ interval

@@ -110,14 +110,17 @@ public actor DefaultCaptureEngine: CaptureEngine {
         }
     }
 
-    /// Restarts the stream at a new rate: the sample index continues, a new anchor is published,
-    /// and every channel is re-planned.
+    /// Restarts the stream at a new rate: the ring backlog is drained, the sample index continues
+    /// (the core rebases the device's restarted index), a new anchor is published, and every
+    /// channel is re-planned.
     public func setSampleRate(_ hz: UInt64) async throws {
         guard !detached else { throw EngineError.deviceDetached(deviceID.description) }
         let wasStreaming = streaming
         if wasStreaming {
             await device.stopStreaming()
             streaming = false
+            // Let the DSP thread finish the old-rate backlog before the new plan is installed.
+            await core.drainPending()
         }
         do {
             try await device.setSampleRate(hz)

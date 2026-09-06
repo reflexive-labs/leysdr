@@ -14,7 +14,7 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     private let lock = NSLock()
     private var _descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "rebindable", serial: "rebind-1",
                                                tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
-                                               sampleRates: [2_400_000], nativeFormat: .cf32)
+                                               sampleRates: [2_400_000, 1_024_000], nativeFormat: .cf32)
     private var _onStateChange: (@Sendable (DeviceState) -> Void)?
     private let storage = SampleStorage(capacity: 4096, format: .cf32)
     private let streaming = LockedValue(false)
