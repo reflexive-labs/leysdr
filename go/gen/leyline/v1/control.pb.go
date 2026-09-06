@@ -1185,7 +1185,7 @@ func (*Sink_File) isSink_Kind() {}
 type SystemAudioSink struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AudioDeviceUid string                 `protobuf:"bytes,1,opt,name=audio_device_uid,json=audioDeviceUid,proto3" json:"audio_device_uid,omitempty"`
-	Volume         float64                `protobuf:"fixed64,2,opt,name=volume,proto3" json:"volume,omitempty"`
+	Volume         *float64               `protobuf:"fixed64,2,opt,name=volume,proto3,oneof" json:"volume,omitempty"` // 0..1; absent = 1.0 (full), explicit 0 = muted
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1228,8 +1228,8 @@ func (x *SystemAudioSink) GetAudioDeviceUid() string {
 }
 
 func (x *SystemAudioSink) GetVolume() float64 {
-	if x != nil {
-		return x.Volume
+	if x != nil && x.Volume != nil {
+		return *x.Volume
 	}
 	return 0
 }
@@ -2780,10 +2780,11 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\fsystem_audio\x18\x03 \x01(\v2\x1b.leyline.v1.SystemAudioSinkH\x00R\vsystemAudio\x120\n" +
 	"\x06stream\x18\x04 \x01(\v2\x16.leyline.v1.StreamSinkH\x00R\x06stream\x12*\n" +
 	"\x04file\x18\x05 \x01(\v2\x14.leyline.v1.FileSinkH\x00R\x04fileB\x06\n" +
-	"\x04kind\"S\n" +
+	"\x04kind\"c\n" +
 	"\x0fSystemAudioSink\x12(\n" +
-	"\x10audio_device_uid\x18\x01 \x01(\tR\x0eaudioDeviceUid\x12\x16\n" +
-	"\x06volume\x18\x02 \x01(\x01R\x06volume\")\n" +
+	"\x10audio_device_uid\x18\x01 \x01(\tR\x0eaudioDeviceUid\x12\x1b\n" +
+	"\x06volume\x18\x02 \x01(\x01H\x00R\x06volume\x88\x01\x01B\t\n" +
+	"\a_volume\")\n" +
 	"\n" +
 	"StreamSink\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\"[\n" +
@@ -3086,6 +3087,7 @@ func file_leyline_v1_control_proto_init() {
 		(*Sink_Stream)(nil),
 		(*Sink_File)(nil),
 	}
+	file_leyline_v1_control_proto_msgTypes[8].OneofWrappers = []any{}
 	file_leyline_v1_control_proto_msgTypes[11].OneofWrappers = []any{
 		(*ParamWrite_CenterHz)(nil),
 		(*ParamWrite_CaptureSampleRate)(nil),

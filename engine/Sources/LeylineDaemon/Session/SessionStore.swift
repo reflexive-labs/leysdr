@@ -533,9 +533,11 @@ actor SessionStore {
         var isSystemAudio = false
         switch request.kind {
         case .systemAudio(var sa)?:
-            if sa.volume == 0 { sa.volume = 1 }
-            guard sa.volume >= 0, sa.volume <= 1 else { throw EngineError.invalidArgument("volume must be within 0..1", target: channelID.string) }
-            sink = try SinkFactory.systemAudio(rate: entry.engine.audioRate, volume: sa.volume, deviceUID: sa.audioDeviceUid.isEmpty ? nil : sa.audioDeviceUid)
+            // Proto3 presence: an absent volume means full (1.0); an explicit 0 means muted.
+            let volume = sa.hasVolume ? sa.volume : 1.0
+            guard volume >= 0, volume <= 1 else { throw EngineError.invalidArgument("volume must be within 0..1", target: channelID.string) }
+            sa.volume = volume
+            sink = try SinkFactory.systemAudio(rate: entry.engine.audioRate, volume: volume, deviceUID: sa.audioDeviceUid.isEmpty ? nil : sa.audioDeviceUid)
             proto.systemAudio = sa
             isSystemAudio = true
         case .stream?:

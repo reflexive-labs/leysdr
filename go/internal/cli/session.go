@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
@@ -531,7 +533,7 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 func (s *session) attachAudio(ctx context.Context, o *tuneOptions) error {
 	sink, err := s.client.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{
 		ChannelId: s.channel.ChannelId,
-		Sink:      &leylinev1.Sink{Kind: &leylinev1.Sink_SystemAudio{SystemAudio: &leylinev1.SystemAudioSink{Volume: o.volume}}},
+		Sink:      &leylinev1.Sink{Kind: &leylinev1.Sink_SystemAudio{SystemAudio: &leylinev1.SystemAudioSink{Volume: proto.Float64(o.volume)}}},
 	})
 	if err != nil {
 		if leyline.Code(err) == leyline.CodePlatformUnsupported {

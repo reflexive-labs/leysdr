@@ -151,7 +151,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   a second unsubscribe/stream returns `STREAM_NOT_FOUND`. Requests with `CS16` or a foreign sample rate
   return `INVALID_ARGUMENT`.
 
-### WI-11 `[ ]` `SystemAudioSink.volume` presence (#30 P3)
+### WI-11 `[x]` `SystemAudioSink.volume` presence (#30 P3)
 
 - proto/leyline/v1/control.proto: `optional double volume = 2;` (comment: absent = 1.0, 0 = muted).
   Regenerate Go + Swift.

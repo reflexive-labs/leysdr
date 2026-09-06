@@ -232,7 +232,7 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 	volume := "no speaker sink"
 	for _, sk := range s.state.Sinks {
 		if sa, ok := sk.Kind.(*leylinev1.Sink_SystemAudio); ok && sk.ChannelId == ch.ChannelId {
-			volume = fmt.Sprintf("%.0f%%", sa.SystemAudio.Volume*100)
+			volume = fmt.Sprintf("%.0f%%", sa.SystemAudio.GetVolume()*100)
 		}
 	}
 	model := "unknown radio"

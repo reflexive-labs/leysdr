@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
@@ -216,4 +217,50 @@ func mustState(t *testing.T, c *leyline.Client) *leylinev1.GetStateResponse {
 		t.Fatal(err)
 	}
 	return st
+}
+
+// TestAttachSinkVolumePresence pins the proto3-presence contract for
+// SystemAudioSink.volume: absent means full (1.0), an explicit 0 means muted,
+// and anything outside 0..1 is INVALID_ARGUMENT.
+func TestAttachSinkVolumePresence(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, _ := c.State(ctx)
+	devID := st.Devices[0].DeviceId
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 25_000, Mode: leylinev1.DemodMode_NFM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attach := func(sa *leylinev1.SystemAudioSink) (*leylinev1.Sink, error) {
+		return c.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{ChannelId: ch.ChannelId, Sink: &leylinev1.Sink{Kind: &leylinev1.Sink_SystemAudio{SystemAudio: sa}}})
+	}
+
+	absent, err := attach(&leylinev1.SystemAudioSink{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sa := absent.GetSystemAudio(); sa.Volume == nil || *sa.Volume != 1 {
+		t.Errorf("absent volume should default to 1.0, got %v", sa)
+	}
+	muted, err := attach(&leylinev1.SystemAudioSink{Volume: proto.Float64(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sa := muted.GetSystemAudio(); sa.Volume == nil || *sa.Volume != 0 {
+		t.Errorf("explicit 0 should stay muted, got %v", sa)
+	}
+	if _, err := attach(&leylinev1.SystemAudioSink{Volume: proto.Float64(1.5)}); leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("want INVALID_ARGUMENT for volume 1.5, got %v", err)
+	}
+	// The state mirror carries presence too.
+	st = mustState(t, c)
+	for _, s := range st.Sinks {
+		if s.GetSystemAudio().Volume == nil {
+			t.Errorf("sink %s lost its volume presence in GetState", s.SinkId)
+		}
+	}
 }

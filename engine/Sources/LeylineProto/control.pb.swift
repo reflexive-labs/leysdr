@@ -628,11 +628,21 @@ public nonisolated struct Leyline_V1_SystemAudioSink: Sendable {
 
   public var audioDeviceUid: String = String()
 
-  public var volume: Double = 0
+  /// 0..1; absent = 1.0 (full), explicit 0 = muted
+  public var volume: Double {
+    get {_volume ?? 0}
+    set {_volume = newValue}
+  }
+  /// Returns true if `volume` has been explicitly set.
+  public var hasVolume: Bool {self._volume != nil}
+  /// Clears the value of `volume`. Subsequent reads from it will return its default value.
+  public mutating func clearVolume() {self._volume = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _volume: Double? = nil
 }
 
 public nonisolated struct Leyline_V1_StreamSink: Sendable {
@@ -1782,25 +1792,29 @@ nonisolated extension Leyline_V1_SystemAudioSink: SwiftProtobuf.Message, SwiftPr
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.audioDeviceUid) }()
-      case 2: try { try decoder.decodeSingularDoubleField(value: &self.volume) }()
+      case 2: try { try decoder.decodeSingularDoubleField(value: &self._volume) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.audioDeviceUid.isEmpty {
       try visitor.visitSingularStringField(value: self.audioDeviceUid, fieldNumber: 1)
     }
-    if self.volume.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.volume, fieldNumber: 2)
-    }
+    try { if let v = self._volume {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 2)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_SystemAudioSink, rhs: Leyline_V1_SystemAudioSink) -> Bool {
     if lhs.audioDeviceUid != rhs.audioDeviceUid {return false}
-    if lhs.volume != rhs.volume {return false}
+    if lhs._volume != rhs._volume {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

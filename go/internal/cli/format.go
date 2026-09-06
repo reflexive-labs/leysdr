@@ -113,7 +113,7 @@ func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 		s := p.Sink
 		kind := "sink"
 		if sa, ok := s.Kind.(*leylinev1.Sink_SystemAudio); ok {
-			kind = fmt.Sprintf("system_audio vol %.2f", sa.SystemAudio.Volume)
+			kind = fmt.Sprintf("system_audio vol %.2f", sa.SystemAudio.GetVolume())
 		}
 		return fmt.Sprintf("sink %s on %s %s%s", s.SinkId, s.ChannelId, kind, who)
 	case *leylinev1.Event_WriteRejected:

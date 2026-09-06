@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/pkg/leyline"
@@ -182,7 +183,7 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 		if p.SinkVolume < 0 || p.SinkVolume > 1 {
 			return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, "volume must be within 0..1"))
 		}
-		sa.SystemAudio.Volume = p.SinkVolume
+		sa.SystemAudio.Volume = proto.Float64(p.SinkVolume)
 		d.emit(ci, s)
 		return true
 	default:

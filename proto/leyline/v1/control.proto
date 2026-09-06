@@ -96,7 +96,10 @@ message Sink {
   }
 }
 
-message SystemAudioSink { string audio_device_uid = 1; double volume = 2; }
+message SystemAudioSink {
+  string audio_device_uid = 1;
+  optional double volume = 2;  // 0..1; absent = 1.0 (full), explicit 0 = muted
+}
 message StreamSink { string stream_id = 1; }
 message FileSink {
   FileSinkKind kind = 1;

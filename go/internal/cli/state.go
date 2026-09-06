@@ -100,7 +100,7 @@ func printState(app *App, st *leylinev1.GetStateResponse) {
 		kind, detail := "?", ""
 		switch k := s.Kind.(type) {
 		case *leylinev1.Sink_SystemAudio:
-			kind, detail = "system_audio", fmt.Sprintf("volume %.2f %s", k.SystemAudio.Volume, k.SystemAudio.AudioDeviceUid)
+			kind, detail = "system_audio", fmt.Sprintf("volume %.2f %s", k.SystemAudio.GetVolume(), k.SystemAudio.AudioDeviceUid)
 		case *leylinev1.Sink_Stream:
 			kind, detail = "stream", k.Stream.StreamId
 		case *leylinev1.Sink_File:

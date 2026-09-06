@@ -228,8 +228,12 @@ func (d *Daemon) AttachSink(ctx context.Context, req *leylinev1.AttachSinkReques
 	switch k := req.Sink.Kind.(type) {
 	case *leylinev1.Sink_SystemAudio:
 		sa := proto.Clone(k.SystemAudio).(*leylinev1.SystemAudioSink)
-		if sa.Volume == 0 {
-			sa.Volume = 1
+		// Proto3 presence: absent volume means full (1.0); an explicit 0 means muted.
+		if sa.Volume == nil {
+			sa.Volume = proto.Float64(1)
+		}
+		if *sa.Volume < 0 || *sa.Volume > 1 {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.ChannelId, "volume must be within 0..1"))
 		}
 		s := &leylinev1.Sink{SinkId: newID("sink_"), ChannelId: ch.ChannelId, Kind: &leylinev1.Sink_SystemAudio{SystemAudio: sa}}
 		d.sinks[s.SinkId] = s

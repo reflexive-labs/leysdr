@@ -601,6 +601,81 @@ final class DaemonTests: XCTestCase {
             }
         }
     }
+
+    /// `SystemAudioSink.volume` is proto3-optional: absent means 1.0, an explicit 0 means muted, and
+    /// anything outside 0..1 is INVALID_ARGUMENT. The range check runs before the platform sink is
+    /// built, so on hosts without AVFoundation the two valid shapes reach PLATFORM_UNSUPPORTED (proof
+    /// they passed validation) while 1.5 is refused everywhere.
+    func testAttachSinkVolumePresence() async throws {
+        let fixture = fixturePath("nfm_tone.cf32")
+        guard FileManager.default.fileExists(atPath: fixture) else {
+            throw XCTSkip("fixture missing: \(fixture) (run leyfix generate)")
+        }
+        try await withDaemon { c in
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            var attach = Leyline_V1_AttachFileDeviceRequest()
+            attach.path = fixture
+            attach.loop = true
+            let device = try await c.control.attachFileDevice(attach, metadata: testMetadata)
+            var cc = Leyline_V1_CreateCaptureRequest()
+            cc.deviceID = device.deviceID
+            cc.centerHz = 146_520_000
+            let capture = try await c.control.createCapture(cc, metadata: testMetadata)
+            var cch = Leyline_V1_CreateChannelRequest()
+            cch.captureID = capture.captureID
+            cch.offsetHz = 100_000
+            cch.mode = .nfm
+            let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+
+            func attachSink(_ sa: Leyline_V1_SystemAudioSink) async throws -> Leyline_V1_Sink {
+                var req = Leyline_V1_AttachSinkRequest()
+                req.channelID = channel.channelID
+                req.sink.systemAudio = sa
+                return try await c.control.attachSink(req, metadata: testMetadata)
+            }
+            /// Attaches and, where the host can build a system-audio sink, asserts the volume the
+            /// daemon settled on in both the reply and the Sink event.
+            func expectVolume(_ sa: Leyline_V1_SystemAudioSink, _ expected: Double, _ label: String) async throws {
+                do {
+                    let sink = try await attachSink(sa)
+                    XCTAssertTrue(sink.systemAudio.hasVolume, "\(label): reply must carry volume presence")
+                    XCTAssertEqual(sink.systemAudio.volume, expected, "\(label): reply volume")
+                    let ev = await events.waitFor { ev in
+                        if case .sink(let s)? = ev.body { return s.sinkID == sink.sinkID }
+                        return false
+                    }
+                    XCTAssertNotNil(ev, "\(label): Sink event")
+                    XCTAssertEqual(ev?.sink.systemAudio.hasVolume, true, "\(label): event presence")
+                    XCTAssertEqual(ev?.sink.systemAudio.volume, expected, "\(label): event volume")
+                } catch {
+                    let code = errorCode(error).code
+                    #if canImport(AVFoundation)
+                    XCTAssertEqual(code, "DEVICE_IO", "\(label): headless runner may fail AVAudioEngine.start; got \(code)")
+                    #else
+                    XCTAssertEqual(code, "PLATFORM_UNSUPPORTED", "\(label): got \(code)")
+                    #endif
+                }
+            }
+
+            // Absent -> 1.0.
+            try await expectVolume(Leyline_V1_SystemAudioSink(), 1.0, "absent volume")
+            // Explicit 0 -> muted, not "unset".
+            var muted = Leyline_V1_SystemAudioSink()
+            muted.volume = 0
+            try await expectVolume(muted, 0, "explicit zero")
+            // Out of range -> INVALID_ARGUMENT before any platform sink is built.
+            var loud = Leyline_V1_SystemAudioSink()
+            loud.volume = 1.5
+            do {
+                _ = try await attachSink(loud)
+                XCTFail("expected INVALID_ARGUMENT for volume 1.5")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
+                XCTAssertEqual(errorCode(error).trailer?.code, "INVALID_ARGUMENT")
+            }
+            await events.stop()
+        }
+    }
 }
 
 /// Accumulates telemetry messages from a streaming RPC for polling from the test body.
