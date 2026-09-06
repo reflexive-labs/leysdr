@@ -163,6 +163,30 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 
 ## Closing
 
-- Run the full gate: `go build ./... && go test ./...`, `swift build && swift test`, and the e2e suite with
-  scratch-built binaries (never `make go` in the container: `go/bin` holds the user's macOS binaries).
-- Update this file's status boxes and commit it.
+Done on 2026-09-06, commits 4fff1d3..0dac92e (one per work item, each verified by an independent reviewer
+before landing). Gate at 0dac92e:
+
+- Swift: `swift build` clean; `swift test` 121 tests, 0 failures (79 before this plan).
+- Go: `go build ./... && go vet ./... && go test ./...` green; `gofumpt` clean; `golangci-lint` unchanged at
+  42 pre-existing findings (errcheck/staticcheck in the CLI, none introduced here).
+- Generated code: `scripts/gen-proto.sh` produces no drift.
+- e2e (`go/internal/e2e`, real `leylined` + Linux `ley` built into a scratch dir): 2/2 pass.
+
+## Follow-ups noted while implementing (not in the review's primary set)
+
+- `SessionStore` rethrows a failed `capture_sample_rate` write without emitting the capture event, so a
+  `detached=true` (or a rate that did take effect on the retry) is visible only on the next event/GetState.
+  Emit the capture (and channels) on that error path.
+- Structural writes (mode/bandwidth) on an OUT_OF_CAPTURE channel are still rejected with
+  `OFFSET_OUT_OF_CAPTURE`; only squelch/AGC are stored for the eventual rebuild. Decide whether to store them.
+- `Telemetry.Subscribe` needed `withRPCCancellationHandler` to end when a client cancels with no traffic;
+  audit `WatchEvents` and `Bulk.Stream` for the same lingering-handler shape.
+- Downstream telemetry buffers (`TelemetryHub` per-subscriber `bufferingNewest(256)`, merged
+  `bufferingNewest(64)`) still drop without seq gaps; only the DSP-side ring is gap-marked.
+- The rtl_tcp reconnect runs `open()` on `Task.detached`; switch it to `BlockingWork.run` now that WI-9 exists.
+  `reconnectFinished` could also require `.available` before publishing `.arrived`.
+- The Go fake daemon still answers cf32 for any IQ request; mirror the daemon's `INVALID_ARGUMENT` for parity.
+- The reopen-config error branch in `RTLSDRDevice.open()` (#16) and the macOS branch of the volume-presence
+  test only run with hardware / AVFoundation; cover them in the hardware-in-the-loop suite.
+- `CaptureAnchor.hostTimeNsAtSampleZero` is recomputed at each rate change from the rebased index at the new
+  rate (documented); a rate-invariant sample-zero time would need a per-epoch base.
