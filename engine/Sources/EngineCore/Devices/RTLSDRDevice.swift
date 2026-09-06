@@ -268,26 +268,38 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     // MARK: Control
 
+    /// Claims the dongle. `rtlsdr_open` blocks for up to hundreds of ms (USB interface claim, EEPROM
+    /// read, plus the retry sleep), so the whole sequence runs on a dedicated thread via
+    /// `BlockingWork.run` rather than parking a cooperative-pool thread (docs/engine-internals.md).
     public func open() async throws {
-        try withLock {
-            guard dev == nil else { return }
-            var d: OpaquePointer?
-            var rc = rtlsdr_open(&d, index)
-            if rc != 0 {
-                // A transient claim (registry probe of a never-probed dongle, or another process
-                // releasing it) usually clears within tens of ms; retry once before failing.
-                Thread.sleep(forTimeInterval: 0.05)
-                d = nil
-                rc = rtlsdr_open(&d, index)
+        try await BlockingWork.run { [self] in
+            try withLock {
+                guard dev == nil else { return }
+                var d: OpaquePointer?
+                var rc = rtlsdr_open(&d, index)
+                if rc != 0 {
+                    // A transient claim (registry probe of a never-probed dongle, or another process
+                    // releasing it) usually clears within tens of ms; retry once before failing.
+                    Thread.sleep(forTimeInterval: 0.05)
+                    d = nil
+                    rc = rtlsdr_open(&d, index)
+                }
+                guard rc == 0, let opened = d else {
+                    throw EngineError.deviceIO("rtlsdr_open failed: \(rc)", target: _descriptor.id.string)
+                }
+                // Apply the cached configuration so reopen after replug is transparent. A failure here
+                // means the dongle is not usable: release it and surface DEVICE_IO instead of handing
+                // out a half-configured device.
+                do {
+                    try check(rtlsdr_set_sample_rate(opened, UInt32(sampleRate)), "rtlsdr_set_sample_rate")
+                    try check(rtlsdr_set_center_freq(opened, UInt32(truncatingIfNeeded: centerHz)), "rtlsdr_set_center_freq")
+                    try check(rtlsdr_set_tuner_gain_mode(opened, 0), "rtlsdr_set_tuner_gain_mode")
+                } catch {
+                    rtlsdr_close(opened)
+                    throw error
+                }
+                dev = opened
             }
-            guard rc == 0, let opened = d else {
-                throw EngineError.deviceIO("rtlsdr_open failed: \(rc)", target: _descriptor.id.string)
-            }
-            dev = opened
-            // Apply the cached configuration so reopen after replug is transparent.
-            rtlsdr_set_sample_rate(opened, UInt32(sampleRate))
-            rtlsdr_set_center_freq(opened, UInt32(truncatingIfNeeded: centerHz))
-            rtlsdr_set_tuner_gain_mode(opened, 0)
         }
     }
 

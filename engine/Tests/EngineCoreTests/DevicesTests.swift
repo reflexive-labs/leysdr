@@ -397,6 +397,26 @@ final class DevicesRTLSDRTests: XCTestCase {
         XCTAssertNotNil(other.streamError)
     }
 
+    /// `open()` runs through `BlockingWork` (WI-9); with the stub librtlsdr (zero devices) the
+    /// rtlsdr_open failure must still surface as DEVICE_IO with the device id as target.
+    func testOpenWithoutHardwareThrowsDeviceIO() async {
+        let probe = RTLSDRProbe(index: 0, name: "Generic RTL2832U", manufacturer: "Realtek", product: "RTL2838UHIDIR",
+                                serial: "00000003", tuner: "R820T", gainsDB: [0, 49.6],
+                                tuningRanges: RTLSDRDevice.tunerInfo(RTLSDR_TUNER_R820T).ranges)
+        let id = DeviceID()
+        let device = RTLSDRDevice(probe: probe, id: id)
+        do {
+            try await device.open()
+            XCTFail("open() must fail without hardware")
+        } catch let e as EngineError {
+            XCTAssertEqual(e.code, "DEVICE_IO")
+            XCTAssertEqual(e.target, id.string)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        await device.close()
+    }
+
     func testTunerTable() {
         XCTAssertEqual(RTLSDRDevice.tunerInfo(RTLSDR_TUNER_R820T).ranges, [FrequencyRange(minHz: 24_000_000, maxHz: 1_766_000_000)])
         XCTAssertEqual(RTLSDRDevice.tunerInfo(RTLSDR_TUNER_E4000).ranges.count, 2)

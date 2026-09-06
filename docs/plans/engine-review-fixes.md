@@ -131,7 +131,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   `seq` gap after the queue overflowed.
 - docs/engine-internals.md + design-data-planes.md: telemetry queue policy is drop-oldest with seq gaps.
 
-### WI-9 `[ ]` Device open off the cooperative pool (#5 P3, plus the adjacent #16 one-liner)
+### WI-9 `[x]` Device open off the cooperative pool (#5 P3, plus the adjacent #16 one-liner)
 
 - `EngineCore/BlockingWork.swift`: `static func run<T>(_ body: @escaping () throws -> T) async throws -> T`
   that runs `body` on a fresh `Thread` and resumes a `CheckedContinuation`.
