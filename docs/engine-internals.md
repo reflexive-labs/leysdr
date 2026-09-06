@@ -161,6 +161,12 @@ closed the channel writes zeros to sinks so audio timing stays continuous. Meter
 100 ms of samples, emit `.meter`; on state change emit `.squelch` with the exact block start time.
 SNR estimate: power − running minimum of block power (5 s window). Reported as NaN until 1 s of data.
 
+Telemetry records leave the DSP thread through `ChannelTelemetryQueue`, a fixed-capacity (64) ring
+with per-slot seqlock versions. Policy is drop-oldest: a full ring evicts the oldest unread record
+(the producer advances `head` by CAS and counts it in `dropped`) so a stalled drain always sees the
+newest readings; the consumer re-checks the slot version and retries if the producer overwrote it
+mid-copy. Push and pop are allocation- and lock-free.
+
 ### Spectrum ladder
 
 Sizes: 256, 512, 1024, 2048, 4096, 8192, 16384 (all ≤ one block). Per tick (max 30 Hz; tick rate
@@ -296,6 +302,16 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
 - `AttachFileDevice` / `DetachFileDevice`: registry passthrough.
 - Errors: `RPCError(code:message:)` with the `EngineError.code` string in the message and the
   proto `ErrorDetail` serialised into trailing metadata key `leyline-error-bin`.
+
+### Telemetry service
+
+`Subscribe` merges the per-channel drains and capture activity into one stream with a monotonic
+`seq`. Delivery is drop-oldest with visible gaps: each drain diffs the engine's `telemetryDropped`
+counter between records and the merged stream advances `seq` by `dropped + 1`, so every record
+evicted from the channel's telemetry ring shows up as a hole in `seq` (a gap accrued behind a
+filtered-out type carries over to the next message sent). The RPC ends when the client cancels
+(`withRPCCancellationHandler` finishes the merged stream — gRPC cancellation is not task
+cancellation) or when the daemon shuts down and finishes the event stream.
 
 ### Bulk service
 

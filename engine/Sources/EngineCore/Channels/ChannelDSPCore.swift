@@ -16,56 +16,86 @@ public struct ChannelTelemetryRecord: Sendable {
     public var squelchOpen: Bool
 }
 
-/// Fixed-capacity SPSC queue of telemetry records plus a "poke" stream that wakes the drain task.
-/// Producer: the DSP thread (`push`, allocation-free, drops when full). Consumer: one drain task.
+/// Fixed-capacity telemetry ring plus a "poke" stream that wakes the drain task.
+/// Producer: the DSP thread (`push`, allocation-free, lock-free). Consumer: one drain task.
+///
+/// Policy is drop-oldest: when the ring is full the producer evicts the oldest unread record
+/// (advancing `head` with a CAS) and counts it in `dropped`, so a stalled consumer always sees the
+/// newest readings instead of a stale prefix. Each slot carries a seqlock version (odd while being
+/// written) so the consumer can detect a slot overwritten underneath it and retry; records are
+/// plain-old-data, so a torn copy is harmless and simply discarded.
 public final class ChannelTelemetryQueue: @unchecked Sendable {
     public let capacity: Int
     private let slots: UnsafeMutablePointer<ChannelTelemetryRecord>
-    private let head = Atomic<Int>(0)
-    private let tail = Atomic<Int>(0)
+    /// Per-slot seqlock versions: even = stable, odd = the producer is writing.
+    private let versions: UnsafeMutablePointer<Atomic<UInt64>>
+    private let head = Atomic<Int>(0)    // next slot to read (monotonic); advanced by CAS from either side
+    private let tail = Atomic<Int>(0)    // next slot to write (monotonic); producer-owned
     private let droppedCount = Atomic<Int>(0)
     /// Yields once per push (buffering newest 1): the consumer drains everything on each wake.
     public let poke: AsyncStream<Void>
     private let pokeContinuation: AsyncStream<Void>.Continuation
 
     public init(capacity: Int = 64) {
+        precondition(capacity > 0)
         self.capacity = capacity
         slots = UnsafeMutablePointer<ChannelTelemetryRecord>.allocate(capacity: capacity)
         let zero = SampleTime(captureID: CaptureID(), sampleIndex: 0)
         slots.initialize(repeating: ChannelTelemetryRecord(kind: .meter, time: zero, powerDBFS: .nan, snrDB: .nan, squelchOpen: true), count: capacity)
+        versions = UnsafeMutablePointer<Atomic<UInt64>>.allocate(capacity: capacity)
+        for i in 0..<capacity { (versions + i).initialize(to: Atomic<UInt64>(0)) }
         (poke, pokeContinuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
 
     deinit {
         slots.deinitialize(count: capacity)
         slots.deallocate()
+        versions.deinitialize(count: capacity)
+        versions.deallocate()
         pokeContinuation.finish()
     }
 
-    /// Records dropped because the queue was full.
+    /// Cumulative count of records evicted (oldest first) because the queue was full.
     public var dropped: Int { droppedCount.load(ordering: .relaxed) }
 
-    /// Producer side (DSP thread). Never blocks or allocates.
+    /// Producer side (DSP thread). Never blocks or allocates; evicts the oldest record when full.
     public func push(_ record: ChannelTelemetryRecord) {
         let t = tail.load(ordering: .relaxed)
-        let h = head.load(ordering: .acquiring)
-        if t - h >= capacity {
-            droppedCount.wrappingAdd(1, ordering: .relaxed)
-            return
+        while true {
+            let h = head.load(ordering: .acquiring)
+            if t - h < capacity { break }
+            // Full: claim the oldest slot by advancing head. A failed CAS means the consumer took it.
+            if head.compareExchange(expected: h, desired: h + 1, ordering: .acquiringAndReleasing).exchanged {
+                droppedCount.wrappingAdd(1, ordering: .relaxed)
+            }
         }
-        slots[t % capacity] = record
+        let idx = t % capacity
+        let v = versions + idx
+        v.pointee.wrappingAdd(1, ordering: .acquiringAndReleasing)   // odd: writing
+        slots[idx] = record
+        v.pointee.wrappingAdd(1, ordering: .releasing)               // even: stable
         tail.store(t + 1, ordering: .releasing)
         pokeContinuation.yield(())
     }
 
-    /// Consumer side. Returns nil when empty.
+    /// Consumer side. Returns nil when empty. Retries when the producer evicts the slot mid-read.
     public func pop() -> ChannelTelemetryRecord? {
-        let h = head.load(ordering: .relaxed)
-        let t = tail.load(ordering: .acquiring)
-        guard t > h else { return nil }
-        let r = slots[h % capacity]
-        head.store(h + 1, ordering: .releasing)
-        return r
+        while true {
+            let h = head.load(ordering: .relaxed)
+            let t = tail.load(ordering: .acquiring)
+            guard t > h else { return nil }
+            let idx = h % capacity
+            let v = versions + idx
+            let v1 = v.pointee.load(ordering: .acquiring)
+            if v1 & 1 == 1 { continue }
+            let r = slots[idx]
+            atomicMemoryFence(ordering: .acquiring)
+            let v2 = v.pointee.load(ordering: .relaxed)
+            if v1 != v2 { continue }
+            if head.compareExchange(expected: h, desired: h + 1, ordering: .acquiringAndReleasing).exchanged {
+                return r
+            }
+        }
     }
 
     /// Ends the poke stream; the drain task exits after its final sweep.

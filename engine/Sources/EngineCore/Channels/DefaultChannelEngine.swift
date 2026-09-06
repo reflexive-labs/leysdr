@@ -31,7 +31,8 @@ public actor DefaultChannelEngine: ChannelEngine {
     /// Read by the capture's DSP thread.
     public nonisolated let slot: ChannelSlot
     private nonisolated let audioRateBox = Atomic<UInt32>(0)
-    private nonisolated let telemetryQueue = ChannelTelemetryQueue()
+    /// Internal so tests can overflow the ring directly; production pushes come from `ChannelDSPCore`.
+    nonisolated let telemetryQueue = ChannelTelemetryQueue()
     private nonisolated let hub = TelemetryHub()
 
     private var currentConfig: ChannelConfig
@@ -149,6 +150,9 @@ public actor DefaultChannelEngine: ChannelEngine {
     public nonisolated func telemetry() -> AsyncStream<ChannelTelemetry> {
         hub.subscribe()
     }
+
+    /// Records evicted from the telemetry ring because the drain task fell behind (drop-oldest).
+    public nonisolated var telemetryDropped: Int { telemetryQueue.dropped }
 
     /// Tears down: pauses processing, closes sinks, ends telemetry streams.
     public func close() async {

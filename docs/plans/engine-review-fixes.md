@@ -118,7 +118,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   test: disconnected rtl_tcp entry becomes `.available` after a poll with the server back.
 - docs/dev-setup.md + engine-internals.md: rtl_tcp reconnects on the next poll after the server returns.
 
-### WI-8 `[ ]` Telemetry ring is latest-wins with visible gaps (#20 P2)
+### WI-8 `[x]` Telemetry ring is latest-wins with visible gaps (#20 P2)
 
 - `ChannelTelemetryQueue`: per-slot seqlock versions (`Atomic<UInt64>` array, preallocated). Producer on
   full: CAS `head` forward (evict oldest) and count it dropped, then write the slot under an odd/even

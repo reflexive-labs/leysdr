@@ -54,7 +54,7 @@ A gRPC server-stream of typed messages, subscribed with a scope filter (daemon, 
 - **Detection** — from the V0 detector: center frequency, bandwidth, SNR, first/last seen timestamps, optional modulation guess. Emitted during scans and by watch jobs.
 - **Capture activity** — the aggregate signal agents use for don't-disturb: interactive-write recency, live audio sinks. Derived by the daemon from control-plane traffic.
 
-Telemetry messages are full protobuf (unlike bulk payloads) — they are small, and typed schema is the point. All carry the sample timebase. Delivery is latest-wins with sequence numbers; a missed meter reading is not an event worth recovering.
+Telemetry messages are full protobuf (unlike bulk payloads) — they are small, and typed schema is the point. All carry the sample timebase. Delivery is drop-oldest with sequence numbers: when a subscriber falls behind, the daemon evicts the oldest unread readings (never the newest) and advances `seq` past each one, so a gap in `seq` is the only trace of a missed meter reading — not an event worth recovering.
 
 Rationale for a separate plane rather than folding into control events: control events describe state someone changed; telemetry describes what the radio observes. Clients almost always want one without the other — the CLI tuning a channel doesn't want 30 Hz meters; a meter widget doesn't want session lifecycle. Separate subscriptions keep both simple.
 

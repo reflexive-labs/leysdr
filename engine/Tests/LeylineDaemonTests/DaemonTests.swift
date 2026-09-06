@@ -1,4 +1,4 @@
-import EngineCore
+@testable import EngineCore
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
@@ -427,6 +427,96 @@ final class DaemonTests: XCTestCase {
             otherEvents.cancel()
         }
     }
+
+    /// A drain that falls behind the telemetry ring loses the oldest readings; the subscriber sees every
+    /// eviction as a `seq` gap instead of a silently contiguous stream.
+    func testTelemetrySeqGapsAfterQueueOverflow() async throws {
+        let fixture = fixturePath("nfm_tone.cf32")
+        guard FileManager.default.fileExists(atPath: fixture) else { throw XCTSkip("fixture missing: \(fixture)") }
+        try await withDaemon { c in
+            var attach = Leyline_V1_AttachFileDeviceRequest()
+            attach.path = fixture
+            attach.loop = true
+            let device = try await c.control.attachFileDevice(attach, metadata: testMetadata)
+            var cc = Leyline_V1_CreateCaptureRequest()
+            cc.deviceID = device.deviceID
+            cc.centerHz = 146_520_000
+            let capture = try await c.control.createCapture(cc, metadata: testMetadata)
+            var cch = Leyline_V1_CreateChannelRequest()
+            cch.captureID = capture.captureID
+            cch.offsetHz = 100_000
+            cch.mode = .nfm
+            let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+            let anyEngine = await c.daemon.store.channelEngine(ChannelID(string: channel.channelID)!)
+            let engine = try XCTUnwrap(anyEngine as? DefaultChannelEngine)
+            let queue = engine.telemetryQueue
+            let capID = CaptureID(string: capture.captureID)!
+            func squelchRecord(_ index: UInt64) -> ChannelTelemetryRecord {
+                ChannelTelemetryRecord(kind: .squelch, time: SampleTime(captureID: capID, sampleIndex: index), powerDBFS: 0, snrDB: 0, squelchOpen: true)
+            }
+
+            // Squelch is off, so every squelch transition this subscription receives is one the test pushed
+            // (tagged by sample index). Meters stay subscribed so the live channel keeps the RPC flowing.
+            // The DSP thread's own 10 Hz meter pushes overlap the microsecond burst only by coincidence.
+            var sub = Leyline_V1_TelemetrySubscription()
+            sub.channelID = channel.channelID
+            let burst = UInt64(queue.capacity * 8)
+            let lastIndex = burst + 1
+            let collector = TelemetryCollector()
+            // Leave only once a meter follows the last pushed record, so the server has no backlog in
+            // flight when the client goes away (an in-flight write can otherwise outlive the RPC).
+            let rpc = Task {
+                try await c.telemetry.subscribe(sub, metadata: testMetadata) { response in
+                    var sawLast = false
+                    for try await m in response.messages {
+                        await collector.append(m)
+                        if case .squelch? = m.body, m.time.sampleIndex == lastIndex { sawLast = true }
+                        else if sawLast, case .meter? = m.body { break }
+                    }
+                }
+            }
+            func pushed(_ all: [Leyline_V1_TelemetryMsg]) -> [Leyline_V1_TelemetryMsg] {
+                all.filter { if case .squelch? = $0.body { return true } else { return false } }
+            }
+            // Probe until the server-side drain is attached (index 1 may arrive more than once).
+            let deadline = Date().addingTimeInterval(10)
+            while await pushed(collector.messages).isEmpty, Date() < deadline {
+                queue.push(squelchRecord(1))
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            let probed = await pushed(collector.messages).count
+            XCTAssertGreaterThan(probed, 0, "subscription never delivered the probe")
+            // Push the burst faster than the drain task can pop: the ring overflows and evicts oldest-first.
+            for i in 2...lastIndex { queue.push(squelchRecord(i)) }
+            while await pushed(collector.messages).last?.time.sampleIndex != lastIndex, Date() < deadline {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let watchdog = Task { try await Task.sleep(nanoseconds: 5_000_000_000); rpc.cancel() }
+            _ = try? await rpc.value
+            watchdog.cancel()
+
+            let all = await collector.messages
+            let msgs = pushed(all).filter { $0.time.sampleIndex >= 2 }
+            XCTAssertEqual(msgs.last?.time.sampleIndex, lastIndex, "the newest record always survives an overflow")
+            XCTAssertLessThan(UInt64(msgs.count), burst, "the burst must overflow the ring (\(queue.capacity) slots)")
+            XCTAssertGreaterThan(engine.telemetryDropped, 0)
+            let seqs = all.map(\.seq)
+            XCTAssertEqual(seqs, seqs.sorted(), "seq must be monotonic")
+            XCTAssertEqual(Set(seqs).count, seqs.count, "seq must be unique")
+            let jumps = zip(seqs, seqs.dropFirst()).map { $1 - $0 }
+            XCTAssertGreaterThan(jumps.max() ?? 0, 1, "evictions must show up as a seq gap")
+            // Every pushed record was either delivered (+1) or evicted (+1): seq runs ahead of the delivered count.
+            if let last = msgs.last, let position = all.firstIndex(where: { $0.seq == last.seq }) {
+                XCTAssertGreaterThan(last.seq, UInt64(position + 1), "seq advances past the delivered count by the evictions")
+            }
+        }
+    }
+}
+
+/// Accumulates telemetry messages from a streaming RPC for polling from the test body.
+actor TelemetryCollector {
+    private(set) var messages: [Leyline_V1_TelemetryMsg] = []
+    func append(_ m: Leyline_V1_TelemetryMsg) { messages.append(m) }
 }
 
 /// A registry-hosted virtual device whose `startStreaming` throws `DEVICE_IO` while `failStartStreaming`

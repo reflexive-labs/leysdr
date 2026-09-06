@@ -217,8 +217,11 @@ public protocol ChannelEngine: AnyObject, Sendable {
     func captureMoved(newCenterHz: UInt64) async
 
     /// Telemetry (meters at a fixed cadence, squelch transitions edge-triggered). Every subscriber gets
-    /// every message from the moment of subscription; latest-wins under backpressure.
+    /// every message from the moment of subscription; drop-oldest under backpressure (see `telemetryDropped`).
     func telemetry() -> AsyncStream<ChannelTelemetry>
+    /// Cumulative count of telemetry records the engine evicted (drop-oldest) before any subscriber
+    /// could see them. Subscribers diff it between records to surface a sequence gap.
+    var telemetryDropped: Int { get }
 }
 
 public enum ChannelState: Hashable, Sendable {

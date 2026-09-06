@@ -1,5 +1,7 @@
 // leyline.v1.Telemetry: fans channel meters / squelch transitions and capture activity into one
-// sequenced stream per subscriber (latest-wins, sample timebase on every message).
+// sequenced stream per subscriber (sample timebase on every message). Delivery is drop-oldest:
+// records the engine evicted before this subscriber drained them advance `seq` without being
+// sent, so a slow subscriber sees a gap in `seq` for every reading it missed.
 
 import EngineCore
 import Foundation
@@ -33,7 +35,8 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
         await store.streamOpened(client)
         defer { Task { await store.streamClosed(client) } }
 
-        let (merged, sink) = AsyncStream<Leyline_V1_TelemetryMsg>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        // Each merged item carries the number of records evicted ahead of it (a `seq` gap to open).
+        let (merged, sink) = AsyncStream<(msg: Leyline_V1_TelemetryMsg, gap: UInt64)>.makeStream(bufferingPolicy: .bufferingNewest(64))
         let events = await store.events(scope: captureFilter.map { .capture($0) } ?? .daemon)
         let st = self.store
         let capFilter = captureFilter
@@ -44,8 +47,15 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
         func track(_ id: ChannelID, _ engine: any ChannelEngine) {
             guard chanFilter == nil || chanFilter == id else { return }
             drains.start(id) {
+                var seenDropped = engine.telemetryDropped
+                var gap: UInt64 = 0
                 for await t in engine.telemetry() {
                     if Task.isCancelled { return }
+                    // Evictions since this drain's previous record become a gap on the merged stream;
+                    // a gap accrued behind a filtered-out record carries over to the next one sent.
+                    let nowDropped = engine.telemetryDropped
+                    gap += UInt64(max(0, nowDropped - seenDropped))
+                    seenDropped = nowDropped
                     var msg = Leyline_V1_TelemetryMsg()
                     switch t {
                     case .meter(let time, let power, let snr, let open):
@@ -61,44 +71,54 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         msg.squelch.channelID = id.string
                         msg.squelch.open = open
                     }
-                    sink.yield(msg)
+                    sink.yield((msg, gap))
+                    gap = 0
                 }
             }
         }
         for (id, engine) in await st.channelEngines(captureID: capFilter) { track(id, engine) }
 
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                for await ev in events {
-                    if Task.isCancelled { return }
-                    guard case .channel(let ch)? = ev.body, ch.state == .channelActive,
-                          let id = ChannelID(string: ch.channelID), let engine = await st.channelEngine(id) else { continue }
-                    track(id, engine)
-                }
-            }
-            if wants(.captureActivity), chanFilter == nil {
+        // RPC cancellation is not task cancellation in grpc-swift: end the merged stream ourselves so a
+        // subscriber that goes away (or a daemon shutdown, which finishes `events`) ends the RPC even
+        // while no telemetry is flowing.
+        try await withRPCCancellationHandler {
+            try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    while !Task.isCancelled {
-                        try await Task.sleep(nanoseconds: Self.activityIntervalNs)
-                        for cap in await st.snapshot(scope: capFilter.map { .capture($0) } ?? .daemon).captures {
-                            var msg = Leyline_V1_TelemetryMsg()
-                            msg.time.captureID = cap.captureID
-                            msg.time.sampleIndex = await st.captureEngine(CaptureID(string: cap.captureID)!)?.stats.samplesProcessed ?? 0
-                            msg.activity.captureID = cap.captureID
-                            msg.activity.snapshot.lastInteractiveWriteNs = cap.activity.lastInteractiveWriteNs
-                            msg.activity.snapshot.liveAudioSinks = cap.activity.liveAudioSinks
-                            sink.yield(msg)
+                    for await ev in events {
+                        if Task.isCancelled { return }
+                        guard case .channel(let ch)? = ev.body, ch.state == .channelActive,
+                              let id = ChannelID(string: ch.channelID), let engine = await st.channelEngine(id) else { continue }
+                        track(id, engine)
+                    }
+                    sink.finish()
+                }
+                if wants(.captureActivity), chanFilter == nil {
+                    group.addTask {
+                        while !Task.isCancelled {
+                            try await Task.sleep(nanoseconds: Self.activityIntervalNs)
+                            for cap in await st.snapshot(scope: capFilter.map { .capture($0) } ?? .daemon).captures {
+                                var msg = Leyline_V1_TelemetryMsg()
+                                msg.time.captureID = cap.captureID
+                                msg.time.sampleIndex = await st.captureEngine(CaptureID(string: cap.captureID)!)?.stats.samplesProcessed ?? 0
+                                msg.activity.captureID = cap.captureID
+                                msg.activity.snapshot.lastInteractiveWriteNs = cap.activity.lastInteractiveWriteNs
+                                msg.activity.snapshot.liveAudioSinks = cap.activity.liveAudioSinks
+                                sink.yield((msg, 0))
+                            }
                         }
                     }
                 }
+                var seq: UInt64 = 0
+                for await item in merged {
+                    var msg = item.msg
+                    seq += item.gap + 1
+                    msg.seq = seq
+                    try await response.write(msg)
+                }
+                group.cancelAll()
             }
-            var seq: UInt64 = 0
-            for await var msg in merged {
-                seq += 1
-                msg.seq = seq
-                try await response.write(msg)
-            }
-            group.cancelAll()
+        } onCancelRPC: {
+            sink.finish()
         }
     }
 }

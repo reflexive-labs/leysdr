@@ -9,6 +9,64 @@ final class ChannelTests: XCTestCase {
         return p
     }
 
+    private func telemetryRecord(_ capID: CaptureID, index: UInt64) -> ChannelTelemetryRecord {
+        ChannelTelemetryRecord(kind: .meter, time: SampleTime(captureID: capID, sampleIndex: index), powerDBFS: Float(index), snrDB: 0, squelchOpen: true)
+    }
+
+    /// The telemetry ring is drop-oldest: overflow evicts the oldest unread records, counts them, and
+    /// keeps the newest so a stalled drain never reads a stale prefix.
+    func testTelemetryQueueDropsOldestAndCountsEvictions() {
+        let queue = ChannelTelemetryQueue()
+        let capID = CaptureID()
+        let n = queue.capacity + 10
+        for i in 0..<n { queue.push(telemetryRecord(capID, index: UInt64(i))) }
+        XCTAssertEqual(queue.dropped, 10)
+        var popped: [UInt64] = []
+        while let r = queue.pop() { popped.append(r.time.sampleIndex) }
+        XCTAssertEqual(popped.count, queue.capacity)
+        XCTAssertEqual(popped, Array(UInt64(10)..<UInt64(n)), "oldest 10 evicted, newest kept in order")
+        XCTAssertEqual(popped.last, UInt64(n - 1), "the last pushed record must survive")
+        XCTAssertNil(queue.pop())
+        // Steady state after an overflow: push/pop still round-trips; the drop count is cumulative.
+        queue.push(ChannelTelemetryRecord(kind: .squelch, time: SampleTime(captureID: capID, sampleIndex: 999), powerDBFS: 0, snrDB: 0, squelchOpen: false))
+        XCTAssertEqual(queue.pop()?.time.sampleIndex, 999)
+        XCTAssertEqual(queue.dropped, 10)
+        queue.finish()
+    }
+
+    /// Producer and consumer race on the ring: every record is either delivered or counted dropped,
+    /// delivered records are in order, and no torn record slips through the seqlock.
+    func testTelemetryQueueConcurrentPushPopAccountsForEveryRecord() {
+        let queue = ChannelTelemetryQueue(capacity: 8)
+        let capID = CaptureID()
+        let total: UInt64 = 200_000
+        let done = DispatchSemaphore(value: 0)
+        let producer = Thread {
+            for i in 1...total { queue.push(self.telemetryRecord(capID, index: i)) }
+            done.signal()
+        }
+        producer.start()
+        var popped: [UInt64] = []
+        var last: UInt64 = 0
+        var finished = false
+        while true {
+            if let r = queue.pop() {
+                XCTAssertEqual(r.powerDBFS, Float(r.time.sampleIndex), "torn record")
+                XCTAssertGreaterThan(r.time.sampleIndex, last, "out of order")
+                last = r.time.sampleIndex
+                popped.append(r.time.sampleIndex)
+            } else if finished {
+                break
+            } else if done.wait(timeout: .now()) == .success {
+                finished = true // one more sweep for anything pushed before the signal
+            }
+        }
+        XCTAssertEqual(popped.last, total, "the newest record always survives")
+        XCTAssertEqual(UInt64(popped.count) + UInt64(queue.dropped), total, "delivered + dropped == pushed")
+        XCTAssertNil(queue.pop())
+        queue.finish()
+    }
+
     /// Narrow modes cannot ask for more than 0.9·r2: the channel would be filtered narrower than it reports.
     func testNarrowBandwidthAboveAudioRateIsRejected() async throws {
         let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: 2_400_000)
