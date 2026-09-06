@@ -591,6 +591,20 @@ actor SessionStore {
         await teardownHook?(.channelAudioRate(chanID))
     }
 
+    /// Snapshot of every channel's audio rate on a capture, taken before a write that may re-plan chains.
+    private func audioRates(captureID: CaptureID) -> [ChannelID: UInt32] {
+        channels.filter { $0.value.captureID == captureID }.mapValues { $0.engine.audioRate }
+    }
+
+    /// After a retune or rate change: rebuilds sinks for every channel whose audio rate moved
+    /// (see `audioRateChanged`) and emits the full state of every channel on the capture.
+    private func reconcileAudioRates(captureID: CaptureID, before: [ChannelID: UInt32], by: ClientContext) async {
+        for (chanID, ch) in channels where ch.captureID == captureID {
+            if ch.engine.audioRate != before[chanID] { await audioRateChanged(chanID, by: by) }
+            await emitChannel(chanID, by: by)
+        }
+    }
+
     // MARK: Writes
 
     /// Applies one coalesced parameter write. Returns the rejection (nil = applied). Success emits
@@ -601,23 +615,23 @@ actor SessionStore {
             case .centerHz(let hz)?:
                 let (id, entry) = try captureTarget(w.targetID)
                 guard let d = devices[entry.deviceID], d.canTune(hz) else { throw EngineError.freqOutOfRange(hz, target: w.targetID) }
+                // A retune can bring a channel back into capture after a rate change: its chain is
+                // re-planned at the current rate only then, so audio rates are reconciled here too.
+                let ratesBefore = audioRates(captureID: id)
                 try await entry.engine.retune(centerHz: hz)
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
-                for (chanID, ch) in channels where ch.captureID == id { await emitChannel(chanID, by: by) }
+                await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
             case .captureSampleRate(let hz)?:
                 let (id, entry) = try captureTarget(w.targetID)
                 guard let d = devices[entry.deviceID], d.sampleRates.isEmpty || d.sampleRates.contains(hz) else {
                     throw EngineError.rateUnsupported(hz, target: w.targetID)
                 }
-                let ratesBefore = channels.filter { $0.value.captureID == id }.mapValues { $0.engine.audioRate }
+                let ratesBefore = audioRates(captureID: id)
                 try await entry.engine.setSampleRate(hz)
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
-                for (chanID, ch) in channels where ch.captureID == id {
-                    if ch.engine.audioRate != ratesBefore[chanID] { await audioRateChanged(chanID, by: by) }
-                    await emitChannel(chanID, by: by)
-                }
+                await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
             case .gain(let g)?:
                 let (id, entry) = try captureTarget(w.targetID)
                 // Argument shape first, then the element: a NaN/inf level is malformed whatever

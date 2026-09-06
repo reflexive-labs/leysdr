@@ -82,7 +82,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   NaN gain -> INVALID_ARGUMENT; sidecar with sample_rate 0 and 1e15 -> INVALID_ARGUMENT; AttachFileDevice
   on a FIFO (mkfifo) and on a directory -> INVALID_ARGUMENT within 2 s (no hang).
 
-### WI-5 `[ ]` Channel state across retune and rate change (#21, #28, both P2)
+### WI-5 `[x]` Channel state across retune and rate change (#21, #28, both P2)
 
 - #21 DefaultChannelEngine: `absoluteHz` is the source of truth. `captureMoved` updates
   `currentConfig.offsetHz` even when the channel no longer fits. `update()` with a nil slot and a

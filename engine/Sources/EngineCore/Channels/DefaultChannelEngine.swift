@@ -83,18 +83,26 @@ public actor DefaultChannelEngine: ChannelEngine {
         if config.mode == .rawIQ, sinkTable.contains(where: { $0 is PCMOnlyAudioSink }) {
             throw EngineError.invalidArgument("cannot switch to raw IQ while a system audio sink is attached", target: id.description)
         }
-        if !structural, let core = slot.load() {
-            core.setSquelch(thresholdDB: config.squelchDB)
-            core.setAGC(config.agc)
+        if !structural {
+            // Squelch/AGC-only: adjust the running core in place. Out of capture there is no core;
+            // the values are kept for the rebuild that happens once the channel fits again, and
+            // the channel stays `.outOfCapture` at its absolute frequency.
+            if let core = slot.load() {
+                core.setSquelch(thresholdDB: config.squelchDB)
+                core.setAGC(config.agc)
+            }
             currentConfig = config
             return
         }
+        // `absoluteHz` is the source of truth: only an explicit offset change moves it. A mode or
+        // bandwidth change on a channel the capture has moved away from keeps its frequency.
+        let offset = old.offsetHz != config.offsetHz ? config.offsetHz : absoluteHz - Int64(centerHz)
         // Validate before mutating: a rejected config must leave the channel (and its reported state) untouched.
-        try Channelizer.checkOffset(config.offsetHz, bandwidthHz: config.bandwidthHz, captureRate: captureRate)
+        try Channelizer.checkOffset(offset, bandwidthHz: config.bandwidthHz, captureRate: captureRate)
         _ = try ChannelPlan.plan(captureRate: captureRate, mode: config.mode, bandwidthHz: config.bandwidthHz)
         currentConfig = config
-        absoluteHz = Int64(centerHz) + config.offsetHz
-        try rebuild(offsetHz: config.offsetHz)
+        absoluteHz = Int64(centerHz) + offset
+        try rebuild(offsetHz: offset)
     }
 
     public func attach(_ sink: any AudioSink) async throws {
@@ -119,6 +127,9 @@ public actor DefaultChannelEngine: ChannelEngine {
     public func captureMoved(newCenterHz: UInt64) async {
         centerHz = newCenterHz
         let offset = absoluteHz - Int64(newCenterHz)
+        // The reported offset follows the absolute frequency even when the channel no longer fits,
+        // so a later structural update rebuilds at the right place.
+        currentConfig.offsetHz = offset
         do {
             try Channelizer.checkOffset(offset, bandwidthHz: currentConfig.bandwidthHz, captureRate: captureRate)
             try rebuild(offsetHz: offset)

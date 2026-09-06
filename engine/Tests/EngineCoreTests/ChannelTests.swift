@@ -59,7 +59,7 @@ final class ChannelTests: XCTestCase {
         XCTAssertEqual(state, .outOfCapture)
         XCTAssertNil(channel.slot.load(), "out-of-capture channel must be skipped by the DSP thread")
         var config = await channel.config
-        XCTAssertEqual(config.offsetHz, 100_000, "offset unchanged while out of capture")
+        XCTAssertEqual(config.offsetHz, -1_400_000, "offset follows the absolute frequency (100.1 MHz) while out of capture")
 
         try await capture.retune(centerHz: 100_500_000)
         state = await channel.state
@@ -69,6 +69,83 @@ final class ChannelTests: XCTestCase {
         XCTAssertNotNil(channel.slot.load())
         let snap = await capture.snapshot
         XCTAssertEqual(snap.centerHz, 100_500_000)
+        await capture.stop()
+    }
+
+    /// A retune pushes the channel out of capture; a squelch/AGC write while out is kept without
+    /// resurrecting the channel or moving it, and a retune back resumes at the original frequency.
+    func testUpdateWhileOutOfCaptureKeepsAbsoluteFrequency() async throws {
+        let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: 2_400_000)
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm)) as! DefaultChannelEngine
+        try await capture.retune(centerHz: 101_500_000)
+        var state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+
+        // Non-structural write with no core: stored, still out of capture, frequency untouched.
+        var cfg = await channel.config
+        cfg.squelchDB = -50
+        cfg.agc = .manual
+        try await channel.update(cfg)
+        state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+        XCTAssertNil(channel.slot.load())
+        var config = await channel.config
+        XCTAssertEqual(config.squelchDB, -50)
+        XCTAssertEqual(config.agc, .manual)
+        XCTAssertEqual(config.offsetHz, -1_400_000)
+
+        // Structural write that does not touch the offset (bandwidth) while out: the channel stays
+        // out of capture at its absolute frequency (the stale offset is not re-validated as-is).
+        cfg = config
+        cfg.bandwidthHz = 10_000
+        do {
+            try await channel.update(cfg)
+            XCTFail("expected OFFSET_OUT_OF_CAPTURE")
+        } catch let e as EngineError {
+            XCTAssertEqual(e.code, "OFFSET_OUT_OF_CAPTURE")
+        }
+        state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+
+        // Retune back: active again at 100.1 MHz with the stored squelch/AGC applied.
+        try await capture.retune(centerHz: 100_000_000)
+        state = await channel.state
+        XCTAssertEqual(state, .active)
+        let core = try XCTUnwrap(channel.slot.load())
+        config = await channel.config
+        XCTAssertEqual(config.offsetHz, 100_000, "original absolute frequency")
+        XCTAssertEqual(core.config.offsetHz, 100_000)
+        XCTAssertEqual(core.config.squelchDB, -50)
+        XCTAssertEqual(core.config.agc, .manual)
+        XCTAssertEqual(channel.audioRate, 48_000)
+        await capture.stop()
+    }
+
+    /// A structural update while in capture that does not change the offset keeps the absolute
+    /// frequency even after the capture has moved (the offset is re-derived, not taken from the write).
+    func testStructuralUpdateAfterRetuneKeepsAbsoluteFrequency() async throws {
+        let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: 2_400_000)
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm)) as! DefaultChannelEngine
+        try await capture.retune(centerHz: 100_500_000)
+        var config = await channel.config
+        XCTAssertEqual(config.offsetHz, -400_000)
+        // Mode change carrying the (now re-derived) offset: stays at 100.1 MHz.
+        var cfg = config
+        cfg.mode = .am
+        cfg.bandwidthHz = 10_000
+        try await channel.update(cfg)
+        config = await channel.config
+        XCTAssertEqual(config.offsetHz, -400_000)
+        XCTAssertEqual(config.mode, .am)
+        // Explicit offset change moves the absolute frequency: retune back shows the new one.
+        cfg = config
+        cfg.offsetHz = 0
+        try await channel.update(cfg)
+        try await capture.retune(centerHz: 100_000_000)
+        config = await channel.config
+        XCTAssertEqual(config.offsetHz, 500_000, "absolute frequency moved to 100.5 MHz by the explicit offset write")
+        let state = await channel.state
+        XCTAssertEqual(state, .active)
         await capture.stop()
     }
 
