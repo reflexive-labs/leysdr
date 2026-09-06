@@ -46,6 +46,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
     private let samplesProcessed = Atomic<UInt64>(0)
     private let needsAnchor = Atomic<Bool>(true)
     private let running = Atomic<Bool>(false)
+    private let threadStarts = Atomic<Int>(0)
     private let lastOverrunLogNs = Atomic<Int64>(0)
     private let lastLoggedOverruns = Atomic<Int>(0)
     private var thread: Thread?
@@ -174,6 +175,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
     /// Starts the DSP thread (`leyline.dsp.<id>`, user-interactive QoS). Idempotent.
     public func startThread() {
         guard !running.exchange(true, ordering: .acquiringAndReleasing) else { return }
+        threadStarts.wrappingAdd(1, ordering: .relaxed)
         let t = Thread { [self] in
             self.loop()
             self.joined.signal()
@@ -192,6 +194,10 @@ public final class CaptureDSPCore: @unchecked Sendable {
     }
 
     public var isRunning: Bool { running.load(ordering: .relaxed) }
+
+    /// Number of times a DSP thread has been spawned for this core. Lets tests assert that a device
+    /// rebind reuses the running thread instead of respawning it.
+    public var threadStartCount: Int { threadStarts.load(ordering: .relaxed) }
 
     /// Finishes the anchor stream. Call once at teardown.
     public func finish() {

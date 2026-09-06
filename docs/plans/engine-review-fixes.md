@@ -38,7 +38,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   `startStreaming` throws returns `DEVICE_IO`, the device is `AVAILABLE` again in GetState, and a retry
   succeeds after the fault clears.
 
-### WI-2 `[ ]` Device loss / rebind test coverage (#13 P2)
+### WI-2 `[x]` Device loss / rebind test coverage (#13 P2)
 
 - LeylineDaemonTests: attach a virtual test device (`registry.attachVirtualDevice`), create a capture,
   drive the device to `.disconnected` through its state-change hook, assert the Capture event shows

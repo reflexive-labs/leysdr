@@ -231,3 +231,92 @@ final class CaptureLifecycleTests: XCTestCase {
         await capture.stop()
     }
 }
+
+final class CaptureDeviceLossTests: XCTestCase {
+    /// `deviceLost` stops the dead stream and reports detached without touching the DSP thread,
+    /// channels or the sample index; `deviceRebound` adopts the new device on the same thread.
+    func testDeviceLostThenReboundReusesDSPThread() async throws {
+        let first = FailingDevice()
+        let capture = DefaultCaptureEngine(device: first, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm))
+        XCTAssertEqual(capture.core.threadStartCount, 1)
+        XCTAssertEqual(capture.deviceID, first.descriptor.id)
+
+        await capture.deviceLost()
+        var snap = await capture.snapshot
+        XCTAssertTrue(snap.detached, "capture reports detached after device loss")
+        XCTAssertEqual(first.streamStops.value, 1, "the dead stream is stopped once")
+        XCTAssertEqual(first.closes.value, 0, "a lost device is not closed by the engine")
+        XCTAssertTrue(capture.core.isRunning, "DSP thread survives device loss")
+        let channels = await capture.channels
+        XCTAssertEqual(channels.map(\.id), [channel.id], "channels are kept across loss")
+        await assertCode("DEVICE_DETACHED") { try await capture.retune(centerHz: 101_000_000) }
+        await assertCode("DEVICE_DETACHED") { try await capture.setSampleRate(1_024_000) }
+
+        // Losing an already-lost device is a no-op.
+        await capture.deviceLost()
+        XCTAssertEqual(first.streamStops.value, 1)
+
+        let second = FailingDevice()
+        try await capture.deviceRebound(second)
+        snap = await capture.snapshot
+        XCTAssertFalse(snap.detached, "rebound clears detached")
+        XCTAssertEqual(snap.centerHz, 100_000_000)
+        XCTAssertEqual(snap.sampleRate, 2_400_000)
+        XCTAssertEqual(capture.deviceID, second.descriptor.id, "the engine now reports the new device")
+        XCTAssertEqual(second.opens.value, 1)
+        XCTAssertEqual(second.streamStarts.value, 1, "stream restarted on the new device")
+        XCTAssertEqual(first.streamStarts.value, 1, "the lost device is never restarted")
+        XCTAssertTrue(capture.core.isRunning)
+        XCTAssertEqual(capture.core.threadStartCount, 1, "rebound reuses the running DSP thread")
+        let kept = await capture.channels
+        XCTAssertEqual(kept.map(\.id), [channel.id])
+        try await capture.retune(centerHz: 101_000_000)
+
+        // `started` is set by the rebound: stop() closes the new device and joins the thread.
+        await capture.stop()
+        XCTAssertFalse(capture.core.isRunning)
+        XCTAssertEqual(second.streamStops.value, 1)
+        XCTAssertEqual(second.closes.value, 1, "stop() closes the rebound device")
+        XCTAssertEqual(first.closes.value, 0)
+    }
+
+    /// A rebind that fails to stream leaves the capture detached; a later rebind can still succeed.
+    func testFailedReboundStaysDetached() async throws {
+        let first = FailingDevice()
+        let capture = DefaultCaptureEngine(device: first, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        await capture.deviceLost()
+
+        let refusing = FailingDevice()
+        refusing.failStartStreaming.value = true
+        await assertCode("DEVICE_IO") { try await capture.deviceRebound(refusing) }
+        var snap = await capture.snapshot
+        XCTAssertTrue(snap.detached, "still detached after a failed rebind")
+        XCTAssertTrue(capture.core.isRunning, "DSP thread kept for the next attempt")
+
+        let good = FailingDevice()
+        try await capture.deviceRebound(good)
+        snap = await capture.snapshot
+        XCTAssertFalse(snap.detached)
+        XCTAssertEqual(good.streamStarts.value, 1)
+        XCTAssertEqual(capture.core.threadStartCount, 1)
+        await capture.stop()
+        XCTAssertEqual(good.closes.value, 1)
+    }
+
+    /// A rebound on an engine that was never started (or whose thread was joined) spawns the thread.
+    func testReboundStartsThreadWhenNotRunning() async throws {
+        let first = FailingDevice()
+        let capture = DefaultCaptureEngine(device: first, centerHz: 100_000_000, sampleRate: 2_400_000)
+        XCTAssertFalse(capture.core.isRunning)
+        try await capture.deviceRebound(first)
+        XCTAssertTrue(capture.core.isRunning)
+        XCTAssertEqual(capture.core.threadStartCount, 1)
+        XCTAssertEqual(first.streamStarts.value, 1)
+        let snap = await capture.snapshot
+        XCTAssertFalse(snap.detached)
+        await capture.stop()
+    }
+}
