@@ -9,6 +9,9 @@ DerivedData/
 *.xcodeproj
 *.xcworkspace
 
+# Pinned protoc plugins installed by scripts/gen-proto.sh
+.tools/
+
 # Go
 go/bin/
 go/dist/

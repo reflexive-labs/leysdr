@@ -95,14 +95,15 @@ ley daemon uninstall
 - Nooelec dongles often ship with serial `00000001`. Two identical serials get distinct IDs by
   enumeration order and a `serial_collision` feature flag; set unique serials with `rtl_eeprom -s`.
 
-### Regenerating the protos on macOS
+### Regenerating the protos
 
-`make proto` needs `protoc` (any current Homebrew `protobuf` is fine), `protoc-gen-go` v1.36.12,
-`protoc-gen-go-grpc` v1.6.2, and the Swift plugins `protoc-gen-swift` (swift-protobuf 1.38.1) and
-`protoc-gen-grpc-swift-2` (grpc-swift-protobuf 2.4.1) on `PATH`. CI runs protoc 25.1; other versions
-produce the same code for these proto3 files, and `scripts/gen-proto.sh` strips the protoc version the
-Go plugins stamp into their headers, so `make proto-check` only fails on real drift (a changed
-descriptor or a different plugin version).
+`make proto` needs only `protoc` from outside the repo (`brew install protobuf`; any current version).
+`scripts/gen-proto.sh` installs the pinned plugins into `.tools/bin` (gitignored): `protoc-gen-go` and
+`protoc-gen-go-grpc` from the `tool` directives in `go/go.mod`, and `protoc-gen-swift` /
+`protoc-gen-grpc-swift-2` built from the engine package's resolved dependencies (`engine/Package.resolved`,
+rebuilt when that file changes). Nothing on your `PATH` influences the output, so `make proto-check` fails
+only on real drift. To bump a plugin: `cd go && go get -tool <module>@<version>` or update the engine's
+package dependency, then `make proto` and commit the regenerated code.
 
 ## Linux / the moat container (Go clients, contract tests, engine compile checks)
 
