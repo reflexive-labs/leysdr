@@ -275,6 +275,10 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     // MARK: Control
 
+    /// `rtlsdr_open` return codes that mean another process owns the USB interface:
+    /// LIBUSB_ERROR_ACCESS (-3, macOS exclusive access) and LIBUSB_ERROR_BUSY (-6).
+    public static func isClaimFailure(_ rc: Int32) -> Bool { rc == -3 || rc == -6 }
+
     /// Claims the dongle. `rtlsdr_open` blocks for up to hundreds of ms (USB interface claim, EEPROM
     /// read, plus the retry sleep), so the whole sequence runs on a dedicated thread via
     /// `BlockingWork.run` rather than parking a cooperative-pool thread (docs/engine-internals.md).
@@ -292,6 +296,11 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
                     rc = rtlsdr_open(&d, index)
                 }
                 guard rc == 0, let opened = d else {
+                    if RTLSDRDevice.isClaimFailure(rc) {
+                        // libusb ACCESS/BUSY: the interface belongs to another process (rtl_tcp,
+                        // SDR++, GQRX). The registry marks the dongle held on this error.
+                        throw EngineError.deviceHeldByOtherProgram(_descriptor.id.string)
+                    }
                     throw EngineError.deviceIO("rtlsdr_open failed: \(rc)", target: _descriptor.id.string)
                 }
                 // Apply the cached configuration so reopen after replug is transparent. A failure here

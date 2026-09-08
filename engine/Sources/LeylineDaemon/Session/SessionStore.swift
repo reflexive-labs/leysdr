@@ -273,6 +273,9 @@ actor SessionStore {
                         await emitCapture(capID, by: .daemon)
                     } catch {
                         log.warning("rebind of \(capID) to \(d.id) failed: \(error)")
+                        if let e = error as? EngineError, e.code == "DEVICE_BUSY" {
+                            await registry.markHeldExternally(id: d.id)
+                        }
                     }
                 }
             }
@@ -381,10 +384,16 @@ actor SessionStore {
             // `start()` already unwound the device; `stop()` finishes the engine so nothing
             // (anchor stream, DSP thread) outlives the failed create.
             await engine.stop()
-            if let e = error as? EngineError, e.code == "DEVICE_IO", desc.features["held_externally"] == .flag(true) {
-                // The registry already knows another program has this dongle; say so instead of
-                // surfacing librtlsdr's claim failure.
-                throw EngineError.deviceHeldByOtherProgram(deviceID.string)
+            if let e = error as? EngineError {
+                if e.code == "DEVICE_BUSY" {
+                    // The dongle's open failed on a USB claim: another program has it. Tell the
+                    // registry so the device reads IN_USE and is re-probed with backoff.
+                    await registry.markHeldExternally(id: deviceID)
+                } else if e.code == "DEVICE_IO", desc.features["held_externally"] == .flag(true) {
+                    // The registry already knows another program has this dongle; say so instead
+                    // of surfacing librtlsdr's claim failure.
+                    throw EngineError.deviceHeldByOtherProgram(deviceID.string)
+                }
             }
             throw error
         }

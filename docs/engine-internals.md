@@ -188,8 +188,11 @@ up; capped to 16384), `actualRate` is `min(requested, 30)`.
   feature `held_externally`, logs it once, and re-probes on a doubling backoff (2 s up to 60 s)
   rather than every poll, because each failed `rtlsdr_open` makes librtlsdr print its
   `usb_claim_interface` complaint to stderr. A successful re-probe (or one of our own captures
-  opening it) flips it back to `AVAILABLE` with the real tuner and gain table; `CreateCapture` on a
-  held dongle answers `DEVICE_BUSY` naming the other program instead of a raw `DEVICE_IO`.
+  opening it) flips it back to `AVAILABLE` with the real tuner and gain table. The reverse also
+  holds: when a capture's own `rtlsdr_open` fails with a libusb ACCESS/BUSY code (another program
+  grabbed a dongle that had probed fine), `RTLSDRDevice.open` throws `DEVICE_BUSY` naming the other
+  program and the session store calls `markHeldExternally`, so the dongle reads `IN_USE` and the
+  backoff re-probe starts from there.
   `RTLSDRDevice.open` retries `rtlsdr_open` once after 50 ms so a transient claim does not fail the
   capture.
 - Descriptor: driver `"rtlsdr"`, model from USB product string, serial from USB serial (Nooelec

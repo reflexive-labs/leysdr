@@ -301,6 +301,28 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         }
     }
 
+    /// Records that one of our captures failed to claim the dongle because another program has it
+    /// (`RTLSDRDevice.open` threw DEVICE_BUSY): the same outcome as a failed probe, so the dongle
+    /// reads `IN_USE` with `held_externally` and is re-probed with backoff until it opens again.
+    /// No-op for virtual devices and for dongles one of our captures already holds.
+    public func markHeldExternally(id: DeviceID) {
+        guard var entry = entries[id], entry.rtlIndex != nil, let rtl = entry.device as? RTLSDRDevice,
+              entry.descriptor.state != .disconnected,
+              !(entry.descriptor.state == .inUse && !entry.heldExternally) else { return }
+        let first = !entry.heldExternally
+        entry.heldExternally = true
+        let delay = scheduleReprobe(id: id)
+        rtl.setState(.inUse)
+        var d = entry.descriptor
+        d.state = .inUse
+        d.features["held_externally"] = .flag(true)
+        let changed = d != entry.descriptor
+        entry.descriptor = d
+        entries[id] = entry
+        if changed { publish(.changed(d)) }
+        logProbeFailure(d, rc: -3, first: first, nextMs: delay)
+    }
+
     /// Schedules the next probe attempt for a dongle whose open just failed.
     private func scheduleReprobe(id: DeviceID) -> Int {
         let previous = probeBackoff[id]?.delayMs

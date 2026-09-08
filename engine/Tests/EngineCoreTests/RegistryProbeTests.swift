@@ -84,6 +84,45 @@ final class RegistryProbeTests: XCTestCase {
         XCTAssertNil(released.features["held_externally"])
     }
 
+    /// A capture's own failed claim (rtlsdr_open ACCESS/BUSY after the dongle was probed fine, e.g.
+    /// rtl_tcp restarted and grabbed it) marks the dongle held exactly like a failed probe.
+    func testCaptureClaimFailureMarksHeld() async throws {
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        var events = reg.events().makeAsyncIterator()
+        _ = await reg.advanceTickAndProbeGate()
+        await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
+        guard case .arrived(let first)? = await events.next() else { return XCTFail("expected arrived") }
+        XCTAssertEqual(first.state, .available)
+
+        await reg.markHeldExternally(id: first.id)
+        guard case .changed(let held)? = await events.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(held.state, .inUse)
+        XCTAssertEqual(held.features["held_externally"], .flag(true))
+        XCTAssertEqual(held.gainElements.first?.validDB, [0, 0.9, 49.6], "the probed gain table is kept")
+        // Re-probed with backoff: tick 2 skips, tick 3 may open (the cached good probe no longer exempts it).
+        var gate = await reg.advanceTickAndProbeGate()
+        XCTAssertFalse(gate(probe(tuner: "unknown", gains: [])))
+        gate = await reg.advanceTickAndProbeGate()
+        XCTAssertTrue(gate(probe(tuner: "unknown", gains: [])))
+        // A skipped probe on a held dongle changes nothing; a successful one frees it.
+        await reg.applyProbes([probe(tuner: "unknown", gains: [])])
+        let still = await reg.devices
+        XCTAssertEqual(still.first?.state, .inUse)
+        await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
+        guard case .changed(let freed)? = await events.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(freed.state, .available)
+        XCTAssertNil(freed.features["held_externally"])
+        // Ours or virtual: no-op.
+        try await reg.markInUse(id: first.id, true)
+        guard case .changed? = await events.next() else { return XCTFail("expected changed") }
+        await reg.markHeldExternally(id: first.id)
+        let ours = await reg.devices
+        XCTAssertNil(ours.first?.features["held_externally"])
+        XCTAssertTrue(RTLSDRDevice.isClaimFailure(-3))
+        XCTAssertTrue(RTLSDRDevice.isClaimFailure(-6))
+        XCTAssertFalse(RTLSDRDevice.isClaimFailure(-1))
+    }
+
     /// Unplugging a held dongle removes it like any other; a re-arrival starts a fresh schedule.
     func testRemovalClearsHoldSchedule() async throws {
         let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
