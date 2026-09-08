@@ -676,6 +676,109 @@ final class DaemonTests: XCTestCase {
             await events.stop()
         }
     }
+
+    /// FU-2: WriteParams on an OUT_OF_CAPTURE channel. `bandwidth_hz` and `mode` are stored (the
+    /// Channel event carries the new values with state OUT_OF_CAPTURE, no WriteRejected), and the
+    /// channel comes back ACTIVE with them once `center_hz` moves the capture back over it.
+    func testStructuralWritesOnOutOfCaptureChannelAreStored() async throws {
+        try await withDaemon { c in
+            let device = RebindableDevice()
+            let d = try await c.daemon.registry.attachVirtualDevice(device)
+            for _ in 0..<150 {
+                let s = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                if s.devices.contains(where: { $0.deviceID == d.id.string }) { break }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+
+            var cc = Leyline_V1_CreateCaptureRequest()
+            cc.deviceID = d.id.string
+            cc.centerHz = 100_000_000
+            let capture = try await c.control.createCapture(cc, metadata: testMetadata)
+            XCTAssertEqual(capture.sampleRate, 2_400_000)
+            var cch = Leyline_V1_CreateChannelRequest()
+            cch.captureID = capture.captureID
+            cch.offsetHz = 100_000
+            cch.mode = .nfm
+            let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+            XCTAssertEqual(channel.state, .channelActive)
+            XCTAssertEqual(channel.bandwidthHz, 12_500)
+
+            func write(tag: UInt64, target: String, _ fill: (inout Leyline_V1_ParamWrite) -> Void) async throws {
+                var w = Leyline_V1_ParamWrite()
+                w.tag = tag
+                w.targetID = target
+                fill(&w)
+                let message = w
+                let summary = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(message) }
+                XCTAssertEqual(summary.writesApplied, 1, "write tag \(tag) applied")
+            }
+
+            // Retune 1.5 MHz away: the channel (100.1 MHz) no longer fits ±1.2 MHz.
+            try await write(tag: 1, target: capture.captureID) { $0.centerHz = 101_500_000 }
+            let out = await events.waitFor { ev in
+                if case .channel(let ch)? = ev.body { return ch.channelID == channel.channelID && ch.state == .outOfCapture }
+                return false
+            }
+            XCTAssertNotNil(out, "channel event OUT_OF_CAPTURE after the retune")
+            XCTAssertEqual(out?.channel.offsetHz, -1_400_000, "offset follows the absolute frequency")
+
+            // Bandwidth then mode while out: both stored, no WriteRejected, state stays OUT_OF_CAPTURE.
+            try await write(tag: 2, target: channel.channelID) { $0.bandwidthHz = 8_000 }
+            let bw = await events.waitFor { ev in
+                if case .channel(let ch)? = ev.body { return ch.channelID == channel.channelID && ch.bandwidthHz == 8_000 }
+                return false
+            }
+            XCTAssertNotNil(bw, "channel event with the stored bandwidth")
+            XCTAssertEqual(bw?.channel.state, .outOfCapture)
+            XCTAssertEqual(bw?.channel.offsetHz, -1_400_000)
+            try await write(tag: 3, target: channel.channelID) { $0.mode = .am }
+            let mode = await events.waitFor { ev in
+                if case .channel(let ch)? = ev.body { return ch.channelID == channel.channelID && ch.mode == .am }
+                return false
+            }
+            XCTAssertNotNil(mode, "channel event with the stored mode")
+            XCTAssertEqual(mode?.channel.state, .outOfCapture)
+            XCTAssertEqual(mode?.channel.bandwidthHz, 8_000)
+            let rejected = await events.events.contains { ev in
+                if case .writeRejected? = ev.body { return true }
+                return false
+            }
+            XCTAssertFalse(rejected, "no write was rejected")
+
+            // An offset write while out is still checked against the capture.
+            var bad = Leyline_V1_ParamWrite()
+            bad.tag = 4
+            bad.targetID = channel.channelID
+            bad.offsetHz = -2_000_000
+            let badMessage = bad
+            _ = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(badMessage) }
+            let wr = await events.waitFor { ev in
+                if case .writeRejected(let r)? = ev.body { return r.tag == 4 }
+                return false
+            }
+            XCTAssertEqual(wr?.writeRejected.error.code, "OFFSET_OUT_OF_CAPTURE")
+
+            // Move the capture back: ACTIVE with the stored bandwidth and mode at 100.1 MHz.
+            try await write(tag: 5, target: capture.captureID) { $0.centerHz = 100_000_000 }
+            let back = await events.waitFor { ev in
+                // The create event was also CHANNEL_ACTIVE at +100 kHz; the one after the retune carries the stored bandwidth.
+                if case .channel(let ch)? = ev.body {
+                    return ch.channelID == channel.channelID && ch.state == .channelActive && ch.offsetHz == 100_000 && ch.bandwidthHz == 8_000
+                }
+                return false
+            }
+            XCTAssertNotNil(back, "channel event CHANNEL_ACTIVE after the capture moves back")
+            XCTAssertEqual(back?.channel.bandwidthHz, 8_000)
+            XCTAssertEqual(back?.channel.mode, .am)
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let ch = try XCTUnwrap(state.channels.first(where: { $0.channelID == channel.channelID }))
+            XCTAssertEqual(ch.state, .channelActive)
+            XCTAssertEqual(ch.bandwidthHz, 8_000)
+            XCTAssertEqual(ch.mode, .am)
+            await events.stop()
+        }
+    }
 }
 
 /// Accumulates telemetry messages from a streaming RPC for polling from the test body.

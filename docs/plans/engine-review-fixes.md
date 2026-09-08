@@ -209,7 +209,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   `CAPTURE_DETACHED` arrives on the watch stream without a GetState; a second variant where the retry
   succeeds asserts the capture event shows the unchanged rate and the channels are re-emitted.
 
-### FU-2 `[ ]` Structural writes on an OUT_OF_CAPTURE channel are stored, not rejected (#21 follow-up)
+### FU-2 `[x]` Structural writes on an OUT_OF_CAPTURE channel are stored, not rejected (#21 follow-up)
 
 - `DefaultChannelEngine.update()`: with a nil slot (out of capture) a `mode` or `bandwidthHz` change is
   stored in `currentConfig` and the channel stays `.outOfCapture`; the eventual rebuild on re-entry uses

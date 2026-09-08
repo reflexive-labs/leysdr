@@ -130,6 +130,79 @@ final class ChannelTests: XCTestCase {
         await capture.stop()
     }
 
+    /// FU-2: mode and bandwidth writes on an OUT_OF_CAPTURE channel are stored, not rejected; the
+    /// channel stays out at its absolute frequency and the rebuild on re-entry uses the stored config.
+    /// An offset write while out is still validated against the capture (and can bring it back in).
+    func testStructuralUpdateWhileOutOfCaptureIsStoredAndAppliedOnReentry() async throws {
+        let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: 2_400_000)
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm)) as! DefaultChannelEngine
+        try await capture.retune(centerHz: 101_500_000)
+        var state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+
+        // Mode + bandwidth in one write, offset untouched: accepted, still out, frequency untouched.
+        var cfg = await channel.config
+        cfg.mode = .am
+        cfg.bandwidthHz = 8_000
+        try await channel.update(cfg)
+        state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+        XCTAssertNil(channel.slot.load(), "no core is built while out of capture")
+        var config = await channel.config
+        XCTAssertEqual(config.mode, .am)
+        XCTAssertEqual(config.bandwidthHz, 8_000)
+        XCTAssertEqual(config.offsetHz, -1_400_000, "offset keeps following the absolute frequency (100.1 MHz)")
+
+        // A mode/bandwidth pair the planner cannot build (AM wider than r2) is still rejected while out.
+        cfg = config
+        cfg.bandwidthHz = 100_000
+        do {
+            try await channel.update(cfg)
+            XCTFail("expected INVALID_ARGUMENT from the planner")
+        } catch let e as EngineError {
+            XCTAssertEqual(e.code, "INVALID_ARGUMENT")
+        }
+        config = await channel.config
+        XCTAssertEqual(config.bandwidthHz, 8_000, "rejected write leaves the stored config untouched")
+
+        // An offset write while out is validated against the current capture as before.
+        cfg = config
+        cfg.offsetHz = -2_000_000
+        do {
+            try await channel.update(cfg)
+            XCTFail("expected OFFSET_OUT_OF_CAPTURE")
+        } catch let e as EngineError {
+            XCTAssertEqual(e.code, "OFFSET_OUT_OF_CAPTURE")
+        }
+        state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+
+        // Retune back: active with the stored mode/bandwidth at the original absolute frequency.
+        try await capture.retune(centerHz: 100_000_000)
+        state = await channel.state
+        XCTAssertEqual(state, .active)
+        let core = try XCTUnwrap(channel.slot.load())
+        XCTAssertEqual(core.config.mode, .am)
+        XCTAssertEqual(core.config.bandwidthHz, 8_000)
+        XCTAssertEqual(core.config.offsetHz, 100_000)
+        config = await channel.config
+        XCTAssertEqual(config.offsetHz, 100_000)
+
+        // An offset write while out that brings the channel back in fits: active immediately.
+        try await capture.retune(centerHz: 101_500_000)
+        state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+        cfg = await channel.config
+        cfg.offsetHz = -500_000
+        try await channel.update(cfg)
+        state = await channel.state
+        XCTAssertEqual(state, .active)
+        config = await channel.config
+        XCTAssertEqual(config.offsetHz, -500_000)
+        XCTAssertEqual(config.mode, .am)
+        await capture.stop()
+    }
+
     /// A retune pushes the channel out of capture; a squelch/AGC write while out is kept without
     /// resurrecting the channel or moving it, and a retune back resumes at the original frequency.
     func testUpdateWhileOutOfCaptureKeepsAbsoluteFrequency() async throws {
@@ -152,18 +225,17 @@ final class ChannelTests: XCTestCase {
         XCTAssertEqual(config.agc, .manual)
         XCTAssertEqual(config.offsetHz, -1_400_000)
 
-        // Structural write that does not touch the offset (bandwidth) while out: the channel stays
-        // out of capture at its absolute frequency (the stale offset is not re-validated as-is).
+        // Structural write that does not touch the offset (bandwidth) while out: stored, the channel
+        // stays out of capture at its absolute frequency (the stale offset is not re-validated as-is).
         cfg = config
         cfg.bandwidthHz = 10_000
-        do {
-            try await channel.update(cfg)
-            XCTFail("expected OFFSET_OUT_OF_CAPTURE")
-        } catch let e as EngineError {
-            XCTAssertEqual(e.code, "OFFSET_OUT_OF_CAPTURE")
-        }
+        try await channel.update(cfg)
         state = await channel.state
         XCTAssertEqual(state, .outOfCapture)
+        XCTAssertNil(channel.slot.load())
+        config = await channel.config
+        XCTAssertEqual(config.bandwidthHz, 10_000)
+        XCTAssertEqual(config.offsetHz, -1_400_000)
 
         // Retune back: active again at 100.1 MHz with the stored squelch/AGC applied.
         try await capture.retune(centerHz: 100_000_000)

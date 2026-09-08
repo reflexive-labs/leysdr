@@ -76,7 +76,9 @@ public actor DefaultChannelEngine: ChannelEngine {
     public var blocksProcessed: UInt64 { slot.load()?.blocks ?? 0 }
 
     /// Applies a new configuration. Squelch/AGC-only changes adjust the running core in place;
-    /// anything structural builds a new core and swaps it (one block of filter warm-up).
+    /// anything structural builds a new core and swaps it (one block of filter warm-up). While the
+    /// channel is `.outOfCapture`, every write that leaves the offset alone is stored for the rebuild
+    /// on re-entry; only an offset change is validated against the capture right away.
     public func update(_ config: ChannelConfig) async throws {
         guard !closed else { throw EngineError.channelNotFound(id.description) }
         let old = currentConfig
@@ -97,10 +99,21 @@ public actor DefaultChannelEngine: ChannelEngine {
         }
         // `absoluteHz` is the source of truth: only an explicit offset change moves it. A mode or
         // bandwidth change on a channel the capture has moved away from keeps its frequency.
-        let offset = old.offsetHz != config.offsetHz ? config.offsetHz : absoluteHz - Int64(centerHz)
+        let offsetChanged = old.offsetHz != config.offsetHz
+        let offset = offsetChanged ? config.offsetHz : absoluteHz - Int64(centerHz)
         // Validate before mutating: a rejected config must leave the channel (and its reported state) untouched.
-        try Channelizer.checkOffset(offset, bandwidthHz: config.bandwidthHz, captureRate: captureRate)
         _ = try ChannelPlan.plan(captureRate: captureRate, mode: config.mode, bandwidthHz: config.bandwidthHz)
+        if !offsetChanged, slot.load() == nil {
+            // Out of capture and the offset is untouched: the channel is already outside the
+            // capture, so re-checking the stale offset would only reject a mode/bandwidth change
+            // that has nothing to do with it. Store the config; the rebuild on re-entry
+            // (`captureMoved`) uses it, and the channel stays `.outOfCapture` until then.
+            var stored = config
+            stored.offsetHz = offset
+            currentConfig = stored
+            return
+        }
+        try Channelizer.checkOffset(offset, bandwidthHz: config.bandwidthHz, captureRate: captureRate)
         currentConfig = config
         absoluteHz = Int64(centerHz) + offset
         try rebuild(offsetHz: offset)

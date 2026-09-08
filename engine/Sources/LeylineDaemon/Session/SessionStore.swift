@@ -707,6 +707,9 @@ actor SessionStore {
                 }
                 var config = await entry.engine.config
                 let rate = await captures[entry.captureID]?.engine.snapshot.sampleRate ?? 0
+                // A channel the capture has moved away from is already outside: non-offset writes
+                // are stored for the rebuild on re-entry, so they skip the offset-vs-bandwidth check.
+                let outOfCapture = await entry.engine.state == .outOfCapture
                 switch w.param {
                 case .offsetHz(let off)?:
                     guard Self.fits(offsetHz: off, bandwidthHz: config.bandwidthHz, sampleRate: rate) else {
@@ -714,7 +717,7 @@ actor SessionStore {
                     }
                     config.offsetHz = off
                 case .bandwidthHz(let bw)?:
-                    guard bw > 0, Self.fits(offsetHz: config.offsetHz, bandwidthHz: bw, sampleRate: rate) else {
+                    guard bw > 0, outOfCapture || Self.fits(offsetHz: config.offsetHz, bandwidthHz: bw, sampleRate: rate) else {
                         throw EngineError(code: "OFFSET_OUT_OF_CAPTURE", message: "bandwidth \(bw) Hz does not fit the capture", target: w.targetID)
                     }
                     config.bandwidthHz = bw
