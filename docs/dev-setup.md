@@ -98,7 +98,8 @@ ley daemon uninstall
 ### Regenerating the protos
 
 `make proto` needs only `protoc` from outside the repo (`brew install protobuf`; any current version).
-`scripts/gen-proto.sh` installs the pinned plugins into `.tools/bin` (gitignored): `protoc-gen-go` and
+`scripts/gen-proto.sh` installs the pinned plugins into `.tools/<os>-<arch>/bin` (gitignored, per host so a
+checkout shared with a Linux container keeps separate binaries): `protoc-gen-go` and
 `protoc-gen-go-grpc` from the `tool` directives in `go/go.mod`, and `protoc-gen-swift` /
 `protoc-gen-grpc-swift-2` built from the engine package's resolved dependencies (`engine/Package.resolved`,
 rebuilt when that file changes). Nothing on your `PATH` influences the output, so `make proto-check` fails
