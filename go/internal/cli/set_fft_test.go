@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/testutil"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -252,7 +252,7 @@ func TestSetSquelchAuto(t *testing.T) {
 func TestSetParameterErrors(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	// Unknown parameter: listed before any daemon or target lookup (dead socket).
-	dead := filepath.Join(t.TempDir(), "dead.sock")
+	dead := testutil.SocketPath(t, "dead.sock")
 	_, _, err := run(t, context.Background(), dead, "set", "foo", "1")
 	if err == nil || !strings.Contains(err.Error(), `"foo" is not a setting`) || !strings.Contains(err.Error(), "squelch") || strings.Contains(err.Error(), "daemon") {
 		t.Fatalf("unknown param: %v", err)

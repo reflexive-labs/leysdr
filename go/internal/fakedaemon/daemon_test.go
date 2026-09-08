@@ -3,7 +3,6 @@ package fakedaemon_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,13 +12,14 @@ import (
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/testutil"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // harness starts a fake daemon on a temp UDS and dials it.
 func harness(t *testing.T, opts fakedaemon.Options) (*leyline.Client, string) {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "d.sock")
+	sock := testutil.SocketPath(t, "d.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	d := fakedaemon.New(opts)
 	served := make(chan error, 1)

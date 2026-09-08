@@ -14,6 +14,7 @@ import (
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/testutil"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -21,7 +22,7 @@ import (
 // a helper client for assertions.
 func harness(t *testing.T, opts fakedaemon.Options) (string, *leyline.Client) {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "d.sock")
+	sock := testutil.SocketPath(t, "d.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	if opts.PresenceGrace == 0 {
 		opts.PresenceGrace = 200 * time.Millisecond
@@ -224,7 +225,7 @@ func TestWithCode(t *testing.T) {
 }
 
 func TestExitCodeNotRunning(t *testing.T) {
-	dead := filepath.Join(t.TempDir(), "nobody.sock")
+	dead := testutil.SocketPath(t, "nobody.sock")
 	for _, args := range [][]string{{"state"}, {"devices"}, {"spectrum", "101.1"}, {"fft", "--freq", "101.1M"}, {"daemon", "status"}} {
 		_, _, err := run(t, context.Background(), dead, args...)
 		if exitCode(err) != ExitNotRunning {
@@ -238,7 +239,7 @@ func TestExitCodeNotRunning(t *testing.T) {
 		}
 	}
 	// A socket file nobody answers on is the stale variant.
-	stale := filepath.Join(t.TempDir(), "stale.sock")
+	stale := testutil.SocketPath(t, "stale.sock")
 	if err := os.WriteFile(stale, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +277,7 @@ func TestDevicesEmptyChecklist(t *testing.T) {
 }
 
 func TestOrientationPerState(t *testing.T) {
-	dead := filepath.Join(t.TempDir(), "nobody.sock")
+	dead := testutil.SocketPath(t, "nobody.sock")
 	out, _, err := runApp(t, ttyApp(dead))
 	if err != nil || !strings.Contains(out, "Daemon    not running") || !strings.Contains(out, "ley daemon start") {
 		t.Fatalf("no daemon: %v\n%s", err, out)

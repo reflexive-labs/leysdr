@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/testutil"
 )
 
 // fakeDaemonEnv makes the test binary serve a fake daemon (used by the shell
@@ -130,7 +131,7 @@ func TestDaemonStatus(t *testing.T) {
 	if !strings.Contains(out, "daemon fake-0.1 pid") {
 		t.Fatalf("status: %s", out)
 	}
-	dead := filepath.Join(t.TempDir(), "dead.sock")
+	dead := testutil.SocketPath(t, "dead.sock")
 	out, _, err := run(t, context.Background(), dead, "daemon", "status")
 	var ee *ExitError
 	if !strings.Contains(out, "not running") || !errors.As(err, &ee) || ee.Code != ExitNotRunning {
