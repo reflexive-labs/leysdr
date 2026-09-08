@@ -71,7 +71,9 @@ const noDeviceChecklist = `no radio found. Check, in order:
   4. ley daemon logs, for driver errors`
 
 // pickDevice chooses --device (a full id, id prefix, row number or frequency),
-// else the first non-file device, else the first.
+// else the first non-file device that is connected and not held by another
+// program (rtl_tcp, SDR++: the daemon flags those held_externally), else the
+// first non-file connected device, else the first.
 func pickDevice(state *leylinev1.GetStateResponse, sel string) (*leylinev1.DeviceDescriptor, error) {
 	if len(state.Devices) == 0 {
 		return nil, errors.New(noDeviceChecklist)
@@ -79,12 +81,29 @@ func pickDevice(state *leylinev1.GetStateResponse, sel string) (*leylinev1.Devic
 	if sel != "" {
 		return leyline.ResolveDevice(state, sel)
 	}
+	var fallback *leylinev1.DeviceDescriptor
 	for _, d := range state.Devices {
-		if d.Driver != "file" && d.State != leylinev1.DeviceState_DISCONNECTED {
+		if d.Driver == "file" || d.State == leylinev1.DeviceState_DISCONNECTED {
+			continue
+		}
+		if !heldExternally(d) {
 			return d, nil
 		}
+		if fallback == nil {
+			fallback = d
+		}
+	}
+	if fallback != nil {
+		return fallback, nil
 	}
 	return state.Devices[0], nil
+}
+
+// heldExternally reports the daemon's held_externally feature: another
+// program has the dongle open, so no capture can be created on it.
+func heldExternally(d *leylinev1.DeviceDescriptor) bool {
+	f, ok := d.GetFeatures()["held_externally"]
+	return ok && f.GetFlag()
 }
 
 // friendlyError carries a plain-words message while keeping the daemon error
@@ -110,6 +129,9 @@ func (s *session) friendly(err error, input string, hz uint64) error {
 	}
 	switch leyline.Code(err) {
 	case leyline.CodeDeviceBusy:
+		if s.device != nil && heldExternally(s.device) {
+			return &friendlyError{msg: fmt.Sprintf("%s is held by another program (rtl_tcp, SDR++, GQRX?): quit it, or pick another radio with --device (ley devices lists them)", s.device.Model), cause: err}
+		}
 		return &friendlyError{msg: "the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits", cause: err}
 	case leyline.CodeFreqOutOfRange:
 		var ranges []*leylinev1.FrequencyRange

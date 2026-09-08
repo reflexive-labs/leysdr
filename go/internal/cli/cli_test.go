@@ -346,3 +346,28 @@ func TestStubsHiddenAndListed(t *testing.T) {
 		t.Errorf("stubs must be hidden from --help: %v\n%s", err, out.String())
 	}
 }
+
+// pickDevice skips a dongle another program holds (held_externally) so the
+// default lands on a radio a capture can actually open, and still falls back
+// to the held one when nothing else is connected.
+func TestPickDeviceSkipsExternallyHeld(t *testing.T) {
+	held := &leylinev1.DeviceDescriptor{
+		DeviceId: "dev_held", Driver: "rtlsdr", Model: "NESDR", State: leylinev1.DeviceState_IN_USE,
+		Features: map[string]*leylinev1.FeatureValue{"held_externally": {Value: &leylinev1.FeatureValue_Flag{Flag: true}}},
+	}
+	remote := &leylinev1.DeviceDescriptor{DeviceId: "dev_remote", Driver: "rtltcp", Model: "rtl_tcp", State: leylinev1.DeviceState_AVAILABLE}
+	file := &leylinev1.DeviceDescriptor{DeviceId: "dev_file", Driver: "file", State: leylinev1.DeviceState_AVAILABLE}
+
+	got, err := pickDevice(&leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{file, held, remote}}, "")
+	if err != nil || got.DeviceId != "dev_remote" {
+		t.Fatalf("expected the rtl_tcp radio, got %v (err %v)", got.GetDeviceId(), err)
+	}
+	got, err = pickDevice(&leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{file, held}}, "")
+	if err != nil || got.DeviceId != "dev_held" {
+		t.Fatalf("expected the held radio as the only fallback, got %v (err %v)", got.GetDeviceId(), err)
+	}
+	got, err = pickDevice(&leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{held, remote}}, "1")
+	if err != nil || got.DeviceId != "dev_held" {
+		t.Fatalf("an explicit --device must still win, got %v (err %v)", got.GetDeviceId(), err)
+	}
+}
