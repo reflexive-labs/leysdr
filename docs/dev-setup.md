@@ -97,23 +97,12 @@ ley daemon uninstall
 
 ### Regenerating the protos on macOS
 
-`protoc` is pinned to **25.1** (`scripts/gen-proto.sh`): `protoc-gen-go` embeds the protoc version in
-every generated header, so a different protoc rewrites `go/gen` and fails the CI drift check. CI installs
-25.1 via `arduino/setup-protoc`; locally use the same version — Homebrew's `protobuf` moves, so either
-`brew install protobuf@25` (if present) or the `protoc-25.1-osx-*.zip` from the protobuf GitHub releases
-on `PATH`. `ALLOW_PROTOC_MISMATCH=1 make proto` runs with whatever protoc is installed (expect header churn).
-The Go plugins are pinned too (`protoc-gen-go` v1.36.12, `protoc-gen-go-grpc` v1.6.2); the Swift ones
-are `swift-protobuf` from Homebrew and `grpc-swift-protobuf` 2.4.1 built from source once:
-
-```sh
-brew install swift-protobuf
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
-git clone -b 2.4.1 https://github.com/grpc/grpc-swift-protobuf /tmp/gsp && \
-  (cd /tmp/gsp && swift build -c release --product protoc-gen-grpc-swift-2) && \
-  cp /tmp/gsp/.build/release/protoc-gen-grpc-swift-2 /opt/homebrew/bin/
-make proto
-```
+`make proto` needs `protoc` (any current Homebrew `protobuf` is fine), `protoc-gen-go` v1.36.12,
+`protoc-gen-go-grpc` v1.6.2, and the Swift plugins `protoc-gen-swift` (swift-protobuf 1.38.1) and
+`protoc-gen-grpc-swift-2` (grpc-swift-protobuf 2.4.1) on `PATH`. CI runs protoc 25.1; other versions
+produce the same code for these proto3 files, and `scripts/gen-proto.sh` strips the protoc version the
+Go plugins stamp into their headers, so `make proto-check` only fails on real drift (a changed
+descriptor or a different plugin version).
 
 ## Linux / the moat container (Go clients, contract tests, engine compile checks)
 
