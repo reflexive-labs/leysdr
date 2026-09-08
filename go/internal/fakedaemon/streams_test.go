@@ -175,6 +175,66 @@ func TestAudioStream(t *testing.T) {
 	}
 }
 
+func TestIQStreamContract(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	cap, _ := setupCaptureChannel(t, c)
+	subscribe := func(format leylinev1.SampleFormat, rate uint64) (*leyline.Subscription, error) {
+		return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
+			Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+			Kind:   leylinev1.StreamKind_IQ,
+			Params: &leylinev1.SubscribeRequest_Iq{Iq: &leylinev1.IqParams{SampleRate: rate, Format: format}},
+		})
+	}
+	// Engine parity (StreamRegistry.subscribe): UNSPECIFIED/CF32 and rate 0/native are accepted and
+	// always served as CF32 at the capture rate.
+	for _, tc := range []struct {
+		format leylinev1.SampleFormat
+		rate   uint64
+	}{
+		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, 0},
+		{leylinev1.SampleFormat_CF32, 0},
+		{leylinev1.SampleFormat_CF32, cap.SampleRate},
+		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, cap.SampleRate},
+	} {
+		sub, err := subscribe(tc.format, tc.rate)
+		if err != nil {
+			t.Fatalf("format %v rate %d: %v", tc.format, tc.rate, err)
+		}
+		iq := sub.Descriptor.GetIq()
+		if iq.GetFormat() != leylinev1.SampleFormat_CF32 || iq.GetSampleRate() != cap.SampleRate {
+			t.Errorf("format %v rate %d: descriptor %v", tc.format, tc.rate, iq)
+		}
+		if err := sub.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}
+	// Anything else is refused, never downgraded or resampled.
+	for _, tc := range []struct {
+		format leylinev1.SampleFormat
+		rate   uint64
+	}{
+		{leylinev1.SampleFormat_CS8, 0},
+		{leylinev1.SampleFormat_CS16, 0},
+		{leylinev1.SampleFormat_CF32, cap.SampleRate / 2},
+		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, 1_000_000},
+	} {
+		if _, err := subscribe(tc.format, tc.rate); leyline.Code(err) != leyline.CodeInvalidArgument {
+			t.Errorf("format %v rate %d: want INVALID_ARGUMENT, got %v", tc.format, tc.rate, err)
+		}
+	}
+	// No params at all is the same as UNSPECIFIED/0.
+	sub, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId}, Kind: leylinev1.StreamKind_IQ,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.GetIq().GetFormat() != leylinev1.SampleFormat_CF32 || sub.GetIq().GetSampleRate() != cap.SampleRate {
+		t.Errorf("bare request: descriptor %v", sub.GetIq())
+	}
+}
+
 func TestPresenceReaping(t *testing.T) {
 	c, sock := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
 	ctx := context.Background()

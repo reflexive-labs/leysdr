@@ -150,6 +150,17 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 		}
 		desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{Bins: nearestLadder(f.GetBins()), BinFormat: format, RowsPerSecond: rows}}
 	case leylinev1.StreamKind_IQ:
+		// v0 IQ contract (engine parity with StreamRegistry.subscribe): raw CF32 at the capture's
+		// native rate only. Anything else is refused rather than silently overridden.
+		iq := req.GetIq()
+		if format := iq.GetFormat(); format != leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED && format != leylinev1.SampleFormat_CF32 {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+				fmt.Sprintf("iq format %v unavailable; v0 serves CF32 only (request UNSPECIFIED or CF32)", format)))
+		}
+		if rate := iq.GetSampleRate(); rate != 0 && rate != c.SampleRate {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+				fmt.Sprintf("iq sample_rate %d unavailable; capture runs at %d Hz (request 0 to accept it)", rate, c.SampleRate)))
+		}
 		desc.Params = &leylinev1.StreamDescriptor_Iq{Iq: &leylinev1.IqParams{SampleRate: c.SampleRate, Format: leylinev1.SampleFormat_CF32}}
 	case leylinev1.StreamKind_AUDIO:
 		if s.channelID == "" {

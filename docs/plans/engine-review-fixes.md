@@ -256,7 +256,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   between `open()` returning and `reconnectFinished` (simulate by transitioning the device to
   `.disconnected` before calling the internal hook) publishes nothing and stays disconnected.
 
-### FU-6 `[ ]` Go fake daemon enforces the v0 IQ contract (#26/#25 follow-up)
+### FU-6 `[x]` Go fake daemon enforces the v0 IQ contract (#26/#25 follow-up)
 
 - `go/internal/fakedaemon/bulk.go` kind=IQ: accept `format` UNSPECIFIED/CF32 and `sample_rate` 0 or the
   capture rate; reject anything else with `INVALID_ARGUMENT` and the same message shape as the daemon
