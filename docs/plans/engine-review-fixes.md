@@ -245,7 +245,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   ring and still observes a seq gap equal to the records lost.
 - docs/engine-internals.md: note that all three telemetry buffers are gap-marked.
 
-### FU-5 `[ ]` rtl_tcp connect runs off the cooperative pool; reconnect publishes only when available (#9 follow-up)
+### FU-5 `[x]` rtl_tcp connect runs off the cooperative pool; reconnect publishes only when available (#9 follow-up)
 
 - `RTLTCPDevice.open()`: run `connect` + header read through `BlockingWork.run` (as `RTLSDRDevice.open`
   does) so neither the startup attach nor the registry's reconnect parks a cooperative-pool thread for

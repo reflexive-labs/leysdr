@@ -437,6 +437,38 @@ final class RTLTCPDeviceTests: XCTestCase {
         await dev.close()
     }
 
+    /// The link can die between `open()` returning and the actor-side `reconnectFinished` hop; the
+    /// registry must not announce a device that is already gone again.
+    func testReconnectFinishedPublishesNothingWhenDeviceDiedBeforeHop() async throws {
+        let server = try FakeRTLTCPServer()
+        let registry = DefaultDeviceRegistry()
+        let events = registry.events()
+        var iter = events.makeAsyncIterator()
+        let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port)
+        try await dev.open()
+        let d = try await registry.attachVirtualDevice(dev)
+        guard case .arrived? = await iter.next() else { return XCTFail("expected arrived") }
+        // Server drops the link: the device flips to .disconnected and the registry records it.
+        server.stop()
+        guard case .changed(let gone)? = await iter.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(gone.state, .disconnected)
+        XCTAssertEqual(dev.descriptor.state, .disconnected)
+        // Simulate the race: a reconnect attempt "succeeded" but the device is disconnected again by
+        // the time the actor sees the result.
+        await registry.reconnectFinished(id: d.id, device: dev, ok: true)
+        let pending = await registry.reconnectingIDs
+        XCTAssertTrue(pending.isEmpty)
+        var devices = await registry.devices.filter { $0.driver != "rtlsdr" }
+        XCTAssertEqual(devices.map(\.state), [.disconnected], "entry stays disconnected for the next poll")
+        // Nothing was published: the next event on the stream is our own detach, not an `arrived`.
+        try await registry.detachFileDevice(id: d.id)
+        guard case .removed(let removed)? = await iter.next() else { return XCTFail("expected removed, got arrived") }
+        XCTAssertEqual(removed, d.id)
+        devices = await registry.devices.filter { $0.driver != "rtlsdr" }
+        XCTAssertTrue(devices.isEmpty)
+        await dev.close()
+    }
+
     func testConnectRefusedIsDeviceIO() async throws {
         let port = try FakeRTLTCPServer.closedPort()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: port)

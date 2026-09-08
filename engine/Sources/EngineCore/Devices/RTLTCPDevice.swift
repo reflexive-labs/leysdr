@@ -280,14 +280,9 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         guard ok else { throw EngineError.deviceIO("rtl_tcp write failed: \(String(cString: strerror(errno)))", target: _descriptor.id.string) }
     }
 
-    // MARK: RadioDevice
-
-    /// Connects, parses the header, builds the descriptor, pushes the initial sample rate and
-    /// frequency, then starts the reader thread. Idempotent while connected.
-    public func open() async throws {
-        guard withLock({ fd < 0 }) else { return }
-        // Connect and read the header with the lock released: both block for up to `timeoutSeconds`
-        // and `descriptor`/`gains` must stay responsive meanwhile.
+    /// Blocking half of `open()`: connects and reads the 12-byte header, validating the magic.
+    /// Returns the connected socket and the raw header; closes the socket on any failure.
+    static func connectAndReadHeader(host: String, port: UInt16) throws -> (Int32, [UInt8]) {
         let target = "\(host):\(port)"
         let sock = try RTLTCPDevice.connect(host: host, port: port, timeoutSeconds: RTLTCPDevice.timeoutSeconds)
         var header = [UInt8](repeating: 0, count: 12)
@@ -299,6 +294,25 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         guard header[0] == 0x52, header[1] == 0x54, header[2] == 0x4c, header[3] == 0x30 else {
             RTLTCPDevice.closeFD(sock)
             throw EngineError.deviceIO("not an rtl_tcp server (bad magic)", target: target)
+        }
+        return (sock, header)
+    }
+
+    // MARK: RadioDevice
+
+    /// Connects, parses the header, builds the descriptor, pushes the initial sample rate and
+    /// frequency, then starts the reader thread. Idempotent while connected.
+    ///
+    /// The connect and header read block for up to `timeoutSeconds` each, so they run on a
+    /// dedicated thread via `BlockingWork.run` (as `RTLSDRDevice.open` does) rather than parking a
+    /// cooperative-pool thread — the registry's reconnect poll calls this for every dead link.
+    public func open() async throws {
+        guard withLock({ fd < 0 }) else { return }
+        // Connect and read the header with the lock released: `descriptor`/`gains` must stay
+        // responsive meanwhile.
+        let target = "\(host):\(port)"
+        let (sock, header) = try await BlockingWork.run { [host, port] in
+            try RTLTCPDevice.connectAndReadHeader(host: host, port: port)
         }
         func be32(_ i: Int) -> UInt32 {
             UInt32(header[i]) << 24 | UInt32(header[i + 1]) << 16 | UInt32(header[i + 2]) << 8 | UInt32(header[i + 3])

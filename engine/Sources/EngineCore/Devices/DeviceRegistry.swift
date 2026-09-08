@@ -333,14 +333,16 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     }
 
     /// Link-loss recovery for hosted `RTLTCPDevice`s: every `.disconnected` entry gets one `open()`
-    /// attempt per poll (bounded by the device's connect timeout, run off the actor). On success the
-    /// entry is `.available` again and `arrived` is published under the same id so `SessionStore`
-    /// rebinds detached captures through its normal path; a failure is retried on the next poll.
+    /// attempt per poll (bounded by the device's connect timeout; `RTLTCPDevice.open` runs its
+    /// blocking connect through `BlockingWork`, so the task itself never parks a pool thread). On
+    /// success the entry is `.available` again and `arrived` is published under the same id so
+    /// `SessionStore` rebinds detached captures through its normal path; a failure is retried on
+    /// the next poll.
     private func reconnectDisconnectedRemotes() {
         for (id, entry) in entries where entry.rtlIndex == nil && entry.descriptor.state == .disconnected {
             guard let remote = entry.device as? RTLTCPDevice, !reconnecting.contains(id) else { continue }
             reconnecting.insert(id)
-            Task.detached { [weak self] in
+            Task { [weak self] in
                 let ok: Bool
                 do { try await remote.open(); ok = true } catch { ok = false }
                 await self?.reconnectFinished(id: id, device: remote, ok: ok)
@@ -348,11 +350,16 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         }
     }
 
-    /// Actor-side tail of a reconnect attempt.
-    private func reconnectFinished(id: DeviceID, device: RTLTCPDevice, ok: Bool) {
+    /// Actor-side tail of a reconnect attempt. Publishes `arrived` only when the device is still
+    /// `.available` now: a link that died between `open()` returning and this hop leaves the entry
+    /// `.disconnected` for the next poll instead of announcing a device that is already gone.
+    /// Internal so tests can drive the race directly.
+    func reconnectFinished(id: DeviceID, device: RTLTCPDevice, ok: Bool) {
         reconnecting.remove(id)
         guard ok, var entry = entries[id], entry.device === device, entry.descriptor.state == .disconnected else { return }
-        entry.descriptor = device.descriptor
+        let current = device.descriptor
+        guard current.state == .available else { return }
+        entry.descriptor = current
         entries[id] = entry
         publish(.arrived(entry.descriptor))
     }
