@@ -161,6 +161,11 @@ public actor DefaultChannelEngine: ChannelEngine {
 
     /// Fan-out stream of meter/squelch telemetry. Ends when the channel is removed.
     public nonisolated func telemetry() -> AsyncStream<ChannelTelemetry> {
+        hub.subscribe().stream
+    }
+
+    /// Fan-out stream plus this subscriber's fan-out drop counter (see `ChannelTelemetrySubscription`).
+    public nonisolated func telemetrySubscription() -> ChannelTelemetrySubscription {
         hub.subscribe()
     }
 
@@ -191,28 +196,52 @@ public actor DefaultChannelEngine: ChannelEngine {
     }
 }
 
+/// One subscriber's view of a channel's telemetry fan-out: the stream and the count of records the
+/// fan-out buffer (drop-oldest, `TelemetryHub.capacity` slots) discarded because this subscriber fell
+/// behind. Together with `ChannelEngine.telemetryDropped` (ring evictions) it accounts for every
+/// record the subscriber never saw, so a consumer can widen its sequence gap by the same amount.
+public final class ChannelTelemetrySubscription: Sendable {
+    public let stream: AsyncStream<ChannelTelemetry>
+    private let droppedCount = Atomic<Int>(0)
+
+    init(stream: AsyncStream<ChannelTelemetry>) {
+        self.stream = stream
+    }
+
+    /// Cumulative records this subscriber lost to its own fan-out buffer overflowing.
+    public var dropped: Int { droppedCount.load(ordering: .relaxed) }
+
+    fileprivate func countDrop() {
+        droppedCount.add(1, ordering: .relaxed)
+    }
+}
+
 /// Lock-guarded set of telemetry subscribers. Publishing happens on the drain task, never on the DSP thread.
+/// Each subscriber's buffer is drop-oldest; a drop is counted on that subscriber's `ChannelTelemetrySubscription`.
 final class TelemetryHub: @unchecked Sendable {
+    /// Per-subscriber buffer depth before the oldest unread record is discarded (and counted).
+    static let capacity = 256
     private let lock = NSLock()
-    private var subscribers: [UUID: AsyncStream<ChannelTelemetry>.Continuation] = [:]
+    private var subscribers: [UUID: (continuation: AsyncStream<ChannelTelemetry>.Continuation, subscription: ChannelTelemetrySubscription)] = [:]
     private var finished = false
 
-    func subscribe() -> AsyncStream<ChannelTelemetry> {
-        let (stream, continuation) = AsyncStream<ChannelTelemetry>.makeStream(bufferingPolicy: .bufferingNewest(256))
+    func subscribe() -> ChannelTelemetrySubscription {
+        let (stream, continuation) = AsyncStream<ChannelTelemetry>.makeStream(bufferingPolicy: .bufferingNewest(Self.capacity))
+        let subscription = ChannelTelemetrySubscription(stream: stream)
         let key = UUID()
         lock.lock()
         if finished {
             lock.unlock()
             continuation.finish()
-            return stream
+            return subscription
         }
-        subscribers[key] = continuation
+        subscribers[key] = (continuation, subscription)
         lock.unlock()
         continuation.onTermination = { [weak self] _ in
             guard let self else { return }
             self.lock.lock(); self.subscribers[key] = nil; self.lock.unlock()
         }
-        return stream
+        return subscription
     }
 
     func publish(_ rec: ChannelTelemetryRecord) {
@@ -224,7 +253,10 @@ final class TelemetryHub: @unchecked Sendable {
         lock.lock()
         let subs = Array(subscribers.values)
         lock.unlock()
-        for c in subs { c.yield(event) }
+        for (c, sub) in subs {
+            // `bufferingNewest` discards the oldest buffered record when full: count it against this subscriber.
+            if case .dropped = c.yield(event) { sub.countDrop() }
+        }
     }
 
     func finishAll() {
@@ -233,6 +265,6 @@ final class TelemetryHub: @unchecked Sendable {
         let subs = Array(subscribers.values)
         subscribers.removeAll()
         lock.unlock()
-        for c in subs { c.finish() }
+        for (c, _) in subs { c.finish() }
     }
 }

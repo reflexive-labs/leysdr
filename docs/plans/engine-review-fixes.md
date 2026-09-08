@@ -233,7 +233,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   `daemon.shutdown()` completes within 2 s; same for Bulk.Stream on an FFT subscription at
   `rows_per_second` 0.1 (no row arrives inside the test window).
 
-### FU-4 `[ ]` Hub and merge-buffer drops count toward telemetry seq gaps (#20 follow-up)
+### FU-4 `[x]` Hub and merge-buffer drops count toward telemetry seq gaps (#20 follow-up)
 
 - `AsyncStream.Continuation.yield` returns `.dropped` when a `bufferingNewest` buffer overflows.
   `TelemetryHub` (DefaultChannelEngine.swift:188, per-subscriber 256) and the merged stream in

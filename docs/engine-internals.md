@@ -319,10 +319,14 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
 ### Telemetry service
 
 `Subscribe` merges the per-channel drains and capture activity into one stream with a monotonic
-`seq`. Delivery is drop-oldest with visible gaps: each drain diffs the engine's `telemetryDropped`
-counter between records and the merged stream advances `seq` by `dropped + 1`, so every record
-evicted from the channel's telemetry ring shows up as a hole in `seq` (a gap accrued behind a
-filtered-out type carries over to the next message sent). The RPC ends when the client cancels
+`seq`. Delivery is drop-oldest with visible gaps across all three telemetry buffers: the channel's
+telemetry ring (64, `telemetryDropped`), the engine's per-subscriber fan-out buffer (256,
+`ChannelTelemetrySubscription.dropped` — `AsyncStream.Continuation.yield` reports the discard), and
+the service's merged buffer (64, a discarded item is folded into a counter along with the gap it
+carried). Each drain diffs the ring and fan-out counters between records, the consumer diffs the
+merged counter before every message, and `seq` advances by `lost + 1`, so every record lost anywhere
+between the DSP thread and the wire shows up as a hole in `seq` (a gap accrued behind a filtered-out
+type carries over to the next message sent). The RPC ends when the client cancels
 (`withRPCCancellationHandler` finishes the merged stream — gRPC cancellation is not task
 cancellation) or when the daemon shuts down and finishes the event stream.
 

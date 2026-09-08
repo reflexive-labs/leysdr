@@ -34,6 +34,38 @@ final class ChannelTests: XCTestCase {
         queue.finish()
     }
 
+    /// The fan-out buffer behind each telemetry subscriber is drop-oldest: a subscriber that stops
+    /// reading loses the oldest records past the hub capacity, every loss is counted on its own
+    /// subscription, and a subscriber that keeps up is not charged for the slow one's drops.
+    func testTelemetryHubCountsDropsPerSubscriber() async {
+        let hub = TelemetryHub()
+        let capID = CaptureID()
+        let stalled = hub.subscribe()
+        let reader = hub.subscribe()
+        let n = TelemetryHub.capacity + 40
+        for i in 0..<n { hub.publish(telemetryRecord(capID, index: UInt64(i))) }
+        XCTAssertEqual(stalled.dropped, 40, "drops past the buffer capacity are counted")
+        XCTAssertEqual(reader.dropped, 40, "nobody read yet: the reader lost the same prefix")
+        // The reader catches up; the stalled subscriber keeps losing its oldest and only it is charged.
+        var readCount = 0
+        for await _ in reader.stream { readCount += 1; if readCount == TelemetryHub.capacity { break } }
+        for i in n..<(n + 10) { hub.publish(telemetryRecord(capID, index: UInt64(i))) }
+        XCTAssertEqual(stalled.dropped, 50, "the stalled subscriber keeps losing the oldest")
+        XCTAssertEqual(reader.dropped, 40, "a subscriber that keeps up is not charged for a sibling's drops")
+        for await _ in reader.stream { readCount += 1; if readCount == TelemetryHub.capacity + 10 { break } }
+        XCTAssertEqual(readCount, TelemetryHub.capacity + 10)
+        // The survivors are the newest `capacity` records in order; reading does not change the count.
+        var got: [UInt64] = []
+        for await t in stalled.stream {
+            if case let .meter(time, _, _, _) = t { got.append(time.sampleIndex) }
+            if got.count == TelemetryHub.capacity { break }
+        }
+        XCTAssertEqual(got, Array(UInt64(50)..<UInt64(n + 10)), "oldest 50 evicted, newest kept in order")
+        XCTAssertEqual(stalled.dropped, 50)
+        hub.finishAll()
+        XCTAssertEqual(stalled.dropped, 50)
+    }
+
     /// Producer and consumer race on the ring: every record is either delivered or counted dropped,
     /// delivered records are in order, and no torn record slips through the seqlock.
     func testTelemetryQueueConcurrentPushPopAccountsForEveryRecord() {

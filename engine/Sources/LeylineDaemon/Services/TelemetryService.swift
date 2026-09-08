@@ -1,16 +1,20 @@
 // leyline.v1.Telemetry: fans channel meters / squelch transitions and capture activity into one
 // sequenced stream per subscriber (sample timebase on every message). Delivery is drop-oldest:
-// records the engine evicted before this subscriber drained them advance `seq` without being
-// sent, so a slow subscriber sees a gap in `seq` for every reading it missed.
+// records lost before this subscriber drained them -- evicted from the channel's telemetry ring,
+// discarded by the engine's per-subscriber fan-out buffer, or discarded by the merged buffer here --
+// advance `seq` without being sent, so a slow subscriber sees a gap in `seq` for every reading it missed.
 
 import EngineCore
 import Foundation
 import GRPCCore
 import LeylineProto
+import Synchronization
 
 struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
     let store: SessionStore
     static let activityIntervalNs: UInt64 = 1_000_000_000
+    /// Merged-stream depth per subscription before the oldest undelivered item is discarded (and counted).
+    static let mergedCapacity = 64
 
     func subscribe(request: Leyline_V1_TelemetrySubscription, response: RPCWriter<Leyline_V1_TelemetryMsg>, context: ServerContext) async throws {
         let client = ClientContext.current
@@ -35,8 +39,16 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
         await store.streamOpened(client)
         defer { Task { await store.streamClosed(client) } }
 
-        // Each merged item carries the number of records evicted ahead of it (a `seq` gap to open).
-        let (merged, sink) = AsyncStream<(msg: Leyline_V1_TelemetryMsg, gap: UInt64)>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        // Each merged item carries the number of records lost ahead of it (a `seq` gap to open). The
+        // merged buffer is drop-oldest too: a discarded item is folded into `mergedLost` (itself plus
+        // the gap it carried) and the consumer adds the delta to the next `seq` it assigns.
+        let (merged, sink) = AsyncStream<(msg: Leyline_V1_TelemetryMsg, gap: UInt64)>.makeStream(bufferingPolicy: .bufferingNewest(Self.mergedCapacity))
+        let mergedLost = Atomic<UInt64>(0)
+        @Sendable func yieldMerged(_ msg: Leyline_V1_TelemetryMsg, gap: UInt64) {
+            if case .dropped(let lost) = sink.yield((msg, gap)) {
+                mergedLost.add(lost.gap + 1, ordering: .relaxed)
+            }
+        }
         let events = await store.events(scope: captureFilter.map { .capture($0) } ?? .daemon)
         let st = self.store
         let capFilter = captureFilter
@@ -47,15 +59,21 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
         func track(_ id: ChannelID, _ engine: any ChannelEngine) {
             guard chanFilter == nil || chanFilter == id else { return }
             drains.start(id) {
+                let subscription = engine.telemetrySubscription()
                 var seenDropped = engine.telemetryDropped
+                var seenHubDropped = subscription.dropped
                 var gap: UInt64 = 0
-                for await t in engine.telemetry() {
+                for await t in subscription.stream {
                     if Task.isCancelled { return }
-                    // Evictions since this drain's previous record become a gap on the merged stream;
-                    // a gap accrued behind a filtered-out record carries over to the next one sent.
+                    // Ring evictions and fan-out drops since this drain's previous record become a gap on
+                    // the merged stream; a gap accrued behind a filtered-out record carries over to the
+                    // next one sent.
                     let nowDropped = engine.telemetryDropped
                     gap += UInt64(max(0, nowDropped - seenDropped))
                     seenDropped = nowDropped
+                    let nowHubDropped = subscription.dropped
+                    gap += UInt64(max(0, nowHubDropped - seenHubDropped))
+                    seenHubDropped = nowHubDropped
                     var msg = Leyline_V1_TelemetryMsg()
                     switch t {
                     case .meter(let time, let power, let snr, let open):
@@ -71,7 +89,7 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         msg.squelch.channelID = id.string
                         msg.squelch.open = open
                     }
-                    sink.yield((msg, gap))
+                    yieldMerged(msg, gap: gap)
                     gap = 0
                 }
             }
@@ -103,15 +121,19 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                                 msg.activity.captureID = cap.captureID
                                 msg.activity.snapshot.lastInteractiveWriteNs = cap.activity.lastInteractiveWriteNs
                                 msg.activity.snapshot.liveAudioSinks = cap.activity.liveAudioSinks
-                                sink.yield((msg, 0))
+                                yieldMerged(msg, gap: 0)
                             }
                         }
                     }
                 }
                 var seq: UInt64 = 0
+                var seenMergedLost: UInt64 = 0
                 for await item in merged {
                     var msg = item.msg
-                    seq += item.gap + 1
+                    // Items the merged buffer discarded before this one was dequeued widen the gap.
+                    let nowMergedLost = mergedLost.load(ordering: .relaxed)
+                    seq += item.gap + (nowMergedLost - seenMergedLost) + 1
+                    seenMergedLost = nowMergedLost
                     msg.seq = seq
                     try await response.write(msg)
                 }
