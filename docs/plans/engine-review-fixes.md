@@ -262,7 +262,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   capture rate; reject anything else with `INVALID_ARGUMENT` and the same message shape as the daemon
   (`StreamRegistry.subscribe`). Add a fakedaemon test for the accept and reject cases; `go test ./...` green.
 
-### FU-7 `[ ]` Probe gate keyed by USB index for serial-collision pairs (registry follow-up)
+### FU-7 `[x]` Probe gate keyed by USB index for serial-collision pairs (registry follow-up)
 
 - `DefaultDeviceRegistry.advanceTickAndProbeGate`: the skip set is keyed by identity base, so with two
   dongles sharing a serial a held sibling stays skipped while the other is ours or probed. Decide per

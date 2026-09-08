@@ -7,8 +7,8 @@ import XCTest
 /// probe arrives, and a later degraded probe never downgrades it. Drives `applyProbes` directly
 /// because the stub librtlsdr enumerates no hardware.
 final class RegistryProbeTests: XCTestCase {
-    private func probe(tuner: String, gains: [Double], openError: Int32? = nil) -> RTLSDRProbe {
-        RTLSDRProbe(index: 0, name: "Generic RTL2832U", manufacturer: "Realtek", product: "RTL2838UHIDIR",
+    private func probe(tuner: String, gains: [Double], openError: Int32? = nil, index: UInt32 = 0) -> RTLSDRProbe {
+        RTLSDRProbe(index: index, name: "Generic RTL2832U", manufacturer: "Realtek", product: "RTL2838UHIDIR",
                     serial: "00000001", tuner: tuner, gainsDB: gains,
                     tuningRanges: RTLSDRDevice.tunerInfo(tuner == "unknown" ? RTLSDR_TUNER_UNKNOWN : RTLSDR_TUNER_R820T).ranges,
                     openError: openError)
@@ -170,6 +170,63 @@ final class RegistryProbeTests: XCTestCase {
         let after = await reg.devices
         XCTAssertEqual(after.first?.gainElements.first?.validDB, [0, 0.9, 49.6])
         XCTAssertEqual(device.probe.tuner, "R820T")
+    }
+
+    /// Two dongles sharing a serial (index 0 ours, index 1 held by another program) are gated on
+    /// their own state: after its backoff the probe may open index 1 while index 0 stays closed,
+    /// and a successful probe frees index 1 without touching our capture on index 0.
+    func testSerialCollisionPairGatesPerIndex() async throws {
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        var events = reg.events().makeAsyncIterator()
+        let good0 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 0)
+        let busy1 = probe(tuner: "unknown", gains: [], openError: -3, index: 1)
+        let good1 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 1)
+
+        // Tick 1: index 0 probes fine, index 1 (same serial) is held.
+        _ = await reg.advanceTickAndProbeGate()
+        await reg.applyProbes([good0, busy1])
+        var arrived: [DeviceDescriptor] = []
+        for _ in 0..<2 {
+            guard case .arrived(let d)? = await events.next() else { return XCTFail("expected arrived") }
+            arrived.append(d)
+        }
+        let first = try XCTUnwrap(arrived.first { $0.state == .available })
+        let held = try XCTUnwrap(arrived.first { $0.state == .inUse })
+        XCTAssertNotEqual(first.id, held.id)
+        XCTAssertEqual(held.features["held_externally"], .flag(true))
+        XCTAssertEqual(held.features["serial_collision"], .flag(true))
+
+        // Index 0 becomes ours.
+        try await reg.markInUse(id: first.id, true)
+        guard case .changed(let ours)? = await events.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(ours.state, .inUse)
+        XCTAssertNil(ours.features["held_externally"])
+
+        // Tick 2: inside index 1's 2 s backoff neither may open.
+        var gate = await reg.advanceTickAndProbeGate()
+        XCTAssertFalse(gate(good0), "ours never opens")
+        XCTAssertFalse(gate(busy1), "held sibling inside its backoff")
+        // Tick 3: the gate opens for index 1 only.
+        gate = await reg.advanceTickAndProbeGate()
+        XCTAssertFalse(gate(good0), "ours stays closed even though its sibling's backoff elapsed")
+        XCTAssertTrue(gate(busy1), "the held sibling may retry on its own schedule")
+        XCTAssertTrue(gate(probe(tuner: "unknown", gains: [], index: 2)), "an unknown index (new device) may open")
+
+        // The other program quits: index 1 is freed, index 0 stays ours.
+        await reg.applyProbes([good0, good1])
+        guard case .changed(let freed)? = await events.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(freed.id, held.id)
+        XCTAssertEqual(freed.state, .available)
+        XCTAssertNil(freed.features["held_externally"])
+        XCTAssertEqual(freed.gainElements.first?.validDB, [0, 0.9, 49.6])
+        let devices = await reg.devices
+        let stillOurs = try XCTUnwrap(devices.first { $0.id == first.id })
+        XCTAssertEqual(stillOurs.state, .inUse)
+        XCTAssertNil(stillOurs.features["held_externally"])
+        // Both probed/claimed now: the next pass opens neither.
+        gate = await reg.advanceTickAndProbeGate()
+        XCTAssertFalse(gate(good0))
+        XCTAssertFalse(gate(good1))
     }
 
     func testIdentityBaseStripsCollisionSuffix() {

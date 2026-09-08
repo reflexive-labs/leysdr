@@ -281,25 +281,36 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     /// Advances the poll counter and returns the predicate `enumerate` uses to decide which
     /// dongles may be opened for a probe this pass: not one of ours, not already probed, and not
-    /// inside a backoff window after a failed open. Split from `poll` so tests can drive it.
+    /// inside a backoff window after a failed open. The decision is per dongle, keyed by identity
+    /// *and* USB index, so two dongles sharing a serial (`#n` collision keys) are gated on their
+    /// own state: a held sibling inside its backoff never shadows the other one, and a probe with
+    /// no matching entry (a new device) may always open. Split from `poll` so tests can drive it.
     func advanceTickAndProbeGate() -> (RTLSDRProbe) -> Bool {
         pollTick += 1
         var skip = Set<String>()
-        for (id, e) in entries where e.rtlIndex != nil {
+        for (id, e) in entries {
+            guard let index = e.rtlIndex else { continue }
             let base = DefaultDeviceRegistry.identityBase(of: e.key)
             let rtl = e.device as? RTLSDRDevice
+            let closed: Bool
             if e.descriptor.state == .inUse && !e.heldExternally {
-                skip.insert(base)
+                closed = true
             } else if e.heldExternally {
-                if let b = probeBackoff[id], pollTick < b.retryAtTick { skip.insert(base) }
-            } else if rtl.map({ DefaultDeviceRegistry.isProbed($0.probe) }) == true {
-                skip.insert(base)
+                closed = probeBackoff[id].map { pollTick < $0.retryAtTick } ?? false
+            } else {
+                closed = rtl.map { DefaultDeviceRegistry.isProbed($0.probe) } ?? false
             }
+            if closed { skip.insert(DefaultDeviceRegistry.probeSlot(base: base, index: index)) }
         }
         return { p in
-            !skip.contains(DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product))
+            let base = DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product)
+            return !skip.contains(DefaultDeviceRegistry.probeSlot(base: base, index: p.index))
         }
     }
+
+    /// Gate key for one physical dongle: identity base plus USB index (the index is what tells two
+    /// serial-collision siblings apart within a pass).
+    private static func probeSlot(base: String, index: UInt32) -> String { "\(base)@\(index)" }
 
     /// Records that one of our captures failed to claim the dongle because another program has it
     /// (`RTLSDRDevice.open` threw DEVICE_BUSY): the same outcome as a failed probe, so the dongle
