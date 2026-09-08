@@ -419,8 +419,13 @@ final class RTLTCPDeviceTests: XCTestCase {
         server = try FakeRTLTCPServer(port: port)
         defer { server.stop() }
         await registry.poll()
-        guard case .arrived(let back)? = await iter.next() else { return XCTFail("expected arrived") }
-        XCTAssertEqual(back.id, d.id)
+        // The same poll also announces any real dongle on the developer's machine; wait for ours.
+        var reannounced: DeviceDescriptor?
+        for _ in 0..<8 {
+            guard let ev = await iter.next() else { break }
+            if case .arrived(let desc) = ev, desc.id == d.id { reannounced = desc; break }
+        }
+        let back = try XCTUnwrap(reannounced, "expected arrived for the rtl_tcp device")
         XCTAssertEqual(back.state, .available)
         devices = await registry.devices.filter { $0.driver != "rtlsdr" }
         XCTAssertEqual(devices.map(\.state), [.available])
