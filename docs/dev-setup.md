@@ -118,7 +118,10 @@ package dependency, then `make proto` and commit the regenerated code.
 - In the moat container the Swift toolchain lives in `/home/moatuser/swift-toolchain` with wrapper
   scripts on `PATH` (`/home/moatuser/bin/swift`) and a stub `librtlsdr` at `/home/moatuser/rtlsdr-stub`.
   The stub is not on the loader path, so running `leylined` there (and therefore `make e2e` / `make check`)
-  needs `LD_LIBRARY_PATH=/home/moatuser/rtlsdr-stub/lib`; `protoc` 25.1 is already installed.
+  needs `LD_LIBRARY_PATH=/home/moatuser/rtlsdr-stub/lib`; `protoc` 25.1 is already installed. The
+  container shares the checkout with the Mac, so run the gate with a scratch install directory
+  (`make check GOBIN=/tmp/ley-bin`) to keep the Linux `ley`/`leyfix` out of `go/bin`; `.tools/` and
+  SwiftPM's build products are already per host.
 
 ## Spikes (docs/build-order.md)
 

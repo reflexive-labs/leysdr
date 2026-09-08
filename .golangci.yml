@@ -1,0 +1,22 @@
+# golangci-lint v2 configuration. Run through `make lint`, which pins the linter version.
+version: "2"
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Writes to CLI output and deferred/cleanup closes on read-only handles: the error is either
+      # not actionable (stdout gone) or already reported by the read that preceded the close.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteByte
+        - (*bufio.Writer).WriteString
+        - (*bufio.Writer).Flush
+        - (*text/tabwriter.Writer).Flush
+        - (*os.File).Close
+        - os.RemoveAll
+        - (*github.com/dpup/leysdr/go/pkg/leyline.Client).Close
+        - (*github.com/dpup/leysdr/go/pkg/leyline.Subscription).Close
+        - (*github.com/dpup/leysdr/go/pkg/iqfile.Reader).Close

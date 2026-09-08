@@ -67,7 +67,7 @@ func (w *Writer) Samples() int64 { return w.count }
 // Close flushes and closes the file.
 func (w *Writer) Close() error {
 	if err := w.w.Flush(); err != nil {
-		w.f.Close()
+		_ = w.f.Close() // cleanup after a failed flush; the flush error is the one to report
 		return err
 	}
 	return w.f.Close()
@@ -99,7 +99,7 @@ func Open(path, format string) (*Reader, error) {
 	}
 	st, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	bps := BytesPerSample(format)

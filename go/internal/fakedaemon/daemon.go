@@ -73,9 +73,8 @@ type watcher struct {
 }
 
 type presence struct {
-	open    int
-	expires time.Time
-	timer   *time.Timer
+	open  int
+	timer *time.Timer
 }
 
 // New returns a daemon with one fake RTL-SDR device attached (unless NoDevice).

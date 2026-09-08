@@ -110,7 +110,7 @@ func generateOne(f *fixture, o genOptions, path string) error {
 			s.fill(blk, n0)
 		}
 		if err := wr.WriteComplex128(blk); err != nil {
-			wr.Close()
+			_ = wr.Close() // cleanup after a failed write
 			return err
 		}
 	}

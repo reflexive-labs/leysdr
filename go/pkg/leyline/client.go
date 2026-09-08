@@ -172,7 +172,7 @@ func (s *errStream) mapErr(err error) error {
 	if err == nil || err == io.EOF {
 		return err
 	}
-	return FromStatusWithTrailer(err, s.ClientStream.Trailer())
+	return FromStatusWithTrailer(err, s.Trailer())
 }
 
 func (s *errStream) RecvMsg(m any) error { return s.mapErr(s.ClientStream.RecvMsg(m)) }

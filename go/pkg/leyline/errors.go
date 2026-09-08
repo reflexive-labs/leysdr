@@ -138,7 +138,7 @@ func splitCodeMessage(s string) (code, msg string) {
 	}
 	c := s[:i]
 	for _, r := range c {
-		if !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 			return "", s
 		}
 	}

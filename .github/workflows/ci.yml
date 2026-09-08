@@ -36,11 +36,8 @@ jobs:
           go build ./...
           go vet ./...
           go test ./...
-      - name: lint
-        working-directory: go
-        run: |
-          go install mvdan.cc/gofumpt@latest
-          test -z "$(gofumpt -l .)"
+      - name: lint (pinned golangci-lint + gofumpt)
+        run: make lint
 
   swift-linux:
     name: engine on Linux (compile + portable DSP tests + contract e2e)

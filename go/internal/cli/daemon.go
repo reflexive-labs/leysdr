@@ -202,7 +202,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	var err2 error
 	for i := 0; i < 10; i++ {
 		err2 = launchctl(ctx, "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), path)
-		if err2 == nil || !(strings.Contains(err2.Error(), "Input/output error") || strings.Contains(err2.Error(), "already")) {
+		if err2 == nil || (!strings.Contains(err2.Error(), "Input/output error") && !strings.Contains(err2.Error(), "already")) {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
