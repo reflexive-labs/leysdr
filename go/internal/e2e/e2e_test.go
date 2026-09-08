@@ -118,6 +118,19 @@ func parseJSON(t *testing.T, s string) map[string]any {
 	return m
 }
 
+// testDevices drops real RTL-SDR dongles from a devices list: the daemon under test enumerates
+// whatever is plugged into the machine, and these assertions are about the devices the test made.
+func testDevices(devs []any) []map[string]any {
+	var out []map[string]any
+	for _, d := range devs {
+		m, _ := d.(map[string]any)
+		if m != nil && m["driver"] != "rtlsdr" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func list(m map[string]any, key string) []any {
 	v, _ := m[key].([]any)
 	return v
@@ -175,12 +188,13 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 	stopPlay, playOut := e.startLive("play", e.fixture, "--no-audio", "--loop", "--json")
 	st := e.waitChannels(1)
 
-	// devices --json: the file device, in use by play's capture.
-	devs := list(parseJSON(t, e.mustRun("devices", "--json")), "devices")
+	// devices --json: the file device, in use by play's capture. A real dongle plugged into the
+	// developer's machine is listed too and ignored here.
+	devs := testDevices(list(parseJSON(t, e.mustRun("devices", "--json")), "devices"))
 	if len(devs) != 1 {
 		t.Fatalf("devices: want 1, got %v", devs)
 	}
-	dev := devs[0].(map[string]any)
+	dev := devs[0]
 	devID, _ := dev["deviceId"].(string)
 	if !strings.HasPrefix(devID, "dev_") || dev["driver"] != "file" || dev["state"] != "IN_USE" {
 		t.Fatalf("unexpected device %v", dev)
@@ -281,7 +295,7 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 		t.Fatalf("play --json prose should be on stderr:\n%s", playOut.errOut.String())
 	}
 	st = e.state()
-	if len(list(st, "channels")) != 0 || len(list(st, "captures")) != 0 || len(list(st, "devices")) != 0 {
+	if len(list(st, "channels")) != 0 || len(list(st, "captures")) != 0 || len(testDevices(list(st, "devices"))) != 0 {
 		t.Fatalf("state not empty after play exit: %v", st)
 	}
 	// play --json printed NDJSON: Events (seq + caused_by) interleaved with
