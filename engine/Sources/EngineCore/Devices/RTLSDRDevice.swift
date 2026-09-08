@@ -18,9 +18,13 @@ public struct RTLSDRProbe: Hashable, Sendable {
     /// Tuner gain table in dB (empty if unknown).
     public var gainsDB: [Double]
     public var tuningRanges: [FrequencyRange]
+    /// `rtlsdr_open` return code when the probe tried to open the dongle and failed (typically the
+    /// USB interface is claimed by another program: rtl_tcp, SDR++, GQRX). nil when the open
+    /// succeeded or was skipped.
+    public var openError: Int32?
 
     public init(index: UInt32, name: String, manufacturer: String, product: String, serial: String,
-                tuner: String, gainsDB: [Double], tuningRanges: [FrequencyRange]) {
+                tuner: String, gainsDB: [Double], tuningRanges: [FrequencyRange], openError: Int32? = nil) {
         self.index = index
         self.name = name
         self.manufacturer = manufacturer
@@ -29,6 +33,7 @@ public struct RTLSDRProbe: Hashable, Sendable {
         self.tuner = tuner
         self.gainsDB = gainsDB
         self.tuningRanges = tuningRanges
+        self.openError = openError
     }
 }
 
@@ -248,7 +253,9 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
             )
             if !claimed.contains(i), shouldOpen(probe) {
                 var dev: OpaquePointer?
-                if rtlsdr_open(&dev, i) == 0, let d = dev {
+                let rc = rtlsdr_open(&dev, i)
+                if rc != 0 || dev == nil { probe.openError = rc == 0 ? -1 : rc }
+                if rc == 0, let d = dev {
                     let info = tunerInfo(rtlsdr_get_tuner_type(d))
                     probe.tuner = info.name
                     probe.tuningRanges = info.ranges

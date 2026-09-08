@@ -188,5 +188,8 @@ before landing). Gate at 0dac92e:
 - The Go fake daemon still answers cf32 for any IQ request; mirror the daemon's `INVALID_ARGUMENT` for parity.
 - The reopen-config error branch in `RTLSDRDevice.open()` (#16) and the macOS branch of the volume-presence
   test only run with hardware / AVFoundation; cover them in the hardware-in-the-loop suite.
+- The registry's probe gate is keyed by identity base, so with a serial-collision pair a held sibling
+  can stay `held_externally` while the other sibling is ours or probed; a replug or one of our own
+  captures clears it. Pre-existing hole in the degraded-probe refresh, now visible.
 - `CaptureAnchor.hostTimeNsAtSampleZero` is recomputed at each rate change from the rebased index at the new
   rate (documented); a rate-invariant sample-zero time would need a per-epoch base.

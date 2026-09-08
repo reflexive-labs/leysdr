@@ -350,7 +350,9 @@ public nonisolated struct Leyline_V1_DeviceDescriptor: Sendable {
 
   /// Escape hatch: vendor features without schema changes. Cross-device concepts get first-class fields.
   /// Well-known keys include "bias_tee", "direct_sampling", "tx_capable", "full_duplex"
-  /// (half-duplex TX devices like HackRF suspend capture to emit).
+  /// (half-duplex TX devices like HackRF suspend capture to emit), "tuner", "serial_collision"
+  /// (two dongles share a serial) and "held_externally" (another program has the device; state is
+  /// IN_USE until it is released).
   public var features: Dictionary<String,Leyline_V1_FeatureValue> = [:]
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

@@ -85,7 +85,11 @@ ley daemon uninstall
 - `ley devices` is empty but the dongle is plugged in: check `rtl_test -t` (from `brew install librtlsdr`).
   If `rtl_test` sees it and `leylined` does not, the daemon is running with a different `librtlsdr`
   (`otool -L engine/.build/release/leylined | grep rtlsdr`).
-- `DEVICE_IO: rtlsdr_open ... -6`: another process has the device (SDR++, GQRX, `rtl_tcp`). Quit it.
+- `DEVICE_BUSY: another program has the device`, or `ley devices` shows the dongle `IN_USE` with a
+  `0..0dB` gain column while nothing of yours is tuned: another process (SDR++, GQRX, `rtl_tcp`) holds
+  it. Quit that program; the daemon re-checks with a backoff of up to 60 s (the `usb_claim_interface
+  error` lines in the daemon log are librtlsdr reporting each check), or just tune: a capture that
+  opens the dongle clears the flag at once.
 - No audio: `ley state` must show a `system_audio` sink on your channel; check the Mac's output device;
   try `ley set volume 1`. The daemon plays through AVAudioEngine's default output.
 - Nooelec dongles often ship with serial `00000001`. Two identical serials get distinct IDs by

@@ -381,6 +381,11 @@ actor SessionStore {
             // `start()` already unwound the device; `stop()` finishes the engine so nothing
             // (anchor stream, DSP thread) outlives the failed create.
             await engine.stop()
+            if let e = error as? EngineError, e.code == "DEVICE_IO", desc.features["held_externally"] == .flag(true) {
+                // The registry already knows another program has this dongle; say so instead of
+                // surfacing librtlsdr's claim failure.
+                throw EngineError.deviceHeldByOtherProgram(deviceID.string)
+            }
             throw error
         }
         let id = engine.id

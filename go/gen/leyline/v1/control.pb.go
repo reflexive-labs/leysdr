@@ -403,7 +403,9 @@ type DeviceDescriptor struct {
 	ProvidesTimestamps bool                   `protobuf:"varint,11,opt,name=provides_timestamps,json=providesTimestamps,proto3" json:"provides_timestamps,omitempty"`
 	// Escape hatch: vendor features without schema changes. Cross-device concepts get first-class fields.
 	// Well-known keys include "bias_tee", "direct_sampling", "tx_capable", "full_duplex"
-	// (half-duplex TX devices like HackRF suspend capture to emit).
+	// (half-duplex TX devices like HackRF suspend capture to emit), "tuner", "serial_collision"
+	// (two dongles share a serial) and "held_externally" (another program has the device; state is
+	// IN_USE until it is released).
 	Features      map[string]*FeatureValue `protobuf:"bytes,12,rep,name=features,proto3" json:"features,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

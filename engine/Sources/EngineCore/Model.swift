@@ -71,7 +71,9 @@ public enum GainMode: Hashable, Sendable {
 }
 
 /// Vendor features without schema changes. Well-known keys: "bias_tee", "direct_sampling",
-/// "tx_capable", "full_duplex", "ppm_correction", "tuner".
+/// "tx_capable", "full_duplex", "ppm_correction", "tuner", "serial_collision" (two dongles share a
+/// serial; ids fall back to enumeration order) and "held_externally" (another program has the
+/// dongle; state reads IN_USE until it is released).
 public enum FeatureValue: Hashable, Sendable {
     case flag(Bool)
     case integer(Int64)
@@ -150,6 +152,7 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
 
     public static func deviceNotFound(_ id: String) -> EngineError { .init(code: "DEVICE_NOT_FOUND", message: "no such device", target: id) }
     public static func deviceBusy(_ id: String) -> EngineError { .init(code: "DEVICE_BUSY", message: "device already has a capture", target: id) }
+    public static func deviceHeldByOtherProgram(_ id: String) -> EngineError { .init(code: "DEVICE_BUSY", message: "another program has the device (rtl_tcp, SDR++, GQRX?); quit it and retry", target: id) }
     public static func deviceDetached(_ id: String) -> EngineError { .init(code: "DEVICE_DETACHED", message: "device is disconnected", target: id) }
     public static func deviceIO(_ msg: String, target: String = "") -> EngineError { .init(code: "DEVICE_IO", message: msg, target: target) }
     public static func freqOutOfRange(_ hz: UInt64, target: String) -> EngineError { .init(code: "FREQ_OUT_OF_RANGE", message: "\(hz) Hz is outside the device tuning range", target: target) }

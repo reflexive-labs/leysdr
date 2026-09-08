@@ -2,6 +2,7 @@
 // hands out stable DeviceIDs keyed by USB identity so replugs keep their id.
 
 import Foundation
+import Logging
 
 /// Fan-out of `DeviceEvent`s to every `events()` subscriber. Lock-guarded so `events()` can be
 /// called from any context (the protocol makes it non-async); the lock is never held across calls.
@@ -62,6 +63,9 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         /// USB index while the dongle is attached; nil for file devices.
         var rtlIndex: UInt32?
         var key: String
+        /// The dongle is claimed by another program (its probe `rtlsdr_open` failed): reported
+        /// `.inUse` with feature `held_externally`, re-probed with backoff until it opens.
+        var heldExternally = false
     }
 
     public let persistPath: String?
@@ -77,6 +81,16 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     private var reconnecting: Set<DeviceID> = []
     /// Devices with a reconnect attempt in flight (test hook).
     var reconnectingIDs: Set<DeviceID> { reconnecting }
+    private static let logger = Logger(label: "leyline.registry")
+
+    /// Poll counter; probe backoff deadlines are expressed in polls so tests can drive them.
+    private var pollTick = 0
+    /// Per-dongle re-probe schedule while another program holds it: the poll at which the next
+    /// `rtlsdr_open` may be tried and the current delay (ms), doubling from `probeBackoffMinMs` to
+    /// `probeBackoffMaxMs`. A failed open makes librtlsdr print to stderr, so once a second is too often.
+    private var probeBackoff: [DeviceID: (retryAtTick: Int, delayMs: Int)] = [:]
+    public static let probeBackoffMinMs = 2_000
+    public static let probeBackoffMaxMs = 60_000
 
     /// - Parameters:
     ///   - persistPath: JSON file that keeps the identity → id map across daemon restarts. nil = memory only.
@@ -210,12 +224,18 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     }
 
     /// Marks a device `.inUse` (a capture holds it) or back to `.available`; publishes `changed`.
+    /// A capture that opens a dongle reported as held by another program proves the hold is over,
+    /// so the external-hold flag and its re-probe schedule are cleared here too.
     public func markInUse(id: DeviceID, _ inUse: Bool) throws {
         guard var entry = entries[id] else { throw EngineError.deviceNotFound(id.string) }
         guard entry.descriptor.state != .disconnected else { throw EngineError.deviceDetached(id.string) }
         let state: DeviceState = inUse ? .inUse : .available
-        guard entry.descriptor.state != state else { return }
+        let releasingHold = entry.heldExternally
+        guard entry.descriptor.state != state || releasingHold else { return }
         entry.descriptor.state = state
+        entry.heldExternally = false
+        entry.descriptor.features["held_externally"] = nil
+        probeBackoff[id] = nil
         entries[id] = entry
         if let v = entry.device as? VirtualDevice { v.setState(state) }
         if let r = entry.device as? RTLSDRDevice { r.setState(state) }
@@ -247,27 +267,47 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// One enumeration pass: diff `RTLSDRDevice.enumerate` against known dongles. The per-device
     /// `rtlsdr_open` probe (tuner type, gain table) runs only for identities never probed
     /// successfully: known dongles keep their cached probe, so idle dongles are not re-initialised
-    /// every second and the poll never contends with a capture's own open. A dongle first seen while
-    /// busy (degraded probe) is re-probed on later passes while idle and its descriptor refreshed.
+    /// every second and the poll never contends with a capture's own open. A dongle whose probe
+    /// open fails (another program holds it) is reported `.inUse` and re-probed with backoff.
     public func poll() {
+        let gate = advanceTickAndProbeGate()
         let claimed = Set(entries.values.compactMap { e -> UInt32? in
-            e.descriptor.state == .inUse ? e.rtlIndex : nil
+            e.descriptor.state == .inUse && !e.heldExternally ? e.rtlIndex : nil
         })
-        // Identity bases (serial/manufacturer/product) that must not be opened by the probe: in use,
-        // or already carrying a real tuner/gain table.
-        var probed = Set<String>()
-        for e in entries.values where e.rtlIndex != nil {
-            let base = DefaultDeviceRegistry.identityBase(of: e.key)
-            let rtl = e.device as? RTLSDRDevice
-            if e.descriptor.state == .inUse || rtl.map({ DefaultDeviceRegistry.isProbed($0.probe) }) == true {
-                probed.insert(base)
-            }
-        }
-        let probes = RTLSDRDevice.enumerate(claimed: claimed) { p in
-            !probed.contains(DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product))
-        }
+        let probes = RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate)
         applyProbes(probes)
         reconnectDisconnectedRemotes()
+    }
+
+    /// Advances the poll counter and returns the predicate `enumerate` uses to decide which
+    /// dongles may be opened for a probe this pass: not one of ours, not already probed, and not
+    /// inside a backoff window after a failed open. Split from `poll` so tests can drive it.
+    func advanceTickAndProbeGate() -> (RTLSDRProbe) -> Bool {
+        pollTick += 1
+        var skip = Set<String>()
+        for (id, e) in entries where e.rtlIndex != nil {
+            let base = DefaultDeviceRegistry.identityBase(of: e.key)
+            let rtl = e.device as? RTLSDRDevice
+            if e.descriptor.state == .inUse && !e.heldExternally {
+                skip.insert(base)
+            } else if e.heldExternally {
+                if let b = probeBackoff[id], pollTick < b.retryAtTick { skip.insert(base) }
+            } else if rtl.map({ DefaultDeviceRegistry.isProbed($0.probe) }) == true {
+                skip.insert(base)
+            }
+        }
+        return { p in
+            !skip.contains(DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product))
+        }
+    }
+
+    /// Schedules the next probe attempt for a dongle whose open just failed.
+    private func scheduleReprobe(id: DeviceID) -> Int {
+        let previous = probeBackoff[id]?.delayMs
+        let delay = previous.map { min($0 * 2, DefaultDeviceRegistry.probeBackoffMaxMs) } ?? DefaultDeviceRegistry.probeBackoffMinMs
+        let ticks = max(1, (delay + pollIntervalMs - 1) / pollIntervalMs)
+        probeBackoff[id] = (pollTick + ticks, delay)
+        return delay
     }
 
     /// Link-loss recovery for hosted `RTLTCPDevice`s: every `.disconnected` entry gets one `open()`
@@ -319,6 +359,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         // Removed: known dongles not enumerated this pass.
         for (id, entry) in entries where entry.rtlIndex != nil && present[id] == nil {
             entries[id] = nil
+            probeBackoff[id] = nil
             (entry.device as? RTLSDRDevice)?.setState(.disconnected)
             publish(.removed(id))
         }
@@ -326,13 +367,44 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         for (id, (probe, key, collided)) in present {
             if var entry = entries[id] {
                 guard let rtl = entry.device as? RTLSDRDevice else { continue }
-                if entry.descriptor.state != .inUse, !DefaultDeviceRegistry.isProbed(rtl.probe),
-                   DefaultDeviceRegistry.isProbed(probe) {
+                let ours = entry.descriptor.state == .inUse && !entry.heldExternally
+                if !ours, let rc = probe.openError {
+                    // Still (or newly) claimed by another program.
+                    let first = !entry.heldExternally
+                    entry.heldExternally = true
+                    let delay = scheduleReprobe(id: id)
+                    rtl.setState(.inUse)
+                    var d = rtl.descriptor
+                    d.state = .inUse
+                    d.features["serial_collision"] = .flag(collided)
+                    d.features["held_externally"] = .flag(true)
+                    if probe.index != entry.rtlIndex { rtl.setIndex(probe.index); entry.rtlIndex = probe.index }
+                    let changed = d != entry.descriptor
+                    entry.descriptor = d
+                    entries[id] = entry
+                    if changed { publish(.changed(d)) }
+                    logProbeFailure(d, rc: rc, first: first, nextMs: delay)
+                    continue
+                }
+                if entry.heldExternally, DefaultDeviceRegistry.isProbed(probe) {
+                    // The other program let go: back to available with the real tuner/gain table.
+                    entry.heldExternally = false
+                    probeBackoff[id] = nil
+                    rtl.setState(.available)
+                    DefaultDeviceRegistry.logger.info("dongle \(entry.descriptor.serial) (\(entry.descriptor.model)) is available again")
+                }
+                if !ours, !DefaultDeviceRegistry.isProbed(rtl.probe), DefaultDeviceRegistry.isProbed(probe) {
                     rtl.updateProbe(probe)
                 }
-                var d = entry.descriptor.state == .inUse ? entry.descriptor : rtl.descriptor
+                var d = ours ? entry.descriptor : rtl.descriptor
                 d.features["serial_collision"] = .flag(collided)
-                if entry.descriptor.state == .inUse { continue }
+                if entry.heldExternally {
+                    d.state = .inUse
+                    d.features["held_externally"] = .flag(true)
+                } else {
+                    d.features["held_externally"] = nil
+                }
+                if ours { continue }
                 if probe.index != entry.rtlIndex || d != entry.descriptor {
                     rtl.setIndex(probe.index)
                     entry.rtlIndex = probe.index
@@ -349,9 +421,27 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
                 }
                 var d = device.descriptor
                 d.features["serial_collision"] = .flag(collided)
-                entries[id] = Entry(descriptor: d, device: device, rtlIndex: probe.index, key: key)
+                var entry = Entry(descriptor: d, device: device, rtlIndex: probe.index, key: key)
+                if let rc = probe.openError {
+                    entry.heldExternally = true
+                    let delay = scheduleReprobe(id: id)
+                    device.setState(.inUse)
+                    d.state = .inUse
+                    d.features["held_externally"] = .flag(true)
+                    entry.descriptor = d
+                    logProbeFailure(d, rc: rc, first: true, nextMs: delay)
+                }
+                entries[id] = entry
                 publish(.arrived(d))
             }
+        }
+    }
+
+    private func logProbeFailure(_ d: DeviceDescriptor, rc: Int32, first: Bool, nextMs: Int) {
+        if first {
+            DefaultDeviceRegistry.logger.info("dongle \(d.serial) (\(d.model)) could not be opened (rtlsdr_open rc \(rc)): another program holds it (rtl_tcp, SDR++, GQRX?); reported IN_USE, re-checking in \(nextMs / 1000) s (backoff up to \(DefaultDeviceRegistry.probeBackoffMaxMs / 1000) s)")
+        } else {
+            DefaultDeviceRegistry.logger.debug("dongle \(d.serial) still held by another program (rtlsdr_open rc \(rc)); next check in \(nextMs / 1000) s")
         }
     }
 }
