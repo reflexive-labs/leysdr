@@ -198,7 +198,7 @@ before landing). Gate at 0dac92e:
 
 Same loop as WI-1..WI-11: one commit each, verified independently, `make check` green on both hosts.
 
-### FU-1 `[ ]` A failed rate write re-emits capture and channel state (#2 follow-up)
+### FU-1 `[x]` A failed rate write re-emits capture and channel state (#2 follow-up)
 
 - `SessionStore.applyWrite` `.captureSampleRate` branch: when `entry.engine.setSampleRate` throws, the
   engine may now be detached (failed restore) or may have applied the new rate on its retry. Before

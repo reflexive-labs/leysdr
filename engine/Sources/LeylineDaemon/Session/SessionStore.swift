@@ -650,7 +650,18 @@ actor SessionStore {
                     throw EngineError.rateUnsupported(hz, target: w.targetID)
                 }
                 let ratesBefore = audioRates(captureID: id)
-                try await entry.engine.setSampleRate(hz)
+                do {
+                    try await entry.engine.setSampleRate(hz)
+                } catch {
+                    // A failed rate change still moved the engine: it is either detached (the
+                    // restore failed too) or streaming again at whatever rate the device ended up
+                    // on, with its channels re-planned accordingly. Publish that truth before the
+                    // rejection so watchers never need a GetState to learn the capture's state.
+                    touchActivity(id, by: by)
+                    await emitCapture(id, by: by)
+                    await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
+                    throw error
+                }
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
                 await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
