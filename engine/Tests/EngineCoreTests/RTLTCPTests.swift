@@ -412,7 +412,8 @@ final class RTLTCPDeviceTests: XCTestCase {
         for _ in 0..<1600 where await !registry.reconnectingIDs.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
         let pending = await registry.reconnectingIDs
         XCTAssertTrue(pending.isEmpty, "failed attempt settles")
-        var devices = await registry.devices
+        // A real dongle on the developer's machine is enumerated by the poll too; look only at ours.
+        var devices = await registry.devices.filter { $0.driver != "rtlsdr" }
         XCTAssertEqual(devices.map(\.state), [.disconnected])
         // Server back: the next poll reconnects, marks available and re-announces the same id.
         server = try FakeRTLTCPServer(port: port)
@@ -421,7 +422,7 @@ final class RTLTCPDeviceTests: XCTestCase {
         guard case .arrived(let back)? = await iter.next() else { return XCTFail("expected arrived") }
         XCTAssertEqual(back.id, d.id)
         XCTAssertEqual(back.state, .available)
-        devices = await registry.devices
+        devices = await registry.devices.filter { $0.driver != "rtlsdr" }
         XCTAssertEqual(devices.map(\.state), [.available])
         XCTAssertTrue(dev.isConnected)
         XCTAssertEqual(dev.descriptor.state, .available)

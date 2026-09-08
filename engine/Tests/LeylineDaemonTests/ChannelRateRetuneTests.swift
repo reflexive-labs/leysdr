@@ -24,7 +24,8 @@ final class ChannelRateRetuneDaemonTests: XCTestCase {
         w.tag = tag
         w.targetID = target
         fill(&w)
-        let summary = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(w) }
+        let message = w
+        let summary = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(message) }
         XCTAssertEqual(summary.writesApplied, 1, "write tag \(tag) applied")
     }
 

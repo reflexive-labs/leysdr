@@ -315,6 +315,33 @@ final class ChannelTests: XCTestCase {
         XCTAssertTrue(channels.isEmpty)
     }
 
+    /// Names of live threads in this process that belong to the engine.
+    /// Darwin: walk the task's threads with Mach and read each pthread name. Linux: /proc/self/task/*/comm.
+    #if canImport(Darwin)
+    static func engineThreadNames() -> [String] {
+        var list: thread_act_array_t?
+        var count: mach_msg_type_number_t = 0
+        guard task_threads(mach_task_self_, &list, &count) == KERN_SUCCESS, let list else { return [] }
+        defer {
+            let bytes = vm_size_t(count) * vm_size_t(MemoryLayout<thread_act_t>.stride)
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: list), bytes)
+        }
+        var names: [String] = []
+        for i in 0..<Int(count) {
+            let thread = list[i]
+            defer { mach_port_deallocate(mach_task_self_, thread) }
+            // Typed as Optional explicitly so the guard compiles whether or not the SDK marks the
+            // return value nullable.
+            let pthreadOrNil: pthread_t? = pthread_from_mach_thread_np(thread)
+            guard let pthread = pthreadOrNil else { continue }
+            var buf = [CChar](repeating: 0, count: 128)
+            guard pthread_getname_np(pthread, &buf, buf.count) == 0 else { continue }
+            let name = String(cString: buf)
+            if name.hasPrefix("leyline.") { names.append(name) }
+        }
+        return names
+    }
+    #else
     /// Names of live threads in this process that belong to the engine (Linux: /proc/self/task/*/comm).
     static func engineThreadNames() -> [String] {
         #if os(Linux)
@@ -326,4 +353,5 @@ final class ChannelTests: XCTestCase {
         return []
         #endif
     }
+    #endif
 }

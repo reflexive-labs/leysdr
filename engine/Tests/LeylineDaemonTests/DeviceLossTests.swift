@@ -69,6 +69,12 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     func stopStreaming() async {
         streamStops.value += 1
         streaming.value = false
+        joinDeliveryThread()
+    }
+
+    /// Bounded: the delivery thread exits as soon as `streaming` is false. Kept synchronous so the
+    /// semaphore wait is not issued from an async context.
+    private func joinDeliveryThread() {
         if thread != nil { done.wait(); thread = nil }
     }
 }
