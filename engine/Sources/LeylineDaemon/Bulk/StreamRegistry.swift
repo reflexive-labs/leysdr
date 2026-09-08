@@ -24,12 +24,28 @@ final class BulkSubscription: @unchecked Sendable {
     /// written on the registry actor, read from the nonisolated reader loop.
     private let reading = Atomic<Bool>(false)
     private let closed = Atomic<Bool>(false)
+    /// Set by `cancelReader` when the attached Stream RPC is cancelled; cleared by the next claim.
+    private let readerCancelled = Atomic<Bool>(false)
 
     var isReading: Bool { reading.load(ordering: .acquiring) }
     var isClosed: Bool { closed.load(ordering: .acquiring) }
+    var isReaderCancelled: Bool { readerCancelled.load(ordering: .acquiring) }
     /// Claims the single reader slot; false when another Stream RPC already holds it.
-    func claimReader() -> Bool { reading.compareExchange(expected: false, desired: true, ordering: .acquiringAndReleasing).exchanged }
+    func claimReader() -> Bool {
+        guard reading.compareExchange(expected: false, desired: true, ordering: .acquiringAndReleasing).exchanged else { return false }
+        readerCancelled.store(false, ordering: .releasing)
+        return true
+    }
     func releaseReader() { reading.store(false, ordering: .releasing) }
+    /// The reader's RPC was cancelled: flag it and wake the drain loop so it returns without waiting
+    /// for the next frame. The poke stream itself stays open for a reader that reconnects in grace.
+    func cancelReader() {
+        readerCancelled.store(true, ordering: .releasing)
+        switch source {
+        case .fft(let ring, _, _, _), .iq(let ring, _, _): ring.wake()
+        case .audio(let audio, _): audio.wake()
+        }
+    }
     func markClosed() { closed.store(true, ordering: .releasing) }
 
     init(id: StreamID, descriptor: Leyline_V1_StreamDescriptor, captureID: CaptureID, channelID: ChannelID?, source: Source) {
@@ -234,8 +250,8 @@ actor StreamRegistry {
         }
     }
 
-    /// Drains one subscription into `write` until the ring finishes or the task is cancelled.
-    /// Runs outside the actor so a slow client never blocks negotiation.
+    /// Drains one subscription into `write` until the ring finishes, the subscription closes, or
+    /// `cancelReader` fires. Runs outside the actor so a slow client never blocks negotiation.
     nonisolated static func run(_ sub: BulkSubscription, write: (Leyline_V1_Frame) async throws -> Void) async throws {
         var seq: UInt64 = 0
         var lastEnd: UInt64 = 0
@@ -263,7 +279,7 @@ actor StreamRegistry {
                 while let p = ring.pop() {
                     try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples, seq: p.seq))
                 }
-                if sub.isClosed { return }
+                if sub.isClosed || sub.isReaderCancelled { return }
             }
             while let p = ring.pop() {
                 try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples, seq: p.seq))
@@ -274,7 +290,7 @@ actor StreamRegistry {
                 while let p = audio.next(s16: s16) {
                     try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples))
                 }
-                if sub.isClosed { return }
+                if sub.isClosed || sub.isReaderCancelled { return }
             }
         }
     }

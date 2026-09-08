@@ -28,7 +28,19 @@ struct BulkService: Leyline_V1_Bulk.SimpleServiceProtocol {
                 await store.streamClosed(c)
             }
         }
-        try await StreamRegistry.run(sub) { try await response.write($0) }
+        // RPC cancellation is not task cancellation in grpc-swift: with no frame due (a slow FFT rate,
+        // squelched audio) the drain would otherwise park on the source's poke stream until the
+        // subscription is closed. `cancelReader` flags the reader and wakes the loop; the poke stream
+        // stays open for a reader that reconnects within the grace period.
+        try await withRPCCancellationHandler {
+            try await withTaskCancellationHandler {
+                try await StreamRegistry.run(sub) { try await response.write($0) }
+            } onCancel: {
+                sub.cancelReader()
+            }
+        } onCancelRPC: {
+            sub.cancelReader()
+        }
     }
 
     func unsubscribe(request: Leyline_V1_StreamRef, context: ServerContext) async throws -> Leyline_V1_Empty {

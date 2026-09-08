@@ -222,7 +222,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   the new bandwidth with state OUT_OF_CAPTURE, then ACTIVE after `center_hz` moves back.
 - docs/engine-internals.md: one sentence on the rule (all non-offset writes are stored while out of capture).
 
-### FU-3 `[ ]` WatchEvents and Bulk.Stream end on client cancel (#20 follow-up)
+### FU-3 `[x]` WatchEvents and Bulk.Stream end on client cancel (#20 follow-up)
 
 - Audit `ControlService.watchEvents` and `BulkService.stream` for the shape fixed in
   `Telemetry.Subscribe`: a `for await` over an AsyncStream that only wakes on traffic keeps the handler

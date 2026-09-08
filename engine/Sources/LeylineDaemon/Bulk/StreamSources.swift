@@ -124,6 +124,9 @@ final class AudioFrameSource: @unchecked Sendable {
         return Frame(payload: payload, sampleStart: start, sampleCount: UInt64(Double(n) * perAudio), droppedSamples: droppedNow)
     }
 
+    /// Wakes a reader parked on `poke` without new audio (used to end a cancelled reader).
+    func wake() { pokeContinuation.yield(()) }
+
     func finish() { pokeContinuation.finish() }
 }
 

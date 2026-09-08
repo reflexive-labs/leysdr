@@ -116,6 +116,9 @@ final class FrameRing: @unchecked Sendable {
         }
     }
 
+    /// Wakes a reader parked on `poke` without committing a frame (used to end a cancelled reader).
+    func wake() { pokeContinuation.yield(()) }
+
     /// Ends the poke stream; the reader loop exits after draining.
     func finish() { pokeContinuation.finish() }
 }

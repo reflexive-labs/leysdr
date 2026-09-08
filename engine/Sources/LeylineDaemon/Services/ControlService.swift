@@ -23,8 +23,23 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         await store.streamOpened(c)
         defer { Task { await store.streamClosed(c) } }
         let events = await store.events(scope: scope)
-        for await ev in events {
-            try await response.write(ev)
+        // RPC cancellation is not task cancellation in grpc-swift: an idle watcher would otherwise sit
+        // in `for await` (keeping its client present) until the store finishes subscribers on shutdown.
+        // Drain in a child task that cancellation ends; cancelling the iterator also drops the
+        // subscription. Shutdown still ends the loop by finishing the stream.
+        let drain = Task {
+            for await ev in events {
+                try await response.write(ev)
+            }
+        }
+        try await withRPCCancellationHandler {
+            try await withTaskCancellationHandler {
+                try await drain.value
+            } onCancel: {
+                drain.cancel()
+            }
+        } onCancelRPC: {
+            drain.cancel()
         }
     }
 
