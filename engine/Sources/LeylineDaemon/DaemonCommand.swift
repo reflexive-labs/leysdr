@@ -50,6 +50,9 @@ struct DaemonCommand: AsyncParsableCommand {
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
         let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
         let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, rtltcp: remotes))
+        // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
+        // return, never a process-killing SIGPIPE.
+        signal(SIGPIPE, SIG_IGN)
         let signals = SignalWatcher([SIGTERM, SIGINT])
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in

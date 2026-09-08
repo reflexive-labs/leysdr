@@ -65,6 +65,12 @@ final class FakeRTLTCPServer: @unchecked Sendable {
     private func acceptLoop() {
         let c = accept(listener, nil, nil)
         guard c >= 0 else { return }
+        #if !os(Linux)
+        // macOS raises SIGPIPE on a write to a closed peer (the device under test closes first
+        // in several cases); Linux gets the same effect from MSG_NOSIGNAL in `sendFlags`.
+        var one: Int32 = 1
+        setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        #endif
         lock.lock(); client = c; lock.unlock()
         var header: [UInt8] = [0x52, 0x54, 0x4c, 0x30]
         for v in [tuner, gainCount] { header += [UInt8(v >> 24), UInt8((v >> 16) & 0xff), UInt8((v >> 8) & 0xff), UInt8(v & 0xff)] }

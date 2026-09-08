@@ -120,7 +120,7 @@ final class DeviceLossDaemonTests: XCTestCase {
             XCTAssertEqual(first.streamStops.value, 1, "the dead stream was stopped")
             var state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertEqual(state.captures.first?.state, .captureDetached)
-            XCTAssertEqual(state.devices.first?.state, .disconnected)
+            XCTAssertEqual(testDevices(state.devices).first?.state, .disconnected)
             let deviceGone = await events.waitFor { ev in
                 if case .device(let dev)? = ev.body { return dev.deviceID == d.id.string && dev.state == .disconnected }
                 return false
@@ -152,9 +152,9 @@ final class DeviceLossDaemonTests: XCTestCase {
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertEqual(state.captures.first?.state, .captureActive)
             XCTAssertEqual(state.captures.first?.captureID, capture.captureID)
-            XCTAssertEqual(state.devices.map(\.deviceID), [d.id.string])
-            XCTAssertEqual(state.devices.first?.state, .inUse)
-            let registryState = await c.daemon.registry.devices.first?.state
+            XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [d.id.string])
+            XCTAssertEqual(testDevices(state.devices).first?.state, .inUse)
+            let registryState = testDevices(await c.daemon.registry.devices).first?.state
             XCTAssertEqual(registryState, .inUse)
 
             var dcap = Leyline_V1_DestroyCaptureRequest()

@@ -116,3 +116,13 @@ func errorCode(_ error: any Error) -> (code: String, trailer: Leyline_V1_ErrorDe
     }
     return (code, detail)
 }
+
+/// The devices a test created. A developer's Mac may have a real dongle plugged in while the suite
+/// runs; every registry poll enumerates it, so assertions about "the" device list must ignore it.
+func testDevices(_ devices: [Leyline_V1_DeviceDescriptor]) -> [Leyline_V1_DeviceDescriptor] {
+    devices.filter { $0.driver != "rtlsdr" }
+}
+
+func testDevices(_ devices: [DeviceDescriptor]) -> [DeviceDescriptor] {
+    devices.filter { $0.driver != "rtlsdr" }
+}

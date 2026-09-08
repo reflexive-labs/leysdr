@@ -11,7 +11,7 @@ final class DaemonTests: XCTestCase {
     func testGetStateEmptyWithDaemonInfo() async throws {
         try await withDaemon { c in
             let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
-            XCTAssertTrue(state.devices.isEmpty)
+            XCTAssertTrue(testDevices(state.devices).isEmpty)
             XCTAssertTrue(state.captures.isEmpty)
             XCTAssertTrue(state.channels.isEmpty)
             XCTAssertTrue(state.sinks.isEmpty)
@@ -52,7 +52,7 @@ final class DaemonTests: XCTestCase {
             XCTAssertEqual(device.sampleRates, [2_400_000])
             XCTAssertEqual(device.nativeFormat, .cf32)
             let listed = try await c.control.listDevices(Leyline_V1_ListDevicesRequest(), metadata: testMetadata)
-            XCTAssertEqual(listed.devices.map(\.deviceID), [device.deviceID])
+            XCTAssertEqual(testDevices(listed.devices).map(\.deviceID), [device.deviceID])
 
             // CreateCapture with rate 0 -> file rate.
             var cc = Leyline_V1_CreateCaptureRequest()
@@ -162,7 +162,7 @@ final class DaemonTests: XCTestCase {
             _ = try await c.control.destroyCapture(dcap, metadata: testMetadata)
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertTrue(state.captures.isEmpty)
-            XCTAssertEqual(state.devices.first?.state, .available)
+            XCTAssertEqual(testDevices(state.devices).first?.state, .available)
             await events.stop()
         }
     }
@@ -733,7 +733,7 @@ final class CaptureLifecycleDaemonTests: XCTestCase {
                 if state.devices.contains(where: { $0.deviceID == d.id.string }) { break }
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
-            XCTAssertEqual(state.devices.map(\.deviceID), [d.id.string])
+            XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [d.id.string])
 
             var cc = Leyline_V1_CreateCaptureRequest()
             cc.deviceID = d.id.string
@@ -747,8 +747,8 @@ final class CaptureLifecycleDaemonTests: XCTestCase {
             XCTAssertEqual(dev.closes.value, 1, "device closed by the failed start")
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertTrue(state.captures.isEmpty)
-            XCTAssertEqual(state.devices.first?.state, .available)
-            let registryState = await c.daemon.registry.devices.first?.state
+            XCTAssertEqual(testDevices(state.devices).first?.state, .available)
+            let registryState = testDevices(await c.daemon.registry.devices).first?.state
             XCTAssertEqual(registryState, .available)
 
             // Fault cleared: the retry succeeds on the same device.
@@ -758,7 +758,7 @@ final class CaptureLifecycleDaemonTests: XCTestCase {
             XCTAssertEqual(dev.streamStarts.value, 1)
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertEqual(state.captures.map(\.captureID), [capture.captureID])
-            XCTAssertEqual(state.devices.first?.state, .inUse)
+            XCTAssertEqual(testDevices(state.devices).first?.state, .inUse)
 
             var dcap = Leyline_V1_DestroyCaptureRequest()
             dcap.captureID = capture.captureID
@@ -787,7 +787,7 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             let dev = FaultyStreamDevice()
             let d = try await c.daemon.registry.attachVirtualDevice(dev)
             var state = try await self.waitForDevice(c, d.id.string)
-            XCTAssertEqual(state.devices.map(\.deviceID), [d.id.string])
+            XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [d.id.string])
 
             var cc = Leyline_V1_CreateCaptureRequest()
             cc.deviceID = d.id.string
@@ -820,10 +820,10 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertEqual(state.captures.map(\.captureID), [capture.captureID])
             XCTAssertEqual(state.captures.first?.state, .captureActive)
-            XCTAssertEqual(state.devices.map(\.deviceID), [d.id.string])
-            XCTAssertEqual(state.devices.first?.state, .inUse)
+            XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [d.id.string])
+            XCTAssertEqual(testDevices(state.devices).first?.state, .inUse)
             XCTAssertEqual(dev.closes.value, 0, "device must not be closed by a rejected detach")
-            let registryIDs = await c.daemon.registry.devices.map(\.id)
+            let registryIDs = testDevices(await c.daemon.registry.devices).map(\.id)
             XCTAssertEqual(registryIDs, [d.id])
 
             var dcap = Leyline_V1_DestroyCaptureRequest()
@@ -846,7 +846,7 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             detach.deviceID = d.deviceID
             _ = try await c.control.detachFileDevice(detach, metadata: testMetadata)
             let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
-            XCTAssertTrue(state.devices.isEmpty)
+            XCTAssertTrue(testDevices(state.devices).isEmpty)
         }
     }
 }

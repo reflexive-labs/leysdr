@@ -361,7 +361,14 @@ final class DevicesRegistryTests: XCTestCase {
 }
 
 final class DevicesRTLSDRTests: XCTestCase {
+    /// These two tests describe the no-hardware case (CI runners, the Linux stub); a dongle plugged
+    /// into the developer's machine would be opened for real, so they step aside for it.
+    private func skipIfDongleAttached() throws {
+        try XCTSkipIf(rtlsdr_get_device_count() > 0, "an RTL-SDR is attached; hardware-free assertions do not apply")
+    }
+
     func testEnumerateWithoutHardware() async throws {
+        try skipIfDongleAttached()
         // The stub librtlsdr reports zero devices; enumeration and a poll must be no-ops.
         XCTAssertEqual(RTLSDRDevice.enumerate(), [])
         let reg = DefaultDeviceRegistry(pollIntervalMs: 20)
@@ -399,7 +406,8 @@ final class DevicesRTLSDRTests: XCTestCase {
 
     /// `open()` runs through `BlockingWork` (WI-9); with the stub librtlsdr (zero devices) the
     /// rtlsdr_open failure must still surface as DEVICE_IO with the device id as target.
-    func testOpenWithoutHardwareThrowsDeviceIO() async {
+    func testOpenWithoutHardwareThrowsDeviceIO() async throws {
+        try skipIfDongleAttached()
         let probe = RTLSDRProbe(index: 0, name: "Generic RTL2832U", manufacturer: "Realtek", product: "RTL2838UHIDIR",
                                 serial: "00000003", tuner: "R820T", gainsDB: [0, 49.6],
                                 tuningRanges: RTLSDRDevice.tunerInfo(RTLSDR_TUNER_R820T).ranges)

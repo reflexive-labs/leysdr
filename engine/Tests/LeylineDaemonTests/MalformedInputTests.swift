@@ -143,7 +143,7 @@ final class MalformedInputDaemonTests: XCTestCase {
                 XCTAssertLessThan(Date().timeIntervalSince(started), 2, "\(path) must be rejected without blocking")
             }
             let listed = try await c.control.listDevices(Leyline_V1_ListDevicesRequest(), metadata: testMetadata)
-            XCTAssertTrue(listed.devices.isEmpty, "nothing was attached")
+            XCTAssertTrue(testDevices(listed.devices).isEmpty, "nothing was attached")
         }
     }
 }
