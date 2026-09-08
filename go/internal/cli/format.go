@@ -49,13 +49,19 @@ func ratesString(rates []uint64) string {
 	return fmt.Sprintf("%.3g..%.3g MSPS (%d)", float64(lo)/1e6, float64(hi)/1e6, len(rates))
 }
 
-// gainsString renders gain elements as "tuner 0..49.6dB(auto)".
+// gainsString renders gain elements as "tuner 0..49.6dB(auto)". An element
+// with no table and a 0..0 range is one the daemon could not read (it never
+// managed to open the dongle) and renders "unknown" rather than "0..0dB".
 func gainsString(gs []*leylinev1.GainElement) string {
 	if len(gs) == 0 {
 		return "-"
 	}
 	parts := make([]string, 0, len(gs))
 	for _, g := range gs {
+		if len(g.ValidDb) == 0 && g.MinDb == 0 && g.MaxDb == 0 {
+			parts = append(parts, g.Name+" unknown")
+			continue
+		}
 		s := fmt.Sprintf("%s %g..%gdB", g.Name, g.MinDb, g.MaxDb)
 		if g.SupportsAuto {
 			s += "(auto)"

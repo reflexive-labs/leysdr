@@ -134,8 +134,19 @@ func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor) {
 	fmt.Fprintln(w, "ID\tDRIVER\tMODEL\tSERIAL\tSTATE\tRANGE\tRATES\tGAIN")
 	for _, d := range devices {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			d.DeviceId, d.Driver, d.Model, d.Serial, enumName(d.State.String()),
+			d.DeviceId, d.Driver, d.Model, d.Serial, deviceStateString(d),
 			rangesString(d.TuningRanges), ratesString(d.SampleRates), gainsString(d.GainElements))
 	}
 	w.Flush()
+}
+
+// deviceStateString renders the STATE column: the bare enum name, with
+// "(other program)" appended when the daemon flags the device held_externally
+// so an IN_USE row is not mistaken for one of our own captures.
+func deviceStateString(d *leylinev1.DeviceDescriptor) string {
+	s := enumName(d.State.String())
+	if heldExternally(d) {
+		s += " (other program)"
+	}
+	return s
 }

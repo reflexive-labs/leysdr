@@ -41,6 +41,28 @@ func fakeRTLSDR() *leylinev1.DeviceDescriptor {
 	}
 }
 
+// HeldRTLSDR builds the descriptor of an RTL-SDR another program holds, the
+// way the real daemon reports one it never managed to open: IN_USE with the
+// held_externally flag and a TUNER gain element whose table could not be read
+// (empty valid_db, 0..0 dB).
+func HeldRTLSDR() *leylinev1.DeviceDescriptor {
+	return &leylinev1.DeviceDescriptor{
+		DeviceId:     newID("dev_"),
+		Driver:       "rtlsdr",
+		Model:        "NESDR SMArt v5",
+		Serial:       "00000002",
+		UsbLocation:  "fake-usb-1",
+		State:        leylinev1.DeviceState_IN_USE,
+		TuningRanges: []*leylinev1.FrequencyRange{{MinHz: 24_000_000, MaxHz: 1_766_000_000}},
+		SampleRates:  RTLSDRRates,
+		NativeFormat: leylinev1.SampleFormat_CS8,
+		GainElements: []*leylinev1.GainElement{{Name: "TUNER", SupportsAuto: true}},
+		Features: map[string]*leylinev1.FeatureValue{
+			"held_externally": {Value: &leylinev1.FeatureValue_Flag{Flag: true}},
+		},
+	}
+}
+
 // sidecar is the <name>.json sidecar of a .cf32 recording.
 type sidecar struct {
 	SampleRate uint64 `json:"sample_rate"`

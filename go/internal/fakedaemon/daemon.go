@@ -32,6 +32,9 @@ type Options struct {
 	MeterInterval time.Duration
 	// NoDevice suppresses the built-in fake RTL-SDR device.
 	NoDevice bool
+	// ExtraDevices are additional descriptors attached at construction (see
+	// HeldRTLSDR); they are served as-is alongside the built-in device.
+	ExtraDevices []*leylinev1.DeviceDescriptor
 	// SocketPath is reported in DaemonInfo; Serve sets it.
 	SocketPath string
 }
@@ -99,6 +102,9 @@ func New(opts Options) *Daemon {
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()
+		d.devices[dev.DeviceId] = dev
+	}
+	for _, dev := range opts.ExtraDevices {
 		d.devices[dev.DeviceId] = dev
 	}
 	return d

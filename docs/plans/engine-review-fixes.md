@@ -272,7 +272,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
   us, index 1 held (openError) -> after its backoff the gate opens for index 1 only; a successful probe
   for index 1 frees it while index 0 stays ours.
 
-### FU-8 `[ ]` `ley devices` shows unknown gain tables and external holds honestly (CLI)
+### FU-8 `[x]` `ley devices` shows unknown gain tables and external holds honestly (CLI)
 
 - `go/internal/cli/format.go:59`: when a gain element's `valid_db` is empty and min == max == 0, render
   `TUNER unknown` (the daemon could not open the dongle to read its table) instead of `0..0dB`.

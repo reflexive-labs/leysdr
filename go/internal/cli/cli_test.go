@@ -90,6 +90,75 @@ func TestDevicesTableAndJSON(t *testing.T) {
 	if resp.Devices[0]["deviceId"] == nil || resp.Devices[0]["state"] != "AVAILABLE" {
 		t.Fatalf("json shape: %s", out)
 	}
+
+	// A dongle another program holds: the daemon never opened it, so its gain
+	// table is unreadable and the STATE column must say who has it.
+	held := fakedaemon.HeldRTLSDR()
+	sock, _ = harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{held}})
+	out = mustRun(t, sock, "devices")
+	lines = strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want header + 2 devices, got:\n%s", out)
+	}
+	var heldLine string
+	for _, l := range lines {
+		if strings.HasPrefix(l, held.DeviceId) {
+			heldLine = l
+		}
+	}
+	if !strings.Contains(heldLine, "IN_USE (other program)") || !strings.Contains(heldLine, "TUNER unknown") || strings.Contains(heldLine, "0..0dB") {
+		t.Fatalf("held device row must read IN_USE (other program) / TUNER unknown, got:\n%s", out)
+	}
+	if !strings.Contains(out, "TUNER 0..49.6dB(auto)") || strings.Contains(out, "AVAILABLE (other program)") {
+		t.Fatalf("built-in device row must be unchanged:\n%s", out)
+	}
+	if out = mustRun(t, sock, "state"); !strings.Contains(out, "IN_USE (other program)") || !strings.Contains(out, "TUNER unknown") {
+		t.Fatalf("ley state devices block must match ley devices:\n%s", out)
+	}
+	// --json stays the plain proto3 mapping: no invented strings.
+	out = mustRun(t, sock, "--json", "devices")
+	if err := json.Unmarshal([]byte(out), &resp); err != nil || len(resp.Devices) != 2 {
+		t.Fatalf("json devices: %v %s", err, out)
+	}
+	if strings.Contains(out, "other program") || strings.Contains(out, "unknown") {
+		t.Fatalf("--json must not carry table-only wording: %s", out)
+	}
+	for _, d := range resp.Devices {
+		if d["deviceId"] == held.DeviceId && (d["state"] != "IN_USE" || d["features"].(map[string]any)["held_externally"].(map[string]any)["flag"] != true) {
+			t.Fatalf("held device json shape: %s", out)
+		}
+	}
+}
+
+// gainsString reports an unreadable table as "unknown" only when both the
+// table and the range are empty; a real 0..0 table or a stepped range keeps
+// the numeric rendering.
+func TestGainsStringUnknownTable(t *testing.T) {
+	cases := []struct {
+		el   *leylinev1.GainElement
+		want string
+	}{
+		{&leylinev1.GainElement{Name: "TUNER", SupportsAuto: true}, "TUNER unknown"},
+		{&leylinev1.GainElement{Name: "TUNER"}, "TUNER unknown"},
+		{&leylinev1.GainElement{Name: "TUNER", ValidDb: []float64{0}}, "TUNER 0..0dB"},
+		{&leylinev1.GainElement{Name: "LNA", MaxDb: 40, StepDb: 8}, "LNA 0..40dB"},
+		{&leylinev1.GainElement{Name: "TUNER", MaxDb: 49.6, SupportsAuto: true, ValidDb: fakedaemon.R820TGains}, "TUNER 0..49.6dB(auto)"},
+	}
+	for _, c := range cases {
+		if got := gainsString([]*leylinev1.GainElement{c.el}); got != c.want {
+			t.Errorf("gainsString(%v) = %q, want %q", c.el, got, c.want)
+		}
+	}
+	if got := gainsString(nil); got != "-" {
+		t.Errorf("gainsString(nil) = %q", got)
+	}
+	held := &leylinev1.DeviceDescriptor{State: leylinev1.DeviceState_IN_USE, Features: map[string]*leylinev1.FeatureValue{"held_externally": {Value: &leylinev1.FeatureValue_Flag{Flag: true}}}}
+	if got := deviceStateString(held); got != "IN_USE (other program)" {
+		t.Errorf("deviceStateString(held) = %q", got)
+	}
+	if got := deviceStateString(&leylinev1.DeviceDescriptor{State: leylinev1.DeviceState_IN_USE}); got != "IN_USE" {
+		t.Errorf("deviceStateString(in use by us) = %q", got)
+	}
 }
 
 func TestState(t *testing.T) {
