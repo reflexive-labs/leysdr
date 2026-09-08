@@ -165,6 +165,30 @@ final class ChannelTests: XCTestCase {
     /// FU-2: mode and bandwidth writes on an OUT_OF_CAPTURE channel are stored, not rejected; the
     /// channel stays out at its absolute frequency and the rebuild on re-entry uses the stored config.
     /// An offset write while out is still validated against the capture (and can bring it back in).
+    /// A stored write must still respect the offset-independent bound, or re-entry would fail later.
+    func testUpdateWhileOutOfCaptureRejectsBandwidthWiderThanCapture() async throws {
+        let rate: UInt64 = 2_400_000
+        let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: rate)
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm))
+        try await capture.retune(centerHz: 110_000_000)
+        var state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+        var cfg = await channel.config
+        cfg.mode = .wfm
+        cfg.bandwidthHz = UInt32(rate) + 1
+        do {
+            try await channel.update(cfg)
+            XCTFail("a bandwidth wider than the capture must be rejected even while out of capture")
+        } catch let e as EngineError {
+            XCTAssertEqual(e.code, "INVALID_ARGUMENT")
+        }
+        state = await channel.state
+        XCTAssertEqual(state, .outOfCapture)
+        let kept = await channel.config
+        XCTAssertEqual(kept.bandwidthHz, 12_500, "a rejected write leaves the stored config untouched")
+        await capture.stop()
+    }
+
     func testStructuralUpdateWhileOutOfCaptureIsStoredAndAppliedOnReentry() async throws {
         let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: 2_400_000)
         let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm)) as! DefaultChannelEngine

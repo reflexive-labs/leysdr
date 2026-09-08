@@ -717,7 +717,10 @@ actor SessionStore {
                     }
                     config.offsetHz = off
                 case .bandwidthHz(let bw)?:
-                    guard bw > 0, outOfCapture || Self.fits(offsetHz: config.offsetHz, bandwidthHz: bw, sampleRate: rate) else {
+                    guard bw > 0, UInt64(bw) <= rate else {
+                        throw EngineError.invalidArgument("bandwidth \(bw) Hz must be in 1...\(rate)", target: w.targetID)
+                    }
+                    guard outOfCapture || Self.fits(offsetHz: config.offsetHz, bandwidthHz: bw, sampleRate: rate) else {
                         throw EngineError(code: "OFFSET_OUT_OF_CAPTURE", message: "bandwidth \(bw) Hz does not fit the capture", target: w.targetID)
                     }
                     config.bandwidthHz = bw

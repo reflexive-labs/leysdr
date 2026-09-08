@@ -103,6 +103,11 @@ public actor DefaultChannelEngine: ChannelEngine {
         let offset = offsetChanged ? config.offsetHz : absoluteHz - Int64(centerHz)
         // Validate before mutating: a rejected config must leave the channel (and its reported state) untouched.
         _ = try ChannelPlan.plan(captureRate: captureRate, mode: config.mode, bandwidthHz: config.bandwidthHz)
+        // The offset-independent bound the channelizer enforces at build time, applied now so a
+        // stored config can never fail later at re-entry.
+        guard config.bandwidthHz > 0, UInt64(config.bandwidthHz) <= captureRate else {
+            throw EngineError.invalidArgument("bandwidth \(config.bandwidthHz) Hz must be in 1...\(captureRate)", target: id.string)
+        }
         if !offsetChanged, slot.load() == nil {
             // Out of capture and the offset is untouched: the channel is already outside the
             // capture, so re-checking the stale offset would only reject a mode/bandwidth change
