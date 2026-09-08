@@ -193,3 +193,90 @@ before landing). Gate at 0dac92e:
   captures clears it. Pre-existing hole in the degraded-probe refresh, now visible.
 - `CaptureAnchor.hostTimeNsAtSampleZero` is recomputed at each rate change from the rebased index at the new
   rate (documented); a rate-invariant sample-zero time would need a per-epoch base.
+
+## Follow-up work items (from the list above, plus the two CLI issues seen on the Mac)
+
+Same loop as WI-1..WI-11: one commit each, verified independently, `make check` green on both hosts.
+
+### FU-1 `[ ]` A failed rate write re-emits capture and channel state (#2 follow-up)
+
+- `SessionStore.applyWrite` `.captureSampleRate` branch: when `entry.engine.setSampleRate` throws, the
+  engine may now be detached (failed restore) or may have applied the new rate on its retry. Before
+  rethrowing: `touchActivity`, `await emitCapture(id, by: by)`, run the same audio-rate reconcile as the
+  success path against the engine's actual `snapshot.sampleRate`, and emit every channel of the capture.
+- Tests (LeylineDaemonTests): a VirtualDevice whose `setSampleRate` throws and whose `startStreaming`
+  then fails once -> WriteParams `capture_sample_rate` gives a rejected write AND a Capture event with
+  `CAPTURE_DETACHED` arrives on the watch stream without a GetState; a second variant where the retry
+  succeeds asserts the capture event shows the unchanged rate and the channels are re-emitted.
+
+### FU-2 `[ ]` Structural writes on an OUT_OF_CAPTURE channel are stored, not rejected (#21 follow-up)
+
+- `DefaultChannelEngine.update()`: with a nil slot (out of capture) a `mode` or `bandwidthHz` change is
+  stored in `currentConfig` and the channel stays `.outOfCapture`; the eventual rebuild on re-entry uses
+  the stored config. Only an `offsetHz` change recomputes `absoluteHz` (existing behaviour).
+- `SessionStore` pre-checks: for a channel currently OUT_OF_CAPTURE, `bandwidth_hz` and `mode` writes skip
+  the `fits(offset, bw, rate)` check (the offset is already outside); keep bandwidth-vs-mode validation
+  that does not involve the offset. Offset writes keep the existing check.
+- Tests: ChannelTests (out-of-capture channel accepts mode+bandwidth, stays out, retune back -> `.active`
+  with the new mode/bandwidth) and a DaemonTests case over WriteParams asserting the Channel event shows
+  the new bandwidth with state OUT_OF_CAPTURE, then ACTIVE after `center_hz` moves back.
+- docs/engine-internals.md: one sentence on the rule (all non-offset writes are stored while out of capture).
+
+### FU-3 `[ ]` WatchEvents and Bulk.Stream end on client cancel (#20 follow-up)
+
+- Audit `ControlService.watchEvents` and `BulkService.stream` for the shape fixed in
+  `Telemetry.Subscribe`: a `for await` over an AsyncStream that only wakes on traffic keeps the handler
+  alive after the client cancels the RPC. Wrap the streaming section in `withRPCCancellationHandler` and
+  finish/cancel the source (event stream subscription, frame drain task) in `onCancelRPC`; also end when
+  the store's event stream finishes on shutdown.
+- Tests (LeylineDaemonTests): open WatchEvents with no traffic, cancel the RPC task, assert
+  `daemon.shutdown()` completes within 2 s; same for Bulk.Stream on an FFT subscription at
+  `rows_per_second` 0.1 (no row arrives inside the test window).
+
+### FU-4 `[ ]` Hub and merge-buffer drops count toward telemetry seq gaps (#20 follow-up)
+
+- `AsyncStream.Continuation.yield` returns `.dropped` when a `bufferingNewest` buffer overflows.
+  `TelemetryHub` (DefaultChannelEngine.swift:188, per-subscriber 256) and the merged stream in
+  `TelemetryService` (64) count those drops per subscriber (atomics, no allocation on the DSP thread)
+  and the service adds the delta to the same `gap` it already derives from ring evictions, so every
+  lost record is a visible seq hole regardless of which buffer lost it.
+- Tests: a hub subscriber that does not read sees `dropped` grow past capacity; the existing
+  `testTelemetrySeqGapsAfterQueueOverflow` gains a variant that stalls the gRPC reader instead of the
+  ring and still observes a seq gap equal to the records lost.
+- docs/engine-internals.md: note that all three telemetry buffers are gap-marked.
+
+### FU-5 `[ ]` rtl_tcp connect runs off the cooperative pool; reconnect publishes only when available (#9 follow-up)
+
+- `RTLTCPDevice.open()`: run `connect` + header read through `BlockingWork.run` (as `RTLSDRDevice.open`
+  does) so neither the startup attach nor the registry's reconnect parks a cooperative-pool thread for
+  the 5 s timeout. The registry's reconnect can then use a plain `Task` instead of `Task.detached`.
+- `DefaultDeviceRegistry.reconnectFinished`: publish `.arrived` only when `device.descriptor.state ==
+  .available`; otherwise leave the entry `.disconnected` for the next poll.
+- Tests: existing RTLTCPTests stay green; add a registry-level test that a device whose link died
+  between `open()` returning and `reconnectFinished` (simulate by transitioning the device to
+  `.disconnected` before calling the internal hook) publishes nothing and stays disconnected.
+
+### FU-6 `[ ]` Go fake daemon enforces the v0 IQ contract (#26/#25 follow-up)
+
+- `go/internal/fakedaemon/bulk.go` kind=IQ: accept `format` UNSPECIFIED/CF32 and `sample_rate` 0 or the
+  capture rate; reject anything else with `INVALID_ARGUMENT` and the same message shape as the daemon
+  (`StreamRegistry.subscribe`). Add a fakedaemon test for the accept and reject cases; `go test ./...` green.
+
+### FU-7 `[ ]` Probe gate keyed by USB index for serial-collision pairs (registry follow-up)
+
+- `DefaultDeviceRegistry.advanceTickAndProbeGate`: the skip set is keyed by identity base, so with two
+  dongles sharing a serial a held sibling stays skipped while the other is ours or probed. Decide per
+  probe: find the entry whose `rtlIndex == probe.index` (same base); skip only on that entry's own state
+  (ours, probed OK, held inside backoff); a probe with no matching entry (new device) may open.
+- Tests (RegistryProbeTests): two probes with the same serial at index 0 and 1; index 0 marked in use by
+  us, index 1 held (openError) -> after its backoff the gate opens for index 1 only; a successful probe
+  for index 1 frees it while index 0 stays ours.
+
+### FU-8 `[ ]` `ley devices` shows unknown gain tables and external holds honestly (CLI)
+
+- `go/internal/cli/format.go:59`: when a gain element's `valid_db` is empty and min == max == 0, render
+  `TUNER unknown` (the daemon could not open the dongle to read its table) instead of `0..0dB`.
+- STATE column (devices table and the devices block of `ley state`): `IN_USE (other program)` when
+  `features.held_externally` is true; `--json` unchanged (proto3 JSON mapping).
+- Tests: extend `TestDevicesTableAndJSON` (fake daemon can hand out a device with the flag and an empty
+  gain table) and update any golden files the change touches.
