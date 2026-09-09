@@ -177,6 +177,12 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if s.createdCapture {
 		defer s.teardown()
 	}
+	// A reused capture keeps its own centre, so the chart can be centred
+	// somewhere other than the frequency that was asked for. Say so rather
+	// than let the axis be a surprise.
+	if o.freq != 0 && s.capture != nil && s.capture.CenterHz != o.freq {
+		fmt.Fprintf(app.Stderr, "showing the capture at %s, which covers %s\n", leyline.FormatFrequency(s.capture.CenterHz), leyline.FormatFrequency(o.freq))
+	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	rate := o.rate

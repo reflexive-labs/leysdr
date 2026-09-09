@@ -206,12 +206,16 @@ is the width of the band shown, which is the capture's sample rate: for a fresh 
 snaps it to the nearest rate the radio supports and says so (`showing 250.000 kHz, the closest
 this radio can do to 200.000 kHz`); when the radio is already capturing at a different width,
 `spectrum` exits 2 naming the current width — drop `--span`, ask for that width, or free the
-radio with `ley stop all`. The loudest bins are just that — only bins at least 15 dB above the
+radio with `ley stop all`. When it draws a capture that is already tuned somewhere else it
+says which centre it is showing (`showing the capture at 146.520 MHz, which covers
+146.000 MHz`). The loudest bins are just that — only bins at least 15 dB above the
 floor are named, one entry per carrier rather than a padded five, and a quiet band says
-`peak    nothing above the floor`; `spectrum` does not call them signals or guess bandwidths;
+`peak    nothing above the floor; the band looks quiet` (and draws the chart cold to match);
+`spectrum` does not call them signals or guess bandwidths;
 `scan` will do detection later (`ley help roadmap`). `--watch` holds the dB scale for the run
-(it moves once, and says so, if something louder arrives), keeps a faint max-hold trace of what
-each column has reached, and ends with a status line — `frame 12  2.0/s  6 s elapsed`, or
+(it moves once, and says so, if something louder arrives), keeps a faint max-hold trace
+where a column still stands clear of the live trace (so a transient is marked and noise fades
+away), and ends with a status line — `frame 12  2.0/s  6 s elapsed`, or
 `waiting for data` when the daemon has sent nothing, which is also what a one-shot says on
 stderr before giving up.
 

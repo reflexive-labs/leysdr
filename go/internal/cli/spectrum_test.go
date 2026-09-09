@@ -258,3 +258,38 @@ func TestSpectrumFrameOnATerminal(t *testing.T) {
 		t.Fatalf("piped output draws no frame:\n%s", piped)
 	}
 }
+
+// A reused capture keeps its own centre, so the chart can be drawn around a
+// frequency other than the one that was asked for. That is never a surprise:
+// spectrum names the capture's centre on stderr and says what it covers.
+func TestSpectrumSaysWhenTheCaptureIsOffCentre(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, err := c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_520_000, SampleRate: 2_400_000}); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, err := run(t, ctx, sock, "--json", "spectrum", "146", "--bins", "256")
+	if err != nil {
+		t.Fatalf("a covered frequency should draw the capture: %v\n%s", err, errOut)
+	}
+	if want := "showing the capture at 146.520 MHz, which covers 146.000 MHz"; !strings.Contains(errOut, want) {
+		t.Fatalf("stderr should say %q:\n%s", want, errOut)
+	}
+	// The capture's own centre, and no frequency at all, say nothing.
+	for _, args := range [][]string{
+		{"--json", "spectrum", "146.52", "--bins", "256"},
+		{"--json", "spectrum", "--bins", "256"},
+	} {
+		_, errOut, err := run(t, ctx, sock, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, errOut)
+		}
+		if strings.Contains(errOut, "which covers") {
+			t.Errorf("%v is centred where it was asked for and must say nothing:\n%s", args, errOut)
+		}
+	}
+}

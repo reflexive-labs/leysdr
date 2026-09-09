@@ -29,6 +29,22 @@ const spectrumLevelSteps = 24
 // a cramped screen cannot spare.
 const spectrumFrameMinWidth = 60
 
+// How the scale is chosen, and how the max-hold trace behaves. The top used to
+// reserve 30 dB above the noise line whatever the data did, which crushed a
+// quiet band into the bottom third of the chart and left 70% of the rows
+// blank; it now tracks the loudest column with a little headroom, and only a
+// dead-flat band falls back to the minimum span. The hold used to be a running
+// maximum that never decayed, so tens of frames of noise built a solid ceiling
+// above the live trace: it now falls back toward the live column every frame
+// and is drawn only where it stands clear of it, which is what a transient
+// looks like.
+const (
+	spectrumHeadroomDb   = 3   // dB of air above the loudest column, before the scale rounds to 5
+	spectrumMinSpanDb    = 10  // the least the top may sit above the noise line
+	spectrumHoldDecayDb  = 1.5 // dB the hold falls toward the live column each frame
+	spectrumHoldMarginDb = 6   // dB a hold must stand above the live column to be drawn
+)
+
 // spectrumView draws one FFT row as a chart. It carries the state that must
 // survive between frames of a --watch run: the frozen dB scale (so the axis
 // does not twitch) and the max-hold trace.
@@ -41,9 +57,11 @@ type spectrumView struct {
 
 	top, bottom float64   // the frozen scale, in dBFS
 	noise       float64   // the median column: the noise line the eye sees
+	peak        float64   // the loudest column the run has seen: the ramp's hot end
 	scaled      bool      // top/bottom have been chosen
 	rescaled    bool      // the last frame had to move the scale
-	hold        []float64 // per-column max since the run started
+	quiet       bool      // the last frame held no detection
+	hold        []float64 // per-column decaying max-hold trace
 }
 
 // newSpectrumView sizes a chart for one run. width is the resolved width;
@@ -91,13 +109,12 @@ func (v *spectrumView) render(bins []float64, peaks []Peak, floor float64, cente
 	colDb := columnLevels(bins, cols)
 	v.rescale(colDb, floor)
 	if v.holdOn {
-		if len(v.hold) != len(colDb) {
-			v.hold = append([]float64(nil), colDb...)
-		}
-		for i, d := range colDb {
-			v.hold[i] = math.Max(v.hold[i], d)
-		}
+		v.updateHold(colDb)
 	}
+	// A frame with no detection is drawn cold whatever its levels are, so a
+	// quiet band and a busy one do not look alike (the peak block says the
+	// same thing in words).
+	v.quiet = len(peaks) == 0
 	// The chart, its header and its axis are one object and are framed as
 	// one; the peak list reads as prose under it and stays outside.
 	var chart strings.Builder
@@ -114,6 +131,28 @@ func (v *spectrumView) render(bins []float64, peaks []Peak, floor float64, cente
 	}
 	v.peakBlock(&b, peaks, floor)
 	return b.String()
+}
+
+// updateHold folds one frame into the max-hold trace: a column louder than
+// its hold takes it, and every other column is pulled back toward the live
+// value. Without that decay the hold is a running maximum that never falls,
+// so after tens of noise frames every column holds the noise peak and the
+// trace draws as a wall above the live one.
+func (v *spectrumView) updateHold(colDb []float64) {
+	if len(v.hold) != len(colDb) {
+		v.hold = append([]float64(nil), colDb...)
+		return
+	}
+	for i, d := range colDb {
+		switch {
+		case math.IsNaN(d) || math.IsInf(d, 0):
+			// Nothing to hold and nothing to decay toward.
+		case d >= v.hold[i] || math.IsNaN(v.hold[i]):
+			v.hold[i] = d
+		default:
+			v.hold[i] = math.Max(d, v.hold[i]-spectrumHoldDecayDb)
+		}
+	}
 }
 
 // note is what the status line should say about the scale, if anything: a
@@ -178,10 +217,19 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 	// the floor rule showing through it rather than as a solid wall, and every
 	// row above it is signal.
 	bottom := math.Floor(v.noise/5) * 5
-	top := math.Ceil(math.Max(peak, v.noise+30)/5) * 5
+	// The top tracks the data: the loudest column plus a little headroom, and
+	// never closer to the noise line than spectrumMinSpanDb, so a dead-flat
+	// band still has rows to draw in without a quiet one being crushed into
+	// the bottom of the chart.
+	top := math.Ceil(math.Max(peak+spectrumHeadroomDb, v.noise+spectrumMinSpanDb)/5) * 5
 	if !v.scaled {
-		v.bottom, v.top, v.scaled = bottom, top, true
+		v.bottom, v.top, v.peak, v.scaled = bottom, top, peak, true
 		return
+	}
+	// The ramp's hot end is the loudest level the run has seen, frozen like
+	// the scale so hue does not twitch between frames.
+	if peak > v.peak {
+		v.peak = peak
 	}
 	if top > v.top {
 		v.top, v.rescaled = top, true

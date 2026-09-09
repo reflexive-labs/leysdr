@@ -168,7 +168,7 @@ would put this CLI's stdout contract at the mercy of every call site.
 - Verify against real RF over rtl_tcp (a live FM broadcast band shows a full range of levels), at
   40, 80, 100 and 160 columns, in truecolor, 256, 16 and no colour.
 
-### VIS-7 `[ ]` The chart must not make an empty band look busy
+### VIS-7 `[x]` The chart must not make an empty band look busy
 
 From a screenshot of a live `--watch` run on a quiet band (frame 59, "peak nothing above the
 floor"): the chart read as a solid wall of signal when the band held only noise. Three causes,

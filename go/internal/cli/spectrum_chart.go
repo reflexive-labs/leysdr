@@ -138,8 +138,9 @@ func (v *spectrumView) gutter(label string, unit bool) string {
 // eighty levels. Each column takes the ramp ink of its own level, so the noise
 // floor reads cold and a carrier hot and the band can be read by hue as well as
 // by height; the floor itself is drawn as a rule across the chart. With --watch
-// a Muted max-hold trace marks the loudest each column has been, which keeps it
-// apart from the coloured live trace.
+// a Muted max-hold trace marks, as a thin line, the columns whose recent peak
+// still stands clear of the live trace, which keeps it apart from the coloured
+// live trace and keeps noise from drawing a ceiling.
 func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64) {
 	g := v.st.Glyphs()
 	step := (v.top - v.bottom) / spectrumHeight
@@ -174,10 +175,19 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 				if cell == " " {
 					cell = v.st.Ramp(0.125)
 				}
-				band = v.levelBand(db)
-			case v.holdOn && c < len(v.hold) && v.hold[c] > db:
+				// A frame with nothing above the floor is drawn at the cold
+				// end of the ramp whatever its levels are, so a quiet band
+				// never wears the colours of a busy one.
+				band = 0
+				if !v.quiet {
+					band = v.levelBand(db)
+				}
+			case v.holdOn && c < len(v.hold) && v.hold[c] >= db+spectrumHoldMarginDb:
+				// A thin line, not a filled block, and only where the hold
+				// stands clear of the live column: what is left is the mark
+				// of a real transient, and noise leaves nothing.
 				if h := (v.hold[c] - base) / step; h > 0 && h <= 1 {
-					cell = string(g.BarEmpty)
+					cell = string(g.Rule)
 				}
 			}
 			if cell == " " && r == floorRow {
@@ -202,10 +212,11 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 
 // levelBand is where a level sits on the ramp, as a step of spectrumLevelSteps.
 // The scale is the chart's own: the bottom of the axis is the cold end and the
-// top the hot one, so hue and height say the same thing, and the peak list can
-// ink its dB values the same way.
+// loudest column the run has seen the hot one, so hue and height say the same
+// thing (the scale's headroom is air, not levels to ink), and the peak list
+// can ink its dB values the same way.
 func (v *spectrumView) levelBand(db float64) int {
-	span := v.top - v.bottom
+	span := v.peak - v.bottom
 	if span <= 0 || math.IsNaN(db) || math.IsInf(db, 0) {
 		return 0
 	}

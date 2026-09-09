@@ -128,21 +128,62 @@ func TestSpectrumScaleIsFrozen(t *testing.T) {
 	}
 }
 
+// noiseFrame is one frame of a band with nothing on it: a fresh draw of the
+// same noise every time, which is what a receiver on a quiet band delivers.
+func noiseFrame(seed int64, n int) []float64 {
+	r := rand.New(rand.NewSource(seed))
+	bins := make([]float64, n)
+	for i := range bins {
+		bins[i] = -90 + r.Float64()*6
+	}
+	return bins
+}
+
+// traceCells counts the chart's thin-line cells. The max-hold trace and the
+// floor rule share a glyph, so the trace is measured by what it adds to the
+// same frames drawn without it.
+func traceCells(text string) int {
+	return strings.Count(ui.Strip(text), "─")
+}
+
 // The max-hold trace keeps what has been seen, and only --watch asks for it.
 func TestSpectrumMaxHold(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 80}
+	loud := spectrumFixture(1024, 200, -21)
+	quiet := spectrumFixture(1024, -1, 0)
+	v := newSpectrumView(st, 80, 0, true, false)
+	v.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
+	text := v.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz)
+	one := newSpectrumView(st, 80, 0, false, false)
+	one.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
+	bare := one.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz)
+	if traceCells(text) <= traceCells(bare) {
+		t.Fatalf("the carrier that has gone should leave a hold trace:\n%s", text)
+	}
+	if strings.Contains(text, "░") {
+		t.Fatalf("the hold is a thin line, not a filled block:\n%s", text)
+	}
+}
+
+// The hold decays toward the live trace and is drawn only where it stands
+// clear of it, so tens of frames of noise leave no ceiling. The running
+// maximum this replaced ended up drawing the whole band as a wall above the
+// live trace, which is what made a quiet band look busy.
+func TestSpectrumMaxHoldDecaysOnNoise(t *testing.T) {
 	st := ui.Style{Unicode: true, Width: 80}
 	v := newSpectrumView(st, 80, 0, true, false)
 	loud := spectrumFixture(1024, 200, -21)
 	v.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
-	quiet := spectrumFixture(1024, -1, 0)
-	text := v.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz)
-	if !strings.Contains(text, "░") {
-		t.Fatalf("the carrier that has gone should leave a hold trace:\n%s", text)
+	var text string
+	var last []float64
+	for seed := int64(1); seed <= 60; seed++ {
+		last = noiseFrame(seed, 1024)
+		text = v.render(last, nil, medianDb(last), fixtureCenterHz, fixtureSpanHz)
 	}
 	one := newSpectrumView(st, 80, 0, false, false)
-	one.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
-	if t2 := one.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz); strings.Contains(t2, "░") {
-		t.Fatalf("a one-shot chart holds nothing:\n%s", t2)
+	bare := one.render(last, nil, medianDb(last), fixtureCenterHz, fixtureSpanHz)
+	if traceCells(text) > traceCells(bare) {
+		t.Fatalf("noise must not accumulate into a held ceiling (%d line cells against %d):\n%s", traceCells(text), traceCells(bare), text)
 	}
 }
 
@@ -343,15 +384,22 @@ func TestSpectrumMaxHoldStaysDim(t *testing.T) {
 	v.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
 	quiet := spectrumFixture(1024, -1, 0)
 	text := v.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz)
+	// The floor rule shares the trace's glyph and its ink, so the row under
+	// test is one the same frames draw no line on without the hold.
+	one := newSpectrumView(st, 80, 0, false, false)
+	one.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
+	bare := strings.Split(one.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz), "\n")
 	held := false
-	for params, runs := range inkRuns(text) {
-		for _, run := range runs {
-			if !strings.Contains(run, "░") {
-				continue
-			}
-			held = true
-			if params != "2" {
-				t.Errorf("the hold trace was inked %q, want the dim ink:\n%s", params, text)
+	for i, l := range strings.Split(text, "\n") {
+		if !strings.Contains(ui.Strip(l), "─") || (i < len(bare) && strings.Contains(ui.Strip(bare[i]), "─")) {
+			continue
+		}
+		held = true
+		for params, runs := range inkRuns(l) {
+			for _, run := range runs {
+				if strings.Contains(run, "─") && params != "2" {
+					t.Errorf("the hold trace was inked %q, want the dim ink:\n%s", params, text)
+				}
 			}
 		}
 	}
@@ -451,5 +499,72 @@ func TestSpectrumFramedFitsWidth(t *testing.T) {
 		if !strings.Contains(plain, "╭") {
 			t.Errorf("width %d: expected a frame:\n%s", width, plain)
 		}
+	}
+}
+
+// The scale tracks the data. It used to reserve 30 dB above the noise line
+// whatever the row held, so a band whose loudest column was a few dB over the
+// noise drew into the bottom third of the chart with 70% of the rows blank.
+func TestSpectrumScaleTracksTheData(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 80}
+	bins := noiseFrame(3, 1024)
+	for i := 500; i < 504; i++ {
+		bins[i] = -70 // a bump over the noise, below the detection threshold
+	}
+	v := newSpectrumView(st, 80, 0, false, false)
+	text := v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+	peak := math.Inf(-1)
+	for _, d := range columnLevels(bins, v.cols(len(bins))) {
+		peak = math.Max(peak, d)
+	}
+	if v.top < peak {
+		t.Fatalf("the top must clear the data: %v under a peak of %v", v.top, peak)
+	}
+	if v.top > v.noise+25 {
+		t.Fatalf("the scale must not reserve sky nothing reaches: %v over a noise line of %v", v.top, v.noise)
+	}
+	if frac := (peak - v.bottom) / (v.top - v.bottom); frac < 0.5 {
+		t.Fatalf("the loudest column reaches %.0f%% of a %v..%v chart, which is crushed:\n%s", 100*frac, v.bottom, v.top, text)
+	}
+	// A dead-flat band has no peak to track and still needs rows to draw in.
+	flat := make([]float64, 1024)
+	for i := range flat {
+		flat[i] = -80
+	}
+	f := newSpectrumView(st, 80, 0, false, false)
+	f.render(flat, nil, medianDb(flat), fixtureCenterHz, fixtureSpanHz)
+	if f.top-f.bottom < spectrumMinSpanDb {
+		t.Fatalf("a flat band still needs a scale to draw in, got %v..%v", f.bottom, f.top)
+	}
+}
+
+// A frame with no detection is drawn at the cold end of the ramp and says so
+// in words, so the chart and the peak line never contradict each other and a
+// quiet band never wears the colours of a busy one.
+func TestSpectrumQuietBandReadsQuiet(t *testing.T) {
+	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
+	cold := levelSGR(st, 0)
+	noise := noiseFrame(5, 1024)
+	quiet := newSpectrumView(st, 80, 0, false, false).render(noise, nil, medianDb(noise), fixtureCenterHz, fixtureSpanHz)
+	for params, runs := range inkRuns(quiet) {
+		if strings.HasPrefix(params, "38;2;") && params != cold {
+			t.Errorf("a band with nothing on it was inked %q (%q), want the cold end only:\n%s", params, runs, quiet)
+		}
+	}
+	if want := "nothing above the floor; the band looks quiet"; !strings.Contains(ui.Strip(quiet), want) {
+		t.Errorf("want %q in:\n%s", want, quiet)
+	}
+	// A band with something on it still climbs the ramp.
+	bins := spectrumFixture(1024, 640, -21)
+	peaks := loudestBins(bins, fixtureCenterHz, fixtureSpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
+	busy := newSpectrumView(st, 80, 0, false, false).render(bins, peaks, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+	hot := false
+	for params := range inkRuns(busy) {
+		if strings.HasPrefix(params, "38;2;") && params != cold {
+			hot = true
+		}
+	}
+	if !hot {
+		t.Fatalf("a detected carrier must still ink hot:\n%s", busy)
 	}
 }

@@ -134,7 +134,9 @@ func (v *spectrumView) peakBlock(b *strings.Builder, peaks []Peak, floor float64
 	const col = 8
 	label := func(word string) string { return v.st.Pad(v.st.Label(word), col) }
 	if len(peaks) == 0 {
-		b.WriteString(label("peak") + v.st.Muted("nothing above the floor") + "\n")
+		// The chart is drawn cold for this frame; say the same thing in
+		// words, so the two never contradict each other.
+		b.WriteString(label("peak") + v.st.Muted("nothing above the floor; the band looks quiet") + "\n")
 		return
 	}
 	top := peaks[0]
