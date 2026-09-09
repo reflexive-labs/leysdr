@@ -40,7 +40,11 @@ proto message.`,
 				_, err = fmt.Fprintf(app.Stdout, "%s\n", b)
 				return err
 			}
-			_, err := fmt.Fprintf(app.Stdout, "ley %s (%s %s/%s)\n", Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			// One line, one fact: the version leads plain and the build
+			// details behind it are diagnostics, so they dim. Same bytes:
+			// this is what bug reports paste and scripts head -1.
+			build := app.Style.Muted(fmt.Sprintf("(%s %s/%s)", runtime.Version(), runtime.GOOS, runtime.GOARCH))
+			_, err := fmt.Fprintf(app.Stdout, "%s %s %s\n", app.Style.Label("ley"), Version, build)
 			return err
 		},
 	}

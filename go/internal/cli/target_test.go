@@ -7,6 +7,7 @@ import (
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -83,7 +84,7 @@ func TestChannelFreqLabelNegative(t *testing.T) {
 	if got := channelSummary(st, neg); !strings.HasPrefix(got, "? NFM, chan_neg") {
 		t.Errorf("channelSummary: %q", got)
 	}
-	if got := orientChannelLine(st, neg); !strings.HasPrefix(got, "? NFM, ") {
+	if got := orientChannelLine(ui.Style{}, st, neg); !strings.HasPrefix(got, "? NFM, ") {
 		t.Errorf("orientChannelLine: %q", got)
 	}
 	ev := &leylinev1.Event{Body: &leylinev1.Event_Channel{Channel: neg}}

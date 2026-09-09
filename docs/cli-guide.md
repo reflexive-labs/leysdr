@@ -15,8 +15,9 @@ station picked out of a capture (frequency, mode, squelch); a **sink** is where 
 
 ## Orientation: bare `ley`
 
-Run `ley` with no arguments. On a terminal it prints where things stand and the next two or
-three commands chosen from that state; piped, it prints the command list; `--json` points you at
+Run `ley` with no arguments. It prints where things stand and the next two or three commands
+chosen from that state — coloured on a terminal, the same words plain when piped, so `ley | tee
+log` says what a screenshot would; `ley --help` is the command list and `--json` points you at
 `ley state --json`. It exits 0 in every state, including "daemon not running".
 
 ```console
@@ -246,6 +247,31 @@ the row number from the printed list (`ley state`, `ley devices`) or a frequency
 capture, channel and sink with its owner; a persistent channel lives until the daemon restarts or
 something removes it (`ley stop`, `ley devices detach` for playback devices; the app or an agent
 for its own).
+
+`ley state` draws that as a tree — each radio, the captures on it, the channels in each capture
+and the sinks under each channel — so the relationship is the indentation and no id is repeated
+as a column. Ids print whole on the dim line under the thing they name, ready to copy:
+
+```console
+$ ley state
+daemon 0.1.0-dev  up 39s
+pid 4242  socket /tmp/leyline/d.sock  event seq 11
+
+Generic RTL2832U (R820T)  rtlsdr  in use
+  device dev_01M1S9TR56S46QTCK0SZS2YPJA  serial 00000001
+  tunes 24.000 MHz to 1.766 GHz
+  └─ 146.500 MHz  2.4 MSPS  active  gain tuner 20.7 dB
+     capture cap_01M1S9VA1XVX9M2K9V0S6Q1J6D  by cli:ley
+     └─ 146.620 MHz NFM  bw 12.5 kHz  squelch -80.0 dB  active
+        channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS  offset +120.000 kHz  persistent  by cli:ley
+        └─ system_audio  volume 1.00 BuiltInSpeakerDevice
+           sink snk_01M1S9VA2G0YV6QK6X9T0J7R4W
+```
+
+`ley state --wide` keeps the flat tables — one row per object, every id, owner and column — for
+a state too large to read as a tree or a line you want to `awk`; `--ascii` swaps the tree
+drawing for `+-` and `\-`. `ley state --json` is still the machine snapshot, and it is unchanged
+by any of this.
 
 ## 6. Play a recording
 

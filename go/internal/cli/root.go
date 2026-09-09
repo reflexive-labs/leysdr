@@ -542,16 +542,15 @@ func ttyColumns(f *os.File) int {
 // never hang on a dead socket.
 const orientDialTimeout = 300 * time.Millisecond
 
-// runOrientation is the bare `ley`: on a terminal it shows where things stand
-// and what to type next; piped it prints the verb list; --json points at the
+// runOrientation is the bare `ley`: it shows where things stand and what to
+// type next, styled on a terminal and plain in a pipe — the Long text promises
+// "run it with no arguments to see where things stand", so `ley | tee log`
+// keeps that promise and `ley --help` stays the verb list. --json points at the
 // machine-readable state. Exit 0 in every state.
-func runOrientation(ctx context.Context, app *App, cmd *cobra.Command) error {
+func runOrientation(ctx context.Context, app *App, _ *cobra.Command) error {
 	if app.JSON {
 		fmt.Fprintln(app.Stderr, "ley: the orientation screen is for terminals; for machine output use: ley state --json")
 		return nil
-	}
-	if !app.IsTTY() {
-		return cmd.Help()
 	}
 	dctx, cancel := context.WithTimeout(ctx, orientDialTimeout)
 	defer cancel()
@@ -564,37 +563,60 @@ func runOrientation(ctx context.Context, app *App, cmd *cobra.Command) error {
 	if err != nil {
 		err = app.notRunning(err)
 	}
-	fmt.Fprint(app.Stdout, renderOrientation(state, err))
+	fmt.Fprint(app.Stdout, renderOrientation(app.Style, state, err))
 	return nil
+}
+
+// orientLabel is the orientation screen's left column: one Label-inked word
+// padded to nine visible columns, so the ink cannot move the text beside it.
+func orientLabel(s ui.Style, word string) string {
+	if word == "" {
+		return strings.Repeat(" ", 9)
+	}
+	return s.Pad(s.Label(word), 9)
+}
+
+// orientNow is the clock the orientation screen ages the daemon against; a
+// test freezes it so two renders of one state cannot differ by a second.
+var orientNow = time.Now
+
+// orientDaemonLine is daemonLine with its diagnostics dimmed: same bytes, less
+// weight on the pid and the socket path.
+func orientDaemonLine(s ui.Style, d *leylinev1.DaemonInfo) string {
+	if d == nil {
+		return daemonLine(d)
+	}
+	up := orientNow().Sub(time.Unix(0, d.StartedAtNs)).Truncate(time.Second)
+	return fmt.Sprintf("daemon %s %s", d.Version, s.Muted(fmt.Sprintf("pid %d up %s socket %s", d.Pid, up, d.SocketPath)))
 }
 
 // renderOrientation renders the orientation screen for one state snapshot:
 // daemon status, devices, what is playing, and the next commands chosen from
 // the state. err is the daemon probe's failure (state is nil then). The V0.5
 // dashboard reuses this for its no-daemon/no-device states.
-func renderOrientation(state *leylinev1.GetStateResponse, err error) string {
+func renderOrientation(s ui.Style, state *leylinev1.GetStateResponse, err error) string {
 	var b strings.Builder
 	next := func(pairs ...string) {
-		b.WriteString("\nNext:\n")
+		fmt.Fprintf(&b, "\n%s\n", s.Label("Next:"))
 		for i := 0; i+1 < len(pairs); i += 2 {
-			fmt.Fprintf(&b, "  %-28s %s\n", pairs[i], pairs[i+1])
+			fmt.Fprintf(&b, "  %s %s\n", s.Pad(s.Cmd(pairs[i]), 28), s.Muted(pairs[i+1]))
 		}
 	}
 	if err != nil {
 		if isNotRunning(err) {
-			fmt.Fprintf(&b, "Daemon    not running\n  %s\n", err.Error())
+			fmt.Fprintf(&b, "%s %s\n  %s\n", orientLabel(s, "Daemon"), s.Err("not running"), err.Error())
 			next("ley daemon start", "start the daemon (it owns the radio)",
 				"ley daemon logs", "read its log if starting fails",
 				"ley help", "list every command")
 		} else {
-			fmt.Fprintf(&b, "Daemon    error: %v\n", err)
+			fmt.Fprintf(&b, "%s %s\n", orientLabel(s, "Daemon"), s.Err(fmt.Sprintf("error: %v", err)))
 			next("ley daemon status", "check the daemon", "ley daemon logs", "read its log")
 		}
 		return b.String()
 	}
-	fmt.Fprintf(&b, "Daemon    %s\n", daemonLine(state.GetDaemon()))
+	fmt.Fprintf(&b, "%s %s\n", orientLabel(s, "Daemon"), orientDaemonLine(s, state.GetDaemon()))
 	if len(state.GetDevices()) == 0 {
-		b.WriteString("Devices   none found\n")
+		fmt.Fprintf(&b, "%s %s\n", orientLabel(s, "Devices"), s.Warn("none found"))
 		b.WriteString(indentLines(noDeviceChecklist, "  ") + "\n")
 		next("ley devices", "look again after plugging in", "ley daemon logs", "see what the daemon saw")
 		return b.String()
@@ -604,10 +626,10 @@ func renderOrientation(state *leylinev1.GetStateResponse, err error) string {
 		if i > 0 {
 			label = ""
 		}
-		fmt.Fprintf(&b, "%-9s %s\n", label, deviceSummary(d))
+		fmt.Fprintf(&b, "%s %s\n", orientLabel(s, label), deviceSummary(s, d))
 	}
 	if len(state.GetChannels()) == 0 {
-		b.WriteString("Playing   nothing\n")
+		fmt.Fprintf(&b, "%s %s\n", orientLabel(s, "Playing"), s.Muted("nothing"))
 		next("ley tune 146.52", "listen (a bare number is MHz; presets: ley help presets)",
 			"ley spectrum 101.1", "see what is on the air around a frequency",
 			"ley help frequencies", "how to write frequencies")
@@ -618,7 +640,7 @@ func renderOrientation(state *leylinev1.GetStateResponse, err error) string {
 		if i > 0 {
 			label = ""
 		}
-		fmt.Fprintf(&b, "%-9s %s\n", label, orientChannelLine(state, ch))
+		fmt.Fprintf(&b, "%s %s\n", orientLabel(s, label), orientChannelLine(s, state, ch))
 	}
 	next("ley set squelch -40", "mute the audio below a level (or: auto)",
 		"ley set gain 30", "change the radio's gain (or: auto)",
@@ -627,22 +649,25 @@ func renderOrientation(state *leylinev1.GetStateResponse, err error) string {
 	return b.String()
 }
 
-// deviceSummary is one line per device: model, driver, serial and state.
-func deviceSummary(d *leylinev1.DeviceDescriptor) string {
+// deviceSummary is one line per device: model, driver, serial and state. The
+// model leads plain, the driver and serial are diagnostics and dim, and the
+// state word takes the ink its meaning calls for.
+func deviceSummary(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 	name := d.Model
 	if name == "" {
 		name = d.DeviceId
 	}
-	s := fmt.Sprintf("%s (%s", name, d.Driver)
+	about := "(" + d.Driver
 	if d.Serial != "" {
-		s += ", serial " + d.Serial
+		about += ", serial " + d.Serial
 	}
-	return fmt.Sprintf("%s) %s, tunes %s", s, strings.ReplaceAll(strings.ToLower(enumName(d.State.String())), "_", " "), rangesString(d.TuningRanges))
+	return fmt.Sprintf("%s %s %s, %s", name, s.Muted(about+")"), inkState(s, stateWord(d.State.String())),
+		s.Muted("tunes "+rangesString(d.TuningRanges)))
 }
 
 // orientChannelLine is one line per channel: frequency, mode, squelch, owner.
-func orientChannelLine(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) string {
+func orientChannelLine(s ui.Style, state *leylinev1.GetStateResponse, ch *leylinev1.Channel) string {
 	freq := channelFreqLabel(state, ch)
-	return fmt.Sprintf("%s %s, squelch %s, %s (%s)", freq, strings.ToUpper(leyline.ModeName(ch.Mode)),
-		squelchString(ch.SquelchDb), strings.ToLower(enumName(ch.State.String())), ch.ChannelId)
+	return fmt.Sprintf("%s %s, squelch %s, %s %s", freq, strings.ToUpper(leyline.ModeName(ch.Mode)),
+		squelchString(ch.SquelchDb), inkState(s, stateWord(ch.State.String())), s.Muted("("+ch.ChannelId+")"))
 }

@@ -15,6 +15,7 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/testutil"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -120,8 +121,11 @@ func TestDevicesTableAndJSON(t *testing.T) {
 	if !strings.Contains(out, "TUNER 0..49.6dB(auto)") || strings.Contains(out, "AVAILABLE (other program)") {
 		t.Fatalf("built-in device row must be unchanged:\n%s", out)
 	}
-	if out = mustRun(t, sock, "state"); !strings.Contains(out, "IN_USE (other program)") || !strings.Contains(out, "TUNER unknown") {
-		t.Fatalf("ley state devices block must match ley devices:\n%s", out)
+	if out = mustRun(t, sock, "state", "--wide"); !strings.Contains(out, "IN_USE (other program)") || !strings.Contains(out, "TUNER unknown") {
+		t.Fatalf("ley state --wide devices block must match ley devices:\n%s", out)
+	}
+	if out = mustRun(t, sock, "state"); !strings.Contains(out, "in use (other program)") {
+		t.Fatalf("ley state tree must say what holds the radio:\n%s", out)
 	}
 	// --json stays the plain proto3 mapping: no invented strings.
 	out = mustRun(t, sock, "--json", "devices")
@@ -197,7 +201,7 @@ func TestGainsStringUnknownTable(t *testing.T) {
 
 func TestState(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out := mustRun(t, sock, "state")
+	out := mustRun(t, sock, "state", "--wide")
 	for _, want := range []string{"daemon fake-0.1", "Devices", "Captures", "Channels", "Sinks"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("state missing %q:\n%s", want, out)
@@ -421,10 +425,15 @@ func TestOrientationPerState(t *testing.T) {
 		t.Fatalf("listening: %v\n%s", err, out)
 	}
 
-	// Piped: the verb list. --json: a pointer to state --json, nothing on stdout.
+	// Piped: the same orientation block, unstyled, so `ley | tee log` answers
+	// the question the Long text promises it answers. --json: a pointer to
+	// state --json, nothing on stdout.
 	out, _, err = run(t, context.Background(), sock)
-	if err != nil || !strings.Contains(out, "Available Commands") && !strings.Contains(out, "Listening:") {
+	if err != nil || !strings.Contains(out, "Playing   146.520 MHz NFM") || !strings.Contains(out, "Next:") {
 		t.Fatalf("piped: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Available Commands") || strings.Contains(out, "\x1b[") {
+		t.Fatalf("piped orientation must be the block, unstyled:\n%s", out)
 	}
 	out, errOut, err := run(t, context.Background(), sock, "--json")
 	if err != nil || out != "" || !strings.Contains(errOut, "ley state --json") {
@@ -437,14 +446,14 @@ func TestOrientationPerState(t *testing.T) {
 }
 
 func TestRenderOrientationStates(t *testing.T) {
-	if s := renderOrientation(nil, &ExitError{Code: ExitNotRunning, Message: "the Leyline daemon is not running (socket x). Start it with: ley daemon start"}); !strings.Contains(s, "ley daemon start") || !strings.Contains(s, "ley daemon logs") {
+	if s := renderOrientation(ui.Style{}, nil, &ExitError{Code: ExitNotRunning, Message: "the Leyline daemon is not running (socket x). Start it with: ley daemon start"}); !strings.Contains(s, "ley daemon start") || !strings.Contains(s, "ley daemon logs") {
 		t.Errorf("not running:\n%s", s)
 	}
-	if s := renderOrientation(nil, errors.New("boom")); !strings.Contains(s, "Daemon    error: boom") {
+	if s := renderOrientation(ui.Style{}, nil, errors.New("boom")); !strings.Contains(s, "Daemon    error: boom") {
 		t.Errorf("other error:\n%s", s)
 	}
 	st := &leylinev1.GetStateResponse{Daemon: &leylinev1.DaemonInfo{Version: "v", Pid: 1}}
-	if s := renderOrientation(st, nil); !strings.Contains(s, "none found") {
+	if s := renderOrientation(ui.Style{}, st, nil); !strings.Contains(s, "none found") {
 		t.Errorf("no device:\n%s", s)
 	}
 }

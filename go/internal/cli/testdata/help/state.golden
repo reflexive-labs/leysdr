@@ -8,11 +8,13 @@ Usage:
   ley state [flags]
 
 Examples:
-  ley state                # the whole picture, as tables
+  ley state                # the whole picture, as a tree
+  ley state --wide         # the same, as flat tables with every column
   ley state --json         # the same as proto3 JSON (GetStateResponse)
 
 Flags:
   -h, --help   help for state
+      --wide   flat tables (every id, owner and column) instead of the tree
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

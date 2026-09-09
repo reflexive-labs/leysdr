@@ -5,8 +5,53 @@ import (
 	"strings"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
+
+// stateWord renders a proto state enum the way people say it: lower case,
+// spaces for underscores ("out of capture"). The raw enum stays in --json.
+func stateWord(s string) string {
+	return strings.ReplaceAll(strings.ToLower(enumName(s)), "_", " ")
+}
+
+// inkState gives a state word its ink: green when the thing is working,
+// yellow when it is degraded but alive, red when it is gone. The word carries
+// the meaning on its own; the colour only helps the eye find it.
+func inkState(st ui.Style, word string) string {
+	switch word {
+	case "active", "available":
+		return st.Ok(word)
+	case "in use", "out of capture":
+		return st.Warn(word)
+	case "detached", "disconnected", "capture detached":
+		return st.Err(word)
+	default:
+		return word
+	}
+}
+
+// formatOffset renders a channel offset from its capture centre with a sign
+// and a unit ("+100.000 kHz", "-12.500 kHz", "0 Hz").
+func formatOffset(hz int64) string {
+	if hz == 0 {
+		return "0 Hz"
+	}
+	sign := "+"
+	if hz < 0 {
+		sign, hz = "-", -hz
+	}
+	return sign + leyline.FormatFrequency(uint64(hz))
+}
+
+// clientLabel is the short owner form ("cli:ley"); the session id it hides
+// stays in clientString, --wide and --json.
+func clientLabel(ci *leylinev1.ClientInfo) string {
+	if ci == nil {
+		return "-"
+	}
+	return ci.Kind + ":" + ci.Label
+}
 
 // enumName strips the "CAPTURE_"/"CHANNEL_" style prefix from proto enum names
 // so tables read "ACTIVE" rather than "CAPTURE_ACTIVE".

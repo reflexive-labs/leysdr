@@ -108,7 +108,8 @@ uses `KeepAlive.SuccessfulExit=false`, so a clean stop stays stopped while a cra
 
 **Bare `ley` (decision, 2026-09-05).** On a TTY it prints an orientation screen — daemon status,
 devices, what is playing, and the next commands chosen from the state; exit 0 in every state,
-300 ms dial timeout. Piped it prints the verb list; `--json` points at `ley state --json`. This
+300 ms dial timeout. Piped it prints the same block unstyled (`ley --help` is the verb list); `--json` points at
+`ley state --json`. This
 screen is the placeholder the V0.5 TUI dashboard replaces on a TTY (`docs/sdr-user-stories.md`);
 its renderer (`renderOrientation` in `go/internal/cli`) is the one function the dashboard reuses
 for its no-daemon and no-device states, so the words stay the same.
