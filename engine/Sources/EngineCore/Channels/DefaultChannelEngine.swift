@@ -67,20 +67,24 @@ public actor DefaultChannelEngine: ChannelEngine {
             while let rec = queue.pop() { hub.publish(rec) }
             hub.finishAll()
         }
-        startSubAudibleTask(core: core)
+        subAudibleTask = Self.makeSubAudibleTask(core: core, captureID: captureID, hub: hub)
     }
 
     /// The slow half of sub-audible detection. Everything branchy -- the bank, the phase estimate,
     /// every accept and reject rule -- happens here, at normal priority, where allocating is fine.
     /// The DSP thread's whole contribution is decimating into a ring.
-    private func startSubAudibleTask(core: ChannelDSPCore) {
-        guard let ring = core.subAudibleTap, core.subAudibleRate > 0 else { return }
+    /// It is `nonisolated` and takes everything it needs by argument because `init` is not an
+    /// isolated context: referencing an actor-isolated method from there is a warning today and an
+    /// error under the Swift 6 language mode. `drainTask` is built inline for exactly this reason.
+    private nonisolated static func makeSubAudibleTask(core: ChannelDSPCore, captureID: CaptureID,
+                                                       hub: TelemetryHub) -> Task<Void, Never>?
+    {
+        guard let ring = core.subAudibleTap, core.subAudibleRate > 0 else { return nil }
         let rate = core.subAudibleRate
         let fullScale = core.subAudibleFullScale
-        let hub = self.hub
         let id = captureID
         let detector = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
-        subAudibleTask = Task.detached(priority: .utility) {
+        return Task.detached(priority: .utility) {
             var window = [Float](repeating: 0, count: detector.windowSize)
             var filled = 0
             var hop = [Float](repeating: 0, count: detector.hop)
@@ -253,7 +257,7 @@ public actor DefaultChannelEngine: ChannelEngine {
         audioRateBox.store(core.audioRate, ordering: .relaxed)
         slot.store(core)
         subAudibleTask?.cancel()
-        startSubAudibleTask(core: core)
+        subAudibleTask = Self.makeSubAudibleTask(core: core, captureID: captureID, hub: hub)
         currentState = .active
     }
 }

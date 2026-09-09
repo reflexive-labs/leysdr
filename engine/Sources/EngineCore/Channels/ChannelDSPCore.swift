@@ -300,7 +300,8 @@ public final class ChannelDSPCore: @unchecked Sendable {
                 // mapping layer floors; NaN stays NaN and means "not measured", which is different.
                 let rms = (audioSumSquares / Double(audioSamples)).squareRoot()
                 rec.audioDBFS = rms > 0 ? Float(20 * Foundation.log10(rms)) : -.infinity
-                rec.audioPeakDBFS = audioPeak > 0 ? 20 * Foundation.log10(audioPeak) : -.infinity
+                // log10f: audioPeak is a Float, and Darwin's overlay has no Float overload of log10.
+                rec.audioPeakDBFS = audioPeak > 0 ? 20 * Foundation.log10f(audioPeak) : -.infinity
             }
             audioSumSquares = 0
             audioSamples = 0

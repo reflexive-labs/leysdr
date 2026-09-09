@@ -204,7 +204,10 @@ public enum PortableKernels {
     /// several dB low on a row with any structure in it.
     @inline(__always)
     public static func dbToPower(_ src: UnsafePointer<Float>, to dst: UnsafeMutablePointer<Float>, count: Int) {
-        for i in 0 ..< count { dst[i] = Foundation.pow(10, src[i] / 10) }
+        // powf, not pow: the Glibc overlay has Float overloads of the math functions and the
+        // Darwin one does not, so a bare `pow` here compiles on Linux and fails on macOS. Every
+        // other Float call in this file is f-suffixed for the same reason.
+        for i in 0 ..< count { dst[i] = Foundation.powf(10, src[i] / 10) }
     }
 
     /// Largest absolute value; 0 for an empty vector.
