@@ -55,6 +55,48 @@ and the channelizer's NCO are exercised.
 | `wfm_tone` | 1 kHz tone FM-modulated, ±75 kHz deviation, carrier +400 kHz, −20 dBFS | WFM @ +400 k, bw 200 k → 1 kHz tone, SNR ≥ 30 dB |
 | `noise_floor` | complex white noise only, −60 dBFS | any channel: meter power within ±1.5 dB of the expected in-bandwidth floor; squelch closed at −40 dBFS |
 | `two_nfm` | two NFM tones (1 kHz @ +100 k, 2 kHz @ −300 k) | two channels in one capture, each hears only its tone |
+| `nfm_pl` | NFM voice plus a 100.0 Hz CTCSS tone at 700 Hz deviation | the everyday case: detect 100.0 Hz |
+| `nfm_pl_67` | NFM voice plus a 67.0 Hz CTCSS tone | detect 67.0, **not** 69.3 |
+| `nfm_pl_69` | NFM voice plus a 69.3 Hz CTCSS tone | detect 69.3, **not** 67.0 |
+| `nfm_hum` | NFM voice plus 100.0 Hz at only 40 Hz deviation | detect **nothing**: this is mains hum |
+| `nfm_pl_only` | keyed carrier with a 123.0 Hz CTCSS tone and no voice | detect 123.0 |
+
+### The sub-audible set
+
+These five exist to keep a CTCSS detector honest, and each one is a specific way of being wrong:
+
+- **`nfm_pl_67` and `nfm_pl_69` are the discrimination pair.** 67.0 and 69.3 Hz are 2.3 Hz apart,
+  the tightest spacing on the EIA ladder. A detector whose resolution is one bin width cannot tell
+  them apart, and one that snaps to the nearest standard tone will confidently name the wrong one.
+  Naming the wrong tone is worse than naming none.
+- **`nfm_hum` is the documented false positive.** 50 Hz mains hum lands on exactly 100.0 Hz at its
+  second harmonic, is perfectly stable, and passes every frequency test there is -- and 100.0 Hz is
+  one of the most common real PL tones. Only the deviation separates them: hum is tens of Hz where a
+  transmitter sends 200-1200. (60 Hz mains lands at 120 Hz, which is not a standard tone at all and
+  is rejected on frequency.)
+- **`nfm_pl_only` is the start of every transmission**, before anyone speaks: a keyed carrier with a
+  tone and nothing else to distinguish it from.
+
+The `sub_audible` block of an `expect` entry records what a detector should say:
+
+```json
+"sub_audible": {
+  "tone_hz": 100.0,
+  "deviation_hz": 40,
+  "detect": false,
+  "why": "40 Hz deviation is mains hum, not CTCSS; a transmitter sends 200-1200 Hz"
+}
+```
+
+The three fixtures carrying a real 700 Hz PL tone expect a much lower **audio** SNR (8 dB, measured
+~11) than `nfm_tone`'s 30. That is a fact about the signal, not a slack expectation: 700 Hz of
+sub-audible deviation is only 11 dB under the 2.5 kHz voice deviation, the 300 Hz high-pass takes
+about 20 dB off it, and de-emphasis then pulls the 1 kHz tone down by another 10 while leaving the
+sub-audible residue alone. `nfm_tone` remains the fixture that pins audio quality; these exist to
+exercise the tone detector.
+
+`detect` is deliberately separate from `tone_hz`: a fixture can carry a tone and still expect no
+detection, which is exactly what `nfm_hum` asserts.
 
 `leyfix check fixtures/` re-reads each fixture and verifies `expect` with a straightforward float64
 reference chain in Go (mix, FIR, decimate, discriminate). It is test tooling, not the engine —

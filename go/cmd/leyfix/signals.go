@@ -20,8 +20,13 @@ func ampFromDBFS(dbfs float64) float64 { return math.Pow(10, dbfs/20) }
 // frequency carrier + dev·sin(2π·tone·t), realised by integrating phase.
 type fmTone struct {
 	rate, carrierHz, toneHz, devHz, dbfs float64
-	phase                                float64
-	wide                                 bool
+	// A sub-audible tone rides the same carrier at its own (much smaller)
+	// deviation: this is how CTCSS/PL is transmitted, and the NFM chain's
+	// 300 Hz high-pass removes it from the audio one stage after the
+	// discriminator. Zero for a fixture that carries none.
+	subToneHz, subDevHz float64
+	phase               float64
+	wide                bool
 }
 
 func (s *fmTone) fill(dst []complex128, n0 int64) {
@@ -29,10 +34,12 @@ func (s *fmTone) fill(dst []complex128, n0 int64) {
 	wc := 2 * math.Pi * s.carrierHz / s.rate
 	wd := 2 * math.Pi * s.devHz / s.rate
 	wt := 2 * math.Pi * s.toneHz / s.rate
+	ws := 2 * math.Pi * s.subToneHz / s.rate
+	wsd := 2 * math.Pi * s.subDevHz / s.rate
 	ph := s.phase
 	for i := range dst {
 		n := float64(n0 + int64(i))
-		ph += wc + wd*math.Sin(wt*n)
+		ph += wc + wd*math.Sin(wt*n) + wsd*math.Sin(ws*n)
 		if ph > math.Pi {
 			ph -= 2 * math.Pi
 		} else if ph < -math.Pi {
@@ -48,10 +55,15 @@ func (s *fmTone) describe() map[string]any {
 	if s.wide {
 		kind = "wfm_tone"
 	}
-	return map[string]any{
+	d := map[string]any{
 		"type": kind, "carrier_hz": s.carrierHz, "tone_hz": s.toneHz,
 		"deviation_hz": s.devHz, "dbfs": s.dbfs,
 	}
+	if s.subToneHz != 0 {
+		d["sub_tone_hz"] = s.subToneHz
+		d["sub_deviation_hz"] = s.subDevHz
+	}
+	return d
 }
 
 // amTone is carrier·(1 + depth·sin(2π·tone·t)); dbfs is the carrier level.

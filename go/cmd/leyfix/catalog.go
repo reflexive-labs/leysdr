@@ -46,6 +46,16 @@ func toneExpect(mode string, offset, bw, tone, minSNR float64) iqfile.Expect {
 	}
 }
 
+// plSNRDB is the audio SNR to expect from a fixture carrying a CTCSS tone.
+// It is far below the 30 dB a clean tone fixture asserts, and that is a fact
+// about the signal rather than a slack expectation: a 700 Hz sub-audible
+// deviation is only 11 dB under the 2.5 kHz voice deviation, the 300 Hz
+// high-pass takes about 20 dB off it at 100 Hz, and de-emphasis then pulls the
+// 1 kHz tone down by another 10 dB while leaving the sub-audible residue alone.
+// Measured across the pl fixtures at ~11 dB. These exist to exercise the tone
+// detector; nfm_tone remains the fixture that pins audio quality.
+const plSNRDB = 8
+
 func hz(v float64) string { return fmt.Sprintf("%.0f", v) }
 
 var catalog = []fixture{
@@ -57,6 +67,97 @@ var catalog = []fixture{
 			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS}}
 		},
 		expect: func(float64) []iqfile.Expect { return []iqfile.Expect{toneExpect("NFM", 100_000, 12_500, 1000, 30)} },
+	},
+	{
+		// The everyday case: a repeater transmission carrying PL 100.0 under
+		// the voice. 700 Hz deviation is 14% of the 5 kHz NFM full scale,
+		// squarely in the range a real transmitter uses.
+		name: "nfm_pl", centerHz: 146_520_000,
+		description: "NFM 1 kHz tone at +100 kHz with a 100.0 Hz CTCSS tone at 700 Hz deviation",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 100.0, subDevHz: 700}}
+		},
+		expect: func(float64) []iqfile.Expect {
+			e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
+			e.SubAudible = &iqfile.SubExpect{ToneHz: 100.0, DeviationHz: 700, Detect: true}
+			return []iqfile.Expect{e}
+		},
+	},
+	{
+		// Half of the discrimination pair. 67.0 and 69.3 are 2.3 Hz apart, the
+		// tightest spacing on the EIA ladder: a detector whose resolution is a
+		// bin width cannot tell them apart, and one that snaps to the nearest
+		// standard tone will confidently name the wrong one.
+		name: "nfm_pl_67", centerHz: 146_520_000,
+		description: "NFM voice with a 67.0 Hz CTCSS tone; the low end of the ladder, 2.3 Hz from 69.3",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 67.0, subDevHz: 700}}
+		},
+		expect: func(float64) []iqfile.Expect {
+			e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
+			e.SubAudible = &iqfile.SubExpect{ToneHz: 67.0, DeviationHz: 700, Detect: true}
+			return []iqfile.Expect{e}
+		},
+	},
+	{
+		name: "nfm_pl_69", centerHz: 146_520_000,
+		description: "NFM voice with a 69.3 Hz CTCSS tone; the other half of the 67.0/69.3 pair",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 69.3, subDevHz: 700}}
+		},
+		expect: func(float64) []iqfile.Expect {
+			e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
+			e.SubAudible = &iqfile.SubExpect{ToneHz: 69.3, DeviationHz: 700, Detect: true}
+			return []iqfile.Expect{e}
+		},
+	},
+	{
+		// The documented false positive, made into a fixture. 50 Hz mains hum
+		// lands on exactly 100.0 Hz at its second harmonic, is perfectly
+		// stable, and passes every frequency test a detector can apply. Only
+		// its deviation gives it away: hum is tens of Hz where PL is hundreds.
+		name: "nfm_hum", centerHz: 146_520_000,
+		description: "NFM voice with 100.0 Hz mains hum at 40 Hz deviation and no CTCSS: the false positive to reject",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 100.0, subDevHz: 40}}
+		},
+		expect: func(float64) []iqfile.Expect {
+			// Hum at 40 Hz deviation barely touches the audio, so this one
+			// keeps the full SNR bar.
+			e := toneExpect("NFM", 100_000, 12_500, 1000, 25)
+			e.SubAudible = &iqfile.SubExpect{
+				ToneHz: 100.0, DeviationHz: 40, Detect: false,
+				Why: "40 Hz deviation is mains hum, not CTCSS; a transmitter sends 200-1200 Hz",
+			}
+			return []iqfile.Expect{e}
+		},
+	},
+	{
+		// A keyed carrier with PL and no speech: the start of every
+		// transmission, and the case where a detector has the least to
+		// distinguish a tone from.
+		name: "nfm_pl_only", centerHz: 146_520_000,
+		description: "NFM carrier with a 123.0 Hz CTCSS tone and no voice",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 0, devHz: 0, dbfs: signalDBFS,
+				subToneHz: 123.0, subDevHz: 700}}
+		},
+		expect: func(float64) []iqfile.Expect {
+			return []iqfile.Expect{{
+				Mode: "NFM", OffsetHz: 100_000, BandwidthHz: 12_500,
+				Meter:      &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
+				SubAudible: &iqfile.SubExpect{ToneHz: 123.0, DeviationHz: 700, Detect: true},
+			}}
+		},
 	},
 	{
 		name: "am_tone", centerHz: 1_000_000,

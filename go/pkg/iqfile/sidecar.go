@@ -52,6 +52,25 @@ type Expect struct {
 	BandwidthHz float64      `json:"bandwidth_hz"`
 	Audio       *AudioExpect `json:"audio,omitempty"`
 	Meter       *MeterExpect `json:"meter,omitempty"`
+	SubAudible  *SubExpect   `json:"sub_audible,omitempty"`
+}
+
+// SubExpect is what a sub-audible detector should say about a fixture. It is
+// the record that keeps a detector honest: a fixture carrying no tone, or one
+// carrying a tone too weak to call, states so here, and a detector that
+// reports one anyway has failed rather than merely disagreed.
+type SubExpect struct {
+	// ToneHz is the tone actually present, 0 for none.
+	ToneHz float64 `json:"tone_hz"`
+	// DeviationHz is the peak deviation the tone was generated at.
+	DeviationHz float64 `json:"deviation_hz,omitempty"`
+	// Detect is whether a detector is expected to report a tone at all. A
+	// fixture can carry one and still expect false -- sub-audible energy below
+	// the plausible deviation for CTCSS is hum, not a tone, and calling it a
+	// tone is the failure mode this exists to catch.
+	Detect bool `json:"detect"`
+	// Why records the reason when Detect disagrees with ToneHz being present.
+	Why string `json:"why,omitempty"`
 }
 
 // Sidecar is the JSON document stored beside the sample file.

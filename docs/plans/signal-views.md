@@ -117,11 +117,36 @@ and a carrier 40 dB up still draws at full density), `TestWaterfallHeaderStatesC
 Verified live on the FM band over rtl_tcp: KQED draws a persistent bright column under the 88.5
 marker, KPOO a fainter one at 89.5, and the noise floor stays blank.
 
-## SV-5 `[ ]` CTCSS fixtures
+## SV-5 `[x]` CTCSS fixtures
 
-`leyfix` gains a sub-audible tone generator. Fixtures: NFM voice + 100.0 Hz PL at 700 Hz deviation;
-the 67.0/69.3 pair at 6/10/20 dB tone-to-band; 50 Hz mains hum with no PL; PL with no voice.
-Nothing in SV-6 may claim a lock until these pass.
+`fmTone` gains `subToneHz`/`subDevHz`, so a fixture carries CTCSS the way a transmitter does.
+`iqfile.Expect` gains a `sub_audible` block whose `detect` is deliberately separate from `tone_hz`:
+a fixture can carry a tone and still expect no detection, which is exactly what `nfm_hum` asserts.
+
+Five fixtures: `nfm_pl` (100.0 Hz at 700 Hz deviation), `nfm_pl_67` and `nfm_pl_69` (the 2.3 Hz
+discrimination pair), `nfm_hum` (100.0 Hz at only 40 Hz deviation, the documented false positive),
+`nfm_pl_only` (a keyed carrier with a tone and no voice).
+
+Verified before building anything against them, with an independent Goertzel bank over each
+fixture's own discriminator output:
+
+```
+nfm_pl       winner 100.0 Hz  margin 10.8 dB   expect 100    detect true
+nfm_pl_67    winner  67.0 Hz  margin  8.1 dB   expect 67     detect true
+nfm_pl_69    winner  69.3 Hz  margin  8.1 dB   expect 69.3   detect true
+nfm_hum      winner 100.0 Hz  margin 10.8 dB   expect 100    detect FALSE
+nfm_pl_only  winner 123.0 Hz  margin 34.8 dB   expect 123    detect true
+nfm_tone     winner 179.9 Hz  margin  0.3 dB   no tone       (rejected by the 6 dB gate)
+```
+
+The pair discriminates correctly, and `nfm_hum` passes the frequency test with a healthy margin --
+which is the point of it. Only deviation separates hum from PL.
+
+The three fixtures carrying a real 700 Hz tone expect a much lower **audio** SNR (8 dB, measured
+~11) than `nfm_tone`'s 30. That is a fact about the signal rather than a slack expectation: 700 Hz
+of sub-audible deviation is 11 dB under the 2.5 kHz voice deviation, the 300 Hz high-pass takes
+about 20 dB off it, and de-emphasis then pulls the 1 kHz tone down another 10 while leaving the
+residue alone.
 
 ## SV-6 `[ ]` CTCSS detector
 
