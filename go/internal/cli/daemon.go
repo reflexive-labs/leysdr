@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -109,12 +110,9 @@ func (a *App) findDaemonBin(flag string) (string, error) {
 	return "", fmt.Errorf("leylined not found: pass --bin, set $%s, or put leylined beside ley or on PATH", daemonBinEnv)
 }
 
-// pidPath is the pidfile beside the effective socket.
+// pidPath is the pidfile beside the effective socket, named after it.
 func (a *App) pidPath() string {
-	if a.Socket != "" {
-		return filepath.Join(filepath.Dir(a.Socket), "leylined.pid")
-	}
-	return leyline.DefaultPidPath()
+	return leyline.PidPathFor(a.socketPath())
 }
 
 func (a *App) logPath(f *daemonFlags) string {
@@ -146,8 +144,10 @@ func launchctl(ctx context.Context, args ...string) error {
 	return nil
 }
 
-// plist renders the LaunchAgent for bin/socket/log.
+// plist renders the LaunchAgent for bin/socket/log. The paths are XML-escaped:
+// a home directory with & or < in it must not break the plist.
 func plist(bin, socket, logPath string) string {
+	bin, socket, logPath = xmlEscape(bin), xmlEscape(socket), xmlEscape(logPath)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -171,6 +171,13 @@ func plist(bin, socket, logPath string) string {
 `, leyline.LaunchAgentLabel, bin, socket, logPath, logPath)
 }
 
+// xmlEscape escapes s for use as XML character data.
+func xmlEscape(s string) string {
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
 func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("daemon install needs launchd (macOS); use 'ley daemon start' here")
@@ -182,23 +189,32 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	if bin, err = filepath.Abs(bin); err != nil {
 		return err
 	}
-	logPath := a.logPath(f)
-	for _, p := range []string{leyline.DefaultLaunchAgentPath(), logPath, a.socketPath()} {
+	// launchd runs the job from / so every path in the plist must be absolute.
+	logPath, err := filepath.Abs(a.logPath(f))
+	if err != nil {
+		return err
+	}
+	socket, err := filepath.Abs(a.socketPath())
+	if err != nil {
+		return err
+	}
+	for _, p := range []string{leyline.DefaultLaunchAgentPath(), logPath, socket} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
 		}
 	}
 	// An ad-hoc `daemon start` instance would make the launchd job crash-loop
 	// on SOCKET_IN_USE: stop ours, refuse anyone else's.
-	if pid := a.readPid(); pid != 0 {
+	info := a.daemonInfo(ctx)
+	if pid := a.ownedPid(ctx, info); pid != 0 {
 		if err := a.stopPid(pid); err != nil {
 			return err
 		}
-	} else if a.reachable(ctx) {
-		return fmt.Errorf("another daemon is serving %s; stop it before installing", a.socketPath())
+	} else if info != nil {
+		return fmt.Errorf("another daemon is serving %s; stop it before installing", socket)
 	}
 	path := leyline.DefaultLaunchAgentPath()
-	if err := os.WriteFile(path, []byte(plist(bin, a.socketPath(), logPath)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(plist(bin, socket, logPath)), 0o644); err != nil {
 		return err
 	}
 	_ = launchctl(ctx, "bootout", launchTarget())
@@ -268,59 +284,125 @@ func (a *App) reachable(ctx context.Context) bool {
 	return err == nil
 }
 
+// startTimeout bounds how long start waits for the daemon to answer.
+const startTimeout = 5 * time.Second
+
 func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	if a.reachable(ctx) {
-		if a.JSON {
-			return a.printDaemonInfo(ctx)
-		}
-		fmt.Fprintf(a.Stdout, "already running%s; check with: ley daemon status\n", a.pidSuffix(ctx))
-		return nil
+		return a.reportStarted(ctx, "already running")
 	}
 	if launchAgentInstalled() {
 		if err := launchctl(ctx, "kickstart", "-k", launchTarget()); err != nil {
 			return err
 		}
-	} else {
-		bin, err := a.findDaemonBin(f.bin)
-		if err != nil {
-			return err
-		}
-		logPath := a.logPath(f)
-		for _, p := range []string{logPath, a.socketPath(), a.pidPath()} {
-			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-				return err
-			}
-		}
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			return err
-		}
-		defer logFile.Close()
-		cmd := exec.Command(bin, "--socket", a.socketPath())
-		cmd.Stdout, cmd.Stderr, cmd.Stdin = logFile, logFile, nil
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("spawn %s: %w", bin, err)
-		}
-		if err := os.WriteFile(a.pidPath(), []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o644); err != nil {
-			return err
-		}
-		// Reap the child if it exits while this process is still alive (tests,
-		// or a daemon that dies immediately) so the pidfile check sees a dead pid.
-		go func() { _ = cmd.Wait() }()
+		return a.awaitDaemon(ctx, f, nil, "started leylined")
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	bin, err := a.findDaemonBin(f.bin)
+	if err != nil {
+		return err
+	}
+	logPath := a.logPath(f)
+	for _, p := range []string{logPath, a.socketPath(), a.pidPath()} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+	}
+	// A pidfile instance that is alive but not answering yet (still booting)
+	// would only be doubled by a second spawn that dies on SOCKET_IN_USE: wait
+	// for it instead. Same for a daemon that came up since the probe above.
+	if pid := a.ownedPid(ctx, nil); pid != 0 || a.reachable(ctx) {
+		return a.awaitDaemon(ctx, f, nil, "already running")
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	cmd := exec.Command(bin, "--socket", a.socketPath(), "--pidfile", a.pidPath())
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = logFile, logFile, nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("spawn %s: %w", bin, err)
+	}
+	return a.awaitDaemon(ctx, f, &child{cmd: cmd, exited: reap(cmd)}, "started leylined")
+}
+
+// child is a daemon this process spawned and has not yet handed over to the
+// pidfile: exited fires when it dies.
+type child struct {
+	cmd    *exec.Cmd
+	exited <-chan error
+}
+
+// reap waits for cmd in the background so a daemon that dies immediately is
+// reaped (tests, or a crash at startup) and its exit is observable.
+func reap(cmd *exec.Cmd) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	return done
+}
+
+// kill SIGTERMs the child and waits for it to exit (SIGKILL after 5 s), so a
+// start that failed leaves no orphan behind.
+func (c *child) kill() {
+	_ = c.cmd.Process.Signal(syscall.SIGTERM)
+	select {
+	case <-c.exited:
+	case <-time.After(5 * time.Second):
+		_ = c.cmd.Process.Kill()
+		<-c.exited
+	}
+}
+
+// awaitDaemon waits up to startTimeout for the daemon to answer on the socket,
+// then reports it with verb. A spawned child is only recorded in the pidfile
+// once it answers; if it dies first, or the pidfile cannot be written, the
+// child is stopped and the error says why so nothing runs unrecorded.
+func (a *App) awaitDaemon(ctx context.Context, f *daemonFlags, c *child, verb string) error {
+	deadline := time.Now().Add(startTimeout)
+	for {
 		if a.reachable(ctx) {
-			if a.JSON {
-				return a.printDaemonInfo(ctx)
+			if c != nil {
+				if err := os.WriteFile(a.pidPath(), []byte(strconv.Itoa(c.cmd.Process.Pid)+"\n"), 0o644); err != nil {
+					c.kill()
+					return fmt.Errorf("write pidfile %s: %w (stopped the daemon again)", a.pidPath(), err)
+				}
 			}
-			fmt.Fprintf(a.Stdout, "started leylined%s; check with: ley daemon status\n", a.pidSuffix(ctx))
-			return nil
+			return a.reportStarted(ctx, verb)
+		}
+		if c != nil {
+			select {
+			case err := <-c.exited:
+				return fmt.Errorf("leylined exited during startup (%v). Look at its log: ley daemon logs (%s)", exitReason(err), a.logPath(f))
+			default:
+			}
+		}
+		if time.Now().After(deadline) {
+			if c != nil {
+				c.kill()
+			}
+			return fmt.Errorf("leylined did not answer on %s within %v. Look at its log: ley daemon logs (%s)", a.socketPath(), startTimeout, a.logPath(f))
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("leylined did not answer on %s within 5 s. Look at its log: ley daemon logs (%s)", a.socketPath(), a.logPath(f))
+}
+
+// exitReason words a cmd.Wait error ("exit status 1", or "exit status 0").
+func exitReason(err error) string {
+	if err == nil {
+		return "exit status 0"
+	}
+	return err.Error()
+}
+
+// reportStarted prints the running daemon: its DaemonInfo under --json (as
+// status does), otherwise "<verb> (pid N); check with: ley daemon status".
+func (a *App) reportStarted(ctx context.Context, verb string) error {
+	if a.JSON {
+		return a.printDaemonInfo(ctx)
+	}
+	fmt.Fprintf(a.Stdout, "%s%s; check with: ley daemon status\n", verb, a.pidSuffix(ctx))
+	return nil
 }
 
 func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
@@ -345,7 +427,12 @@ func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 			time.Sleep(100 * time.Millisecond)
 		}
 	} else {
-		pid := a.readPid()
+		pid := a.ownedPid(ctx, last)
+		if pid == 0 {
+			// No (valid) pidfile: a daemon answering on the socket is still
+			// ours to stop, by the pid it reports. Only silence means not running.
+			pid = int(last.GetPid())
+		}
 		if pid == 0 {
 			a.reportNotRunningForStop()
 			return nil
@@ -391,7 +478,36 @@ func (a *App) printDaemonInfo(ctx context.Context) error {
 	return a.printJSON(info)
 }
 
-// stopPid SIGTERMs a pidfile instance, waits for it to exit, and removes the pidfile.
+// ownedPid returns the pidfile's pid when that process is our daemon, 0 when
+// there is none. A pidfile a crashed daemon left behind can name a pid the
+// system has since reused, so the pid must be vouched for: when the socket
+// answers (info non-nil) the daemon's own DaemonInfo.pid must match; otherwise
+// the process's command name must be leylined. A mismatch removes the stale
+// pidfile so nothing else is ever signalled through it.
+func (a *App) ownedPid(ctx context.Context, info *leylinev1.DaemonInfo) int {
+	pid := a.readPid()
+	if pid == 0 {
+		return 0
+	}
+	if info != nil {
+		if int(info.GetPid()) == pid {
+			return pid
+		}
+	} else if out, err := exec.CommandContext(ctx, "ps", "-o", "comm=", "-p", strconv.Itoa(pid)).Output(); err == nil && isDaemonComm(string(out)) {
+		return pid
+	}
+	_ = os.Remove(a.pidPath())
+	return 0
+}
+
+// isDaemonComm reports whether `ps -o comm=` output names leylined (macOS
+// prints the full executable path, Linux the bare name).
+func isDaemonComm(out string) bool {
+	return filepath.Base(strings.TrimSpace(out)) == "leylined"
+}
+
+// stopPid SIGTERMs a pidfile instance (vouched for by ownedPid), waits for it
+// to exit, and removes the pidfile.
 func (a *App) stopPid(pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		return fmt.Errorf("signal pid %d: %w", pid, err)
@@ -413,7 +529,8 @@ func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
 	c, err := a.dial(ctx)
 	if err == nil {
 		defer c.Close()
-		if resp, err := c.State(ctx); err == nil {
+		var resp *leylinev1.GetStateResponse
+		if resp, err = c.State(ctx); err == nil {
 			if a.JSON {
 				return a.printJSON(resp.Daemon)
 			}
@@ -421,8 +538,13 @@ func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
 			return nil
 		}
 	}
-	// Not running: same DaemonInfo shape with pid absent (0), and a non-zero
-	// status so scripts can key on it without parsing.
+	// A daemon that answers with an error is running but unwell: that error,
+	// with its [CODE], is the report (exit 1). Only nothing listening is "not
+	// running": the same DaemonInfo shape with pid absent (0), and exit 3 so
+	// scripts can key on it without parsing.
+	if err = a.notRunning(err); !isNotRunning(err) {
+		return err
+	}
 	if a.JSON {
 		if err := a.printJSON(&leylinev1.DaemonInfo{SocketPath: a.socketPath()}); err != nil {
 			return err

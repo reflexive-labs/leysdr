@@ -349,8 +349,9 @@ is reaped.
 - Socket: `~/Library/Application Support/Leyline/leyline.sock` on macOS; `$XDG_RUNTIME_DIR/leyline.sock`
   or `/tmp/leyline-<uid>.sock` elsewhere. `--socket` overrides. A stale socket file (no listener) is
   removed at startup; a live one aborts with a clear error.
-- Pidfile next to the socket (`leylined.pid`). `SIGTERM`/`SIGINT` → graceful stop (captures stopped,
-  devices closed, socket unlinked).
+- Pidfile next to the socket (`leylined.pid` by default; `ley daemon start` passes `--pidfile` named
+  after the socket, `leyline.pid` / `/tmp/leyline-<uid>.pid`, so two sockets in one directory never
+  share it). `SIGTERM`/`SIGINT` → graceful stop (captures stopped, devices closed, socket unlinked).
 - Logs to stderr via swift-log; launchd redirects to `~/Library/Logs/Leyline/leylined.log`.
 - `ley daemon install` writes `~/Library/LaunchAgents/com.leyline.daemon.plist` (KeepAlive, RunAtLoad)
   pointing at the `leylined` binary and bootstraps it; `start/stop/status/logs` drive launchctl when

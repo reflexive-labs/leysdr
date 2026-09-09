@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -155,19 +157,28 @@ func TestDaemonStatus(t *testing.T) {
 	}
 }
 
-func TestDaemonStartStop(t *testing.T) {
-	dir := t.TempDir()
+// fakeDaemonScript writes a "leylined" shell script into dir that execs the
+// test binary as a fake daemon (body "" for that; a custom body replaces it)
+// and returns the script, socket, pidfile and log paths for that directory.
+func fakeDaemonScript(t *testing.T, dir, body string) (script, sock, pidfile, logPath string) {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(dir, "leylined")
-	body := "#!/bin/sh\nexec env " + fakeDaemonEnv + "=1 " + exe + " \"$@\"\n"
+	script = filepath.Join(dir, "leylined")
+	if body == "" {
+		body = "#!/bin/sh\nexec env " + fakeDaemonEnv + "=1 " + exe + " \"$@\"\n"
+	}
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sock := filepath.Join(dir, "d.sock")
-	logPath := filepath.Join(dir, "leylined.log")
+	return script, filepath.Join(dir, "d.sock"), filepath.Join(dir, "d.pid"), filepath.Join(dir, "leylined.log")
+}
+
+func TestDaemonStartStop(t *testing.T) {
+	dir := t.TempDir()
+	script, sock, pidfile, logPath := fakeDaemonScript(t, dir, "")
 	// Discovery via the binary beside the ley executable.
 	app := &App{Stdout: os.Stdout, Stderr: os.Stderr, Executable: filepath.Join(dir, "ley"), LookupEnv: func(string) (string, bool) { return "", false }}
 	if bin, err := app.findDaemonBin(""); err != nil || bin != script {
@@ -185,7 +196,7 @@ func TestDaemonStartStop(t *testing.T) {
 	if !strings.Contains(out, "started leylined") || !strings.Contains(out, "pid") {
 		t.Fatalf("start output: %s", out)
 	}
-	pidBytes, err := os.ReadFile(filepath.Join(dir, "leylined.pid"))
+	pidBytes, err := os.ReadFile(pidfile)
 	if err != nil || len(pidBytes) == 0 {
 		t.Fatalf("pidfile: %v", err)
 	}
@@ -198,7 +209,7 @@ func TestDaemonStartStop(t *testing.T) {
 	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "stopped") {
 		t.Fatalf("stop: %s", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "leylined.pid")); !os.IsNotExist(err) {
+	if _, err := os.Stat(pidfile); !os.IsNotExist(err) {
 		t.Fatalf("pidfile not removed: %v", err)
 	}
 	if out, _, err := run(t, context.Background(), sock, "daemon", "status"); !strings.Contains(out, "not running") || err == nil {
@@ -290,4 +301,120 @@ func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {
 	if len(st.Devices) != 1 {
 		t.Fatalf("failed persistent play left a file device: %v", st.Devices)
 	}
+}
+
+// waitFor polls cond for up to 3 s.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// startSleeper spawns a `sleep` that outlives the test unless stopped, and
+// returns its pid: a process that is not the daemon.
+func startSleeper(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	return cmd.Process.Pid
+}
+
+// #22: a daemon whose pidfile went missing is still stopped, by the pid it
+// reports itself; "not running" is only for a socket nobody answers on.
+func TestDaemonStopWithoutPidfile(t *testing.T) {
+	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "")
+	mustRun(t, sock, "daemon", "start", "--bin", script, "--log", logPath)
+	if err := os.Remove(pidfile); err != nil {
+		t.Fatal(err)
+	}
+	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "stopped") {
+		t.Fatalf("stop without pidfile: %s", out)
+	}
+	if _, _, err := run(t, context.Background(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
+		t.Fatalf("status after stop: %v", err)
+	}
+}
+
+// #20: a pidfile naming a pid the system reused must never be signalled.
+func TestDaemonStopPidReused(t *testing.T) {
+	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "")
+	sleeper := startSleeper(t)
+	writePid := func() {
+		if err := os.WriteFile(pidfile, []byte(strconv.Itoa(sleeper)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Nothing on the socket: the pid's command name is not leylined, so the
+	// pidfile is stale; it is removed and stop reports not running.
+	writePid()
+	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "not running") {
+		t.Fatalf("stop with reused pid: %s", out)
+	}
+	if _, err := os.Stat(pidfile); !os.IsNotExist(err) {
+		t.Fatalf("stale pidfile kept: %v", err)
+	}
+	if syscall.Kill(sleeper, 0) != nil {
+		t.Fatal("stop signalled the process that reused the pid")
+	}
+	// A daemon answering with a different pid: the pidfile is stale, the
+	// daemon is stopped by its own pid, the other process is left alone.
+	mustRun(t, sock, "daemon", "start", "--bin", script, "--log", logPath)
+	writePid()
+	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "stopped") {
+		t.Fatalf("stop with reused pid beside a live daemon: %s", out)
+	}
+	if syscall.Kill(sleeper, 0) != nil {
+		t.Fatal("stop signalled the process that reused the pid")
+	}
+	if _, _, err := run(t, context.Background(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
+		t.Fatalf("status after stop: %v", err)
+	}
+}
+
+// #21: a daemon that dies during startup is reported as such, promptly, and
+// never recorded in the pidfile.
+func TestDaemonStartChildExits(t *testing.T) {
+	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "#!/bin/sh\necho boom\nexit 3\n")
+	started := time.Now()
+	_, _, err := run(t, context.Background(), sock, "daemon", "start", "--bin", script, "--log", logPath)
+	if err == nil || !strings.Contains(err.Error(), "exited during startup") || !strings.Contains(err.Error(), "exit status 3") {
+		t.Fatalf("start with a dying daemon: %v", err)
+	}
+	if time.Since(started) > 3*time.Second {
+		t.Fatalf("start took %v to notice the exit", time.Since(started))
+	}
+	if _, err := os.Stat(pidfile); !os.IsNotExist(err) {
+		t.Fatalf("pidfile written for a dead daemon: %v", err)
+	}
+	if log, _ := os.ReadFile(logPath); !strings.Contains(string(log), "boom") {
+		t.Fatalf("log: %q", log)
+	}
+}
+
+// #12: a daemon that came up but cannot be recorded in the pidfile is stopped
+// again, so nothing runs that stop cannot find.
+func TestDaemonStartPidfileUnwritable(t *testing.T) {
+	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "")
+	if err := os.Mkdir(pidfile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := run(t, context.Background(), sock, "daemon", "start", "--bin", script, "--log", logPath)
+	if err == nil || !strings.Contains(err.Error(), "write pidfile") || !strings.Contains(err.Error(), "stopped the daemon again") {
+		t.Fatalf("start with an unwritable pidfile: %v", err)
+	}
+	if _, _, err := run(t, context.Background(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
+		t.Fatalf("daemon left running after the failed start: %v", err)
+	}
+	waitFor(t, "the daemon's exit in the log", func() bool {
+		log, _ := os.ReadFile(logPath)
+		return strings.Contains(string(log), "fake leylined stopped")
+	})
 }

@@ -50,7 +50,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   `Code == "CANCELED"` under a cancelled ctx as ExitInterrupted (130); main_test case.
 - #23 play.go:78: os.ErrNotExist -> fileMissing(...) wrapped in usageError (exit 2), other stat errors unchanged; test.
 
-### CLI-3 `[ ]` Daemon lifecycle management (#2, #22, #21, #20, #12, #19, #17)
+### CLI-3 `[x]` Daemon lifecycle management (#2, #22, #21, #20, #12, #19, #17)
 
 - #2 daemonStatus routes the State error through app.notRunning; non-UNAVAILABLE codes exit 1 with `[CODE]`.
 - #22 daemonStop (no launchd): when readPid() is 0, probe the socket first; take the pid from State().Daemon.Pid;

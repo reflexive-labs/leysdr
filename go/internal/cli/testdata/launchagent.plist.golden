@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>com.leyline.daemon</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/a&amp;b/bin/leylined</string>
+		<string>--socket</string>
+		<string>/Users/a&lt;b&gt;/Library/Application Support/Leyline/leyline.sock</string>
+	</array>
+	<key>RunAtLoad</key><true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key><false/>
+	</dict>
+	<key>StandardOutPath</key><string>/Users/a&amp;b&lt;c&gt;/Library/Logs/Leyline/leylined.log</string>
+	<key>StandardErrorPath</key><string>/Users/a&amp;b&lt;c&gt;/Library/Logs/Leyline/leylined.log</string>
+</dict>
+</plist>

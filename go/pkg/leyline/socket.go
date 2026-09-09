@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 // SocketEnv is the environment variable that overrides DefaultSocketPath.
@@ -21,30 +22,56 @@ const LaunchAgentLabel = "com.leyline.daemon"
 // overrides; otherwise macOS uses ~/Library/Application Support/Leyline/leyline.sock,
 // and other platforms use $XDG_RUNTIME_DIR/leyline.sock or /tmp/leyline-<uid>.sock.
 func DefaultSocketPath() string {
-	if p := os.Getenv(SocketEnv); p != "" {
+	return defaultSocketPath(runtime.GOOS, os.Getenv)
+}
+
+func defaultSocketPath(goos string, getenv func(string) string) string {
+	if p := getenv(SocketEnv); p != "" {
 		return p
 	}
-	if runtime.GOOS == "darwin" {
+	if goos == "darwin" {
 		return filepath.Join(homeDir(), "Library", "Application Support", "Leyline", "leyline.sock")
 	}
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+	if dir := getenv("XDG_RUNTIME_DIR"); dir != "" {
 		return filepath.Join(dir, "leyline.sock")
 	}
 	return filepath.Join(os.TempDir(), "leyline-"+strconv.Itoa(os.Getuid())+".sock")
 }
 
-// DefaultPidPath returns the daemon pidfile path: leylined.pid beside the socket.
+// DefaultPidPath returns the daemon pidfile path: PidPathFor(DefaultSocketPath()).
 func DefaultPidPath() string {
-	return filepath.Join(filepath.Dir(DefaultSocketPath()), "leylined.pid")
+	return PidPathFor(DefaultSocketPath())
+}
+
+// PidPathFor returns the pidfile beside socket, named after it with .pid in
+// place of .sock (leyline.sock -> leyline.pid, /tmp/leyline-501.sock ->
+// /tmp/leyline-501.pid), so two sockets sharing a directory never share a pidfile.
+func PidPathFor(socket string) string {
+	return sibling(socket, ".pid")
 }
 
 // DefaultLogPath returns the daemon log path: ~/Library/Logs/Leyline/leylined.log
-// on macOS, otherwise leylined.log beside the socket.
+// on macOS, otherwise LogPathFor(DefaultSocketPath()).
 func DefaultLogPath() string {
-	if runtime.GOOS == "darwin" {
+	return defaultLogPath(runtime.GOOS, DefaultSocketPath())
+}
+
+func defaultLogPath(goos, socket string) string {
+	if goos == "darwin" {
 		return filepath.Join(homeDir(), "Library", "Logs", "Leyline", "leylined.log")
 	}
-	return filepath.Join(filepath.Dir(DefaultSocketPath()), "leylined.log")
+	return LogPathFor(socket)
+}
+
+// LogPathFor returns the log file beside socket, named after it with .log in
+// place of .sock (see PidPathFor).
+func LogPathFor(socket string) string {
+	return sibling(socket, ".log")
+}
+
+// sibling is socket's directory joined with its base name, extension replaced by ext.
+func sibling(socket, ext string) string {
+	return filepath.Join(filepath.Dir(socket), strings.TrimSuffix(filepath.Base(socket), filepath.Ext(socket))+ext)
 }
 
 // DefaultLaunchAgentPath returns the path of the daemon's launchd plist
