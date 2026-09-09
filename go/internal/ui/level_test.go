@@ -104,10 +104,13 @@ func TestLevelDegradesByProfile(t *testing.T) {
 		}
 		named[sgr] = true
 	}
-	want := map[string]bool{"34": true, "36": true, "32": true, "33": true, "31": true}
+	// Bright blue at the cold end, not blue: plain ANSI blue renders
+	// near-black in most dark themes, and the cold end is where most of a
+	// spectrum's ink lands.
+	want := map[string]bool{"94": true, "36": true, "32": true, "33": true, "31": true}
 	for sgr := range named {
 		if !want[sgr] {
-			t.Errorf("16-colour ramp emitted %q; want only blue, cyan, green, yellow, red", "\x1b["+sgr+"m")
+			t.Errorf("16-colour ramp emitted %q; want only bright blue, cyan, green, yellow, red", "\x1b["+sgr+"m")
 		}
 	}
 	if len(named) != len(want) {

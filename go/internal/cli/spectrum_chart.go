@@ -190,13 +190,7 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 				if cell == " " {
 					cell = v.st.Ramp(0.125)
 				}
-				// A frame with nothing above the floor is drawn at the cold
-				// end of the ramp whatever its levels are, so a quiet band
-				// never wears the colours of a busy one.
-				band = 0
-				if !v.quiet {
-					band = v.levelBand(db)
-				}
+				band = v.levelBand(db)
 			case fill > 1 && r > floorRow:
 				// Below the trace and above the floor: a thin stem, not a
 				// filled block, so a tall column still reads as one thing
@@ -207,10 +201,7 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 				// sitting on the noise line is the line, and drawing its stem
 				// would rebuild the wall one row lower.
 				cell = g.TreeTrunk
-				band = 0
-				if !v.quiet {
-					band = v.levelBand(db)
-				}
+				band = v.levelBand(db)
 			case v.holdOn && c < len(v.hold) && v.hold[c] >= db+spectrumHoldMarginDb:
 				// A thin line, not a filled block, and only where the hold
 				// stands clear of the live column: what is left is the mark
@@ -268,7 +259,14 @@ func (v *spectrumView) levelBand(db float64) int {
 	if span <= 0 || math.IsNaN(db) || math.IsInf(db, 0) {
 		return 0
 	}
-	step := int((db - v.noise) / span * float64(spectrumLevelSteps-1))
+	frac := (db - v.noise) / span
+	if v.quiet {
+		// Nothing was detected, so the span this is keyed to is noise against
+		// noise. Hold the ramp to its cold end: the texture still shows, but
+		// an empty band never wears the colours of a busy one.
+		frac *= spectrumQuietRampCap
+	}
+	step := int(frac * float64(spectrumLevelSteps-1))
 	if step < 0 {
 		return 0
 	}

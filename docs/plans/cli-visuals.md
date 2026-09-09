@@ -263,6 +263,66 @@ column), `TestSpectrumDrawsOnlyTheTopEdge`, `TestSpectrumTallColumnKeepsAStem`,
 `TestSpectrumFrameOnATerminal` had to stop detecting an ASCII frame by the bare presence of `+`,
 which is also the sixth step of the ASCII column ramp: it now looks for a top-left corner.
 
+### VIS-9 `[x]` A quiet band must read as one flat line
+
+Reported twice more after VIS-8 landed, with a screenshot of `ley spectrum 85.5 --watch`: "the
+spectrum is all dark blue", then "still not looking good", then "the blue is still hard to see on my
+dark terminal". Three separate causes, all real, all fixed.
+
+Measured against the radio over rtl_tcp rather than reasoned about. Real column distributions,
+90 columns each:
+
+```
+band          min    p25    p50    p75    p90    p99    max   p75-p25  max-p50
+quiet 85.5  -48.1  -42.3  -40.5  -39.0  -37.7  -35.1  -35.0      3.2      5.5
+busy 88.5   -48.0  -44.1  -42.4  -37.0  -30.2  -12.4   -7.5      7.1     35.0
+busy 91.7   -51.2  -43.6  -39.3  -34.4  -29.0  -13.4   -6.3      9.2     33.1
+```
+
+**1. The scale collapsed onto the noise.** The top tracked the loudest column, which on an empty
+band is a noise column a few dB over the median. Quiet got top -30 / bottom -45, a 1.5 dB row, and
+the floor's own ~7 dB of spread smeared across five rows as confetti. Busy got a 5 dB row and read
+fine, which is why only the quiet band looked broken. Fixed by holding a minimum span of 50 dB, so
+the row is never finer than 5 dB, and anchoring the bottom under the band's 10th-percentile column
+rather than under its median, so the low tail is drawn where it is instead of clamped into a flat
+edge that is an artefact of the scale. All three real bands now land on 0/-50 with the floor rule on
+the same row, which also makes them comparable: a column of a given height means the same dB on each.
+A band deeper than 50 dB still gets a coarser row, never a finer one.
+
+Four independent design proposals were taken on this, from a reference-level angle, a
+noise-spread angle, a robust-statistic angle and a detection-gate angle. All four converged on a
+fixed ~50 dB span at 5 dB per row, for the same reason: 5 dB is coarser than any real noise floor's
+spread. Two of three judges picked the robust-statistic form, which is what was built. The judge
+who dissented caught the low-tail clamping, which is why the bottom uses p10.
+
+**2. A quiet band was inked in exactly one colour.** When nothing cleared the detection threshold
+every column was forced to ramp band 0. Honest, and unreadable: 100% of the inked cells on the real
+85.5 capture were a single blue, so the chart was a flat field with no shape, and the flatness of
+the floor -- the thing a reader checks a quiet band for -- could not be seen. Now the ramp is capped
+at `spectrumQuietRampCap` instead of collapsed: the same capture draws 7 distinct inks, all between
+blue and cyan, and nothing warm. The band still cannot wear the colours of a busy one.
+
+**3. The cold end was invisible on a dark terminal.** The ramp started at a saturated `#0000A0`,
+which is 1.2:1 contrast against a `#1e1e1e` ground. Since most of a spectrum is noise floor and the
+noise floor is the cold end, most of the chart was literally unreadable. We cannot ask what the
+terminal's background is, so the ramp now holds every stop between 0.18 and 0.26 relative luminance,
+clearing 3.2:1 against black, `#1e1e1e`, white and `#fafafa`. Hue still sweeps cold to hot; only
+luminance is held flat, which costs nothing because height carries level too. The 16-colour fallback
+takes bright blue rather than blue for the same reason.
+
+Tests: `TestSpectrumBandsAreComparable`, the rewritten `TestSpectrumScaleTracksTheData` (which used
+to assert the scale must *not* reserve unreachable sky -- that rule was the bug), the rewritten
+`TestSpectrumQuietBandReadsQuiet` (cold third, more than one ink), `TestLevelRampIsLegibleOnBothGrounds`
+and `TestLevelRampSweepsColdToHot`.
+
+Also corrected: an earlier capture that appeared to show nothing at 88.5 was taken while rtl_tcp was
+crash-looping and was mistuned by about 1.08 MHz, which put KQED at an apparent 87.4. With the radio
+healthy, KQED reads +40 dB over the floor at 88.5 and KALW +39 dB at 91.7. **Open:** a DC spike at
+the capture's exact centre appears on some fresh rtl_tcp connections, at roughly the same -7 dBFS.
+It was absent from the session the 88.5 and 92.0 numbers came from, but the clean way to separate it
+from a real carrier is an off-centre capture (`ley spectrum 88.0`, where KQED should sit half a
+division right of centre). rtl_tcp went down before that could be run.
+
 ## Closing
 
 Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one

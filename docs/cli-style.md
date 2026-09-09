@@ -95,11 +95,23 @@ Rules:
 
 `ui.Style.Level(frac, text)` inks text with the colour a normalised level maps to, and is
 the only place depth above sixteen colours is used. The ramp runs cold to hot so height and hue agree:
-deep blue at the noise floor, cyan, green, yellow, red at full scale. **The cold end is the
+blue at the noise floor, then cyan, green, amber, red at full scale. **The cold end is the
 noise line, not the bottom of the chart**, so hue answers the question a reader actually
-has -- how far over the floor is this -- and a band with nothing on it is honestly, wholly
-cold. A mostly blue chart is a correct chart when the band is empty; what must never
-happen is blue with no shape in it (see the spectrum rule in section 5). It degrades by
+has: how far over the floor is this.
+
+**Hue sweeps; luminance does not.** Every stop is held between 0.18 and 0.26 relative
+luminance, which is the only band clearing 3.2:1 contrast against a black terminal *and* a
+white one. We are forbidden from asking which the reader has (no OSC query, no
+`HasDarkBackground`), so the ramp has to work on both. The cold end was once a saturated
+`#0000A0`, which is 1.2:1 on a dark terminal: since most of a spectrum is noise floor and the
+noise floor is the cold end, most of the chart was invisible. Level is carried by height as
+well as by hue, so spending luminance on legibility costs nothing. `TestLevelRampIsLegibleOnBothGrounds`
+holds the line.
+
+**A quiet band is held to the cold third of the ramp, not to a single ink.** Forcing every
+column to one colour when nothing is detected is honest and unreadable: the chart becomes a
+flat field with no shape, and the flatness of the floor, which is what a reader checks a quiet
+band for, cannot be seen. Cap the ramp instead: the texture shows, the heat does not. It degrades by
 profile, not by branch: truecolor renders the gradient, 256 renders the nearest cube
 colour, 16 collapses to blue/cyan/green/yellow/red, and none returns the string
 unchanged. A reader with colour off still has the eight-level block ramp, so level
@@ -147,6 +159,13 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   as one mass whatever is on the air, and the flatness of the floor, which is the thing the
   reader is checking, has no shape to be seen in. The reference line itself is drawn as a
   rule and labelled on the axis, so height above it reads directly as margin.
+- **A chart's row is held coarse, and its span is not allowed to shrink to fit.** Autoscaling
+  to the data is right until the data is noise: a receiver's noise floor spreads about 7 dB
+  across the columns, so a scale that fits itself to an empty band gives a 1.5 dB row and
+  smears that floor over five of them as confetti. Hold a minimum span -- for the spectrum,
+  50 dB, a 5 dB row -- and an empty band collapses to one line with seven rows of honest
+  headroom above it. The reserved sky is not waste: it is what makes two bands comparable,
+  because a column of a given height means the same dB on both.
 
 ## 6. Frozen contracts
 

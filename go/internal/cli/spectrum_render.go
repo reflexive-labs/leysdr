@@ -2,6 +2,7 @@ package cli
 
 import (
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/dpup/leysdr/go/internal/ui"
@@ -24,6 +25,16 @@ const (
 // columns that land on the same step share one run of ink.
 const spectrumLevelSteps = 24
 
+// spectrumQuietRampCap is how much of the ramp a band with no detection may
+// use. A quiet band's loudest column is only a few dB over its median, so
+// keying the ramp to that span unmodified would paint noise texture red and
+// dress an empty band up as a busy one. Forcing every column to the single
+// coldest ink instead, which is what this replaced, was honest but unreadable:
+// the chart became one flat field of blue with no shape in it, which is what
+// the reader was actually complaining about. Capping the ramp keeps both --
+// the texture is visible as blue through cyan, and nothing is ever warm.
+const spectrumQuietRampCap = 0.34
+
 // spectrumFrameMinWidth is the narrowest terminal that gets a frame around the
 // chart. The border and its padding cost ui.BoxPadding columns of chart, which
 // a cramped screen cannot spare.
@@ -40,7 +51,8 @@ const spectrumFrameMinWidth = 60
 // looks like.
 const (
 	spectrumHeadroomDb   = 3   // dB of air above the loudest column, before the scale rounds to 5
-	spectrumMinSpanDb    = 10  // the least the top may sit above the noise line
+	spectrumMinSpanDb    = 50  // the least the whole scale may span, top to bottom
+	spectrumFloorPadDb   = 5   // dB of room kept under the noise line for the columns that dip
 	spectrumHoldDecayDb  = 1.5 // dB the hold falls toward the live column each frame
 	spectrumScaleDecayDb = 2   // dB the scale top and the ramp's hot end give back each frame
 	spectrumHoldMarginDb = 6   // dB a hold must stand above the live column to be drawn
@@ -215,19 +227,21 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 		v.noise = floor
 	}
 	v.rescaled = false
-	// The top tracks the data: the loudest column plus a little headroom, and
-	// never closer to the noise line than spectrumMinSpanDb, so a dead-flat
-	// band still has rows to draw in without a quiet one being crushed into
-	// the bottom of the chart.
-	top := math.Ceil(math.Max(peak+spectrumHeadroomDb, v.noise+spectrumMinSpanDb)/5) * 5
-	// The chart starts a whole row below the noise line. Rounding the noise
-	// down to 5 dB, which is all this used to do, put the line somewhere in the
-	// first row or the second depending on where the band happened to fall, so
-	// the floor rule moved between runs and the axis label for it appeared
-	// about one time in ten. Reserving a row makes both deterministic: the rule
-	// always sits on a labelled row with a row beneath it for the columns that
-	// dip under the median.
-	bottom := math.Min(math.Floor(v.noise/5)*5, math.Floor(floorRowLimit(v.noise, top)/5)*5)
+	// The bottom sits under the band's low tail, not just under its median: a
+	// tenth of the columns dip below the noise line, and clamping them all onto
+	// the first row draws a flat edge that is an artefact of the scale rather
+	// than a fact about the band.
+	low := percentileDb(colDb, 10)
+	bottom := math.Floor(math.Min(v.noise-spectrumFloorPadDb, low)/5) * 5
+	// The scale spans at least spectrumMinSpanDb whatever the data does, which
+	// fixes the row at 5 dB or coarser. That is the whole trick: a receiver's
+	// noise floor spreads about 7 dB across the columns, so at 5 dB a row it
+	// collapses into one or two and reads as a line, while at the 1.5 dB a row
+	// an empty band used to get -- the top tracked the loudest noise column,
+	// which is only a few dB over the median -- the same floor smeared over
+	// five rows and read as confetti. Holding the span also makes two bands
+	// comparable: a column of the same height means the same dB on both.
+	top := math.Max(math.Ceil((peak+spectrumHeadroomDb)/5)*5, bottom+spectrumMinSpanDb)
 	if !v.scaled {
 		v.bottom, v.top, v.peak, v.scaled = bottom, top, peak, true
 		return
@@ -266,9 +280,24 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 	}
 }
 
-// floorRowLimit is the highest the chart may start and still leave one whole
-// row under the noise line. A row is (top-bottom)/spectrumHeight dB, so the
-// constraint noise-bottom >= (top-bottom)/spectrumHeight solves for bottom.
-func floorRowLimit(noise, top float64) float64 {
-	return (spectrumHeight*noise - top) / (spectrumHeight - 1)
+// percentileDb is the p-th percentile of the finite values in v, by nearest
+// rank. It is used for the scale's low anchor, where the point is to ignore
+// the tail: the minimum column of a noise band wanders several dB frame to
+// frame and would drag the scale with it.
+func percentileDb(v []float64, p float64) float64 {
+	finite := make([]float64, 0, len(v))
+	for _, d := range v {
+		if !math.IsNaN(d) && !math.IsInf(d, 0) {
+			finite = append(finite, d)
+		}
+	}
+	if len(finite) == 0 {
+		return math.NaN()
+	}
+	sort.Float64s(finite)
+	i := int(p / 100 * float64(len(finite)))
+	if i >= len(finite) {
+		i = len(finite) - 1
+	}
+	return finite[i]
 }

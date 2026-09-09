@@ -51,6 +51,9 @@ const (
 	ansiYellow = "3"
 	ansiBlue   = "4"
 	ansiCyan   = "6"
+	// ansiBrightBlue is the level ramp's cold end: plain blue (4) renders
+	// near-black in most dark terminal themes.
+	ansiBrightBlue = "12"
 )
 
 // inkBase is the ANSI-depth style every ink role extends. Tabs survive it
@@ -86,21 +89,29 @@ func (s Style) ink(st lipgloss.Style, text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// levelStops is the ramp of section 3a of docs/cli-style.md as RGB: deep
-// blue at the noise floor, then cyan, green, yellow and red at full scale.
-// The stops sit on the edges of the colour cube so interpolating between
-// them sweeps the hue monotonically from cold to hot.
+// levelStops is the ramp of section 3a of docs/cli-style.md as RGB: blue at
+// the noise floor, then cyan, green, amber and red at full scale. The hue
+// sweeps monotonically from cold to hot, but the luminance deliberately does
+// not: every stop is held between 0.18 and 0.26 relative luminance, which is
+// the only band that clears 3.2:1 contrast against a black terminal AND a
+// white one. The ramp used to run from a saturated {0,0,160} at the cold end, which
+// is 1.2:1 against a dark ground -- a reader on a dark terminal could not see
+// the noise floor at all, and since most of a chart is noise floor, most of
+// the chart was invisible. Level is carried by height as well as by hue, so
+// spending luminance on legibility costs nothing and buys both grounds.
 var levelStops = [5][3]float64{
-	{0, 0, 160},   // deep blue
-	{0, 190, 220}, // cyan
-	{0, 200, 60},  // green
-	{215, 210, 0}, // yellow
-	{220, 30, 20}, // red
+	{78, 130, 235}, // blue
+	{16, 152, 173}, // cyan
+	{47, 158, 68},  // green
+	{215, 105, 0},  // amber
+	{224, 49, 49},  // red
 }
 
 // levelNames is the same ramp collapsed to five of the 16 ANSI names, for a
-// terminal that reports no more depth than that.
-var levelNames = [5]string{ansiBlue, ansiCyan, ansiGreen, ansiYellow, ansiRed}
+// terminal that reports no more depth than that. The cold end takes bright
+// blue rather than blue for the same reason the truecolor stop is light:
+// plain ANSI blue is near-black in most dark themes.
+var levelNames = [5]string{ansiBrightBlue, ansiCyan, ansiGreen, ansiYellow, ansiRed}
 
 // Level inks text with the ramp that stands for frac, a level normalised to
 // [0, 1] (anything outside is clamped; a NaN reads as the floor). It is the

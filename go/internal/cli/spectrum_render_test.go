@@ -477,7 +477,7 @@ func TestSpectrumFrame(t *testing.T) {
 	} {
 		v := newSpectrumView(tc.style, tc.width, 0, false, tc.frame)
 		got := v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
-		if v.framed || strings.ContainsAny(got, "╭+") {
+		if v.framed || framed(got) {
 			t.Errorf("%s must not be framed:\n%s", tc.name, got)
 		}
 		if v.inner() != tc.width {
@@ -525,11 +525,20 @@ func TestSpectrumScaleTracksTheData(t *testing.T) {
 	if v.top < peak {
 		t.Fatalf("the top must clear the data: %v under a peak of %v", v.top, peak)
 	}
-	if v.top > v.noise+25 {
-		t.Fatalf("the scale must not reserve sky nothing reaches: %v over a noise line of %v", v.top, v.noise)
+	// The row is never finer than spectrumMinSpanDb/spectrumHeight. The scale
+	// used to shrink to fit whatever the loudest column was, which on a band
+	// with nothing on it is a noise column a few dB over the median: the row
+	// came out at 1.5 dB, the floor's own 7 dB of spread smeared across five
+	// rows, and an empty band drew as confetti instead of as a line. Reserving
+	// sky nothing reaches is the price of a row coarse enough to draw a floor.
+	if span := v.top - v.bottom; span < spectrumMinSpanDb {
+		t.Fatalf("the scale spans %v dB, under the %v dB that keeps a row coarse", span, spectrumMinSpanDb)
 	}
-	if frac := (peak - v.bottom) / (v.top - v.bottom); frac < 0.5 {
-		t.Fatalf("the loudest column reaches %.0f%% of a %v..%v chart, which is crushed:\n%s", 100*frac, v.bottom, v.top, text)
+	// The bottom clears the band's low tail, so the columns that dip below the
+	// noise line are drawn where they are rather than clamped into a flat edge
+	// that is an artefact of the scale.
+	if low := percentileDb(columnLevels(bins, v.cols(len(bins))), 10); v.bottom > low {
+		t.Fatalf("the bottom %v is above the 10th percentile column %v, which clamps the low tail:\n%s", v.bottom, low, text)
 	}
 	// A dead-flat band has no peak to track and still needs rows to draw in.
 	flat := make([]float64, 1024)
@@ -543,17 +552,64 @@ func TestSpectrumScaleTracksTheData(t *testing.T) {
 	}
 }
 
+// Two bands that both fit inside the held span are drawn to the same row, so a
+// column of a given height means the same number of dB on each and a reader
+// stepping from band to band is comparing like with like. A band with more
+// dynamic range than the held span gets a coarser row -- 10 rows cannot show
+// 63 dB at 5 dB a row -- but never a finer one, which is the direction that
+// shattered the floor.
+func TestSpectrumBandsAreComparable(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 100}
+	dbPerRow := func(bins []float64) float64 {
+		v := newSpectrumView(st, 100, 0, false, false)
+		v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+		return (v.top - v.bottom) / spectrumHeight
+	}
+	// A quiet band, and one carrying a carrier 40 dB over its floor: the shape
+	// of a real broadcast band, and well inside the held span.
+	quiet := dbPerRow(noiseFrame(9, 1024))
+	fits := dbPerRow(spectrumFixture(1024, 512, -47))
+	if quiet != fits {
+		t.Errorf("a quiet band draws %v dB a row and a 40 dB-deep one %v; the two cannot be compared", quiet, fits)
+	}
+	if want := float64(spectrumMinSpanDb) / spectrumHeight; quiet != want {
+		t.Errorf("the held row is %v dB, want %v", quiet, want)
+	}
+	// A band deeper than the held span spends more dB a row, never fewer.
+	if deep := dbPerRow(spectrumFixture(1024, 512, -21)); deep <= quiet {
+		t.Errorf("a 63 dB-deep band draws %v dB a row, want more than the held %v", deep, quiet)
+	}
+}
+
 // A frame with no detection is drawn at the cold end of the ramp and says so
 // in words, so the chart and the peak line never contradict each other and a
 // quiet band never wears the colours of a busy one.
 func TestSpectrumQuietBandReadsQuiet(t *testing.T) {
 	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
-	cold := levelSGR(st, 0)
 	noise := noiseFrame(5, 1024)
 	quiet := newSpectrumView(st, 80, 0, false, false).render(noise, nil, medianDb(noise), fixtureCenterHz, fixtureSpanHz)
+	// A quiet band is held to the cold end of the ramp, but not to a single
+	// ink. Forcing every column to one colour was honest and unreadable: the
+	// chart became a flat field of blue with no shape in it, and the flatness
+	// of the floor, which is the thing a reader checks a quiet band for, could
+	// not be seen. The texture shows; the heat does not.
+	inks := map[string]bool{}
+	for params := range inkRuns(quiet) {
+		if strings.HasPrefix(params, "38;2;") {
+			inks[params] = true
+		}
+	}
+	if len(inks) < 2 {
+		t.Errorf("a quiet band drew %d ink(s); the noise texture must still be visible:\n%s", len(inks), quiet)
+	}
+	warm := levelSGR(st, spectrumQuietRampCap+0.02)
 	for params, runs := range inkRuns(quiet) {
-		if strings.HasPrefix(params, "38;2;") && params != cold {
-			t.Errorf("a band with nothing on it was inked %q (%q), want the cold end only:\n%s", params, runs, quiet)
+		if !strings.HasPrefix(params, "38;2;") {
+			continue
+		}
+		if band := levelSGRBand(st, params); band > spectrumQuietRampCap+0.02 {
+			t.Errorf("a band with nothing on it was inked %q (%q), past the cold end %q:\n%s",
+				params, runs, warm, quiet)
 		}
 	}
 	if want := "nothing above the floor; the band looks quiet"; !strings.Contains(ui.Strip(quiet), want) {
@@ -565,7 +621,10 @@ func TestSpectrumQuietBandReadsQuiet(t *testing.T) {
 	busy := newSpectrumView(st, 80, 0, false, false).render(bins, peaks, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
 	hot := false
 	for params := range inkRuns(busy) {
-		if strings.HasPrefix(params, "38;2;") && params != cold {
+		if !strings.HasPrefix(params, "38;2;") {
+			continue
+		}
+		if levelSGRBand(st, params) > 0.7 {
 			hot = true
 		}
 	}
@@ -602,6 +661,19 @@ func TestSpectrumScaleRelaxesAfterATransient(t *testing.T) {
 	if v.top != settled {
 		t.Errorf("the top should relax to where a quiet band puts it: want %v, got %v", settled, v.top)
 	}
+}
+
+// levelSGRBand is the ramp fraction that would have produced params, found by
+// sweeping the ramp. It lets a test say "no ink past the cold end" without
+// hard-coding the palette.
+func levelSGRBand(st ui.Style, params string) float64 {
+	for i := 0; i <= 200; i++ {
+		f := float64(i) / 200
+		if levelSGR(st, f) == params {
+			return f
+		}
+	}
+	return -1
 }
 
 // chartBody is the chart rows of a render: everything between the header and
