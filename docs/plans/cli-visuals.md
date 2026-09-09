@@ -168,6 +168,37 @@ would put this CLI's stdout contract at the mercy of every call site.
 - Verify against real RF over rtl_tcp (a live FM broadcast band shows a full range of levels), at
   40, 80, 100 and 160 columns, in truecolor, 256, 16 and no colour.
 
+### VIS-7 `[ ]` The chart must not make an empty band look busy
+
+From a screenshot of a live `--watch` run on a quiet band (frame 59, "peak nothing above the
+floor"): the chart read as a solid wall of signal when the band held only noise. Three causes,
+all confirmed in the code.
+
+- **The scale reserves 30 dB that nothing reaches.** `spectrum_render.go:181` sets
+  `top = ceil(max(peak, noise+30)/5)*5`, so on a band whose loudest column is a few dB over the
+  noise the data is crushed into the bottom third of the chart and 70% of the rows are blank. Make
+  the top track the data: the peak plus a small headroom, with a floor of about `noise+10` so a
+  dead-flat band still has somewhere to draw. Keep the frozen-scale-across-frames behaviour and
+  the one-time "scale now X to Y" note; only the choice of top changes.
+- **Max-hold accumulates noise into a ceiling.** `hold` is a per-column running maximum that never
+  decays (`spectrum_render.go:46`), so after tens of frames of noise every column's hold sits at
+  the noise peak and draws as a solid band above the live trace. That is what the screenshot's grey
+  wall is. Give it a decay (pull each column back toward the live value a little each frame) and
+  draw it only where it stands a visible margin above the live column, as a thin trace rather than
+  a filled block, so it marks real transients and disappears on noise.
+- **The chart contradicts the peak line.** When nothing clears the detection threshold the peak
+  line already says "nothing above the floor" while the chart is full of colour. Say it plainly
+  ("nothing above the floor; the band looks quiet") and render a chart with no detections in the
+  cold end of the ramp so busy and quiet look different at a glance.
+
+Also, defensively: when `spectrum` reuses an existing capture whose centre is not the frequency
+that was asked for, say so on stderr ("showing the capture at 85.500 MHz, which covers
+88.500 MHz"), so a chart centred somewhere other than the argument is never a surprise. A fresh
+daemon centres correctly, which was verified against the radio; this is about the reuse path.
+
+Verify against the radio over rtl_tcp on a quiet band and on the FM broadcast band, in `--watch`,
+and confirm the two look different.
+
 ## Closing
 
 Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one
