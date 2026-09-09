@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -207,7 +209,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	// on SOCKET_IN_USE: stop ours, refuse anyone else's.
 	info := a.daemonInfo(ctx)
 	if pid := a.ownedPid(ctx, info); pid != 0 {
-		if err := a.stopPid(pid); err != nil {
+		if err := a.stopPid(ctx, pid); err != nil {
 			return err
 		}
 	} else if info != nil {
@@ -322,9 +324,26 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	cmd.Stdout, cmd.Stderr, cmd.Stdin = logFile, logFile, nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("spawn %s: %w", bin, err)
+		return startFailure(bin, err)
 	}
 	return a.awaitDaemon(ctx, f, &child{cmd: cmd, exited: reap(cmd)}, "started leylined")
+}
+
+// startFailure words a failure to launch the daemon binary in the house
+// shape -- one sentence, then what to do next -- instead of leaking
+// os/exec's "fork/exec <path>: ..." with the path repeated. The three ways
+// to point ley at a binary are the remedy `ley daemon --help` documents.
+func startFailure(bin string, err error) error {
+	reason := err.Error()
+	var xe *exec.Error
+	var pe *fs.PathError
+	switch {
+	case errors.As(err, &xe):
+		reason = xe.Err.Error()
+	case errors.As(err, &pe):
+		reason = pe.Err.Error()
+	}
+	return fmt.Errorf("cannot run the daemon binary %s: %s. Pass --bin, set $%s, or put leylined on PATH", bin, reason, daemonBinEnv)
 }
 
 // child is a daemon this process spawned and has not yet handed over to the
@@ -437,7 +456,7 @@ func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 			a.reportNotRunningForStop()
 			return nil
 		}
-		if err := a.stopPid(pid); err != nil {
+		if err := a.stopPid(ctx, pid); err != nil {
 			return err
 		}
 	}
@@ -506,21 +525,73 @@ func isDaemonComm(out string) bool {
 	return filepath.Base(strings.TrimSpace(out)) == "leylined"
 }
 
+// stopTimeout bounds the wait for a signalled daemon to go away.
+const stopTimeout = 5 * time.Second
+
 // stopPid SIGTERMs a pidfile instance (vouched for by ownedPid), waits for it
 // to exit, and removes the pidfile.
-func (a *App) stopPid(pid int) error {
+func (a *App) stopPid(ctx context.Context, pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal pid %d: %w", pid, err)
+		return fmt.Errorf("cannot signal the daemon (pid %d): %v. Check what that process is with: ps -p %d", pid, err, pid)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for syscall.Kill(pid, 0) == nil {
+	deadline := time.Now().Add(stopTimeout)
+	for i := 0; !processGone(ctx, pid, i%10 == 0); i++ {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("pid %d did not exit within 5 s", pid)
+			return fmt.Errorf("the daemon (pid %d) has not exited yet; it may be finishing a write. Check with: ley daemon status", pid)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	_ = os.Remove(a.pidPath())
 	return nil
+}
+
+// processGone reports whether pid has stopped running. A process nothing has
+// reaped yet is a zombie: it has exited and its socket is already gone, but
+// kill(pid, 0) still succeeds -- which is why stop used to report "did not
+// exit within 5 s" for a daemon started from the same shell that ran ley.
+// The zombie check costs a `ps`, so callers ask for it a few times a second
+// rather than on every poll.
+func processGone(ctx context.Context, pid int, checkZombie bool) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return true
+	}
+	return checkZombie && isZombie(ctx, pid)
+}
+
+// isZombie reports whether pid is an exited process waiting to be reaped
+// (state Z on both macOS and Linux). /proc answers on Linux without a
+// fork; macOS has no /proc, so there it asks ps, as ownedPid does.
+func isZombie(ctx context.Context, pid int) bool {
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		// "<pid> (<comm>) <state> ...", and comm may hold spaces or a ")".
+		if i := strings.LastIndex(string(b), ")"); i >= 0 {
+			return strings.HasPrefix(strings.TrimLeft(string(b)[i+1:], " "), "Z")
+		}
+		return false
+	}
+	out, err := exec.CommandContext(ctx, "ps", "-o", "state=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false
+	}
+	st := strings.TrimSpace(string(out))
+	return st != "" && st[0] == 'Z'
+}
+
+// daemonStatusLine answers the question the verb was asked -- is it up? --
+// with its first word, then the build, the pid, the uptime and the socket.
+// The state is a word before it is a colour, so a pipe or NO_COLOR loses
+// nothing; the socket path is Muted because it is the field a reader checks
+// least and the one that costs the most room.
+func daemonStatusLine(st ui.Style, d *leylinev1.DaemonInfo) string {
+	if d == nil {
+		return st.Ok("running") + "  (no info)"
+	}
+	up := time.Since(time.Unix(0, d.GetStartedAtNs())).Truncate(time.Second)
+	return fmt.Sprintf("%s  %s  %s %d  %s %s  %s %s",
+		st.Ok("running"), d.GetVersion(),
+		st.Label("pid"), d.GetPid(),
+		st.Label("up"), up,
+		st.Label("socket"), st.Muted(d.GetSocketPath()))
 }
 
 func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
@@ -534,7 +605,7 @@ func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
 			if a.JSON {
 				return a.printJSON(resp.Daemon)
 			}
-			fmt.Fprintln(a.Stdout, daemonLine(resp.Daemon))
+			fmt.Fprintln(a.Stdout, daemonStatusLine(a.Style, resp.GetDaemon()))
 			return nil
 		}
 	}
@@ -550,7 +621,7 @@ func (a *App) daemonStatus(ctx context.Context, _ *daemonFlags) error {
 			return err
 		}
 	} else {
-		fmt.Fprintln(a.Stdout, a.notRunningMessage())
+		fmt.Fprintln(a.Stdout, inkMessage(a.Style, a.notRunningMessage()))
 	}
 	return &ExitError{Code: ExitNotRunning}
 }
@@ -565,22 +636,44 @@ func (a *App) daemonLogs(ctx context.Context, f *daemonFlags) error {
 		return fmt.Errorf("cannot read the log %s: %v", path, err)
 	}
 	defer file.Close()
-	if _, err := io.Copy(a.Stdout, file); err != nil {
+	// Piped, the log is this daemon's own format passed through byte-for-byte
+	// so `ley daemon logs | grep` keeps working. Only a terminal gets the
+	// re-laid columns, and only for the lines that parse.
+	if !a.IsTTY() {
+		return a.copyLog(ctx, file, f.follow, func(r io.Reader) error {
+			_, err := io.Copy(a.Stdout, r)
+			return err
+		})
+	}
+	relay := &logRelay{st: a.Style, w: a.Stdout}
+	read := func(r io.Reader) error { return relay.copy(r) }
+	if err := read(file); err != nil {
 		return err
 	}
 	if !f.follow {
 		return nil
 	}
-	for {
+	fmt.Fprintln(a.Stdout, relay.followLine(path))
+	return a.copyLog(ctx, file, true, read)
+}
+
+// copyLog drains src with drain, then keeps draining it every 250 ms while
+// follow is set, until the context ends.
+func (a *App) copyLog(ctx context.Context, src io.Reader, follow bool, drain func(io.Reader) error) error {
+	if err := drain(src); err != nil {
+		return err
+	}
+	for follow {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(250 * time.Millisecond):
 		}
-		if _, err := io.Copy(a.Stdout, file); err != nil {
+		if err := drain(src); err != nil {
 			return err
 		}
 	}
+	return nil
 }
 
 // pidSuffix is " (pid N)" when the running daemon reports one.

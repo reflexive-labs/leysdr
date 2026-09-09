@@ -73,6 +73,9 @@ type App struct {
 	// color is --color ("auto", "always", "never") and ascii is --ascii.
 	color string
 	ascii bool
+	// styled records that resolveStyles has run: the help path never reaches
+	// the pre-run hook, so it resolves the styles itself, once.
+	styled bool
 }
 
 // NewRootCommand builds the full `ley` command tree bound to app.
@@ -130,7 +133,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 	// the App: no renderer re-derives them. Help never reaches this hook, so
 	// the help snapshots stay plain whatever the terminal is.
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		return app.resolveStyles(cmd)
+		return app.resolveStyles(cmd, app.machineStdout(cmd))
 	}
 	root.AddGroup(
 		&cobra.Group{ID: GroupListening, Title: "Listening:"},
@@ -157,8 +160,8 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 	root.AddCommand(newStubCommands(app)...)
 	// A topic whose name is also a verb (presets) keeps its prose under
 	// `ley help <topic>` but registers no bare command: the verb owns the name.
-	root.AddCommand(newTopicCommands(commandNames(root))...)
-	root.SetHelpCommand(newHelpCommand())
+	root.AddCommand(newTopicCommands(app, commandNames(root))...)
+	root.SetHelpCommand(newHelpCommand(app))
 	root.SetHelpCommandGroupID(GroupLooking)
 	root.SetCompletionCommandGroupID(GroupData)
 	// `ley --help` ends with the help topics; children inherit the template
@@ -173,6 +176,9 @@ Help topics ("ley help <topic>"):
 `+topicList()+`{{end}}{{if .HasAvailableSubCommands}}
 
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}`, 1))
+	// Every help screen, the subcommands' included (they inherit the root's
+	// help func), goes through the style before it is printed.
+	root.SetHelpFunc(app.helpFunc(root.HelpFunc()))
 	// Flag errors and argument-count errors are usage errors (exit 2) for
 	// every verb, including ones that return Cobra's own messages.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError(err) })
@@ -204,21 +210,25 @@ func wrapArgs(cmd *cobra.Command) {
 	}
 }
 
-// rootArgs reproduces Cobra's unknown-command error (with its "did you mean"
-// suggestions) for `ley <not-a-verb>`, so the root's own RunE only runs for a
-// bare `ley`.
+// rootArgs handles `ley <not-a-verb>`, so the root's own RunE only runs for a
+// bare `ley`. It is the CLI's other front door and says what `ley help
+// <not-a-topic>` says: name the failure, then show the way out -- Cobra's
+// "did you mean" when the name is close to a verb, the topic list when it is
+// not, and the command list either way.
 func rootArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return nil
 	}
-	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	msg := fmt.Sprintf("no command or topic named %q.", args[0])
 	if s := cmd.SuggestionsFor(args[0]); len(s) > 0 {
 		msg += "\n\nDid you mean this?\n"
 		for _, name := range s {
-			msg += "\t" + name + "\n"
+			msg += "  " + name + "\n"
 		}
+	} else {
+		msg += "\n\nTopics:\n" + topicList() + "\n"
 	}
-	msg += fmt.Sprintf("\nRun '%s --help' for usage.", cmd.CommandPath())
+	msg += fmt.Sprintf("\nRun '%s --help' for the commands.", cmd.CommandPath())
 	return &ExitError{Code: ExitUsage, Message: msg}
 }
 
@@ -226,7 +236,14 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 func Execute(ctx context.Context, app *App, args []string) error {
 	root := NewRootCommand(app)
 	root.SetArgs(args)
-	return withCode(root.ExecuteContext(ctx))
+	err := withCode(root.ExecuteContext(ctx))
+	if err != nil && !app.styled {
+		// A usage error (unknown verb, bad flag) is raised before the pre-run
+		// hook resolves the styles, and the error line still wants stderr's
+		// ink. A --color the flag parser rejected leaves the styles plain.
+		_ = app.resolveStyles(root, app.machineStdout(root))
+	}
+	return err
 }
 
 // withCode gives a daemon error its final shape: "<message> [CODE]", the
@@ -411,7 +428,7 @@ func (h *headerInk) flush() error {
 // Machine output on stdout (--json, a bulk row stream, --format bin) turns
 // stdout's colour off before any renderer exists; stderr keeps its ink so a
 // person still gets prose and warnings in colour.
-func (a *App) resolveStyles(cmd *cobra.Command) error {
+func (a *App) resolveStyles(cmd *cobra.Command, machine bool) error {
 	switch a.color {
 	case "", "auto", "always", "never":
 	default:
@@ -421,7 +438,7 @@ func (a *App) resolveStyles(cmd *cobra.Command) error {
 		Color:       a.color,
 		ASCII:       a.ascii,
 		Width:       widthFlag(cmd),
-		Machine:     a.machineStdout(cmd),
+		Machine:     machine,
 		StdoutTTY:   a.IsTTY(),
 		StderrTTY:   a.IsErrTTY(),
 		StdoutWidth: a.TermWidth(),
@@ -431,7 +448,43 @@ func (a *App) resolveStyles(cmd *cobra.Command) error {
 	a.Style = ui.Resolve(o)
 	o.Stderr = true
 	a.ErrStyle = ui.Resolve(o)
+	a.styled = true
 	return nil
+}
+
+// helpFunc wraps Cobra's help renderer (def) so the finished screen goes
+// through styleHelp. Help never reaches PersistentPreRunE, so the styles are
+// resolved here when nothing else has; through a pipe -- which is how the
+// snapshots in testdata/help are captured -- the style is plain and the
+// screen comes out byte-identical.
+func (a *App) helpFunc(def func(*cobra.Command, []string)) func(*cobra.Command, []string) {
+	return func(c *cobra.Command, args []string) {
+		out := a.helpStyle(c)
+		var buf strings.Builder
+		c.SetOut(&buf)
+		def(c, args)
+		c.SetOut(out)
+		fmt.Fprint(out, styleHelp(a.Style, buf.String()))
+	}
+}
+
+// printHelpText writes one already-rendered help screen (a topic's prose)
+// through the resolved style.
+func (a *App) printHelpText(c *cobra.Command, text string) {
+	out := a.helpStyle(c)
+	fmt.Fprint(out, styleHelp(a.Style, strings.TrimRight(text, "\n")+"\n"))
+}
+
+// helpStyle resolves the styles if the pre-run hook has not, and returns the
+// writer help is printed to.
+func (a *App) helpStyle(c *cobra.Command) io.Writer {
+	if !a.styled {
+		// Help is a screen even for the verbs whose stdout is a row stream
+		// (`ley fft --help` is read by a person), so it is never machine
+		// output. A bad --color is reported by the verb, not by help.
+		_ = a.resolveStyles(c, false)
+	}
+	return c.OutOrStdout()
 }
 
 // bulkRowVerbs are the verbs whose stdout is a row stream for a tool, not a

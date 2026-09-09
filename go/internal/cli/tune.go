@@ -27,7 +27,7 @@ func addTuneFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
 	addSignalFlags(cmd, f, withDevice)
 	cmd.Flags().BoolVar(&f.noAudio, "no-audio", false, "decode but do not play through the speakers (use with --persistent or --json)")
 	cmd.Flags().BoolVar(&f.persistent, "persistent", false, "leave the channel running after the command exits and print its ids (for scripts)")
-	cmd.Flags().StringVar(&f.volume, "volume", "1", "speaker volume: 0 to 1, or a percentage like 50% (default: full)")
+	cmd.Flags().StringVar(&f.volume, "volume", "1", "speaker volume: 0 to 1, or a percentage like 50%")
 }
 
 // addSignalFlags registers the flags that describe the signal itself -- how

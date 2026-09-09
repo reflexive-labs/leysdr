@@ -131,7 +131,7 @@ func TestPlayExplicitModeBeatsSidecar(t *testing.T) {
 func TestDaemonStatus(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "daemon", "status")
-	if !strings.Contains(out, "daemon fake-0.1 pid") {
+	if !strings.Contains(out, "running  fake-0.1  pid") {
 		t.Fatalf("status: %s", out)
 	}
 	dead := testutil.SocketPath(t, "dead.sock")

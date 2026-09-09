@@ -30,7 +30,7 @@ Flags:
       --no-audio         decode but do not play through the speakers (use with --persistent or --json)
       --persistent       leave the channel running after the command exits and print its ids (for scripts)
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
-      --volume string    speaker volume: 0 to 1, or a percentage like 50% (default: full) (default "1")
+      --volume string    speaker volume: 0 to 1, or a percentage like 50% (default "1")
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

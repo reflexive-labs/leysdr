@@ -61,7 +61,18 @@ prints a line when a radio is plugged in or removed.
 
 The daemon keeps running after you close the terminal; `ley daemon status` says whether it is
 answering (exit 3 when not), `ley daemon stop` stops it, and on macOS `ley daemon install`
-starts it at login.
+starts it at login. Status is one line whose first word is the answer:
+
+```console
+$ ley daemon status
+running  0.1.0-dev  pid 4242  up 46s  socket /tmp/leyline/d.sock
+```
+
+`ley daemon logs` prints the daemon's log. On a terminal it re-lays each line it recognises into
+columns — the clock (the date on its own line when it changes), the level, one subsystem token,
+then the message — and colours the level; piped, and for any line it does not recognise, the log
+comes through byte for byte, so `ley daemon logs | grep` keeps working. `-f` marks where the
+backlog ends before it follows.
 
 ## 2. Hear a station
 
@@ -383,7 +394,7 @@ meets first:
 | `ley: the radio is on 146.520 MHz with 1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway, or free it with: ley stop --all` | another channel rides on the capture and your frequency is outside its band | `ley tune 101.1 --retune`, or `ley stop all` first |
 | `1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k` (a warning, tune continues) | a bare number is MHz, and 1010 MHz is nothing in particular | `ley tune 1010k` if you meant AM broadcast |
 | `ley: the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits [DEVICE_BUSY]` | another client holds the radio on a band that does not cover your frequency | `ley state` shows who; tune inside its band, or stop it |
-| `ley: unknown command "tunee" for "ley"` with `Did you mean this? tune` (exit 2) | a typo in the verb | take the suggestion |
+| `ley: no command or topic named "tunee".` with `Did you mean this?` and `tune` (exit 2) | a typo in the verb | take the suggestion; with no near match the topic list and `ley --help` follow instead |
 | full-scale static as soon as `tune` starts | squelch is off (scripts, `--persistent`, non-voice modes, or no spectrum row arrived) | `ley set squelch auto` |
 | `record`, `scan`, `watch` exit 2 with "not implemented yet" | planned verbs | `ley help roadmap` says what to use today |
 

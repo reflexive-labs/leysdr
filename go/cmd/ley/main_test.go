@@ -37,7 +37,7 @@ func TestExitStatus(t *testing.T) {
 		{"other daemon error under signal", cancelled, &cli.ExitError{Code: 1, Err: &leyline.Error{Code: leyline.CodeDeviceBusy}}, 1},
 	}
 	for _, tc := range cases {
-		if got := exitStatus(tc.ctx, tc.err); got != tc.want {
+		if got := exitStatus(tc.ctx, &cli.App{}, tc.err); got != tc.want {
 			t.Errorf("%s: got %d, want %d", tc.name, got, tc.want)
 		}
 	}

@@ -58,7 +58,7 @@ func topicList() string {
 // newTopicCommands builds the hidden topic commands, skipping any name a
 // verb already owns (`ley presets` prints the table; `ley help presets`
 // still prints this topic, since help looks topics up first).
-func newTopicCommands(taken map[string]bool) []*cobra.Command {
+func newTopicCommands(app *App, taken map[string]bool) []*cobra.Command {
 	var cmds []*cobra.Command
 	for _, t := range topics {
 		t := t
@@ -72,7 +72,7 @@ func newTopicCommands(taken map[string]bool) []*cobra.Command {
 			Args:   cobra.NoArgs,
 		}
 		cmd.SetHelpFunc(func(c *cobra.Command, _ []string) {
-			c.Print(strings.TrimRight(t.text(), "\n") + "\n")
+			app.printHelpText(c, t.text())
 		})
 		cmds = append(cmds, cmd)
 	}
@@ -81,7 +81,7 @@ func newTopicCommands(taken map[string]bool) []*cobra.Command {
 
 // newHelpCommand is the `ley help` verb: a topic name prints the topic, a
 // verb name prints that verb's --help, nothing prints the root help.
-func newHelpCommand() *cobra.Command {
+func newHelpCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:     "help [command or topic]",
 		Short:   "Help for a command, or a longer explanation of a topic",
@@ -110,7 +110,7 @@ func newHelpCommand() *cobra.Command {
 				return root.Help()
 			}
 			if t := topicByName(args[0]); t != nil {
-				c.Print(strings.TrimRight(t.text(), "\n") + "\n")
+				app.printHelpText(c, t.text())
 				return nil
 			}
 			cmd, rest, err := root.Find(args)

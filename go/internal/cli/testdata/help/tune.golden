@@ -36,7 +36,7 @@ Flags:
       --rate uint        sample rate in Hz when the radio is first tuned, e.g. 2400000; also the width of band it covers (default: the radio's own)
       --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
-      --volume string    speaker volume: 0 to 1, or a percentage like 50% (default: full) (default "1")
+      --volume string    speaker volume: 0 to 1, or a percentage like 50% (default "1")
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

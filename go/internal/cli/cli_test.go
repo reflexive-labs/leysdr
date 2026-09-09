@@ -279,8 +279,8 @@ func TestExitCodesUsage(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"nosuchverb"}, `unknown command "nosuchverb"`},
-		{[]string{"spectrun"}, "Did you mean this?\n\tspectrum"},
+		{[]string{"nosuchverb"}, `no command or topic named "nosuchverb"`},
+		{[]string{"spectrun"}, "Did you mean this?\n  spectrum"},
 		{[]string{"state", "extra"}, "unknown command \"extra\""},
 		{[]string{"devices", "--bogus"}, "unknown flag: --bogus"},
 		{[]string{"fft", "--format", "xml"}, "--format must be json or bin"},

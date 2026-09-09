@@ -113,7 +113,7 @@ Files: `spectrum.go`, `fft.go`.
 - `ley fft --format bin` refuses to write binary to a terminal.
 - Every chart line stays within the resolved width; test at 40, 80 and 160 columns.
 
-### VIS-5 `[ ]` Daemon, help and errors
+### VIS-5 `[x]` Daemon, help and errors
 
 Files: `daemon.go`, `topics.go`, `root.go` (help), `cmd/ley/main.go`.
 
