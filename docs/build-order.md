@@ -34,7 +34,7 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `sdr-user-stories
 ## Milestone D — semantic tier
 
 13. Detector (energy detection, noise floor, persistence tracking); telemetry plane; `ley scan`. *(Story: scan with detections.)*
-14. TUI dashboard: bare `ley` opens a Bubble Tea dashboard — braille-cell waterfall from a negotiated low-rate FFT stream, tuning controls, channel list, meters from telemetry. First real exercise of stream negotiation by a constrained consumer.
+14. TUI dashboard: bare `ley` opens a Bubble Tea dashboard — shaded-cell waterfall from a negotiated low-rate FFT stream, tuning controls, channel list, meters from telemetry. First real exercise of stream negotiation by a constrained consumer.
 15. Jobs: store, JobRunner respawn, CaptureAllocator with don't-disturb; watch job → ActivitySegments → transcript.
 16. MCP adapter (Go, sharing the `ley` client library); tools from `docs/interfaces.md`; snapshot PNG rendering.
 

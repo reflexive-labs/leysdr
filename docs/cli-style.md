@@ -124,6 +124,7 @@ survives as height.
 |---|---|---|---|
 | Spectrum column ramp | ` ▁▂▃▄▅▆▇█` | ` .:-=+*#%` | eight levels plus empty |
 | Spectrum stem | `│` | `\|` | under a column's top edge, above the floor rule |
+| Waterfall shade | ` ░▒▓█` | ` .:+#` | four levels plus empty; densities that tile |
 | Level bar filled / empty | `█` / `░` | `#` / `.` | meter bars |
 | Marker (squelch, tuned freq) | `▲` | `^` | placed under the axis |
 | Horizontal rule | `─` | `-` | section separators, the noise floor |
@@ -159,6 +160,14 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   as one mass whatever is on the air, and the flatness of the floor, which is the thing the
   reader is checking, has no shape to be seen in. The reference line itself is drawn as a
   rule and labelled on the axis, so height above it reads directly as margin.
+- **A time-vs-frequency map double-encodes level, and leaves its floor blank.** The cell's texture
+  carries the level and hue refines it. Hue alone is nothing with colour off, so a map whose level
+  lives only in colour is a blank rectangle under `NO_COLOR` or `--ascii`. This is why half-blocks
+  (`▀` with a foreground and a background colour, two rows of time per cell) are rejected despite
+  doubling the time depth: every cell becomes the same glyph. The floor draws as a space so the
+  terminal's own background shows through, and the scale is chosen once and held -- a scale that
+  moved per row would make the time axis lie, since the same signal would change shade because
+  something else got louder.
 - **A chart's row is held coarse, and its span is not allowed to shrink to fit.** Autoscaling
   to the data is right until the data is noise: a receiver's noise floor spreads about 7 dB
   across the columns, so a scale that fits itself to an empty band gives a 1.5 dB row and
@@ -213,6 +222,7 @@ func (s Style) Pad(text string, n int) string      // pad to visible width
 func (s Style) Truncate(text string, n int) string // ellipsis on visible width
 func (s Style) Bar(frac float64, width int) string // level bar
 func (s Style) Ramp(frac float64) string           // one column of the spectrum ramp
+func (s Style) Shade(frac float64) string          // one cell of the waterfall ramp; blank at the floor
 func (s Style) Level(frac float64, text string) string // the level ramp, section 3a
 func (s Style) Rule(width int) string
 func (s Style) RuleHeavy(width int) string

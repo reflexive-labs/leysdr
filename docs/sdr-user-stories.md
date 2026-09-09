@@ -20,7 +20,7 @@ Proves the daemon, device layer, and control/data planes with no UI investment.
 ## V0.5 — TUI dashboard (Go, Bubble Tea)
 Ships between CLI and native app; the first constrained rendering client.
 
-- As an operator, running bare `ley` opens a full-terminal dashboard with a live braille-cell waterfall, current channel, and signal meters.
+- As an operator, running bare `ley` opens a full-terminal dashboard with a live shaded-cell waterfall, current channel, and signal meters.
 - As an operator, I can tune, change mode, and adjust squelch from the keyboard without leaving the dashboard.
 - As an operator, the dashboard works over SSH to another Mac running the daemon (once remote access lands) — degraded-but-honest rendering is the point.
 

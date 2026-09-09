@@ -1,0 +1,44 @@
+waterfall draws the band as a scrolling map: left to right is frequency,
+down the screen is time, and a denser cell means a stronger signal. Each row
+is one look at the band; the newest is at the bottom.
+
+It answers the one question 'ley spectrum' cannot: is that signal always
+there, or did it start and stop? A birdie draws a dead straight line down the
+screen. A transmission draws a block with a beginning and an end. A pager
+burst draws a dash. None of the three can be told apart in a single spectrum
+frame.
+
+Each row covers the whole interval between rows, not an instant, so a
+transmission shorter than a row still shows up. The dB scale is chosen from
+the first rows and then held for the run: if it moved, the same signal would
+change shade because something else got louder, and two rows could not be
+compared.
+
+Read the header: at a wide span each column covers tens of kHz, so this is a
+map of where energy is, not a picture of a signal's shape. Narrow the span
+with --span to see shape, or use 'ley spectrum' for levels.
+
+Usage:
+  ley waterfall [frequency] [flags]
+
+Examples:
+  ley waterfall 146.52              # is the local repeater busy?
+  ley waterfall 162.55 --span 250k  # narrow: a channel at a time
+  ley waterfall --rate 4            # four rows a second
+  ley waterfall 101.1 --count 40    # forty rows, then stop
+
+Flags:
+      --bins uint32     number of bins across the band before they are folded into columns (the daemon may round it) (default 1024)
+      --count int       stop after N rows (0 = until Ctrl-C)
+      --device string   device: an id, id prefix, list index or frequency (default: the first real radio)
+  -h, --help            help for waterfall
+      --rate float      rows per second (default 2)
+      --retune          move the radio to the frequency even when other channels are listening on it (they fall silent)
+      --span string     width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate (default: the device's own, or the width it is already capturing)
+      --width int       map width in columns (default: the terminal's, or 80 when piped)
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

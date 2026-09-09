@@ -90,15 +90,32 @@ every `MAX` row and by no `SNAPSHOT` row, which is the whole claim;
 in a request, since a client asking for a look count is asking the daemon to spend CPU it does not
 own.
 
-## SV-4 `[ ]` The waterfall
+## SV-4 `[x]` The waterfall
 
 - `ui.Glyphs.Shade` = `" ░▒▓█"`, ASCII `" .:+#"`.
 - `ley waterfall [frequency]`: negotiates an FFT stream with `MAX`, draws one shaded cell per
   column, floor blank, scale held for the run, newest at bottom, one printed line per row, gap rows,
   frequency axis reprinted periodically, per-column bandwidth in the header.
 
-Tests: strip-to-plain; a row never exceeds the resolved width; a gap draws its own row; the scale
-does not move once set; ASCII renders the same information.
+`ley spectrum` and `ley waterfall` pick their capture by identical rules, so those 50 lines moved
+into `session.openBand` rather than being copied.
+
+Two things the first cut got wrong, both caught by the width test rather than by eye: the header and
+the key overflowed a 40-column terminal, and `headerSeg.width()` measured bytes, which counts escape
+sequences as columns for a key whose glyph is already inked. The greedy packer the spectrum header
+used is now shared as `packSegments`, and `headerSeg` takes an explicit visible width.
+
+The scale is taken from the first row rather than the first two: one row of eighty-odd columns is
+plenty of evidence for a median, and taking it immediately lets the header state the floor its
+shades are measured from instead of printing a dash.
+
+Tests: `TestWaterfallStripsToPlain` at 40/80/160 in both alphabets, `TestWaterfallFitsWidth` (which
+found the overflow), `TestWaterfallDrawsAGap`, `TestWaterfallScaleIsHeld`,
+`TestWaterfallQuietBandIsMostlyBlank` (a band with nothing on it inks under a tenth of its cells,
+and a carrier 40 dB up still draws at full density), `TestWaterfallHeaderStatesColumnBandwidth`.
+
+Verified live on the FM band over rtl_tcp: KQED draws a persistent bright column under the 88.5
+marker, KPOO a fainter one at 89.5, and the noise floor stays blank.
 
 ## SV-5 `[ ]` CTCSS fixtures
 

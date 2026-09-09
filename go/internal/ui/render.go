@@ -65,6 +65,23 @@ func (s Style) Ramp(frac float64) string {
 	return string(r[i])
 }
 
+// Shade returns one waterfall cell for a normalised level. Below the first step
+// it is a space, so an empty band leaves the terminal's own background showing
+// through and only what is above the floor takes ink.
+//
+// It rounds down rather than to nearest, unlike Ramp: a waterfall cell that has
+// nothing in it must be blank, and rounding to nearest would paint the bottom
+// half of the first step.
+func (s Style) Shade(frac float64) string {
+	r := []rune(s.Glyphs().Shade)
+	top := len(r) - 1
+	i := int(clamp01(frac) * float64(top+1))
+	if i > top {
+		i = top
+	}
+	return string(r[i])
+}
+
 // Rule returns a horizontal rule width columns wide: a section separator, or
 // the noise floor under a spectrum.
 func (s Style) Rule(width int) string {

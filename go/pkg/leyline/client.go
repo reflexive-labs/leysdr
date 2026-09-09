@@ -414,11 +414,24 @@ func (c *Client) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 // are requested GAP_MARKED so a consumer processing rows (rather than painting
 // them) sees a Gap on the first frame after a drop; audio and IQ stay LATEST_WINS.
 func (c *Client) SubscribeFFT(ctx context.Context, captureID string, bins uint32, rowsPerSecond float64, format leylinev1.FftBinFormat) (*Subscription, error) {
+	return c.SubscribeFFTAccumulated(ctx, captureID, bins, rowsPerSecond, format, leylinev1.FftAccumulation_ROW_SNAPSHOT)
+}
+
+// SubscribeFFTAccumulated is SubscribeFFT with a say in how each row is built.
+// ROW_SNAPSHOT takes one periodogram per row, which covers a fraction of a
+// percent of it: right for a chart of "now", wrong for anything reading duty
+// cycle. ROW_MAX looks across the whole row, so a burst shorter than a row is
+// still drawn. The descriptor answers with the looks actually taken.
+func (c *Client) SubscribeFFTAccumulated(ctx context.Context, captureID string, bins uint32, rowsPerSecond float64,
+	format leylinev1.FftBinFormat, acc leylinev1.FftAccumulation,
+) (*Subscription, error) {
 	return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
 		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: captureID},
 		Kind:   leylinev1.StreamKind_FFT,
 		Policy: leylinev1.DeliveryPolicy_GAP_MARKED,
-		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: bins, BinFormat: format, RowsPerSecond: rowsPerSecond}},
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{
+			Bins: bins, BinFormat: format, RowsPerSecond: rowsPerSecond, Accumulation: acc,
+		}},
 	})
 }
 

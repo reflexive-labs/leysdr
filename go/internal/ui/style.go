@@ -59,6 +59,12 @@ type Glyphs struct {
 	BarFull, BarEmpty rune
 	// Marker points at a frequency or a squelch threshold under an axis.
 	Marker rune
+	// Shade is the waterfall's density ramp, empty first then four levels. A
+	// waterfall carries level by hue, and hue alone is nothing with colour off,
+	// so the cell's texture has to carry it too. These tile; the block ramp
+	// does not -- stacked in a grid, `▁▂▃` reads as scan lines rather than as
+	// density.
+	Shade string
 	// Rule draws a horizontal separator or the noise floor.
 	Rule rune
 	// RuleHeavy is the same line drawn with weight, for a separator that
@@ -76,6 +82,7 @@ type Glyphs struct {
 var (
 	unicodeGlyphs = Glyphs{
 		Ramp:       " ▁▂▃▄▅▆▇█",
+		Shade:      " ░▒▓█",
 		BarFull:    '█',
 		BarEmpty:   '░',
 		Marker:     '▲',
@@ -89,6 +96,7 @@ var (
 	}
 	asciiGlyphs = Glyphs{
 		Ramp:       " .:-=+*#%",
+		Shade:      " .:+#",
 		BarFull:    '#',
 		BarEmpty:   '.',
 		Marker:     '^',

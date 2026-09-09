@@ -73,15 +73,51 @@ func fmtDb(db float64) string {
 type headerSeg struct {
 	name, value string
 	dim         bool
+	// width overrides the measured width for a segment whose name is already
+	// inked, where counting bytes would count escape sequences as columns.
+	width int
 }
 
-func (s headerSeg) width() int { return len(s.name) + len(s.value) }
+func (s headerSeg) visible() int {
+	if s.width > 0 {
+		return s.width
+	}
+	return len(s.name) + len(s.value)
+}
 
 func (s headerSeg) render(st ui.Style) string {
 	if s.dim {
 		return st.Muted(s.name + s.value)
 	}
 	return st.Muted(s.name) + s.value
+}
+
+// packSegments lays facts out greedily across as many lines as the width needs,
+// so a narrow terminal gets more lines rather than a truncated fact.
+func packSegments(st ui.Style, segs []headerSeg, width int) []string {
+	var lines []string
+	var cur strings.Builder
+	curw := 0
+	for _, s := range segs {
+		w := s.visible()
+		switch {
+		case curw == 0:
+			cur.WriteString(s.render(st))
+			curw = w
+		case curw+2+w <= width:
+			cur.WriteString("  " + s.render(st))
+			curw += 2 + w
+		default:
+			lines = append(lines, cur.String())
+			cur.Reset()
+			cur.WriteString(s.render(st))
+			curw = w
+		}
+	}
+	if curw > 0 {
+		lines = append(lines, cur.String())
+	}
+	return lines
 }
 
 // header states what band this is, how wide, and what the floor is, then the
@@ -98,29 +134,7 @@ func (v *spectrumView) header(nbins int, floor float64, centerHz, spanHz uint64)
 		{value: leyline.FormatFrequency(lo) + " to " + leyline.FormatFrequency(hi), dim: true},
 		{value: fmt.Sprintf("%d bins of %s", nbins, leyline.FormatFrequency(uint64(math.Round(binWidth)))), dim: true},
 	}
-	var lines []string
-	var cur strings.Builder
-	curw := 0
-	for _, s := range segs {
-		w := s.width()
-		switch {
-		case curw == 0:
-			cur.WriteString(s.render(v.st))
-			curw = w
-		case curw+2+w <= v.inner():
-			cur.WriteString("  " + s.render(v.st))
-			curw += 2 + w
-		default:
-			lines = append(lines, cur.String())
-			cur.Reset()
-			cur.WriteString(s.render(v.st))
-			curw = w
-		}
-	}
-	if curw > 0 {
-		lines = append(lines, cur.String())
-	}
-	return lines
+	return packSegments(v.st, segs, v.inner())
 }
 
 // gutter is the level axis' left column: the level, and the unit written once
