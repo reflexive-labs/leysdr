@@ -125,6 +125,9 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 			}
 			continue
 		}
+		if !humanEvent(ev) {
+			continue
+		}
 		fmt.Fprintln(app.Stdout, eventLine(ev, nil))
 		_ = p
 	}

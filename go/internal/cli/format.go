@@ -143,6 +143,15 @@ func channelFreqLabel(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) 
 	return leyline.FormatFrequency(hz)
 }
 
+// humanEvent reports whether an event says anything to a person watching a
+// live verb. An Anchor is the capture's sample-timebase bookkeeping: it is
+// emitted whenever a stream (re)starts and tells the reader nothing they can
+// act on, so it stays in --json and out of the live view.
+func humanEvent(ev *leylinev1.Event) bool {
+	_, anchor := ev.Body.(*leylinev1.Event_Anchor)
+	return !anchor
+}
+
 // eventLine renders an event as one human-readable line.
 func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 	who := ""

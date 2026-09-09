@@ -403,7 +403,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 				}
 				continue
 			}
-			if !s.mine(ev) {
+			if !s.mine(ev) && humanEvent(ev) {
 				clear()
 				fmt.Fprintln(s.app.Stdout, eventLine(ev, s.state))
 			}
