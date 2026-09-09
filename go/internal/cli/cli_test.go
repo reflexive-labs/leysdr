@@ -257,6 +257,12 @@ func listening(t *testing.T, c *leyline.Client) {
 
 func TestExitCodesUsage(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
+	dir := t.TempDir()
+	iq := filepath.Join(dir, "tone.cf32")
+	if err := os.WriteFile(iq, make([]byte, 8*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "x.cf32")
 	cases := []struct {
 		args []string
 		want string
@@ -271,6 +277,14 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"record", "--audio", "--duration", "10"}, "record is not implemented yet (Milestone C.12). Today:"},
 		{[]string{"scan", "146.52"}, "scan is not implemented yet (Milestone D). Today: ley spectrum"},
 		{[]string{"watch"}, "watch is not implemented yet (V0.5)"},
+		// tune's positional and flags are parsed before anything reaches the daemon.
+		{[]string{"tune"}, "tune needs a frequency or preset"},
+		{[]string{"tune", "146,52"}, "frequency"},
+		{[]string{"tune", "nooa"}, "or give a frequency such as 146.52 (MHz)"},
+		{[]string{"tune", "146.52", "--mode", "morse"}, "--mode:"},
+		{[]string{"play", iq, "--freq", "1,1"}, "--freq:"},
+		// A recording that is not there is a usage error said in plain words.
+		{[]string{"play", missing}, "there is no file at " + missing},
 	}
 	for _, tc := range cases {
 		_, _, err := run(t, context.Background(), sock, tc.args...)
@@ -292,7 +306,7 @@ func TestExitCodesUsage(t *testing.T) {
 		t.Errorf("detach a real radio: exit %d (%v)", exitCode(err), err)
 	}
 	// A missing log file is said in plain words with the next step.
-	missing := filepath.Join(t.TempDir(), "none.log")
+	missing = filepath.Join(t.TempDir(), "none.log")
 	_, _, err = run(t, context.Background(), sock, "daemon", "logs", "--log", missing)
 	if exitCode(err) != 1 || err == nil || !strings.Contains(err.Error(), "there is no file at "+missing) || !strings.Contains(err.Error(), "ley daemon start") || strings.Contains(err.Error(), "no such file or directory") {
 		t.Errorf("daemon logs without a file: exit %d (%v)", exitCode(err), err)

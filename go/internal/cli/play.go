@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -76,6 +77,10 @@ needed.`,
 				return err
 			}
 			if _, err := os.Stat(path); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					// A wrong path is the user's mistake (exit 2), said in plain words.
+					return usageError(fileMissing(path, "check the path; ley play takes a .cf32 IQ recording (the fixtures/ directory has some)"))
+				}
 				return err
 			}
 			sc, err := readSidecar(path)

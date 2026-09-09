@@ -42,7 +42,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   with the event on stdout; `stop --json` prints `{}`; `devices --watch --json` first line is the wrapped list;
   `daemon start --json` output parses as DaemonInfo; `version --json` golden).
 
-### CLI-2 `[ ]` Exit codes and interruption (#9, #29, #23)
+### CLI-2 `[x]` Exit codes and interruption (#9, #29, #23)
 
 - #9 tune.go: wrap resolveTuneTarget's three error returns and tuneFlags.parse's flag errors in usageError; rows
   in TestExitCodesUsage for `tune`, `tune 146,52`, `tune nooa`, `tune 146.52 --mode morse`, `play x.cf32 --freq 1,1`.

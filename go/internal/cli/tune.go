@@ -53,7 +53,7 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
 	if f.gain != "" {
 		if _, _, err := leyline.ParseGain(f.gain); err != nil {
-			return nil, fmt.Errorf("--gain: %w", err)
+			return nil, usageError(fmt.Errorf("--gain: %w", err))
 		}
 	}
 	o.band = leyline.BandFor(freq)
@@ -61,7 +61,7 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 	case f.mode != "":
 		m, reason, err := leyline.ResolveMode(f.mode, freq)
 		if err != nil {
-			return nil, fmt.Errorf("--mode: %w", err)
+			return nil, usageError(fmt.Errorf("--mode: %w", err))
 		}
 		o.mode, o.modeReason = m, reason
 	case def.mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED:
@@ -78,7 +78,7 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 	if f.bw != "" {
 		bw, err := leyline.ParseBandwidth(f.bw)
 		if err != nil {
-			return nil, fmt.Errorf("--bw: %w (examples: 12.5, 12.5k, 200k, 12500)", err)
+			return nil, usageError(fmt.Errorf("--bw: %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
 		o.bw = bw
 	} else {
@@ -87,7 +87,7 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 	if f.squelch != "" {
 		db, auto, err := leyline.ParseSquelch(f.squelch)
 		if err != nil {
-			return nil, fmt.Errorf("--squelch: %w (examples: -40, -40dB, off, auto)", err)
+			return nil, usageError(fmt.Errorf("--squelch: %w (examples: -40, -40dB, off, auto)", err))
 		}
 		o.squelch, o.squelchAuto = db, auto
 	} else if !app.JSON && !f.persistent && (o.mode == leylinev1.DemodMode_NFM || o.mode == leylinev1.DemodMode_AM) {
@@ -95,7 +95,7 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 	}
 	v, err := leyline.ParseVolume(f.volume)
 	if err != nil {
-		return nil, fmt.Errorf("--volume: %w (examples: 0.5, 50%%)", err)
+		return nil, usageError(fmt.Errorf("--volume: %w (examples: 0.5, 50%%)", err))
 	}
 	o.volume = v
 	return o, nil
@@ -105,15 +105,15 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 // first, then a preset name; anything else lists the nearest presets.
 func resolveTuneTarget(arg string) (hz uint64, def modeDefault, err error) {
 	if arg == "" {
-		return 0, def, fmt.Errorf("tune needs a frequency or preset: ley tune 146.52, ley tune noaa (ley help presets lists them)")
+		return 0, def, usageErrorf("tune needs a frequency or preset: ley tune 146.52, ley tune noaa (ley help presets lists them)")
 	}
 	if r := rune(arg[0]); unicode.IsDigit(r) || r == '.' || r == '-' || r == '+' {
 		hz, err = leyline.ParseUserFrequency(arg)
-		return hz, def, err
+		return hz, def, usageError(err)
 	}
 	p, err := leyline.ResolvePreset(arg)
 	if err != nil {
-		return 0, def, fmt.Errorf("%w; or give a frequency such as 146.52 (MHz)", err)
+		return 0, def, usageError(fmt.Errorf("%w; or give a frequency such as 146.52 (MHz)", err))
 	}
 	return p.Hz, modeDefault{mode: p.Mode, reason: "preset " + p.Name + ": " + p.Description}, nil
 }

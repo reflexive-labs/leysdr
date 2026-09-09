@@ -48,6 +48,9 @@ type Error struct {
 	Message string // human prose
 	Target  string // id of the object the error concerns, may be empty
 	Status  *status.Status
+	// cause is the error FromStatus converted, kept so errors.Is can see
+	// through to context.Canceled and friends.
+	cause error
 }
 
 // Error implements error as "CODE: message (target)".
@@ -57,6 +60,10 @@ func (e *Error) Error() string {
 	}
 	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
+
+// Unwrap returns the error this one was converted from (nil when built by
+// hand), so errors.Is(err, context.Canceled) works on a client-side cancel.
+func (e *Error) Unwrap() error { return e.cause }
 
 // GRPCStatus lets status.FromError recover the original gRPC status.
 func (e *Error) GRPCStatus() *status.Status { return e.Status }
@@ -95,23 +102,23 @@ func FromStatusWithTrailer(err error, trailer metadata.MD) *Error {
 	st, ok := status.FromError(err)
 	if !ok {
 		if errors.Is(err, context.Canceled) {
-			return &Error{Code: "CANCELED", Message: err.Error(), Status: status.New(codes.Canceled, err.Error())}
+			return &Error{Code: "CANCELED", Message: err.Error(), Status: status.New(codes.Canceled, err.Error()), cause: err}
 		}
-		return &Error{Code: CodeUnknown, Message: err.Error(), Status: status.New(codes.Unknown, err.Error())}
+		return &Error{Code: CodeUnknown, Message: err.Error(), Status: status.New(codes.Unknown, err.Error()), cause: err}
 	}
 	if d := detailFromTrailer(trailer); d != nil {
-		return &Error{Code: d.Code, Message: d.Message, Target: d.Target, Status: st}
+		return &Error{Code: d.Code, Message: d.Message, Target: d.Target, Status: st, cause: err}
 	}
 	for _, d := range st.Details() {
 		if ed, ok := d.(*leylinev1.ErrorDetail); ok {
-			return &Error{Code: ed.Code, Message: ed.Message, Target: ed.Target, Status: st}
+			return &Error{Code: ed.Code, Message: ed.Message, Target: ed.Target, Status: st, cause: err}
 		}
 	}
 	code, msg := splitCodeMessage(st.Message())
 	if code == "" {
 		code = codeForGRPC(st.Code())
 	}
-	return &Error{Code: code, Message: msg, Status: st}
+	return &Error{Code: code, Message: msg, Status: st, cause: err}
 }
 
 func detailFromTrailer(md metadata.MD) *leylinev1.ErrorDetail {

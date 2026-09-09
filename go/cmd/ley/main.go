@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/dpup/leysdr/go/internal/cli"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 func main() {
@@ -26,12 +27,15 @@ func main() {
 // 2 usage error (bad flag, unknown verb or parameter), 3 daemon not running,
 // 130 interrupted by Ctrl-C before the live phase (a verb whose live phase
 // was interrupted returns nil and so exits 0). Verbs carry 2 and 3 as
-// cli.ExitError; everything else is 1.
+// cli.ExitError; everything else is 1. An interrupt shows up either as
+// context.Canceled in the chain or as a CANCELED daemon error (gRPC turns a
+// cancelled call context into a Canceled status); both count only while the
+// signal context is actually cancelled, so a stray CANCELED stays exit 1.
 func exitStatus(ctx context.Context, err error) int {
 	if err == nil {
 		return 0
 	}
-	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || leyline.Code(err) == "CANCELED") {
 		fmt.Fprintln(os.Stderr, "ley: interrupted")
 		return cli.ExitInterrupted
 	}
