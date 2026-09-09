@@ -19,9 +19,13 @@ sample rates (how wide a band it can take in at once) and gain elements
 (the amplifier stages 'ley set gain' adjusts). An empty list on a terminal
 is followed by a checklist of what to try. --watch keeps running and prints
 a line whenever a radio is plugged in or removed. Row numbers from this
-list are accepted wherever a device id is (ley tune --device 2).`,
+list are accepted wherever a device id is (ley tune --device 2).
+
+--json prints a ListDevicesResponse; with --watch that line comes first and
+each plug or unplug then adds an Event line carrying the full device.`,
 		Example: `  ley devices              # is my radio visible?
   ley devices --watch      # print a line on plug and unplug
+  ley devices --watch --json   # {"devices":[...]}, then one Event per change
   ley devices detach 2     # remove the second listed file playback device`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
@@ -88,13 +92,10 @@ func runDevices(cmd *cobra.Command, app *App, watch bool) error {
 		return app.notRunning(err)
 	}
 	if app.JSON {
-		if !watch {
-			return app.printJSON(resp)
-		}
-		for _, d := range resp.Devices {
-			if err := app.printJSON(d); err != nil {
-				return err
-			}
+		// With --watch the first line is this same ListDevicesResponse; Event
+		// lines (each carrying the full DeviceDescriptor) follow it.
+		if err := app.printJSON(resp); err != nil {
+			return err
 		}
 	} else {
 		printDeviceTable(app, resp.Devices)

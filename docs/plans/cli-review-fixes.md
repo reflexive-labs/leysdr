@@ -27,7 +27,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 ## Work items (dependency order)
 
-### CLI-1 `[ ]` JSON on stdout and exit status under --json (#8, #24, #25, #3, #1, #27)
+### CLI-1 `[x]` JSON on stdout and exit status under --json (#8, #24, #25, #3, #1, #27)
 
 - #8 stop.go:120/143: both early-return sentences go to stderr, or nothing under `--json`; exit 0.
 - #24 set.go:490: detect WriteRejected before the JSON branch; under `--json` print the event line, then exit 1

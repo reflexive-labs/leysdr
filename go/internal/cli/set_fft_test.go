@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -14,7 +15,10 @@ import (
 )
 
 func TestSetParams(t *testing.T) {
-	sock, c := harness(t, fakedaemon.Options{})
+	// WriteAwaitsWatcher: the fake holds each write until this session's
+	// WatchEvents stream is registered, so the WriteRejected asserted below
+	// cannot be emitted before the CLI is listening (CLI-4 #15 removes the race).
+	sock, c := harness(t, fakedaemon.Options{WriteAwaitsWatcher: true})
 	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40"); err == nil || !strings.Contains(err.Error(), "nothing is playing; start with: ley tune 146.52") {
 		t.Fatalf("expected no-channel error, got %v", err)
 	}
@@ -93,6 +97,19 @@ func TestSetParams(t *testing.T) {
 	_, _, err := run(t, context.Background(), sock, "set", "gain", "20", "--element", "nope")
 	if err == nil || !strings.Contains(err.Error(), "rejected") || exitCode(err) != 1 {
 		t.Fatalf("expected rejection, got %v", err)
+	}
+	// Under --json the WriteRejected event is the report: on stdout, exit 1, no prose.
+	out, errOut, err := run(t, context.Background(), sock, "--json", "set", "gain", "20", "--element", "nope")
+	var ee *ExitError
+	if !errors.As(err, &ee) || ee.Code != 1 || ee.Message != "" || errOut != "" {
+		t.Fatalf("set --json rejection: %v stderr=%q", err, errOut)
+	}
+	ev = map[string]any{}
+	if err := json.Unmarshal([]byte(out), &ev); err != nil || ev["writeRejected"] == nil {
+		t.Fatalf("set --json rejection stdout: %v %s", err, out)
+	}
+	if rej := ev["writeRejected"].(map[string]any); rej["error"].(map[string]any)["code"] != leyline.CodeGainElementUnknown {
+		t.Fatalf("set --json rejection code: %s", out)
 	}
 	if _, _, err := run(t, context.Background(), sock, "set", "volume", "0.5"); err == nil || leyline.Code(err) != leyline.CodeSinkNotFound || !strings.Contains(err.Error(), "not playing through the speakers") {
 		t.Fatalf("expected sink error, got %v", err)

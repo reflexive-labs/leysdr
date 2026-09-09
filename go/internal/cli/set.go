@@ -487,10 +487,18 @@ func runSet(ctx context.Context, s *session, param, value, element string, ch *l
 		}
 		return err
 	}
+	r, wasRejected := ev.Body.(*leylinev1.Event_WriteRejected)
 	if s.app.JSON {
-		return s.app.printJSON(ev)
+		if err := s.app.printJSON(ev); err != nil {
+			return err
+		}
+		if wasRejected {
+			// The event on stdout is the whole report; the status says it failed.
+			return &ExitError{Code: 1, Err: rejectedError(r.WriteRejected)}
+		}
+		return nil
 	}
-	if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
+	if wasRejected {
 		return fmt.Errorf("rejected: %w", s.friendly(rejectedError(r.WriteRejected), value, hz))
 	}
 	fmt.Fprintln(s.app.Stdout, confirmLine(s.state, param, element, ev, ch, cap))

@@ -46,7 +46,7 @@ func (d *Daemon) WatchEvents(scope *leylinev1.EventScope, srv grpc.ServerStreami
 	}
 	done := d.streamOpened(ctx)
 	defer done()
-	w := &watcher{scope: scope, ch: make(chan *leylinev1.Event, 256)}
+	w := &watcher{scope: scope, ch: make(chan *leylinev1.Event, 256), client: clientFrom(ctx).ClientId}
 	d.mu.Lock()
 	d.watchers[w] = struct{}{}
 	d.mu.Unlock()

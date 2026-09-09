@@ -1,6 +1,7 @@
 stop asks the daemon to exit and waits until the socket stops answering.
 A socket file left behind by a crashed daemon is removed so the next start
-is clean.
+is clean. --json prints the DaemonInfo the daemon last reported (its pid),
+or only socketPath when nothing was running.
 
 Usage:
   ley daemon stop [flags]

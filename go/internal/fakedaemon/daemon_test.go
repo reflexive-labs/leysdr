@@ -264,3 +264,59 @@ func TestAttachSinkVolumePresence(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteAwaitsWatcher: with the option set, a write sent before the
+// client's WatchEvents stream exists is held until it registers, so the
+// WriteRejected it produces reaches the stream instead of being lost.
+func TestWriteAwaitsWatcher(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{WriteAwaitsWatcher: true})
+	ctx := context.Background()
+	st, _ := c.State(ctx)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := &leylinev1.ParamWrite{Tag: 7, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "nope", Value: &leylinev1.GainWrite_Db{Db: 20}}}}
+	summary := make(chan *leylinev1.WriteSummary, 1)
+	go func() {
+		sum, err := c.WriteParams(ctx, bad)
+		if err != nil {
+			t.Errorf("WriteParams: %v", err)
+		}
+		summary <- sum
+	}()
+	// The write is held: the summary must not arrive before the watcher exists.
+	select {
+	case sum := <-summary:
+		t.Fatalf("write applied before a watcher registered: %v", sum)
+	case <-time.After(150 * time.Millisecond):
+	}
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events, _, err := c.Events(evCtx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case sum := <-summary:
+		if sum.GetWritesReceived() != 1 || sum.GetWritesApplied() != 0 {
+			t.Fatalf("summary: %v", sum)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("write never released after the watcher registered")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
+				if r.WriteRejected.Tag != 7 || r.WriteRejected.Error.GetCode() != leyline.CodeGainElementUnknown {
+					t.Fatalf("rejection: %v", r.WriteRejected)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("WriteRejected never reached the watcher")
+		}
+	}
+}

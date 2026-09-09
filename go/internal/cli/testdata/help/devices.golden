@@ -5,6 +5,9 @@ is followed by a checklist of what to try. --watch keeps running and prints
 a line whenever a radio is plugged in or removed. Row numbers from this
 list are accepted wherever a device id is (ley tune --device 2).
 
+--json prints a ListDevicesResponse; with --watch that line comes first and
+each plug or unplug then adds an Event line carrying the full device.
+
 Usage:
   ley devices [flags]
   ley devices [command]
@@ -12,6 +15,7 @@ Usage:
 Examples:
   ley devices              # is my radio visible?
   ley devices --watch      # print a line on plug and unplug
+  ley devices --watch --json   # {"devices":[...]}, then one Event per change
   ley devices detach 2     # remove the second listed file playback device
 
 Available Commands:

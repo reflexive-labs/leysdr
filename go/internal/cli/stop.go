@@ -76,11 +76,13 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 		return fmt.Errorf("nothing to stop; ley state lists what is running")
 	}
 	desc := fmt.Sprintf("%s %s (channel %d, %s)", leyline.FormatFrequency(channelFreq(ch, cap)), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(s.state, ch), ch.ChannelId)
-	if _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil {
+	resp, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId})
+	if err != nil {
 		return err
 	}
 	if s.app.JSON {
-		return s.app.printJSON(ch)
+		// The daemon's Empty answer: the object is gone, so nothing stale is echoed.
+		return s.app.printJSON(resp)
 	}
 	others := 0
 	for _, c := range s.state.Channels {
@@ -117,7 +119,7 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 		}
 		switch len(inUse) {
 		case 0:
-			fmt.Fprintln(s.app.Stdout, "nothing is running; every radio is free")
+			s.stopNothing("nothing is running; every radio is free")
 			return nil
 		case 1:
 			dev = inUse[0]
@@ -140,7 +142,7 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 		}
 	}
 	if len(caps) == 0 {
-		fmt.Fprintf(s.app.Stdout, "nothing is running on %s (%s); it is free\n", dev.Model, dev.DeviceId)
+		s.stopNothing(fmt.Sprintf("nothing is running on %s (%s); it is free", dev.Model, dev.DeviceId))
 		return nil
 	}
 	stopped := 0
@@ -152,24 +154,15 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 			if _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil && leyline.Code(err) != leyline.CodeChannelNotFound {
 				return err
 			}
-			if s.app.JSON {
-				if err := s.app.printJSON(ch); err != nil {
-					return err
-				}
-			}
 			stopped++
 		}
 		if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
 			return err
 		}
-		if s.app.JSON {
-			if err := s.app.printJSON(cap); err != nil {
-				return err
-			}
-		}
 	}
 	if s.app.JSON {
-		return nil
+		// One Empty for the whole action, as the daemon answers each destroy.
+		return s.app.printJSON(&leylinev1.Empty{})
 	}
 	noun := "channels"
 	if stopped == 1 {
@@ -177,4 +170,14 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 	}
 	fmt.Fprintf(s.app.Stdout, "stopped %d %s and freed %s (%s)\n", stopped, noun, dev.Model, dev.DeviceId)
 	return nil
+}
+
+// stopNothing reports that stop --all found nothing to do. The sentence is
+// for a person, so it goes to stderr and is dropped under --json; either way
+// the exit status is 0 (a free radio is the state stop --all asks for).
+func (s *session) stopNothing(msg string) {
+	if s.app.JSON {
+		return
+	}
+	fmt.Fprintln(s.app.Stderr, msg)
 }

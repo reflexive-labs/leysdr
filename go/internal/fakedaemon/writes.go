@@ -1,6 +1,7 @@
 package fakedaemon
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -41,9 +42,14 @@ func (d *Daemon) WriteParams(srv grpc.ClientStreamingServer[leylinev1.ParamWrite
 	pending := map[writeKey]*leylinev1.ParamWrite{}
 	order := []writeKey{}
 	var received, applied uint64
+	awaited := !d.opts.WriteAwaitsWatcher
 	flush := func() {
 		if len(pending) == 0 {
 			return
+		}
+		if !awaited {
+			d.awaitWatcher(ctx, ci.ClientId)
+			awaited = true
 		}
 		d.mu.Lock()
 		for _, k := range order {
@@ -94,6 +100,35 @@ func (d *Daemon) WriteParams(srv grpc.ClientStreamingServer[leylinev1.ParamWrite
 		case <-ctx.Done():
 			flush()
 			return nil
+		}
+	}
+}
+
+// awaitWatcher blocks until client has a registered WatchEvents stream, the
+// context ends or Options.WatcherWait elapses (Options.WriteAwaitsWatcher).
+func (d *Daemon) awaitWatcher(ctx context.Context, client string) {
+	wait := d.opts.WatcherWait
+	if wait == 0 {
+		wait = 2 * time.Second
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		d.mu.Lock()
+		found := false
+		for w := range d.watchers {
+			if w.client == client {
+				found = true
+				break
+			}
+		}
+		d.mu.Unlock()
+		if found || ctx.Err() != nil || time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Millisecond):
 		}
 	}
 }

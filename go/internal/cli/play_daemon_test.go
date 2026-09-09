@@ -207,6 +207,36 @@ func TestDaemonStartStop(t *testing.T) {
 	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "not running") {
 		t.Fatalf("second stop: %s", out)
 	}
+	// --json: start and stop print the DaemonInfo status prints; a stop with
+	// nothing running prints only socketPath (exit 0) and says so on stderr.
+	var info map[string]any
+	out = mustRun(t, sock, "--json", "daemon", "start", "--bin", script, "--log", logPath)
+	if err := json.Unmarshal([]byte(out), &info); err != nil || info["socketPath"] != sock || info["pid"] == nil || info["version"] == nil {
+		t.Fatalf("start --json: %v %s", err, out)
+	}
+	out = mustRun(t, sock, "--json", "daemon", "start", "--bin", script, "--log", logPath)
+	if err := json.Unmarshal([]byte(out), &info); err != nil || info["pid"] == nil {
+		t.Fatalf("second start --json: %v %s", err, out)
+	}
+	out = mustRun(t, sock, "--json", "daemon", "stop")
+	if err := json.Unmarshal([]byte(out), &info); err != nil || info["socketPath"] != sock || info["pid"] == nil {
+		t.Fatalf("stop --json: %v %s", err, out)
+	}
+	out, errOut, err := run(t, context.Background(), sock, "--json", "daemon", "stop")
+	if err != nil || !strings.Contains(errOut, "not running") {
+		t.Fatalf("stop --json not running: %v stderr=%q", err, errOut)
+	}
+	info = map[string]any{} // Unmarshal merges into an existing map
+	if err := json.Unmarshal([]byte(out), &info); err != nil || info["socketPath"] != sock || info["pid"] != nil {
+		t.Fatalf("stop --json not running stdout: %v %s", err, out)
+	}
+	// Verbs without a JSON shape refuse the flag before doing anything.
+	for _, args := range [][]string{{"daemon", "logs", "--log", logPath}, {"daemon", "install"}, {"daemon", "uninstall"}} {
+		out, _, err := run(t, context.Background(), sock, append([]string{"--json"}, args...)...)
+		if exitCode(err) != ExitUsage || out != "" || !strings.Contains(err.Error(), "no --json output") {
+			t.Errorf("ley --json %v: exit %d (%v) stdout=%q, want %d", args, exitCode(err), err, out, ExitUsage)
+		}
+	}
 }
 
 func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {

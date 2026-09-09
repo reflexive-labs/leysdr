@@ -37,6 +37,16 @@ type Options struct {
 	ExtraDevices []*leylinev1.DeviceDescriptor
 	// SocketPath is reported in DaemonInfo; Serve sets it.
 	SocketPath string
+	// WriteAwaitsWatcher makes WriteParams hold every write until the writing
+	// client has a WatchEvents stream registered (or WatcherWait elapses), so a
+	// WriteRejected emitted for it can never precede the watcher. A sequencing
+	// aid for tests of clients that open a session (GetState + WatchEvents)
+	// and write straight away: the real daemon may register the stream after
+	// the write lands (CLI-4 #15 makes the session resume from the snapshot's
+	// seq instead).
+	WriteAwaitsWatcher bool
+	// WatcherWait bounds WriteAwaitsWatcher. Default 2 s.
+	WatcherWait time.Duration
 }
 
 // Daemon is the in-memory state store plus all five service implementations.
@@ -71,8 +81,9 @@ func (c *capture) sampleIndex(now time.Time) uint64 {
 }
 
 type watcher struct {
-	scope *leylinev1.EventScope
-	ch    chan *leylinev1.Event
+	scope  *leylinev1.EventScope
+	ch     chan *leylinev1.Event
+	client string // ClientInfo.client_id of the watching client
 }
 
 type presence struct {

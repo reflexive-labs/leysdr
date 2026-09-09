@@ -23,8 +23,8 @@ func TestStopChannelAndAll(t *testing.T) {
 	if _, _, err := run(t, context.Background(), sock, "stop"); err == nil || !strings.Contains(err.Error(), "nothing is playing") {
 		t.Fatalf("stop with nothing running: %v", err)
 	}
-	if out := mustRun(t, sock, "stop", "--all"); !strings.Contains(out, "nothing is running; every radio is free") {
-		t.Fatalf("stop --all with nothing running: %s", out)
+	if out, errOut, err := run(t, context.Background(), sock, "stop", "--all"); err != nil || out != "" || !strings.Contains(errOut, "nothing is running; every radio is free") {
+		t.Fatalf("stop --all with nothing running: %v stdout=%q stderr=%q", err, out, errOut)
 	}
 	// Usage errors never reach the daemon.
 	for _, args := range [][]string{{"stop", "--all", "2"}, {"stop", "2", "--device", "1"}, {"stop", "1", "2"}} {
@@ -79,13 +79,34 @@ func TestStopChannelAndAll(t *testing.T) {
 	if st := state(); len(st.Channels) != 0 || len(st.Captures) != 0 {
 		t.Fatalf("after stop all: %d channels, %d captures", len(st.Channels), len(st.Captures))
 	}
-	if out = mustRun(t, sock, "stop", "--all", "--device", "1"); !strings.Contains(out, "nothing is running on Generic RTL2832U (R820T)") {
-		t.Fatalf("stop --all on a free radio: %s", out)
+	if out, errOut, err := run(t, context.Background(), sock, "stop", "--all", "--device", "1"); err != nil || out != "" || !strings.Contains(errOut, "nothing is running on Generic RTL2832U (R820T)") {
+		t.Fatalf("stop --all on a free radio: %v stdout=%q stderr=%q", err, out, errOut)
 	}
-	// --json prints the removed objects as proto JSON, one per line.
+}
+
+// TestStopJSON: under --json stop prints the daemon's Empty answer ({}) and
+// nothing when there was nothing to do; the exit status carries success.
+func TestStopJSON(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	// Idle: no object to echo, no prose on stdout, exit 0.
+	for _, args := range [][]string{{"--json", "stop", "--all"}, {"--json", "stop", "all", "--device", "1"}} {
+		out, errOut, err := run(t, context.Background(), sock, args...)
+		if err != nil || out != "" || errOut != "" {
+			t.Fatalf("idle ley %v: %v stdout=%q stderr=%q", args, err, out, errOut)
+		}
+	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
-	out = mustRun(t, sock, "--json", "stop", "--all")
-	if !strings.HasPrefix(out, "{") || !strings.Contains(out, `"channelId"`) || !strings.Contains(out, `"captureId"`) {
-		t.Fatalf("stop --all --json: %s", out)
+	if out := mustRun(t, sock, "--json", "stop"); out != "{}\n" {
+		t.Fatalf("stop --json: %q", out)
+	}
+	if st, err := c.State(context.Background()); err != nil || len(st.Channels) != 0 || len(st.Captures) != 1 {
+		t.Fatalf("after stop --json: %v %v", st, err)
+	}
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
+	if out := mustRun(t, sock, "--json", "stop", "--all"); out != "{}\n" {
+		t.Fatalf("stop --all --json: %q", out)
+	}
+	if st, err := c.State(context.Background()); err != nil || len(st.Channels) != 0 || len(st.Captures) != 0 {
+		t.Fatalf("after stop --all --json: %v %v", st, err)
 	}
 }

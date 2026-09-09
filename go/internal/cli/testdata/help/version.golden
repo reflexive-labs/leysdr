@@ -1,6 +1,9 @@
 version prints the version of this ley binary and the Go toolchain it was
 built with. The daemon's own version is in 'ley daemon status'.
 
+--json prints {"version","go","os","arch"}: a client-local document, not a
+proto message.
+
 Usage:
   ley version [flags]
 

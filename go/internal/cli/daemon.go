@@ -54,31 +54,36 @@ to the ley executable, then PATH.`,
 	}
 	cmd.PersistentFlags().StringVar(&f.bin, "bin", "", "path to the leylined binary")
 	cmd.PersistentFlags().StringVar(&f.log, "log", "", "daemon log file (default: ~/Library/Logs/Leyline/leylined.log)")
-	sub := func(use, short, long, example string, run func(context.Context, *daemonFlags) error) *cobra.Command {
+	// sub builds one subcommand; jsonOK false makes --json a usage error (the
+	// verb has no JSON shape: its output is a file or a launchd action).
+	sub := func(use, short, long, example string, jsonOK bool, run func(context.Context, *daemonFlags) error) *cobra.Command {
 		return &cobra.Command{Use: use, Short: short, Long: long, Example: example, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+			if app.JSON && !jsonOK {
+				return usageErrorf("daemon %s has no --json output; drop the flag (ley daemon status --json reports the daemon)", use)
+			}
 			return run(cmd.Context(), &f)
 		}}
 	}
 	logs := sub("logs", "Print the daemon's log",
 		"logs prints the daemon's log file (where it reports the radios it found,\nwhat it is doing and why something failed). -f keeps printing as it grows.",
-		"  ley daemon logs          # the whole log so far\n  ley daemon logs -f       # follow it while you try something", app.daemonLogs)
+		"  ley daemon logs          # the whole log so far\n  ley daemon logs -f       # follow it while you try something", false, app.daemonLogs)
 	logs.Flags().BoolVarP(&f.follow, "follow", "f", false, "keep printing as the log grows")
 	cmd.AddCommand(
 		sub("install", "Start the daemon at login (macOS LaunchAgent)",
 			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leyline.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes.",
-			"  ley daemon install       # start at login from now on\n  ley daemon install --bin /opt/leyline/bin/leylined", app.daemonInstall),
+			"  ley daemon install       # start at login from now on\n  ley daemon install --bin /opt/leyline/bin/leylined", false, app.daemonInstall),
 		sub("uninstall", "Stop starting the daemon at login (macOS)",
 			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.",
-			"  ley daemon uninstall", app.daemonUninstall),
+			"  ley daemon uninstall", false, app.daemonUninstall),
 		sub("start", "Start the daemon",
-			"start launches the daemon and prints its pid (process id). With a LaunchAgent\ninstalled it asks launchd; otherwise it spawns leylined in the background\nwith its output in the log file. Already running is not an error.",
-			"  ley daemon start         # started leylined (pid 12345); check with: ley daemon status\n  ley daemon start --log /tmp/leylined.log", app.daemonStart),
+			"start launches the daemon and prints its pid (process id). With a LaunchAgent\ninstalled it asks launchd; otherwise it spawns leylined in the background\nwith its output in the log file. Already running is not an error.\n--json prints the running daemon's DaemonInfo, as 'ley daemon status --json' does.",
+			"  ley daemon start         # started leylined (pid 12345); check with: ley daemon status\n  ley daemon start --log /tmp/leylined.log\n  ley daemon start --json  # the DaemonInfo of the daemon now running", true, app.daemonStart),
 		sub("stop", "Stop the daemon (and clear a stale socket)",
-			"stop asks the daemon to exit and waits until the socket stops answering.\nA socket file left behind by a crashed daemon is removed so the next start\nis clean.",
-			"  ley daemon stop\n  ley daemon stop && ley daemon start   # restart", app.daemonStop),
+			"stop asks the daemon to exit and waits until the socket stops answering.\nA socket file left behind by a crashed daemon is removed so the next start\nis clean. --json prints the DaemonInfo the daemon last reported (its pid),\nor only socketPath when nothing was running.",
+			"  ley daemon stop\n  ley daemon stop && ley daemon start   # restart", true, app.daemonStop),
 		sub("status", "Say whether the daemon is running (exit 3 when not)",
 			"status prints the daemon's pid, version and socket when it answers, and\nexits 3 with the command to start it when it does not. Scripts can use the\nexit code alone.",
-			"  ley daemon status\n  ley daemon status --json # a DaemonInfo message; only socketPath when not running", app.daemonStatus),
+			"  ley daemon status\n  ley daemon status --json # a DaemonInfo message; only socketPath when not running", true, app.daemonStatus),
 		logs,
 	)
 	return cmd
@@ -265,6 +270,9 @@ func (a *App) reachable(ctx context.Context) bool {
 
 func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	if a.reachable(ctx) {
+		if a.JSON {
+			return a.printDaemonInfo(ctx)
+		}
 		fmt.Fprintf(a.Stdout, "already running%s; check with: ley daemon status\n", a.pidSuffix(ctx))
 		return nil
 	}
@@ -304,6 +312,9 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if a.reachable(ctx) {
+			if a.JSON {
+				return a.printDaemonInfo(ctx)
+			}
 			fmt.Fprintf(a.Stdout, "started leylined%s; check with: ley daemon status\n", a.pidSuffix(ctx))
 			return nil
 		}
@@ -313,8 +324,11 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 }
 
 func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
+	// The daemon cannot be asked afterwards, so its last report (pid and all)
+	// is what --json prints once it is gone.
+	last := a.daemonInfo(ctx)
 	if launchAgentInstalled() {
-		if !a.reachable(ctx) {
+		if last == nil {
 			a.reportNotRunningForStop()
 			return nil
 		}
@@ -340,8 +354,41 @@ func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 			return err
 		}
 	}
+	if a.JSON {
+		if last == nil {
+			last = &leylinev1.DaemonInfo{SocketPath: a.socketPath()}
+		}
+		return a.printJSON(last)
+	}
 	fmt.Fprintln(a.Stdout, "stopped")
 	return nil
+}
+
+// daemonInfo is the running daemon's DaemonInfo from a fresh GetState, nil
+// when nothing answers on the socket within a second.
+func (a *App) daemonInfo(ctx context.Context) *leylinev1.DaemonInfo {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	c, err := a.dial(ctx)
+	if err != nil {
+		return nil
+	}
+	defer c.Close()
+	st, err := c.State(ctx)
+	if err != nil {
+		return nil
+	}
+	return st.GetDaemon()
+}
+
+// printDaemonInfo prints the DaemonInfo `daemon status --json` prints, from a
+// fresh GetState; a daemon that stopped answering in between is an error.
+func (a *App) printDaemonInfo(ctx context.Context) error {
+	info := a.daemonInfo(ctx)
+	if info == nil {
+		return fmt.Errorf("leylined stopped answering on %s; check with: ley daemon status", a.socketPath())
+	}
+	return a.printJSON(info)
 }
 
 // stopPid SIGTERMs a pidfile instance, waits for it to exit, and removes the pidfile.
@@ -416,29 +463,28 @@ func (a *App) daemonLogs(ctx context.Context, f *daemonFlags) error {
 
 // pidSuffix is " (pid N)" when the running daemon reports one.
 func (a *App) pidSuffix(ctx context.Context) string {
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	c, err := a.dial(ctx)
-	if err != nil {
-		return ""
+	if pid := a.daemonInfo(ctx).GetPid(); pid != 0 {
+		return fmt.Sprintf(" (pid %d)", pid)
 	}
-	defer c.Close()
-	st, err := c.State(ctx)
-	if err != nil || st.GetDaemon().GetPid() == 0 {
-		return ""
-	}
-	return fmt.Sprintf(" (pid %d)", st.Daemon.Pid)
+	return ""
 }
 
 // reportNotRunningForStop prints the stop verdict when nothing is running and
 // clears a socket file a dead daemon left behind, so the next start is clean.
+// Under --json the verdict is a DaemonInfo with only socketPath (the status
+// shape) on stdout and the sentence goes to stderr.
 func (a *App) reportNotRunningForStop() {
 	sock := a.socketPath()
+	out := a.Stdout
+	if a.JSON {
+		out = a.Stderr
+		_ = a.printJSON(&leylinev1.DaemonInfo{SocketPath: sock})
+	}
 	if _, err := os.Stat(sock); err == nil {
 		if err := os.Remove(sock); err == nil {
-			fmt.Fprintf(a.Stdout, "not running; removed the stale socket %s. Start it with: ley daemon start\n", sock)
+			fmt.Fprintf(out, "not running; removed the stale socket %s. Start it with: ley daemon start\n", sock)
 			return
 		}
 	}
-	fmt.Fprintln(a.Stdout, "not running. Start it with: ley daemon start")
+	fmt.Fprintln(out, "not running. Start it with: ley daemon start")
 }

@@ -130,6 +130,32 @@ func TestDevicesTableAndJSON(t *testing.T) {
 	}
 }
 
+// TestDevicesWatchJSON: `devices --watch --json` prints the same wrapped
+// ListDevicesResponse `devices --json` prints as its first line, then Event
+// lines (never bare DeviceDescriptors).
+func TestDevicesWatchJSON(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	out, errOut, err := run(t, ctx, sock, "--json", "devices", "--watch")
+	if err != nil || errOut != "" {
+		t.Fatalf("devices --watch --json: %v stderr=%q", err, errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var resp struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &resp); err != nil || len(resp.Devices) != 1 || resp.Devices[0]["deviceId"] == nil {
+		t.Fatalf("first line must be the wrapped list: %v %s", err, lines[0])
+	}
+	for _, l := range lines[1:] {
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(l), &ev); err != nil || ev["device"] == nil {
+			t.Fatalf("later lines must be device Events: %v %s", err, l)
+		}
+	}
+}
+
 // gainsString reports an unreadable table as "unknown" only when both the
 // table and the range are empty; a real 0..0 table or a stepped range keeps
 // the numeric rendering.

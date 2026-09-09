@@ -59,11 +59,25 @@ adds no capability the protocol lacks.
 
 **`--json`** is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`,
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
-to stderr, so stdout is parseable. **The one documented exception**, sitting beside the shm-ring
-bypass in the design docs: bulk FFT rows have no proto message, so `ley fft --format json` and
-`ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins}` (snake_case, numbers
+to stderr, so stdout is parseable. **Two documented exceptions.** The first sits beside the
+shm-ring bypass in the design docs: bulk FFT rows have no proto message, so `ley fft --format json`
+and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins}` (snake_case, numbers
 as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
-presentation only, never called signals.
+presentation only, never called signals. The second is `ley version --json`: a client-local value
+with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
+that order (pinned by a golden test).
+
+Destructive verbs echo nothing stale: `ley stop`, `ley stop --all` and `ley devices detach` print
+the daemon's `Empty` answer (`{}`) under `--json` — one line for the whole action — and the exit
+status carries success; when `stop --all` finds nothing running it prints nothing (the sentence is
+stderr prose without `--json`) and exits 0. `ley set --json` prints the confirming or rejecting
+Event and exits 1 on a `WriteRejected` with nothing on stderr. `ley devices --watch --json` prints
+the `ListDevicesResponse` first (the same line `devices --json` prints), then one `Event` per plug
+or unplug carrying the full `DeviceDescriptor`. `ley daemon start --json` and `daemon stop --json`
+print the same `DaemonInfo` as `daemon status --json` (start from a fresh `GetState` after the
+action; stop the last info the daemon reported, pid included, or only `socketPath` when nothing was
+running); `daemon install`, `uninstall` and `logs` have no JSON shape and reject `--json` as a
+usage error (exit 2).
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`devices --watch` session; 1 when the daemon refused or
