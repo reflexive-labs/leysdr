@@ -44,13 +44,17 @@ $ ley daemon start
 started leylined (pid 4242); check with: ley daemon status
 
 $ ley devices
-ID                              DRIVER  MODEL                     SERIAL    STATE      RANGE                 RATES                GAIN
-dev_01M1S9TR56S46QTCK0SZS2YPJA  rtlsdr  Generic RTL2832U (R820T)  00000001  AVAILABLE  24.000 MHz-1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
+MODEL                     STATE      RANGE                    RATES                GAIN
+Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
+ley devices --wide  adds DRIVER, SERIAL, ID
 ```
 
-RANGE is what the radio can tune; RATES is how wide a band it can take in at once; GAIN lists the
-amplifier stages `ley set gain` adjusts. Row numbers from this list work wherever a device id is
-accepted (`ley tune 146.52 --device 2`). An empty list on a terminal is followed by a checklist
+MODEL and STATE lead because they are the answer to "is my radio usable"; RANGE is what the radio
+can tune, RATES is how wide a band it can take in at once, and GAIN lists the amplifier stages
+`ley set gain` adjusts. `ley devices --wide` adds the driver, serial and full device id (and any
+column too wide for the terminal), and `--json` always carries all of them. Row numbers from this
+list work wherever a device id is accepted (`ley tune 146.52 --device 2`). An empty list prints
+`(no radios found)`, and on a terminal a checklist follows
 (plugged in? does `rtl_test` see it? does anything else have it open? what does `ley daemon logs` say?). `ley devices --watch`
 prints a line when a radio is plugged in or removed.
 
@@ -295,7 +299,9 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   same bulk-row exception as `fft` — and `--format bin` writes the raw PCM frames back to back
   (mono, little-endian, `S16` in this build; the rate and format go to stderr). It attaches no
   system-audio sink and leaves the squelch off unless `--squelch` asks for one.
-- **`ley presets` and `ley bands`** print the client-local tables (`--json` gives arrays); no
+- **`ley presets` and `ley bands`** print the client-local tables grouped under their band (for
+  presets) or their family (for bands), so a family of near-identical rows reads as one block;
+  `--json` gives the flat arrays with every field, including the description a table trims. No
   RPC is made. `ley help presets` is the same data in prose.
 - **Defaults meant for people are off for scripts.** Under `--json` or `--persistent` squelch
   defaults to `off` (pass `--squelch auto` or a level); pass `--mode` explicitly rather than

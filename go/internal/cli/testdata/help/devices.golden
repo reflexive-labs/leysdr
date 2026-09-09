@@ -3,7 +3,8 @@ sample rates (how wide a band it can take in at once) and gain elements
 (the amplifier stages 'ley set gain' adjusts). An empty list on a terminal
 is followed by a checklist of what to try. --watch keeps running and prints
 a line whenever a radio is plugged in or removed. Row numbers from this
-list are accepted wherever a device id is (ley tune --device 2).
+list are accepted wherever a device id is (ley tune --device 2), and --wide
+adds the driver, serial and full device id columns.
 
 --json prints a ListDevicesResponse; with --watch that line comes first and
 each plug or unplug then adds an Event line carrying the full device.
@@ -24,6 +25,7 @@ Available Commands:
 Flags:
   -h, --help    help for devices
       --watch   keep running and print a line when a radio is plugged in or removed
+      --wide    add the driver, serial and full device id columns
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

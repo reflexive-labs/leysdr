@@ -73,12 +73,20 @@ func mustRun(t *testing.T, sock string, args ...string) string {
 func TestDevicesTableAndJSON(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "devices")
-	if !strings.Contains(out, "ID") || !strings.Contains(out, "rtlsdr") && !strings.Contains(out, "RTL") {
+	// MODEL leads and STATE follows it: the ids and serials are behind --wide.
+	if head := strings.Fields(out)[0]; head != "MODEL" || !strings.Contains(out, "RTL") {
 		t.Fatalf("unexpected table:\n%s", out)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("want header + 1 device, got:\n%s", out)
+	}
+	if strings.Contains(out, "dev_") {
+		t.Fatalf("the default table must not lead with ids:\n%s", out)
+	}
+	wide := mustRun(t, sock, "devices", "--wide")
+	if !strings.Contains(wide, "DRIVER") || !strings.Contains(wide, "SERIAL") || !strings.Contains(wide, "rtlsdr") {
+		t.Fatalf("--wide must add driver, serial and id:\n%s", wide)
 	}
 	out = mustRun(t, sock, "--json", "devices")
 	var resp struct {
@@ -102,7 +110,7 @@ func TestDevicesTableAndJSON(t *testing.T) {
 	}
 	var heldLine string
 	for _, l := range lines {
-		if strings.HasPrefix(l, held.DeviceId) {
+		if strings.Contains(l, "IN_USE") {
 			heldLine = l
 		}
 	}

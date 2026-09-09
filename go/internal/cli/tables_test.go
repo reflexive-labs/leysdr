@@ -9,6 +9,18 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
+// indentedRows counts the body rows of a grouped table: rows sit indented
+// under their heading, while the headings and the header row do not.
+func indentedRows(out string) int {
+	n := 0
+	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if strings.HasPrefix(l, "  ") && !strings.Contains(l, "NAME") {
+			n++
+		}
+	}
+	return n
+}
+
 // TestPresetsAndBands: both tables render every row from the client-local
 // tables and need no daemon; --json is an array of the documented shape.
 func TestPresetsAndBands(t *testing.T) {
@@ -18,12 +30,22 @@ func TestPresetsAndBands(t *testing.T) {
 	if err != nil || errOut != "" {
 		t.Fatalf("ley presets: err=%v stderr=%q", err, errOut)
 	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != len(leyline.Presets())+1 {
-		t.Fatalf("want a header and %d presets, got %d lines:\n%s", len(leyline.Presets()), len(lines), out)
+	// Rows are indented under their band's heading; the header row and the
+	// headings are the only unindented lines.
+	if rows := indentedRows(out); rows != len(leyline.Presets()) {
+		t.Fatalf("want %d preset rows, got %d:\n%s", len(leyline.Presets()), rows, out)
 	}
-	if !strings.HasPrefix(lines[0], "NAME") || !strings.Contains(out, "noaa, wx1, weather") {
+	if !strings.Contains(out, "NAME") || !strings.Contains(out, "noaa, wx1, weather") {
 		t.Fatalf("preset table shape:\n%s", out)
+	}
+	for _, head := range []string{"NOAA weather", "2 m amateur", "marine VHF", "airband"} {
+		if !strings.Contains(out, "\n"+head+"\n") {
+			t.Fatalf("preset table is missing the %q group heading:\n%s", head, out)
+		}
+	}
+	// The description no longer restates the frequency printed beside it.
+	if strings.Contains(out, "(162.550 MHz)") {
+		t.Fatalf("description still restates the frequency column:\n%s", out)
 	}
 
 	out, errOut, err = run(t, context.Background(), sock, "--json", "presets")
@@ -45,9 +67,17 @@ func TestPresetsAndBands(t *testing.T) {
 	if err != nil || errOut != "" {
 		t.Fatalf("ley bands: err=%v stderr=%q", err, errOut)
 	}
-	lines = strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != len(leyline.Bands())+1 || !strings.HasPrefix(lines[0], "NAME") {
-		t.Fatalf("band table shape:\n%s", out)
+	if rows := indentedRows(out); rows != len(leyline.Bands()) {
+		t.Fatalf("want %d band rows, got %d:\n%s", len(leyline.Bands()), rows, out)
+	}
+	for _, head := range []string{"broadcast", "amateur radio", "other services"} {
+		if !strings.Contains(out, "\n"+head+"\n") {
+			t.Fatalf("band table is missing the %q group heading:\n%s", head, out)
+		}
+	}
+	// The heading carries "amateur radio", so the note keeps only what differs.
+	if strings.Contains(out, "amateur radio, LSB voice") {
+		t.Fatalf("note still repeats its group heading:\n%s", out)
 	}
 
 	out, errOut, err = run(t, context.Background(), sock, "--json", "bands")

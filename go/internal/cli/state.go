@@ -54,7 +54,9 @@ func daemonLine(d *leylinev1.DaemonInfo) string {
 func printState(app *App, st *leylinev1.GetStateResponse) {
 	fmt.Fprintf(app.Stdout, "%s (event seq %d)\n\n", daemonLine(st.Daemon), st.EventSeq)
 	fmt.Fprintln(app.Stdout, "Devices")
-	printDeviceTable(app, st.Devices)
+	// Wide: the Captures table below joins to a device by its id, so this
+	// screen keeps the id column `ley devices` moves behind --wide.
+	printDeviceTable(app, st.Devices, true)
 	fmt.Fprintln(app.Stdout, "\nCaptures")
 	w := app.table()
 	fmt.Fprintln(w, "ID\tDEVICE\tCENTER\tRATE\tSTATE\tGAINS\tAUDIO SINKS\tCREATED BY")

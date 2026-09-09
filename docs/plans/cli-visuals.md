@@ -65,7 +65,7 @@ Files: `root.go` (renderOrientation), `state.go`, `format.go`, `version.go`.
   `Muted`. Keep a flat table behind `--wide`. `--json` is untouched.
 - `ley version`: no visual change beyond `Label` on the field names; `--json` untouched.
 
-### VIS-2 `[ ]` Devices, presets and bands
+### VIS-2 `[x]` Devices, presets and bands
 
 Files: `devices.go`, `tables.go`.
 

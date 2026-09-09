@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -81,16 +82,7 @@ data with no proto message, so it is not the proto3 JSON mapping.`,
 				}
 				return app.printArray(out)
 			}
-			w := app.table()
-			fmt.Fprintln(w, "NAME\tFREQUENCY\tMODE\tALIASES\tDESCRIPTION")
-			for _, p := range ps {
-				aliases := "-"
-				if len(p.Aliases) > 0 {
-					aliases = strings.Join(p.Aliases, ", ")
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), aliases, p.Description)
-			}
-			return w.Flush()
+			return printPresetTable(app, ps)
 		},
 	}
 }
@@ -124,12 +116,135 @@ client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 				}
 				return app.printArray(out)
 			}
-			w := app.table()
-			fmt.Fprintln(w, "NAME\tRANGE\tMODE\tBANDWIDTH\tNOTE")
-			for _, b := range bs {
-				fmt.Fprintf(w, "%s\t%s to %s\t%s\t%s\t%s\n", b.Name, leyline.FormatFrequency(b.MinHz), leyline.FormatFrequency(b.MaxHz), bandModeName(b.Mode), formatBandwidth(b.BandwidthHz), b.Note)
-			}
-			return w.Flush()
+			return printBandTable(app, bs)
 		},
 	}
+}
+
+// printPresetTable renders `ley presets`. Presets are grouped under the band
+// they live in, so the seven near-identical noaa rows read as one offer the
+// eye can skip rather than seven; the frequency the description used to
+// restate is dropped (the FREQUENCY column already says it), and the aliases
+// are Muted because they are the fallback spelling, not the one to type.
+// --json keeps every field, description and all.
+func printPresetTable(app *App, ps []leyline.Preset) error {
+	s := tableStyle(app)
+	keys := make([]string, len(ps))
+	for i, p := range ps {
+		keys[i] = presetGroup(p)
+	}
+	order, heads := groupRows(keys)
+	cols := []column{
+		{head: "NAME"},
+		{head: "FREQUENCY"},
+		{head: "MODE"},
+		{head: "ALIASES", drop: 1},
+		{head: "DESCRIPTION", min: 14, drop: 2},
+	}
+	for _, i := range order {
+		p := ps[i]
+		aliases := s.Glyphs().Absent
+		if len(p.Aliases) > 0 {
+			aliases = s.Muted(strings.Join(p.Aliases, ", "))
+		}
+		desc := strings.TrimPrefix(withoutFrequency(p.Description, p.Hz), keys[i]+" ")
+		add(cols, p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), aliases, desc)
+	}
+	_, err := printColumns(app.Stdout, s, cols, heads)
+	return err
+}
+
+// printBandTable renders `ley bands`. The eight amateur allocations are one
+// family printed as eight nearly identical rows, so bands are grouped by
+// family (in the order the families first appear, frequency order within
+// one) and the note drops the "amateur radio," the heading now carries.
+// --json keeps the flat, frequency-ordered array with the full note.
+func printBandTable(app *App, bs []leyline.Band) error {
+	s := tableStyle(app)
+	keys := make([]string, len(bs))
+	for i, b := range bs {
+		keys[i] = bandFamily(b)
+	}
+	order, heads := groupRows(keys)
+	cols := []column{
+		{head: "NAME"},
+		{head: "RANGE"},
+		{head: "MODE"},
+		{head: "BANDWIDTH", drop: 1},
+		{head: "NOTE", min: 14, drop: 2},
+	}
+	for _, i := range order {
+		b := bs[i]
+		rng := leyline.FormatFrequency(b.MinHz) + " to " + leyline.FormatFrequency(b.MaxHz)
+		add(cols, b.Name, rng, bandModeName(b.Mode), formatBandwidth(b.BandwidthHz),
+			strings.TrimPrefix(b.Note, bandFamily(b)+", "))
+	}
+	_, err := printColumns(app.Stdout, s, cols, heads)
+	return err
+}
+
+// add appends one row of cells across cols, in column order.
+func add(cols []column, cells ...string) {
+	for i := range cells {
+		cols[i].cells = append(cols[i].cells, cells[i])
+	}
+}
+
+// presetGroup is the sub-heading a preset sits under: the band containing it,
+// which is the same name `ley bands` prints, or "other" for a preset outside
+// every band ley knows.
+func presetGroup(p leyline.Preset) string {
+	if b := leyline.BandFor(p.Hz); b != nil {
+		return b.Name
+	}
+	return "other"
+}
+
+// bandFamily is the sub-heading a band sits under. The amateur allocations
+// are the family worth collapsing; broadcast is the other one a newcomer
+// already has a word for, and everything else is a service.
+func bandFamily(b leyline.Band) string {
+	switch {
+	case strings.HasPrefix(b.Note, "amateur radio"):
+		return "amateur radio"
+	case strings.Contains(b.Name, "broadcast"):
+		return "broadcast"
+	}
+	return "other services"
+}
+
+// withoutFrequency drops the frequency a description restates, so the
+// DESCRIPTION column carries only what the FREQUENCY column does not. The
+// --json description keeps it: that string is data, not layout.
+func withoutFrequency(desc string, hz uint64) string {
+	return strings.TrimSuffix(desc, " ("+leyline.FormatFrequency(hz)+")")
+}
+
+// groupRows returns the row order that puts each group together and the
+// heading to print before each row ("" inside a group). Groups appear in the
+// order they first occur and rows keep their table order inside one, so
+// nothing the reader has memorised moves further than its family.
+func groupRows(keys []string) ([]int, []string) {
+	var order []int
+	var seen []string
+	for _, k := range keys {
+		if slices.Contains(seen, k) {
+			continue
+		}
+		seen = append(seen, k)
+		for i, k2 := range keys {
+			if k2 == k {
+				order = append(order, i)
+			}
+		}
+	}
+	heads := make([]string, len(order))
+	prev := ""
+	for i, row := range order {
+		if keys[row] != prev {
+			heads[i] = keys[row]
+			prev = keys[row]
+		}
+	}
+	return order, heads
 }
