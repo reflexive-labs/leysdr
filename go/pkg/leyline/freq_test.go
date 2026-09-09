@@ -118,3 +118,24 @@ func TestFrequencyHint(t *testing.T) {
 		t.Errorf("FormatRanges(nil) = %q", got)
 	}
 }
+
+func TestNearestRate(t *testing.T) {
+	rates := []uint64{250_000, 1_024_000, 2_400_000}
+	cases := []struct{ want, got uint64 }{
+		{200_000, 250_000},
+		{250_000, 250_000},
+		{600_000, 250_000},
+		{700_000, 1_024_000},
+		{637_000, 1_024_000},
+		{5_000_000, 2_400_000},
+		{1_712_000, 2_400_000},
+	}
+	for _, c := range cases {
+		if got := NearestRate(rates, c.want); got != c.got {
+			t.Errorf("NearestRate(%d) = %d, want %d", c.want, got, c.got)
+		}
+	}
+	if got := NearestRate(nil, 123); got != 123 {
+		t.Errorf("empty rates should pass through, got %d", got)
+	}
+}

@@ -10,6 +10,12 @@ the run and removed when spectrum exits. When other channels are listening
 on a band that does not cover the frequency, spectrum refuses to move the
 radio unless --retune is given.
 
+--span is the width of the band shown, which is the capture's sample rate.
+For a fresh capture it is snapped to the nearest rate the radio supports
+(spectrum says so on stderr); when the radio is already capturing at a
+different width, spectrum exits 2 and names it: drop --span, ask for that
+width, or free the radio with 'ley stop all'.
+
 It draws once by default. --watch keeps redrawing (--rate times a second)
 until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
 prints the same rows as numbers for tools.
@@ -21,7 +27,7 @@ Examples:
   ley spectrum 101.1          # the FM broadcast band around 101.1 MHz
   ley spectrum                # the band ley tune is listening to
   ley spectrum 146.52 -w      # keep redrawing until Ctrl-C
-  ley spectrum 7.1 --span 200k --bins 2048
+  ley spectrum 7.1 --span 250k --bins 2048   # 250 kHz is the narrowest an RTL-SDR captures
   ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, peaks}
 
 Flags:
@@ -31,7 +37,7 @@ Flags:
   -h, --help            help for spectrum
       --rate float      redraws per second with --watch (default 2)
       --retune          move the radio to the frequency even when other channels are listening on it (they fall silent)
-      --span string     width of the band to show, e.g. 2.4M or 200k (default: the device's default rate)
+      --span string     width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate, snapped to the nearest rate the radio supports (default: the device's default rate, or the width it is already capturing)
   -w, --watch           keep redrawing until Ctrl-C
       --width int       chart width in columns (default: the terminal's, or 80 when piped)
 

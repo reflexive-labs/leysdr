@@ -128,3 +128,36 @@ func TestMorseTiming(t *testing.T) {
 		t.Fatalf("first element should be a dah: %v", spans[0])
 	}
 }
+
+// The three fixtures that do not fit at 240 kHz (see TestCheckReducedGeneration)
+// each round-trip generate+check on their own at a rate that holds them.
+func TestCheckEachWideFixture(t *testing.T) {
+	cases := []struct {
+		name string
+		rate string
+	}{
+		{"am_tone", "1024000"},
+		{"wfm_tone", "1536000"},
+		{"two_nfm", "1024000"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var out bytes.Buffer
+			if err := runGenerate([]string{"--out", dir, "--rate", c.rate, "--duration", "0.25", "--only", c.name}, &out); err != nil {
+				t.Fatal(err)
+			}
+			out.Reset()
+			if err := runCheck([]string{dir}, &out); err != nil {
+				t.Fatalf("check failed: %v\n%s", err, out.String())
+			}
+			got := out.String()
+			if !strings.Contains(got, "PASS "+c.name+".json[0]") || strings.Contains(got, "FAIL") {
+				t.Fatalf("expected PASS for %s:\n%s", c.name, got)
+			}
+			if c.name == "two_nfm" && !strings.Contains(got, "PASS two_nfm.json[1]") {
+				t.Fatalf("two_nfm should check both channels:\n%s", got)
+			}
+		})
+	}
+}

@@ -167,8 +167,12 @@ what `auto` squelch measures against. With a frequency (`ley spectrum 101.1`) th
 free or already covering it; a capture is created for the run and removed on exit. When other
 channels are listening on a band that does not cover the frequency, `spectrum` refuses to move
 the radio and says so; `--retune` moves it anyway (they fall silent). `--watch` (`-w`) keeps
-redrawing until Ctrl-C, `--span 200k` narrows the view, `--bins 2048` sharpens it, `--width 72`
-fits a narrow terminal. The loudest bins are just that — only bins at least 6 dB above the floor
+redrawing until Ctrl-C, `--bins 2048` sharpens it, `--width 72` fits a narrow terminal. `--span`
+is the width of the band shown, which is the capture's sample rate: for a fresh capture `ley`
+snaps it to the nearest rate the radio supports and says so (`showing 250.000 kHz, the closest
+this radio can do to 200.000 kHz`); when the radio is already capturing at a different width,
+`spectrum` exits 2 naming the current width — drop `--span`, ask for that width, or free the
+radio with `ley stop all`. The loudest bins are just that — only bins at least 6 dB above the floor
 are listed, and a quiet band says `loudest bins: nothing above the floor`; `spectrum` does not
 call them signals or guess bandwidths; `scan` will do detection later (`ley help roadmap`).
 
@@ -292,7 +296,7 @@ meets first:
 |---|---|---|
 | `ley: the Leyline daemon is not running (socket ...). Start it with: ley daemon start` (exit 3) | nothing is answering on the socket | `ley daemon start`; if it says a stale socket is in the way, `ley daemon stop && ley daemon start` |
 | `no radio found. Check, in order:` under an empty `ley devices` table | the daemon runs but sees no radio | the checklist: plugged in (try another port or cable), `rtl_test` sees it, nothing else has it open, `ley daemon logs` for driver errors |
-| `ley: 1.800 GHz is outside what Generic RTL2832U (R820T) can tune (24.000 MHz – 1.766 GHz); did you mean 1.800 MHz (160 m amateur)? write 1800k` | a bare number is MHz, so `1800` was 1800 MHz | type the unit: `ley tune 1800k` |
+| `ley: 1.800 GHz is outside what Generic RTL2832U (R820T) can tune (24.000 MHz – 1.766 GHz); did you mean 1.800 MHz (160 m amateur)? write 1800k [FREQ_OUT_OF_RANGE]` | a bare number is MHz, so `1800` was 1800 MHz | type the unit: `ley tune 1800k` |
 | `... this device cannot tune below 24.000 MHz; HF needs an upconverter or a device with direct sampling` | the frequency is real, the radio just cannot reach it | an upconverter, or a radio that can |
 | `ley: frequency: "146,52" contains a comma; use a dot for decimals (146.52) or a unit (146520k)` | commas are refused | `ley tune 146.52` |
 | `ley: preset: unknown name "noa"; did you mean noaa1, noaa2, noaa3? (ley help presets lists them all); or give a frequency such as 146.52 (MHz)` | not a preset | `ley tune noaa`, or the frequency |
@@ -302,7 +306,7 @@ meets first:
 | `ley: no channel matches "3" (a full id, id prefix, row number or frequency); pick one:` then rows `1  chan_…  146.520 MHz NFM` | the selector fit nothing; the rows are what exists | pick a row number or id from the list |
 | `ley: the radio is on 146.520 MHz with 1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway, or free it with: ley stop --all` | another channel rides on the capture and your frequency is outside its band | `ley tune 101.1 --retune`, or `ley stop all` first |
 | `1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k` (a warning, tune continues) | a bare number is MHz, and 1010 MHz is nothing in particular | `ley tune 1010k` if you meant AM broadcast |
-| `ley: the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits` | another client holds the radio on a band that does not cover your frequency | `ley state` shows who; tune inside its band, or stop it |
+| `ley: the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits [DEVICE_BUSY]` | another client holds the radio on a band that does not cover your frequency | `ley state` shows who; tune inside its band, or stop it |
 | `ley: unknown command "tunee" for "ley"` with `Did you mean this? tune` (exit 2) | a typo in the verb | take the suggestion |
 | full-scale static as soon as `tune` starts | squelch is off (scripts, `--persistent`, non-voice modes, or no spectrum row arrived) | `ley set squelch auto` |
 | `record`, `scan`, `watch` exit 2 with "not implemented yet" | planned verbs | `ley help roadmap` says what to use today |

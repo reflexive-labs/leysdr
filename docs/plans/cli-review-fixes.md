@@ -99,7 +99,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 - #16 client library: SubscribeFFT requests GAP_MARKED (audio and IQ stay LATEST_WINS), so the documented fft gap
   line is reachable; test `ley fft --format json --count 55` against the fake and assert the gap line; docs.
 
-### CLI-7 `[ ]` Docs, leyfix coverage and the span decision (#18, #30, #7)
+### CLI-7 `[x]` Docs, leyfix coverage and the span decision (#18, #30, #7)
 
 - #18 cli-guide.md: append ` [FREQ_OUT_OF_RANGE]` / ` [DEVICE_BUSY]` to the two example lines.
 - #30 leyfix_test: generate+check am_tone, wfm_tone and two_nfm individually via `--only` at a rate that fits.

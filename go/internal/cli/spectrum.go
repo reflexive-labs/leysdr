@@ -67,13 +67,19 @@ the run and removed when spectrum exits. When other channels are listening
 on a band that does not cover the frequency, spectrum refuses to move the
 radio unless --retune is given.
 
+--span is the width of the band shown, which is the capture's sample rate.
+For a fresh capture it is snapped to the nearest rate the radio supports
+(spectrum says so on stderr); when the radio is already capturing at a
+different width, spectrum exits 2 and names it: drop --span, ask for that
+width, or free the radio with 'ley stop all'.
+
 It draws once by default. --watch keeps redrawing (--rate times a second)
 until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
 prints the same rows as numbers for tools.`,
 		Example: `  ley spectrum 101.1          # the FM broadcast band around 101.1 MHz
   ley spectrum                # the band ley tune is listening to
   ley spectrum 146.52 -w      # keep redrawing until Ctrl-C
-  ley spectrum 7.1 --span 200k --bins 2048
+  ley spectrum 7.1 --span 250k --bins 2048   # 250 kHz is the narrowest an RTL-SDR captures
   ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, peaks}`,
 		GroupID: GroupLooking,
 		Args:    cobra.MaximumNArgs(1),
@@ -105,7 +111,7 @@ prints the same rows as numbers for tools.`,
 			return runSpectrum(cmd.Context(), app, o)
 		},
 	}
-	cmd.Flags().StringVar(&span, "span", "", "width of the band to show, e.g. 2.4M or 200k (default: the device's default rate)")
+	cmd.Flags().StringVar(&span, "span", "", "width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate, snapped to the nearest rate the radio supports (default: the device's default rate, or the width it is already capturing)")
 	cmd.Flags().Uint32Var(&o.bins, "bins", 1024, "number of bins across the band (the daemon may round it)")
 	cmd.Flags().BoolVarP(&o.watch, "watch", "w", false, "keep redrawing until Ctrl-C")
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "redraws per second with --watch")
@@ -140,6 +146,20 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			return usageErrorf("%s", msg)
 		}
 	}
+	// --span is the capture width. A fresh capture gets the nearest rate the
+	// radio supports (said on stderr); an existing capture keeps its width, so
+	// a different span is refused up front rather than silently ignored.
+	span := o.span
+	if span != 0 {
+		span = leyline.NearestRate(s.device.SampleRates, o.span)
+		if cap != nil && cap.SampleRate != span {
+			return usageErrorf("the radio is already capturing %s wide, and spectrum shows the capture's width; drop --span, ask for --span %s, or free the radio with: ley stop all",
+				leyline.FormatFrequency(cap.SampleRate), leyline.FormatFrequency(cap.SampleRate))
+		}
+		if span != o.span {
+			fmt.Fprintf(app.Stderr, "showing %s, the closest this radio can do to %s\n", leyline.FormatFrequency(span), leyline.FormatFrequency(o.span))
+		}
+	}
 	// ensureCapture reuses a capture that covers the frequency, refuses to
 	// move one other channels ride on (unless --retune), and creates one
 	// otherwise; the capture created for this run is removed on exit.
@@ -147,7 +167,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if freq == 0 {
 		freq = cap.CenterHz
 	}
-	if err := s.ensureCapture(ctx, &tuneOptions{freq: freq, input: o.freqInput, rate: o.span, retune: o.retune}); err != nil {
+	if err := s.ensureCapture(ctx, &tuneOptions{freq: freq, input: o.freqInput, rate: span, retune: o.retune}); err != nil {
 		return err
 	}
 	if s.createdCapture {

@@ -241,3 +241,20 @@ func FrequencyHint(input string, hz uint64, ranges []*leylinev1.FrequencyRange) 
 	}
 	return ""
 }
+
+// NearestRate returns the entry of rates closest to want (a tie goes to the
+// higher rate). Empty rates return want unchanged: a device that does not
+// advertise its rates leaves validation to the daemon.
+func NearestRate(rates []uint64, want uint64) uint64 {
+	best, bestDiff := want, uint64(math.MaxUint64)
+	for _, r := range rates {
+		diff := r - want
+		if r < want {
+			diff = want - r
+		}
+		if diff < bestDiff || (diff == bestDiff && r > best) {
+			best, bestDiff = r, diff
+		}
+	}
+	return best
+}

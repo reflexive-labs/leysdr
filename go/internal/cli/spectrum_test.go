@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
@@ -141,5 +142,55 @@ func TestSpectrumWatchCountAndCapture(t *testing.T) {
 	_, _, err = run(t, ctx, sock, "spectrum", "1.010")
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "range") {
 		t.Fatalf("out of range: exit %d %v", exitCode(err), err)
+	}
+}
+
+// --span is the capture width: a fresh capture snaps it to the nearest rate
+// the radio supports (with a note on stderr); an existing capture at a
+// different width is refused with exit 2 rather than ignored.
+func TestSpectrumSpan(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	out, errOut, err := run(t, ctx, sock, "--json", "spectrum", "101.1", "--span", "200k", "--bins", "256")
+	if err != nil {
+		t.Fatalf("fresh capture with --span 200k: %v\n%s", err, errOut)
+	}
+	var row SpectrumRow
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &row); err != nil || row.SpanHz != 250_000 {
+		t.Fatalf("span should snap to 250 kHz: %v %+v", err, row)
+	}
+	if want := "showing 250.000 kHz, the closest this radio can do to 200.000 kHz"; !strings.Contains(errOut, want) {
+		t.Fatalf("stderr should note the snap %q:\n%s", want, errOut)
+	}
+	// An exact rate: no note.
+	_, errOut, err = run(t, ctx, sock, "--json", "spectrum", "101.1", "--span", "2.4M", "--bins", "256")
+	if err != nil || strings.Contains(errOut, "closest") {
+		t.Fatalf("exact span: %v\n%s", err, errOut)
+	}
+	// An existing capture keeps its width: a different span exits 2 and names the current width.
+	st, err := c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 101_100_000, SampleRate: 2_400_000}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run(t, ctx, sock, "spectrum", "--span", "250k")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "2.400 MHz wide") || !strings.Contains(err.Error(), "ley stop all") {
+		t.Fatalf("existing capture with a different span: exit %d %v", exitCode(err), err)
+	}
+	// The capture's own width (or one that snaps to it) is fine.
+	out, errOut, err = run(t, ctx, sock, "--json", "spectrum", "--span", "2.3M", "--bins", "256")
+	if err != nil {
+		t.Fatalf("matching span: %v\n%s", err, errOut)
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &row); err != nil || row.SpanHz != 2_400_000 {
+		t.Fatalf("row: %v %+v", err, row)
+	}
+	if !strings.Contains(errOut, "showing 2.400 MHz, the closest this radio can do to 2.300 MHz") {
+		t.Fatalf("stderr should note the snap:\n%s", errOut)
+	}
+	if st, err := c.State(ctx); err != nil || len(st.Captures) != 1 {
+		t.Fatalf("the shared capture must survive the run: %v %v", err, st.GetCaptures())
 	}
 }
