@@ -98,7 +98,7 @@ func (v *spectrumView) markerRow(cols int, lo, hi uint64) string {
 	}
 	label := " " + leyline.FormatFrequency(v.mark)
 	line := strings.Repeat(" ", spectrumGutter+col) + string(v.st.Glyphs().Marker)
-	if ui.Visible(line)+len(label) <= v.width {
+	if ui.Visible(line)+len(label) <= v.inner() {
 		return line + label
 	}
 	return line
@@ -107,15 +107,15 @@ func (v *spectrumView) markerRow(cols int, lo, hi uint64) string {
 // labelRow writes each tick's frequency under its tick, dropping any label the
 // width cannot fit beside its neighbour.
 func (v *spectrumView) labelRow(cols int, ticks []spectrumTick) string {
-	row := make([]byte, 0, v.width)
+	row := make([]byte, 0, v.inner())
 	for _, t := range ticks {
 		text := leyline.FormatFrequency(t.hz)
 		at := spectrumGutter + t.col - len(text)/2
 		if at < spectrumGutter {
 			at = spectrumGutter
 		}
-		if at+len(text) > v.width {
-			at = v.width - len(text)
+		if at+len(text) > v.inner() {
+			at = v.inner() - len(text)
 		}
 		if at < len(row)+1 || at < spectrumGutter {
 			continue
@@ -128,7 +128,8 @@ func (v *spectrumView) labelRow(cols int, ticks []spectrumTick) string {
 
 // peakBlock names the loudest bins as a label block: the strongest first, with
 // its margin above the noise floor, which is the number that decides whether a
-// frequency is worth tuning to.
+// frequency is worth tuning to. Every level here takes the same ramp ink the
+// chart gave that column, so the list and the chart agree on what is hot.
 func (v *spectrumView) peakBlock(b *strings.Builder, peaks []Peak, floor float64) {
 	const col = 8
 	label := func(word string) string { return v.st.Pad(v.st.Label(word), col) }
@@ -137,9 +138,9 @@ func (v *spectrumView) peakBlock(b *strings.Builder, peaks []Peak, floor float64
 		return
 	}
 	top := peaks[0]
-	head := fmt.Sprintf("%s  %s dBFS", leyline.FormatFrequency(top.CenterHz), fmtDb(top.Db))
+	head := fmt.Sprintf("%s  %s dBFS", leyline.FormatFrequency(top.CenterHz), v.levelInk(top.Db, fmtDb(top.Db)))
 	margin := fmt.Sprintf("%s dB above the floor", fmtDb(top.Db-floor))
-	if col+len(head)+2+len(margin) <= v.width {
+	if col+ui.Visible(head)+2+len(margin) <= v.width {
 		b.WriteString(label("peak") + head + "  " + v.st.Muted(margin) + "\n")
 	} else {
 		b.WriteString(label("peak") + head + "\n")
@@ -148,7 +149,7 @@ func (v *spectrumView) peakBlock(b *strings.Builder, peaks []Peak, floor float64
 	if len(peaks) > 1 {
 		parts := make([]string, 0, len(peaks)-1)
 		for _, p := range peaks[1:] {
-			parts = append(parts, fmt.Sprintf("%s %s", leyline.FormatFrequency(p.CenterHz), fmtDb(p.Db)))
+			parts = append(parts, fmt.Sprintf("%s %s", leyline.FormatFrequency(p.CenterHz), v.levelInk(p.Db, fmtDb(p.Db))))
 		}
 		rest := v.st.Truncate(strings.Join(parts, ", "), v.width-col)
 		b.WriteString(label("others") + rest + "\n")

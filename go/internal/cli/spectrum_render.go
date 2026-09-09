@@ -16,14 +16,18 @@ const (
 	spectrumMinCols = 10
 )
 
-// Level bands, in dB above the noise floor. Below spectrumQuietDb a column is
-// noise and is drawn Muted; at or above spectrumLoudDb it is loud enough to be
-// worth tuning to and is drawn Ok. Between them it is plain: something is
-// there, read it.
-const (
-	spectrumQuietDb = 6
-	spectrumLoudDb  = 20
-)
+// How the chart carries level as colour. Every column takes the ramp ink its
+// own dB lands on, so the noise floor reads cold and a carrier hot; the
+// three-band Muted/plain/Ok inking this replaced collapsed to plain across most
+// of a live band. The steps quantise the ramp so a row of eighty columns emits
+// a handful of escape sequences rather than one per column: neighbouring
+// columns that land on the same step share one run of ink.
+const spectrumLevelSteps = 24
+
+// spectrumFrameMinWidth is the narrowest terminal that gets a frame around the
+// chart. The border and its padding cost ui.BoxPadding columns of chart, which
+// a cramped screen cannot spare.
+const spectrumFrameMinWidth = 60
 
 // spectrumView draws one FFT row as a chart. It carries the state that must
 // survive between frames of a --watch run: the frozen dB scale (so the axis
@@ -33,6 +37,7 @@ type spectrumView struct {
 	width  int
 	mark   uint64 // the frequency the user asked for, 0 when they did not
 	holdOn bool   // keep a max-hold trace (--watch only)
+	framed bool   // draw the chart and its header inside a Box
 
 	top, bottom float64   // the frozen scale, in dBFS
 	noise       float64   // the median column: the noise line the eye sees
@@ -42,18 +47,34 @@ type spectrumView struct {
 }
 
 // newSpectrumView sizes a chart for one run. width is the resolved width;
-// mark is the frequency the user typed, or 0.
-func newSpectrumView(st ui.Style, width int, mark uint64, hold bool) *spectrumView {
+// mark is the frequency the user typed, or 0; frame asks for the border, which
+// is drawn only on a screen that has the alphabet and the columns for it.
+func newSpectrumView(st ui.Style, width int, mark uint64, hold, frame bool) *spectrumView {
 	if width <= 0 {
 		width = ui.DefaultWidth
 	}
-	return &spectrumView{st: st, width: width, mark: mark, holdOn: hold}
+	return &spectrumView{
+		st:     st,
+		width:  width,
+		mark:   mark,
+		holdOn: hold,
+		framed: frame && st.Unicode && width >= spectrumFrameMinWidth,
+	}
+}
+
+// inner is the width the chart itself may use: the whole width, less what the
+// frame spends on its border and padding when there is one.
+func (v *spectrumView) inner() int {
+	if v.framed {
+		return v.width - ui.BoxPadding
+	}
+	return v.width
 }
 
 // cols is the chart's width in columns, never less than spectrumMinCols even
 // on a terminal too narrow to deserve one, and never more than there are bins.
 func (v *spectrumView) cols(bins int) int {
-	c := v.width - spectrumGutter
+	c := v.inner() - spectrumGutter
 	if c < spectrumMinCols {
 		c = spectrumMinCols
 	}
@@ -77,12 +98,20 @@ func (v *spectrumView) render(bins []float64, peaks []Peak, floor float64, cente
 			v.hold[i] = math.Max(v.hold[i], d)
 		}
 	}
-	var b strings.Builder
+	// The chart, its header and its axis are one object and are framed as
+	// one; the peak list reads as prose under it and stays outside.
+	var chart strings.Builder
 	for _, line := range v.header(len(bins), floor, centerHz, spanHz) {
-		b.WriteString(line + "\n")
+		chart.WriteString(line + "\n")
 	}
-	v.chart(&b, colDb, floor)
-	v.axis(&b, cols, centerHz, spanHz)
+	v.chart(&chart, colDb, floor)
+	v.axis(&chart, cols, centerHz, spanHz)
+	var b strings.Builder
+	if v.framed {
+		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
+	} else {
+		b.WriteString(chart.String())
+	}
 	v.peakBlock(&b, peaks, floor)
 	return b.String()
 }

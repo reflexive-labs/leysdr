@@ -212,3 +212,49 @@ func TestSpectrumSpan(t *testing.T) {
 		t.Fatalf("the shared capture must survive the run: %v %v", err, st.GetCaptures())
 	}
 }
+
+// End to end, the frame and the ramp are a terminal's: a UTF-8 terminal wide
+// enough gets the chart in a box with its levels coloured, and the same run
+// piped is the bare lines a script already reads.
+func TestSpectrumFrameOnATerminal(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	listening(t, c)
+	app := ttyApp(sock)
+	app.TermWidth = func() int { return 100 }
+	app.LookupEnv = func(name string) (string, bool) {
+		switch name {
+		case "LANG":
+			return "en_US.UTF-8", true
+		case "TERM":
+			return "xterm-256color", true
+		}
+		return "", false
+	}
+	tty, _, err := runApp(t, app, "spectrum", "--bins", "256")
+	if err != nil {
+		t.Fatalf("spectrum on a terminal: %v\n%s", err, tty)
+	}
+	if !strings.HasPrefix(tty, "╭") || !strings.Contains(tty, "╰") {
+		t.Fatalf("a wide UTF-8 terminal should frame the chart:\n%s", tty)
+	}
+	if !strings.Contains(tty, "\x1b[") {
+		t.Fatalf("the chart should be inked on a terminal:\n%s", tty)
+	}
+	// The peak list is under the frame, not in it.
+	for _, l := range strings.Split(strings.TrimRight(tty, "\n"), "\n") {
+		if strings.Contains(ui.Strip(l), "peak ") && strings.Contains(l, "│") {
+			t.Errorf("the peak list belongs outside the frame: %q", l)
+		}
+	}
+	// --ascii keeps the same screen without either alphabet's frame.
+	plain, _, err := runApp(t, app, "--ascii", "spectrum", "--bins", "256")
+	if err != nil {
+		t.Fatalf("ascii spectrum: %v\n%s", err, plain)
+	}
+	if strings.ContainsAny(plain, "╭+") {
+		t.Fatalf("--ascii draws no frame:\n%s", plain)
+	}
+	if piped := mustRun(t, sock, "spectrum", "--bins", "256", "--width", "100"); strings.ContainsAny(piped, "╭+") {
+		t.Fatalf("piped output draws no frame:\n%s", piped)
+	}
+}

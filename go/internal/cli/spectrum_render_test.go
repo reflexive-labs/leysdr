@@ -38,7 +38,7 @@ const (
 // renderFixture draws one row through a fresh view.
 func renderFixture(t *testing.T, st ui.Style, width int, mark uint64, hold bool, bins []float64) string {
 	t.Helper()
-	v := newSpectrumView(st, width, mark, hold)
+	v := newSpectrumView(st, width, mark, hold, false)
 	peaks := loudestBins(bins, fixtureCenterHz, fixtureSpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
 	return v.render(bins, peaks, medianDb(bins), fixtureCenterHz, fixtureSpanHz) + v.nextStep(peaks)
 }
@@ -106,7 +106,7 @@ func TestSpectrumMarksTheRequestedFrequency(t *testing.T) {
 // The scale is frozen for the run: a quieter frame must not move it, and a
 // louder one moves it once and says so.
 func TestSpectrumScaleIsFrozen(t *testing.T) {
-	v := newSpectrumView(ui.Style{Width: 80}, 80, 0, true)
+	v := newSpectrumView(ui.Style{Width: 80}, 80, 0, true, false)
 	bins := spectrumFixture(1024, 640, -30)
 	v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
 	top, bottom := v.top, v.bottom
@@ -131,7 +131,7 @@ func TestSpectrumScaleIsFrozen(t *testing.T) {
 // The max-hold trace keeps what has been seen, and only --watch asks for it.
 func TestSpectrumMaxHold(t *testing.T) {
 	st := ui.Style{Unicode: true, Width: 80}
-	v := newSpectrumView(st, 80, 0, true)
+	v := newSpectrumView(st, 80, 0, true, false)
 	loud := spectrumFixture(1024, 200, -21)
 	v.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
 	quiet := spectrumFixture(1024, -1, 0)
@@ -139,7 +139,7 @@ func TestSpectrumMaxHold(t *testing.T) {
 	if !strings.Contains(text, "░") {
 		t.Fatalf("the carrier that has gone should leave a hold trace:\n%s", text)
 	}
-	one := newSpectrumView(st, 80, 0, false)
+	one := newSpectrumView(st, 80, 0, false, false)
 	one.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
 	if t2 := one.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz); strings.Contains(t2, "░") {
 		t.Fatalf("a one-shot chart holds nothing:\n%s", t2)
@@ -252,5 +252,204 @@ func TestSpectrumColumnLevels(t *testing.T) {
 	}
 	if best != -21 {
 		t.Fatalf("the carrier should survive folding, got %v", best)
+	}
+}
+
+// renderFramed draws one row through a view that asked for the frame, which it
+// keeps or drops on the style and the width alone.
+func renderFramed(t *testing.T, st ui.Style, width int, bins []float64) string {
+	t.Helper()
+	v := newSpectrumView(st, width, 0, false, true)
+	peaks := loudestBins(bins, fixtureCenterHz, fixtureSpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
+	return v.render(bins, peaks, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+}
+
+// spectrumRamp is a row that climbs from the noise floor to a carrier, so the
+// chart has a level for most of the ramp's steps to ink.
+func spectrumRamp(n int) []float64 {
+	bins := make([]float64, n)
+	for i := range bins {
+		bins[i] = -90 + 70*float64(i)/float64(n-1)
+	}
+	return bins
+}
+
+// inkRuns is every inked run of text in a rendered screen, as SGR parameters
+// and the text they cover.
+func inkRuns(text string) map[string][]string {
+	runs := map[string][]string{}
+	for _, part := range strings.Split(text, "\x1b[")[1:] {
+		i := strings.Index(part, "m")
+		if i < 0 {
+			continue
+		}
+		params, rest := part[:i], part[i+1:]
+		if params == "0" {
+			continue
+		}
+		if j := strings.Index(rest, "\x1b"); j >= 0 {
+			rest = rest[:j]
+		}
+		runs[params] = append(runs[params], rest)
+	}
+	return runs
+}
+
+// levelSGR is the parameters Level emits for one point of the ramp.
+func levelSGR(st ui.Style, frac float64) string {
+	s := st.Level(frac, "x")
+	return strings.TrimSuffix(strings.SplitN(s, "x", 2)[0], "m")[len("\x1b["):]
+}
+
+// Every column is inked by its own level, so a band that climbs from the noise
+// floor to a carrier reads by hue as well as by height. The three-band
+// Muted/plain/Ok inking this replaced collapsed to plain across most of a live
+// band.
+func TestSpectrumColoursByLevel(t *testing.T) {
+	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
+	text := renderFixture(t, st, 80, 0, false, spectrumRamp(1024))
+	colours := map[string]bool{}
+	for params := range inkRuns(text) {
+		if strings.HasPrefix(params, "38;2;") {
+			colours[params] = true
+		}
+	}
+	if len(colours) < 5 {
+		t.Fatalf("a band that climbs 70 dB should take several ramp inks, got %d:\n%s", len(colours), text)
+	}
+	// The ends of the ramp are the ends of the scale: the floor is cold, the
+	// loudest column is hot.
+	cold, hot := levelSGR(st, 0), levelSGR(st, 1)
+	if cold == hot {
+		t.Fatal("the ramp must ink the floor and the peak differently")
+	}
+	for _, want := range []string{cold, hot} {
+		if _, ok := inkRuns(text)[want]; !ok {
+			t.Errorf("no run inked %q in:\n%s", want, text)
+		}
+	}
+	// Colour off is still a chart: the block ramp does the same job.
+	if plain := renderFixture(t, ui.Style{Unicode: true, Width: 80}, 80, 0, false, spectrumRamp(1024)); strings.Contains(plain, "\x1b") {
+		t.Errorf("colour off must emit no ink:\n%q", plain)
+	}
+}
+
+// The max-hold trace keeps its dim treatment now that the live trace is
+// coloured: what has been is faint scaffolding, what is on the air is hue.
+func TestSpectrumMaxHoldStaysDim(t *testing.T) {
+	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
+	v := newSpectrumView(st, 80, 0, true, false)
+	loud := spectrumFixture(1024, 200, -21)
+	v.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
+	quiet := spectrumFixture(1024, -1, 0)
+	text := v.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz)
+	held := false
+	for params, runs := range inkRuns(text) {
+		for _, run := range runs {
+			if !strings.Contains(run, "░") {
+				continue
+			}
+			held = true
+			if params != "2" {
+				t.Errorf("the hold trace was inked %q, want the dim ink:\n%s", params, text)
+			}
+		}
+	}
+	if !held {
+		t.Fatalf("the carrier that has gone should leave an inked hold trace:\n%s", text)
+	}
+}
+
+// The peak list carries the same ramp ink the chart gave that level, so the
+// chart and the list agree about what is hot.
+func TestSpectrumPeakListTakesRampInk(t *testing.T) {
+	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
+	bins := spectrumFixture(1024, 640, -21)
+	v := newSpectrumView(st, 80, 0, false, false)
+	peaks := loudestBins(bins, fixtureCenterHz, fixtureSpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
+	text := v.render(bins, peaks, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+	want := levelSGR(st, levelFrac(v.levelBand(peaks[0].Db)))
+	line := ""
+	for _, l := range strings.Split(text, "\n") {
+		if strings.Contains(ui.Strip(l), "peak") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "\x1b["+want+"m"+fmtDb(peaks[0].Db)) {
+		t.Errorf("the peak's level is not inked with the chart's ramp (%q):\n%q", want, line)
+	}
+	// The margin and the frequency stay as they were: only the level ramps.
+	if !strings.Contains(ui.Strip(line), "-21 dBFS") {
+		t.Errorf("stripped peak line = %q", ui.Strip(line))
+	}
+}
+
+// A terminal wide enough gets the chart in a frame, with the header inside it
+// and the peak list outside; a pipe, --ascii and a cramped screen do not.
+func TestSpectrumFrame(t *testing.T) {
+	bins := spectrumFixture(1024, 640, -21)
+	st := ui.Style{Unicode: true, Width: 100}
+	text := renderFramed(t, st, 100, bins)
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if !strings.HasPrefix(lines[0], "╭") || !strings.HasSuffix(lines[0], "╮") {
+		t.Fatalf("the chart is not framed:\n%s", text)
+	}
+	if !strings.HasPrefix(lines[1], "│") || !strings.Contains(lines[1], "146.520 MHz") {
+		t.Errorf("the header belongs inside the frame, got %q", lines[1])
+	}
+	closed := -1
+	for i, l := range lines {
+		if strings.HasPrefix(l, "╰") {
+			closed = i
+		}
+	}
+	if closed < 0 || closed == len(lines)-1 {
+		t.Fatalf("the frame must close above the peak list:\n%s", text)
+	}
+	for _, l := range lines[closed+1:] {
+		if strings.Contains(l, "│") {
+			t.Errorf("the peak list is outside the frame, got %q", l)
+		}
+	}
+	// Piped, ASCII and narrow all draw the chart bare.
+	for _, tc := range []struct {
+		name  string
+		style ui.Style
+		width int
+		frame bool
+	}{
+		{"piped", ui.Style{Unicode: true, Width: 100}, 100, false},
+		{"ascii", ui.Style{Width: 100}, 100, true},
+		{"narrow", ui.Style{Unicode: true, Width: spectrumFrameMinWidth - 1}, spectrumFrameMinWidth - 1, true},
+	} {
+		v := newSpectrumView(tc.style, tc.width, 0, false, tc.frame)
+		got := v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+		if v.framed || strings.ContainsAny(got, "╭+") {
+			t.Errorf("%s must not be framed:\n%s", tc.name, got)
+		}
+		if v.inner() != tc.width {
+			t.Errorf("%s: inner width %d, want the whole %d", tc.name, v.inner(), tc.width)
+		}
+	}
+}
+
+// A framed chart still fits the width it was given, in both renderings, and
+// the ink is still nothing but ink.
+func TestSpectrumFramedFitsWidth(t *testing.T) {
+	bins := spectrumFixture(1024, 640, -21)
+	for _, width := range []int{spectrumFrameMinWidth, 80, 100, ui.MaxWidth} {
+		plain := renderFramed(t, ui.Style{Unicode: true, Width: width}, width, bins)
+		styled := renderFramed(t, ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: width}, width, bins)
+		if got := ui.Strip(styled); got != plain {
+			t.Errorf("width %d: framed styled and plain differ\nplain:\n%s\nstripped:\n%s", width, plain, got)
+		}
+		for _, l := range strings.Split(strings.TrimRight(styled, "\n"), "\n") {
+			if w := ui.Visible(l); w > width {
+				t.Errorf("width %d: framed line of %d columns: %q", width, w, ui.Strip(l))
+			}
+		}
+		if !strings.Contains(plain, "╭") {
+			t.Errorf("width %d: expected a frame:\n%s", width, plain)
+		}
 	}
 }

@@ -154,7 +154,7 @@ would put this CLI's stdout contract at the mercy of every call site.
   across the range and returns the input unchanged when `Color` is false; a forced 16-colour
   profile emits only the named five; and no ramp output appears under `--json`.
 
-### VIS-6 `[ ]` Colour the spectrum by level, and frame what deserves a frame
+### VIS-6 `[x]` Colour the spectrum by level, and frame what deserves a frame
 
 - Every spectrum column takes `Level` ink keyed to its own dB, so the band reads by hue as well as
   height: the noise floor is cold and a carrier is hot. This replaces the three-band

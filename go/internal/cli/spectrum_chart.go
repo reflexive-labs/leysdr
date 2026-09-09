@@ -10,13 +10,14 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// The three ink bands a chart column can be drawn in. They are indices, not
-// colours: a run of columns sharing one band is inked once, so a row carries a
-// handful of escape sequences rather than one per column.
+// The ink bands a chart cell can be drawn in. A non-negative band is a step of
+// the level ramp (see spectrumLevelSteps); the two negative bands are the inks
+// that are not keyed to a level. They are indices, not colours: a run of cells
+// sharing one band is inked once, so a row carries a handful of escape
+// sequences rather than one per column.
 const (
-	inkPlain = iota
-	inkMuted
-	inkOk
+	inkPlain = -1
+	inkMuted = -2
 )
 
 // inkedLine builds one chart row, merging neighbouring cells that share an ink
@@ -44,11 +45,11 @@ func (l *inkedLine) flush() {
 	text := l.run.String()
 	l.run.Reset()
 	l.open = false
-	switch l.band {
-	case inkMuted:
+	switch {
+	case l.band == inkMuted:
 		text = l.st.Muted(text)
-	case inkOk:
-		text = l.st.Ok(text)
+	case l.band >= 0:
+		text = l.st.Level(levelFrac(l.band), text)
 	}
 	l.out.WriteString(text)
 }
@@ -106,7 +107,7 @@ func (v *spectrumView) header(nbins int, floor float64, centerHz, spanHz uint64)
 		case curw == 0:
 			cur.WriteString(s.render(v.st))
 			curw = w
-		case curw+2+w <= v.width:
+		case curw+2+w <= v.inner():
 			cur.WriteString("  " + s.render(v.st))
 			curw += 2 + w
 		default:
@@ -134,10 +135,11 @@ func (v *spectrumView) gutter(label string, unit bool) string {
 }
 
 // chart draws the bars: one eighth-block per column per row, so ten rows carry
-// eighty levels. Columns within spectrumQuietDb of the floor are Muted, so the
-// noise reads as a low stipple rather than a wall; the floor itself is drawn as
-// a rule across the chart. With --watch a Muted max-hold trace marks the
-// loudest each column has been.
+// eighty levels. Each column takes the ramp ink of its own level, so the noise
+// floor reads cold and a carrier hot and the band can be read by hue as well as
+// by height; the floor itself is drawn as a rule across the chart. With --watch
+// a Muted max-hold trace marks the loudest each column has been, which keeps it
+// apart from the coloured live trace.
 func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64) {
 	g := v.st.Glyphs()
 	step := (v.top - v.bottom) / spectrumHeight
@@ -172,7 +174,7 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 				if cell == " " {
 					cell = v.st.Ramp(0.125)
 				}
-				band = spectrumBand(db - v.noise)
+				band = v.levelBand(db)
 			case v.holdOn && c < len(v.hold) && v.hold[c] > db:
 				if h := (v.hold[c] - base) / step; h > 0 && h <= 1 {
 					cell = string(g.BarEmpty)
@@ -198,17 +200,34 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 	}
 }
 
-// spectrumBand is how loud a column is relative to the noise floor, as an ink
-// band: noise, something, or loud enough to tune to.
-func spectrumBand(aboveFloor float64) int {
-	switch {
-	case aboveFloor < spectrumQuietDb:
-		return inkMuted
-	case aboveFloor < spectrumLoudDb:
-		return inkPlain
-	default:
-		return inkOk
+// levelBand is where a level sits on the ramp, as a step of spectrumLevelSteps.
+// The scale is the chart's own: the bottom of the axis is the cold end and the
+// top the hot one, so hue and height say the same thing, and the peak list can
+// ink its dB values the same way.
+func (v *spectrumView) levelBand(db float64) int {
+	span := v.top - v.bottom
+	if span <= 0 || math.IsNaN(db) || math.IsInf(db, 0) {
+		return 0
 	}
+	step := int((db - v.bottom) / span * float64(spectrumLevelSteps-1))
+	if step < 0 {
+		return 0
+	}
+	if step > spectrumLevelSteps-1 {
+		return spectrumLevelSteps - 1
+	}
+	return step
+}
+
+// levelFrac is a ramp step as the normalised level ui.Style.Level takes.
+func levelFrac(band int) float64 {
+	return float64(band) / float64(spectrumLevelSteps-1)
+}
+
+// levelInk is levelBand as ink, for the values outside the chart that must
+// agree with it.
+func (v *spectrumView) levelInk(db float64, text string) string {
+	return v.st.Level(levelFrac(v.levelBand(db)), text)
 }
 
 // spectrumEdges is the band's low and high frequency.

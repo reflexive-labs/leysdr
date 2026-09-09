@@ -196,7 +196,9 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
-	view := newSpectrumView(app.Style, o.width, o.freq, o.watch)
+	// The frame is a terminal's: piped output stays plain lines a script can
+	// read, and newSpectrumView drops it again on an ASCII or narrow screen.
+	view := newSpectrumView(app.Style, o.width, o.freq, o.watch, app.IsTTY())
 	w := newSpectrumWriter(app, out, o, rate)
 	defer w.finish()
 	tick := time.NewTicker(spectrumTickInterval)
