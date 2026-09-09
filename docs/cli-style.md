@@ -45,10 +45,22 @@ First match wins, evaluated separately for stdout and stderr:
 | 6 | `TERM` is `dumb` or empty | off |
 | 7 | that stream is a terminal | on, else off |
 
-**Depth is always the 16 ANSI names**, never 256 and never truecolor. The user's own
-terminal theme resolves them, so the output is legible on a light Terminal.app profile
-and a dark iTerm2 profile without querying the terminal for its background. Never emit
-an OSC background query: it writes to the terminal and reads stdin as a side effect.
+**Ink roles are the 16 ANSI names**, so the user's own terminal theme resolves them and
+they read on a light Terminal.app profile and a dark iTerm2 one. **One exception: the
+level ramp** (section 4a) uses the full depth the terminal reports, because a spectrum
+carries level by hue and sixteen colours cannot express a gradient. Everything else stays
+on the named sixteen. Never emit an OSC background query: it writes to the terminal and
+reads stdin as a side effect.
+
+### 4a. The level ramp
+
+`ui.Style.Level(frac)` maps a normalised level to a colour, and is the only place depth
+above sixteen colours is used. The ramp runs cold to hot so height and hue agree:
+deep blue at the noise floor, cyan, green, yellow, red at full scale. It degrades by
+profile, not by branch: truecolor renders the gradient, 256 renders the nearest cube
+colour, 16 collapses to blue/cyan/green/yellow/red, and none returns the string
+unchanged. A reader with colour off still has the eight-level block ramp, so level
+survives as height.
 
 ### Width
 

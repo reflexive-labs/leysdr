@@ -132,6 +132,42 @@ Files: `daemon.go`, `topics.go`, `root.go` (help), `cmd/ley/main.go`.
   `spawn ... fork/exec ...`) and re-check the 5 s stop timeout, which fired on clean stops during
   the audit.
 
+### UI-1 `[ ]` Adopt lipgloss and add the level ramp
+
+The dependency decision above is reversed by request: take `github.com/charmbracelet/lipgloss`
+(v1, the module path the user linked). v1 is the right line here because its `Render()`
+self-downsamples, so a stray `fmt.Fprintf` cannot leak truecolor into a pipe; v2 inverts that and
+would put this CLI's stdout contract at the mercy of every call site.
+
+- `internal/ui` renders its six ink roles through lipgloss styles instead of hand-written SGR.
+  The `Color bool` gate stays authoritative and is checked before lipgloss is called at all, so a
+  zero `Style` is still the identity function and every existing test and golden holds.
+- Detect the profile once, from the same per-stream decision `Resolve` already makes, and set it on
+  a lipgloss renderer the package owns. Never touch lipgloss's global default renderer, and never
+  call `HasDarkBackground` or `AdaptiveColor`: both query the terminal and read stdin.
+- Add `Level(frac float64) string`, the ramp from section 4a of the style guide: deep blue at the
+  floor through cyan, green and yellow to red at full scale, rendered at whatever depth the
+  profile reports and collapsing to five named colours at 16.
+- Add the line and border vocabulary lipgloss brings: a `Box` helper (rounded border) and a
+  heavier rule glyph set, both with ASCII fallbacks, for the screens that want a frame.
+- Tests: the identity property still holds with lipgloss in place; `Level` is monotone in hue
+  across the range and returns the input unchanged when `Color` is false; a forced 16-colour
+  profile emits only the named five; and no ramp output appears under `--json`.
+
+### VIS-6 `[ ]` Colour the spectrum by level, and frame what deserves a frame
+
+- Every spectrum column takes `Level` ink keyed to its own dB, so the band reads by hue as well as
+  height: the noise floor is cold and a carrier is hot. This replaces the three-band
+  Muted/plain/Ok inking, which real RF showed collapses to plain across most of a live band.
+  Keep the block ramp doing the same job for a reader with colour off.
+- The `--watch` max-hold trace keeps its own dim treatment so it stays distinguishable from the
+  live trace now that the live trace is coloured.
+- Frame the chart with the new `Box` helper on a terminal wide enough for it, with the header
+  inside the frame; no frame when piped, under `--ascii`, or below the width it needs.
+- Give the peak list the same ramp ink on its dB values so the chart and the list agree.
+- Verify against real RF over rtl_tcp (a live FM broadcast band shows a full range of levels), at
+  40, 80, 100 and 160 columns, in truecolor, 256, 16 and no colour.
+
 ## Closing
 
 Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one
