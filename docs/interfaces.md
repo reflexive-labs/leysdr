@@ -46,7 +46,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 └── (planned) jobs, transcript, recordings   # arrive with the Jobs/Resources services (Milestones C.12, D)
 ```
 
-Global flags: `--json` everywhere; `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`).
+Global flags: `--json` everywhere; `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
 
 **Input conventions** (`go/pkg/leyline`, shared by every verb): a bare frequency number is MHz
 (`146.52`, `1010`); units `k`, `M`, `G`, `Hz`, `e6` are exact; commas are refused with a hint.

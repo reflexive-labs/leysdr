@@ -330,12 +330,31 @@ func (a *App) printJSON(m proto.Message) error {
 // table returns a tabwriter over stdout; callers must Flush. The first line
 // written through it is the header row and takes Label ink: tabwriter still
 // measures the plain text, so the SGR bytes cannot misalign a column.
-func (a *App) table() *tabwriter.Writer {
+func (a *App) table() *tableWriter {
 	out := a.Stdout
+	var ink *headerInk
 	if a.Style.Color {
-		out = &headerInk{w: a.Stdout, ink: a.Style.Label}
+		ink = &headerInk{w: a.Stdout, ink: a.Style.Label}
+		out = ink
 	}
-	return tabwriter.NewWriter(out, 0, 8, 2, ' ', 0)
+	return &tableWriter{Writer: tabwriter.NewWriter(out, 0, 8, 2, ' ', 0), ink: ink}
+}
+
+// tableWriter is a tabwriter whose Flush also drains the header inker, so a
+// header row written without a trailing newline still reaches stdout.
+type tableWriter struct {
+	*tabwriter.Writer
+	ink *headerInk
+}
+
+func (t *tableWriter) Flush() error {
+	if err := t.Writer.Flush(); err != nil {
+		return err
+	}
+	if t.ink != nil {
+		return t.ink.flush()
+	}
+	return nil
 }
 
 // headerInk applies one ink role to the first line written through it and
@@ -374,6 +393,18 @@ func (h *headerInk) Write(p []byte) (int, error) {
 	}
 	h.buf = append(h.buf, p...)
 	return len(p), nil
+}
+
+// flush writes any buffered partial line, inked, and stops further inking.
+func (h *headerInk) flush() error {
+	if h.done || len(h.buf) == 0 {
+		return nil
+	}
+	line := string(h.buf)
+	h.buf, h.done = nil, true
+	text := strings.TrimRight(line, " ")
+	_, err := io.WriteString(h.w, h.ink(text)+line[len(text):])
+	return err
 }
 
 // resolveStyles decides stdout's and stderr's look once, before cmd runs.

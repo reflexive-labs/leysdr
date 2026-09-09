@@ -68,7 +68,7 @@ func TestRamp(t *testing.T) {
 	prev := -1
 	for i := 0; i <= 100; i++ {
 		got := uni.Ramp(float64(i) / 100)
-		idx := indexOf(uni.Glyphs().Ramp, []rune(got)[0])
+		idx := indexOf([]rune(uni.Glyphs().Ramp), []rune(got)[0])
 		if idx < prev {
 			t.Fatalf("ramp went backwards at %d%%: %q", i, got)
 		}

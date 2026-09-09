@@ -65,8 +65,9 @@ func (s Style) Cmd(text string) string { return s.ink(sgrCyan, text) }
 // whichever alphabet the style resolved to. Every glyph has an ASCII
 // fallback: a screen must be legible in both.
 type Glyphs struct {
-	// Ramp is the spectrum column ramp, empty first then eight levels.
-	Ramp []rune
+	// Ramp is the spectrum column ramp, empty first then eight levels. It is
+	// a string so a caller cannot mutate the shared alphabet.
+	Ramp string
 	// BarFull and BarEmpty draw level meters.
 	BarFull, BarEmpty rune
 	// Marker points at a frequency or a squelch threshold under an axis.
@@ -84,7 +85,7 @@ type Glyphs struct {
 
 var (
 	unicodeGlyphs = Glyphs{
-		Ramp:       []rune(" ▁▂▃▄▅▆▇█"),
+		Ramp:       " ▁▂▃▄▅▆▇█",
 		BarFull:    '█',
 		BarEmpty:   '░',
 		Marker:     '▲',
@@ -96,7 +97,7 @@ var (
 		Ellipsis:   "…",
 	}
 	asciiGlyphs = Glyphs{
-		Ramp:       []rune(" .:-=+*#%"),
+		Ramp:       " .:-=+*#%",
 		BarFull:    '#',
 		BarEmpty:   '.',
 		Marker:     '^',

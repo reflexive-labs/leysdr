@@ -56,7 +56,7 @@ func (s Style) Bar(frac float64, width int) string {
 // Ramp returns the one spectrum column that stands for frac, from blank at or
 // below zero to full at or above one (a NaN reads as blank).
 func (s Style) Ramp(frac float64) string {
-	r := s.Glyphs().Ramp
+	r := []rune(s.Glyphs().Ramp)
 	top := len(r) - 1
 	i := int(clamp01(frac)*float64(top) + 0.5)
 	if i > top {
