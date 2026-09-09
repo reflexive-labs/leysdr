@@ -410,11 +410,14 @@ func (c *Client) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 }
 
 // SubscribeFFT subscribes to the FFT ladder of a capture. bins/rowsPerSecond/format
-// are desires; read the returned Descriptor for what the daemon serves.
+// are desires; read the returned Descriptor for what the daemon serves. FFT rows
+// are requested GAP_MARKED so a consumer processing rows (rather than painting
+// them) sees a Gap on the first frame after a drop; audio and IQ stay LATEST_WINS.
 func (c *Client) SubscribeFFT(ctx context.Context, captureID string, bins uint32, rowsPerSecond float64, format leylinev1.FftBinFormat) (*Subscription, error) {
 	return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
 		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: captureID},
 		Kind:   leylinev1.StreamKind_FFT,
+		Policy: leylinev1.DeliveryPolicy_GAP_MARKED,
 		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: bins, BinFormat: format, RowsPerSecond: rowsPerSecond}},
 	})
 }

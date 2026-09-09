@@ -262,7 +262,9 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   `--rate` times a second, `--count` rows or until Ctrl-C, `--format json` or `bin`. `spectrum
   --json` emits one row with a `peaks` list. These rows are bulk data with no proto message,
   so their shape (`{seq, sample_index, center_hz, span_hz, bins}`) is the one documented
-  exception to the proto3 rule.
+  exception to the proto3 rule. `fft` rows are delivered gap-marked: when the daemon had to
+  drop rows, a `{"gap":{"from_sample":A,"to_sample":B}}` line precedes the next row (gap lines
+  do not count toward `--count`; `--format bin` carries no gap records).
 - **Defaults meant for people are off for scripts.** Under `--json` or `--persistent` squelch
   defaults to `off` (pass `--squelch auto` or a level); pass `--mode` explicitly rather than
   relying on band defaults; give frequencies with a unit (`146.52M`).

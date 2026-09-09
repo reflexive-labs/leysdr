@@ -98,6 +98,13 @@ needed.`,
 					f.bw = fmt.Sprintf("%d", sc.Expect[0].BandwidthHz)
 				}
 			}
+			// --freq is a usage error before anything reaches the daemon.
+			var freqHz uint64
+			if freq != "" {
+				if freqHz, err = leyline.ParseUserFrequency(freq); err != nil {
+					return usageErrorf("--freq: %v", err)
+				}
+			}
 			s, err := openSession(cmd.Context(), app)
 			if err != nil {
 				return err
@@ -131,9 +138,7 @@ needed.`,
 				hz = uint64(int64(hz) + sc.Expect[0].OffsetHz)
 			}
 			if freq != "" {
-				if hz, err = leyline.ParseUserFrequency(freq); err != nil {
-					return usageErrorf("--freq: %v", err)
-				}
+				hz = freqHz
 			}
 			o, err := f.parse(app, freq, hz, def)
 			if err != nil {

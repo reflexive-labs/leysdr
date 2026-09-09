@@ -12,7 +12,10 @@ for the run (destroyed on exit).
                {seq, sample_index, center_hz, span_hz, bins:[dB...]}
                Bulk rows have no proto message, so this shape (and the
                matching 'spectrum --json') is the documented exception to
-               ley's proto3 JSON rule; see docs/interfaces.md.
+               ley's proto3 JSON rule; see docs/interfaces.md. Rows are
+               delivered gap-marked: when the daemon had to drop rows, a
+               line {"gap":{"from_sample":A,"to_sample":B}} precedes the
+               next row and names the samples it skipped.
 --format bin:  one record per row: a 16-byte little-endian header
                magic "LEYF" | u32 bins | u64 seq
                followed by the payload as delivered by the daemon

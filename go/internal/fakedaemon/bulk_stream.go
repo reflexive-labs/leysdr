@@ -54,6 +54,12 @@ func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer
 			}
 			var payload []byte
 			var idx uint64
+			if c != nil && c.State == leylinev1.CaptureState_CAPTURE_ACTIVE && c.atEOF(now) {
+				// The file ran out (no loop): the device is gone from the
+				// capture's point of view, exactly as the daemon reports it.
+				d.fileEOFLocked(c)
+				c = nil
+			}
 			if c != nil {
 				idx = c.sampleIndex(now)
 				payload = d.renderLocked(s, c, ch, now)
@@ -71,6 +77,26 @@ func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer
 			if err := srv.Send(f); err != nil {
 				return nil
 			}
+		}
+	}
+}
+
+// fileEOFLocked is the end of a non-looping playback file: the device goes
+// DISCONNECTED and its capture CAPTURE_DETACHED (both stay in state, as after
+// a USB unplug; DestroyCapture / DetachFileDevice clean up). Open bulk streams
+// on the capture end; channels and sinks are kept.
+func (d *Daemon) fileEOFLocked(c *capture) {
+	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "daemon", Label: "playback"}
+	c.State = leylinev1.CaptureState_CAPTURE_DETACHED
+	if dev := d.devices[c.DeviceId]; dev != nil {
+		dev.State = leylinev1.DeviceState_DISCONNECTED
+		d.emit(by, dev)
+	}
+	d.emit(by, c.Capture)
+	for sid, s := range d.streams {
+		if s.captureID == c.CaptureId {
+			s.close()
+			delete(d.streams, sid)
 		}
 	}
 }

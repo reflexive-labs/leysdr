@@ -63,7 +63,9 @@ to stderr, so stdout is parseable. **Two documented exceptions.** The first sits
 shm-ring bypass in the design docs: bulk FFT rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins}` (snake_case, numbers
 as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
-presentation only, never called signals. The second is `ley version --json`: a client-local value
+presentation only, never called signals. `ley fft` subscribes GAP_MARKED (audio and IQ stay
+LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sample":B}}` line before the
+next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
 that order (pinned by a golden test).
 

@@ -193,8 +193,14 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			}
 			ch.OffsetHz = p.OffsetHz
 		case *leylinev1.ParamWrite_BandwidthHz:
-			if p.BandwidthHz == 0 || (c != nil && !channelFits(c, ch.OffsetHz, p.BandwidthHz)) {
-				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeOffsetOutOfCapture, w.TargetId, fmt.Sprintf("bandwidth %d Hz does not fit the capture", p.BandwidthHz)))
+			// Mirrors the daemon: bandwidth (like mode and squelch) is stored even while the
+			// channel is OUT_OF_CAPTURE and applied on re-entry, so it is not checked against the
+			// current offset. Only the offset-independent bound applies: 0 < bw <= capture rate.
+			if p.BandwidthHz == 0 {
+				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, "bandwidth must be > 0"))
+			}
+			if c != nil && uint64(p.BandwidthHz) > c.SampleRate {
+				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, fmt.Sprintf("bandwidth %d Hz is wider than the %d sps capture", p.BandwidthHz, c.SampleRate)))
 			}
 			ch.BandwidthHz = p.BandwidthHz
 		case *leylinev1.ParamWrite_Mode:

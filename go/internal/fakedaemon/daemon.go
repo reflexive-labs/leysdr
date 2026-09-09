@@ -65,6 +65,7 @@ type Daemon struct {
 	mu       sync.Mutex
 	seq      uint64
 	devices  map[string]*leylinev1.DeviceDescriptor
+	files    map[string]fileInfo // playback files by device id
 	captures map[string]*capture
 	channels map[string]*leylinev1.Channel
 	sinks    map[string]*leylinev1.Sink
@@ -92,11 +93,29 @@ type retainedEvent struct {
 type capture struct {
 	*leylinev1.Capture
 	startedAt time.Time
+	// file is set for captures on a playback device: without loop the sample
+	// index stops at file.samples and the capture detaches there (EOF).
+	file fileInfo
 }
 
-// sampleIndex returns the capture's current sample position.
+// sampleIndex returns the capture's current sample position: wall-clock
+// elapsed at the capture rate, held at the file's end for a non-looping
+// playback device (a looping one keeps counting, like the daemon's runningIndex).
 func (c *capture) sampleIndex(now time.Time) uint64 {
+	idx := c.elapsedSamples(now)
+	if c.file.samples > 0 && !c.file.loop && idx > c.file.samples {
+		return c.file.samples
+	}
+	return idx
+}
+
+func (c *capture) elapsedSamples(now time.Time) uint64 {
 	return uint64(now.Sub(c.startedAt).Seconds() * float64(c.SampleRate))
+}
+
+// atEOF reports whether a non-looping playback capture has consumed its file.
+func (c *capture) atEOF(now time.Time) bool {
+	return c.file.samples > 0 && !c.file.loop && c.elapsedSamples(now) >= c.file.samples
 }
 
 type watcher struct {
@@ -122,6 +141,7 @@ func New(opts Options) *Daemon {
 		opts:      opts,
 		startedNs: time.Now().UnixNano(),
 		devices:   map[string]*leylinev1.DeviceDescriptor{},
+		files:     map[string]fileInfo{},
 		captures:  map[string]*capture{},
 		channels:  map[string]*leylinev1.Channel{},
 		sinks:     map[string]*leylinev1.Sink{},

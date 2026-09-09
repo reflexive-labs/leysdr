@@ -123,6 +123,7 @@ func (d *Daemon) CreateCapture(ctx context.Context, req *leylinev1.CreateCapture
 		CreatedBy:  proto.Clone(ci).(*leylinev1.ClientInfo),
 	}}
 	c.Anchor = &leylinev1.CaptureAnchor{CaptureId: c.CaptureId, HostTimeNs: now.UnixNano(), SampleRate: rate}
+	c.file = d.files[dev.DeviceId]
 	for _, el := range dev.GainElements {
 		c.Gains = append(c.Gains, &leylinev1.GainState{Element: el.Name, Auto: el.SupportsAuto, Db: snapGain(el, el.MaxDb/2)})
 	}
@@ -278,17 +279,23 @@ func (d *Daemon) DetachSink(ctx context.Context, req *leylinev1.DetachSinkReques
 	return &leylinev1.Empty{}, nil
 }
 
-// AttachFileDevice implements Control: registers a playback device.
+// AttachFileDevice implements Control: opens and validates the recording the
+// way the daemon does (regular file, sidecar present with a sane sample_rate)
+// and registers a playback device.
 func (d *Daemon) AttachFileDevice(ctx context.Context, req *leylinev1.AttachFileDeviceRequest) (*leylinev1.DeviceDescriptor, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
 	if req.Path == "" {
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "path is required"))
 	}
-	dev := fileDevice(req.Path, req.Loop)
+	dev, info, e := openFileDevice(req.Path, req.Loop)
+	if e != nil {
+		return nil, fail(ctx, e)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.devices[dev.DeviceId] = dev
+	d.files[dev.DeviceId] = info
 	d.emit(ci, dev)
 	return proto.Clone(dev).(*leylinev1.DeviceDescriptor), nil
 }
@@ -316,6 +323,7 @@ func (d *Daemon) DetachFileDevice(ctx context.Context, req *leylinev1.DetachFile
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	delete(d.devices, dev.DeviceId)
+	delete(d.files, dev.DeviceId)
 	dev.State = leylinev1.DeviceState_DISCONNECTED
 	d.emit(ci, dev)
 	return &leylinev1.Empty{}, nil

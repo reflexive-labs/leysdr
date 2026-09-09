@@ -346,7 +346,8 @@ Anything meant for a person (banners, "using NFM: ...") goes to stderr, so
 stdout is always parseable. One documented exception to the proto3 rule:
 'ley fft' and 'ley spectrum --json' rows are bulk data with no proto
 message: {seq, sample_index, center_hz, span_hz, bins}, plus peaks for
-spectrum.
+spectrum. fft rows are gap-marked: a {"gap":{"from_sample","to_sample"}}
+line precedes the first row after the daemon dropped some.
 
 Exit codes:
   0    ok, including Ctrl-C during a live phase (tune, play, spectrum

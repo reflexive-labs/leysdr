@@ -88,7 +88,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   shows `ley stop 2`.
 - #33 ParseFrequency: no comma/underscore stripping; doc comment says Hz-strict; ParseUserFrequency unchanged; tests.
 
-### CLI-6 `[ ]` Fake daemon fidelity and stream delivery (#11, #10, #16)
+### CLI-6 `[x]` Fake daemon fidelity and stream delivery (#11, #10, #16)
 
 - #11 writes.go:156: drop the channelFits half of the bandwidth guard (bandwidth > 0 stays); add the stored-write
   test (bandwidth/mode/squelch on OUT_OF_CAPTURE, applied on re-entry) mirroring the daemon's.
