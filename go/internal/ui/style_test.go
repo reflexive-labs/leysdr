@@ -66,16 +66,16 @@ func TestInkStripsToPlain(t *testing.T) {
 func TestGlyphsAlphabets(t *testing.T) {
 	u := Style{Unicode: true}.Glyphs()
 	a := Style{}.Glyphs()
-	if len(u.Ramp) != 9 || len(a.Ramp) != 9 {
-		t.Fatalf("ramp lengths = %d/%d, want 9 each (empty plus eight levels)", len(u.Ramp), len(a.Ramp))
+	if len([]rune(u.Ramp)) != 9 || len([]rune(a.Ramp)) != 9 {
+		t.Fatalf("ramp lengths = %d/%d, want 9 each (empty plus eight levels)", len([]rune(u.Ramp)), len([]rune(a.Ramp)))
 	}
-	if u.Ramp[0] != ' ' || a.Ramp[0] != ' ' {
+	if []rune(u.Ramp)[0] != ' ' || []rune(a.Ramp)[0] != ' ' {
 		t.Error("both ramps must start blank")
 	}
 	if u.Absent != "-" || a.Absent != "-" {
 		t.Error("the absent value is - in both alphabets")
 	}
-	for _, r := range append(append([]rune{}, u.Ramp...), u.BarFull, u.BarEmpty, u.Marker, u.Rule) {
+	for _, r := range append([]rune(u.Ramp), u.BarFull, u.BarEmpty, u.Marker, u.Rule) {
 		if w := runeWidth(r); w != 1 {
 			t.Errorf("glyph %q measures %d columns, want 1", r, w)
 		}

@@ -15,6 +15,7 @@ linters:
         - (*bufio.Writer).WriteString
         - (*bufio.Writer).Flush
         - (*text/tabwriter.Writer).Flush
+        - (*github.com/dpup/leysdr/go/internal/cli.tableWriter).Flush
         - (*os.File).Close
         - os.RemoveAll
         - (*github.com/dpup/leysdr/go/pkg/leyline.Client).Close
