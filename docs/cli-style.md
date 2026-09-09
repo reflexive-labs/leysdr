@@ -93,8 +93,8 @@ Rules:
 
 ### 3a. The level ramp
 
-`ui.Style.Level(frac)` maps a normalised level to a colour, and is the only place depth
-above sixteen colours is used. The ramp runs cold to hot so height and hue agree:
+`ui.Style.Level(frac, text)` inks text with the colour a normalised level maps to, and is
+the only place depth above sixteen colours is used. The ramp runs cold to hot so height and hue agree:
 deep blue at the noise floor, cyan, green, yellow, red at full scale. It degrades by
 profile, not by branch: truecolor renders the gradient, 256 renders the nearest cube
 colour, 16 collapses to blue/cyan/green/yellow/red, and none returns the string
@@ -110,6 +110,8 @@ survives as height.
 | Level bar filled / empty | `█` / `░` | `#` / `.` | meter bars |
 | Marker (squelch, tuned freq) | `▲` | `^` | placed under the axis |
 | Horizontal rule | `─` | `-` | section separators, the noise floor |
+| Heavy rule | `━` | `=` | a break a light rule cannot carry |
+| Frame | `╭╮╰╯│─` | `+|-` | `ui.Style.Box`, for a chart that deserves one |
 | Tree branch / last / trunk | `├─` `└─` `│` | `+-` `\-` `|` | `ley state` hierarchy |
 | Absent value | `-` | `-` | never blank, never the same glyph as a range separator |
 
@@ -153,13 +155,18 @@ Styling may add SGR and may re-lay a screen, but these do not move:
 
 ## 7. The `ui` package
 
-`go/internal/ui` owns styling. It has no dependencies outside the standard library.
+`go/internal/ui` owns styling. It renders through lipgloss v1: `Render()` self-downsamples
+to the profile it was given, so a stray `fmt.Fprintf` cannot leak truecolor into a pipe. The
+package owns its own renderers, one per depth, writing nowhere; it never touches lipgloss's
+global default renderer, and never calls `HasDarkBackground` or `AdaptiveColor`, both of
+which query the terminal and read stdin.
 
 ```go
 type Style struct {
-    Color   bool // emit SGR
-    Unicode bool // use the UTF-8 glyph set
-    Width   int  // resolved terminal width, 0 = unknown
+    Color   bool    // emit SGR
+    Profile Profile // colour depth, for Level alone; zero reads as the 16 names
+    Unicode bool    // use the UTF-8 glyph set
+    Width   int     // resolved terminal width, 0 = unknown
 }
 
 // Zero value is plain, ASCII, unknown width: every method is the identity.
@@ -175,7 +182,10 @@ func (s Style) Pad(text string, n int) string      // pad to visible width
 func (s Style) Truncate(text string, n int) string // ellipsis on visible width
 func (s Style) Bar(frac float64, width int) string // level bar
 func (s Style) Ramp(frac float64) string           // one column of the spectrum ramp
+func (s Style) Level(frac float64, text string) string // the level ramp, section 3a
 func (s Style) Rule(width int) string
+func (s Style) RuleHeavy(width int) string
+func (s Style) Box(content string) string          // rounded frame, ASCII fallback
 
 func Visible(string) int    // width ignoring SGR
 func Strip(string) string   // remove SGR; tests assert on this

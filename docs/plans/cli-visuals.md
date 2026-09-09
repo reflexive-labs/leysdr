@@ -132,7 +132,7 @@ Files: `daemon.go`, `topics.go`, `root.go` (help), `cmd/ley/main.go`.
   `spawn ... fork/exec ...`) and re-check the 5 s stop timeout, which fired on clean stops during
   the audit.
 
-### UI-1 `[ ]` Adopt lipgloss and add the level ramp
+### UI-1 `[x]` Adopt lipgloss and add the level ramp
 
 The dependency decision above is reversed by request: take `github.com/charmbracelet/lipgloss`
 (v1, the module path the user linked). v1 is the right line here because its `Render()`

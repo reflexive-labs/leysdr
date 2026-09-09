@@ -74,6 +74,15 @@ func (s Style) Rule(width int) string {
 	return strings.Repeat(string(s.Glyphs().Rule), width)
 }
 
+// RuleHeavy is Rule drawn with weight: the separator for a break a blank
+// line and a light rule cannot carry, such as the top of a framed chart.
+func (s Style) RuleHeavy(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return strings.Repeat(string(s.Glyphs().RuleHeavy), width)
+}
+
 // clamp01 folds a fraction into [0, 1]; anything that is not a number (NaN
 // fails every comparison) reads as zero.
 func clamp01(f float64) float64 {

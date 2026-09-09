@@ -49,11 +49,34 @@ type Options struct {
 // Resolve applies the colour, width and unicode chains of section 2 of
 // docs/cli-style.md and returns the style for the stream o names.
 func Resolve(o Options) Style {
+	color := resolveColor(o)
 	return Style{
-		Color:   resolveColor(o),
+		Color:   color,
+		Profile: resolveProfile(o, color),
 		Unicode: resolveUnicode(o),
 		Width:   resolveWidth(o),
 	}
+}
+
+// resolveProfile reports the colour depth the level ramp may use. It is
+// decided from the same per-stream answer the colour chain already gave, and
+// from the environment only: querying the terminal for its capabilities
+// writes to it and reads stdin as a side effect.
+func resolveProfile(o Options, color bool) Profile {
+	if !color {
+		return ProfileNone
+	}
+	if v, _ := o.lookup("COLORTERM"); strings.EqualFold(v, "truecolor") || strings.EqualFold(v, "24bit") {
+		return ProfileTrueColor
+	}
+	term, _ := o.lookup("TERM")
+	switch {
+	case strings.Contains(term, "direct"):
+		return ProfileTrueColor
+	case strings.Contains(term, "256color"):
+		return ProfileANSI256
+	}
+	return ProfileANSI
 }
 
 // resolveColor is the colour chain, first match wins.

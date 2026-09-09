@@ -116,3 +116,42 @@ func TestUnicodeChain(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveProfile is the depth chain for the level ramp: environment
+// only, never a query to the terminal, and never any depth at all when the
+// stream is not being coloured.
+func TestResolveProfile(t *testing.T) {
+	env := func(vars map[string]string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			v, ok := vars[name]
+			return v, ok
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		vars map[string]string
+		opts Options
+		want Profile
+	}{
+		{"truecolor", map[string]string{"TERM": "xterm-256color", "COLORTERM": "truecolor"}, Options{StdoutTTY: true}, ProfileTrueColor},
+		{"24bit", map[string]string{"TERM": "xterm", "COLORTERM": "24bit"}, Options{StdoutTTY: true}, ProfileTrueColor},
+		{"direct", map[string]string{"TERM": "xterm-direct"}, Options{StdoutTTY: true}, ProfileTrueColor},
+		{"256", map[string]string{"TERM": "screen-256color"}, Options{StdoutTTY: true}, ProfileANSI256},
+		{"plain terminal", map[string]string{"TERM": "xterm"}, Options{StdoutTTY: true}, ProfileANSI},
+		{"forced", map[string]string{"TERM": "dumb"}, Options{Color: "always"}, ProfileANSI},
+		{"piped", map[string]string{"TERM": "xterm-256color", "COLORTERM": "truecolor"}, Options{}, ProfileNone},
+		{"NO_COLOR", map[string]string{"TERM": "xterm-256color", "NO_COLOR": "1"}, Options{StdoutTTY: true}, ProfileNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := tc.opts
+			o.LookupEnv = env(tc.vars)
+			got := Resolve(o)
+			if got.Profile != tc.want {
+				t.Errorf("Profile = %v, want %v", got.Profile, tc.want)
+			}
+			if (got.Profile != ProfileNone) != got.Color {
+				t.Errorf("Profile %v disagrees with Color %v", got.Profile, got.Color)
+			}
+		})
+	}
+}
