@@ -9,6 +9,9 @@ DerivedData/
 *.xcodeproj
 *.xcworkspace
 
+# Agent scratch (worktrees created by parallel runs)
+.claude/
+
 # Pinned protoc plugins installed by scripts/gen-proto.sh
 .tools/
 
