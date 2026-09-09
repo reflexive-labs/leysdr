@@ -51,7 +51,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 - Nothing else changes: no verb is restyled in this item. The gate must be green with the package
   in place and unused by callers apart from `table()`.
 
-### VIS-1 `[ ]` Orientation, state and version
+### VIS-1 `[x]` Orientation, state and version
 
 Files: `root.go` (renderOrientation), `state.go`, `format.go`, `version.go`.
 
@@ -77,7 +77,7 @@ Files: `devices.go`, `tables.go`.
   aliases, group the `noaa*` family and the amateur bands under `Label` sub-headings. `--json`
   arrays keep every field including the full description.
 
-### VIS-3 `[ ]` Live verbs: tune, play, listen, set, stop
+### VIS-3 `[x]` Live verbs: tune, play, listen, set, stop
 
 Files: `tune.go`, `play.go`, `listen.go`, `session.go`, `set.go`, `stop.go`, `format.go`.
 
@@ -134,4 +134,33 @@ Files: `daemon.go`, `topics.go`, `root.go` (help), `cmd/ley/main.go`.
 
 ## Closing
 
-- Full gate on both hosts; `ui.Strip(styled) == plain` for every restyled screen; update the boxes.
+Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one
+commit per screen group, each built in its own worktree and applied to main with the suite run
+between). Gate in the container at 3768071:
+
+- Go: build, vet, `go test ./...` green; `make lint` 0 issues; `gofumpt` clean.
+- Swift: 137 tests, 0 failures (untouched by this pass).
+- e2e: 2/2. One assertion moved: `set`'s confirmation no longer repeats the channel id, so the
+  test asserts the value and the frequency it does print, and the state check that follows still
+  proves the write reached the right channel.
+- Verified by eye against the real daemon with a looping fixture: the spectrum chart at 40, 80 and
+  160 columns in both alphabets, `ley state`'s tree, `ley devices`, the tune banner and meter, and
+  a check that `--color always --json` leaks no escape byte on any verb or on the fft rows.
+
+### Follow-ups
+
+- `ley play`'s banner did not get the one-fact-per-line treatment `tune`'s did; it still reads as
+  a five-line block of ids. Worth a small follow-up for symmetry.
+- `ley state`'s per-device tuning range prints `146.520 MHz to 146.520 MHz` for a file device;
+  `ley devices` collapses a one-frequency range and state should share that helper.
+- The spectrum peak threshold is a constant 15 dB above the median bin. The honest quantity scales
+  with bin count (the max of N noise bins grows with ln N); if `scan` ever wants real detection it
+  needs the scaled form.
+- The live meter moved from stdout to stderr so the stderr-tty gate is coherent, but the banner
+  still goes to stdout in human mode, so a scraped live session now sees its two halves on
+  different streams. Worth deciding deliberately.
+- `ley bands`' NOTE column truncates to about 15 columns at 80 columns wide, because NAME, RANGE,
+  MODE and BANDWIDTH already spend 63. Dropping BANDWIDTH would give NOTE room.
+- `docs/cli-style.md` section 6 says only the `ley:` prefix and the `[CODE]` suffix may take ink on
+  an error line, while the VIS-5 item also allowed a muted path and a highlighted remedy. The
+  implementation followed the item; the guide should be reconciled to match.
