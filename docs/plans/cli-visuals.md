@@ -208,6 +208,38 @@ is what the reported screenshot showed at frame 59). The top now rises at once a
 5 dB label step a frame, and `TestSpectrumScaleIsFrozen` was rewritten from "never contracts" to
 "never snaps".
 
+### VIS-8 `[ ]` Draw a trace, not a filled mass
+
+Reported after VIS-7 landed: "the spectrum is all dark blue, the heights look more accurate, I
+would expect this to show that KQED is operating on 88.5 but across the whole range the noise level
+looks more or less equivalent."
+
+Both halves are the same cause, and it is not the colour mapping. The ramp is already keyed to a
+column's margin over the noise line, so a noise column really is cold and a carrier really is hot.
+The problem is **area**: a filled bar chart paints every cell below a column's top, so on a 90
+column chart the noise floor covers two or three full rows, roughly two hundred cells, while KQED
+covers two columns, about sixteen cells. By area the picture is over 90% noise, and because noise is
+correctly cold, the picture is over 90% dark blue. Filling also destroys the very thing the reader
+wants to see: that the noise is flat. A solid block of full cells carries no shape.
+
+- **Draw the top edge of each column, not the column.** One glyph per column, placed on the row its
+  level falls in and picking the block from the sub-row remainder, with nothing painted beneath it.
+  Flat noise then reads as a thin uneven line near the floor, a carrier reads as a spike, and a wide
+  signal like WFM reads as a plateau. This is how a spectrum analyser draws, and it is what makes
+  "the noise is even across the band" visible at a glance.
+- Keep the noise floor rule, so the trace has a reference line to sit on.
+- Keep the ramp keyed to margin over the noise line: with the mass gone, the hot columns are most of
+  the remaining ink, so the chart reads warm exactly where there is signal.
+- The max-hold trace already draws as a thin rule; make sure the two remain distinguishable now that
+  the live trace is also thin (different glyph or ink, and the hold only where it clears the live
+  column).
+- Reconsider the level axis while there: with a trace, the three dB labels become readable rather
+  than decorative, so keep them, but the number a reader acts on is dB over the floor, which the
+  peak line already gives. Do not add more labels.
+- Verify on the radio over rtl_tcp in one batch on a single long-lived capture (rtl_tcp is single
+  client and has been fragile): the FM band must make KQED unmistakable, and a quiet band must show
+  an even line with no spike.
+
 ## Closing
 
 Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one
