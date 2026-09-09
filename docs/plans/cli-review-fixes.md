@@ -79,7 +79,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   skip the destroy when other clients' channels remain (report it on stderr). Test with a second client adding a
   channel after the session opened.
 
-### CLI-5 `[ ]` Selectors and parsing (#6, #13, #5, #33)
+### CLI-5 `[x]` Selectors and parsing (#6, #13, #5, #33)
 
 - #6 resolveTarget: explicit --channel and --capture that disagree (channel.CaptureId != capture.CaptureId) are a
   usage error naming both ids.

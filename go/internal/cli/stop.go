@@ -56,7 +56,7 @@ several radios in use, --device says which.`,
 			if all {
 				return stopAll(cmd.Context(), s, deviceSel)
 			}
-			ch, cap, err := resolveTarget(s, sel, "")
+			ch, cap, err := resolveTarget(s, sel, "", stopTarget)
 			if err != nil {
 				return err
 			}
@@ -75,7 +75,7 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 	if ch == nil {
 		return fmt.Errorf("nothing to stop; ley state lists what is running")
 	}
-	desc := fmt.Sprintf("%s %s (channel %d, %s)", leyline.FormatFrequency(channelFreq(ch, cap)), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(s.state, ch), ch.ChannelId)
+	desc := fmt.Sprintf("%s %s (channel %d, %s)", channelFreqLabel(s.state, ch), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(s.state, ch), ch.ChannelId)
 	resp, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId})
 	if err != nil {
 		return err

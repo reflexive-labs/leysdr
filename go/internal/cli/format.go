@@ -87,12 +87,15 @@ func clientString(ci *leylinev1.ClientInfo) string {
 	return fmt.Sprintf("%s:%s (%s)", ci.Kind, ci.Label, ci.ClientId)
 }
 
-// channelFreq returns the absolute frequency of a channel given its capture.
-func channelFreq(ch *leylinev1.Channel, cap *leylinev1.Capture) uint64 {
-	if cap == nil {
-		return 0
+// channelFreqLabel renders a channel's absolute frequency (capture center
+// plus offset, via leyline.ChannelFrequency) or "?" when its capture is not
+// in state or the sum is below zero.
+func channelFreqLabel(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) string {
+	hz, ok := leyline.ChannelFrequency(state, ch)
+	if !ok {
+		return "?"
 	}
-	return uint64(int64(cap.CenterHz) + ch.OffsetHz)
+	return leyline.FormatFrequency(hz)
 }
 
 // eventLine renders an event as one human-readable line.
@@ -111,8 +114,8 @@ func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 	case *leylinev1.Event_Channel:
 		c := p.Channel
 		freq := ""
-		if cap := captureByID(state, c.CaptureId); cap != nil {
-			freq = " " + leyline.FormatFrequency(channelFreq(c, cap))
+		if _, ok := leyline.ChannelFrequency(state, c); ok {
+			freq = " " + channelFreqLabel(state, c)
 		}
 		return fmt.Sprintf("channel %s %s%s %s bw %d squelch %s%s", c.ChannelId, enumName(c.State.String()), freq, leyline.ModeName(c.Mode), c.BandwidthHz, squelchString(c.SquelchDb), who)
 	case *leylinev1.Event_Sink:

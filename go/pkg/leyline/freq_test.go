@@ -21,7 +21,6 @@ func TestParseFrequency(t *testing.T) {
 		{"7.040 MHz", 7_040_000},
 		{"146.52e6", 146_520_000},
 		{" 96.9 mhz ", 96_900_000},
-		{"1,296.2 MHz", 1_296_200_000},
 		{"500Hz", 500},
 	}
 	for _, c := range cases {
@@ -34,7 +33,7 @@ func TestParseFrequency(t *testing.T) {
 			t.Errorf("ParseFrequency(%q) = %d, want %d", c.in, got, c.want)
 		}
 	}
-	for _, bad := range []string{"", "abc", "1.2.3M", "-5M", "12X"} {
+	for _, bad := range []string{"", "abc", "1.2.3M", "-5M", "12X", "1,296.2 MHz", "146,520,000", "146_520_000", "146_520k", "1_000.5M"} {
 		if _, err := ParseFrequency(bad); err == nil {
 			t.Errorf("ParseFrequency(%q): expected error", bad)
 		}

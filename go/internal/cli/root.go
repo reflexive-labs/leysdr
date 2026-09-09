@@ -467,10 +467,7 @@ func deviceSummary(d *leylinev1.DeviceDescriptor) string {
 
 // orientChannelLine is one line per channel: frequency, mode, squelch, owner.
 func orientChannelLine(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) string {
-	freq := "?"
-	if cap := captureByID(state, ch.CaptureId); cap != nil {
-		freq = leyline.FormatFrequency(channelFreq(ch, cap))
-	}
+	freq := channelFreqLabel(state, ch)
 	return fmt.Sprintf("%s %s, squelch %s, %s (%s)", freq, strings.ToUpper(leyline.ModeName(ch.Mode)),
 		squelchString(ch.SquelchDb), strings.ToLower(enumName(ch.State.String())), ch.ChannelId)
 }

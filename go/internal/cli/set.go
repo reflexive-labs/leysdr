@@ -109,7 +109,7 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 				return err
 			}
 			defer s.close()
-			ch, cap, err := resolveTarget(s, channelSel, captureSel)
+			ch, cap, err := resolveTarget(s, channelSel, captureSel, setTarget)
 			if err != nil {
 				return err
 			}
@@ -130,11 +130,30 @@ func unknownParam(name string) error {
 	return usageErrorf("%q is not a setting. Settings:\n%s", name, setParamList())
 }
 
+// targetHint says how a verb names its channel, for resolveTarget's messages:
+// set takes a flag (`--channel N`), stop a bare argument (`N`).
+type targetHint struct {
+	// flag prefixes a bad selector's error ("--channel" or "channel").
+	flag string
+	// pick is the selector form to suggest ("--channel N" or "its number N").
+	pick string
+	// example is a full command using pick ("ley set squelch -40 --channel 2").
+	example string
+}
+
+// setTarget and stopTarget are the hints for the two verbs that resolve a target.
+var (
+	setTarget  = targetHint{flag: "--channel", pick: "--channel N", example: "ley set squelch -40 --channel 2"}
+	stopTarget = targetHint{flag: "channel", pick: "its number N", example: "ley stop 2"}
+)
+
 // resolveTarget picks the channel (and its capture) a set applies to. With
 // no selector: one active channel → it; several → the cli-made one, but only
 // when exactly one active channel is cli-owned (the rest belong to the app,
-// an agent or a job), and the choice is printed; otherwise a numbered list. Selectors accept an id, id prefix, row number or frequency.
-func resolveTarget(s *session, channelSel, captureSel string) (*leylinev1.Channel, *leylinev1.Capture, error) {
+// an agent or a job), and the choice is printed; otherwise a numbered list
+// worded with hint. Selectors accept an id, id prefix, row number or
+// frequency; an explicit channel and capture that disagree are a usage error.
+func resolveTarget(s *session, channelSel, captureSel string, hint targetHint) (*leylinev1.Channel, *leylinev1.Capture, error) {
 	st := s.state
 	var ch *leylinev1.Channel
 	var cap *leylinev1.Capture
@@ -146,7 +165,10 @@ func resolveTarget(s *session, channelSel, captureSel string) (*leylinev1.Channe
 	}
 	if channelSel != "" {
 		if ch, err = leyline.ResolveChannel(st, channelSel); err != nil {
-			return nil, nil, fmt.Errorf("--channel: %w", err)
+			return nil, nil, fmt.Errorf("%s: %w", hint.flag, err)
+		}
+		if cap != nil && ch.CaptureId != cap.CaptureId {
+			return nil, nil, usageErrorf("channel %s is on capture %s, not --capture %s; drop one selector or pick a channel on that capture", ch.ChannelId, ch.CaptureId, cap.CaptureId)
 		}
 	} else {
 		var active []*leylinev1.Channel
@@ -160,7 +182,7 @@ func resolveTarget(s *session, channelSel, captureSel string) (*leylinev1.Channe
 			ch = active[0]
 		case 0:
 			if cap == nil {
-				return nil, nil, fmt.Errorf("nothing is playing; start with: ley tune 146.52 (or pick a channel with --channel)")
+				return nil, nil, fmt.Errorf("nothing is playing; start with: ley tune 146.52 (or pick a channel with %s)", hint.pick)
 			}
 		default:
 			var cli []*leylinev1.Channel
@@ -170,7 +192,7 @@ func resolveTarget(s *session, channelSel, captureSel string) (*leylinev1.Channe
 				}
 			}
 			if len(cli) != 1 {
-				return nil, nil, fmt.Errorf("%d channels are playing; pick one with --channel:\n%s\ne.g. ley set squelch -40 --channel 2", len(active), channelTable(st, active))
+				return nil, nil, fmt.Errorf("%d channels are playing; pick one with %s:\n%s\ne.g. %s", len(active), hint.pick, channelTable(st, active), hint.example)
 			}
 			ch = cli[0]
 			s.say("using channel %d, %s (the only active channel ley made)\n", channelRow(st, ch), channelSummary(st, ch))
@@ -199,7 +221,7 @@ func channelSummary(st *leylinev1.GetStateResponse, ch *leylinev1.Channel) strin
 	if o := ch.GetOwner(); o != nil {
 		owner = o.Kind + ":" + o.Label
 	}
-	return fmt.Sprintf("%s %s, %s (%s)", leyline.FormatFrequency(channelFreq(ch, captureByID(st, ch.CaptureId))), strings.ToUpper(leyline.ModeName(ch.Mode)), ch.ChannelId, owner)
+	return fmt.Sprintf("%s %s, %s (%s)", channelFreqLabel(st, ch), strings.ToUpper(leyline.ModeName(ch.Mode)), ch.ChannelId, owner)
 }
 
 // channelTable renders a numbered list of channels using state row numbers.
@@ -220,8 +242,8 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 	if s.app.JSON {
 		return s.app.printJSON(ch)
 	}
-	hz := channelFreq(ch, cap)
-	freq := leyline.FormatFrequency(hz)
+	hz, _ := leyline.ChannelFrequency(s.state, ch)
+	freq := channelFreqLabel(s.state, ch)
 	if b := leyline.BandFor(hz); b != nil {
 		freq += " (" + b.Name + ")"
 	}
@@ -421,7 +443,8 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 		if err := needChannel(); err != nil {
 			return nil, nil, err
 		}
-		m, reason, err := leyline.ResolveMode(value, channelFreq(ch, cap))
+		hz, _ := leyline.ChannelFrequency(s.state, ch)
+		m, reason, err := leyline.ResolveMode(value, hz)
 		if err != nil {
 			return nil, nil, paramErr(param, err)
 		}
@@ -522,7 +545,7 @@ func confirmLine(st *leylinev1.GetStateResponse, param, element string, ev *leyl
 	}
 	target := "the radio"
 	if ch != nil {
-		target = fmt.Sprintf("%s %s (channel %d, %s)", leyline.FormatFrequency(channelFreq(ch, cap)), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(st, ch), ch.ChannelId)
+		target = fmt.Sprintf("%s %s (channel %d, %s)", channelFreqLabel(st, ch), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(st, ch), ch.ChannelId)
 	} else if cap != nil {
 		target += " (" + cap.CaptureId + ")"
 	}

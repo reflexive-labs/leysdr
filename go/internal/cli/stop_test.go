@@ -62,8 +62,12 @@ func TestStopChannelAndAll(t *testing.T) {
 		t.Fatalf("after stop: %d channels", len(st.Channels))
 	}
 	// Both remaining channels belong to the app: a numbered list, then a frequency selector.
-	if _, _, err := run(t, context.Background(), sock, "stop"); err == nil || !strings.Contains(err.Error(), "2 channels are playing") {
+	// The hint is stop's own (a bare number), not set's --channel flag.
+	if _, _, err := run(t, context.Background(), sock, "stop"); err == nil || !strings.Contains(err.Error(), "2 channels are playing; pick one with its number N:") || !strings.Contains(err.Error(), "e.g. ley stop 2") || strings.Contains(err.Error(), "--channel") {
 		t.Fatalf("stop ambiguity: %v", err)
+	}
+	if _, _, err := run(t, context.Background(), sock, "stop", "chan_nope"); err == nil || !strings.HasPrefix(err.Error(), "channel: ") {
+		t.Fatalf("stop bad selector prefix: %v", err)
 	}
 	if out = mustRun(t, sock, "stop", "146.72"); !strings.Contains(out, "stopped 146.720 MHz NFM (channel ") {
 		t.Fatalf("stop by frequency: %s", out)

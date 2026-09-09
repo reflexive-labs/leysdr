@@ -86,8 +86,8 @@ func printState(app *App, st *leylinev1.GetStateResponse) {
 	fmt.Fprintln(w, "ID\tCAPTURE\tFREQ\tOFFSET\tMODE\tBW\tSQUELCH\tSTATE\tPERSISTENT\tOWNER")
 	for _, ch := range st.Channels {
 		freq := "-"
-		if cap := captureByID(st, ch.CaptureId); cap != nil {
-			freq = leyline.FormatFrequency(channelFreq(ch, cap))
+		if _, ok := leyline.ChannelFrequency(st, ch); ok {
+			freq = channelFreqLabel(st, ch)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%+d\t%s\t%d\t%s\t%s\t%v\t%s\n", ch.ChannelId, ch.CaptureId, freq, ch.OffsetHz,
 			leyline.ModeName(ch.Mode), ch.BandwidthHz, squelchString(ch.SquelchDb), enumName(ch.State.String()), ch.Persistent, clientString(ch.Owner))

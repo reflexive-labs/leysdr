@@ -333,7 +333,8 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 				continue
 			}
 			if mt, ok := m.Body.(*leylinev1.TelemetryMsg_Meter); ok {
-				line := meterLine(channelFreq(s.channel, s.capture), s.channel.Mode, mt.Meter)
+				hz, _ := leyline.ChannelFrequency(s.state, s.channel)
+				line := meterLine(hz, s.channel.Mode, mt.Meter)
 				fmt.Fprintf(s.app.Stdout, "\r%-*s", lastLen, line)
 				lastLen = len(line)
 			}

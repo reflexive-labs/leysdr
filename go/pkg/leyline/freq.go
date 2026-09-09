@@ -9,17 +9,24 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
 
-// ParseFrequency parses a human frequency string into Hz. Accepted forms:
-// "146520000", "146.52M", "146.52MHz", "7040k", "7.040 MHz", "1.2G", "146.52e6".
-// Suffixes are case-insensitive; an optional "Hz" is tolerated after the SI prefix.
+// ParseFrequency parses a frequency string into Hz, strictly: a bare number
+// is Hz, never MHz. Accepted forms: "146520000", "146.52M", "146.52MHz",
+// "7040k", "7.040 MHz", "1.2G", "146.52e6". Suffixes are case-insensitive; an
+// optional "Hz" is tolerated after the SI prefix and spaces are ignored.
+// Digit separators are rejected ("1,296.2M", "146_520_000"): a comma is
+// ambiguous between a decimal mark and a thousands separator. For the forms a
+// person at a radio would type (bare MHz, a comma hint) use ParseUserFrequency.
 func ParseFrequency(s string) (uint64, error) {
 	orig := s
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, " ", "")
-	s = strings.ReplaceAll(s, "_", "")
-	s = strings.ReplaceAll(s, ",", "")
 	if s == "" {
 		return 0, fmt.Errorf("frequency: empty string")
+	}
+	if strings.ContainsAny(s, ",_") {
+		// strconv.ParseFloat honours Go's digit separators ("146_520"), so
+		// spell the rule out instead of leaving it to the number syntax.
+		return 0, fmt.Errorf("frequency: cannot parse %q: digit separators are not accepted", orig)
 	}
 	mult := 1.0
 	s = strings.TrimSuffix(s, "hz")
