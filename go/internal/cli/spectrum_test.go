@@ -251,12 +251,25 @@ func TestSpectrumFrameOnATerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ascii spectrum: %v\n%s", err, plain)
 	}
-	if strings.ContainsAny(plain, "╭+") {
+	if framed(plain) {
 		t.Fatalf("--ascii draws no frame:\n%s", plain)
 	}
-	if piped := mustRun(t, sock, "spectrum", "--bins", "256", "--width", "100"); strings.ContainsAny(piped, "╭+") {
+	if piped := mustRun(t, sock, "spectrum", "--bins", "256", "--width", "100"); framed(piped) {
 		t.Fatalf("piped output draws no frame:\n%s", piped)
 	}
+}
+
+// framed reports whether a screen is boxed. A border is detected by its top-left
+// corner, not by the corner glyph appearing anywhere: the ASCII alphabet draws
+// its corner with '+', which is also the sixth step of the ASCII column ramp, so
+// a chart with signal in it carries plenty of them.
+func framed(screen string) bool {
+	for _, l := range strings.Split(screen, "\n") {
+		if t := strings.TrimLeft(ui.Strip(l), " "); strings.HasPrefix(t, "╭") || strings.HasPrefix(t, "+-") {
+			return true
+		}
+	}
+	return false
 }
 
 // A reused capture keeps its own centre, so the chart can be drawn around a

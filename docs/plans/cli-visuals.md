@@ -208,37 +208,60 @@ is what the reported screenshot showed at frame 59). The top now rises at once a
 5 dB label step a frame, and `TestSpectrumScaleIsFrozen` was rewritten from "never contracts" to
 "never snaps".
 
-### VIS-8 `[ ]` Draw a trace, not a filled mass
+### VIS-8 `[x]` Draw a trace, not a filled mass
 
 Reported after VIS-7 landed: "the spectrum is all dark blue, the heights look more accurate, I
 would expect this to show that KQED is operating on 88.5 but across the whole range the noise level
 looks more or less equivalent."
 
-Both halves are the same cause, and it is not the colour mapping. The ramp is already keyed to a
-column's margin over the noise line, so a noise column really is cold and a carrier really is hot.
-The problem is **area**: a filled bar chart paints every cell below a column's top, so on a 90
-column chart the noise floor covers two or three full rows, roughly two hundred cells, while KQED
-covers two columns, about sixteen cells. By area the picture is over 90% noise, and because noise is
-correctly cold, the picture is over 90% dark blue. Filling also destroys the very thing the reader
-wants to see: that the noise is flat. A solid block of full cells carries no shape.
+Measured against the radio first, on a 2.4 MHz capture centred on 88.5 over rtl_tcp. Two things
+came back. The chart was telling the truth about the band -- the column at 88.5 sat 1.8 dB *under*
+the band median, so there was nothing there to draw -- and the frequency mapping was verified
+independently against `fixtures/two_nfm.cf32`, whose two carriers at 146.220 and 146.620 land within
+one bin of truth. What was wrong was the drawing.
 
-- **Draw the top edge of each column, not the column.** One glyph per column, placed on the row its
-  level falls in and picking the block from the sub-row remainder, with nothing painted beneath it.
-  Flat noise then reads as a thin uneven line near the floor, a carrier reads as a spike, and a wide
-  signal like WFM reads as a plateau. This is how a spectrum analyser draws, and it is what makes
-  "the noise is even across the band" visible at a glance.
-- Keep the noise floor rule, so the trace has a reference line to sit on.
-- Keep the ramp keyed to margin over the noise line: with the mass gone, the hot columns are most of
-  the remaining ink, so the chart reads warm exactly where there is signal.
-- The max-hold trace already draws as a thin rule; make sure the two remain distinguishable now that
-  the live trace is also thin (different glyph or ink, and the hold only where it clears the live
-  column).
-- Reconsider the level axis while there: with a trace, the three dB labels become readable rather
-  than decorative, so keep them, but the number a reader acts on is dB over the floor, which the
-  peak line already gives. Do not add more labels.
-- Verify on the radio over rtl_tcp in one batch on a single long-lived capture (rtl_tcp is single
-  client and has been fragile): the FM band must make KQED unmistakable, and a quiet band must show
-  an even line with no spike.
+**Cause: area, not colour.** The ramp was already keyed near the noise line, so a noise column
+really was cold. But a filled bar chart paints every cell below a column's top, so on a 90 column
+chart the floor covered two full rows, about 180 cells, where the loudest signal covered a dozen. By
+area the picture was mostly noise, and because noise is correctly cold, the picture was mostly dark
+blue. Filling also destroyed the very thing the reader wanted: a solid block of cells has no shape,
+so "the noise is even across the band" could not be seen.
+
+Done:
+
+- **The chart draws the top edge of each column**, one glyph on the row its level falls in, picking
+  the block from the sub-row remainder. `traceRow` pins a column at or under the bottom to the first
+  row rather than dropping it, so a dip does not open a hole in the trace.
+- **A thin stem under the trace**, drawn with the trunk glyph, only in rows above the floor rule. A
+  first cut without the stem left a tall carrier as a glyph floating over nine blank rows on
+  high-dynamic-range playback; a first cut with stems everywhere rebuilt the wall one row lower.
+  Above the floor only is what keeps a tower reading as one thing at one frequency while a flat
+  floor stays a line. The stem is the trunk glyph and the max-hold trace is the rule glyph, so the
+  two never blur.
+- **The scale reserves one whole row under the noise line** (`floorRowLimit`). Rounding the noise
+  down to 5 dB, which is all the bottom used to do, left the floor rule on the first row or the
+  second depending on where the band happened to fall -- for a live FM band the label appeared about
+  one frame in ten. The bottom is now the lower of that rounding and the limit that guarantees the
+  row, so the rule always sits on a labelled row with a row beneath it for the columns that dip.
+- **The interior axis label names the noise floor** instead of an arbitrary mid-scale value, so a
+  column's height over the rule reads directly as signal margin. That is the answer to "is the scale
+  useful": the absolute dBFS numbers are for the header, and the number a reader acts on is margin.
+- **The bottom relaxes as the top does.** It is now tied to the top, so without the mirrored decay a
+  transient would drag it down and strand the rest of the run in a stretched chart.
+- **`levelBand` is keyed to the noise line**, not to the bottom of the axis. With a row of air
+  reserved under the floor, keying to the bottom counted that air as levels to ink and drew every
+  noise column slightly warm.
+
+Not done, deliberately: the chart is still mostly cold ink on an empty band, and that is correct.
+66% of the inked cells are blue on the 88.5 capture because 66% of that band is noise. Ink dropped
+from 187 cells to 131 and, more to the point, the cold ink is now a one-cell line with texture
+rather than a two-row block. Chasing the percentage would mean lying about the band.
+
+Tests: `TestSpectrumNoiseDrawsALineNotAMass` (a flat floor may not spend more than one block per
+column), `TestSpectrumDrawsOnlyTheTopEdge`, `TestSpectrumTallColumnKeepsAStem`,
+`TestSpectrumStemsStayAboveTheFloor`, `TestSpectrumAxisLabelsTheFloor`.
+`TestSpectrumFrameOnATerminal` had to stop detecting an ASCII frame by the bare presence of `+`,
+which is also the sixth step of the ASCII column ramp: it now looks for a top-left corner.
 
 ## Closing
 

@@ -603,3 +603,152 @@ func TestSpectrumScaleRelaxesAfterATransient(t *testing.T) {
 		t.Errorf("the top should relax to where a quiet band puts it: want %v, got %v", settled, v.top)
 	}
 }
+
+// chartBody is the chart rows of a render: everything between the header and
+// the axis rule, which is where the trace and its stems are drawn.
+func chartBody(t *testing.T, text string) []string {
+	t.Helper()
+	var rows []string
+	for _, ln := range strings.Split(ui.Strip(text), "\n") {
+		i := strings.IndexRune(ln, '│')
+		if i < 0 {
+			continue
+		}
+		// The axis rule under the chart also carries the trunk glyph, as its
+		// frequency ticks. A chart row's gutter is blank there.
+		if strings.ContainsRune(ln[:i], '─') {
+			continue
+		}
+		rows = append(rows, ln[i+len("│"):])
+	}
+	if len(rows) == 0 {
+		t.Fatalf("no chart rows in:\n%s", text)
+	}
+	return rows
+}
+
+// blockCells counts the filled cells of the eight-level ramp: the ink a column
+// spends. Stems and the floor rule are not blocks and do not count.
+func blockCells(rows []string) int {
+	n := 0
+	for _, r := range rows {
+		for _, c := range r {
+			if strings.ContainsRune("▁▂▃▄▅▆▇█", c) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// A flat noise floor is a line, not a mass. The chart used to paint every cell
+// under a column, so a band with nothing on it covered two whole rows -- some
+// two hundred cells against a carrier's dozen -- and read as one cold block
+// whatever was on the air. One column of noise may now leave one block.
+func TestSpectrumNoiseDrawsALineNotAMass(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 100}
+	quiet := spectrumFixture(1024, -1, 0)
+	rows := chartBody(t, renderFixture(t, st, 100, 0, false, quiet))
+	cols := newSpectrumView(st, 100, 0, false, false).cols(1024)
+	if got := blockCells(rows); got > cols {
+		t.Fatalf("a flat floor drew %d blocks over %d columns; it must not fill more than one apiece:\n%s",
+			got, cols, strings.Join(rows, "\n"))
+	}
+}
+
+// The trace is the top edge, so a column is drawn once however tall it is: no
+// row below its level may carry that column's block.
+func TestSpectrumDrawsOnlyTheTopEdge(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 100}
+	bins := spectrumFixture(1024, 512, -21)
+	rows := chartBody(t, renderFixture(t, st, 100, 0, false, bins))
+	// Walk each column down the rows; once a block has been seen, everything
+	// under it must be a stem, the floor rule or blank.
+	for c := 0; c < len(rows[0]); c++ {
+		seen := false
+		for _, r := range rows {
+			if c >= len(([]rune(r))) {
+				continue
+			}
+			ch := []rune(r)[c]
+			isBlock := strings.ContainsRune("▁▂▃▄▅▆▇█", ch)
+			if seen && isBlock {
+				t.Fatalf("column %d carries a second block below its top edge:\n%s", c, strings.Join(rows, "\n"))
+			}
+			seen = seen || isBlock
+		}
+	}
+}
+
+// A carrier standing well above the floor keeps a stem, so it reads as one
+// thing at one frequency rather than as a glyph floating in white space. The
+// stem is the trunk glyph, which is not the rule the max-hold trace draws with,
+// so the two stay apart.
+func TestSpectrumTallColumnKeepsAStem(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 100}
+	bins := spectrumFixture(1024, 512, -21)
+	rows := chartBody(t, renderFixture(t, st, 100, 0, false, bins))
+	stems := 0
+	for _, r := range rows {
+		stems += strings.Count(r, "│")
+	}
+	if stems == 0 {
+		t.Fatalf("a carrier 70 dB over the floor drew no stem:\n%s", strings.Join(rows, "\n"))
+	}
+	if strings.ContainsRune("│", '─') {
+		t.Fatal("the stem and the hold trace must use different glyphs")
+	}
+}
+
+// Nothing is stemmed down through the noise line. A column sitting on the floor
+// is the floor, and stemming it would rebuild the wall one row lower -- which
+// is what made the whole chart read as a single cold block.
+func TestSpectrumStemsStayAboveTheFloor(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 100}
+	// A busy band: many columns a little over the floor, one carrier well over.
+	bins := spectrumFixture(1024, 512, -21)
+	for i := range bins {
+		if i%3 == 0 {
+			bins[i] += 8
+		}
+	}
+	v := newSpectrumView(st, 100, 0, false, false)
+	text := v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
+	rows := chartBody(t, text)
+	// rows is drawn top-down; the floor rule is the lowest row carrying it.
+	floorIdx := -1
+	for i, r := range rows {
+		if strings.ContainsRune(r, '─') {
+			floorIdx = i
+		}
+	}
+	if floorIdx < 0 {
+		t.Fatalf("no floor rule drawn:\n%s", strings.Join(rows, "\n"))
+	}
+	for i := floorIdx; i < len(rows); i++ {
+		if strings.ContainsRune(rows[i], '│') {
+			t.Fatalf("row %d is at or below the floor rule but carries a stem:\n%s", i, strings.Join(rows, "\n"))
+		}
+	}
+}
+
+// The interior axis label names the noise floor, so a column's height over the
+// rule reads straight off as signal margin.
+func TestSpectrumAxisLabelsTheFloor(t *testing.T) {
+	st := ui.Style{Unicode: true, Width: 100}
+	// A live band's shape: a floor around -45 and a carrier 34 dB over it, so
+	// the floor rule sits clear of the first row and earns its label. On a
+	// fixture whose floor lands on the first row the label is suppressed,
+	// because the axis line right beneath already says the number.
+	bins := spectrumFixture(1024, 512, -11)
+	for i := range bins {
+		bins[i] += 45
+	}
+	bins[512] = -11
+	v := newSpectrumView(st, 100, 0, false, false)
+	text := ui.Strip(v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz))
+	want := fmtDb(v.noise)
+	if !strings.Contains(text, want) {
+		t.Fatalf("the axis must label the noise floor %s:\n%s", want, text)
+	}
+}

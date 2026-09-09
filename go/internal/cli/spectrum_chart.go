@@ -134,13 +134,20 @@ func (v *spectrumView) gutter(label string, unit bool) string {
 	return fmt.Sprintf("%4s", label) + v.st.Muted(suffix)
 }
 
-// chart draws the bars: one eighth-block per column per row, so ten rows carry
-// eighty levels. Each column takes the ramp ink of its own level, so the noise
-// floor reads cold and a carrier hot and the band can be read by hue as well as
-// by height; the floor itself is drawn as a rule across the chart. With --watch
-// a Muted max-hold trace marks, as a thin line, the columns whose recent peak
-// still stands clear of the live trace, which keeps it apart from the coloured
-// live trace and keeps noise from drawing a ceiling.
+// chart draws the band as a trace: one glyph per column, on the row that
+// column's level falls in and picking its eighth-block from the sub-row
+// remainder, with nothing painted beneath it. Filling every cell below a column
+// made the picture mostly noise by area -- a flat floor covers two whole rows,
+// some two hundred cells, where a carrier covers a dozen -- so the chart read as
+// one cold mass whatever was on the air, and the flatness of the floor, which is
+// the thing a reader is checking, had no shape to be seen in. A trace gives the
+// floor a line, a carrier a spike and a broadcast signal a plateau.
+//
+// Each column takes the ramp ink of its own level, so the floor reads cold and a
+// carrier hot; the floor itself is a rule across the chart, labelled on the
+// axis, so height above it is read as signal margin. With --watch a Muted
+// max-hold trace marks the columns whose recent peak still stands clear of the
+// live one.
 func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64) {
 	g := v.st.Glyphs()
 	step := (v.top - v.bottom) / spectrumHeight
@@ -160,8 +167,13 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 		switch r {
 		case spectrumHeight:
 			label, unit = fmtDb(v.top), true
-		case spectrumHeight / 2:
-			label = fmtDb(base)
+		case floorRow:
+			// The one interior label worth its four columns is the floor
+			// itself: with the rule drawn across the chart at this level, a
+			// column's height above it reads directly as signal margin. It is
+			// skipped when the floor sits on the first row, where the axis
+			// label right beneath it already says the same number.
+			label = fmtDb(v.noise)
 		}
 		cells := make([]string, len(colDb))
 		bands := make([]int, len(colDb))
@@ -170,7 +182,10 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 			cell, band := " ", inkMuted
 			fill := (db - base) / step
 			switch {
-			case fill > 0:
+			case v.traceRow(db, step) == r:
+				// The top edge of this column, and only it: the block is the
+				// part of this row the level reaches into, so a run of columns
+				// at one level draws as a line rather than as a wall.
 				cell = v.st.Ramp(fill)
 				if cell == " " {
 					cell = v.st.Ramp(0.125)
@@ -178,6 +193,20 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 				// A frame with nothing above the floor is drawn at the cold
 				// end of the ramp whatever its levels are, so a quiet band
 				// never wears the colours of a busy one.
+				band = 0
+				if !v.quiet {
+					band = v.levelBand(db)
+				}
+			case fill > 1 && r > floorRow:
+				// Below the trace and above the floor: a thin stem, not a
+				// filled block, so a tall column still reads as one thing
+				// standing at one frequency without the fill becoming the
+				// picture. A stem costs a stroke where a block costs a whole
+				// cell of ink, which is what turned a flat floor into a wall of
+				// colour. Nothing is stemmed down through the floor: a column
+				// sitting on the noise line is the line, and drawing its stem
+				// would rebuild the wall one row lower.
+				cell = g.TreeTrunk
 				band = 0
 				if !v.quiet {
 					band = v.levelBand(db)
@@ -210,17 +239,36 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 	}
 }
 
+// traceRow is the chart row a column's top edge is drawn in: the level's
+// position on the scale, in rows, rounded up. A column at or under the bottom
+// of the scale is pinned to the first row rather than dropped, so a dip does
+// not open a hole in the trace, and one over the top is pinned to the last.
+func (v *spectrumView) traceRow(db, step float64) int {
+	if math.IsNaN(db) || math.IsInf(db, 0) {
+		return 0 // no row: an absent column draws nothing
+	}
+	r := int(math.Ceil((db - v.bottom) / step))
+	if r < 1 {
+		return 1
+	}
+	if r > spectrumHeight {
+		return spectrumHeight
+	}
+	return r
+}
+
 // levelBand is where a level sits on the ramp, as a step of spectrumLevelSteps.
-// The scale is the chart's own: the bottom of the axis is the cold end and the
-// loudest column the run has seen the hot one, so hue and height say the same
-// thing (the scale's headroom is air, not levels to ink), and the peak list
-// can ink its dB values the same way.
+// The cold end is the noise line and the hot end the loudest column the run has
+// seen, so hue says what a reader actually wants to know: how far over the
+// floor this is. Keying it to the bottom of the axis instead, as this used to,
+// meant the row of air reserved under the floor counted as levels to ink, so
+// every noise column drew a little warm and the whole ramp was offset.
 func (v *spectrumView) levelBand(db float64) int {
-	span := v.peak - v.bottom
+	span := v.peak - v.noise
 	if span <= 0 || math.IsNaN(db) || math.IsInf(db, 0) {
 		return 0
 	}
-	step := int((db - v.bottom) / span * float64(spectrumLevelSteps-1))
+	step := int((db - v.noise) / span * float64(spectrumLevelSteps-1))
 	if step < 0 {
 		return 0
 	}

@@ -95,7 +95,11 @@ Rules:
 
 `ui.Style.Level(frac, text)` inks text with the colour a normalised level maps to, and is
 the only place depth above sixteen colours is used. The ramp runs cold to hot so height and hue agree:
-deep blue at the noise floor, cyan, green, yellow, red at full scale. It degrades by
+deep blue at the noise floor, cyan, green, yellow, red at full scale. **The cold end is the
+noise line, not the bottom of the chart**, so hue answers the question a reader actually
+has -- how far over the floor is this -- and a band with nothing on it is honestly, wholly
+cold. A mostly blue chart is a correct chart when the band is empty; what must never
+happen is blue with no shape in it (see the spectrum rule in section 5). It degrades by
 profile, not by branch: truecolor renders the gradient, 256 renders the nearest cube
 colour, 16 collapses to blue/cyan/green/yellow/red, and none returns the string
 unchanged. A reader with colour off still has the eight-level block ramp, so level
@@ -107,6 +111,7 @@ survives as height.
 | Purpose | UTF-8 | ASCII | Notes |
 |---|---|---|---|
 | Spectrum column ramp | ` ▁▂▃▄▅▆▇█` | ` .:-=+*#%` | eight levels plus empty |
+| Spectrum stem | `│` | `\|` | under a column's top edge, above the floor rule |
 | Level bar filled / empty | `█` / `░` | `#` / `.` | meter bars |
 | Marker (squelch, tuned freq) | `▲` | `^` | placed under the axis |
 | Horizontal rule | `─` | `-` | section separators, the noise floor |
@@ -135,6 +140,13 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **A screen ends with what to do next** when the user is likely to be mid-task:
   one `Cmd` line, never a paragraph.
 - **Blank lines group**; rules separate sections only when a blank line is not enough.
+- **A chart draws its trace, not its area.** One glyph per column, on the row that column's
+  value falls in, with a thin stem beneath it only where it stands above the reference line.
+  Filling every cell under a column makes area, not information: a flat noise floor covers
+  two whole rows -- some two hundred cells against a carrier's dozen -- so the picture reads
+  as one mass whatever is on the air, and the flatness of the floor, which is the thing the
+  reader is checking, has no shape to be seen in. The reference line itself is drawn as a
+  rule and labelled on the axis, so height above it reads directly as margin.
 
 ## 6. Frozen contracts
 

@@ -215,15 +215,19 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 		v.noise = floor
 	}
 	v.rescaled = false
-	// The chart starts at the noise line, so noise reads as a low stipple with
-	// the floor rule showing through it rather than as a solid wall, and every
-	// row above it is signal.
-	bottom := math.Floor(v.noise/5) * 5
 	// The top tracks the data: the loudest column plus a little headroom, and
 	// never closer to the noise line than spectrumMinSpanDb, so a dead-flat
 	// band still has rows to draw in without a quiet one being crushed into
 	// the bottom of the chart.
 	top := math.Ceil(math.Max(peak+spectrumHeadroomDb, v.noise+spectrumMinSpanDb)/5) * 5
+	// The chart starts a whole row below the noise line. Rounding the noise
+	// down to 5 dB, which is all this used to do, put the line somewhere in the
+	// first row or the second depending on where the band happened to fall, so
+	// the floor rule moved between runs and the axis label for it appeared
+	// about one time in ten. Reserving a row makes both deterministic: the rule
+	// always sits on a labelled row with a row beneath it for the columns that
+	// dip under the median.
+	bottom := math.Min(math.Floor(v.noise/5)*5, math.Floor(floorRowLimit(v.noise, top)/5)*5)
 	if !v.scaled {
 		v.bottom, v.top, v.peak, v.scaled = bottom, top, peak, true
 		return
@@ -251,4 +255,20 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 	if bottom < v.bottom {
 		v.bottom, v.rescaled = bottom, true
 	}
+	if bottom > v.bottom {
+		// The bottom relaxes as the top does, and for the same reason: it is
+		// tied to the top, so a transient drags it down, and without this the
+		// rest of the run draws in a chart stretched around a signal that has
+		// gone.
+		if relaxed := math.Min(math.Ceil((v.bottom+spectrumScaleDecayDb)/5)*5, bottom); relaxed > v.bottom {
+			v.bottom, v.rescaled = relaxed, true
+		}
+	}
+}
+
+// floorRowLimit is the highest the chart may start and still leave one whole
+// row under the noise line. A row is (top-bottom)/spectrumHeight dB, so the
+// constraint noise-bottom >= (top-bottom)/spectrumHeight solves for bottom.
+func floorRowLimit(noise, top float64) float64 {
+	return (spectrumHeight*noise - top) / (spectrumHeight - 1)
 }
