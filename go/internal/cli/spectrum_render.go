@@ -42,6 +42,7 @@ const (
 	spectrumHeadroomDb   = 3   // dB of air above the loudest column, before the scale rounds to 5
 	spectrumMinSpanDb    = 10  // the least the top may sit above the noise line
 	spectrumHoldDecayDb  = 1.5 // dB the hold falls toward the live column each frame
+	spectrumScaleDecayDb = 2   // dB the scale top and the ramp's hot end give back each frame
 	spectrumHoldMarginDb = 6   // dB a hold must stand above the live column to be drawn
 )
 
@@ -193,9 +194,10 @@ func columnLevels(bins []float64, cols int) []float64 {
 	return out
 }
 
-// rescale picks the dB scale on the first frame and then holds it, so a
-// --watch run is comparable with itself. A frame louder than the top raises it
-// once, visibly (the status line says so); the scale never contracts.
+// rescale picks the dB scale on the first frame and then follows the band
+// asymmetrically: it rises at once so a signal is never clipped, and falls by
+// at most spectrumScaleDecayDb a frame so a passing transient does not cost
+// the rest of the run its rows. Either move is visible in the status line.
 func (v *spectrumView) rescale(colDb []float64, floor float64) {
 	peak := floor
 	for _, d := range colDb {
@@ -226,10 +228,22 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 		v.bottom, v.top, v.peak, v.scaled = bottom, top, peak, true
 		return
 	}
-	// The ramp's hot end is the loudest level the run has seen, frozen like
-	// the scale so hue does not twitch between frames.
+	// The ramp's hot end and the scale follow the band, but slowly: a single
+	// transient must not permanently cost the chart its rows. Rising is
+	// immediate so a signal is never clipped; falling is gradual, so a burst
+	// that has passed gives its space back after a few seconds instead of
+	// leaving the rest of the run crushed into the bottom of the chart.
 	if peak > v.peak {
 		v.peak = peak
+	} else {
+		v.peak = math.Max(peak, v.peak-spectrumScaleDecayDb)
+	}
+	if top < v.top {
+		// Step down by whole label increments: the scale is rounded to 5 dB, so
+		// a decay smaller than that would round straight back to where it was.
+		if relaxed := math.Max(math.Floor((v.top-spectrumScaleDecayDb)/5)*5, top); relaxed < v.top {
+			v.top, v.rescaled = relaxed, true
+		}
 	}
 	if top > v.top {
 		v.top, v.rescaled = top, true

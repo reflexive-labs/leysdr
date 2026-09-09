@@ -103,8 +103,9 @@ func TestSpectrumMarksTheRequestedFrequency(t *testing.T) {
 	}
 }
 
-// The scale is frozen for the run: a quieter frame must not move it, and a
-// louder one moves it once and says so.
+// The scale follows the band asymmetrically: a louder frame raises it at once
+// so a signal is never clipped, a quieter one gives space back gradually so the
+// chart neither twitches nor stays stuck at the height of a passed transient.
 func TestSpectrumScaleIsFrozen(t *testing.T) {
 	v := newSpectrumView(ui.Style{Width: 80}, 80, 0, true, false)
 	bins := spectrumFixture(1024, 640, -30)
@@ -115,9 +116,13 @@ func TestSpectrumScaleIsFrozen(t *testing.T) {
 	}
 	quiet := spectrumFixture(1024, 640, -60)
 	v.render(quiet, nil, medianDb(quiet), fixtureCenterHz, fixtureSpanHz)
-	if v.top != top || v.bottom != bottom || v.note() != "" {
-		t.Fatalf("a quieter frame must not contract the scale: %v..%v", v.bottom, v.top)
+	if v.top > top {
+		t.Fatalf("a quieter frame must never raise the top: %v then %v", top, v.top)
 	}
+	if drop := top - v.top; drop > 5 {
+		t.Fatalf("the scale must relax gradually, not snap: %v dB in one frame", drop)
+	}
+	_ = bottom
 	loud := spectrumFixture(1024, 640, -5)
 	v.render(loud, nil, medianDb(loud), fixtureCenterHz, fixtureSpanHz)
 	if v.top <= top {
@@ -566,5 +571,35 @@ func TestSpectrumQuietBandReadsQuiet(t *testing.T) {
 	}
 	if !hot {
 		t.Fatalf("a detected carrier must still ink hot:\n%s", busy)
+	}
+}
+
+// A transient must not cost the rest of a --watch run its rows. The scale
+// rises at once so a signal is never clipped, then gives the space back a few
+// dB a frame once the band goes quiet again.
+func TestSpectrumScaleRelaxesAfterATransient(t *testing.T) {
+	v := newSpectrumView(ui.Style{}, 80, 0, true, false)
+	quiet := make([]float64, 256)
+	for i := range quiet {
+		quiet[i] = -60
+	}
+	loud := append([]float64(nil), quiet...)
+	loud[128] = -5
+
+	v.render(quiet, nil, -60, 100_000_000, 2_400_000)
+	settled := v.top
+	v.render(loud, nil, -60, 100_000_000, 2_400_000)
+	if v.top <= settled {
+		t.Fatalf("a loud frame must raise the top: %v then %v", settled, v.top)
+	}
+	raised := v.top
+	for i := 0; i < 40; i++ {
+		v.render(quiet, nil, -60, 100_000_000, 2_400_000)
+	}
+	if v.top >= raised {
+		t.Errorf("the top must come back down once the band is quiet again: raised %v, still %v", raised, v.top)
+	}
+	if v.top != settled {
+		t.Errorf("the top should relax to where a quiet band puts it: want %v, got %v", settled, v.top)
 	}
 }

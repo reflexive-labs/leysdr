@@ -199,6 +199,15 @@ daemon centres correctly, which was verified against the radio; this is about th
 Verify against the radio over rtl_tcp on a quiet band and on the FM broadcast band, in `--watch`,
 and confirm the two look different.
 
+Verified 2026-09-09 on the R820T over rtl_tcp. The quiet band (85.5 MHz) settles at a -45 to -25
+scale, noise fills the lower rows with no grey ceiling, and the peak line reads "nothing above the
+floor; the band looks quiet". The FM band (88.5 MHz) settles at -50 to -0 with carriers standing 40
+dB over the floor and a real peak list. A third fix was needed on top of the item: the scale only
+ever ratcheted upward, so one transient permanently cost the rest of a `--watch` run its rows (this
+is what the reported screenshot showed at frame 59). The top now rises at once and relaxes by one
+5 dB label step a frame, and `TestSpectrumScaleIsFrozen` was rewritten from "never contracts" to
+"never snaps".
+
 ## Closing
 
 Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one
