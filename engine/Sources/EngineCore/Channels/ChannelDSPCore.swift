@@ -152,6 +152,18 @@ public final class ChannelDSPCore: @unchecked Sendable {
         amDemodulator = demodulator as? AMDemodulator
         ssbDemodulator = demodulator as? SSBDemodulator
         try demodulator.configure(inputRate: channelizer.outputRate, bandwidthHz: config.bandwidthHz)
+        // Armed after configure, which is what decides the tapped rate, and never changed again for
+        // the life of this core: a config change rebuilds it. That is what lets the DSP thread read
+        // the reference without synchronisation.
+        if config.subAudibleDetect, let src = demodulator as? SubAudibleSource, src.subAudibleRate > 0 {
+            // Four seconds at the tapped rate: the drain runs many times a second, so this is slack,
+            // not a buffer anyone is meant to fill.
+            let ring = FloatRing(capacity: Int(src.subAudibleRate * 4))
+            src.subAudibleTap = ring
+            subAudibleTap = ring
+            subAudibleRate = src.subAudibleRate
+            subAudibleFullScale = src.fullScaleDeviationHz
+        }
         audioRate = demodulator.outputRate
         iqOut = SampleStorage(capacity: channelizer.maxOutput, format: .cf32)
         audioOut = SampleStorage(capacity: channelizer.maxOutput, format: .f32)
@@ -164,6 +176,12 @@ public final class ChannelDSPCore: @unchecked Sendable {
 
     /// Audio energy accumulated since the last meter record, owned by the DSP thread alone. The sum
     /// is a Double because a 100 ms interval at 48 kHz is 4800 squares and Float would drift.
+    /// The sub-audible tap, when this channel asked for one. Read by the slow detection task; the
+    /// DSP thread writes it through the demodulator and never looks at these.
+    public private(set) var subAudibleTap: FloatRing?
+    public private(set) var subAudibleRate: Double = 0
+    public private(set) var subAudibleFullScale: Double = 0
+
     private var audioSumSquares: Double = 0
     private var audioSamples: Int = 0
     private var audioPeak: Float = 0

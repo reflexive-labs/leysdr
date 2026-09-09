@@ -76,8 +76,10 @@ var catalog = []fixture{
 		description: "NFM 1 kHz tone at +100 kHz with a 100.0 Hz CTCSS tone at 700 Hz deviation",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
 		build: func(rate float64) []source {
-			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
-				subToneHz: 100.0, subDevHz: 700}}
+			return []source{&fmTone{
+				rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 100.0, subDevHz: 700,
+			}}
 		},
 		expect: func(float64) []iqfile.Expect {
 			e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
@@ -94,8 +96,10 @@ var catalog = []fixture{
 		description: "NFM voice with a 67.0 Hz CTCSS tone; the low end of the ladder, 2.3 Hz from 69.3",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
 		build: func(rate float64) []source {
-			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
-				subToneHz: 67.0, subDevHz: 700}}
+			return []source{&fmTone{
+				rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 67.0, subDevHz: 700,
+			}}
 		},
 		expect: func(float64) []iqfile.Expect {
 			e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
@@ -108,8 +112,10 @@ var catalog = []fixture{
 		description: "NFM voice with a 69.3 Hz CTCSS tone; the other half of the 67.0/69.3 pair",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
 		build: func(rate float64) []source {
-			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
-				subToneHz: 69.3, subDevHz: 700}}
+			return []source{&fmTone{
+				rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 69.3, subDevHz: 700,
+			}}
 		},
 		expect: func(float64) []iqfile.Expect {
 			e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
@@ -126,8 +132,10 @@ var catalog = []fixture{
 		description: "NFM voice with 100.0 Hz mains hum at 40 Hz deviation and no CTCSS: the false positive to reject",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
 		build: func(rate float64) []source {
-			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
-				subToneHz: 100.0, subDevHz: 40}}
+			return []source{&fmTone{
+				rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+				subToneHz: 100.0, subDevHz: 40,
+			}}
 		},
 		expect: func(float64) []iqfile.Expect {
 			// Hum at 40 Hz deviation barely touches the audio, so this one
@@ -148,8 +156,10 @@ var catalog = []fixture{
 		description: "NFM carrier with a 123.0 Hz CTCSS tone and no voice",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
 		build: func(rate float64) []source {
-			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 0, devHz: 0, dbfs: signalDBFS,
-				subToneHz: 123.0, subDevHz: 700}}
+			return []source{&fmTone{
+				rate: rate, carrierHz: 100_000, toneHz: 0, devHz: 0, dbfs: signalDBFS,
+				subToneHz: 123.0, subDevHz: 700,
+			}}
 		},
 		expect: func(float64) []iqfile.Expect {
 			return []iqfile.Expect{{

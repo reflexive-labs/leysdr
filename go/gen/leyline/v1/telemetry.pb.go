@@ -34,6 +34,7 @@ const (
 	TelemetryType_SQUELCH_TRANSITION         TelemetryType = 2
 	TelemetryType_DETECTION                  TelemetryType = 3
 	TelemetryType_CAPTURE_ACTIVITY           TelemetryType = 4
+	TelemetryType_SUB_AUDIBLE                TelemetryType = 5
 )
 
 // Enum value maps for TelemetryType.
@@ -44,6 +45,7 @@ var (
 		2: "SQUELCH_TRANSITION",
 		3: "DETECTION",
 		4: "CAPTURE_ACTIVITY",
+		5: "SUB_AUDIBLE",
 	}
 	TelemetryType_value = map[string]int32{
 		"TELEMETRY_TYPE_UNSPECIFIED": 0,
@@ -51,6 +53,7 @@ var (
 		"SQUELCH_TRANSITION":         2,
 		"DETECTION":                  3,
 		"CAPTURE_ACTIVITY":           4,
+		"SUB_AUDIBLE":                5,
 	}
 )
 
@@ -79,6 +82,58 @@ func (x TelemetryType) Number() protoreflect.EnumNumber {
 // Deprecated: Use TelemetryType.Descriptor instead.
 func (TelemetryType) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{0}
+}
+
+type SubAudibleKind int32
+
+const (
+	SubAudibleKind_SUB_AUDIBLE_KIND_UNSPECIFIED SubAudibleKind = 0
+	SubAudibleKind_SUB_AUDIBLE_NONE             SubAudibleKind = 1 // looked, found nothing
+	SubAudibleKind_SUB_AUDIBLE_CTCSS            SubAudibleKind = 2
+	SubAudibleKind_SUB_AUDIBLE_DCS              SubAudibleKind = 3
+)
+
+// Enum value maps for SubAudibleKind.
+var (
+	SubAudibleKind_name = map[int32]string{
+		0: "SUB_AUDIBLE_KIND_UNSPECIFIED",
+		1: "SUB_AUDIBLE_NONE",
+		2: "SUB_AUDIBLE_CTCSS",
+		3: "SUB_AUDIBLE_DCS",
+	}
+	SubAudibleKind_value = map[string]int32{
+		"SUB_AUDIBLE_KIND_UNSPECIFIED": 0,
+		"SUB_AUDIBLE_NONE":             1,
+		"SUB_AUDIBLE_CTCSS":            2,
+		"SUB_AUDIBLE_DCS":              3,
+	}
+)
+
+func (x SubAudibleKind) Enum() *SubAudibleKind {
+	p := new(SubAudibleKind)
+	*p = x
+	return p
+}
+
+func (x SubAudibleKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubAudibleKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_telemetry_proto_enumTypes[1].Descriptor()
+}
+
+func (SubAudibleKind) Type() protoreflect.EnumType {
+	return &file_leyline_v1_telemetry_proto_enumTypes[1]
+}
+
+func (x SubAudibleKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubAudibleKind.Descriptor instead.
+func (SubAudibleKind) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{1}
 }
 
 type TelemetrySubscription struct {
@@ -197,6 +252,7 @@ type TelemetryMsg struct {
 	//	*TelemetryMsg_Squelch
 	//	*TelemetryMsg_Detection
 	//	*TelemetryMsg_Activity
+	//	*TelemetryMsg_SubAudible
 	Body          isTelemetryMsg_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -289,6 +345,15 @@ func (x *TelemetryMsg) GetActivity() *CaptureActivityMsg {
 	return nil
 }
 
+func (x *TelemetryMsg) GetSubAudible() *SubAudible {
+	if x != nil {
+		if x, ok := x.Body.(*TelemetryMsg_SubAudible); ok {
+			return x.SubAudible
+		}
+	}
+	return nil
+}
+
 type isTelemetryMsg_Body interface {
 	isTelemetryMsg_Body()
 }
@@ -309,6 +374,10 @@ type TelemetryMsg_Activity struct {
 	Activity *CaptureActivityMsg `protobuf:"bytes,6,opt,name=activity,proto3,oneof"`
 }
 
+type TelemetryMsg_SubAudible struct {
+	SubAudible *SubAudible `protobuf:"bytes,7,opt,name=sub_audible,json=subAudible,proto3,oneof"`
+}
+
 func (*TelemetryMsg_Meter) isTelemetryMsg_Body() {}
 
 func (*TelemetryMsg_Squelch) isTelemetryMsg_Body() {}
@@ -316,6 +385,153 @@ func (*TelemetryMsg_Squelch) isTelemetryMsg_Body() {}
 func (*TelemetryMsg_Detection) isTelemetryMsg_Body() {}
 
 func (*TelemetryMsg_Activity) isTelemetryMsg_Body() {}
+
+func (*TelemetryMsg_SubAudible) isTelemetryMsg_Body() {}
+
+// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
+//
+// Edge-triggered on a change of identity or confidence band, plus a 1 Hz
+// heartbeat while a tone is held (the telemetry plane has no GetState, so a
+// client that subscribes mid-transmission has to be told what is already
+// there). Full state every message.
+//
+// The honesty rules this message exists to encode:
+//   - tone_hz is measured; standard_tone_hz is classified, and is 0 when two
+//     standard tones could both explain the measurement. The EIA ladder is
+//     spaced as tightly as 2.3 Hz (67.0/69.3), and snapping to the nearer one
+//     names the wrong tone with a straight face.
+//   - confidence is a STATED SCORE, not a probability:
+//     clamp((tone_snr_db-6)/14) * clamp(1-|tone_hz-standard_tone_hz|/tol)
+//   - min(hops_agreeing,3)/3
+//     Calibrating a real probability needs a corpus of off-air recordings we do
+//     not have. The measured fields are always populated, so a client can
+//     threshold on those and ignore the score.
+//   - Known false positive: 50 Hz mains hum lands on exactly 100.0 Hz, is
+//     perfectly stable, and passes every frequency test; 100.0 Hz is also one
+//     of the commonest real PL tones. Only deviation_hz separates them.
+type SubAudible struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ChannelId      string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	Kind           SubAudibleKind         `protobuf:"varint,2,opt,name=kind,proto3,enum=leyline.v1.SubAudibleKind" json:"kind,omitempty"`
+	ToneHz         float64                `protobuf:"fixed64,3,opt,name=tone_hz,json=toneHz,proto3" json:"tone_hz,omitempty"`                           // measured; NaN when nothing was measured
+	StandardToneHz float64                `protobuf:"fixed64,4,opt,name=standard_tone_hz,json=standardToneHz,proto3" json:"standard_tone_hz,omitempty"` // classified; 0 = measured but not classifiable
+	DcsCode        uint32                 `protobuf:"varint,5,opt,name=dcs_code,json=dcsCode,proto3" json:"dcs_code,omitempty"`                         // octal as decimal (023 -> 23); 0 unless DCS
+	DcsInverted    bool                   `protobuf:"varint,6,opt,name=dcs_inverted,json=dcsInverted,proto3" json:"dcs_inverted,omitempty"`
+	DeviationHz    float64                `protobuf:"fixed64,7,opt,name=deviation_hz,json=deviationHz,proto3" json:"deviation_hz,omitempty"` // peak deviation the tone was sent at
+	ToneSnrDb      float64                `protobuf:"fixed64,8,opt,name=tone_snr_db,json=toneSnrDb,proto3" json:"tone_snr_db,omitempty"`     // the tone against the rest of the 60-260 Hz band
+	Confidence     float64                `protobuf:"fixed64,9,opt,name=confidence,proto3" json:"confidence,omitempty"`                      // stated score, not a probability; formula above
+	FirstSeen      *SampleTime            `protobuf:"bytes,10,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
+	HopsAgreeing   uint32                 `protobuf:"varint,11,opt,name=hops_agreeing,json=hopsAgreeing,proto3" json:"hops_agreeing,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SubAudible) Reset() {
+	*x = SubAudible{}
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubAudible) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubAudible) ProtoMessage() {}
+
+func (x *SubAudible) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubAudible.ProtoReflect.Descriptor instead.
+func (*SubAudible) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SubAudible) GetChannelId() string {
+	if x != nil {
+		return x.ChannelId
+	}
+	return ""
+}
+
+func (x *SubAudible) GetKind() SubAudibleKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SubAudibleKind_SUB_AUDIBLE_KIND_UNSPECIFIED
+}
+
+func (x *SubAudible) GetToneHz() float64 {
+	if x != nil {
+		return x.ToneHz
+	}
+	return 0
+}
+
+func (x *SubAudible) GetStandardToneHz() float64 {
+	if x != nil {
+		return x.StandardToneHz
+	}
+	return 0
+}
+
+func (x *SubAudible) GetDcsCode() uint32 {
+	if x != nil {
+		return x.DcsCode
+	}
+	return 0
+}
+
+func (x *SubAudible) GetDcsInverted() bool {
+	if x != nil {
+		return x.DcsInverted
+	}
+	return false
+}
+
+func (x *SubAudible) GetDeviationHz() float64 {
+	if x != nil {
+		return x.DeviationHz
+	}
+	return 0
+}
+
+func (x *SubAudible) GetToneSnrDb() float64 {
+	if x != nil {
+		return x.ToneSnrDb
+	}
+	return 0
+}
+
+func (x *SubAudible) GetConfidence() float64 {
+	if x != nil {
+		return x.Confidence
+	}
+	return 0
+}
+
+func (x *SubAudible) GetFirstSeen() *SampleTime {
+	if x != nil {
+		return x.FirstSeen
+	}
+	return nil
+}
+
+func (x *SubAudible) GetHopsAgreeing() uint32 {
+	if x != nil {
+		return x.HopsAgreeing
+	}
+	return 0
+}
 
 // Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
 type Meter struct {
@@ -337,7 +553,7 @@ type Meter struct {
 
 func (x *Meter) Reset() {
 	*x = Meter{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -349,7 +565,7 @@ func (x *Meter) String() string {
 func (*Meter) ProtoMessage() {}
 
 func (x *Meter) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -362,7 +578,7 @@ func (x *Meter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Meter.ProtoReflect.Descriptor instead.
 func (*Meter) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Meter) GetChannelId() string {
@@ -428,7 +644,7 @@ type SquelchTransition struct {
 
 func (x *SquelchTransition) Reset() {
 	*x = SquelchTransition{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -440,7 +656,7 @@ func (x *SquelchTransition) String() string {
 func (*SquelchTransition) ProtoMessage() {}
 
 func (x *SquelchTransition) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -453,7 +669,7 @@ func (x *SquelchTransition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SquelchTransition.ProtoReflect.Descriptor instead.
 func (*SquelchTransition) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{3}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SquelchTransition) GetChannelId() string {
@@ -511,7 +727,7 @@ type Detection struct {
 
 func (x *Detection) Reset() {
 	*x = Detection{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -523,7 +739,7 @@ func (x *Detection) String() string {
 func (*Detection) ProtoMessage() {}
 
 func (x *Detection) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -536,7 +752,7 @@ func (x *Detection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Detection.ProtoReflect.Descriptor instead.
 func (*Detection) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Detection) GetDetectionId() string {
@@ -612,7 +828,7 @@ type CaptureActivityMsg struct {
 
 func (x *CaptureActivityMsg) Reset() {
 	*x = CaptureActivityMsg{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -624,7 +840,7 @@ func (x *CaptureActivityMsg) String() string {
 func (*CaptureActivityMsg) ProtoMessage() {}
 
 func (x *CaptureActivityMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -637,7 +853,7 @@ func (x *CaptureActivityMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureActivityMsg.ProtoReflect.Descriptor instead.
 func (*CaptureActivityMsg) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CaptureActivityMsg) GetCaptureId() string {
@@ -664,7 +880,7 @@ type CaptureActivitySnapshot struct {
 
 func (x *CaptureActivitySnapshot) Reset() {
 	*x = CaptureActivitySnapshot{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -676,7 +892,7 @@ func (x *CaptureActivitySnapshot) String() string {
 func (*CaptureActivitySnapshot) ProtoMessage() {}
 
 func (x *CaptureActivitySnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -689,7 +905,7 @@ func (x *CaptureActivitySnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureActivitySnapshot.ProtoReflect.Descriptor instead.
 func (*CaptureActivitySnapshot) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CaptureActivitySnapshot) GetLastInteractiveWriteNs() int64 {
@@ -719,15 +935,35 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"channel_id\x18\x03 \x01(\tH\x00R\tchannelId\x12/\n" +
 	"\x05types\x18\x04 \x03(\x0e2\x19.leyline.v1.TelemetryTypeR\x05typesB\a\n" +
-	"\x05scope\"\xaf\x02\n" +
+	"\x05scope\"\xea\x02\n" +
 	"\fTelemetryMsg\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12*\n" +
 	"\x04time\x18\x02 \x01(\v2\x16.leyline.v1.SampleTimeR\x04time\x12)\n" +
 	"\x05meter\x18\x03 \x01(\v2\x11.leyline.v1.MeterH\x00R\x05meter\x129\n" +
 	"\asquelch\x18\x04 \x01(\v2\x1d.leyline.v1.SquelchTransitionH\x00R\asquelch\x125\n" +
 	"\tdetection\x18\x05 \x01(\v2\x15.leyline.v1.DetectionH\x00R\tdetection\x12<\n" +
-	"\bactivity\x18\x06 \x01(\v2\x1e.leyline.v1.CaptureActivityMsgH\x00R\bactivityB\x06\n" +
-	"\x04body\"\xd2\x01\n" +
+	"\bactivity\x18\x06 \x01(\v2\x1e.leyline.v1.CaptureActivityMsgH\x00R\bactivity\x129\n" +
+	"\vsub_audible\x18\a \x01(\v2\x16.leyline.v1.SubAudibleH\x00R\n" +
+	"subAudibleB\x06\n" +
+	"\x04body\"\x9b\x03\n" +
+	"\n" +
+	"SubAudible\x12\x1d\n" +
+	"\n" +
+	"channel_id\x18\x01 \x01(\tR\tchannelId\x12.\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1a.leyline.v1.SubAudibleKindR\x04kind\x12\x17\n" +
+	"\atone_hz\x18\x03 \x01(\x01R\x06toneHz\x12(\n" +
+	"\x10standard_tone_hz\x18\x04 \x01(\x01R\x0estandardToneHz\x12\x19\n" +
+	"\bdcs_code\x18\x05 \x01(\rR\adcsCode\x12!\n" +
+	"\fdcs_inverted\x18\x06 \x01(\bR\vdcsInverted\x12!\n" +
+	"\fdeviation_hz\x18\a \x01(\x01R\vdeviationHz\x12\x1e\n" +
+	"\vtone_snr_db\x18\b \x01(\x01R\ttoneSnrDb\x12\x1e\n" +
+	"\n" +
+	"confidence\x18\t \x01(\x01R\n" +
+	"confidence\x125\n" +
+	"\n" +
+	"first_seen\x18\n" +
+	" \x01(\v2\x16.leyline.v1.SampleTimeR\tfirstSeen\x12#\n" +
+	"\rhops_agreeing\x18\v \x01(\rR\fhopsAgreeing\"\xd2\x01\n" +
 	"\x05Meter\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x1d\n" +
@@ -763,13 +999,19 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\bsnapshot\x18\x02 \x01(\v2#.leyline.v1.CaptureActivitySnapshotR\bsnapshot\"~\n" +
 	"\x17CaptureActivitySnapshot\x129\n" +
 	"\x19last_interactive_write_ns\x18\x01 \x01(\x03R\x16lastInteractiveWriteNs\x12(\n" +
-	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks*w\n" +
+	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks*\x88\x01\n" +
 	"\rTelemetryType\x12\x1e\n" +
 	"\x1aTELEMETRY_TYPE_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05METER\x10\x01\x12\x16\n" +
 	"\x12SQUELCH_TRANSITION\x10\x02\x12\r\n" +
 	"\tDETECTION\x10\x03\x12\x14\n" +
-	"\x10CAPTURE_ACTIVITY\x10\x042W\n" +
+	"\x10CAPTURE_ACTIVITY\x10\x04\x12\x0f\n" +
+	"\vSUB_AUDIBLE\x10\x05*t\n" +
+	"\x0eSubAudibleKind\x12 \n" +
+	"\x1cSUB_AUDIBLE_KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10SUB_AUDIBLE_NONE\x10\x01\x12\x15\n" +
+	"\x11SUB_AUDIBLE_CTCSS\x10\x02\x12\x13\n" +
+	"\x0fSUB_AUDIBLE_DCS\x10\x032W\n" +
 	"\tTelemetry\x12J\n" +
 	"\tSubscribe\x12!.leyline.v1.TelemetrySubscription\x1a\x18.leyline.v1.TelemetryMsg0\x01B4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
@@ -785,36 +1027,41 @@ func file_leyline_v1_telemetry_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_telemetry_proto_rawDescData
 }
 
-var file_leyline_v1_telemetry_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_leyline_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_leyline_v1_telemetry_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_leyline_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_leyline_v1_telemetry_proto_goTypes = []any{
 	(TelemetryType)(0),              // 0: leyline.v1.TelemetryType
-	(*TelemetrySubscription)(nil),   // 1: leyline.v1.TelemetrySubscription
-	(*TelemetryMsg)(nil),            // 2: leyline.v1.TelemetryMsg
-	(*Meter)(nil),                   // 3: leyline.v1.Meter
-	(*SquelchTransition)(nil),       // 4: leyline.v1.SquelchTransition
-	(*Detection)(nil),               // 5: leyline.v1.Detection
-	(*CaptureActivityMsg)(nil),      // 6: leyline.v1.CaptureActivityMsg
-	(*CaptureActivitySnapshot)(nil), // 7: leyline.v1.CaptureActivitySnapshot
-	(*SampleTime)(nil),              // 8: leyline.v1.SampleTime
+	(SubAudibleKind)(0),             // 1: leyline.v1.SubAudibleKind
+	(*TelemetrySubscription)(nil),   // 2: leyline.v1.TelemetrySubscription
+	(*TelemetryMsg)(nil),            // 3: leyline.v1.TelemetryMsg
+	(*SubAudible)(nil),              // 4: leyline.v1.SubAudible
+	(*Meter)(nil),                   // 5: leyline.v1.Meter
+	(*SquelchTransition)(nil),       // 6: leyline.v1.SquelchTransition
+	(*Detection)(nil),               // 7: leyline.v1.Detection
+	(*CaptureActivityMsg)(nil),      // 8: leyline.v1.CaptureActivityMsg
+	(*CaptureActivitySnapshot)(nil), // 9: leyline.v1.CaptureActivitySnapshot
+	(*SampleTime)(nil),              // 10: leyline.v1.SampleTime
 }
 var file_leyline_v1_telemetry_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.TelemetrySubscription.types:type_name -> leyline.v1.TelemetryType
-	8,  // 1: leyline.v1.TelemetryMsg.time:type_name -> leyline.v1.SampleTime
-	3,  // 2: leyline.v1.TelemetryMsg.meter:type_name -> leyline.v1.Meter
-	4,  // 3: leyline.v1.TelemetryMsg.squelch:type_name -> leyline.v1.SquelchTransition
-	5,  // 4: leyline.v1.TelemetryMsg.detection:type_name -> leyline.v1.Detection
-	6,  // 5: leyline.v1.TelemetryMsg.activity:type_name -> leyline.v1.CaptureActivityMsg
-	8,  // 6: leyline.v1.Detection.first_seen:type_name -> leyline.v1.SampleTime
-	8,  // 7: leyline.v1.Detection.last_seen:type_name -> leyline.v1.SampleTime
-	7,  // 8: leyline.v1.CaptureActivityMsg.snapshot:type_name -> leyline.v1.CaptureActivitySnapshot
-	1,  // 9: leyline.v1.Telemetry.Subscribe:input_type -> leyline.v1.TelemetrySubscription
-	2,  // 10: leyline.v1.Telemetry.Subscribe:output_type -> leyline.v1.TelemetryMsg
-	10, // [10:11] is the sub-list for method output_type
-	9,  // [9:10] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	10, // 1: leyline.v1.TelemetryMsg.time:type_name -> leyline.v1.SampleTime
+	5,  // 2: leyline.v1.TelemetryMsg.meter:type_name -> leyline.v1.Meter
+	6,  // 3: leyline.v1.TelemetryMsg.squelch:type_name -> leyline.v1.SquelchTransition
+	7,  // 4: leyline.v1.TelemetryMsg.detection:type_name -> leyline.v1.Detection
+	8,  // 5: leyline.v1.TelemetryMsg.activity:type_name -> leyline.v1.CaptureActivityMsg
+	4,  // 6: leyline.v1.TelemetryMsg.sub_audible:type_name -> leyline.v1.SubAudible
+	1,  // 7: leyline.v1.SubAudible.kind:type_name -> leyline.v1.SubAudibleKind
+	10, // 8: leyline.v1.SubAudible.first_seen:type_name -> leyline.v1.SampleTime
+	10, // 9: leyline.v1.Detection.first_seen:type_name -> leyline.v1.SampleTime
+	10, // 10: leyline.v1.Detection.last_seen:type_name -> leyline.v1.SampleTime
+	9,  // 11: leyline.v1.CaptureActivityMsg.snapshot:type_name -> leyline.v1.CaptureActivitySnapshot
+	2,  // 12: leyline.v1.Telemetry.Subscribe:input_type -> leyline.v1.TelemetrySubscription
+	3,  // 13: leyline.v1.Telemetry.Subscribe:output_type -> leyline.v1.TelemetryMsg
+	13, // [13:14] is the sub-list for method output_type
+	12, // [12:13] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_telemetry_proto_init() }
@@ -833,14 +1080,15 @@ func file_leyline_v1_telemetry_proto_init() {
 		(*TelemetryMsg_Squelch)(nil),
 		(*TelemetryMsg_Detection)(nil),
 		(*TelemetryMsg_Activity)(nil),
+		(*TelemetryMsg_SubAudible)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_telemetry_proto_rawDesc), len(file_leyline_v1_telemetry_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   7,
+			NumEnums:      2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

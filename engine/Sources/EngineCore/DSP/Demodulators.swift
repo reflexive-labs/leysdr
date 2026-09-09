@@ -58,9 +58,22 @@ let demodulatorMaxBlock = 16384
 /// Narrow-band FM: discriminator (±5 kHz → ±1.0, full scale), 300 Hz two-pole high-pass (removes
 /// CTCSS/PL tones and any DC offset), 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, the TIA-603
 /// voice response; transmitters pre-emphasize) with ×2 make-up gain, 1-pole LPF ≈ 4 kHz, output clipped to ±1.
-public final class NFMDemodulator: Demodulator {
+public final class NFMDemodulator: Demodulator, SubAudibleSource {
     public let mode: DemodMode = .nfm
     public private(set) var outputRate: UInt32 = 0
+    /// ±5 kHz is full scale for NFM: `discriminate` is scaled to put that at ±1.0.
+    public let fullScaleDeviationHz: Double = 5000
+    /// Set once when the channel is built, before any block is processed.
+    public var subAudibleTap: FloatRing?
+    public private(set) var subAudibleRate: Double = 0
+    /// Two decimation stages from the channel rate down to roughly 1 kHz. Two rather than one
+    /// boxcar: nothing anti-aliases a boxcar, so voice near 1.3 kHz folds straight into the
+    /// 60-300 Hz band at about -13 dB and fabricates tone energy out of speech.
+    private var subStage1: RealFIRDecimator?
+    private var subStage2: RealFIRDecimator?
+    private var subScratch1: UnsafeMutablePointer<Float>?
+    private var subScratch2: UnsafeMutablePointer<Float>?
+    private var subCapacity = 0
     public let maxBlock = demodulatorMaxBlock
     private var scratch: DemodScratch?
     private var scale: Float = 0
@@ -77,6 +90,11 @@ public final class NFMDemodulator: Demodulator {
 
     public init() {}
 
+    deinit {
+        subScratch1?.deallocate()
+        subScratch2?.deallocate()
+    }
+
     public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         outputRate = inputRate
@@ -86,7 +104,58 @@ public final class NFMDemodulator: Demodulator {
         hpfCoefficient = Float(rc / (rc + 1 / Double(inputRate)))
         deemphasisCoefficient = Kernels.onePoleCoefficient(cutoffHz: 300, rate: Double(inputRate))
         if scratch == nil { scratch = DemodScratch(maxBlock: maxBlock) }
+        configureSubAudible(inputRate: Double(inputRate))
         reset()
+    }
+
+    /// Build the sub-audible decimation chain for this channel rate. Called from `configure`, never
+    /// from the DSP thread: every allocation the tap needs happens here.
+    ///
+    /// The exact decimated rate is carried as a Double and never assumed: the channel runs at
+    /// 48 kHz from a 2.4 MSPS capture but 51.2 kHz from a 2.048 MSPS one, and a detector told the
+    /// wrong rate measures the wrong frequency.
+    private func configureSubAudible(inputRate: Double) {
+        subStage1 = nil
+        subStage2 = nil
+        subScratch1?.deallocate()
+        subScratch2?.deallocate()
+        subScratch1 = nil
+        subScratch2 = nil
+        subAudibleRate = 0
+        let total = Int((inputRate / 1000).rounded())
+        guard total >= 2 else { return }
+        // Split the work: a single stage from 48 kHz to 1 kHz would need hundreds of taps for a
+        // 300 Hz transition, where two cheap stages do the same job.
+        var d2 = 4
+        while d2 > 1, total % d2 != 0 { d2 -= 1 }
+        let d1 = total / d2
+        let mid = inputRate / Double(d1)
+        let taps1 = FIRDesign.lowPass(cutoffHz: 0.4 * mid / 2, rate: inputRate, transitionHz: 0.2 * mid / 2)
+        subStage1 = RealFIRDecimator(taps: taps1, decimation: d1, maxBlock: maxBlock)
+        subCapacity = maxBlock / d1 + 8
+        subScratch1 = UnsafeMutablePointer<Float>.allocate(capacity: subCapacity)
+        subScratch1?.initialize(repeating: 0, count: subCapacity)
+        if d2 > 1 {
+            let taps2 = FIRDesign.lowPass(cutoffHz: 320, rate: mid, transitionHz: 120)
+            subStage2 = RealFIRDecimator(taps: taps2, decimation: d2, maxBlock: subCapacity)
+            subScratch2 = UnsafeMutablePointer<Float>.allocate(capacity: subCapacity)
+            subScratch2?.initialize(repeating: 0, count: subCapacity)
+        }
+        subAudibleRate = inputRate / Double(d1 * d2)
+    }
+
+    /// Decimate the discriminator output into the tap. Hot path: no allocation, no locks, and a
+    /// single nil check when nobody is listening.
+    private func tapSubAudible(_ src: UnsafePointer<Float>, count: Int) {
+        guard let ring = subAudibleTap, let s1 = subStage1, let buf1 = subScratch1 else { return }
+        let n1 = s1.process(src, count: count, out: buf1)
+        guard n1 > 0 else { return }
+        if let s2 = subStage2, let buf2 = subScratch2 {
+            let n2 = s2.process(buf1, count: n1, out: buf2)
+            if n2 > 0 { ring.push(UnsafeBufferPointer(start: buf2, count: n2)) }
+        } else {
+            ring.push(UnsafeBufferPointer(start: buf1, count: n1))
+        }
     }
 
     public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
@@ -94,6 +163,9 @@ public final class NFMDemodulator: Demodulator {
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         discriminate(s, count: n, scale: scale)
+        // The tap comes before every stage that follows: the 300 Hz high-pass below is what makes
+        // CTCSS inaudible, and it is the reason this has to be taken here rather than off the audio.
+        tapSubAudible(s.real, count: n)
         let out = output.base.assumingMemoryBound(to: Float.self)
         Kernels.onePoleLowPass(s.real, to: out, count: n, coefficient: lpfCoefficient, state: &lpfState)
         highPass(out, count: n)
@@ -127,6 +199,8 @@ public final class NFMDemodulator: Demodulator {
         hpfPrevIn = (0, 0)
         hpfPrevOut = (0, 0)
         deemphasisState = 0
+        subStage1?.reset()
+        subStage2?.reset()
     }
 }
 

@@ -148,12 +148,47 @@ of sub-audible deviation is 11 dB under the 2.5 kHz voice deviation, the 300 Hz 
 about 20 dB off it, and de-emphasis then pulls the 1 kHz tone down another 10 while leaving the
 residue alone.
 
-## SV-6 `[ ]` CTCSS detector
+## SV-6 `[x]` CTCSS detector
 
-- `SubAudibleSource` protocol on `NFMDemodulator`, tapping `scratch.real`; two FIR decimation
-  stages plus a 20 Hz DC block into a fixed ring, allocated in `configure`.
-- Slow per-channel task: Goertzel gate, phase-slope estimate, the accept rules from the design doc.
+- `SubAudibleSource` on `NFMDemodulator`, tapping the discriminator before the high-pass; two FIR
+  decimation stages into a `FloatRing`, everything allocated in `configure`. DC is removed in the
+  detector's window rather than by a separate filter -- the discriminator's DC is the tuning error,
+  and one subtraction per window is cheaper than a filter on the hot path.
+- Slow per-channel task at utility priority: Goertzel bank as a gate, phase-slope estimate for the
+  frequency, and the accept rules. Every branch is here; the DSP thread only decimates.
 - `SubAudible` telemetry, `Channel.subaudible_detect = 12`, the `PL` line, `--json`.
+
+Detection is armed for NFM channels, since that is the only mode CTCSS is sent under. Making it a
+per-channel request is a control-plane change and field 12 is the contract for it; until then the
+mode is the answer, and the cost is two decimation stages (~0.6 Mmult/s) that never gate audio.
+
+**Two bugs worth recording.** The tap was first armed before `demodulator.configure`, which is what
+decides the tapped rate, so the rate was zero and the guard silently disarmed it -- the unit tests
+all passed and nothing came out end to end. And the first tap test regenerated its signal from t=0
+for every block, putting a phase discontinuity into the discriminator that is in no real signal; it
+detected a tone but classified it as unclassifiable, which is the detector behaving correctly on a
+corrupt input.
+
+Verified end to end through the real daemon, every fixture:
+
+```
+nfm_pl       expect 100.0  got 100.0   dev 700 Hz  snr 87 dB  conf 1.00
+nfm_pl_67    expect  67.0  got  67.0   dev 700 Hz  snr 99 dB  conf 1.00
+nfm_pl_69    expect  69.3  got  69.3   dev 700 Hz  snr 97 dB  conf 1.00
+nfm_pl_only  expect 123.0  got 123.0   dev 700 Hz  snr 92 dB  conf 1.00
+nfm_hum      expect  none  got  none   SUB_AUDIBLE_NONE
+nfm_tone     expect  none  got  none   SUB_AUDIBLE_NONE
+```
+
+The measured deviation is 700 Hz against a generated 700, which is what says the amplitude
+calibration is right rather than merely self-consistent. On screen: `PL  67.0 Hz  dev 699 Hz
+tone/band 59 dB`.
+
+Tests: `SubAudibleTests` (detects four tones across the ladder; discriminates the 67.0/69.3 pair;
+rejects voice across six seeds; rejects mains hum by deviation and says so; refuses to classify an
+ambiguous measurement; confidence is zero without a classification), `SubAudibleTapTests` (the tone
+survives the tap and provably does **not** survive the audio, measured on both), and the CLI
+tracker tests.
 
 ## SV-7 `[ ]` DCS
 

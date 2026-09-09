@@ -178,6 +178,7 @@ enum ProtoMapping {
         out.state = state.map(channelState) ?? .unspecified
         out.persistent = config.persistent
         out.requiredHz = config.requiredHz ?? 0
+        out.subaudibleDetect = config.subAudibleDetect
         out.owner = owner
         return out
     }

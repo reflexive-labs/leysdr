@@ -98,6 +98,16 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         msg.squelch.durationSamples = openSamples
                         msg.squelch.peakSnrDb = peakSNR
                         msg.squelch.peakAudioDbfs = peakPower
+                    case .subAudible(let time, let r):
+                        guard wants(.subAudible) else { continue }
+                        msg.time = ProtoMapping.sampleTime(time)
+                        msg.subAudible.channelID = id.string
+                        msg.subAudible.kind = r.detected ? .subAudibleCtcss : .subAudibleNone
+                        msg.subAudible.toneHz = r.toneHz
+                        msg.subAudible.standardToneHz = r.standardToneHz
+                        msg.subAudible.deviationHz = r.deviationHz
+                        msg.subAudible.toneSnrDb = r.toneSNRDB
+                        msg.subAudible.confidence = r.confidence
                     }
                     yieldMerged(msg, gap: gap)
                     gap = 0

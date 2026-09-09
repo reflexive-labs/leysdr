@@ -347,7 +347,11 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	defer cancel()
 	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
-		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_METER, leylinev1.TelemetryType_SQUELCH_TRANSITION},
+		Types: []leylinev1.TelemetryType{
+			leylinev1.TelemetryType_METER,
+			leylinev1.TelemetryType_SQUELCH_TRANSITION,
+			leylinev1.TelemetryType_SUB_AUDIBLE,
+		},
 	})
 	if err != nil {
 		return err
@@ -386,6 +390,13 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			case *leylinev1.TelemetryMsg_Meter:
 				hz, _ := leyline.ChannelFrequency(s.state, s.channel)
 				meter.write(meter.line(hz, s.channel.Mode, b.Meter, s.channel.SquelchDb))
+			case *leylinev1.TelemetryMsg_SubAudible:
+				// A tone that has appeared or changed is worth a line; the
+				// heartbeat that repeats it is not, so only a change prints.
+				if line, ok := s.subAudible.line(b.SubAudible, s.app.ErrStyle); ok {
+					clear()
+					fmt.Fprintln(s.app.Stderr, line)
+				}
 			case *leylinev1.TelemetryMsg_Squelch:
 				// A transmission that has ended is a fact worth keeping, so it
 				// scrolls above the meter rather than replacing it. The meter

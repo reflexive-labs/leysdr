@@ -32,6 +32,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
   case squelchTransition // = 2
   case detection // = 3
   case captureActivity // = 4
+  case subAudible // = 5
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -45,6 +46,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
     case 2: self = .squelchTransition
     case 3: self = .detection
     case 4: self = .captureActivity
+    case 5: self = .subAudible
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -56,6 +58,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
     case .squelchTransition: return 2
     case .detection: return 3
     case .captureActivity: return 4
+    case .subAudible: return 5
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -67,6 +70,51 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
     .squelchTransition,
     .detection,
     .captureActivity,
+    .subAudible,
+  ]
+
+}
+
+public nonisolated enum Leyline_V1_SubAudibleKind: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// looked, found nothing
+  case subAudibleNone // = 1
+  case subAudibleCtcss // = 2
+  case subAudibleDcs // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .subAudibleNone
+    case 2: self = .subAudibleCtcss
+    case 3: self = .subAudibleDcs
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .subAudibleNone: return 1
+    case .subAudibleCtcss: return 2
+    case .subAudibleDcs: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_SubAudibleKind] = [
+    .unspecified,
+    .subAudibleNone,
+    .subAudibleCtcss,
+    .subAudibleDcs,
   ]
 
 }
@@ -167,6 +215,14 @@ public nonisolated struct Leyline_V1_TelemetryMsg: Sendable {
     set {body = .activity(newValue)}
   }
 
+  public var subAudible: Leyline_V1_SubAudible {
+    get {
+      if case .subAudible(let v)? = body {return v}
+      return Leyline_V1_SubAudible()
+    }
+    set {body = .subAudible(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Body: Equatable, Sendable {
@@ -174,12 +230,81 @@ public nonisolated struct Leyline_V1_TelemetryMsg: Sendable {
     case squelch(Leyline_V1_SquelchTransition)
     case detection(Leyline_V1_Detection)
     case activity(Leyline_V1_CaptureActivityMsg)
+    case subAudible(Leyline_V1_SubAudible)
 
   }
 
   public init() {}
 
   fileprivate var _time: Leyline_V1_SampleTime? = nil
+}
+
+/// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
+///
+/// Edge-triggered on a change of identity or confidence band, plus a 1 Hz
+/// heartbeat while a tone is held (the telemetry plane has no GetState, so a
+/// client that subscribes mid-transmission has to be told what is already
+/// there). Full state every message.
+///
+/// The honesty rules this message exists to encode:
+///   - tone_hz is measured; standard_tone_hz is classified, and is 0 when two
+///     standard tones could both explain the measurement. The EIA ladder is
+///     spaced as tightly as 2.3 Hz (67.0/69.3), and snapping to the nearer one
+///     names the wrong tone with a straight face.
+///   - confidence is a STATED SCORE, not a probability:
+///       clamp((tone_snr_db-6)/14) * clamp(1-|tone_hz-standard_tone_hz|/tol)
+///                                 * min(hops_agreeing,3)/3
+///     Calibrating a real probability needs a corpus of off-air recordings we do
+///     not have. The measured fields are always populated, so a client can
+///     threshold on those and ignore the score.
+///   - Known false positive: 50 Hz mains hum lands on exactly 100.0 Hz, is
+///     perfectly stable, and passes every frequency test; 100.0 Hz is also one
+///     of the commonest real PL tones. Only deviation_hz separates them.
+public nonisolated struct Leyline_V1_SubAudible: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var channelID: String = String()
+
+  public var kind: Leyline_V1_SubAudibleKind = .unspecified
+
+  /// measured; NaN when nothing was measured
+  public var toneHz: Double = 0
+
+  /// classified; 0 = measured but not classifiable
+  public var standardToneHz: Double = 0
+
+  /// octal as decimal (023 -> 23); 0 unless DCS
+  public var dcsCode: UInt32 = 0
+
+  public var dcsInverted: Bool = false
+
+  /// peak deviation the tone was sent at
+  public var deviationHz: Double = 0
+
+  /// the tone against the rest of the 60-260 Hz band
+  public var toneSnrDb: Double = 0
+
+  /// stated score, not a probability; formula above
+  public var confidence: Double = 0
+
+  public var firstSeen: Leyline_V1_SampleTime {
+    get {_firstSeen ?? Leyline_V1_SampleTime()}
+    set {_firstSeen = newValue}
+  }
+  /// Returns true if `firstSeen` has been explicitly set.
+  public var hasFirstSeen: Bool {self._firstSeen != nil}
+  /// Clears the value of `firstSeen`. Subsequent reads from it will return its default value.
+  public mutating func clearFirstSeen() {self._firstSeen = nil}
+
+  public var hopsAgreeing: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _firstSeen: Leyline_V1_SampleTime? = nil
 }
 
 /// Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
@@ -334,7 +459,11 @@ public nonisolated struct Leyline_V1_CaptureActivitySnapshot: Sendable {
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_TelemetryType: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TELEMETRY_TYPE_UNSPECIFIED\0\u{1}METER\0\u{1}SQUELCH_TRANSITION\0\u{1}DETECTION\0\u{1}CAPTURE_ACTIVITY\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TELEMETRY_TYPE_UNSPECIFIED\0\u{1}METER\0\u{1}SQUELCH_TRANSITION\0\u{1}DETECTION\0\u{1}CAPTURE_ACTIVITY\0\u{1}SUB_AUDIBLE\0")
+}
+
+nonisolated extension Leyline_V1_SubAudibleKind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SUB_AUDIBLE_KIND_UNSPECIFIED\0\u{1}SUB_AUDIBLE_NONE\0\u{1}SUB_AUDIBLE_CTCSS\0\u{1}SUB_AUDIBLE_DCS\0")
 }
 
 nonisolated extension Leyline_V1_TelemetrySubscription: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -413,7 +542,7 @@ nonisolated extension Leyline_V1_TelemetrySubscription: SwiftProtobuf.Message, S
 
 nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TelemetryMsg"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{1}time\0\u{1}meter\0\u{1}squelch\0\u{1}detection\0\u{1}activity\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{1}time\0\u{1}meter\0\u{1}squelch\0\u{1}detection\0\u{1}activity\0\u{3}sub_audible\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -475,6 +604,19 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
           self.body = .activity(v)
         }
       }()
+      case 7: try {
+        var v: Leyline_V1_SubAudible?
+        var hadOneofValue = false
+        if let current = self.body {
+          hadOneofValue = true
+          if case .subAudible(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.body = .subAudible(v)
+        }
+      }()
       default: break
       }
     }
@@ -508,6 +650,10 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
       guard case .activity(let v)? = self.body else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
     }()
+    case .subAudible?: try {
+      guard case .subAudible(let v)? = self.body else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -517,6 +663,90 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
     if lhs.seq != rhs.seq {return false}
     if lhs._time != rhs._time {return false}
     if lhs.body != rhs.body {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_SubAudible: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SubAudible"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{1}kind\0\u{3}tone_hz\0\u{3}standard_tone_hz\0\u{3}dcs_code\0\u{3}dcs_inverted\0\u{3}deviation_hz\0\u{3}tone_snr_db\0\u{1}confidence\0\u{3}first_seen\0\u{3}hops_agreeing\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.channelID) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
+      case 3: try { try decoder.decodeSingularDoubleField(value: &self.toneHz) }()
+      case 4: try { try decoder.decodeSingularDoubleField(value: &self.standardToneHz) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.dcsCode) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.dcsInverted) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.deviationHz) }()
+      case 8: try { try decoder.decodeSingularDoubleField(value: &self.toneSnrDb) }()
+      case 9: try { try decoder.decodeSingularDoubleField(value: &self.confidence) }()
+      case 10: try { try decoder.decodeSingularMessageField(value: &self._firstSeen) }()
+      case 11: try { try decoder.decodeSingularUInt32Field(value: &self.hopsAgreeing) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.channelID.isEmpty {
+      try visitor.visitSingularStringField(value: self.channelID, fieldNumber: 1)
+    }
+    if self.kind != .unspecified {
+      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 2)
+    }
+    if self.toneHz.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.toneHz, fieldNumber: 3)
+    }
+    if self.standardToneHz.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.standardToneHz, fieldNumber: 4)
+    }
+    if self.dcsCode != 0 {
+      try visitor.visitSingularUInt32Field(value: self.dcsCode, fieldNumber: 5)
+    }
+    if self.dcsInverted != false {
+      try visitor.visitSingularBoolField(value: self.dcsInverted, fieldNumber: 6)
+    }
+    if self.deviationHz.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.deviationHz, fieldNumber: 7)
+    }
+    if self.toneSnrDb.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.toneSnrDb, fieldNumber: 8)
+    }
+    if self.confidence.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.confidence, fieldNumber: 9)
+    }
+    try { if let v = self._firstSeen {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    } }()
+    if self.hopsAgreeing != 0 {
+      try visitor.visitSingularUInt32Field(value: self.hopsAgreeing, fieldNumber: 11)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_SubAudible, rhs: Leyline_V1_SubAudible) -> Bool {
+    if lhs.channelID != rhs.channelID {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.toneHz != rhs.toneHz {return false}
+    if lhs.standardToneHz != rhs.standardToneHz {return false}
+    if lhs.dcsCode != rhs.dcsCode {return false}
+    if lhs.dcsInverted != rhs.dcsInverted {return false}
+    if lhs.deviationHz != rhs.deviationHz {return false}
+    if lhs.toneSnrDb != rhs.toneSnrDb {return false}
+    if lhs.confidence != rhs.confidence {return false}
+    if lhs._firstSeen != rhs._firstSeen {return false}
+    if lhs.hopsAgreeing != rhs.hopsAgreeing {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -48,6 +48,9 @@ type tuneOptions struct {
 // and the optional system-audio sink, plus the open event stream that keeps
 // the non-persistent channel alive.
 type session struct {
+	// subAudible remembers the last tone reported, so a heartbeat that repeats
+	// it does not repeat the line.
+	subAudible     subAudibleTracker
 	app            *App
 	client         *leyline.Client
 	state          *leylinev1.GetStateResponse

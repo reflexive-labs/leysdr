@@ -523,8 +523,13 @@ actor SessionStore {
         guard Self.fits(offsetHz: offsetHz, bandwidthHz: bw, sampleRate: rate) else {
             throw EngineError.offsetOutOfCapture(offsetHz, target: captureID.string)
         }
+        // Sub-audible detection is on for NFM, which is the only mode CTCSS is sent under. It costs
+        // the DSP thread two decimation stages -- about 0.6 Mmult/s -- and never gates audio.
+        // Making it a per-channel request is a control-plane change (Channel field 12 is the
+        // contract for it); until then, the mode is the answer.
         let config = ChannelConfig(offsetHz: offsetHz, bandwidthHz: bw, mode: m, persistent: persistent,
-                                   requiredHz: requiredHz == 0 ? nil : requiredHz)
+                                   requiredHz: requiredHz == 0 ? nil : requiredHz,
+                                   subAudibleDetect: m == .nfm)
         let engine = try await cap.engine.addChannel(config)
         channels[engine.id] = ChannelEntry(engine: engine, captureID: captureID, owner: by)
         touchActivity(captureID, by: by)

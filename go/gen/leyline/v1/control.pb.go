@@ -947,20 +947,26 @@ func (x *CaptureActivity) GetLiveAudioSinks() uint32 {
 }
 
 type Channel struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId     string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	CaptureId     string                 `protobuf:"bytes,2,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
-	OffsetHz      int64                  `protobuf:"varint,3,opt,name=offset_hz,json=offsetHz,proto3" json:"offset_hz,omitempty"` // from capture center; absolute freq = center + offset
-	BandwidthHz   uint32                 `protobuf:"varint,4,opt,name=bandwidth_hz,json=bandwidthHz,proto3" json:"bandwidth_hz,omitempty"`
-	Mode          DemodMode              `protobuf:"varint,5,opt,name=mode,proto3,enum=leyline.v1.DemodMode" json:"mode,omitempty"`
-	SquelchDb     float64                `protobuf:"fixed64,6,opt,name=squelch_db,json=squelchDb,proto3" json:"squelch_db,omitempty"` // dBFS threshold; NaN = squelch off
-	Agc           GainMode               `protobuf:"varint,7,opt,name=agc,proto3,enum=leyline.v1.GainMode" json:"agc,omitempty"`
-	State         ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"`
-	Persistent    bool                   `protobuf:"varint,9,opt,name=persistent,proto3" json:"persistent,omitempty"`                    // survives owner disconnect; jobs set this
-	RequiredHz    uint64                 `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"` // set by jobs: rebind target when OUT_OF_CAPTURE
-	Owner         *ClientInfo            `protobuf:"bytes,11,opt,name=owner,proto3" json:"owner,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChannelId   string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	CaptureId   string                 `protobuf:"bytes,2,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	OffsetHz    int64                  `protobuf:"varint,3,opt,name=offset_hz,json=offsetHz,proto3" json:"offset_hz,omitempty"` // from capture center; absolute freq = center + offset
+	BandwidthHz uint32                 `protobuf:"varint,4,opt,name=bandwidth_hz,json=bandwidthHz,proto3" json:"bandwidth_hz,omitempty"`
+	Mode        DemodMode              `protobuf:"varint,5,opt,name=mode,proto3,enum=leyline.v1.DemodMode" json:"mode,omitempty"`
+	SquelchDb   float64                `protobuf:"fixed64,6,opt,name=squelch_db,json=squelchDb,proto3" json:"squelch_db,omitempty"` // dBFS threshold; NaN = squelch off
+	Agc         GainMode               `protobuf:"varint,7,opt,name=agc,proto3,enum=leyline.v1.GainMode" json:"agc,omitempty"`
+	State       ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"`
+	Persistent  bool                   `protobuf:"varint,9,opt,name=persistent,proto3" json:"persistent,omitempty"`                    // survives owner disconnect; jobs set this
+	RequiredHz  uint64                 `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"` // set by jobs: rebind target when OUT_OF_CAPTURE
+	Owner       *ClientInfo            `protobuf:"bytes,11,opt,name=owner,proto3" json:"owner,omitempty"`
+	// Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
+	// ignored for every other mode. Detection is reported on the telemetry plane
+	// and never gates audio -- tone squelch is a separate, later decision, and
+	// field 13 is held for it, because every false negative there is silence the
+	// user cannot diagnose.
+	SubaudibleDetect bool `protobuf:"varint,12,opt,name=subaudible_detect,json=subaudibleDetect,proto3" json:"subaudible_detect,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Channel) Reset() {
@@ -1068,6 +1074,13 @@ func (x *Channel) GetOwner() *ClientInfo {
 		return x.Owner
 	}
 	return nil
+}
+
+func (x *Channel) GetSubaudibleDetect() bool {
+	if x != nil {
+		return x.SubaudibleDetect
+	}
+	return false
 }
 
 type Sink struct {
@@ -2769,7 +2782,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x04auto\x18\x03 \x01(\bR\x04auto\"v\n" +
 	"\x0fCaptureActivity\x129\n" +
 	"\x19last_interactive_write_ns\x18\x01 \x01(\x03R\x16lastInteractiveWriteNs\x12(\n" +
-	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks\"\x98\x03\n" +
+	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks\"\xcb\x03\n" +
 	"\aChannel\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x1d\n" +
@@ -2788,7 +2801,8 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\vrequired_hz\x18\n" +
 	" \x01(\x04R\n" +
 	"requiredHz\x12,\n" +
-	"\x05owner\x18\v \x01(\v2\x16.leyline.v1.ClientInfoR\x05owner\"\xe6\x01\n" +
+	"\x05owner\x18\v \x01(\v2\x16.leyline.v1.ClientInfoR\x05owner\x12+\n" +
+	"\x11subaudible_detect\x18\f \x01(\bR\x10subaudibleDetectJ\x04\b\r\x10\x0e\"\xe6\x01\n" +
 	"\x04Sink\x12\x17\n" +
 	"\asink_id\x18\x01 \x01(\tR\x06sinkId\x12\x1d\n" +
 	"\n" +

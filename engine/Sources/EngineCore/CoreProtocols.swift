@@ -171,9 +171,14 @@ public struct ChannelConfig: Hashable, Sendable {
     public var persistent: Bool
     /// Set by jobs: rebind target when OUT_OF_CAPTURE.
     public var requiredHz: UInt64?
+    /// Watch for a sub-audible tone (CTCSS/PL). NFM only; ignored for every other mode. It never
+    /// gates audio: tone squelch is a separate, later decision, because a false negative there is
+    /// silence the user cannot diagnose.
+    public var subAudibleDetect: Bool
 
     public init(offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode, squelchDB: Double = .nan,
-                agc: GainMode = .auto, persistent: Bool = false, requiredHz: UInt64? = nil) {
+                agc: GainMode = .auto, persistent: Bool = false, requiredHz: UInt64? = nil,
+                subAudibleDetect: Bool = false) {
         self.offsetHz = offsetHz
         self.bandwidthHz = bandwidthHz
         self.mode = mode
@@ -181,6 +186,7 @@ public struct ChannelConfig: Hashable, Sendable {
         self.agc = agc
         self.persistent = persistent
         self.requiredHz = requiredHz
+        self.subAudibleDetect = subAudibleDetect
     }
 
     // NaN-aware equality so squelch-off compares equal to squelch-off.
@@ -243,6 +249,24 @@ public enum ChannelTelemetry: Sendable {
     /// and are meaningful on a close edge only (`open == false`); an open edge carries 0 and NaN,
     /// because a transmission still in progress has neither a duration nor a final peak.
     case squelch(time: SampleTime, open: Bool, openSamples: UInt64, peakSNRDB: Double, peakPowerDBFS: Double)
+    /// A sub-audible tone, or the absence of one. Emitted only while the channel asked for it.
+    case subAudible(time: SampleTime, result: SubAudibleResult)
+}
+
+/// A demodulator that can hand out its raw discriminator output, decimated to roughly 1 kHz, for
+/// sub-audible tone detection.
+///
+/// The tap is set once when the channel is built and never changes for the life of the DSP core, so
+/// the hot path reads a reference nobody is writing. Everything the tap does is decimation into a
+/// ring; every decision about what the samples mean happens in a slow task draining it.
+public protocol SubAudibleSource: AnyObject {
+    /// Deviation in Hz that maps to ±1.0 in the discriminator output (5 kHz NFM, 75 kHz WFM).
+    var fullScaleDeviationHz: Double { get }
+    /// Where to write decimated discriminator output. nil (the default) costs the hot path a single
+    /// nil check per block.
+    var subAudibleTap: FloatRing? { get set }
+    /// The rate `subAudibleTap` is written at. Zero until `configure`.
+    var subAudibleRate: Double { get }
 }
 
 /// A demodulator stage. Implementations per DemodMode, all vDSP-backed on macOS.

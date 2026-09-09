@@ -43,6 +43,7 @@ public actor DefaultChannelEngine: ChannelEngine {
     private var absoluteHz: Int64
     private var sinkTable: [any AudioSink] = []
     private var drainTask: Task<Void, Never>?
+    private var subAudibleTask: Task<Void, Never>?
     private var closed = false
 
     /// Builds the first core synchronously; the capture engine registers `slot` afterwards.
@@ -65,6 +66,59 @@ public actor DefaultChannelEngine: ChannelEngine {
             }
             while let rec = queue.pop() { hub.publish(rec) }
             hub.finishAll()
+        }
+        startSubAudibleTask(core: core)
+    }
+
+    /// The slow half of sub-audible detection. Everything branchy -- the bank, the phase estimate,
+    /// every accept and reject rule -- happens here, at normal priority, where allocating is fine.
+    /// The DSP thread's whole contribution is decimating into a ring.
+    private func startSubAudibleTask(core: ChannelDSPCore) {
+        guard let ring = core.subAudibleTap, core.subAudibleRate > 0 else { return }
+        let rate = core.subAudibleRate
+        let fullScale = core.subAudibleFullScale
+        let hub = self.hub
+        let id = captureID
+        let detector = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
+        subAudibleTask = Task.detached(priority: .utility) {
+            var window = [Float](repeating: 0, count: detector.windowSize)
+            var filled = 0
+            var hop = [Float](repeating: 0, count: detector.hop)
+            var lastReported: SubAudibleResult?
+            var heartbeat = 0
+            while !Task.isCancelled {
+                let want = filled < window.count ? window.count - filled : detector.hop
+                if ring.available < want {
+                    // A hop is ~128 ms of samples; waking a little faster than that keeps the
+                    // answer current without spinning.
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    continue
+                }
+                if filled < window.count {
+                    let got = window.withUnsafeMutableBufferPointer {
+                        ring.pop(into: UnsafeMutableBufferPointer(rebasing: $0[filled...]))
+                    }
+                    filled += got
+                    if filled < window.count { continue }
+                } else {
+                    let got = hop.withUnsafeMutableBufferPointer { ring.pop(into: $0) }
+                    guard got == detector.hop else { continue }
+                    window.removeFirst(detector.hop)
+                    window.append(contentsOf: hop)
+                }
+                let result = detector.analyse(window, fullScaleDeviationHz: fullScale)
+                // Edge-triggered on identity, plus a heartbeat: the telemetry plane has no GetState,
+                // so a client that subscribes mid-transmission has to be told what is already there.
+                heartbeat += 1
+                let changed = lastReported.map {
+                    $0.detected != result.detected || $0.standardToneHz != result.standardToneHz
+                } ?? true
+                if changed || heartbeat >= 8 {
+                    heartbeat = 0
+                    lastReported = result
+                    hub.publishSubAudible(time: SampleTime(captureID: id, sampleIndex: 0), result: result)
+                }
+            }
         }
     }
 
@@ -185,6 +239,7 @@ public actor DefaultChannelEngine: ChannelEngine {
         let sinks = sinkTable
         sinkTable = []
         for s in sinks { await s.closeSink() }
+        subAudibleTask?.cancel()
         telemetryQueue.finish()
         _ = await drainTask?.value
     }
@@ -197,6 +252,8 @@ public actor DefaultChannelEngine: ChannelEngine {
         core.setSinks(sinkTable)
         audioRateBox.store(core.audioRate, ordering: .relaxed)
         slot.store(core)
+        subAudibleTask?.cancel()
+        startSubAudibleTask(core: core)
         currentState = .active
     }
 }
@@ -249,6 +306,22 @@ final class TelemetryHub: @unchecked Sendable {
         return subscription
     }
 
+    /// Publish a sub-audible result. It comes from the slow detection task, not the DSP thread, so
+    /// it does not travel through the POD telemetry ring: the ring exists to get plain-old-data off
+    /// the hot path, and this is already off it.
+    func publishSubAudible(time: SampleTime, result: SubAudibleResult) {
+        publish(event: .subAudible(time: time, result: result))
+    }
+
+    private func publish(event: ChannelTelemetry) {
+        lock.lock()
+        let subs = Array(subscribers.values)
+        lock.unlock()
+        for (c, sub) in subs {
+            if case .dropped = c.yield(event) { sub.countDrop() }
+        }
+    }
+
     func publish(_ rec: ChannelTelemetryRecord) {
         let event: ChannelTelemetry
         switch rec.kind {
@@ -260,13 +333,8 @@ final class TelemetryHub: @unchecked Sendable {
             event = .squelch(time: rec.time, open: rec.squelchOpen, openSamples: rec.openSamples,
                              peakSNRDB: Double(rec.peakSNRDB), peakPowerDBFS: Double(rec.peakPowerDBFS))
         }
-        lock.lock()
-        let subs = Array(subscribers.values)
-        lock.unlock()
-        for (c, sub) in subs {
-            // `bufferingNewest` discards the oldest buffered record when full: count it against this subscriber.
-            if case .dropped = c.yield(event) { sub.countDrop() }
-        }
+        // `bufferingNewest` discards the oldest buffered record when full: counted per subscriber.
+        publish(event: event)
     }
 
     func finishAll() {

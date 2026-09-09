@@ -563,6 +563,13 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// Clears the value of `owner`. Subsequent reads from it will return its default value.
   public mutating func clearOwner() {self._owner = nil}
 
+  /// Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
+  /// ignored for every other mode. Detection is reported on the telemetry plane
+  /// and never gates audio -- tone squelch is a separate, later decision, and
+  /// field 13 is held for it, because every false negative there is silence the
+  /// user cannot diagnose.
+  public var subaudibleDetect: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1624,7 +1631,7 @@ nonisolated extension Leyline_V1_CaptureActivity: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Channel"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}capture_id\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}agc\0\u{1}state\0\u{1}persistent\0\u{3}required_hz\0\u{1}owner\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}capture_id\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}agc\0\u{1}state\0\u{1}persistent\0\u{3}required_hz\0\u{1}owner\0\u{3}subaudible_detect\0\u{c}\u{d}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1643,6 +1650,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
       case 9: try { try decoder.decodeSingularBoolField(value: &self.persistent) }()
       case 10: try { try decoder.decodeSingularUInt64Field(value: &self.requiredHz) }()
       case 11: try { try decoder.decodeSingularMessageField(value: &self._owner) }()
+      case 12: try { try decoder.decodeSingularBoolField(value: &self.subaudibleDetect) }()
       default: break
       }
     }
@@ -1686,6 +1694,9 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
     try { if let v = self._owner {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
     } }()
+    if self.subaudibleDetect != false {
+      try visitor.visitSingularBoolField(value: self.subaudibleDetect, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1701,6 +1712,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.persistent != rhs.persistent {return false}
     if lhs.requiredHz != rhs.requiredHz {return false}
     if lhs._owner != rhs._owner {return false}
+    if lhs.subaudibleDetect != rhs.subaudibleDetect {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

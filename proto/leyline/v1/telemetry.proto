@@ -19,6 +19,7 @@ enum TelemetryType {
   SQUELCH_TRANSITION = 2;
   DETECTION = 3;
   CAPTURE_ACTIVITY = 4;
+  SUB_AUDIBLE = 5;
 }
 
 message TelemetryMsg {
@@ -29,7 +30,49 @@ message TelemetryMsg {
     SquelchTransition squelch = 4;
     Detection detection = 5;
     CaptureActivityMsg activity = 6;
+    SubAudible sub_audible = 7;
   }
+}
+
+// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
+//
+// Edge-triggered on a change of identity or confidence band, plus a 1 Hz
+// heartbeat while a tone is held (the telemetry plane has no GetState, so a
+// client that subscribes mid-transmission has to be told what is already
+// there). Full state every message.
+//
+// The honesty rules this message exists to encode:
+//   - tone_hz is measured; standard_tone_hz is classified, and is 0 when two
+//     standard tones could both explain the measurement. The EIA ladder is
+//     spaced as tightly as 2.3 Hz (67.0/69.3), and snapping to the nearer one
+//     names the wrong tone with a straight face.
+//   - confidence is a STATED SCORE, not a probability:
+//       clamp((tone_snr_db-6)/14) * clamp(1-|tone_hz-standard_tone_hz|/tol)
+//                                 * min(hops_agreeing,3)/3
+//     Calibrating a real probability needs a corpus of off-air recordings we do
+//     not have. The measured fields are always populated, so a client can
+//     threshold on those and ignore the score.
+//   - Known false positive: 50 Hz mains hum lands on exactly 100.0 Hz, is
+//     perfectly stable, and passes every frequency test; 100.0 Hz is also one
+//     of the commonest real PL tones. Only deviation_hz separates them.
+message SubAudible {
+  string channel_id = 1;
+  SubAudibleKind kind = 2;
+  double tone_hz = 3;           // measured; NaN when nothing was measured
+  double standard_tone_hz = 4;  // classified; 0 = measured but not classifiable
+  uint32 dcs_code = 5;          // octal as decimal (023 -> 23); 0 unless DCS
+  bool dcs_inverted = 6;
+  double deviation_hz = 7;      // peak deviation the tone was sent at
+  double tone_snr_db = 8;       // the tone against the rest of the 60-260 Hz band
+  double confidence = 9;        // stated score, not a probability; formula above
+  SampleTime first_seen = 10;
+  uint32 hops_agreeing = 11;
+}
+enum SubAudibleKind {
+  SUB_AUDIBLE_KIND_UNSPECIFIED = 0;
+  SUB_AUDIBLE_NONE = 1;   // looked, found nothing
+  SUB_AUDIBLE_CTCSS = 2;
+  SUB_AUDIBLE_DCS = 3;
 }
 
 // Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
