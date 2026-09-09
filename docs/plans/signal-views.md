@@ -3,7 +3,7 @@
 Implements `docs/design-signal-views.md`. Work items in build order; each of SV-1, SV-2 and SV-4 is
 independently shippable. Mark `[x]` only when the item's tests pass and the full gate is green.
 
-## SV-1 `[ ]` Transmission log
+## SV-1 `[x]` Transmission log
 
 The cheapest real win: three fields the daemon already has.
 
@@ -14,9 +14,22 @@ The cheapest real win: three fields the daemon already has.
 - `ley` keeps a bounded ring of closed transmissions per channel and renders the table.
 - `--json` carries the same fields.
 
-Tests: a fixture that keys up and down produces a transition whose duration matches the keyed
-sample count; peaks are within tolerance of the fixture's known level; an open edge carries no
-summary; the Go client round-trips the new fields.
+Tests: `ChannelTests.testSquelchCloseEdgeSummarisesTheTransmission` (close edge carries a duration
+and both peaks; every open edge carries 0 and NaN); `TestClosedTransmissionOnlyOnTheCloseEdge`,
+`TestClosedTransmissionConvertsWithTheCaptureRate`, `TestFmtDuration`,
+`TestTransmissionStyledStripsToPlain`, `TestTransmissionOmitsUnmeasuredValues`, and
+`TestTuneReportsAFinishedTransmission` end to end against the fake daemon.
+
+Built as reported here rather than as a table: the live meter redraws one line in place, so a
+finished transmission scrolls above it as prose and the meter redraws on its next tick. The table
+arrives with SV-2, which is where the screen gets its other rows.
+
+**Correction to the design doc:** `duration_samples` is in **capture** samples, not channel samples.
+The channel's own rate is not on the wire, so a duration in channel samples would be unconvertible;
+capture samples is the rate `SampleTime` already counts in and that every client knows.
+`leyline.ChannelCaptureRate` looks it up. Verified on the real daemon against `two_nfm.cf32`: a
+squelch closed four seconds in reported `transmission  4.0 s  peak -20 dBFS`, and -20 dBFS is the
+fixture's tone level.
 
 ## SV-2 `[ ]` Audio meter fields and the two-bar channel view
 

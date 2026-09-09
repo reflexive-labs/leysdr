@@ -51,6 +51,11 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 		return srv.Send(m)
 	}
 	squelchOpen := map[string]bool{}
+	// What the real daemon accumulates on the DSP thread while the squelch is
+	// open, so the close edge can summarise the transmission that just ended.
+	openedAt := map[string]uint64{}
+	peakPower := map[string]float64{}
+	peakSNR := map[string]float64{}
 	ticker := time.NewTicker(d.opts.MeterInterval)
 	defer ticker.Stop()
 	activityEvery := time.Second / d.opts.MeterInterval
@@ -77,10 +82,35 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 				st := &leylinev1.SampleTime{CaptureId: c.CaptureId, SampleIndex: c.sampleIndex(now)}
 				power := syntheticPower(now)
 				open := math.IsNaN(ch.SquelchDb) || power >= ch.SquelchDb
-				if prev, seen := squelchOpen[ch.ChannelId]; (!seen || prev != open) && wants(leylinev1.TelemetryType_SQUELCH_TRANSITION) {
-					out = append(out, &leylinev1.TelemetryMsg{Time: st, Body: &leylinev1.TelemetryMsg_Squelch{
-						Squelch: &leylinev1.SquelchTransition{ChannelId: ch.ChannelId, Open: open},
-					}})
+				if open {
+					if p, seen := peakPower[ch.ChannelId]; !seen || power > p {
+						peakPower[ch.ChannelId] = power
+						peakSNR[ch.ChannelId] = power + 90
+					}
+				}
+				if prev, seen := squelchOpen[ch.ChannelId]; !seen || prev != open {
+					if wants(leylinev1.TelemetryType_SQUELCH_TRANSITION) {
+						sq := &leylinev1.SquelchTransition{ChannelId: ch.ChannelId, Open: open}
+						if open {
+							// A transmission in progress has no duration and no
+							// final peak; NaN says "not measured", which is not
+							// the same as a peak of zero.
+							sq.PeakSnrDb, sq.PeakAudioDbfs = math.NaN(), math.NaN()
+						} else {
+							sq.DurationSamples = st.SampleIndex - openedAt[ch.ChannelId]
+							sq.PeakSnrDb = peakSNR[ch.ChannelId]
+							sq.PeakAudioDbfs = peakPower[ch.ChannelId]
+						}
+						out = append(out, &leylinev1.TelemetryMsg{Time: st, Body: &leylinev1.TelemetryMsg_Squelch{Squelch: sq}})
+					}
+					if open {
+						openedAt[ch.ChannelId] = st.SampleIndex
+						peakPower[ch.ChannelId] = power
+						peakSNR[ch.ChannelId] = power + 90
+					} else {
+						delete(peakPower, ch.ChannelId)
+						delete(peakSNR, ch.ChannelId)
+					}
 				}
 				squelchOpen[ch.ChannelId] = open
 				if wants(leylinev1.TelemetryType_METER) {

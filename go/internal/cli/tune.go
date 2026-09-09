@@ -382,9 +382,18 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 				}
 				continue
 			}
-			if mt, ok := m.Body.(*leylinev1.TelemetryMsg_Meter); ok {
+			switch b := m.Body.(type) {
+			case *leylinev1.TelemetryMsg_Meter:
 				hz, _ := leyline.ChannelFrequency(s.state, s.channel)
-				meter.write(meter.line(hz, s.channel.Mode, mt.Meter, s.channel.SquelchDb))
+				meter.write(meter.line(hz, s.channel.Mode, b.Meter, s.channel.SquelchDb))
+			case *leylinev1.TelemetryMsg_Squelch:
+				// A transmission that has ended is a fact worth keeping, so it
+				// scrolls above the meter rather than replacing it. The meter
+				// redraws itself on its next tick.
+				if t, ok := closedTransmission(b.Squelch, leyline.ChannelCaptureRate(s.state, s.channel)); ok {
+					clear()
+					fmt.Fprintln(s.app.Stderr, t.render(s.app.ErrStyle))
+				}
 			}
 		case ev, ok := <-s.events:
 			if !ok {

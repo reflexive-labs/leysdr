@@ -83,11 +83,17 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         msg.meter.powerDbfs = power
                         msg.meter.snrDb = snr
                         msg.meter.squelchOpen = open
-                    case .squelch(let time, let open):
+                    case .squelch(let time, let open, let openSamples, let peakSNR, let peakPower):
                         guard wants(.squelchTransition) else { continue }
                         msg.time = ProtoMapping.sampleTime(time)
                         msg.squelch.channelID = id.string
                         msg.squelch.open = open
+                        // The close edge carries the summary of what just ended; the open edge
+                        // carries the same zero and NaN the engine handed us, so a client can tell
+                        // "no summary" from "a transmission of zero length".
+                        msg.squelch.durationSamples = openSamples
+                        msg.squelch.peakSnrDb = peakSNR
+                        msg.squelch.peakAudioDbfs = peakPower
                     }
                     yieldMerged(msg, gap: gap)
                     gap = 0

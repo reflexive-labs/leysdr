@@ -41,9 +41,20 @@ message Meter {
 }
 
 // Edge-triggered, exact in sample time — transcript features key on this, not on Meter.
+//
+// Fields 3-5 summarise the transmission that just ended and are set on the CLOSE edge only
+// (open == false). On an open edge duration_samples is 0 and both peaks are NaN: a transmission
+// that has not finished has no duration and no final peak. They cost the hot path two compares
+// and let a client keep a log of what happened on a frequency without subscribing to meters.
 message SquelchTransition {
   string channel_id = 1;
   bool open = 2;
+  uint64 duration_samples = 3;   // CAPTURE samples the squelch was open (SampleTime's rate,
+                                 // not the channel's), so a client converts it with the capture
+                                 // sample rate it already knows
+  double peak_snr_db = 4;        // loudest SNR seen while open; NaN on an open edge
+  double peak_audio_dbfs = 5;    // loudest block power seen while open; NaN on an open edge
+  reserved 6;                    // SubAudible tone, when CTCSS lands
 }
 
 // The atom of the semantic tier. v0 detector: energy detection over the FFT ladder.

@@ -14,6 +14,13 @@ public struct ChannelTelemetryRecord: Sendable {
     public var powerDBFS: Float
     public var snrDB: Float
     public var squelchOpen: Bool
+    /// Summary of the transmission that just ended. Set on the close edge of a squelch record only;
+    /// zero and NaN otherwise, because a transmission still in progress has neither a duration nor a
+    /// final peak. Plain-old-data like the rest of the record: the ring copies it by value and a
+    /// torn read is discarded, so no reference type may ever appear here.
+    public var openSamples: UInt64 = 0
+    public var peakSNRDB: Float = .nan
+    public var peakPowerDBFS: Float = .nan
 }
 
 /// Fixed-capacity telemetry ring plus a "poke" stream that wakes the drain task.
@@ -149,6 +156,14 @@ public final class ChannelDSPCore: @unchecked Sendable {
         setAGC(config.agc)
     }
 
+    /// The transmission in progress, owned by the DSP thread alone. `openSamples` counts CAPTURE
+    /// samples since the squelch opened -- the same rate `SampleTime` uses, which is the one a
+    /// client already knows from the capture; the channel's own rate is not on the wire. The peaks
+    /// are the loudest values seen in that interval. Reset on every open edge, drained on the close.
+    private var openSamples: UInt64 = 0
+    private var peakPowerDBFS: Float = .nan
+    private var peakSNRDB: Float = .nan
+
     /// Blocks processed so far.
     public var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
 
@@ -187,8 +202,30 @@ public final class ChannelDSPCore: @unchecked Sendable {
         iq.count = n
         let power = meter.measure(iq)
         squelch.thresholdDB = Float(bitPattern: squelchBits.load(ordering: .relaxed))
+        // Track the transmission in progress: two compares, no branch on the common path. The block
+        // that opens the squelch counts, so a short transmission is never measured as zero samples.
+        if squelch.isOpen {
+            openSamples &+= UInt64(block.count)
+            if !(power <= peakPowerDBFS) { peakPowerDBFS = power }
+            let snr = meter.snrDB
+            if !(snr <= peakSNRDB) { peakSNRDB = snr }
+        }
         if squelch.update(powerDB: power) {
-            telemetry.push(ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: power, snrDB: meter.snrDB, squelchOpen: squelch.isOpen))
+            var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: power, snrDB: meter.snrDB, squelchOpen: squelch.isOpen)
+            if squelch.isOpen {
+                // Opening: start a fresh interval. This block belongs to it.
+                openSamples = UInt64(block.count)
+                peakPowerDBFS = power
+                peakSNRDB = meter.snrDB
+            } else {
+                rec.openSamples = openSamples
+                rec.peakPowerDBFS = peakPowerDBFS
+                rec.peakSNRDB = peakSNRDB
+                openSamples = 0
+                peakPowerDBFS = .nan
+                peakSNRDB = .nan
+            }
+            telemetry.push(rec)
         }
         let agcOn = agcAuto.load(ordering: .relaxed)
         if let am = amDemodulator { am.agcEnabled = agcOn }

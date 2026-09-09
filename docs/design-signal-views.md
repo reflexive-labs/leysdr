@@ -228,7 +228,8 @@ message Meter {                     // 1-4 unchanged, still 10 Hz, still full st
 }
 
 message SquelchTransition {         // 1-2 unchanged; 3-5 set on the close edge only
-  uint64 duration_samples = 3;
+  uint64 duration_samples = 3;  // CAPTURE samples: SampleTime's rate, which every
+                                // client knows; the channel's own rate is not on the wire
   double peak_snr_db      = 4;
   double peak_audio_dbfs  = 5;
   reserved 6;                   // SubAudible tone, when CTCSS lands

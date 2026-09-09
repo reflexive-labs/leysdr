@@ -387,10 +387,20 @@ func (x *Meter) GetSquelchOpen() bool {
 }
 
 // Edge-triggered, exact in sample time — transcript features key on this, not on Meter.
+//
+// Fields 3-5 summarise the transmission that just ended and are set on the CLOSE edge only
+// (open == false). On an open edge duration_samples is 0 and both peaks are NaN: a transmission
+// that has not finished has no duration and no final peak. They cost the hot path two compares
+// and let a client keep a log of what happened on a frequency without subscribing to meters.
 type SquelchTransition struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId     string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	Open          bool                   `protobuf:"varint,2,opt,name=open,proto3" json:"open,omitempty"`
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ChannelId       string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	Open            bool                   `protobuf:"varint,2,opt,name=open,proto3" json:"open,omitempty"`
+	DurationSamples uint64                 `protobuf:"varint,3,opt,name=duration_samples,json=durationSamples,proto3" json:"duration_samples,omitempty"` // CAPTURE samples the squelch was open (SampleTime's rate,
+	// not the channel's), so a client converts it with the capture
+	// sample rate it already knows
+	PeakSnrDb     float64 `protobuf:"fixed64,4,opt,name=peak_snr_db,json=peakSnrDb,proto3" json:"peak_snr_db,omitempty"`             // loudest SNR seen while open; NaN on an open edge
+	PeakAudioDbfs float64 `protobuf:"fixed64,5,opt,name=peak_audio_dbfs,json=peakAudioDbfs,proto3" json:"peak_audio_dbfs,omitempty"` // loudest block power seen while open; NaN on an open edge
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -437,6 +447,27 @@ func (x *SquelchTransition) GetOpen() bool {
 		return x.Open
 	}
 	return false
+}
+
+func (x *SquelchTransition) GetDurationSamples() uint64 {
+	if x != nil {
+		return x.DurationSamples
+	}
+	return 0
+}
+
+func (x *SquelchTransition) GetPeakSnrDb() float64 {
+	if x != nil {
+		return x.PeakSnrDb
+	}
+	return 0
+}
+
+func (x *SquelchTransition) GetPeakAudioDbfs() float64 {
+	if x != nil {
+		return x.PeakAudioDbfs
+	}
+	return 0
 }
 
 // The atom of the semantic tier. v0 detector: energy detection over the FFT ladder.
@@ -682,11 +713,14 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"power_dbfs\x18\x02 \x01(\x01R\tpowerDbfs\x12\x15\n" +
 	"\x06snr_db\x18\x03 \x01(\x01R\x05snrDb\x12!\n" +
-	"\fsquelch_open\x18\x04 \x01(\bR\vsquelchOpen\"F\n" +
+	"\fsquelch_open\x18\x04 \x01(\bR\vsquelchOpen\"\xbf\x01\n" +
 	"\x11SquelchTransition\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x12\n" +
-	"\x04open\x18\x02 \x01(\bR\x04open\"\xe6\x02\n" +
+	"\x04open\x18\x02 \x01(\bR\x04open\x12)\n" +
+	"\x10duration_samples\x18\x03 \x01(\x04R\x0fdurationSamples\x12\x1e\n" +
+	"\vpeak_snr_db\x18\x04 \x01(\x01R\tpeakSnrDb\x12&\n" +
+	"\x0fpeak_audio_dbfs\x18\x05 \x01(\x01R\rpeakAudioDbfsJ\x04\b\x06\x10\a\"\xe6\x02\n" +
 	"\tDetection\x12!\n" +
 	"\fdetection_id\x18\x01 \x01(\tR\vdetectionId\x12\x1d\n" +
 	"\n" +

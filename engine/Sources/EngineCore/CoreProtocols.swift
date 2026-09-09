@@ -235,7 +235,10 @@ public enum ChannelState: Hashable, Sendable {
 
 public enum ChannelTelemetry: Sendable {
     case meter(time: SampleTime, powerDBFS: Double, snrDB: Double, squelchOpen: Bool)
-    case squelch(time: SampleTime, open: Bool)
+    /// A squelch edge. `openSamples` and the two peaks summarise the transmission that just ended
+    /// and are meaningful on a close edge only (`open == false`); an open edge carries 0 and NaN,
+    /// because a transmission still in progress has neither a duration nor a final peak.
+    case squelch(time: SampleTime, open: Bool, openSamples: UInt64, peakSNRDB: Double, peakPowerDBFS: Double)
 }
 
 /// A demodulator stage. Implementations per DemodMode, all vDSP-backed on macOS.

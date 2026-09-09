@@ -253,7 +253,9 @@ final class TelemetryHub: @unchecked Sendable {
         let event: ChannelTelemetry
         switch rec.kind {
         case .meter: event = .meter(time: rec.time, powerDBFS: Double(rec.powerDBFS), snrDB: Double(rec.snrDB), squelchOpen: rec.squelchOpen)
-        case .squelch: event = .squelch(time: rec.time, open: rec.squelchOpen)
+        case .squelch:
+            event = .squelch(time: rec.time, open: rec.squelchOpen, openSamples: rec.openSamples,
+                             peakSNRDB: Double(rec.peakSNRDB), peakPowerDBFS: Double(rec.peakPowerDBFS))
         }
         lock.lock()
         let subs = Array(subscribers.values)

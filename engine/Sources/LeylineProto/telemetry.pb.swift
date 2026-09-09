@@ -203,6 +203,11 @@ public nonisolated struct Leyline_V1_Meter: Sendable {
 }
 
 /// Edge-triggered, exact in sample time — transcript features key on this, not on Meter.
+///
+/// Fields 3-5 summarise the transmission that just ended and are set on the CLOSE edge only
+/// (open == false). On an open edge duration_samples is 0 and both peaks are NaN: a transmission
+/// that has not finished has no duration and no final peak. They cost the hot path two compares
+/// and let a client keep a log of what happened on a frequency without subscribing to meters.
 public nonisolated struct Leyline_V1_SquelchTransition: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -211,6 +216,16 @@ public nonisolated struct Leyline_V1_SquelchTransition: Sendable {
   public var channelID: String = String()
 
   public var `open`: Bool = false
+
+  /// CAPTURE samples the squelch was open (SampleTime's rate,
+  public var durationSamples: UInt64 = 0
+
+  /// not the channel's), so a client converts it with the capture
+  /// sample rate it already knows
+  public var peakSnrDb: Double = 0
+
+  /// loudest block power seen while open; NaN on an open edge
+  public var peakAudioDbfs: Double = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -543,7 +558,7 @@ nonisolated extension Leyline_V1_Meter: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 nonisolated extension Leyline_V1_SquelchTransition: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SquelchTransition"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{1}open\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{1}open\0\u{3}duration_samples\0\u{3}peak_snr_db\0\u{3}peak_audio_dbfs\0\u{c}\u{6}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -553,6 +568,9 @@ nonisolated extension Leyline_V1_SquelchTransition: SwiftProtobuf.Message, Swift
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.channelID) }()
       case 2: try { try decoder.decodeSingularBoolField(value: &self.`open`) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.durationSamples) }()
+      case 4: try { try decoder.decodeSingularDoubleField(value: &self.peakSnrDb) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.peakAudioDbfs) }()
       default: break
       }
     }
@@ -565,12 +583,24 @@ nonisolated extension Leyline_V1_SquelchTransition: SwiftProtobuf.Message, Swift
     if self.`open` != false {
       try visitor.visitSingularBoolField(value: self.`open`, fieldNumber: 2)
     }
+    if self.durationSamples != 0 {
+      try visitor.visitSingularUInt64Field(value: self.durationSamples, fieldNumber: 3)
+    }
+    if self.peakSnrDb.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.peakSnrDb, fieldNumber: 4)
+    }
+    if self.peakAudioDbfs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.peakAudioDbfs, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_SquelchTransition, rhs: Leyline_V1_SquelchTransition) -> Bool {
     if lhs.channelID != rhs.channelID {return false}
     if lhs.`open` != rhs.`open` {return false}
+    if lhs.durationSamples != rhs.durationSamples {return false}
+    if lhs.peakSnrDb != rhs.peakSnrDb {return false}
+    if lhs.peakAudioDbfs != rhs.peakAudioDbfs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

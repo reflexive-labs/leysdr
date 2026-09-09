@@ -395,6 +395,58 @@ final class ChannelTests: XCTestCase {
         await capture.stop()
     }
 
+    /// The close edge of a squelch transition summarises the transmission that just ended: how long
+    /// it ran and how loud it got. The open edge carries no summary, because a transmission still in
+    /// progress has neither a duration nor a final peak, and a client must be able to tell that
+    /// apart from a transmission that really was zero samples long.
+    func testSquelchCloseEdgeSummarisesTheTransmission() async throws {
+        let path = try nfmTonePath()
+        let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
+        let capture = DefaultCaptureEngine(device: device, centerHz: UInt64(device.sidecar.centerHz), sampleRate: UInt64(device.sidecar.sampleRate))
+        // Open to begin with: the -20 dBFS tone clears -40 comfortably.
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40)) as! DefaultChannelEngine
+        let collector = AudioCollector()
+        try await channel.attach(collector.sink)
+        let events = Task<[ChannelTelemetry], Never> {
+            var out: [ChannelTelemetry] = []
+            for await t in channel.telemetry() { out.append(t) }
+            return out
+        }
+        try await capture.start()
+        // PowerMeter reports NaN SNR until it has measured a second of samples, so the transmission
+        // has to run past that before the close edge can carry a real peak SNR. The channel runs at
+        // ~48 kHz, so 72000 frames is comfortably over a second.
+        let deadline = Date().addingTimeInterval(20)
+        while collector.count < 72_000, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        // Shut it: threshold above the tone forces a close edge, which carries the summary.
+        try await channel.update(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm, squelchDB: 0))
+        let mark = collector.count
+        while collector.count < mark + 9600, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        await capture.stop()
+        let all = await events.value
+
+        var opens: [ChannelTelemetry] = []
+        var closes: [ChannelTelemetry] = []
+        for e in all {
+            if case let .squelch(_, open, _, _, _) = e { if open { opens.append(e) } else { closes.append(e) } }
+        }
+        guard case let .squelch(_, _, closeSamples, closeSNR, closePower)? = closes.last else {
+            return XCTFail("expected a squelch-close transition, got \(all.count) events")
+        }
+        XCTAssertGreaterThan(closeSamples, 0, "a transmission that carried audio must report a duration")
+        XCTAssertFalse(closeSNR.isNaN, "the close edge must carry a peak SNR")
+        XCTAssertFalse(closePower.isNaN, "the close edge must carry a peak level")
+        // The fixture's tone sits near -20 dBFS; the peak is the loudest block, so it must be at
+        // least as loud as the threshold the squelch was holding open against.
+        XCTAssertGreaterThan(closePower, -40, "peak level \(closePower) should reflect the -20 dBFS tone")
+        for e in opens {
+            guard case let .squelch(_, _, samples, snr, power) = e else { continue }
+            XCTAssertEqual(samples, 0, "an open edge has no duration to report")
+            XCTAssertTrue(snr.isNaN, "an open edge has no peak SNR yet")
+            XCTAssertTrue(power.isNaN, "an open edge has no peak level yet")
+        }
+    }
+
     func testSquelchTelemetryTransitionsAndZeros() async throws {
         let path = try nfmTonePath()
         let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
@@ -418,7 +470,9 @@ final class ChannelTests: XCTestCase {
         while collector.count < before + 9600, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         await capture.stop()
         let all = await events.value
-        let opens = all.compactMap { if case let .squelch(_, open) = $0 { return open } else { return nil } }
+        let opens = all.compactMap { (e) -> Bool? in
+            if case let .squelch(_, open, _, _, _) = e { return open } else { return nil }
+        }
         XCTAssertEqual(opens.last, true, "expected a squelch-open transition after lowering the threshold: \(opens)")
         let meters = all.filter { if case .meter = $0 { return true } else { return false } }
         XCTAssertGreaterThanOrEqual(meters.count, 3, "meter cadence is 100 ms of samples")

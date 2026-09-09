@@ -147,6 +147,19 @@ func ResolveCapture(state *leylinev1.GetStateResponse, sel string) (*leylinev1.C
 // ChannelFrequency returns the channel's absolute frequency (capture center
 // plus offset) using the captures in state; ok is false when the capture is
 // not in state.
+// ChannelCaptureRate is the sample rate of the capture a channel is on. It is
+// the rate SampleTime counts in, so it converts anything the daemon reports in
+// samples -- a transmission's duration, a gap -- into seconds. Zero means the
+// capture is not in this state snapshot.
+func ChannelCaptureRate(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) uint64 {
+	for _, c := range state.GetCaptures() {
+		if c.GetCaptureId() == ch.GetCaptureId() {
+			return c.GetSampleRate()
+		}
+	}
+	return 0
+}
+
 func ChannelFrequency(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) (hz uint64, ok bool) {
 	for _, c := range state.GetCaptures() {
 		if c.GetCaptureId() == ch.GetCaptureId() {
