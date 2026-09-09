@@ -95,7 +95,7 @@ Files: `tune.go`, `play.go`, `listen.go`, `session.go`, `set.go`, `stop.go`, `fo
   ("stopped; channel removed, radio free", or the surviving id under `--persistent`), suppressed
   under `--json`, exit code unchanged.
 
-### VIS-4 `[ ]` Spectrum showpiece and fft
+### VIS-4 `[x]` Spectrum showpiece and fft
 
 Files: `spectrum.go`, `fft.go`.
 

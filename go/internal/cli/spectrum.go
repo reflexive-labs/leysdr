@@ -4,26 +4,22 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
-	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// spectrumPeaks is how many loudest bins the "loudest bins:" line and the
-// JSON peaks array carry.
+// spectrumPeaks is the most peaks the chart's peak block and the JSON peaks
+// array carry. Fewer is normal: the list is as long as the evidence.
 const spectrumPeaks = 5
-
-// spectrumHeight is the bar chart's height in rows.
-const spectrumHeight = 10
-
-// defaultSpectrumWidth is used when the terminal width is unknown (piped).
-const defaultSpectrumWidth = 80
 
 // Peak is one entry of `ley spectrum --json`'s peaks: a loud bin's centre.
 type Peak struct {
@@ -32,10 +28,12 @@ type Peak struct {
 }
 
 // SpectrumRow is one JSON line of `ley spectrum --json`: the FFT row shape
-// (see FFTRow) plus the loudest bins.
+// (see FFTRow) plus the noise floor the peaks were judged against and the
+// loudest bins.
 type SpectrumRow struct {
 	FFTRow
-	Peaks []Peak `json:"peaks"`
+	FloorDb float64 `json:"floor_db"`
+	Peaks   []Peak  `json:"peaks"`
 }
 
 type spectrumOptions struct {
@@ -56,9 +54,11 @@ func newSpectrumCommand(app *App) *cobra.Command {
 		Use:   "spectrum [frequency]",
 		Short: "Show what is on the air around a frequency",
 		Long: `spectrum draws the band around a frequency as a bar chart: left to right is
-frequency, taller is louder. Under the chart it lists the loudest bins so
-you can read a frequency straight off. Levels are dBFS (0 is the loudest
-the radio can hear; the header prints the noise floor, which depends on gain).
+frequency, taller is louder. Under the chart it names the loudest bins and
+how far the strongest sits above the noise, so you can read a frequency
+straight off. Levels are dBFS (0 is the loudest the radio can hear; the
+header prints the noise floor, which depends on gain). Only bins well clear
+of the floor are named, so a quiet band names none.
 
 Without a frequency it shows the band the device is already tuned to (what
 'ley tune' is listening to). With a frequency it needs the device to be
@@ -74,13 +74,16 @@ different width, spectrum exits 2 and names it: drop --span, ask for that
 width, or free the radio with 'ley stop all'.
 
 It draws once by default. --watch keeps redrawing (--rate times a second)
-until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
-prints the same rows as numbers for tools.`,
+until Ctrl-C: the dB scale is held for the run so frames can be compared, a
+faint trace marks the loudest each column has been, and a status line says
+how many rows have arrived or that the stream has gone quiet. Everything
+here comes from the daemon's FFT stream: 'ley fft' prints the same rows as
+numbers for tools.`,
 		Example: `  ley spectrum 101.1          # the FM broadcast band around 101.1 MHz
   ley spectrum                # the band ley tune is listening to
   ley spectrum 146.52 -w      # keep redrawing until Ctrl-C
   ley spectrum 7.1 --span 250k --bins 2048   # 250 kHz is the narrowest an RTL-SDR captures
-  ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, peaks}`,
+  ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}`,
 		GroupID: GroupLooking,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,11 +105,12 @@ prints the same rows as numbers for tools.`,
 			if o.count < 0 {
 				return usageErrorf("--count must be 0 or more")
 			}
-			if o.width == 0 {
-				o.width = app.TermWidth()
-			}
+			// Width comes from the resolved style, which has already applied
+			// --width, COLUMNS, the terminal's own size and the [40, 160]
+			// clamp (docs/cli-style.md section 2).
+			o.width = app.Style.Width
 			if o.width <= 0 {
-				o.width = defaultSpectrumWidth
+				o.width = ui.DefaultWidth
 			}
 			return runSpectrum(cmd.Context(), app, o)
 		},
@@ -192,43 +196,74 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
-	redraw := o.watch && !app.JSON && app.IsTTY()
-	n, lastLines := 0, 0
-	for fr := range sub.Frames {
-		if len(fr.Payload) == 0 {
-			continue
-		}
-		bins := decodeBins(fr.Payload, u8)
-		peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
-		if app.JSON {
-			row := SpectrumRow{FFTRow: FFTRow{Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), CenterHz: desc.CenterHz, SpanHz: desc.SpanHz, Bins: bins}, Peaks: peaks}
-			b, err := json.Marshal(row)
-			if err != nil {
+	view := newSpectrumView(app.Style, o.width, o.freq, o.watch)
+	w := newSpectrumWriter(app, out, o, rate)
+	defer w.finish()
+	tick := time.NewTicker(spectrumTickInterval)
+	defer tick.Stop()
+	n := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+			// A row every so often is normal; no row at all is the failure the
+			// status line and the stderr note exist to make visible. A one-shot
+			// gives up rather than hanging for ever with nothing on screen;
+			// --watch keeps waiting, and says so.
+			w.idle()
+			if !o.watch && n == 0 && time.Since(w.start) > spectrumFirstRow {
+				return fmt.Errorf("no spectrum row arrived in %.0f s, so there is nothing to draw. Check the radio is still capturing with: ley state", spectrumFirstRow.Seconds())
+			}
+		case fr, ok := <-sub.Frames:
+			if !ok {
+				return spectrumEnd(ctx, sub.Err(), n)
+			}
+			if len(fr.Payload) == 0 {
+				continue
+			}
+			bins := decodeBins(fr.Payload, u8)
+			floor := medianDb(bins)
+			peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks, floor+peakAboveFloorDb)
+			if app.JSON {
+				row := SpectrumRow{FFTRow: FFTRow{Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), CenterHz: desc.CenterHz, SpanHz: desc.SpanHz, Bins: bins}, FloorDb: floor, Peaks: peaks}
+				b, err := json.Marshal(row)
+				if err != nil {
+					return err
+				}
+				out.Write(b)
+				out.WriteByte('\n')
+				w.row()
+			} else {
+				text := view.render(bins, peaks, floor, desc.CenterHz, desc.SpanHz)
+				w.frame(text, view.note())
+				if !o.watch {
+					w.footer(view.nextStep(peaks))
+				}
+			}
+			if err := out.Flush(); err != nil {
 				return err
 			}
-			out.Write(b)
-			out.WriteByte('\n')
-		} else {
-			text := renderSpectrum(bins, peaks, desc.CenterHz, desc.SpanHz, o.width)
-			if redraw && lastLines > 0 {
-				fmt.Fprintf(out, "\x1b[%dA", lastLines)
+			n++
+			if !o.watch || (o.count > 0 && n >= o.count) {
+				return nil
 			}
-			out.WriteString(text)
-			lastLines = strings.Count(text, "\n")
-			if !redraw && o.watch {
-				out.WriteString("\n")
-			}
-		}
-		if err := out.Flush(); err != nil {
-			return err
-		}
-		n++
-		if !o.watch || (o.count > 0 && n >= o.count) {
-			return nil
 		}
 	}
-	if err := sub.Err(); err != nil && ctx.Err() == nil {
+}
+
+// spectrumEnd turns the end of the FFT stream into an exit. A stream that
+// closed before producing anything is a failure the user must be told about:
+// it used to hang, then exit 0, with no output at all.
+func spectrumEnd(ctx context.Context, err error, rows int) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+	if err != nil {
 		return err
+	}
+	if rows == 0 {
+		return errors.New("the spectrum stream ended before it sent a row. Check the radio is still capturing with: ley state")
 	}
 	return nil
 }
@@ -241,9 +276,13 @@ func deviceName(d *leylinev1.DeviceDescriptor) string {
 	return d.DeviceId
 }
 
-// peakAboveFloorDb is how far above the noise floor (the row's median) a
-// bin must be to count as a peak; below that it is noise, not a signal.
-const peakAboveFloorDb = 6
+// peakAboveFloorDb is how far above the noise floor (the row's median) a bin
+// must be to count as a peak. The loudest of a thousand noise bins sits about
+// 10 dB above their median by chance alone, so a threshold near that admits
+// noise: at 6 dB four of five "loudest bins" were random bumps quoted like
+// carriers. 15 dB is above what noise reaches and below any carrier worth
+// tuning to.
+const peakAboveFloorDb = 15
 
 // loudestBins returns up to n of the loudest local maxima at or above minDb,
 // loudest first, as bin-centre frequencies. A run of equal-height bins
@@ -268,13 +307,26 @@ func loudestBins(bins []float64, centerHz, spanHz uint64, n int, minDb float64) 
 		peaks = append(peaks, Peak{CenterHz: uint64(math.Round(left + (float64(i)+0.5)*binWidth)), Db: v})
 	}
 	sort.SliceStable(peaks, func(a, b int) bool { return peaks[a].Db > peaks[b].Db })
-	if len(peaks) > n {
-		peaks = peaks[:n]
+	// One carrier is one entry: its shoulders are the same signal, so a peak
+	// too close to a louder one is dropped rather than quoted as a second find.
+	gap := math.Max(3*binWidth, float64(spanHz)/128)
+	kept := make([]Peak, 0, n)
+	for _, p := range peaks {
+		if len(kept) >= n {
+			break
+		}
+		near := false
+		for _, k := range kept {
+			if math.Abs(float64(p.CenterHz)-float64(k.CenterHz)) < gap {
+				near = true
+				break
+			}
+		}
+		if !near {
+			kept = append(kept, p)
+		}
 	}
-	if peaks == nil {
-		peaks = []Peak{}
-	}
-	return peaks
+	return kept
 }
 
 // medianDb is the row's median level: the noise floor, as presentation.
@@ -285,73 +337,4 @@ func medianDb(bins []float64) float64 {
 	s := append([]float64(nil), bins...)
 	sort.Float64s(s)
 	return s[len(s)/2]
-}
-
-// renderSpectrum draws the header, the bar chart and the loudest-bins line.
-func renderSpectrum(bins []float64, peaks []Peak, centerHz, spanHz uint64, width int) string {
-	var b strings.Builder
-	floor := medianDb(bins)
-	lo := float64(centerHz) - float64(spanHz)/2
-	hi := float64(centerHz) + float64(spanHz)/2
-	binWidth := float64(spanHz) / math.Max(1, float64(len(bins)))
-	fmt.Fprintf(&b, "%s, span %s (%s to %s), %d bins of %s, floor %.0f dB\n",
-		leyline.FormatFrequency(centerHz), leyline.FormatFrequency(spanHz),
-		leyline.FormatFrequency(uint64(math.Max(0, lo))), leyline.FormatFrequency(uint64(hi)),
-		len(bins), leyline.FormatFrequency(uint64(math.Round(binWidth))), floor)
-	const gutter = 7 // "-100 |" plus a space
-	cols := width - gutter
-	if cols < 10 {
-		cols = 10
-	}
-	if cols > len(bins) {
-		cols = len(bins)
-	}
-	// Each column shows the loudest bin it covers.
-	colDb := make([]float64, cols)
-	for c := range colDb {
-		from, to := c*len(bins)/cols, (c+1)*len(bins)/cols
-		if to <= from {
-			to = from + 1
-		}
-		m := math.Inf(-1)
-		for _, v := range bins[from:to] {
-			m = math.Max(m, v)
-		}
-		colDb[c] = m
-	}
-	top := floor
-	for _, v := range colDb {
-		top = math.Max(top, v)
-	}
-	bottom := floor - 5
-	top = math.Max(top, bottom+10)
-	for r := spectrumHeight; r >= 1; r-- {
-		level := bottom + (top-bottom)*float64(r)/spectrumHeight
-		fmt.Fprintf(&b, "%4.0f |", level)
-		for _, v := range colDb {
-			if v >= level {
-				b.WriteByte('#')
-			} else {
-				b.WriteByte(' ')
-			}
-		}
-		b.WriteByte('\n')
-	}
-	b.WriteString("     +" + strings.Repeat("-", cols) + "\n")
-	l, m, h := leyline.FormatFrequency(uint64(math.Max(0, lo))), leyline.FormatFrequency(centerHz), leyline.FormatFrequency(uint64(hi))
-	pad := cols - len(l) - len(m) - len(h)
-	if pad < 2 {
-		pad = 2
-	}
-	fmt.Fprintf(&b, "      %s%s%s%s%s\n", l, strings.Repeat(" ", pad/2), m, strings.Repeat(" ", pad-pad/2), h)
-	if len(peaks) == 0 {
-		b.WriteString("loudest bins: nothing above the floor\n")
-		return b.String()
-	}
-	parts := make([]string, len(peaks))
-	for i, p := range peaks {
-		parts[i] = fmt.Sprintf("%s %.0f dB", leyline.FormatFrequency(p.CenterHz), p.Db)
-	}
-	b.WriteString("loudest bins: " + strings.Join(parts, ", ") + "\n")
-	return b.String()
 }

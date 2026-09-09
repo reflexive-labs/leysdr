@@ -1,7 +1,9 @@
 spectrum draws the band around a frequency as a bar chart: left to right is
-frequency, taller is louder. Under the chart it lists the loudest bins so
-you can read a frequency straight off. Levels are dBFS (0 is the loudest
-the radio can hear; the header prints the noise floor, which depends on gain).
+frequency, taller is louder. Under the chart it names the loudest bins and
+how far the strongest sits above the noise, so you can read a frequency
+straight off. Levels are dBFS (0 is the loudest the radio can hear; the
+header prints the noise floor, which depends on gain). Only bins well clear
+of the floor are named, so a quiet band names none.
 
 Without a frequency it shows the band the device is already tuned to (what
 'ley tune' is listening to). With a frequency it needs the device to be
@@ -17,8 +19,11 @@ different width, spectrum exits 2 and names it: drop --span, ask for that
 width, or free the radio with 'ley stop all'.
 
 It draws once by default. --watch keeps redrawing (--rate times a second)
-until Ctrl-C. Everything here comes from the daemon's FFT stream: 'ley fft'
-prints the same rows as numbers for tools.
+until Ctrl-C: the dB scale is held for the run so frames can be compared, a
+faint trace marks the loudest each column has been, and a status line says
+how many rows have arrived or that the stream has gone quiet. Everything
+here comes from the daemon's FFT stream: 'ley fft' prints the same rows as
+numbers for tools.
 
 Usage:
   ley spectrum [frequency] [flags]
@@ -28,7 +33,7 @@ Examples:
   ley spectrum                # the band ley tune is listening to
   ley spectrum 146.52 -w      # keep redrawing until Ctrl-C
   ley spectrum 7.1 --span 250k --bins 2048   # 250 kHz is the narrowest an RTL-SDR captures
-  ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, peaks}
+  ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}
 
 Flags:
       --bins uint32     number of bins across the band (the daemon may round it) (default 1024)

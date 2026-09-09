@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"regexp"
 	"strings"
 	"testing"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -27,7 +29,7 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[0]), &row); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"seq", "sample_index", "center_hz", "span_hz", "bins", "peaks"} {
+	for _, k := range []string{"seq", "sample_index", "center_hz", "span_hz", "bins", "floor_db", "peaks"} {
 		if _, ok := row[k]; !ok {
 			t.Errorf("row lacks %q: %s", k, lines[0])
 		}
@@ -53,12 +55,17 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	}
 
 	text := mustRun(t, sock, "spectrum", "--bins", "256", "--width", "60")
-	if !strings.HasPrefix(text, "146.520 MHz, span "+leyline.FormatFrequency(typed.SpanHz)+" (") || !strings.Contains(text, "256 bins of") || !strings.Contains(text, "floor -") {
+	if !strings.HasPrefix(text, "146.520 MHz  span "+leyline.FormatFrequency(typed.SpanHz)) || !strings.Contains(text, "256 bins of") || !strings.Contains(text, "floor -") {
 		t.Fatalf("header:\n%s", text)
 	}
-	wantPeak := "loudest bins: " + leyline.FormatFrequency(top.CenterHz) + " -40 dB"
+	wantPeak := "peak    " + leyline.FormatFrequency(top.CenterHz) + "  -40 dBFS"
 	if !strings.Contains(text, wantPeak) {
 		t.Fatalf("want %q in:\n%s", wantPeak, text)
+	}
+	// The strongest peak's margin above the floor is the number the reader
+	// came for, and the screen ends with the command that acts on it.
+	if !strings.Contains(text, "dB above the floor") || !strings.Contains(text, "tune with: ley tune ") {
+		t.Fatalf("peak block and next step:\n%s", text)
 	}
 	for _, banned := range []string{"signal", "SNR", "bandwidth"} {
 		if strings.Contains(strings.ToLower(text), strings.ToLower(banned)) {
@@ -66,11 +73,11 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 		}
 	}
 	for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		if len(l) > 60 && !strings.HasPrefix(l, "loudest bins") && !strings.Contains(l, "span") {
+		if ui.Visible(l) > 60 {
 			t.Errorf("line wider than --width 60: %q", l)
 		}
 	}
-	if bars := strings.Count(text, "#"); bars == 0 {
+	if !strings.ContainsAny(text, ".:-=+*#%") {
 		t.Fatalf("no bars drawn:\n%s", text)
 	}
 	if _, _, err := run(t, context.Background(), sock, "spectrum", "--bins", "256", "--width", "60"); err != nil {
@@ -123,20 +130,31 @@ func TestSpectrumWatchCountAndCapture(t *testing.T) {
 		t.Fatalf("capture must be destroyed after the run: %v %v", err, st.GetCaptures())
 	}
 	text := mustRun(t, sock, "spectrum", "101.1", "--watch", "--count", "2", "--rate", "30", "--width", "50")
-	if got := strings.Count(text, "loudest bins:"); got != 2 {
+	if got := strings.Count(text, "peak    "); got != 2 {
 		t.Fatalf("piped --watch should append 2 charts, got %d:\n%s", got, text)
 	}
 	// No channel: the fake's row is floor only, and spectrum says so instead of listing noise.
-	if !strings.Contains(text, "loudest bins: nothing above the floor") {
+	if !strings.Contains(text, "peak    nothing above the floor") {
 		t.Fatalf("a flat row should report nothing above the floor:\n%s", text)
 	}
 	if strings.Contains(text, "\x1b[") {
 		t.Fatalf("piped output must not carry cursor moves:\n%s", text)
 	}
-	// On a terminal the redraw moves the cursor up instead of appending.
+	// On a terminal the redraw moves the cursor up instead of appending, erases
+	// each line it rewrites so a shorter frame cannot leave a tail behind, and
+	// gives the cursor back at the end.
 	tty, _, err := runApp(t, ttyApp(sock), "spectrum", "101.1", "--watch", "--count", "2", "--rate", "30")
-	if err != nil || strings.Count(tty, "\x1b[") != 1 {
+	if err != nil {
 		t.Fatalf("tty redraw: %v\n%q", err, tty)
+	}
+	if up := regexp.MustCompile(`\x1b\[\d+A`).FindAllString(tty, -1); len(up) != 1 {
+		t.Fatalf("second frame should redraw in place, got %v:\n%q", up, tty)
+	}
+	if !strings.Contains(tty, ansiHideCursor) || !strings.HasSuffix(tty, ansiShowCursor) {
+		t.Fatalf("the cursor must be hidden for the run and restored at the end:\n%q", tty)
+	}
+	if n := strings.Count(tty, ansiEraseLine); n < 2 {
+		t.Fatalf("every redrawn line should erase to end of line, got %d:\n%q", n, tty)
 	}
 	// Out of the device's range: says so, exit 2, no capture left behind.
 	_, _, err = run(t, ctx, sock, "spectrum", "1.010")

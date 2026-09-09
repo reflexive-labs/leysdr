@@ -141,26 +141,36 @@ made when there is exactly one such, and `set` says which; otherwise it lists th
 ## 4. See the band
 
 `spectrum` draws the band as a bar chart — left to right is frequency, taller is louder — and
-lists the loudest bins so you can read a frequency straight off. Without a frequency it shows
-the band the radio is already tuned to, which is the useful form while `tune` is running.
+names the loudest bins, with how far the strongest sits above the noise, so you can read a
+frequency straight off. Without a frequency it shows the band the radio is already tuned to,
+which is the useful form while `tune` is running.
 
 ```console
-$ ley spectrum
-146.520 MHz, span 2.400 MHz (145.320 MHz to 147.720 MHz), 1024 bins of 2.344 kHz, floor -100 dB
- -41 |                                   #
- -47 |                                   #
- -54 |                                   #
- -60 |                                   #
- -67 |                                   #
- -73 |                                   #
- -79 |                                   #
- -86 |                                   #
- -92 |                                   #
- -99 |#################################################################
-     +-----------------------------------------------------------------
-      145.320 MHz                146.520 MHz                147.720 MHz
-loudest bins: 146.622 MHz -41 dB
+$ ley spectrum 146.62
+146.520 MHz  span 2.400 MHz  floor -90 dBFS  145.320 MHz to 147.720 MHz
+1024 bins of 2.344 kHz
+ -20 dBFS│                                     ▄▇
+         │                                     ██
+         │                                     ██
+         │                                     ██
+         │                                     ██
+ -59     │                                     ██
+         │                                     ██
+         │                                     ██
+         │                                     ██
+         │▃▁▁▂─▄▄─▁▄▃▁▆▁▁▃▁▄▂─▂▂▁▂▄▂▁▄─▆▃▁▁▃▃▁▂██─▁─▁▃─▂▄▃▃──▃▄▄▁▃▅▁▃─▅──▅▄▁▂▁▁▁
+ -85     ──────│─────────────│──────────────│──────────────│─────────────│──────
+                                               ▲ 146.620 MHz
+          145.500 MHz   146.000 MHz    146.500 MHz    147.000 MHz   147.500 MHz
+peak    146.622 MHz  -21 dBFS  69 dB above the floor
+tune with: ley tune 146.622
 ```
+
+The chart reads from the noise up: the rule along the bottom is the noise line, the dim stipple
+on it is noise, and anything that stands clear of it is worth looking at. The level axis is
+labelled at three points with `dBFS` once, the frequency axis carries a tick per label, and the
+`▲` marks the frequency you asked for. On a terminal without UTF-8, or with `--ascii`, the same
+chart is drawn with `#` and `-`; with colour, columns near the floor are dim and loud ones green.
 
 A bin is one narrow slice of frequency (here 2.344 kHz); the floor is the median bin, which is
 what `auto` squelch measures against. With a frequency (`ley spectrum 101.1`) the radio must be
@@ -172,9 +182,14 @@ is the width of the band shown, which is the capture's sample rate: for a fresh 
 snaps it to the nearest rate the radio supports and says so (`showing 250.000 kHz, the closest
 this radio can do to 200.000 kHz`); when the radio is already capturing at a different width,
 `spectrum` exits 2 naming the current width — drop `--span`, ask for that width, or free the
-radio with `ley stop all`. The loudest bins are just that — only bins at least 6 dB above the floor
-are listed, and a quiet band says `loudest bins: nothing above the floor`; `spectrum` does not
-call them signals or guess bandwidths; `scan` will do detection later (`ley help roadmap`).
+radio with `ley stop all`. The loudest bins are just that — only bins at least 15 dB above the
+floor are named, one entry per carrier rather than a padded five, and a quiet band says
+`peak    nothing above the floor`; `spectrum` does not call them signals or guess bandwidths;
+`scan` will do detection later (`ley help roadmap`). `--watch` holds the dB scale for the run
+(it moves once, and says so, if something louder arrives), keeps a faint max-hold trace of what
+each column has reached, and ends with a status line — `frame 12  2.0/s  6 s elapsed`, or
+`waiting for data` when the daemon has sent nothing, which is also what a one-shot says on
+stderr before giving up.
 
 ## 5. Two channels on one radio
 
@@ -264,11 +279,14 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   sinks, activity. Read it instead of scraping tables.
 - **`ley fft`** is the number feed behind `spectrum`: rows of bin levels across the band,
   `--rate` times a second, `--count` rows or until Ctrl-C, `--format json` or `bin`. `spectrum
-  --json` emits one row with a `peaks` list. These rows are bulk data with no proto message,
-  so their shape (`{seq, sample_index, center_hz, span_hz, bins}`) is the one documented
+  --json` emits one row with a `floor_db` and a `peaks` list (which is as long as the evidence:
+  often one entry, sometimes none). These rows are bulk data with no proto message, so their
+  shape (`{seq, sample_index, center_hz, span_hz, bins}`) is the one documented
   exception to the proto3 rule. `fft` rows are delivered gap-marked: when the daemon had to
   drop rows, a `{"gap":{"from_sample":A,"to_sample":B}}` line precedes the next row (gap lines
-  do not count toward `--count`; `--format bin` carries no gap records).
+  do not count toward `--count`; `--format bin` carries no gap records). `--format bin` writes
+  binary, so it is refused when stdout is a terminal — redirect or pipe it; piped, the bytes
+  are unchanged.
 - **`ley listen`** is the audio feed behind `tune`: the daemon decodes the station and `listen`
   writes the samples to stdout instead of the speakers. It resolves a frequency or preset the
   way `tune` does, making a capture and channel when none exists and removing them on exit, or
@@ -297,7 +315,7 @@ $ ley fft --freq 101.1M --rate 10 | jq .bins[0]
 $ ley listen 162.55 --count 10 | jq -r .sample_index      # decoded audio, ten rows
 $ ley listen chan_01J... --format bin | play -t raw -r 48000 -e signed -b 16 -c 1 -
 $ ley presets --json | jq -r '.[].name'                  # client-local tables, no daemon
-$ ley spectrum 101.1 --json                              # {seq, sample_index, center_hz, span_hz, bins, peaks}
+$ ley spectrum 101.1 --json                              # {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 

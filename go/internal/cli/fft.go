@@ -56,7 +56,9 @@ for the run (destroyed on exit).
                delivered gap-marked: when the daemon had to drop rows, a
                line {"gap":{"from_sample":A,"to_sample":B}} precedes the
                next row and names the samples it skipped.
---format bin:  one record per row: a 16-byte little-endian header
+--format bin:  binary, so it is refused when stdout is a terminal:
+               redirect it ('> rows.bin') or pipe it.
+               One record per row: a 16-byte little-endian header
                magic "LEYF" | u32 bins | u64 seq
                followed by the payload as delivered by the daemon
                (bins x f32 dB little-endian, or bins x u8 with --u8, where
@@ -70,6 +72,11 @@ for the run (destroyed on exit).
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if format != "json" && format != "bin" {
 				return usageErrorf("--format must be json or bin")
+			}
+			// Binary records to a terminal are a screenful of garbage and can
+			// wedge it, so refuse rather than write. Piped, nothing changes.
+			if format == "bin" && app.IsTTY() {
+				return usageErrorf("--format bin writes binary records, not text; redirect it: ley fft --format bin > rows.bin")
 			}
 			var hz uint64
 			if freq != "" {
