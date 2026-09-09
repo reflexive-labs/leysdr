@@ -72,9 +72,12 @@ else is chosen for you and printed, so a wrong guess is visible rather than sile
 ```console
 $ ley tune 146.52
 using NFM: 2 m amateur band default
-Listening to 146.520 MHz (NFM, 2 m amateur) on Generic RTL2832U (R820T), gain auto. Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS). Ctrl-C stops.
+Listening to 146.520 MHz (NFM, 2 m amateur)
+Radio Generic RTL2832U (R820T), gain auto
+Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS).
+Ctrl-C stops.
 From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum
-146.520 MHz NFM  signal -39 dBFS  audio
+█████████░░░▲░░░  146.520 MHz NFM  signal -39 dBFS  audio
 ```
 
 What was decided, and how to override it:
@@ -91,8 +94,11 @@ What was decided, and how to override it:
 - **Bandwidth** (`--bw`, a bare number is kHz) and **volume** (`--volume 50%`) have the mode's
   usual values. Gain starts on auto; `ley help gain`.
 
-The last line is a live meter: the signal level, and whether audio is playing or `muted,
-waiting for a signal`. Ctrl-C stops and removes the channel (exit 0).
+The last line is a live meter: on a terminal a bar scaled from -90 dBFS to 0 with a marker at
+the squelch threshold, then the signal level and whether audio is playing or `muted, waiting for
+a signal`. It is written to stderr and redrawn in place; redirected or piped it loses the bar and
+prints one whole line a second instead, so a `tee`d session stays readable. Ctrl-C stops, removes
+the channel and says what became of the radio (exit 0).
 
 ```console
 $ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try noaa2..7
@@ -114,22 +120,24 @@ channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS on Generic RTL2832U (R820T)
   mode       NFM
   bandwidth  12.500 kHz
   squelch    -80 dBFS
+on the radio
   gain       auto
+through the speakers
   volume     100%
 change one with: ley set squelch -50 · ley set gain 30 · ley set freq 146.62
 
 $ ley set squelch -45
-squelch → -45 dBFS on 146.520 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
+squelch -80 dBFS → -45 dBFS on 146.520 MHz NFM (channel 1)
 
 $ ley set squelch auto
 squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS)
-squelch → -80 dBFS on 146.520 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
+squelch -45 dBFS → -80 dBFS on 146.520 MHz NFM (channel 1)
 
 $ ley set gain 30
-gain → 29.7 dB on the radio (TUNER)
+gain auto → 29.7 dB on the radio (TUNER)
 
 $ ley set freq 146.62
-frequency → 146.620 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
+frequency 146.520 MHz → 146.620 MHz on channel 1 (NFM)
 ```
 
 Note the gain line: you asked for 30, the radio has 29.7, and that is what is printed. The
@@ -223,10 +231,11 @@ ley: 2 channels are playing; pick one with --channel:
 e.g. ley set squelch -40 --channel 2
 
 $ ley set squelch -40 --channel 2
-squelch → -40 dBFS on 146.620 MHz NFM (channel 2, chan_01M1S9VB621DNPDV56D9NRD6NG)
+squelch off (audio always on) → -40 dBFS on 146.620 MHz NFM (channel 2)
 
 $ ley stop 2                        # remove one channel; the radio stays tuned
-stopped 146.620 MHz NFM (channel 2, chan_01M1S9VB621DNPDV56D9NRD6NG); the radio stays tuned, free it with: ley stop --all
+stopped 146.620 MHz NFM (channel 2, chan_01M1S9VB621DNPDV56D9NRD6NG)
+the radio stays tuned, free it with: ley stop --all
 
 $ ley stop all                      # remove everything on the radio and free it
 stopped 1 channel and freed Generic RTL2832U (R820T) (dev_01M1S9TR56S46QTCK0SZS2YPJA)
@@ -283,9 +292,12 @@ hardware is needed; the `fixtures/` directory has generated signals with known c
 $ ley play fixtures/nfm_tone.cf32
 playing nfm_tone.cf32 as device dev_01M1S9W2Y0CESFVYYGNM805N9P
 using NFM: the recording's sidecar says NFM
-Listening to 146.620 MHz (NFM, 2 m amateur) on FilePlaybackDevice, gain unknown. Squelch off. Ctrl-C stops.
+Listening to 146.620 MHz (NFM, 2 m amateur)
+Radio FilePlaybackDevice, gain unknown
+Squelch off.
+Ctrl-C stops.
 From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum
-146.620 MHz NFM  signal -63 dBFS  audio
+████░░░░░░░░░░░░  146.620 MHz NFM  signal -63 dBFS  audio
 ```
 
 The frequency and mode come from the `.json` sidecar beside the file; `--freq` and `--mode`

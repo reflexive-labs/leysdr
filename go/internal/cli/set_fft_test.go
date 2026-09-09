@@ -31,7 +31,7 @@ func TestSetParams(t *testing.T) {
 		return st
 	}
 	out := mustRun(t, sock, "set", "squelch", "-40")
-	if !strings.Contains(out, "squelch → -40 dBFS on 146.520 MHz NFM (channel 1, chan_") || strings.Contains(out, "cli:") {
+	if !strings.Contains(out, "squelch off (audio always on) → -40 dBFS on 146.520 MHz NFM (channel 1)") || strings.Contains(out, "cli:") {
 		t.Fatalf("squelch confirmation: %s", out)
 	}
 	if st := state(); st.Channels[0].SquelchDb != -40 {
@@ -55,14 +55,14 @@ func TestSetParams(t *testing.T) {
 	if st := state(); st.Captures[0].Gains[0].Db != 7.7 {
 		t.Fatalf("gain 6 not snapped to 7.7: %v", st.Captures[0].Gains)
 	}
-	if !strings.Contains(out, "gain → 7.7 dB on the radio (TUNER)") {
+	if !strings.Contains(out, "→ 7.7 dB on the radio (TUNER)") {
 		t.Fatalf("confirmation should show the snapped gain: %s", out)
 	}
 	mustRun(t, sock, "set", "gain", "46")
 	if st := state(); st.Captures[0].Gains[0].Db != 44.5 {
 		t.Fatalf("gain 46 not snapped to 44.5: %v", st.Captures[0].Gains)
 	}
-	if out = mustRun(t, sock, "set", "gain", "auto"); !strings.Contains(out, "gain → auto on the radio (TUNER)") {
+	if out = mustRun(t, sock, "set", "gain", "auto"); !strings.Contains(out, "→ auto on the radio (TUNER)") {
 		t.Fatalf("gain auto confirmation: %s", out)
 	}
 	if st := state(); !st.Captures[0].Gains[0].Auto {
@@ -73,7 +73,7 @@ func TestSetParams(t *testing.T) {
 	if st := state(); st.Channels[0].OffsetHz != 80_000 || st.Captures[0].CenterHz != 146_520_000 {
 		t.Fatalf("freq offset: %v / %s", st.Channels[0], out)
 	}
-	if !strings.Contains(out, "frequency → 146.600 MHz NFM (channel 1, chan_") {
+	if !strings.Contains(out, "frequency 146.520 MHz → 146.600 MHz on channel 1 (NFM)") {
 		t.Fatalf("freq confirmation: %s", out)
 	}
 	// freq outside the span retunes the capture and zeroes the offset.
@@ -84,10 +84,10 @@ func TestSetParams(t *testing.T) {
 	if st := state(); st.Channels[0].OffsetHz != 0 || st.Captures[0].CenterHz != 155_000_000 {
 		t.Fatalf("freq retune: %v %v", st.Channels[0], st.Captures[0])
 	}
-	if out = mustRun(t, sock, "set", "mode", "am"); !strings.Contains(out, "mode → AM on 155.000 MHz AM (channel 1, chan_") {
+	if out = mustRun(t, sock, "set", "mode", "am"); !strings.Contains(out, "mode NFM → AM on 155.000 MHz (channel 1)") {
 		t.Fatalf("mode confirmation: %s", out)
 	}
-	if out = mustRun(t, sock, "set", "filter", "8k"); !strings.Contains(out, "bandwidth → 8.000 kHz on 155.000 MHz AM (channel 1") { // filter is an alias of bw
+	if out = mustRun(t, sock, "set", "filter", "8k"); !strings.Contains(out, "→ 8.000 kHz on 155.000 MHz AM (channel 1)") { // filter is an alias of bw
 		t.Fatalf("bw confirmation: %s", out)
 	}
 	if st := state(); st.Channels[0].Mode != leylinev1.DemodMode_AM || st.Channels[0].BandwidthHz != 8000 {

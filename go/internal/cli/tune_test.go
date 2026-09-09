@@ -132,9 +132,9 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// liveTune runs tune in the background until its stdout contains want (the
-// meter line, usually) or the deadline passes, then cancels and returns the
-// captured stdout/stderr.
+// liveTune runs tune in the background until want appears on either stream
+// (the meter line, usually, which is stderr's) or the deadline passes, then
+// cancels and returns the captured stdout/stderr.
 func liveTune(t *testing.T, sock string, want string, args ...string) (string, string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -143,7 +143,7 @@ func liveTune(t *testing.T, sock string, want string, args ...string) (string, s
 	app := &App{Stdout: &out, Stderr: &errOut, LookupEnv: func(string) (string, bool) { return "", false }}
 	go func() { done <- Execute(ctx, app, append([]string{"--socket", sock}, args...)) }()
 	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(out.String(), want) {
+	for !strings.Contains(out.String()+errOut.String(), want) {
 		select {
 		case err := <-done:
 			t.Fatalf("tune exited before printing %q: %v\n%s\n%s", want, err, out.String(), errOut.String())
@@ -168,7 +168,13 @@ func liveTune(t *testing.T, sock string, want string, args ...string) (string, s
 
 func TestTuneLifecycle(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
-	out, _ := liveTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio", "--squelch", "-40")
+	stdout, errOut := liveTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio", "--squelch", "-40")
+	// The banner is stdout's and the meter is stderr's (docs/cli-style.md 3):
+	// what a person sees is the two together.
+	out := stdout + errOut
+	if strings.Contains(stdout, "signal ") {
+		t.Fatalf("the meter belongs on stderr, not in a script's stdout:\n%s", stdout)
+	}
 	for _, want := range []string{"Listening to 146.520 MHz (NFM, 2 m amateur)", "gain auto", "Squelch -40 dBFS.", "Ctrl-C stops", "From another terminal: ley set squelch -50", "146.520 MHz NFM  signal ", " dBFS  "} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("live output lacks %q:\n%s", want, out)

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -224,8 +225,27 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 	if o.persistent {
 		return s.printCreated()
 	}
-	defer s.teardown()
-	return s.live(ctx, o)
+	err := s.live(ctx, o)
+	s.teardown()
+	if err == nil && ctx.Err() != nil {
+		s.sayClosed()
+	}
+	return err
+}
+
+// sayClosed is the one line an interrupted live session leaves behind: what
+// happened to the radio, on stderr because the run's stdout may be a
+// script's. Under --json the events already said it.
+func (s *session) sayClosed() {
+	if s.app.JSON {
+		return
+	}
+	st := s.app.ErrStyle
+	if s.freedRadio {
+		fmt.Fprintf(s.app.Stderr, "stopped; channel removed, %s\n", st.Ok("radio free"))
+		return
+	}
+	fmt.Fprintf(s.app.Stderr, "stopped; channel removed, the radio stays tuned (%s lists what is on it)\n", st.Cmd("ley state"))
 }
 
 // bandWarning catches the classic slip of typing a kHz figure as MHz: when
@@ -285,21 +305,44 @@ func (s *session) banner(o *tuneOptions) string {
 			squelch = fmt.Sprintf("Squelch %.0f dBFS.", o.squelch)
 		}
 	}
-	return fmt.Sprintf("Listening to %s (%s) on %s, %s. %s Ctrl-C stops.\nFrom another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum\n",
-		leyline.FormatFrequency(o.freq), where, s.device.Model, gainString(s.capture), squelch)
+	st := s.app.Style
+	if s.app.JSON || s.proseToStderr {
+		st = s.app.ErrStyle
+	}
+	// One fact per line, each led by the word the eye looks for. The lines
+	// are not padded into a column because three golden substrings pin
+	// "Squelch <value>" and "<device>, gain auto" with single spaces; the
+	// leading word carries Label ink instead.
+	return strings.Join([]string{
+		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", leyline.FormatFrequency(o.freq), where)),
+		leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, gainString(s.capture))),
+		leadWord(st, squelch),
+		st.Muted("Ctrl-C stops."),
+		st.Muted("From another terminal:") + " " + st.Cmd("ley set squelch -50") + st.Muted(" · ") + st.Cmd("ley set gain 30") + st.Muted(" · ") + st.Cmd("ley spectrum"),
+	}, "\n") + "\n"
+}
+
+// leadLabel writes one banner row: the topic in Label ink, then the value.
+func leadLabel(st ui.Style, label, value string) string {
+	return st.Label(label) + " " + value
+}
+
+// leadWord inks the first word of a ready-made sentence, so a line whose
+// wording is pinned by a golden still leads with the word the eye wants.
+func leadWord(st ui.Style, sentence string) string {
+	i := strings.IndexByte(sentence, ' ')
+	if i <= 0 {
+		return st.Label(sentence)
+	}
+	return leadLabel(st, sentence[:i], sentence[i+1:])
 }
 
 // live holds the session open, refreshing the meter line in place and
 // printing events caused by other clients, until ctx is cancelled (Ctrl-C).
 // Under --json stdout carries NDJSON only; the banner goes to stderr.
 func (s *session) live(ctx context.Context, o *tuneOptions) error {
-	lastLen := 0
-	clear := func() {
-		if lastLen > 0 {
-			fmt.Fprintf(s.app.Stdout, "\r%s\r", strings.Repeat(" ", lastLen))
-			lastLen = 0
-		}
-	}
+	meter := &meterSink{w: s.app.Stderr, style: s.app.ErrStyle, tty: s.app.IsErrTTY()}
+	clear := meter.clear
 	tctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
@@ -341,9 +384,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			}
 			if mt, ok := m.Body.(*leylinev1.TelemetryMsg_Meter); ok {
 				hz, _ := leyline.ChannelFrequency(s.state, s.channel)
-				line := meterLine(hz, s.channel.Mode, mt.Meter)
-				fmt.Fprintf(s.app.Stdout, "\r%-*s", lastLen, line)
-				lastLen = len(line)
+				meter.write(meter.line(hz, s.channel.Mode, mt.Meter, s.channel.SquelchDb))
 			}
 		case ev, ok := <-s.events:
 			if !ok {

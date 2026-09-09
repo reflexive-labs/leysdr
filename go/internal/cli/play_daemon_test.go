@@ -58,10 +58,10 @@ func TestPlayWithSidecar(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	var out string
+	var out, errOut string
 	go func() {
-		o, _, err := run(t, ctx, sock, "play", iq, "--no-audio")
-		out = o
+		o, e, err := run(t, ctx, sock, "play", iq, "--no-audio")
+		out, errOut = o, e
 		done <- err
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -91,8 +91,9 @@ func TestPlayWithSidecar(t *testing.T) {
 	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
 		t.Fatalf("play did not detach/tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
 	}
-	if !strings.Contains(out, "146.620 MHz AM  signal ") {
-		t.Fatalf("meter line: %s", out)
+	// The meter is stderr's: a person's gauge, never a script's stdout.
+	if !strings.Contains(errOut, "146.620 MHz AM  signal ") {
+		t.Fatalf("meter line: %s", errOut)
 	}
 	// Mode precedence for play: the sidecar beats the band table and says so;
 	// squelch stays off for a recording unless asked.

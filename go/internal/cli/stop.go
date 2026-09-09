@@ -75,7 +75,9 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 	if ch == nil {
 		return fmt.Errorf("nothing to stop; ley state lists what is running")
 	}
-	desc := fmt.Sprintf("%s %s (channel %d, %s)", channelFreqLabel(s.state, ch), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(s.state, ch), ch.ChannelId)
+	st := s.app.Style
+	desc := fmt.Sprintf("%s %s %s", channelFreqLabel(s.state, ch), strings.ToUpper(leyline.ModeName(ch.Mode)),
+		st.Muted(fmt.Sprintf("(channel %d, %s)", channelRow(s.state, ch), ch.ChannelId)))
 	resp, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId})
 	if err != nil {
 		return err
@@ -91,7 +93,11 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 		}
 	}
 	if others == 0 && cap != nil {
-		fmt.Fprintf(s.app.Stdout, "stopped %s; the radio stays tuned, free it with: ley stop --all\n", desc)
+		// The outcome reads alone; the caveat -- the channel is gone but the
+		// hardware is still held -- is a footnote on its own line rather
+		// than the middle clause of a 118-character sentence.
+		fmt.Fprintf(s.app.Stdout, "stopped %s\n", desc)
+		fmt.Fprintf(s.app.Stdout, "%s %s\n", st.Muted("the radio stays tuned, free it with:"), st.Cmd("ley stop --all"))
 		return nil
 	}
 	fmt.Fprintf(s.app.Stdout, "stopped %s\n", desc)
@@ -124,11 +130,13 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 		case 1:
 			dev = inUse[0]
 		default:
+			// The rows say what each radio is doing: two dongles of the same
+			// model differ by the frequency they are on, not by their ids.
 			lines := make([]string, 0, len(inUse))
 			for _, d := range inUse {
 				for i, all := range st.Devices {
 					if all.DeviceId == d.DeviceId {
-						lines = append(lines, fmt.Sprintf("  %d  %s  %s", i+1, d.DeviceId, d.Model))
+						lines = append(lines, fmt.Sprintf("  %d  %s  %s  %s", i+1, d.Model, deviceDoing(st, d), d.DeviceId))
 					}
 				}
 			}
@@ -168,8 +176,35 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 	if stopped == 1 {
 		noun = "channel"
 	}
-	fmt.Fprintf(s.app.Stdout, "stopped %d %s and freed %s (%s)\n", stopped, noun, dev.Model, dev.DeviceId)
+	sty := s.app.Style
+	fmt.Fprintf(s.app.Stdout, "stopped %d %s and %s %s %s\n", stopped, noun, sty.Ok("freed"), dev.Model, sty.Muted("("+dev.DeviceId+")"))
 	return nil
+}
+
+// deviceDoing describes what one radio is playing, for a picker whose rows
+// would otherwise differ only by an id: the frequency and mode of its first
+// channel, and how many others ride with it. It is plain text -- these rows
+// live inside an error message, which takes no ink (docs/cli-style.md 6).
+func deviceDoing(st *leylinev1.GetStateResponse, d *leylinev1.DeviceDescriptor) string {
+	var chs []*leylinev1.Channel
+	for _, c := range st.Captures {
+		if c.DeviceId != d.DeviceId {
+			continue
+		}
+		for _, ch := range st.Channels {
+			if ch.CaptureId == c.CaptureId {
+				chs = append(chs, ch)
+			}
+		}
+	}
+	if len(chs) == 0 {
+		return "tuned, no channels"
+	}
+	doing := fmt.Sprintf("%s %s", channelFreqLabel(st, chs[0]), strings.ToUpper(leyline.ModeName(chs[0].Mode)))
+	if len(chs) > 1 {
+		doing += fmt.Sprintf(" and %s", plural(len(chs)-1, "other channel"))
+	}
+	return doing
 }
 
 // stopNothing reports that stop --all found nothing to do. The sentence is

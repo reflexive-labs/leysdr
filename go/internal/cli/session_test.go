@@ -60,7 +60,7 @@ func startTune(t *testing.T, sock, want string, args ...string) (out, errOut *sy
 	app := &App{Stdout: out, Stderr: errOut, LookupEnv: func(string) (string, bool) { return "", false }}
 	go func() { res <- Execute(ctx, app, append([]string{"--socket", sock}, args...)) }()
 	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(out.String(), want) {
+	for !strings.Contains(out.String()+errOut.String(), want) {
 		select {
 		case err := <-res:
 			t.Fatalf("tune exited before printing %q: %v\n%s\n%s", want, err, out.String(), errOut.String())

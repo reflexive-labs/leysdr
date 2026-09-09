@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -265,9 +266,35 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 			}
 		}
 	}
-	fmt.Fprintf(s.app.Stdout, "channel %s on %s\n  frequency  %s\n  mode       %s\n  bandwidth  %s\n  squelch    %s\n  gain       %s\n  volume     %s\nchange one with: ley set squelch -50 · ley set gain 30 · ley set freq 146.62\n",
-		ch.ChannelId, model, freq, strings.ToUpper(leyline.ModeName(ch.Mode)), leyline.FormatFrequency(uint64(ch.BandwidthHz)), squelch, strings.TrimPrefix(gainString(cap), "gain "), volume)
+	// Three objects, three groups: a reader who changes gain has to see that
+	// it belongs to the radio and moves every channel on it, not just this
+	// one. Values the radio cannot offer are Muted, so the settings actually
+	// in force carry the weight.
+	st := s.app.Style
+	fmt.Fprintf(s.app.Stdout, "%s %s on %s\n", st.Label("channel"), st.Muted(ch.ChannelId), model)
+	settingRow(s.app, "frequency", freq, true)
+	settingRow(s.app, "mode", strings.ToUpper(leyline.ModeName(ch.Mode)), true)
+	settingRow(s.app, "bandwidth", leyline.FormatFrequency(uint64(ch.BandwidthHz)), true)
+	settingRow(s.app, "squelch", squelch, !leyline.SquelchOff(ch.SquelchDb))
+	gain := strings.TrimPrefix(gainString(cap), "gain ")
+	fmt.Fprintf(s.app.Stdout, "%s\n", st.Muted("on the radio"))
+	settingRow(s.app, "gain", gain, gain != "no gain control")
+	fmt.Fprintf(s.app.Stdout, "%s\n", st.Muted("through the speakers"))
+	settingRow(s.app, "volume", volume, volume != "no speaker sink")
+	fmt.Fprintf(s.app.Stdout, "%s %s\n", st.Muted("change one with:"),
+		st.Cmd("ley set squelch -50")+st.Muted(" · ")+st.Cmd("ley set gain 30")+st.Muted(" · ")+st.Cmd("ley set freq 146.62"))
 	return nil
+}
+
+// settingRow prints one row of the settings view: the label in the padded
+// left column, the value plain when it is in force and Muted when it is a
+// "the radio cannot do this" placeholder.
+func settingRow(app *App, label, value string, live bool) {
+	st := app.Style
+	if !live {
+		value = st.Muted(value)
+	}
+	fmt.Fprintf(app.Stdout, "  %s %s\n", st.Label(st.Pad(label, 10)), value)
 }
 
 // paramErr wraps a parse failure with the parameter's accepted forms. It is
@@ -524,15 +551,25 @@ func runSet(ctx context.Context, s *session, param, value, element string, ch *l
 	if wasRejected {
 		return fmt.Errorf("rejected: %w", s.friendly(rejectedError(r.WriteRejected), value, hz))
 	}
-	fmt.Fprintln(s.app.Stdout, confirmLine(s.state, param, element, ev, ch, cap))
+	fmt.Fprintln(s.app.Stdout, confirmLine(s.app.Style, s.state, param, element, ev, ch, cap))
 	return nil
 }
 
-// confirmLine is the one plain line a successful set prints: the setting,
-// the value the daemon applied (read back from the confirming event) and
-// what it applies to, e.g. "squelch → -40 dBFS on 146.520 MHz NFM (channel
-// 1, chan_…)" or "gain → 29.7 dB on the radio (TUNER)".
-func confirmLine(st *leylinev1.GetStateResponse, param, element string, ev *leylinev1.Event, ch *leylinev1.Channel, cap *leylinev1.Capture) string {
+// confirmLine is the one line a successful set prints: the setting, the
+// value it held, the value the daemon applied (read back from the confirming
+// event) and what it applies to, e.g. "squelch off → -40 dBFS on 146.520 MHz
+// NFM (channel 1)" or "gain 7.7 dB → auto on the radio (TUNER)". The old
+// value is dropped when it is unknown or unchanged, leaving today's
+// "squelch → -40 dBFS on …". The channel id is not repeated: the caller
+// already named the channel, and `ley set` with no arguments prints the id
+// whenever it is wanted.
+func confirmLine(sty ui.Style, st *leylinev1.GetStateResponse, param, element string, ev *leylinev1.Event, ch *leylinev1.Channel, cap *leylinev1.Capture) string {
+	if param == "gain" && element == "" && len(cap.GetGains()) > 0 {
+		element = cap.Gains[0].Element
+	}
+	// ch and cap are the objects as they were before the write; the state
+	// carries the versions the confirming event folded in.
+	was, _ := setValue(param, element, ev, ch, cap, nil)
 	if ch != nil {
 		if c := channelByID(st, ch.ChannelId); c != nil {
 			ch = c
@@ -543,47 +580,98 @@ func confirmLine(st *leylinev1.GetStateResponse, param, element string, ev *leyl
 			cap = c
 		}
 	}
-	target := "the radio"
-	if ch != nil {
-		target = fmt.Sprintf("%s %s (channel %d, %s)", channelFreqLabel(st, ch), strings.ToUpper(leyline.ModeName(ch.Mode)), channelRow(st, ch), ch.ChannelId)
-	} else if cap != nil {
-		target += " (" + cap.CaptureId + ")"
+	now, label := setValue(param, element, ev, ch, cap, st)
+	name := label
+	if name == "" {
+		name = param
 	}
+	change := "→ " + now
+	if was != "" && was != now {
+		change = sty.Muted(was) + " → " + now
+	}
+	return fmt.Sprintf("%s %s on %s", sty.Label(name), change, setScope(sty, st, param, element, ch, cap))
+}
+
+// setValue renders one parameter's value from the objects that carry it,
+// with the parameter's human name (the label `ley set` prints with no
+// arguments). An empty value means "not knowable here", which is how the
+// line falls back to naming only the new value.
+func setValue(param, element string, ev *leylinev1.Event, ch *leylinev1.Channel, cap *leylinev1.Capture, st *leylinev1.GetStateResponse) (value, label string) {
 	switch param {
 	case "freq":
-		if ch != nil {
-			return "frequency → " + target
+		if ch == nil {
+			return leyline.FormatFrequency(cap.GetCenterHz()), "frequency"
 		}
-		return fmt.Sprintf("frequency → %s on %s", leyline.FormatFrequency(cap.GetCenterHz()), target)
+		if cap != nil {
+			// centre plus offset, so the pre-write pair reads back the
+			// frequency the channel had before the write moved it.
+			return leyline.FormatFrequency(uint64(int64(cap.GetCenterHz()) + ch.GetOffsetHz())), "frequency"
+		}
+		if st == nil {
+			return "", "frequency"
+		}
+		return channelFreqLabel(st, ch), "frequency"
 	case "gain":
 		if element == "" && len(cap.GetGains()) > 0 {
 			element = cap.Gains[0].Element
 		}
 		for _, g := range cap.GetGains() {
-			if g.Element == element {
-				if g.Auto {
-					return fmt.Sprintf("gain → auto on the radio (%s)", element)
-				}
-				return fmt.Sprintf("gain → %.1f dB on the radio (%s)", g.Db, element)
+			if g.Element != element {
+				continue
 			}
+			if g.Auto {
+				return "auto", "gain"
+			}
+			return fmt.Sprintf("%.1f dB", g.Db), "gain"
 		}
-		return fmt.Sprintf("gain → set on the radio (%s)", element)
+		return "", "gain"
 	case "squelch":
-		v := "off (audio always on)"
-		if !leyline.SquelchOff(ch.SquelchDb) {
-			v = fmt.Sprintf("%.0f dBFS", ch.SquelchDb)
+		if leyline.SquelchOff(ch.GetSquelchDb()) {
+			return "off (audio always on)", "squelch"
 		}
-		return fmt.Sprintf("squelch → %s on %s", v, target)
+		return fmt.Sprintf("%.0f dBFS", ch.GetSquelchDb()), "squelch"
 	case "bw":
-		return fmt.Sprintf("bandwidth → %s on %s", leyline.FormatFrequency(uint64(ch.BandwidthHz)), target)
+		return leyline.FormatFrequency(uint64(ch.GetBandwidthHz())), "bandwidth"
 	case "mode":
-		return fmt.Sprintf("mode → %s on %s", strings.ToUpper(leyline.ModeName(ch.Mode)), target)
+		return strings.ToUpper(leyline.ModeName(ch.GetMode())), "mode"
 	case "volume":
-		if sk, ok := ev.Body.(*leylinev1.Event_Sink); ok {
-			return fmt.Sprintf("volume → %.0f%% on %s", sk.Sink.GetSystemAudio().GetVolume()*100, target)
+		if sk, ok := ev.Body.(*leylinev1.Event_Sink); ok && st != nil {
+			return fmt.Sprintf("%.0f%%", sk.Sink.GetSystemAudio().GetVolume()*100), "volume"
 		}
+		return "", "volume"
 	}
-	return fmt.Sprintf("%s → applied on %s", param, target)
+	return "applied", param
+}
+
+// setScope names what the write applied to, leaving out the field that just
+// changed (a mode change does not restate the mode). A device-scoped write
+// says "the radio" in Label ink, so a gain change never reads as a channel
+// change; a channel-scoped one is Muted scaffolding behind the value.
+func setScope(sty ui.Style, st *leylinev1.GetStateResponse, param, element string, ch *leylinev1.Channel, cap *leylinev1.Capture) string {
+	// gain belongs to the radio even when the command addressed a channel:
+	// it moves every channel on that radio, and the line has to say so.
+	if ch == nil || param == "gain" {
+		target := sty.Label("the radio")
+		if id := element; id != "" {
+			return target + sty.Muted(" ("+id+")")
+		}
+		if cap != nil {
+			return target + sty.Muted(" ("+cap.CaptureId+")")
+		}
+		return target
+	}
+	row := fmt.Sprintf("channel %d", channelRow(st, ch))
+	mode := strings.ToUpper(leyline.ModeName(ch.Mode))
+	if param == "freq" {
+		// The value just said the frequency; the channel it moved is what
+		// is left to name.
+		return sty.Muted(row) + " (" + mode + ")"
+	}
+	where := channelFreqLabel(st, ch)
+	if param != "mode" {
+		where += " " + mode
+	}
+	return where + sty.Muted(" ("+row+")")
 }
 
 // parseNegativeSafe parses flags for a command that disabled Cobra's flag

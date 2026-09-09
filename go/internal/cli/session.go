@@ -67,6 +67,9 @@ type session struct {
 	// proseToStderr forces say() to stderr even without --json, for verbs
 	// whose stdout carries a stream a person never reads (listen).
 	proseToStderr bool
+	// freedRadio records that teardown destroyed the capture this session
+	// created, so the closing line can say the radio is free.
+	freedRadio bool
 }
 
 // noDeviceChecklist is what to try when the daemon lists no radios.
@@ -683,7 +686,9 @@ func (s *session) teardown() {
 	}
 	if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: s.capture.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
 		s.cleanupFailed("capture "+s.capture.CaptureId, err)
+		return
 	}
+	s.freedRadio = true
 }
 
 // cleanupFailed reports a teardown RPC failure with the way out.

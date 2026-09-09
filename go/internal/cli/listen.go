@@ -188,7 +188,11 @@ func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions
 	defer stopDrain()
 	ap := sub.Descriptor.GetAudio()
 	rate, name := ap.GetSampleRate(), ap.GetFormat().String()
-	s.say("streaming %s from %s: %d Hz %s mono. Ctrl-C stops.\n", audioWhat(s), s.channel.ChannelId, rate, name)
+	// The two things a person checks -- what is being decoded and what the
+	// rows carry -- sit next to each other; the channel id follows them,
+	// Muted, rather than separating them with 32 characters of base32.
+	st := s.app.ErrStyle
+	s.say("streaming %s: %d Hz %s mono. Ctrl-C stops. %s\n", audioWhat(s), rate, name, st.Muted("from "+s.channel.ChannelId))
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
 	n := 0
