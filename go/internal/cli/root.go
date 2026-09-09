@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -55,6 +57,22 @@ type App struct {
 	// TermWidth returns the terminal width in columns, 0 when unknown. nil
 	// means "detect from Stdout".
 	TermWidth func() int
+	// IsErrTTY reports whether Stderr is an interactive terminal; colour is
+	// decided per stream, so prose keeps its ink when stdout is a pipe. nil
+	// means "detect from Stderr".
+	IsErrTTY func() bool
+	// ErrTermWidth returns Stderr's column count, 0 when unknown. nil means
+	// "detect from Stderr".
+	ErrTermWidth func() int
+	// Style is stdout's resolved look and ErrStyle is stderr's. Both are
+	// resolved once, before any verb runs (see NewRootCommand). The zero
+	// value is plain, ASCII and unknown-width, so an App literal built by a
+	// test renders exactly what the golden files hold.
+	Style    ui.Style
+	ErrStyle ui.Style
+	// color is --color ("auto", "always", "never") and ascii is --ascii.
+	color string
+	ascii bool
 }
 
 // NewRootCommand builds the full `ley` command tree bound to app.
@@ -73,6 +91,12 @@ func NewRootCommand(app *App) *cobra.Command {
 	}
 	if app.TermWidth == nil {
 		app.TermWidth = func() int { return terminalWidth(app.Stdout) }
+	}
+	if app.IsErrTTY == nil {
+		app.IsErrTTY = func() bool { return isTerminal(app.Stderr) }
+	}
+	if app.ErrTermWidth == nil {
+		app.ErrTermWidth = func() int { return terminalWidth(app.Stderr) }
 	}
 	root := &cobra.Command{
 		Use:   "ley",
@@ -100,6 +124,14 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 	root.SetErr(app.Stderr)
 	root.PersistentFlags().BoolVar(&app.JSON, "json", false, "machine output: proto3 JSON (NDJSON for streams)")
 	root.PersistentFlags().StringVar(&app.Socket, "socket", "", "daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)")
+	root.PersistentFlags().StringVar(&app.color, "color", "auto", "colour output: auto, always or never")
+	root.PersistentFlags().BoolVar(&app.ascii, "ascii", false, "draw with ASCII only (no box, bar or tree glyphs)")
+	// Capabilities are resolved once, before any verb runs, and carried on
+	// the App: no renderer re-derives them. Help never reaches this hook, so
+	// the help snapshots stay plain whatever the terminal is.
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		return app.resolveStyles(cmd)
+	}
 	root.AddGroup(
 		&cobra.Group{ID: GroupListening, Title: "Listening:"},
 		&cobra.Group{ID: GroupAdjusting, Title: "Adjusting:"},
@@ -295,9 +327,107 @@ func (a *App) printJSON(m proto.Message) error {
 	return err
 }
 
-// table returns a tabwriter over stdout; callers must Flush.
+// table returns a tabwriter over stdout; callers must Flush. The first line
+// written through it is the header row and takes Label ink: tabwriter still
+// measures the plain text, so the SGR bytes cannot misalign a column.
 func (a *App) table() *tabwriter.Writer {
-	return tabwriter.NewWriter(a.Stdout, 0, 8, 2, ' ', 0)
+	out := a.Stdout
+	if a.Style.Color {
+		out = &headerInk{w: a.Stdout, ink: a.Style.Label}
+	}
+	return tabwriter.NewWriter(out, 0, 8, 2, ' ', 0)
+}
+
+// headerInk applies one ink role to the first line written through it and
+// passes everything after it through untouched. It sits between the
+// tabwriter and stdout so the escape bytes are added after the columns are
+// measured; trailing padding stays outside the ink so a selection of the
+// header does not pick up the run of spaces.
+type headerInk struct {
+	w    io.Writer
+	ink  func(string) string
+	buf  []byte
+	done bool
+}
+
+func (h *headerInk) Write(p []byte) (int, error) {
+	if h.done {
+		return h.w.Write(p)
+	}
+	for i, b := range p {
+		if b != '\n' {
+			continue
+		}
+		h.buf = append(h.buf, p[:i]...)
+		line := string(h.buf)
+		h.buf, h.done = nil, true
+		text := strings.TrimRight(line, " ")
+		if _, err := io.WriteString(h.w, h.ink(text)+line[len(text):]+"\n"); err != nil {
+			return 0, err
+		}
+		if rest := p[i+1:]; len(rest) > 0 {
+			if _, err := h.w.Write(rest); err != nil {
+				return 0, err
+			}
+		}
+		return len(p), nil
+	}
+	h.buf = append(h.buf, p...)
+	return len(p), nil
+}
+
+// resolveStyles decides stdout's and stderr's look once, before cmd runs.
+// Machine output on stdout (--json, a bulk row stream, --format bin) turns
+// stdout's colour off before any renderer exists; stderr keeps its ink so a
+// person still gets prose and warnings in colour.
+func (a *App) resolveStyles(cmd *cobra.Command) error {
+	switch a.color {
+	case "", "auto", "always", "never":
+	default:
+		return usageErrorf("--color must be auto, always or never (got %q)", a.color)
+	}
+	o := ui.Options{
+		Color:       a.color,
+		ASCII:       a.ascii,
+		Width:       widthFlag(cmd),
+		Machine:     a.machineStdout(cmd),
+		StdoutTTY:   a.IsTTY(),
+		StderrTTY:   a.IsErrTTY(),
+		StdoutWidth: a.TermWidth(),
+		StderrWidth: a.ErrTermWidth(),
+		LookupEnv:   a.LookupEnv,
+	}
+	a.Style = ui.Resolve(o)
+	o.Stderr = true
+	a.ErrStyle = ui.Resolve(o)
+	return nil
+}
+
+// bulkRowVerbs are the verbs whose stdout is a row stream for a tool, not a
+// screen: they are never styled, whatever the terminal says.
+var bulkRowVerbs = map[string]bool{"fft": true, "listen": true}
+
+// machineStdout reports whether cmd writes machine output on stdout.
+func (a *App) machineStdout(cmd *cobra.Command) bool {
+	if a.JSON || bulkRowVerbs[cmd.Name()] {
+		return true
+	}
+	f := cmd.Flags().Lookup("format")
+	return f != nil && f.Value.String() == "bin"
+}
+
+// widthFlag reads cmd's own --width, for the verbs that have one; 0 when the
+// verb has no such flag or the user did not set it.
+func widthFlag(cmd *cobra.Command) int {
+	f := cmd.Flags().Lookup("width")
+	if f == nil || !f.Changed {
+		return 0
+	}
+	n, err := strconv.Atoi(f.Value.String())
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // notRunning turns a dial/RPC failure into what the user should do next. A

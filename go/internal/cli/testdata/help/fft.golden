@@ -42,5 +42,7 @@ Flags:
       --u8              ask for 1-byte bins (DB_U8) instead of 4-byte floats (DB_F32); smaller, coarser
 
 Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
       --json            machine output: proto3 JSON (NDJSON for streams)
       --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

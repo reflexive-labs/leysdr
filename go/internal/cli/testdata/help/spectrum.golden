@@ -42,5 +42,7 @@ Flags:
       --width int       chart width in columns (default: the terminal's, or 80 when piped)
 
 Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
       --json            machine output: proto3 JSON (NDJSON for streams)
       --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

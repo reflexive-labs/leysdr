@@ -26,7 +26,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 ## Work items
 
-### UI-0 `[ ]` The `ui` package (foundation; everything else depends on it)
+### UI-0 `[x]` The `ui` package (foundation; everything else depends on it)
 
 - New package `go/internal/ui`, standard library only, implementing section 7 of
   `docs/cli-style.md` exactly: `Style` with `Color`/`Unicode`/`Width`, the six ink methods

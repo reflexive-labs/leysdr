@@ -45,5 +45,7 @@ Flags:
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
 
 Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
       --json            machine output: proto3 JSON (NDJSON for streams)
       --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
