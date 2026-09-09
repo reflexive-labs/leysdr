@@ -183,8 +183,20 @@ between). Gate in the container at 3768071:
   160 columns in both alphabets, `ley state`'s tree, `ley devices`, the tune banner and meter, and
   a check that `--color always --json` leaks no escape byte on any verb or on the fft rows.
 
+### Colour pass (UI-1, VIS-6)
+
+Added on request after the first pass shipped. lipgloss v1.1.0 is now a dependency, the six ink
+roles render through it, and `Style.Level(frac, text)` inks by level along a blue to red ramp at
+whatever depth the terminal reports. Verified against a live FM broadcast band over rtl_tcp: the
+noise floor renders deep blue, mid-band cyan and green, a broadcast carrier yellow, the strongest
+peak orange-red, and the peak list takes the same ink so chart and list agree. Degradation checked
+at truecolor, 256, 16 (five named stops) and none, and the rounded frame appears on a terminal at
+least 60 columns wide and never when piped or under `--ascii`.
+
 ### Follow-ups
 
+- The `ley state` device line and `ley devices` disagree on how a one-frequency tuning range reads;
+  state should use the same collapsing helper.
 - `ley play`'s banner did not get the one-fact-per-line treatment `tune`'s did; it still reads as
   a five-line block of ids. Worth a small follow-up for symmetry.
 - `ley state`'s per-device tuning range prints `146.520 MHz to 146.520 MHz` for a file device;
