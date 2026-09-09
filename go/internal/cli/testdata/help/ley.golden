@@ -23,14 +23,17 @@ Adjusting:
   stop        Stop a channel, or everything on the radio (which frees it)
 
 Looking around:
+  bands       List the bands ley recognises and their defaults
   devices     List the radios the daemon can see
   help        Help for a command, or a longer explanation of a topic
+  presets     List the named frequencies tune accepts
   spectrum    Show what is on the air around a frequency
   state       Show everything the daemon knows right now
 
 Data for tools:
   completion  Generate the autocompletion script for the specified shell
   fft         Stream spectrum rows as numbers, for tools
+  listen      Stream a channel's decoded audio, for tools
 
 Daemon:
   daemon      Start, stop and check the process that owns the radio

@@ -32,6 +32,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── spectrum [freq] [--span N] [--bins N] [--watch] [--rate N] [--count N] [--device SEL] [--width N] [--retune]
 │                                    # one FFT row drawn as a bar chart + the loudest bins (>= floor + 6 dB, else "nothing above the floor"); the human view of fft
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
+├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
+│                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
+├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
 ├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
 ├── devices [--watch] | devices detach <SEL>
@@ -53,21 +56,29 @@ explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Mo
 `--channel`, `--capture`, `--device` and `devices detach` accept a full id, an id prefix, the
 1-based row number from the printed list, or a frequency. **Presets** (`noaa`, `noaa1..7`,
 `calling`, `marine16`, `guard`, with aliases) and **bands** (name, default mode, default
-bandwidth) are pure client-side tables rendered by `ley help presets`; resolution is number/unit
-form first, then preset name, never probing. These are presentation over the same RPCs: the CLI
+bandwidth) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
+prose by `ley help presets`; resolution is number/unit form first, then preset name, never probing. These are presentation over the same RPCs: the CLI
 adds no capability the protocol lacks.
 
 **`--json`** is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`,
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
-to stderr, so stdout is parseable. **Two documented exceptions.** The first sits beside the
-shm-ring bypass in the design docs: bulk FFT rows have no proto message, so `ley fft --format json`
+to stderr, so stdout is parseable. **Three documented exceptions.** The first sits beside the
+shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins}` (snake_case, numbers
 as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
-presentation only, never called signals. `ley fft` subscribes GAP_MARKED (audio and IQ stay
+presentation only, never called signals. `ley listen --format json` is the audio member of the same
+exception: `{seq, sample_index, sample_rate, format, pcm}`, `pcm` being the frame's PCM bytes
+base64-encoded and `format` the `AudioSampleFormat` the daemon settled on (`S16` in v0); every row
+repeats the rate and format so a consumer needs no header. `--format bin` writes those same frames
+raw, back to back and nothing else. `ley fft` subscribes GAP_MARKED (audio and IQ stay
 LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sample":B}}` line before the
 next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
-that order (pinned by a golden test).
+that order (pinned by a golden test). The third is the client-local tables: `ley presets --json`
+prints one array of `{name, aliases, hz, mode, description}` and `ley bands --json` one array of
+`{name, min_hz, max_hz, mode, bandwidth_hz, note}` (`mode` is `usb/lsb` where the sideband follows
+the frequency). Neither verb dials the daemon; `ley help presets` is the same data in prose, and
+`ley presets` (the verb) owns the bare name.
 
 Destructive verbs echo nothing stale: `ley stop`, `ley stop --all` and `ley devices detach` print
 the daemon's `Empty` answer (`{}`) under `--json` — one line for the whole action — and the exit
@@ -82,7 +93,7 @@ running); `daemon install`, `uninstall` and `logs` have no JSON shape and reject
 usage error (exit 2).
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
-`tune`/`play`/`spectrum --watch`/`fft`/`devices --watch` session; 1 when the daemon refused or
+`tune`/`play`/`spectrum --watch`/`fft`/`listen`/`devices --watch` session; 1 when the daemon refused or
 failed (the line reads `ley: <message> [CODE]`, keeping the daemon's stable `ErrorDetail.code`,
 unless `ley` has a plainer sentence for that code); 2 usage error — bad flag or argument,
 unknown verb (with Cobra's "did you mean"), unknown setting, unparseable value or unknown

@@ -106,7 +106,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 - #7 spectrum: implement the Decisions entry (snap for a fresh capture with a stderr note; exit 2 on an existing
   capture with a different width); update the flag help, cli-guide.md and the spectrum golden.
 
-### CLI-8 `[ ]` Agent parity: `ley listen`, `ley presets`, `ley bands`
+### CLI-8 `[x]` Agent parity: `ley listen`, `ley presets`, `ley bands`
 
 - `ley listen <sel|freq> [--format json|bin] [--count N] [--rate/--mode as tune]`: resolves like tune (creating a
   capture/channel when needed, no system-audio sink), subscribes AUDIO via the client library, writes NDJSON rows

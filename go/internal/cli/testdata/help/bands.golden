@@ -1,0 +1,26 @@
+bands lists the slices of spectrum ley knows by name, with the mode and
+bandwidth 'ley tune' uses there when --mode and --bw are not given. Outside
+every band tune falls back to NFM and says so. Like presets, the table lives
+in ley and never reaches the daemon; 'ley help presets' prints it in prose
+alongside the presets.
+
+usb/lsb means the sideband follows the amateur convention: USB at and above
+10 MHz, LSB below (ley help modes).
+
+--json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, note}:
+client-local data with no proto message, so it is not the proto3 JSON mapping.
+
+Usage:
+  ley bands [flags]
+
+Examples:
+  ley bands                      # the table
+  ley bands --json | jq -r '.[] | .name'
+  ley tune 146.52                # 2 m amateur: NFM, 12.5 kHz
+
+Flags:
+  -h, --help   help for bands
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

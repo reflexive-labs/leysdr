@@ -1,0 +1,49 @@
+listen is the audio feed behind 'ley tune': the daemon decodes the station
+and listen writes the samples to stdout instead of the speakers. It resolves
+its argument the way tune does (a frequency, a bare number being MHz, or a
+preset such as noaa), creating a capture and a channel when none exists and
+removing what it created on exit. Give a channel id (chan_...) instead to tap
+a channel that is already running, such as one 'ley tune --persistent' left
+behind; the tune flags are rejected in that case, because the channel's owner
+chose them.
+
+Unlike tune, listen attaches no system-audio sink and leaves the squelch off
+unless --squelch asks for one, so a script gets every sample the daemon made.
+Everything meant for a person goes to stderr; stdout is only the stream.
+
+--format json: one row per line
+               {seq, sample_index, sample_rate, format, pcm}
+               with pcm base64-encoded. Bulk rows have no proto message, so
+               this shape is part of the documented exception to ley's proto3
+               JSON rule; see docs/interfaces.md.
+--format bin:  the raw PCM frames as the daemon delivers them, back to back
+               and nothing else (mono, little-endian, the sample rate and
+               format named on stderr; S16 in this build).
+
+--json asks for the same rows --format json prints, so it changes nothing
+here; with --format bin it is a usage error.
+
+Usage:
+  ley listen <frequency|preset|channel> [flags]
+
+Examples:
+  ley listen 162.55 --count 10               # ten rows of NOAA audio
+  ley listen noaa --format json | jq .seq    # rows into a tool
+  ley listen 146.52 --format bin > audio.s16 # raw mono PCM
+  ley listen chan_01J... --count 1           # tap a channel already running
+
+Flags:
+      --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
+      --count int        stop after this many rows, e.g. 10 (default: until Ctrl-C)
+      --device string    which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)
+      --format string    output format: json (one row per line) or bin (raw PCM frames, see below) (default "json")
+      --gain string      receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)
+  -h, --help             help for listen
+      --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
+      --rate uint        sample rate in Hz when the radio is first tuned, e.g. 2400000; also the width of band it covers (default: the radio's own)
+      --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
+      --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

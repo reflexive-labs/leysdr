@@ -23,6 +23,16 @@ type tuneFlags struct {
 
 // addTuneFlags registers the tune flag set on cmd (shared with play).
 func addTuneFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
+	addSignalFlags(cmd, f, withDevice)
+	cmd.Flags().BoolVar(&f.noAudio, "no-audio", false, "decode but do not play through the speakers (use with --persistent or --json)")
+	cmd.Flags().BoolVar(&f.persistent, "persistent", false, "leave the channel running after the command exits and print its ids (for scripts)")
+	cmd.Flags().StringVar(&f.volume, "volume", "1", "speaker volume: 0 to 1, or a percentage like 50% (default: full)")
+}
+
+// addSignalFlags registers the flags that describe the signal itself -- how
+// to tune and decode it, not where the audio goes -- so listen, which has no
+// speakers, shares tune's spelling and help without its playback flags.
+func addSignalFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
 	cmd.Flags().StringVar(&f.mode, "mode", "", "how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)")
 	cmd.Flags().StringVar(&f.bw, "bw", "", "how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)")
 	if withDevice {
@@ -32,9 +42,6 @@ func addTuneFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
 	}
 	cmd.Flags().StringVar(&f.gain, "gain", "", "receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)")
 	cmd.Flags().StringVar(&f.squelch, "squelch", "", "mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)")
-	cmd.Flags().BoolVar(&f.noAudio, "no-audio", false, "decode but do not play through the speakers (use with --persistent or --json)")
-	cmd.Flags().BoolVar(&f.persistent, "persistent", false, "leave the channel running after the command exits and print its ids (for scripts)")
-	cmd.Flags().StringVar(&f.volume, "volume", "1", "speaker volume: 0 to 1, or a percentage like 50% (default: full)")
 }
 
 // modeDefault is what a caller knows about the mode before the flags are

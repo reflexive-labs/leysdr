@@ -1,0 +1,23 @@
+presets lists the names 'ley tune' takes in place of a frequency, with the
+frequency and mode each one stands for. The table lives in ley, not the
+daemon: a preset is translated into the same tune the number would do, and
+nothing is probed or scanned. 'ley help presets' explains them in prose and
+lists the bands as well.
+
+--json prints an array of {name, aliases, hz, mode, description}: client-local
+data with no proto message, so it is not the proto3 JSON mapping.
+
+Usage:
+  ley presets [flags]
+
+Examples:
+  ley presets                    # the table
+  ley presets --json | jq -r .[].name
+  ley tune noaa                  # what a preset is for
+
+Flags:
+  -h, --help   help for presets
+
+Global Flags:
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

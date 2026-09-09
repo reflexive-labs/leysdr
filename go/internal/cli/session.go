@@ -64,6 +64,9 @@ type session struct {
 	seq uint64
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
+	// proseToStderr forces say() to stderr even without --json, for verbs
+	// whose stdout carries a stream a person never reads (listen).
+	proseToStderr bool
 }
 
 // noDeviceChecklist is what to try when the daemon lists no radios.
@@ -525,10 +528,10 @@ func rejectedError(r *leylinev1.WriteRejected) error {
 	return &leyline.Error{Code: r.GetError().GetCode(), Message: r.GetError().GetMessage(), Target: r.GetError().GetTarget()}
 }
 
-// say prints prose to stdout in human mode and to stderr under --json, so
-// stdout stays NDJSON-only for scripts.
+// say prints prose to stdout in human mode and to stderr under --json (or
+// when the verb reserves stdout for a stream), so stdout stays parseable.
 func (s *session) say(format string, args ...any) {
-	if s.app.JSON {
+	if s.app.JSON || s.proseToStderr {
 		fmt.Fprintf(s.app.Stderr, format, args...)
 		return
 	}

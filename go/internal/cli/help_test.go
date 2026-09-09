@@ -85,20 +85,35 @@ func TestHelpGolden(t *testing.T) {
 			t.Fatalf("ley %s --help: err=%v stderr=%q", strings.Join(path, " "), err, errOut)
 		}
 		checkGolden(t, name, out)
+		// `ley help <name>` prefers a topic of that name (presets), by
+		// design; every other verb's help must match its --help exactly.
+		if topicByName(path[len(path)-1]) != nil {
+			continue
+		}
 		viaHelp, _, err := runApp(t, helpApp(), append([]string{"help"}, path...)...)
 		if err != nil || viaHelp != out {
 			t.Errorf("ley help %s: err=%v; output differs from --help", strings.Join(path, " "), err)
 		}
 	}
 
+	verbs := map[string]bool{}
+	for _, path := range visibleVerbs(t) {
+		if len(path) == 1 {
+			verbs[path[0]] = true
+		}
+	}
 	for _, tp := range topics {
 		out, errOut, err := runApp(t, helpApp(), "help", tp.name)
 		if err != nil || errOut != "" {
 			t.Fatalf("ley help %s: err=%v stderr=%q", tp.name, err, errOut)
 		}
 		checkGolden(t, "help-"+tp.name, out)
-		if bare, _, err := runApp(t, helpApp(), tp.name); err != nil || bare != out {
-			t.Errorf("ley %s: err=%v; output differs from ley help %s", tp.name, err, tp.name)
+		// A topic whose name is also a verb (presets) has no bare form: the
+		// verb owns `ley presets`, and only `ley help presets` is the prose.
+		if !verbs[tp.name] {
+			if bare, _, err := runApp(t, helpApp(), tp.name); err != nil || bare != out {
+				t.Errorf("ley %s: err=%v; output differs from ley help %s", tp.name, err, tp.name)
+			}
 		}
 		if !strings.Contains(out, "ley ") {
 			t.Errorf("help %s: no example command", tp.name)

@@ -114,13 +114,18 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newStopCommand(app),
 		newSpectrumCommand(app),
 		newFFTCommand(app),
+		newListenCommand(app),
+		newPresetsCommand(app),
+		newBandsCommand(app),
 		newPlayCommand(app),
 		newStateCommand(app),
 		newDaemonCommand(app),
 		newVersionCommand(app),
 	)
 	root.AddCommand(newStubCommands(app)...)
-	root.AddCommand(newTopicCommands()...)
+	// A topic whose name is also a verb (presets) keeps its prose under
+	// `ley help <topic>` but registers no bare command: the verb owns the name.
+	root.AddCommand(newTopicCommands(commandNames(root))...)
 	root.SetHelpCommand(newHelpCommand())
 	root.SetHelpCommandGroupID(GroupLooking)
 	root.SetCompletionCommandGroupID(GroupData)
@@ -141,6 +146,15 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError(err) })
 	wrapArgs(root)
 	return root
+}
+
+// commandNames is the set of verb names already registered on cmd.
+func commandNames(cmd *cobra.Command) map[string]bool {
+	names := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		names[sub.Name()] = true
+	}
+	return names
 }
 
 // wrapArgs turns every verb's positional-argument error into a usage error.

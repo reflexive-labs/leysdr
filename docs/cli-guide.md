@@ -269,6 +269,16 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   exception to the proto3 rule. `fft` rows are delivered gap-marked: when the daemon had to
   drop rows, a `{"gap":{"from_sample":A,"to_sample":B}}` line precedes the next row (gap lines
   do not count toward `--count`; `--format bin` carries no gap records).
+- **`ley listen`** is the audio feed behind `tune`: the daemon decodes the station and `listen`
+  writes the samples to stdout instead of the speakers. It resolves a frequency or preset the
+  way `tune` does, making a capture and channel when none exists and removing them on exit, or
+  taps a channel already running when given its id (`chan_...`). `--format json` prints
+  `{seq, sample_index, sample_rate, format, pcm}` rows with `pcm` base64-encoded — part of the
+  same bulk-row exception as `fft` — and `--format bin` writes the raw PCM frames back to back
+  (mono, little-endian, `S16` in this build; the rate and format go to stderr). It attaches no
+  system-audio sink and leaves the squelch off unless `--squelch` asks for one.
+- **`ley presets` and `ley bands`** print the client-local tables (`--json` gives arrays); no
+  RPC is made. `ley help presets` is the same data in prose.
 - **Defaults meant for people are off for scripts.** Under `--json` or `--persistent` squelch
   defaults to `off` (pass `--squelch auto` or a level); pass `--mode` explicitly rather than
   relying on band defaults; give frequencies with a unit (`146.52M`).
@@ -276,13 +286,17 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   and the message keeps the daemon's stable code in brackets (`ley: <message> [DEVICE_BUSY]`)
   unless `ley` has a plainer sentence for it; 2 usage error — a bad flag or argument, an unknown
   verb, setting, value form or preset — nothing was sent to the daemon; 3 the daemon is not
-  running (any verb); 130 interrupted before the live phase began. Error lines read
+  running (any verb); 130 interrupted before the live phase began (a Ctrl-C during a live
+  `tune`, `play`, `fft`, `listen` or `spectrum --watch` exits 0). Error lines read
   `ley: <what went wrong>. <what to do next>`.
 
 ```console
 $ ley tune 146.52M --mode nfm --persistent --json        # ids on stdout, prose on stderr
 $ ley set squelch -40 --channel chan_01J... --json
 $ ley fft --freq 101.1M --rate 10 | jq .bins[0]
+$ ley listen 162.55 --count 10 | jq -r .sample_index      # decoded audio, ten rows
+$ ley listen chan_01J... --format bin | play -t raw -r 48000 -e signed -b 16 -c 1 -
+$ ley presets --json | jq -r '.[].name'                  # client-local tables, no daemon
 $ ley spectrum 101.1 --json                              # {seq, sample_index, center_hz, span_hz, bins, peaks}
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```

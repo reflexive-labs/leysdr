@@ -55,11 +55,16 @@ func topicList() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// newTopicCommands builds the hidden topic commands.
-func newTopicCommands() []*cobra.Command {
+// newTopicCommands builds the hidden topic commands, skipping any name a
+// verb already owns (`ley presets` prints the table; `ley help presets`
+// still prints this topic, since help looks topics up first).
+func newTopicCommands(taken map[string]bool) []*cobra.Command {
 	var cmds []*cobra.Command
 	for _, t := range topics {
 		t := t
+		if taken[t.name] {
+			continue
+		}
 		cmd := &cobra.Command{
 			Use:    t.name,
 			Short:  t.short,
@@ -343,15 +348,25 @@ func topicScripting() string {
 mapping of the leyline.v1 messages (docs/interfaces.md): lowerCamelCase
 keys, 64-bit integers as strings, one object per line for streams (NDJSON).
 Anything meant for a person (banners, "using NFM: ...") goes to stderr, so
-stdout is always parseable. One documented exception to the proto3 rule:
-'ley fft' and 'ley spectrum --json' rows are bulk data with no proto
-message: {seq, sample_index, center_hz, span_hz, bins}, plus peaks for
-spectrum. fft rows are gap-marked: a {"gap":{"from_sample","to_sample"}}
-line precedes the first row after the daemon dropped some.
+stdout is always parseable. Documented exceptions to the proto3 rule: bulk
+rows have no proto message, so 'ley fft' and 'ley spectrum --json' print
+{seq, sample_index, center_hz, span_hz, bins} (plus peaks for spectrum) and
+'ley listen' prints {seq, sample_index, sample_rate, format, pcm} with pcm
+base64-encoded; fft rows are gap-marked, so a
+{"gap":{"from_sample","to_sample"}} line precedes the first row after the
+daemon dropped some. 'ley presets --json' and 'ley bands --json' print
+arrays of the client-local tables, and 'ley version --json' a client-local
+{version, go, os, arch}.
+
+Audio for a tool or an agent: 'ley listen' is 'ley tune' with the samples
+on stdout instead of the speakers. It makes a channel when none exists and
+removes it on exit, or taps one already running when given a channel id.
+--format bin writes the raw PCM frames (mono, little-endian, S16 in this
+build; the rate and format are named on stderr).
 
 Exit codes:
   0    ok, including Ctrl-C during a live phase (tune, play, spectrum
-       --watch, fft, devices --watch)
+       --watch, fft, listen, devices --watch)
   1    the daemon refused or failed; the message keeps the daemon's code in
        brackets, e.g. [DEVICE_BUSY]
   2    usage error: bad flag or argument, unknown verb, setting or preset.
@@ -379,7 +394,9 @@ accepted as selectors; scripts should use full ids.
   ley state --json                          snapshot of everything
   ley tune 146.52M --mode nfm --persistent --json
   ley set squelch -40 --channel chan_01J... --json
-  ley fft --freq 101.1M --rate 10 | jq .bins[0]`
+  ley fft --freq 101.1M --rate 10 | jq .bins[0]
+  ley listen 162.55 --count 10              ten rows of decoded audio
+  ley presets --json | jq -r '.[].name'     the client-local tables`
 }
 
 // topicRoadmap is generated from the stub table.
