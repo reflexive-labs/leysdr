@@ -119,4 +119,38 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 ## Closing
 
-- Full gate on both hosts; update this file's boxes; note anything deliberately left out.
+Done on 2026-09-09, commits 97d9bb1..067bb7f (one per work item, each verified by an independent reviewer before
+landing). Gate at 067bb7f, run in the container:
+
+- Swift: `swift build` clean; `swift test` 137 tests, 0 failures (125 before this plan; the engine gained the
+  event-replay tests CLI-4 needed).
+- Go: `go build ./... && go vet ./... && go test ./...` green; `make lint` 0 issues; `gofumpt` clean.
+- Generated code: `scripts/gen-proto.sh` produces no drift (the one proto change below is regenerated and committed).
+- e2e (real `leylined` + Linux `ley`): 2/2 pass.
+- Smoke test of the new verbs against the real daemon with `fixtures/nfm_tone.cf32`: `ley listen <chan> --format json`
+  returned 20 NDJSON rows at 48 kHz S16 with monotonic seq and real audio (peak 8085/32767), `--format bin` returned
+  the matching raw PCM, `ley presets --json` and `ley bands --json` returned 10 and 14 entries, and listening on
+  another client's channel left that channel ACTIVE.
+
+### Wire change
+
+CLI-4's #15 (no event may be missed between the state snapshot and the event stream) had no wire support: `EventScope`
+carried no resume point. `optional uint64 since_seq = 3` was added, plus a 256-event retained window in both the real
+daemon and the fake, and the control-plane docs now state that reconnect = GetState + resume from that seq. Additive
+within v1, generated code regenerated, both daemons and the Go client updated together.
+
+## Follow-ups noted while implementing (not in the review's primary set)
+
+- `fakedaemon.Options.WriteAwaitsWatcher`, added in CLI-1 to make a rejection test deterministic, is redundant now
+  that `since_seq` closes the same window; drop it and the one test that opts in.
+- `ley listen` ends on Ctrl-C with exit 0, not the 130 this plan first wrote: 130 is documented as "interrupted before
+  the live phase began" and every other live verb exits 0, so listen was added to that list in the docs instead.
+- `ley listen` takes a frequency, a preset or a `chan_` id, but not a channel row number (a bare number is a
+  frequency there). Decide whether row numbers should work for it the way they do for `--channel`.
+- listen skips two stderr notes tune prints while resolving the same argument (the kHz-typed-as-MHz warning and the
+  "using NFM: <reason>" line); cosmetic, but they should probably match.
+- The fake daemon detects file EOF inside its bulk-stream loop, so a non-loop capture with no open stream never
+  detaches; the real daemon's I/O thread hits EOF regardless. A per-capture timer in the fake would close the gap.
+- `buildChannelWrites`/`showSettings` still take a `cap` parameter that is unused on some paths after CLI-5.
+- The `ps -o comm=` identity check (#20) is only exercised on its negative path in tests; a hung real `leylined`
+  with no socket answer is hardware-in-the-loop territory.
