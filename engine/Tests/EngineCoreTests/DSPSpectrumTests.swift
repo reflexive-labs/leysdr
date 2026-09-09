@@ -57,10 +57,10 @@ final class DSPSpectrumTests: XCTestCase {
         XCTAssertEqual(DefaultSpectrumLadder.roundBins(1025), 2048)
         XCTAssertEqual(DefaultSpectrumLadder.roundBins(1 << 20), 16384)
         let sink = CollectingSpectrumSink()
-        let sub = await ladder.subscribe(bins: 3000, rowsPerSecond: 100, policy: .latestWins, sink: sink)
+        let sub = await ladder.subscribe(bins: 3000, rowsPerSecond: 100, accumulation: .snapshot, policy: .latestWins, sink: sink)
         XCTAssertEqual(sub.actualBins, 4096)
         XCTAssertEqual(sub.actualRate, 30)
-        let sub2 = await ladder.subscribe(bins: 0, rowsPerSecond: 0, policy: .latestWins, sink: sink)
+        let sub2 = await ladder.subscribe(bins: 0, rowsPerSecond: 0, accumulation: .snapshot, policy: .latestWins, sink: sink)
         XCTAssertEqual(sub2.actualBins, 256)
         XCTAssertEqual(sub2.actualRate, 30)
         XCTAssertEqual(ladder.subscriberCount, 2)
@@ -81,7 +81,7 @@ final class DSPSpectrumTests: XCTestCase {
     func testLadderTinyRateStillDeliversRows() async {
         let ladder = DefaultSpectrumLadder()
         let sink = CollectingSpectrumSink()
-        let sub = await ladder.subscribe(bins: 256, rowsPerSecond: 1e-300, policy: .latestWins, sink: sink)
+        let sub = await ladder.subscribe(bins: 256, rowsPerSecond: 1e-300, accumulation: .snapshot, policy: .latestWins, sink: sink)
         XCTAssertEqual(sub.actualRate, 0.1)
         let iq = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 256))
         let cap = CaptureID()
@@ -94,8 +94,8 @@ final class DSPSpectrumTests: XCTestCase {
     func testLadderRateLimitsBySampleTime() async {
         let ladder = DefaultSpectrumLadder()
         let fast = CollectingSpectrumSink(), slow = CollectingSpectrumSink()
-        _ = await ladder.subscribe(bins: 512, rowsPerSecond: 30, policy: .latestWins, sink: fast)
-        _ = await ladder.subscribe(bins: 512, rowsPerSecond: 5, policy: .gapMarked, sink: slow)
+        _ = await ladder.subscribe(bins: 512, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: fast)
+        _ = await ladder.subscribe(bins: 512, rowsPerSecond: 5, accumulation: .snapshot, policy: .gapMarked, sink: slow)
         let rate: UInt64 = 2_400_000, block = 16384
         let iq = DSPTest.storage(DSPTest.complexTone(frequencyHz: 600_000, rate: Double(rate), count: block))
         let cap = CaptureID()
@@ -124,9 +124,9 @@ final class DSPSpectrumTests: XCTestCase {
         }
         let ladder = DefaultSpectrumLadder()
         let a = FullRowSink(), b = FullRowSink(), c = FullRowSink()
-        _ = await ladder.subscribe(bins: 1024, rowsPerSecond: 30, policy: .latestWins, sink: a)
-        _ = await ladder.subscribe(bins: 4096, rowsPerSecond: 30, policy: .latestWins, sink: b)
-        _ = await ladder.subscribe(bins: 1024, rowsPerSecond: 30, policy: .latestWins, sink: c)
+        _ = await ladder.subscribe(bins: 1024, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: a)
+        _ = await ladder.subscribe(bins: 4096, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: b)
+        _ = await ladder.subscribe(bins: 1024, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: c)
         let rate: UInt64 = 2_400_000
         // Tone in the upper half of the span: a 1024-slice of the 4096 row would miss it.
         let iq = DSPTest.storage(DSPTest.complexTone(frequencyHz: 900_000, rate: Double(rate), count: 16384))
@@ -144,7 +144,7 @@ final class DSPSpectrumTests: XCTestCase {
     func testLadderSkipsSizesLargerThanBlock() async {
         let ladder = DefaultSpectrumLadder()
         let sink = CollectingSpectrumSink()
-        _ = await ladder.subscribe(bins: 16384, rowsPerSecond: 30, policy: .latestWins, sink: sink)
+        _ = await ladder.subscribe(bins: 16384, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: sink)
         let iq = DSPTest.storage(DSPTest.complexTone(frequencyHz: 0, rate: 48_000, count: 8192))
         ladder.process(block: iq.view(), at: SampleTime(captureID: CaptureID(), sampleIndex: 0), centerHz: 0, spanHz: 48_000)
         XCTAssertEqual(sink.rows.count, 0)
@@ -153,6 +153,7 @@ final class DSPSpectrumTests: XCTestCase {
     func testPowerMeterAndSquelch() {
         var meter = PowerMeter(rate: 48_000)
         let tone = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 4800))
+        let cap = CaptureID()
         let quiet = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 4800, amplitude: 0.001))
         XCTAssertEqual(meter.measure(tone.view()), 0, accuracy: 0.01)
         XCTAssertTrue(meter.snrDB.isNaN) // < 1 s of data
@@ -171,5 +172,72 @@ final class DSPSpectrumTests: XCTestCase {
         XCTAssertFalse(squelch.isOpen)
         XCTAssertFalse(squelch.update(powerDB: -30)) // needs to exceed threshold
         XCTAssertTrue(Squelch(thresholdDB: .nan).isOpen)
+    }
+}
+
+extension DSPSpectrumTests {
+    /// Feed `blocks` blocks through a ladder, making only the blocks in `burst` carry a tone. The
+    /// row rate is set so one row spans every block, which is the case a waterfall cares about: a
+    /// transmission shorter than a row.
+    private func burstRun(accumulation: SpectrumAccumulation, blocks: Int, burst: Range<Int>) async -> [Float] {
+        let ladder = DefaultSpectrumLadder()
+        let sink = CollectingSpectrumSink()
+        let rate: Double = 256_000
+        let size = 256
+        // One row per `blocks` blocks: rowsPerSecond = rate / (blocks * size).
+        let rows = rate / Double(blocks * size)
+        let cap = CaptureID()
+        _ = await ladder.subscribe(bins: size, rowsPerSecond: rows, accumulation: accumulation,
+                                   policy: .latestWins, sink: sink)
+        let quiet = DSPTest.storage(DSPTest.complexTone(frequencyHz: 0, rate: rate, count: size, amplitude: 0.000_01))
+        let loud = DSPTest.storage(DSPTest.complexTone(frequencyHz: 64_000, rate: rate, count: size, amplitude: 1))
+        for b in 0 ..< (blocks * 3) {
+            let block = burst.contains(b % blocks) ? loud : quiet
+            ladder.process(block: block.view(), at: SampleTime(captureID: cap, sampleIndex: UInt64(b * size)),
+                           centerHz: 100_000_000, spanHz: UInt64(rate))
+        }
+        return sink.rows.map(\.peakDB)
+    }
+
+    /// A burst shorter than a row is what a waterfall exists to show, and one periodogram per row
+    /// covers a fraction of a percent of it. MAX looks across the row and finds the burst; SNAPSHOT
+    /// only finds it when the row boundary happens to land inside it.
+    func testMaxAccumulationCatchesABurstSnapshotMisses() async {
+        // The burst is 2 blocks of a 32-block row: 6% of the row.
+        let maxed = await burstRun(accumulation: .max, blocks: 32, burst: 5 ..< 7)
+        let snapped = await burstRun(accumulation: .snapshot, blocks: 32, burst: 5 ..< 7)
+        XCTAssertFalse(maxed.isEmpty, "expected rows under MAX")
+        XCTAssertFalse(snapped.isEmpty, "expected rows under SNAPSHOT")
+        // Every MAX row sees the burst: a full-scale tone peaks near 0 dBFS.
+        for (i, db) in maxed.enumerated() {
+            XCTAssertGreaterThan(db, -10, "MAX row \(i) missed the burst (peak \(db) dBFS)")
+        }
+        // SNAPSHOT samples one block per row; the burst is 6% of the row, so it does not.
+        for (i, db) in snapped.enumerated() {
+            XCTAssertLessThan(db, -40, "SNAPSHOT row \(i) should not have landed on the burst (peak \(db) dBFS)")
+        }
+    }
+
+    /// MEAN dilutes a short burst rather than hiding it: it is the honest average of the row, and
+    /// it must sit well under the burst's own level and well over the quiet floor.
+    func testMeanAccumulationDilutesABurst() async {
+        let meaned = await burstRun(accumulation: .mean, blocks: 32, burst: 5 ..< 7)
+        XCTAssertFalse(meaned.isEmpty)
+        for (i, db) in meaned.enumerated() {
+            XCTAssertLessThan(db, -5, "MEAN row \(i) must not read like a continuous carrier (\(db) dBFS)")
+            XCTAssertGreaterThan(db, -30, "MEAN row \(i) must still see the burst (\(db) dBFS)")
+        }
+    }
+
+    /// The looks the daemon takes are an answer, and SNAPSHOT still means exactly one.
+    func testSubscriptionReportsItsLooks() async {
+        let ladder = DefaultSpectrumLadder()
+        let sink = CollectingSpectrumSink()
+        let snap = await ladder.subscribe(bins: 256, rowsPerSecond: 4, accumulation: .snapshot, policy: .latestWins, sink: sink)
+        XCTAssertEqual(snap.looksPerRow, 1)
+        XCTAssertEqual(snap.accumulation, .snapshot)
+        let maxed = await ladder.subscribe(bins: 256, rowsPerSecond: 4, accumulation: .max, policy: .latestWins, sink: sink)
+        XCTAssertEqual(maxed.looksPerRow, DefaultSpectrumLadder.maxLooksPerRow)
+        XCTAssertEqual(maxed.accumulation, .max)
     }
 }

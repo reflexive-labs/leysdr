@@ -130,6 +130,60 @@ func (Transport) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{1}
 }
 
+type FftAccumulation int32
+
+const (
+	FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED FftAccumulation = 0
+	// Value names are siblings of their type within the package (C++ scoping),
+	// so these carry a ROW_ prefix: a bare SNAPSHOT collides with ResourceKind.
+	FftAccumulation_ROW_SNAPSHOT FftAccumulation = 1 // one periodogram per row
+	FftAccumulation_ROW_MEAN     FftAccumulation = 2 // power mean over the row: a stable floor, dilutes short bursts
+	FftAccumulation_ROW_MAX      FftAccumulation = 3 // max over the row: catches bursts; the noise floor reads
+)
+
+// Enum value maps for FftAccumulation.
+var (
+	FftAccumulation_name = map[int32]string{
+		0: "FFT_ACCUMULATION_UNSPECIFIED",
+		1: "ROW_SNAPSHOT",
+		2: "ROW_MEAN",
+		3: "ROW_MAX",
+	}
+	FftAccumulation_value = map[string]int32{
+		"FFT_ACCUMULATION_UNSPECIFIED": 0,
+		"ROW_SNAPSHOT":                 1,
+		"ROW_MEAN":                     2,
+		"ROW_MAX":                      3,
+	}
+)
+
+func (x FftAccumulation) Enum() *FftAccumulation {
+	p := new(FftAccumulation)
+	*p = x
+	return p
+}
+
+func (x FftAccumulation) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FftAccumulation) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_bulk_proto_enumTypes[2].Descriptor()
+}
+
+func (FftAccumulation) Type() protoreflect.EnumType {
+	return &file_leyline_v1_bulk_proto_enumTypes[2]
+}
+
+func (x FftAccumulation) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FftAccumulation.Descriptor instead.
+func (FftAccumulation) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{2}
+}
+
 type FftBinFormat int32
 
 const (
@@ -163,11 +217,11 @@ func (x FftBinFormat) String() string {
 }
 
 func (FftBinFormat) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_bulk_proto_enumTypes[2].Descriptor()
+	return file_leyline_v1_bulk_proto_enumTypes[3].Descriptor()
 }
 
 func (FftBinFormat) Type() protoreflect.EnumType {
-	return &file_leyline_v1_bulk_proto_enumTypes[2]
+	return &file_leyline_v1_bulk_proto_enumTypes[3]
 }
 
 func (x FftBinFormat) Number() protoreflect.EnumNumber {
@@ -176,7 +230,7 @@ func (x FftBinFormat) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FftBinFormat.Descriptor instead.
 func (FftBinFormat) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{3}
 }
 
 type AudioSampleFormat int32
@@ -212,11 +266,11 @@ func (x AudioSampleFormat) String() string {
 }
 
 func (AudioSampleFormat) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_bulk_proto_enumTypes[3].Descriptor()
+	return file_leyline_v1_bulk_proto_enumTypes[4].Descriptor()
 }
 
 func (AudioSampleFormat) Type() protoreflect.EnumType {
-	return &file_leyline_v1_bulk_proto_enumTypes[3]
+	return &file_leyline_v1_bulk_proto_enumTypes[4]
 }
 
 func (x AudioSampleFormat) Number() protoreflect.EnumNumber {
@@ -225,7 +279,7 @@ func (x AudioSampleFormat) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AudioSampleFormat.Descriptor instead.
 func (AudioSampleFormat) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{3}
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{4}
 }
 
 type SubscribeRequest struct {
@@ -468,6 +522,16 @@ type FftParams struct {
 	Bins          uint32                 `protobuf:"varint,1,opt,name=bins,proto3" json:"bins,omitempty"` // daemon serves from a fixed power-of-two ladder
 	BinFormat     FftBinFormat           `protobuf:"varint,2,opt,name=bin_format,json=binFormat,proto3,enum=leyline.v1.FftBinFormat" json:"bin_format,omitempty"`
 	RowsPerSecond float64                `protobuf:"fixed64,3,opt,name=rows_per_second,json=rowsPerSecond,proto3" json:"rows_per_second,omitempty"`
+	// How a row is built from the samples it covers. ROW_SNAPSHOT (the default, and
+	// what a request that leaves this unset gets) computes one periodogram per
+	// row from whichever block crossed the row boundary: at 2.4 MSPS a
+	// 1024-point FFT covers 0.17% of a 250 ms row, so a burst shorter than the
+	// row appears only sometimes. That is fine for a live band chart, whose
+	// reader is looking at "now", and wrong for anything reading duty cycle.
+	Accumulation FftAccumulation `protobuf:"varint,4,opt,name=accumulation,proto3,enum=leyline.v1.FftAccumulation" json:"accumulation,omitempty"`
+	// Looks the daemon actually took per row. Answer only: a request must leave
+	// it 0. Always 1 under SNAPSHOT.
+	LooksPerRow   uint32 `protobuf:"varint,5,opt,name=looks_per_row,json=looksPerRow,proto3" json:"looks_per_row,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -519,6 +583,20 @@ func (x *FftParams) GetBinFormat() FftBinFormat {
 func (x *FftParams) GetRowsPerSecond() float64 {
 	if x != nil {
 		return x.RowsPerSecond
+	}
+	return 0
+}
+
+func (x *FftParams) GetAccumulation() FftAccumulation {
+	if x != nil {
+		return x.Accumulation
+	}
+	return FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED
+}
+
+func (x *FftParams) GetLooksPerRow() uint32 {
+	if x != nil {
+		return x.LooksPerRow
 	}
 	return 0
 }
@@ -970,12 +1048,14 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\bIqParams\x12\x1f\n" +
 	"\vsample_rate\x18\x01 \x01(\x04R\n" +
 	"sampleRate\x120\n" +
-	"\x06format\x18\x02 \x01(\x0e2\x18.leyline.v1.SampleFormatR\x06format\"\x80\x01\n" +
+	"\x06format\x18\x02 \x01(\x0e2\x18.leyline.v1.SampleFormatR\x06format\"\xe5\x01\n" +
 	"\tFftParams\x12\x12\n" +
 	"\x04bins\x18\x01 \x01(\rR\x04bins\x127\n" +
 	"\n" +
 	"bin_format\x18\x02 \x01(\x0e2\x18.leyline.v1.FftBinFormatR\tbinFormat\x12&\n" +
-	"\x0frows_per_second\x18\x03 \x01(\x01R\rrowsPerSecond\"e\n" +
+	"\x0frows_per_second\x18\x03 \x01(\x01R\rrowsPerSecond\x12?\n" +
+	"\faccumulation\x18\x04 \x01(\x0e2\x1b.leyline.v1.FftAccumulationR\faccumulation\x12\"\n" +
+	"\rlooks_per_row\x18\x05 \x01(\rR\vlooksPerRow\"e\n" +
 	"\vAudioParams\x12\x1f\n" +
 	"\vsample_rate\x18\x01 \x01(\rR\n" +
 	"sampleRate\x125\n" +
@@ -1017,7 +1097,12 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\tTransport\x12\x19\n" +
 	"\x15TRANSPORT_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04GRPC\x10\x01\x12\f\n" +
-	"\bSHM_RING\x10\x02*E\n" +
+	"\bSHM_RING\x10\x02*`\n" +
+	"\x0fFftAccumulation\x12 \n" +
+	"\x1cFFT_ACCUMULATION_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fROW_SNAPSHOT\x10\x01\x12\f\n" +
+	"\bROW_MEAN\x10\x02\x12\v\n" +
+	"\aROW_MAX\x10\x03*E\n" +
 	"\fFftBinFormat\x12\x1e\n" +
 	"\x1aFFT_BIN_FORMAT_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05DB_U8\x10\x01\x12\n" +
@@ -1044,58 +1129,60 @@ func file_leyline_v1_bulk_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_bulk_proto_rawDescData
 }
 
-var file_leyline_v1_bulk_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_leyline_v1_bulk_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_leyline_v1_bulk_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_leyline_v1_bulk_proto_goTypes = []any{
 	(StreamKind)(0),          // 0: leyline.v1.StreamKind
 	(Transport)(0),           // 1: leyline.v1.Transport
-	(FftBinFormat)(0),        // 2: leyline.v1.FftBinFormat
-	(AudioSampleFormat)(0),   // 3: leyline.v1.AudioSampleFormat
-	(*SubscribeRequest)(nil), // 4: leyline.v1.SubscribeRequest
-	(*IqParams)(nil),         // 5: leyline.v1.IqParams
-	(*FftParams)(nil),        // 6: leyline.v1.FftParams
-	(*AudioParams)(nil),      // 7: leyline.v1.AudioParams
-	(*StreamDescriptor)(nil), // 8: leyline.v1.StreamDescriptor
-	(*ShmRing)(nil),          // 9: leyline.v1.ShmRing
-	(*Frame)(nil),            // 10: leyline.v1.Frame
-	(*StreamRef)(nil),        // 11: leyline.v1.StreamRef
-	(DeliveryPolicy)(0),      // 12: leyline.v1.DeliveryPolicy
-	(*StreamPosition)(nil),   // 13: leyline.v1.StreamPosition
-	(SampleFormat)(0),        // 14: leyline.v1.SampleFormat
-	(*SampleTime)(nil),       // 15: leyline.v1.SampleTime
-	(*Gap)(nil),              // 16: leyline.v1.Gap
-	(*Empty)(nil),            // 17: leyline.v1.Empty
+	(FftAccumulation)(0),     // 2: leyline.v1.FftAccumulation
+	(FftBinFormat)(0),        // 3: leyline.v1.FftBinFormat
+	(AudioSampleFormat)(0),   // 4: leyline.v1.AudioSampleFormat
+	(*SubscribeRequest)(nil), // 5: leyline.v1.SubscribeRequest
+	(*IqParams)(nil),         // 6: leyline.v1.IqParams
+	(*FftParams)(nil),        // 7: leyline.v1.FftParams
+	(*AudioParams)(nil),      // 8: leyline.v1.AudioParams
+	(*StreamDescriptor)(nil), // 9: leyline.v1.StreamDescriptor
+	(*ShmRing)(nil),          // 10: leyline.v1.ShmRing
+	(*Frame)(nil),            // 11: leyline.v1.Frame
+	(*StreamRef)(nil),        // 12: leyline.v1.StreamRef
+	(DeliveryPolicy)(0),      // 13: leyline.v1.DeliveryPolicy
+	(*StreamPosition)(nil),   // 14: leyline.v1.StreamPosition
+	(SampleFormat)(0),        // 15: leyline.v1.SampleFormat
+	(*SampleTime)(nil),       // 16: leyline.v1.SampleTime
+	(*Gap)(nil),              // 17: leyline.v1.Gap
+	(*Empty)(nil),            // 18: leyline.v1.Empty
 }
 var file_leyline_v1_bulk_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.SubscribeRequest.kind:type_name -> leyline.v1.StreamKind
-	12, // 1: leyline.v1.SubscribeRequest.policy:type_name -> leyline.v1.DeliveryPolicy
-	13, // 2: leyline.v1.SubscribeRequest.start:type_name -> leyline.v1.StreamPosition
+	13, // 1: leyline.v1.SubscribeRequest.policy:type_name -> leyline.v1.DeliveryPolicy
+	14, // 2: leyline.v1.SubscribeRequest.start:type_name -> leyline.v1.StreamPosition
 	1,  // 3: leyline.v1.SubscribeRequest.transport:type_name -> leyline.v1.Transport
-	5,  // 4: leyline.v1.SubscribeRequest.iq:type_name -> leyline.v1.IqParams
-	6,  // 5: leyline.v1.SubscribeRequest.fft:type_name -> leyline.v1.FftParams
-	7,  // 6: leyline.v1.SubscribeRequest.audio:type_name -> leyline.v1.AudioParams
-	14, // 7: leyline.v1.IqParams.format:type_name -> leyline.v1.SampleFormat
-	2,  // 8: leyline.v1.FftParams.bin_format:type_name -> leyline.v1.FftBinFormat
-	3,  // 9: leyline.v1.AudioParams.format:type_name -> leyline.v1.AudioSampleFormat
-	0,  // 10: leyline.v1.StreamDescriptor.kind:type_name -> leyline.v1.StreamKind
-	12, // 11: leyline.v1.StreamDescriptor.policy:type_name -> leyline.v1.DeliveryPolicy
-	5,  // 12: leyline.v1.StreamDescriptor.iq:type_name -> leyline.v1.IqParams
-	6,  // 13: leyline.v1.StreamDescriptor.fft:type_name -> leyline.v1.FftParams
-	7,  // 14: leyline.v1.StreamDescriptor.audio:type_name -> leyline.v1.AudioParams
-	9,  // 15: leyline.v1.StreamDescriptor.shm:type_name -> leyline.v1.ShmRing
-	15, // 16: leyline.v1.Frame.time:type_name -> leyline.v1.SampleTime
-	16, // 17: leyline.v1.Frame.gap:type_name -> leyline.v1.Gap
-	4,  // 18: leyline.v1.Bulk.Subscribe:input_type -> leyline.v1.SubscribeRequest
-	11, // 19: leyline.v1.Bulk.Stream:input_type -> leyline.v1.StreamRef
-	11, // 20: leyline.v1.Bulk.Unsubscribe:input_type -> leyline.v1.StreamRef
-	8,  // 21: leyline.v1.Bulk.Subscribe:output_type -> leyline.v1.StreamDescriptor
-	10, // 22: leyline.v1.Bulk.Stream:output_type -> leyline.v1.Frame
-	17, // 23: leyline.v1.Bulk.Unsubscribe:output_type -> leyline.v1.Empty
-	21, // [21:24] is the sub-list for method output_type
-	18, // [18:21] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	6,  // 4: leyline.v1.SubscribeRequest.iq:type_name -> leyline.v1.IqParams
+	7,  // 5: leyline.v1.SubscribeRequest.fft:type_name -> leyline.v1.FftParams
+	8,  // 6: leyline.v1.SubscribeRequest.audio:type_name -> leyline.v1.AudioParams
+	15, // 7: leyline.v1.IqParams.format:type_name -> leyline.v1.SampleFormat
+	3,  // 8: leyline.v1.FftParams.bin_format:type_name -> leyline.v1.FftBinFormat
+	2,  // 9: leyline.v1.FftParams.accumulation:type_name -> leyline.v1.FftAccumulation
+	4,  // 10: leyline.v1.AudioParams.format:type_name -> leyline.v1.AudioSampleFormat
+	0,  // 11: leyline.v1.StreamDescriptor.kind:type_name -> leyline.v1.StreamKind
+	13, // 12: leyline.v1.StreamDescriptor.policy:type_name -> leyline.v1.DeliveryPolicy
+	6,  // 13: leyline.v1.StreamDescriptor.iq:type_name -> leyline.v1.IqParams
+	7,  // 14: leyline.v1.StreamDescriptor.fft:type_name -> leyline.v1.FftParams
+	8,  // 15: leyline.v1.StreamDescriptor.audio:type_name -> leyline.v1.AudioParams
+	10, // 16: leyline.v1.StreamDescriptor.shm:type_name -> leyline.v1.ShmRing
+	16, // 17: leyline.v1.Frame.time:type_name -> leyline.v1.SampleTime
+	17, // 18: leyline.v1.Frame.gap:type_name -> leyline.v1.Gap
+	5,  // 19: leyline.v1.Bulk.Subscribe:input_type -> leyline.v1.SubscribeRequest
+	12, // 20: leyline.v1.Bulk.Stream:input_type -> leyline.v1.StreamRef
+	12, // 21: leyline.v1.Bulk.Unsubscribe:input_type -> leyline.v1.StreamRef
+	9,  // 22: leyline.v1.Bulk.Subscribe:output_type -> leyline.v1.StreamDescriptor
+	11, // 23: leyline.v1.Bulk.Stream:output_type -> leyline.v1.Frame
+	18, // 24: leyline.v1.Bulk.Unsubscribe:output_type -> leyline.v1.Empty
+	22, // [22:25] is the sub-list for method output_type
+	19, // [19:22] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_bulk_proto_init() }
@@ -1124,7 +1211,7 @@ func file_leyline_v1_bulk_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_bulk_proto_rawDesc), len(file_leyline_v1_bulk_proto_rawDesc)),
-			NumEnums:      4,
+			NumEnums:      5,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,

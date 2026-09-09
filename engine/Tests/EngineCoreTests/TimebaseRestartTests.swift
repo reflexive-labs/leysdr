@@ -84,7 +84,7 @@ final class TimebaseRestartTests: XCTestCase {
         let tap = RecordingTap()
         await capture.addTap(tap)
         let sink = LockedSpectrumSink()
-        let sub = await capture.spectrum.subscribe(bins: 256, rowsPerSecond: 30, policy: .latestWins, sink: sink)
+        let sub = await capture.spectrum.subscribe(bins: 256, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: sink)
         var anchors: [CaptureAnchor] = []
         let anchorTask = Task { for await a in capture.anchorEvents { anchors.append(a) } }
         try await capture.start()
@@ -182,7 +182,7 @@ final class TimebaseRestartTests: XCTestCase {
     func testLadderClampsDueAfterJumpOrRewind() async {
         let ladder = DefaultSpectrumLadder()
         let sink = LockedSpectrumSink()
-        _ = await ladder.subscribe(bins: 256, rowsPerSecond: 10, policy: .latestWins, sink: sink)
+        _ = await ladder.subscribe(bins: 256, rowsPerSecond: 10, accumulation: .snapshot, policy: .latestWins, sink: sink)
         let storage = SampleStorage(capacity: 4096, format: .cf32)
         let id = CaptureID()
         func step(_ index: UInt64, span: UInt64) {

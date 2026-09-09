@@ -265,19 +265,39 @@ public protocol Demodulator: AnyObject {
 /// subscribers. Subscribers get the nearest size the ladder computes and at most the rate they ask for.
 public protocol SpectrumLadder: AnyObject, Sendable {
     /// Requested `bins`/`rowsPerSecond` may be downgraded, never upgraded; the returned subscription is authoritative.
-    func subscribe(bins: Int, rowsPerSecond: Double, policy: DeliveryPolicy, sink: any SpectrumSink) async -> SpectrumSubscription
+    func subscribe(bins: Int, rowsPerSecond: Double, accumulation: SpectrumAccumulation,
+                   policy: DeliveryPolicy, sink: any SpectrumSink) async -> SpectrumSubscription
     func cancel(_ subscription: SpectrumSubscription) async
+}
+
+/// How a spectrum row is built from the samples it covers.
+public enum SpectrumAccumulation: Sendable, Hashable {
+    /// One periodogram per row, from whichever block crossed the row boundary. At 2.4 MSPS a
+    /// 1024-point FFT covers 0.17% of a 250 ms row, so a burst shorter than a row shows up only
+    /// sometimes. Right for a live band chart, wrong for anything reading duty cycle.
+    case snapshot
+    /// Power mean over the looks taken in the row: a stable floor that dilutes short bursts.
+    case mean
+    /// Elementwise maximum over the looks: catches bursts, and reads the noise floor a few dB high
+    /// because the maximum of N draws is biased upward.
+    case max
 }
 
 public struct SpectrumSubscription: Hashable, Sendable {
     public var id: StreamID
     public var actualBins: Int
     public var actualRate: Double
+    public var accumulation: SpectrumAccumulation
+    /// Looks the ladder takes per row. Always 1 under `.snapshot`.
+    public var looksPerRow: Int
 
-    public init(id: StreamID, actualBins: Int, actualRate: Double) {
+    public init(id: StreamID, actualBins: Int, actualRate: Double,
+                accumulation: SpectrumAccumulation = .snapshot, looksPerRow: Int = 1) {
         self.id = id
         self.actualBins = actualBins
         self.actualRate = actualRate
+        self.accumulation = accumulation
+        self.looksPerRow = looksPerRow
     }
 }
 

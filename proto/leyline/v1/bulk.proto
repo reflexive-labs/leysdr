@@ -41,6 +41,25 @@ message FftParams {
   uint32 bins = 1;               // daemon serves from a fixed power-of-two ladder
   FftBinFormat bin_format = 2;
   double rows_per_second = 3;
+  // How a row is built from the samples it covers. ROW_SNAPSHOT (the default, and
+  // what a request that leaves this unset gets) computes one periodogram per
+  // row from whichever block crossed the row boundary: at 2.4 MSPS a
+  // 1024-point FFT covers 0.17% of a 250 ms row, so a burst shorter than the
+  // row appears only sometimes. That is fine for a live band chart, whose
+  // reader is looking at "now", and wrong for anything reading duty cycle.
+  FftAccumulation accumulation = 4;
+  // Looks the daemon actually took per row. Answer only: a request must leave
+  // it 0. Always 1 under SNAPSHOT.
+  uint32 looks_per_row = 5;
+}
+enum FftAccumulation {
+  FFT_ACCUMULATION_UNSPECIFIED = 0;
+  // Value names are siblings of their type within the package (C++ scoping),
+  // so these carry a ROW_ prefix: a bare SNAPSHOT collides with ResourceKind.
+  ROW_SNAPSHOT = 1;  // one periodogram per row
+  ROW_MEAN = 2;      // power mean over the row: a stable floor, dilutes short bursts
+  ROW_MAX = 3;       // max over the row: catches bursts; the noise floor reads
+                     // a few dB high, because the maximum of N draws is biased up
 }
 enum FftBinFormat { FFT_BIN_FORMAT_UNSPECIFIED = 0; DB_U8 = 1; DB_F32 = 2; }
 message AudioParams { uint32 sample_rate = 1; AudioSampleFormat format = 2; }

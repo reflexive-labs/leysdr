@@ -56,7 +56,7 @@ measurements; RMS never exceeds full scale; peak is never under RMS);
 Verified on the real daemon against `two_nfm.cf32`: channel power -20.0 dBFS (the fixture's tone
 level) against demodulated audio -15.2 dBFS, stable across meters.
 
-## SV-3 `[ ]` Ladder accumulation
+## SV-3 `[x]` Ladder accumulation
 
 No user-visible output. Lands before SV-4.
 
@@ -65,9 +65,30 @@ No user-visible output. Lands before SV-4.
 - `DefaultSpectrumLadder` accumulates one look per capture block, capped at 64 looks per row.
 - `StreamDescriptor` reports the looks actually taken, so a client can say so.
 
-Tests: a fixture with a burst shorter than a row interval appears at full level under `MAX` and is
-diluted under `MEAN`; `SNAPSHOT` is bit-identical to today; the looks cap holds at a high row rate;
-no allocation added to the ladder pass.
+Enum values carry a `ROW_` prefix (`ROW_SNAPSHOT`, `ROW_MEAN`, `ROW_MAX`): proto3 enum values are
+siblings of their type within the package, and a bare `SNAPSHOT` collides with `ResourceKind` in
+jobs.proto.
+
+Two things the design did not anticipate:
+
+- **`MEAN` must average in the power domain.** The ladder emits dB, and the mean of decibels is a
+  different statistic that reads several dB low on a row with any structure in it. Each look is
+  converted with a new `Kernels.dbToPower` and the row converted back at emit. The conversion may
+  not touch the ladder's shared row buffer, which every same-size subscriber in the same pass reads,
+  so a mean subscriber gets a scratch buffer of its own. Both are allocated at subscribe time.
+- **An accumulating subscriber's first row waits a whole interval.** Emitting on the first block
+  would put one look in a row that claims to summarise the interval, which is exactly the lie this
+  work item exists to remove.
+
+Looks are spread evenly across the row on their own `nextLook` schedule rather than taken back to
+back, so the 64-look cap thins the sampling at a slow row rate instead of covering only the start of
+the row.
+
+Tests: `testMaxAccumulationCatchesABurstSnapshotMisses` -- a burst filling 6% of a row is found by
+every `MAX` row and by no `SNAPSHOT` row, which is the whole claim;
+`testMeanAccumulationDilutesABurst`; `testSubscriptionReportsItsLooks`. `looks_per_row` is refused
+in a request, since a client asking for a look count is asking the daemon to spend CPU it does not
+own.
 
 ## SV-4 `[ ]` The waterfall
 

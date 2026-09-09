@@ -40,7 +40,7 @@ final class DSPKernelTests: XCTestCase {
         try demod.configure(inputRate: ch.outputRate, bandwidthHz: 12_500)
         let ladder = DefaultSpectrumLadder()
         let sink = CollectingSpectrumSink()
-        _ = await ladder.subscribe(bins: 1024, rowsPerSecond: 30, policy: .latestWins, sink: sink)
+        _ = await ladder.subscribe(bins: 1024, rowsPerSecond: 30, accumulation: .snapshot, policy: .latestWins, sink: sink)
         let iq = DSPTest.storage(DSPTest.fmTone(carrierHz: 100_000, audioHz: 1_000, deviationHz: 3_000, rate: 2_400_000, count: block))
         let chStore = SampleStorage(capacity: ch.maxOutput, format: .cf32)
         let outStore = SampleStorage(capacity: ch.maxOutput, format: .f32)

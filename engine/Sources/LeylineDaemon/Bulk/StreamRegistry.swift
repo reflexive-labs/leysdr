@@ -125,11 +125,27 @@ actor StreamRegistry {
             let bins = DefaultSpectrumLadder.roundBins(want.bins == 0 ? 1024 : Int(want.bins))
             let ring = FrameRing(slots: Self.fftSlots, slotBytes: bins * 4)
             let sink = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8)
-            let sub = await capture.spectrum.subscribe(bins: bins, rowsPerSecond: rows, policy: enginePolicy, sink: sink)
+            // looks_per_row is an answer, never a request: a client asking for a look count would
+            // be asking the daemon to spend CPU it does not own.
+            if want.looksPerRow != 0 {
+                throw EngineError.invalidArgument("looks_per_row is answered by the daemon; leave it 0")
+            }
+            let accumulation: SpectrumAccumulation
+            switch want.accumulation {
+            case .unspecified, .rowSnapshot: accumulation = .snapshot
+            case .rowMean: accumulation = .mean
+            case .rowMax: accumulation = .max
+            case .UNRECOGNIZED(let v):
+                throw EngineError.invalidArgument("unknown FftAccumulation \(v)")
+            }
+            let sub = await capture.spectrum.subscribe(bins: bins, rowsPerSecond: rows,
+                                                       accumulation: accumulation, policy: enginePolicy, sink: sink)
             var p = Leyline_V1_FftParams()
             p.bins = UInt32(sub.actualBins)
             p.binFormat = format
             p.rowsPerSecond = sub.actualRate
+            p.accumulation = want.accumulation == .unspecified ? .rowSnapshot : want.accumulation
+            p.looksPerRow = UInt32(sub.looksPerRow)
             desc.fft = p
             source = .fft(ring, sub, capture.spectrum, sink)
         case .audio:

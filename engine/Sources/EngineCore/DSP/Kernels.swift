@@ -193,6 +193,20 @@ public enum PortableKernels {
         return s / Float(count)
     }
 
+    /// Elementwise maximum into `dst`. Used to accumulate a max-hold row.
+    @inline(__always)
+    public static func maxInPlace(_ dst: UnsafeMutablePointer<Float>, _ src: UnsafePointer<Float>, count: Int) {
+        for i in 0 ..< count where src[i] > dst[i] { dst[i] = src[i] }
+    }
+
+    /// dB → linear power, the inverse of `powerToDB`. Averaging a spectrum has to
+    /// happen in power: the mean of decibels is a different statistic and reads
+    /// several dB low on a row with any structure in it.
+    @inline(__always)
+    public static func dbToPower(_ src: UnsafePointer<Float>, to dst: UnsafeMutablePointer<Float>, count: Int) {
+        for i in 0 ..< count { dst[i] = Foundation.pow(10, src[i] / 10) }
+    }
+
     /// Largest absolute value; 0 for an empty vector.
     @inline(__always)
     public static func maxMagnitude(_ src: UnsafePointer<Float>, count: Int) -> Float {
@@ -368,6 +382,25 @@ public enum AccelerateKernels {
         var m: Float = 0
         vDSP_measqv(src, 1, &m, vDSP_Length(count))
         return m
+    }
+
+    /// Elementwise maximum into `dst`. Used to accumulate a max-hold row.
+    @inline(__always)
+    public static func maxInPlace(_ dst: UnsafeMutablePointer<Float>, _ src: UnsafePointer<Float>, count: Int) {
+        vDSP_vmax(dst, 1, src, 1, dst, 1, vDSP_Length(count))
+    }
+
+    /// dB → linear power, the inverse of `powerToDB`. Averaging a spectrum has to
+    /// happen in power: the mean of decibels is a different statistic and reads
+    /// several dB low on a row with any structure in it.
+    @inline(__always)
+    public static func dbToPower(_ src: UnsafePointer<Float>, to dst: UnsafeMutablePointer<Float>, count: Int) {
+        // Scale into dst, then raise in place: no scratch, so this stays callable
+        // from the DSP thread.
+        var tenth: Float = 0.1
+        var n = Int32(count)
+        vDSP_vsmul(src, 1, &tenth, dst, 1, vDSP_Length(count))
+        vvexp10f(dst, dst, &n)
     }
 
     /// Largest absolute value; 0 for an empty vector.

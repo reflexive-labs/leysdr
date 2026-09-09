@@ -114,6 +114,55 @@ public nonisolated enum Leyline_V1_Transport: SwiftProtobuf.Enum, Swift.CaseIter
 
 }
 
+public nonisolated enum Leyline_V1_FftAccumulation: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// Value names are siblings of their type within the package (C++ scoping),
+  /// so these carry a ROW_ prefix: a bare SNAPSHOT collides with ResourceKind.
+  case rowSnapshot // = 1
+
+  /// power mean over the row: a stable floor, dilutes short bursts
+  case rowMean // = 2
+
+  /// max over the row: catches bursts; the noise floor reads
+  case rowMax // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .rowSnapshot
+    case 2: self = .rowMean
+    case 3: self = .rowMax
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .rowSnapshot: return 1
+    case .rowMean: return 2
+    case .rowMax: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_FftAccumulation] = [
+    .unspecified,
+    .rowSnapshot,
+    .rowMean,
+    .rowMax,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_FftBinFormat: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -314,6 +363,18 @@ public nonisolated struct Leyline_V1_FftParams: Sendable {
 
   public var rowsPerSecond: Double = 0
 
+  /// How a row is built from the samples it covers. ROW_SNAPSHOT (the default, and
+  /// what a request that leaves this unset gets) computes one periodogram per
+  /// row from whichever block crossed the row boundary: at 2.4 MSPS a
+  /// 1024-point FFT covers 0.17% of a 250 ms row, so a burst shorter than the
+  /// row appears only sometimes. That is fine for a live band chart, whose
+  /// reader is looking at "now", and wrong for anything reading duty cycle.
+  public var accumulation: Leyline_V1_FftAccumulation = .unspecified
+
+  /// Looks the daemon actually took per row. Answer only: a request must leave
+  /// it 0. Always 1 under SNAPSHOT.
+  public var looksPerRow: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -499,6 +560,10 @@ nonisolated extension Leyline_V1_Transport: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TRANSPORT_UNSPECIFIED\0\u{1}GRPC\0\u{1}SHM_RING\0")
 }
 
+nonisolated extension Leyline_V1_FftAccumulation: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FFT_ACCUMULATION_UNSPECIFIED\0\u{1}ROW_SNAPSHOT\0\u{1}ROW_MEAN\0\u{1}ROW_MAX\0")
+}
+
 nonisolated extension Leyline_V1_FftBinFormat: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FFT_BIN_FORMAT_UNSPECIFIED\0\u{1}DB_U8\0\u{1}DB_F32\0")
 }
@@ -676,7 +741,7 @@ nonisolated extension Leyline_V1_IqParams: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FftParams"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}bins\0\u{3}bin_format\0\u{3}rows_per_second\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}bins\0\u{3}bin_format\0\u{3}rows_per_second\0\u{1}accumulation\0\u{3}looks_per_row\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -687,6 +752,8 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
       case 1: try { try decoder.decodeSingularUInt32Field(value: &self.bins) }()
       case 2: try { try decoder.decodeSingularEnumField(value: &self.binFormat) }()
       case 3: try { try decoder.decodeSingularDoubleField(value: &self.rowsPerSecond) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.accumulation) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.looksPerRow) }()
       default: break
       }
     }
@@ -702,6 +769,12 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
     if self.rowsPerSecond.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.rowsPerSecond, fieldNumber: 3)
     }
+    if self.accumulation != .unspecified {
+      try visitor.visitSingularEnumField(value: self.accumulation, fieldNumber: 4)
+    }
+    if self.looksPerRow != 0 {
+      try visitor.visitSingularUInt32Field(value: self.looksPerRow, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -709,6 +782,8 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.bins != rhs.bins {return false}
     if lhs.binFormat != rhs.binFormat {return false}
     if lhs.rowsPerSecond != rhs.rowsPerSecond {return false}
+    if lhs.accumulation != rhs.accumulation {return false}
+    if lhs.looksPerRow != rhs.looksPerRow {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

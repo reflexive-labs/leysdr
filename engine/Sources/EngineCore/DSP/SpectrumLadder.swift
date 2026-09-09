@@ -26,6 +26,11 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         return min(max(rowsPerSecond, minRowsPerSecond), maxRowsPerSecond)
     }
 
+    /// Most looks the ladder will take for one row. It bounds the FFT cost of a very slow row rate;
+    /// looks are spread evenly across the row rather than taken back to back, so capping them
+    /// thins the sampling instead of covering only the start of the row.
+    public static let maxLooksPerRow = 64
+
     final class Entry {
         let subscription: SpectrumSubscription
         let policy: DeliveryPolicy
@@ -33,12 +38,47 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         let sink: any SpectrumSink
         /// Sample index at/after which the next row is due (DSP thread only).
         var nextDue: UInt64 = 0
+        /// Sample index at/after which the next look is due, and the row being built. Both are
+        /// nil/zero under `.snapshot`, which analyses once per row and emits the ladder's own
+        /// buffer untouched. Allocated at subscribe time: the DSP thread never allocates.
+        var nextLook: UInt64 = 0
+        var looks: Int = 0
+        /// Whether this entry has seen a block yet. An accumulating entry uses it to put its first
+        /// row a whole interval out: a row emitted on the first block would have one look in it and
+        /// would claim to summarise an interval it never saw.
+        var started = false
+        let accumulator: UnsafeMutableBufferPointer<Float>?
+        /// Per-entry scratch for `.mean`, which cannot convert in the shared row buffer.
+        let scratch: UnsafeMutableBufferPointer<Float>?
 
         init(subscription: SpectrumSubscription, policy: DeliveryPolicy, sizeIndex: Int, sink: any SpectrumSink) {
             self.subscription = subscription
             self.policy = policy
             self.sizeIndex = sizeIndex
             self.sink = sink
+            if subscription.accumulation == .snapshot {
+                accumulator = nil
+                scratch = nil
+            } else {
+                let buf = UnsafeMutableBufferPointer<Float>.allocate(capacity: subscription.actualBins)
+                buf.initialize(repeating: 0)
+                accumulator = buf
+                // `.mean` converts each look out of dB before summing it. That conversion may not
+                // touch the ladder's shared row buffer, which every same-size subscriber in this
+                // pass reads, so each mean subscriber converts into scratch of its own.
+                if subscription.accumulation == .mean {
+                    let tmp = UnsafeMutableBufferPointer<Float>.allocate(capacity: subscription.actualBins)
+                    tmp.initialize(repeating: 0)
+                    scratch = tmp
+                } else {
+                    scratch = nil
+                }
+            }
+        }
+
+        deinit {
+            accumulator?.deallocate()
+            scratch?.deallocate()
         }
     }
 
@@ -68,9 +108,13 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         return table.count
     }
 
-    public func subscribe(bins: Int, rowsPerSecond: Double, policy: DeliveryPolicy, sink: any SpectrumSink) async -> SpectrumSubscription {
+    public func subscribe(bins: Int, rowsPerSecond: Double, accumulation: SpectrumAccumulation,
+                          policy: DeliveryPolicy, sink: any SpectrumSink) async -> SpectrumSubscription {
         let size = DefaultSpectrumLadder.roundBins(bins)
-        let sub = SpectrumSubscription(id: StreamID(), actualBins: size, actualRate: DefaultSpectrumLadder.roundRate(rowsPerSecond))
+        let rate = DefaultSpectrumLadder.roundRate(rowsPerSecond)
+        let looks = accumulation == .snapshot ? 1 : DefaultSpectrumLadder.maxLooksPerRow
+        let sub = SpectrumSubscription(id: StreamID(), actualBins: size, actualRate: rate,
+                                       accumulation: accumulation, looksPerRow: looks)
         let entry = Entry(subscription: sub, policy: policy, sizeIndex: DefaultSpectrumLadder.sizes.firstIndex(of: size)!, sink: sink)
         lock.lock()
         table = table + [entry]
@@ -101,8 +145,47 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
             // A new anchor (rate change shrinks the interval) or a rewound/jumped timeline can
             // leave the due point more than one interval ahead of `now`; clamp so rows never stall.
             if e.nextDue > now &+ interval { e.nextDue = now &+ interval }
-            guard now >= e.nextDue else { continue }
             let analyzer = analyzers[e.sizeIndex]
+
+            // An accumulating subscriber takes looks between rows, evenly spread: a row is only as
+            // honest about a burst as the fraction of itself it actually looked at, and one
+            // periodogram is 0.17% of a 250 ms row at 2.4 MSPS.
+            if let acc = e.accumulator {
+                if !e.started {
+                    e.started = true
+                    e.nextDue = now &+ interval
+                    e.nextLook = now
+                }
+                let lookInterval = Swift.max(1 as UInt64, interval / UInt64(e.subscription.looksPerRow))
+                if e.nextLook > now &+ lookInterval { e.nextLook = now }
+                if now >= e.nextLook, block.count >= analyzer.size {
+                    let row = rows[e.sizeIndex]
+                    if !computed[e.sizeIndex] {
+                        analyzer.analyze(block, into: row)
+                        computed[e.sizeIndex] = true
+                    }
+                    fold(row: row, into: acc, scratch: e.scratch, kind: e.subscription.accumulation, first: e.looks == 0)
+                    e.looks += 1
+                    let scheduledLook = e.nextLook &+ lookInterval
+                    e.nextLook = scheduledLook > now ? scheduledLook : now &+ lookInterval
+                }
+                guard now >= e.nextDue else { continue }
+                // A row with no looks in it has nothing to say, so it is skipped rather than
+                // emitted as whatever the accumulator last held.
+                guard e.looks > 0 else {
+                    let scheduled = e.nextDue &+ interval
+                    e.nextDue = scheduled > now ? scheduled : now &+ interval
+                    continue
+                }
+                finish(acc, kind: e.subscription.accumulation, looks: e.looks)
+                let scheduled = e.nextDue &+ interval
+                e.nextDue = scheduled > now ? scheduled : now &+ interval
+                e.sink.write(row: UnsafeBufferPointer(acc), at: time, centerHz: centerHz, spanHz: spanHz)
+                e.looks = 0
+                continue
+            }
+
+            guard now >= e.nextDue else { continue }
             guard block.count >= analyzer.size else { continue }
             let row = rows[e.sizeIndex]
             if !computed[e.sizeIndex] {
@@ -114,6 +197,46 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
             let scheduled = e.nextDue &+ interval
             e.nextDue = scheduled > now ? scheduled : now &+ interval
             e.sink.write(row: UnsafeBufferPointer(row), at: time, centerHz: centerHz, spanHz: spanHz)
+        }
+    }
+
+    /// Fold one look into a row being built. `.max` accumulates in dB, where the elementwise
+    /// maximum is the same value as the maximum of the underlying power. `.mean` cannot: the mean
+    /// of decibels is a different statistic, so the look is converted to linear power first and the
+    /// row is converted back in `finish`.
+    private func fold(row: UnsafeMutableBufferPointer<Float>, into acc: UnsafeMutableBufferPointer<Float>,
+                      scratch: UnsafeMutableBufferPointer<Float>?, kind: SpectrumAccumulation, first: Bool)
+    {
+        let n = Swift.min(row.count, acc.count)
+        switch kind {
+        case .snapshot:
+            break
+        case .max:
+            if first {
+                Kernels.copy(row.baseAddress!, to: acc.baseAddress!, count: n)
+            } else {
+                Kernels.maxInPlace(acc.baseAddress!, row.baseAddress!, count: n)
+            }
+        case .mean:
+            guard let tmp = scratch?.baseAddress else { return }
+            Kernels.dbToPower(row.baseAddress!, to: tmp, count: n)
+            if first {
+                Kernels.copy(tmp, to: acc.baseAddress!, count: n)
+            } else {
+                Kernels.add(acc.baseAddress!, tmp, to: acc.baseAddress!, count: n)
+            }
+        }
+    }
+
+    /// Turn a completed accumulator into the dB row a sink expects.
+    private func finish(_ acc: UnsafeMutableBufferPointer<Float>, kind: SpectrumAccumulation, looks: Int) {
+        switch kind {
+        case .snapshot, .max:
+            break
+        case .mean:
+            let scale = 1 / Float(looks)
+            Kernels.scaleAdd(acc.baseAddress!, scale: scale, offset: 0, to: acc.baseAddress!, count: acc.count)
+            Kernels.powerToDB(acc.baseAddress!, to: acc.baseAddress!, count: acc.count)
         }
     }
 }
