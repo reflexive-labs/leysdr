@@ -114,8 +114,21 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 				}
 				squelchOpen[ch.ChannelId] = open
 				if wants(leylinev1.TelemetryType_METER) {
+					// A closed squelch writes zeros to the sinks, so there is no
+					// audio to hear: the engine floors that at -200 dBFS rather
+					// than sending -inf, which does not survive JSON.
+					audio, peak := -200.0, -200.0
+					if open {
+						// Demodulated level sits below the channel power; the
+						// exact offset does not matter, only that the two are
+						// different measurements of different things.
+						audio, peak = power+6, power+10
+					}
 					out = append(out, &leylinev1.TelemetryMsg{Time: st, Body: &leylinev1.TelemetryMsg_Meter{
-						Meter: &leylinev1.Meter{ChannelId: ch.ChannelId, PowerDbfs: power, SnrDb: power + 90, SquelchOpen: open},
+						Meter: &leylinev1.Meter{
+							ChannelId: ch.ChannelId, PowerDbfs: power, SnrDb: power + 90, SquelchOpen: open,
+							AudioDbfs: audio, AudioPeakDbfs: peak,
+						},
 					}})
 				}
 			}

@@ -40,11 +40,76 @@ func meterRender(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev
 		gate, ink = "audio", st.Ok
 	}
 	line = strings.TrimSuffix(line, gate) + ink(gate)
+	// The detail rows carry their own signal bar, so the inline one would say
+	// the same thing twice; the words keep the first line on their own.
+	if rows := meterDetail(st, m, squelchDb); rows != "" {
+		return line + "\n" + rows
+	}
 	bar := meterBar(st, m.GetPowerDbfs(), squelchDb, m.GetSquelchOpen(), meterBarSize(st, ui.Visible(line)))
 	if bar == "" {
 		return line
 	}
 	return bar + "  " + line
+}
+
+// meterDetailMinWidth is the narrowest terminal that gets the detail rows.
+// Under it the contractual line and its bar are the whole meter: two more rows
+// of half-width bars would say less than the words already do.
+const meterDetailMinWidth = 60
+
+// meterDetail is the rows under the meter line: what the radio hears and what
+// the listener hears, which are different questions. A strong unmodulated
+// carrier is loud on the first and silent on the second.
+//
+// It draws only when the daemon actually measured an audio level. NaN means
+// "not measured" -- a raw-IQ channel has no audio, and neither does a channel
+// whose first block has not landed -- and a row that invents 0.0 dBFS for it
+// would be reporting a very loud signal.
+func meterDetail(st ui.Style, m *leylinev1.Meter, squelchDb float64) string {
+	if st.Width < meterDetailMinWidth {
+		return ""
+	}
+	audio := m.GetAudioDbfs()
+	if math.IsNaN(audio) || audio == 0 && m.GetAudioPeakDbfs() == 0 {
+		return ""
+	}
+	const label = 9 // "  signal  " / "  audio    ": one left column for both rows
+	width := st.Width - label - len(" -100 dBFS") - 2
+	if width > meterBarWidth {
+		width = meterBarWidth
+	}
+	if width < minMeterBar {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("  " + st.Pad(st.Label("signal"), label-2) + " ")
+	b.WriteString(meterBar(st, m.GetPowerDbfs(), squelchDb, m.GetSquelchOpen(), width))
+	b.WriteString("  " + fmtMeterDb(m.GetPowerDbfs()))
+	if snr := m.GetSnrDb(); !math.IsNaN(snr) {
+		b.WriteString("  " + st.Muted("snr ") + fmt.Sprintf("%.0f", snr) + st.Muted(" dB"))
+	}
+	b.WriteString("\n")
+	b.WriteString("  " + st.Pad(st.Label("audio"), label-2) + " ")
+	// The marker on this row is the peak hold, not the squelch: a squelch
+	// threshold is a level on the channel, and this row is not the channel.
+	b.WriteString(meterBar(st, audio, m.GetAudioPeakDbfs(), m.GetSquelchOpen(), width))
+	b.WriteString("  " + fmtMeterDb(audio))
+	if pk := m.GetAudioPeakDbfs(); !math.IsNaN(pk) && pk > meterFloorDbfs {
+		b.WriteString("  " + st.Muted("peak ") + fmt.Sprintf("%.0f", pk) + st.Muted(" dBFS"))
+	}
+	return b.String()
+}
+
+// fmtMeterDb is a level as the detail rows write it: right-aligned so the two
+// rows' numbers line up, and the absent glyph when nothing was measured.
+func fmtMeterDb(db float64) string {
+	if math.IsNaN(db) {
+		return "     -"
+	}
+	if math.IsInf(db, -1) || db <= meterFloorDbfs {
+		return "  quiet"
+	}
+	return fmt.Sprintf("%4.0f dBFS", db)
 }
 
 // meterBarSize is how many columns are left for the bar once the meter line
@@ -116,8 +181,12 @@ type meterSink struct {
 	w     io.Writer
 	style ui.Style
 	tty   bool
-	// lastLen is the visible width of the line on screen (terminal only).
+	// lastLen is the visible width of the first line on screen (terminal only).
 	lastLen int
+	// lastRows and lastLens describe the block currently on screen, so the next
+	// write can step back over it and pad each row to what it is replacing.
+	lastRows int
+	lastLens []int
 	// last is when a line was last written (pipe only).
 	last time.Time
 }
@@ -133,34 +202,76 @@ func (m *meterSink) line(freq uint64, mode leylinev1.DemodMode, mt *leylinev1.Me
 	return meterRender(st, freq, mode, mt, squelchDb)
 }
 
-// write shows one rendered meter line.
-func (m *meterSink) write(line string) {
+// write shows one rendered meter, which may be several lines. The first line
+// is always the contractual meterLine; any further lines are detail rows that
+// a terminal wide enough has room for.
+//
+// Off a terminal every write is whole lines at meterPipeInterval, and only the
+// first: a log wants the record, not the bars, and repeating a three-line block
+// once a second fills a file with scaffolding.
+func (m *meterSink) write(block string) {
+	lines := strings.Split(block, "\n")
 	if !m.tty {
 		now := time.Now()
 		if !m.last.IsZero() && now.Sub(m.last) < meterPipeInterval {
 			return
 		}
 		m.last = now
-		fmt.Fprintln(m.w, line)
+		fmt.Fprintln(m.w, lines[0])
 		return
 	}
-	pad := m.lastLen - ui.Visible(line)
-	if pad < 0 {
-		pad = 0
+	// Step back over the rows drawn last time before redrawing, so the block
+	// stays in place instead of scrolling. Each row is padded to what stood
+	// there before, so a shorter row leaves no residue.
+	if m.lastRows > 1 {
+		fmt.Fprintf(m.w, "\x1b[%dA", m.lastRows-1)
 	}
-	fmt.Fprintf(m.w, "\r%s%s", line, strings.Repeat(" ", pad))
-	m.lastLen = ui.Visible(line)
+	for i, line := range lines {
+		pad := 0
+		if i < len(m.lastLens) {
+			pad = m.lastLens[i] - ui.Visible(line)
+		}
+		if pad < 0 {
+			pad = 0
+		}
+		nl := "\n"
+		if i == len(lines)-1 {
+			nl = ""
+		}
+		fmt.Fprintf(m.w, "\r%s%s%s", line, strings.Repeat(" ", pad), nl)
+	}
+	m.lastLens = m.lastLens[:0]
+	for _, line := range lines {
+		m.lastLens = append(m.lastLens, ui.Visible(line))
+	}
+	m.lastRows = len(lines)
+	m.lastLen = m.lastLens[0]
 }
 
 // clear removes the drawn meter so another line can take the terminal's
-// last row. Off a terminal the meter's lines are already whole, so there is
+// last rows. Off a terminal the meter's lines are already whole, so there is
 // nothing to erase.
 func (m *meterSink) clear() {
-	if !m.tty || m.lastLen == 0 {
+	if !m.tty || m.lastRows == 0 {
 		return
 	}
-	fmt.Fprintf(m.w, "\r%s\r", strings.Repeat(" ", m.lastLen))
+	if m.lastRows > 1 {
+		fmt.Fprintf(m.w, "\x1b[%dA", m.lastRows-1)
+	}
+	for i, n := range m.lastLens {
+		nl := "\n"
+		if i == len(m.lastLens)-1 {
+			nl = ""
+		}
+		fmt.Fprintf(m.w, "\r%s%s", strings.Repeat(" ", n), nl)
+	}
+	if m.lastRows > 1 {
+		fmt.Fprintf(m.w, "\x1b[%dA", m.lastRows-1)
+	}
+	fmt.Fprint(m.w, "\r")
+	m.lastRows = 0
 	m.lastLen = 0
+	m.lastLens = m.lastLens[:0]
 }
 
 // meterFrac places a level on the floor-to-0 dBFS scale.

@@ -184,6 +184,23 @@ public enum PortableKernels {
         return s / Float(count)
     }
 
+    /// Mean of squares (power); 0 for an empty vector.
+    @inline(__always)
+    public static func meanSquare(_ src: UnsafePointer<Float>, count: Int) -> Float {
+        guard count > 0 else { return 0 }
+        var s: Float = 0
+        for i in 0 ..< count { s += src[i] * src[i] }
+        return s / Float(count)
+    }
+
+    /// Largest absolute value; 0 for an empty vector.
+    @inline(__always)
+    public static func maxMagnitude(_ src: UnsafePointer<Float>, count: Int) -> Float {
+        var m: Float = 0
+        for i in 0 ..< count where Swift.abs(src[i]) > m { m = Swift.abs(src[i]) }
+        return m
+    }
+
     /// Maximum element; `-.infinity` for an empty vector.
     @inline(__always)
     public static func max(_ src: UnsafePointer<Float>, count: Int) -> Float {
@@ -341,6 +358,24 @@ public enum AccelerateKernels {
         guard count > 0 else { return 0 }
         var m: Float = 0
         vDSP_meanv(src, 1, &m, vDSP_Length(count))
+        return m
+    }
+
+    /// Mean of squares (power); 0 for an empty vector.
+    @inline(__always)
+    public static func meanSquare(_ src: UnsafePointer<Float>, count: Int) -> Float {
+        guard count > 0 else { return 0 }
+        var m: Float = 0
+        vDSP_measqv(src, 1, &m, vDSP_Length(count))
+        return m
+    }
+
+    /// Largest absolute value; 0 for an empty vector.
+    @inline(__always)
+    public static func maxMagnitude(_ src: UnsafePointer<Float>, count: Int) -> Float {
+        guard count > 0 else { return 0 }
+        var m: Float = 0
+        vDSP_maxmgv(src, 1, &m, vDSP_Length(count))
         return m
     }
 

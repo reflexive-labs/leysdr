@@ -57,7 +57,7 @@ final class ChannelTests: XCTestCase {
         // The survivors are the newest `capacity` records in order; reading does not change the count.
         var got: [UInt64] = []
         for await t in stalled.stream {
-            if case let .meter(time, _, _, _) = t { got.append(time.sampleIndex) }
+            if case let .meter(time, _, _, _, _, _) = t { got.append(time.sampleIndex) }
             if got.count == TelemetryHub.capacity { break }
         }
         XCTAssertEqual(got, Array(UInt64(50)..<UInt64(n + 10)), "oldest 50 evicted, newest kept in order")
@@ -393,6 +393,46 @@ final class ChannelTests: XCTestCase {
         let cfg = await nfm.config
         XCTAssertEqual(cfg.mode, .nfm)
         await capture.stop()
+    }
+
+    /// The audio level is measured on the demodulated block, not on the channel IQ. A steady FM
+    /// carrier makes the point: the channel is loud in `powerDBFS` whatever it carries, and the
+    /// audio level reflects the tone that was actually recovered.
+    func testMeterReportsAudioLevelSeparatelyFromChannelPower() async throws {
+        let path = try nfmTonePath()
+        let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
+        let capture = DefaultCaptureEngine(device: device, centerHz: UInt64(device.sidecar.centerHz), sampleRate: UInt64(device.sidecar.sampleRate))
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40)) as! DefaultChannelEngine
+        let collector = AudioCollector()
+        try await channel.attach(collector.sink)
+        let events = Task<[ChannelTelemetry], Never> {
+            var out: [ChannelTelemetry] = []
+            for await t in channel.telemetry() { out.append(t) }
+            return out
+        }
+        try await capture.start()
+        let deadline = Date().addingTimeInterval(10)
+        while collector.count < 24_000, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        await capture.stop()
+
+        var audio: [Double] = []
+        var peaks: [Double] = []
+        var powers: [Double] = []
+        for e in await events.value {
+            if case let .meter(_, power, _, _, a, p) = e, !a.isNaN {
+                audio.append(a); peaks.append(p); powers.append(power)
+            }
+        }
+        XCTAssertGreaterThanOrEqual(audio.count, 3, "expected several meters carrying an audio level")
+        for (i, a) in audio.enumerated() {
+            XCTAssertFalse(a.isNaN, "a demodulating channel reports an audio level")
+            XCTAssertLessThanOrEqual(a, 0.001, "RMS cannot exceed full scale: \(a) dBFS")
+            XCTAssertGreaterThanOrEqual(peaks[i], a, "peak is never under RMS: \(peaks[i]) < \(a)")
+            XCTAssertLessThanOrEqual(peaks[i], 0.001, "the demodulator clips to +-1, so the peak cannot exceed 0 dBFS")
+        }
+        // The two are different measurements of different things, so they must not be equal.
+        XCTAssertNotEqual(audio[0], powers[0], accuracy: 0.001,
+                          "audio level and channel power must be measured separately")
     }
 
     /// The close edge of a squelch transition summarises the transmission that just ended: how long

@@ -190,12 +190,23 @@ public nonisolated struct Leyline_V1_Meter: Sendable {
 
   public var channelID: String = String()
 
+  /// channel IQ power: what the squelch measures
   public var powerDbfs: Double = 0
 
   /// NaN if noise floor not yet estimated
   public var snrDb: Double = 0
 
   public var squelchOpen: Bool = false
+
+  /// What the listener actually hears, measured on the demodulated block rather
+  /// than on the channel IQ. A strong carrier with no modulation has a high
+  /// power_dbfs and a low audio_dbfs; the two answer different questions.
+  /// Both are NaN before the first block, and NaN (never 0) whenever the value
+  /// was not measured -- 0 dBFS is a real, very loud level.
+  public var audioDbfs: Double = 0
+
+  /// largest sample in the interval; -inf when digitally silent
+  public var audioPeakDbfs: Double = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -513,7 +524,7 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Meter: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Meter"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}power_dbfs\0\u{3}snr_db\0\u{3}squelch_open\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}power_dbfs\0\u{3}snr_db\0\u{3}squelch_open\0\u{3}audio_dbfs\0\u{3}audio_peak_dbfs\0\u{c}\u{7}\u{1}\u{c}\u{8}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -525,6 +536,8 @@ nonisolated extension Leyline_V1_Meter: SwiftProtobuf.Message, SwiftProtobuf._Me
       case 2: try { try decoder.decodeSingularDoubleField(value: &self.powerDbfs) }()
       case 3: try { try decoder.decodeSingularDoubleField(value: &self.snrDb) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.squelchOpen) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.audioDbfs) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.audioPeakDbfs) }()
       default: break
       }
     }
@@ -543,6 +556,12 @@ nonisolated extension Leyline_V1_Meter: SwiftProtobuf.Message, SwiftProtobuf._Me
     if self.squelchOpen != false {
       try visitor.visitSingularBoolField(value: self.squelchOpen, fieldNumber: 4)
     }
+    if self.audioDbfs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.audioDbfs, fieldNumber: 5)
+    }
+    if self.audioPeakDbfs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.audioPeakDbfs, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -551,6 +570,8 @@ nonisolated extension Leyline_V1_Meter: SwiftProtobuf.Message, SwiftProtobuf._Me
     if lhs.powerDbfs != rhs.powerDbfs {return false}
     if lhs.snrDb != rhs.snrDb {return false}
     if lhs.squelchOpen != rhs.squelchOpen {return false}
+    if lhs.audioDbfs != rhs.audioDbfs {return false}
+    if lhs.audioPeakDbfs != rhs.audioPeakDbfs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

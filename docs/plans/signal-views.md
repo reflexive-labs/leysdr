@@ -31,17 +31,30 @@ capture samples is the rate `SampleTime` already counts in and that every client
 squelch closed four seconds in reported `transmission  4.0 s  peak -20 dBFS`, and -20 dBFS is the
 fixture's tone level.
 
-## SV-2 `[ ]` Audio meter fields and the two-bar channel view
+## SV-2 `[x]` Audio meter fields and the two-bar channel view
 
-- `Meter` gains `audio_dbfs = 5`, `audio_peak_dbfs = 6`, `deviation_hz = 7`, `freq_error_hz = 8`.
-- Engine: accumulate over the demodulated block in `ChannelDSPCore.process` — sum of squares and
-  peak, both vDSP over data already in cache. `deviation_hz` and `freq_error_hz` are FM only and
-  come from the calibrated discriminator; NaN elsewhere, never zero (zero is a real value).
-- CLI: the two-bar block above the transmission table, on stderr, TTY and width >= 60 only. Below
-  that the existing one-line meter is byte-identical.
+- `Meter` gains `audio_dbfs = 5` and `audio_peak_dbfs = 6`. New `Kernels.meanSquare` and
+  `Kernels.maxMagnitude`, vDSP on Darwin and plain loops in `PortableKernels`.
+- Engine: accumulate sum-of-squares and peak over the demodulated block in `ChannelDSPCore.process`,
+  drained and reset on each meter tick. Two passes over data already in cache. The sum is a `Double`
+  because a 100 ms interval at 48 kHz is 4800 squares and `Float` would drift.
+- CLI: two detail rows under the contractual meter line, on a terminal at least 60 columns wide.
+  The inline bar is dropped when they draw, because it repeats the signal row.
 
-Tests: strip-to-plain at 40/80/160 and in ASCII; NaN renders as the absent glyph, not `0.0`; the
-existing meter line is unchanged when the view does not apply.
+**`deviation_hz` and `freq_error_hz` are deferred to SV-6, and their field numbers are `reserved`
+in the proto so the wire does not churn.** Both must come from the raw discriminator, and a
+deviation read off the de-emphasised, high-passed audio would be wrong by whatever de-emphasis did
+to it. The tap that makes them correct is SV-6's, so they ship with it rather than being
+approximated here.
+
+Tests: `ChannelTests.testMeterReportsAudioLevelSeparatelyFromChannelPower` (the two are different
+measurements; RMS never exceeds full scale; peak is never under RMS);
+`TestMeterDetailRowsAppearOnAWideTerminal` (line 1 stays the contract line byte for byte),
+`TestMeterNarrowTerminalIsUnchanged`, `TestMeterNoDetailRowsWithoutAnAudioLevel`,
+`TestMeterDetailStripsToPlain` at 60/80/160 in both alphabets, `TestMeterSilentAudioReadsQuiet`.
+
+Verified on the real daemon against `two_nfm.cf32`: channel power -20.0 dBFS (the fixture's tone
+level) against demodulated audio -15.2 dBFS, stable across meters.
 
 ## SV-3 `[ ]` Ladder accumulation
 

@@ -35,9 +35,22 @@ message TelemetryMsg {
 // Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
 message Meter {
   string channel_id = 1;
-  double power_dbfs = 2;
+  double power_dbfs = 2;   // channel IQ power: what the squelch measures
   double snr_db = 3;       // NaN if noise floor not yet estimated
   bool squelch_open = 4;
+  // What the listener actually hears, measured on the demodulated block rather
+  // than on the channel IQ. A strong carrier with no modulation has a high
+  // power_dbfs and a low audio_dbfs; the two answer different questions.
+  // Both are NaN before the first block, and NaN (never 0) whenever the value
+  // was not measured -- 0 dBFS is a real, very loud level.
+  double audio_dbfs = 5;       // RMS over the meter interval
+  double audio_peak_dbfs = 6;  // largest sample in the interval; -inf when digitally silent
+  // FM only, from the calibrated discriminator; NaN for every other mode.
+  // Reserved here so the numbers are settled; populated when the sub-audible
+  // tap lands, because a deviation read off the de-emphasised audio would be
+  // wrong by whatever de-emphasis did to it.
+  reserved 7;  // deviation_hz
+  reserved 8;  // freq_error_hz
 }
 
 // Edge-triggered, exact in sample time — transcript features key on this, not on Meter.

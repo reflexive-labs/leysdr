@@ -234,7 +234,11 @@ public enum ChannelState: Hashable, Sendable {
 }
 
 public enum ChannelTelemetry: Sendable {
-    case meter(time: SampleTime, powerDBFS: Double, snrDB: Double, squelchOpen: Bool)
+    /// `audioDBFS`/`audioPeakDBFS` are what the listener hears over the meter interval, measured on
+    /// the demodulated block; NaN when there is no audio to measure (a raw-IQ channel, or before the
+    /// first block). NaN means "not measured" and is not the same as 0 dBFS, which is very loud.
+    case meter(time: SampleTime, powerDBFS: Double, snrDB: Double, squelchOpen: Bool,
+               audioDBFS: Double, audioPeakDBFS: Double)
     /// A squelch edge. `openSamples` and the two peaks summarise the transmission that just ended
     /// and are meaningful on a close edge only (`open == false`); an open edge carries 0 and NaN,
     /// because a transmission still in progress has neither a duration nor a final peak.

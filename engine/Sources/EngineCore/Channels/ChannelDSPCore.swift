@@ -21,6 +21,12 @@ public struct ChannelTelemetryRecord: Sendable {
     public var openSamples: UInt64 = 0
     public var peakSNRDB: Float = .nan
     public var peakPowerDBFS: Float = .nan
+    /// What the listener hears over the meter interval, measured on the demodulated block rather
+    /// than on the channel IQ: a strong unmodulated carrier is loud in `powerDBFS` and quiet here.
+    /// NaN on a squelch record and before the first block; a raw-IQ channel has no audio and leaves
+    /// both NaN, because there is nothing a listener would hear.
+    public var audioDBFS: Float = .nan
+    public var audioPeakDBFS: Float = .nan
 }
 
 /// Fixed-capacity telemetry ring plus a "poke" stream that wakes the drain task.
@@ -156,6 +162,12 @@ public final class ChannelDSPCore: @unchecked Sendable {
         setAGC(config.agc)
     }
 
+    /// Audio energy accumulated since the last meter record, owned by the DSP thread alone. The sum
+    /// is a Double because a 100 ms interval at 48 kHz is 4800 squares and Float would drift.
+    private var audioSumSquares: Double = 0
+    private var audioSamples: Int = 0
+    private var audioPeak: Float = 0
+
     /// The transmission in progress, owned by the DSP thread alone. `openSamples` counts CAPTURE
     /// samples since the squelch opened -- the same rate `SampleTime` uses, which is the one a
     /// client already knows from the capture; the channel's own rate is not on the wire. The peaks
@@ -252,10 +264,30 @@ public final class ChannelDSPCore: @unchecked Sendable {
         if frames > 0 {
             for sink in table { sink.write(out, at: time) }
         }
+        // Audio level over the meter interval. Two vDSP passes over the block that was just written
+        // to the sinks, so the data is already in cache. Raw IQ has no audio to measure.
+        if config.mode != .rawIQ, frames > 0 {
+            let base = out.base.assumingMemoryBound(to: Float.self)
+            audioSumSquares += Double(Kernels.meanSquare(base, count: frames)) * Double(frames)
+            audioSamples += frames
+            let peak = Kernels.maxMagnitude(base, count: frames)
+            if peak > audioPeak { audioPeak = peak }
+        }
         samplesSinceMeter += n
         if samplesSinceMeter >= meterInterval {
             samplesSinceMeter -= meterInterval
-            telemetry.push(ChannelTelemetryRecord(kind: .meter, time: time, powerDBFS: power, snrDB: meter.snrDB, squelchOpen: squelch.isOpen))
+            var rec = ChannelTelemetryRecord(kind: .meter, time: time, powerDBFS: power, snrDB: meter.snrDB, squelchOpen: squelch.isOpen)
+            if audioSamples > 0 {
+                // Full scale is 1.0, so RMS 1.0 is 0 dBFS. A silent interval is -inf, which the
+                // mapping layer floors; NaN stays NaN and means "not measured", which is different.
+                let rms = (audioSumSquares / Double(audioSamples)).squareRoot()
+                rec.audioDBFS = rms > 0 ? Float(20 * Foundation.log10(rms)) : -.infinity
+                rec.audioPeakDBFS = audioPeak > 0 ? 20 * Foundation.log10(audioPeak) : -.infinity
+            }
+            audioSumSquares = 0
+            audioSamples = 0
+            audioPeak = 0
+            telemetry.push(rec)
         }
         blocksProcessed.wrappingAdd(1, ordering: .relaxed)
     }

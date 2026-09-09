@@ -252,7 +252,10 @@ final class TelemetryHub: @unchecked Sendable {
     func publish(_ rec: ChannelTelemetryRecord) {
         let event: ChannelTelemetry
         switch rec.kind {
-        case .meter: event = .meter(time: rec.time, powerDBFS: Double(rec.powerDBFS), snrDB: Double(rec.snrDB), squelchOpen: rec.squelchOpen)
+        case .meter:
+            event = .meter(time: rec.time, powerDBFS: Double(rec.powerDBFS), snrDB: Double(rec.snrDB),
+                           squelchOpen: rec.squelchOpen,
+                           audioDBFS: Double(rec.audioDBFS), audioPeakDBFS: Double(rec.audioPeakDBFS))
         case .squelch:
             event = .squelch(time: rec.time, open: rec.squelchOpen, openSamples: rec.openSamples,
                              peakSNRDB: Double(rec.peakSNRDB), peakPowerDBFS: Double(rec.peakPowerDBFS))

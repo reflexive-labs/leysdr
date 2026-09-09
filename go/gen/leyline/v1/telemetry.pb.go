@@ -319,11 +319,18 @@ func (*TelemetryMsg_Activity) isTelemetryMsg_Body() {}
 
 // Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
 type Meter struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId     string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	PowerDbfs     float64                `protobuf:"fixed64,2,opt,name=power_dbfs,json=powerDbfs,proto3" json:"power_dbfs,omitempty"`
-	SnrDb         float64                `protobuf:"fixed64,3,opt,name=snr_db,json=snrDb,proto3" json:"snr_db,omitempty"` // NaN if noise floor not yet estimated
-	SquelchOpen   bool                   `protobuf:"varint,4,opt,name=squelch_open,json=squelchOpen,proto3" json:"squelch_open,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChannelId   string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	PowerDbfs   float64                `protobuf:"fixed64,2,opt,name=power_dbfs,json=powerDbfs,proto3" json:"power_dbfs,omitempty"` // channel IQ power: what the squelch measures
+	SnrDb       float64                `protobuf:"fixed64,3,opt,name=snr_db,json=snrDb,proto3" json:"snr_db,omitempty"`             // NaN if noise floor not yet estimated
+	SquelchOpen bool                   `protobuf:"varint,4,opt,name=squelch_open,json=squelchOpen,proto3" json:"squelch_open,omitempty"`
+	// What the listener actually hears, measured on the demodulated block rather
+	// than on the channel IQ. A strong carrier with no modulation has a high
+	// power_dbfs and a low audio_dbfs; the two answer different questions.
+	// Both are NaN before the first block, and NaN (never 0) whenever the value
+	// was not measured -- 0 dBFS is a real, very loud level.
+	AudioDbfs     float64 `protobuf:"fixed64,5,opt,name=audio_dbfs,json=audioDbfs,proto3" json:"audio_dbfs,omitempty"`               // RMS over the meter interval
+	AudioPeakDbfs float64 `protobuf:"fixed64,6,opt,name=audio_peak_dbfs,json=audioPeakDbfs,proto3" json:"audio_peak_dbfs,omitempty"` // largest sample in the interval; -inf when digitally silent
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -384,6 +391,20 @@ func (x *Meter) GetSquelchOpen() bool {
 		return x.SquelchOpen
 	}
 	return false
+}
+
+func (x *Meter) GetAudioDbfs() float64 {
+	if x != nil {
+		return x.AudioDbfs
+	}
+	return 0
+}
+
+func (x *Meter) GetAudioPeakDbfs() float64 {
+	if x != nil {
+		return x.AudioPeakDbfs
+	}
+	return 0
 }
 
 // Edge-triggered, exact in sample time — transcript features key on this, not on Meter.
@@ -706,14 +727,17 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\asquelch\x18\x04 \x01(\v2\x1d.leyline.v1.SquelchTransitionH\x00R\asquelch\x125\n" +
 	"\tdetection\x18\x05 \x01(\v2\x15.leyline.v1.DetectionH\x00R\tdetection\x12<\n" +
 	"\bactivity\x18\x06 \x01(\v2\x1e.leyline.v1.CaptureActivityMsgH\x00R\bactivityB\x06\n" +
-	"\x04body\"\x7f\n" +
+	"\x04body\"\xd2\x01\n" +
 	"\x05Meter\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x1d\n" +
 	"\n" +
 	"power_dbfs\x18\x02 \x01(\x01R\tpowerDbfs\x12\x15\n" +
 	"\x06snr_db\x18\x03 \x01(\x01R\x05snrDb\x12!\n" +
-	"\fsquelch_open\x18\x04 \x01(\bR\vsquelchOpen\"\xbf\x01\n" +
+	"\fsquelch_open\x18\x04 \x01(\bR\vsquelchOpen\x12\x1d\n" +
+	"\n" +
+	"audio_dbfs\x18\x05 \x01(\x01R\taudioDbfs\x12&\n" +
+	"\x0faudio_peak_dbfs\x18\x06 \x01(\x01R\raudioPeakDbfsJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"\xbf\x01\n" +
 	"\x11SquelchTransition\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x12\n" +
