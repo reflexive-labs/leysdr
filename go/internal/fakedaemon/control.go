@@ -32,9 +32,13 @@ func (d *Daemon) GetState(ctx context.Context, req *leylinev1.GetStateRequest) (
 // WatchEvents implements Control. Events carry the full state of the changed
 // object; the stream keeps the caller present.
 func (d *Daemon) WatchEvents(scope *leylinev1.EventScope, srv grpc.ServerStreamingServer[leylinev1.Event]) error {
-	ctx := srv.Context()
-	if scope == nil || scope.Scope == nil {
-		scope = leyline.DaemonScope()
+	ctx, stop := d.streamContext(srv.Context())
+	defer stop()
+	if scope == nil {
+		scope = &leylinev1.EventScope{}
+	}
+	if scope.Scope == nil {
+		scope = &leylinev1.EventScope{Scope: &leylinev1.EventScope_Daemon{Daemon: true}, SinceSeq: scope.SinceSeq}
 	}
 	if cid, ok := scope.Scope.(*leylinev1.EventScope_CaptureId); ok {
 		d.mu.Lock()
@@ -46,8 +50,17 @@ func (d *Daemon) WatchEvents(scope *leylinev1.EventScope, srv grpc.ServerStreami
 	}
 	done := d.streamOpened(ctx)
 	defer done()
-	w := &watcher{scope: scope, ch: make(chan *leylinev1.Event, 256), client: clientFrom(ctx).ClientId}
+	w := &watcher{scope: scope, ch: make(chan *leylinev1.Event, eventHistoryLimit), client: clientFrom(ctx).ClientId}
 	d.mu.Lock()
+	// Replay the retained events newer than since_seq before registering for
+	// live ones, under the lock, so the two cannot interleave out of order.
+	if scope.SinceSeq != nil {
+		for _, kept := range d.history {
+			if kept.event.Seq > *scope.SinceSeq && w.admits(kept.captureID) {
+				w.offer(kept.event)
+			}
+		}
+	}
 	d.watchers[w] = struct{}{}
 	d.mu.Unlock()
 	defer func() {

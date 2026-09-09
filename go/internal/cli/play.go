@@ -117,7 +117,9 @@ needed.`,
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
 				defer cancel()
-				_, _ = s.client.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId})
+				if _, err := s.client.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId}); err != nil && leyline.Code(err) != leyline.CodeDeviceNotFound {
+					fmt.Fprintf(app.Stderr, "warning: could not detach file device %s: %v; detach it with: ley devices detach %s\n", dev.DeviceId, err, dev.DeviceId)
+				}
 			}()
 			s.device = dev
 			center := sc.CenterHz

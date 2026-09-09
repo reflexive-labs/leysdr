@@ -320,3 +320,104 @@ func TestWriteAwaitsWatcher(t *testing.T) {
 		}
 	}
 }
+
+// TestWatchEventsSinceSeq: a stream opened with since_seq replays the retained
+// events newer than a GetState snapshot, in order and scope-filtered, before
+// going live, so "GetState then WatchEvents" misses nothing.
+func TestWatchEventsSinceSeq(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, err := c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two mutations after the snapshot, before any stream exists.
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_NFM, Persistent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(nil, st.EventSeq))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := func() *leylinev1.Event {
+		select {
+		case ev := <-events:
+			return ev
+		case <-time.After(2 * time.Second):
+			t.Fatal("no replayed event")
+			return nil
+		}
+	}
+	// Replay starts right after the snapshot (the device going IN_USE, then
+	// the capture, then the channel), in seq order.
+	first := next()
+	if first.Seq != st.EventSeq+1 {
+		t.Fatalf("replay should start at seq %d, got %v", st.EventSeq+1, first)
+	}
+	last, sawCapture, sawChannel := first.Seq, false, false
+	for i := 0; i < 8 && !sawChannel; i++ {
+		ev := next()
+		if ev.Seq <= last {
+			t.Fatalf("replayed out of order: seq %d after %d", ev.Seq, last)
+		}
+		last = ev.Seq
+		sawCapture = sawCapture || ev.GetCapture().GetCaptureId() == cap.CaptureId
+		sawChannel = ev.GetChannel().GetChannelId() == ch.ChannelId
+	}
+	if !sawCapture || !sawChannel {
+		t.Fatalf("capture (%v) and channel (%v) creation were not both replayed", sawCapture, sawChannel)
+	}
+	if _, err := c.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		if ev := next(); ev.GetChannel().GetChannelId() == ch.ChannelId && ev.GetChannel().GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
+			return
+		}
+	}
+	t.Fatal("live events did not follow the replay")
+}
+
+// TestWatchEventsSinceSeqScoped: replay honours a capture scope and seq 0 replays nothing.
+func TestWatchEventsSinceSeqScoped(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, _ := c.State(ctx)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	live, _, err := c.Events(evCtx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-live:
+		t.Fatalf("since_seq 0 must not replay: %v", ev)
+	case <-time.After(100 * time.Millisecond):
+	}
+	scoped, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), st.EventSeq))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		select {
+		case ev := <-scoped:
+			if ev.GetCapture().GetCaptureId() == cap.CaptureId {
+				return
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("scoped replay delivered nothing")
+		}
+	}
+	t.Fatal("scoped replay did not carry the capture")
+}

@@ -23,6 +23,12 @@ enum EventScopeFilter: Sendable, Hashable {
             self = .daemon
         }
     }
+
+    /// Whether an event scoped to `captureID` (nil = daemon-wide) is delivered to this filter.
+    func admits(_ captureID: CaptureID?) -> Bool {
+        if case .capture(let want) = self, let have = captureID, have != want { return false }
+        return true
+    }
 }
 
 /// Objects torn down by the store that the bulk plane must stop streaming from.
@@ -118,6 +124,16 @@ actor SessionStore {
     private(set) var sinks: [SinkID: SinkEntry] = [:]
     private(set) var seq: UInt64 = 0
     private var subscribers: [UUID: Subscriber] = [:]
+    /// The most recent `eventHistoryLimit` events, oldest first, for `since_seq` replay.
+    private var history: [RetainedEvent] = []
+    /// How many events `WatchEvents(since_seq)` can replay: matches the subscriber buffer, so a
+    /// client that fell that far behind re-fetches `GetState` either way.
+    static let eventHistoryLimit = 256
+
+    private struct RetainedEvent {
+        var captureID: CaptureID?
+        var event: Leyline_V1_Event
+    }
     private var presence: [String: Presence] = [:]
     private var deviceTask: Task<Void, Never>?
     /// Installed by the bulk plane so streams on destroyed objects end.
@@ -136,9 +152,17 @@ actor SessionStore {
     /// Fan-out of full-state events. `bufferingNewest(256)`: a slow subscriber sees a seq gap and
     /// re-fetches `GetState`. The subscriber is registered synchronously on the actor before the
     /// stream is returned, so every event committed after this call returns is delivered
-    /// ("WatchEvents then GetState" cannot miss one).
-    func events(scope: EventScopeFilter) -> AsyncStream<Leyline_V1_Event> {
-        let (stream, continuation) = AsyncStream<Leyline_V1_Event>.makeStream(bufferingPolicy: .bufferingNewest(256))
+    /// ("WatchEvents then GetState" cannot miss one). `sinceSeq` (the seq of a `GetState`
+    /// snapshot) first replays the retained events newer than it that match `scope`, in order, so
+    /// "GetState then WatchEvents" cannot miss one either; a snapshot older than the retained
+    /// window shows up as a seq gap on the first delivered event.
+    func events(scope: EventScopeFilter, sinceSeq: UInt64? = nil) -> AsyncStream<Leyline_V1_Event> {
+        let (stream, continuation) = AsyncStream<Leyline_V1_Event>.makeStream(bufferingPolicy: .bufferingNewest(Self.eventHistoryLimit))
+        if let since = sinceSeq {
+            for kept in history where kept.event.seq > since && scope.admits(kept.captureID) {
+                continuation.yield(kept.event)
+            }
+        }
         addSubscriber(key: UUID(), scope: scope, continuation: continuation)
         return stream
     }
@@ -167,8 +191,9 @@ actor SessionStore {
         ev.seq = seq
         ev.causedBy = by.proto
         ev.body = body
-        for sub in subscribers.values {
-            if case .capture(let want) = sub.scope, let have = captureID, have != want { continue }
+        history.append(RetainedEvent(captureID: captureID, event: ev))
+        if history.count > Self.eventHistoryLimit { history.removeFirst(history.count - Self.eventHistoryLimit) }
+        for sub in subscribers.values where sub.scope.admits(captureID) {
             sub.continuation.yield(ev)
         }
         return seq

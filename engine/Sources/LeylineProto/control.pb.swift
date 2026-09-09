@@ -963,6 +963,21 @@ public nonisolated struct Leyline_V1_EventScope: Sendable {
     set {scope = .captureID(newValue)}
   }
 
+  /// WatchEvents only: when set, replay retained events with seq > since_seq
+  /// (the seq of a GetState snapshot, 0 included) before going live, so
+  /// "GetState then WatchEvents" misses nothing. Unset = live only. The daemon
+  /// retains a bounded window; when since_seq is older than it, the first
+  /// delivered seq is more than since_seq + 1 and the client re-fetches
+  /// GetState (the seq-gap rule).
+  public var sinceSeq: UInt64 {
+    get {_sinceSeq ?? 0}
+    set {_sinceSeq = newValue}
+  }
+  /// Returns true if `sinceSeq` has been explicitly set.
+  public var hasSinceSeq: Bool {self._sinceSeq != nil}
+  /// Clears the value of `sinceSeq`. Subsequent reads from it will return its default value.
+  public mutating func clearSinceSeq() {self._sinceSeq = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Scope: Equatable, Sendable {
@@ -972,6 +987,8 @@ public nonisolated struct Leyline_V1_EventScope: Sendable {
   }
 
   public init() {}
+
+  fileprivate var _sinceSeq: UInt64? = nil
 }
 
 public nonisolated struct Leyline_V1_Empty: Sendable {
@@ -2354,7 +2371,7 @@ nonisolated extension Leyline_V1_WriteRejected: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Leyline_V1_EventScope: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".EventScope"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}daemon\0\u{3}capture_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}daemon\0\u{3}capture_id\0\u{3}since_seq\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2378,6 +2395,7 @@ nonisolated extension Leyline_V1_EventScope: SwiftProtobuf.Message, SwiftProtobu
           self.scope = .captureID(v)
         }
       }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self._sinceSeq) }()
       default: break
       }
     }
@@ -2399,11 +2417,15 @@ nonisolated extension Leyline_V1_EventScope: SwiftProtobuf.Message, SwiftProtobu
     }()
     case nil: break
     }
+    try { if let v = self._sinceSeq {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_EventScope, rhs: Leyline_V1_EventScope) -> Bool {
     if lhs.scope != rhs.scope {return false}
+    if lhs._sinceSeq != rhs._sinceSeq {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -141,6 +141,11 @@ func (d *Daemon) rejectLocked(ci *leylinev1.ClientInfo, tag uint64, e *leyline.E
 // applyLocked applies one write to the live object and emits its full state.
 // Returns false (after emitting WriteRejected) when the write is invalid.
 func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) bool {
+	if d.opts.RejectWrites != nil {
+		if e := d.opts.RejectWrites(w); e != nil {
+			return d.rejectLocked(ci, w.Tag, e)
+		}
+	}
 	interactive := ci.Kind != "job"
 	touch := func(c *capture) {
 		if interactive {

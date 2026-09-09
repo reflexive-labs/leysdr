@@ -291,7 +291,10 @@ One actor owns the tables: devices (mirrors the registry), captures (`CaptureEng
 `CaptureID`), channels, sinks, and the monotonically increasing event sequence. Every mutation goes
 through it and emits exactly one event carrying the full new state of the changed object. Subscribers
 (`WatchEvents`) get an `AsyncStream` with `bufferingNewest(256)`; a client that observes a `seq` gap
-re-fetches `GetState`.
+re-fetches `GetState`. The store also retains the last 256 events: `WatchEvents` with `since_seq`
+(a `GetState` snapshot's `event_seq`) replays the retained events newer than it, scope-filtered and in
+order, before the live subscription — on the actor, so the two cannot interleave — which is how
+"GetState then WatchEvents" misses nothing. Go clients pass `leyline.ScopeSince(scope, state.EventSeq)`.
 
 Activity: `last_interactive_write_ns` is updated by any capture/channel write whose client kind is not
 `job`; `live_audio_sinks` counts attached system-audio sinks. This is the don't-disturb signal.

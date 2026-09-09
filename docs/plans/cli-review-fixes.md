@@ -66,7 +66,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   non-darwin fallback yields /tmp/leyline-<uid>.pid|.log); tests for darwin and non-darwin naming.
 - Tests: extend play_daemon_test's real-spawn harness for #21/#22/#12 where feasible; unit tests for the helpers.
 
-### CLI-4 `[ ]` Session cleanup and shared captures (#14, #26, #4, #15)
+### CLI-4 `[x]` Session cleanup and shared captures (#14, #26, #4, #15)
 
 - #14 teardown(): report non-NotFound errors from DestroyChannel/DestroyCapture on stderr with `ley stop --all`
   as the recovery; same for play's DetachFileDevice.

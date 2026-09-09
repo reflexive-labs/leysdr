@@ -15,7 +15,8 @@ import (
 // and CaptureActivity at 1 Hz per capture.
 func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.ServerStreamingServer[leylinev1.TelemetryMsg]) error {
 	d := t.d
-	ctx := srv.Context()
+	ctx, stop := d.streamContext(srv.Context())
+	defer stop()
 	done := d.streamOpened(ctx)
 	defer done()
 

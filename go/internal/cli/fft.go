@@ -132,6 +132,10 @@ func runFFT(ctx context.Context, s *session, o fftOptions) error {
 		return err
 	}
 	defer sub.Close()
+	// Keep the event stream flowing (and the mirror current) while rows are
+	// written; stopped before teardown reads the mirror.
+	stopDrain := s.drainEvents()
+	defer stopDrain()
 	desc := sub.Descriptor
 	nbins := desc.GetFft().GetBins()
 	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8

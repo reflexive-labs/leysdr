@@ -59,6 +59,9 @@ type session struct {
 	events         <-chan *leylinev1.Event
 	eventErrs      <-chan error
 	cancelEvents   context.CancelFunc
+	// seq is the newest event seq folded into the mirror (the snapshot's at
+	// open); older events arriving late are already reflected and are skipped.
+	seq uint64
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
 }
@@ -159,8 +162,11 @@ func covers(cap *leylinev1.Capture, freq uint64, bw uint32) bool {
 	return lo >= c-half && hi <= c+half
 }
 
-// open dials, snapshots state and opens the daemon-scoped event stream. The
-// event stream is opened before any mutation so every confirmation is seen.
+// open dials, snapshots state and opens the daemon-scoped event stream,
+// resuming from the snapshot's seq (reconnect = GetState + resume from seq):
+// the daemon replays what happened between the snapshot and the stream's
+// registration, so no confirmation is missed, and both happen before any
+// mutation.
 func openSession(ctx context.Context, app *App) (*session, error) {
 	c, err := app.dial(ctx)
 	if err != nil {
@@ -172,13 +178,41 @@ func openSession(ctx context.Context, app *App) (*session, error) {
 		return nil, app.notRunning(err)
 	}
 	ectx, cancel := context.WithCancel(ctx)
-	events, errs, err := c.Events(ectx, nil)
+	events, errs, err := c.Events(ectx, leyline.ScopeSince(nil, st.EventSeq))
 	if err != nil {
 		cancel()
 		c.Close()
 		return nil, err
 	}
-	return &session{app: app, client: c, state: st, events: events, eventErrs: errs, cancelEvents: cancel}, nil
+	return &session{app: app, client: c, state: st, seq: st.EventSeq, events: events, eventErrs: errs, cancelEvents: cancel}, nil
+}
+
+// drainEvents folds the event stream into the mirror in the background for
+// verbs that do not read events themselves (spectrum, fft), so the stream
+// keeps flowing and the mirror stays current while they run. The returned
+// func stops the drain and waits for it; the mirror (state, capture,
+// channel) must not be touched until it has returned.
+func (s *session) drainEvents() (stop func()) {
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-quit:
+				return
+			case ev, ok := <-s.events:
+				if !ok {
+					return
+				}
+				s.apply(ev)
+			}
+		}
+	}()
+	return func() {
+		close(quit)
+		<-done
+	}
 }
 
 // close tears down the event stream and connection.
@@ -209,8 +243,11 @@ func (s *session) awaitEvent(ctx context.Context, pred func(*leylinev1.Event) bo
 				continue
 			}
 			s.state = st
+			if st.EventSeq > s.seq {
+				s.seq = st.EventSeq
+			}
 			for _, ev := range stateEvents(st) {
-				s.apply(ev)
+				s.fold(ev)
 				if pred(ev) {
 					return ev, nil
 				}
@@ -219,8 +256,7 @@ func (s *session) awaitEvent(ctx context.Context, pred func(*leylinev1.Event) bo
 			if !ok {
 				return nil, fmt.Errorf("event stream ended: %w", <-s.eventErrs)
 			}
-			s.apply(ev)
-			if pred(ev) {
+			if s.apply(ev) && pred(ev) {
 				return ev, nil
 			}
 		}
@@ -242,9 +278,27 @@ func stateEvents(st *leylinev1.GetStateResponse) []*leylinev1.Event {
 	return out
 }
 
-// apply folds a full-state event into the local mirror (invariant 6: events
+// apply folds a live event into the mirror unless it is older than what the
+// mirror already reflects (a replayed or late event with seq at or below the
+// snapshot's, or a poll's), and reports whether it was folded.
+func (s *session) apply(ev *leylinev1.Event) bool {
+	if _, rejection := ev.Body.(*leylinev1.Event_WriteRejected); rejection {
+		// Not state: a poll cannot have reflected it, so it is never stale.
+		return true
+	}
+	if ev.Seq != 0 && ev.Seq <= s.seq {
+		return false
+	}
+	if ev.Seq > s.seq {
+		s.seq = ev.Seq
+	}
+	s.fold(ev)
+	return true
+}
+
+// fold merges a full-state event into the local mirror (invariant 6: events
 // carry whole objects, so the mirror is a straight replace).
-func (s *session) apply(ev *leylinev1.Event) {
+func (s *session) fold(ev *leylinev1.Event) {
 	switch b := ev.Body.(type) {
 	case *leylinev1.Event_Capture:
 		replaceCapture(s.state, b.Capture)
@@ -504,9 +558,33 @@ func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 		s.squelchNote = fmt.Sprintf("Squelch auto → %.0f dBFS (10 dB above the band's noise floor, %.0f dBFS).", db, floor)
 	}
 	if !math.IsNaN(o.squelch) {
+		// The initial squelch is part of the tune: wait for the daemon to
+		// confirm it, and treat a rejection as a tune failure (the caller
+		// tears down what was created) rather than listening with the wrong
+		// squelch and calling it applied.
 		w := &leylinev1.ParamWrite{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: o.squelch}}
-		if _, err := s.client.WriteParams(ctx, w); err != nil {
-			return err
+		sum, err := s.client.WriteParams(ctx, w)
+		if err != nil {
+			return fmt.Errorf("--squelch: %w", err)
+		}
+		rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
+		ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
+			switch b := ev.Body.(type) {
+			case *leylinev1.Event_Channel:
+				return !rejected && b.Channel.ChannelId == ch.ChannelId && b.Channel.SquelchDb == o.squelch
+			case *leylinev1.Event_WriteRejected:
+				return s.mine(ev) && b.WriteRejected.Tag == 2
+			}
+			return false
+		})
+		if err != nil {
+			if rejected {
+				return fmt.Errorf("--squelch: %.0f dBFS rejected by the daemon (no reason observed)", o.squelch)
+			}
+			return fmt.Errorf("--squelch: %w", err)
+		}
+		if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
+			return fmt.Errorf("--squelch: %w", rejectedError(r.WriteRejected))
 		}
 	}
 	return nil
@@ -570,24 +648,44 @@ func (s *session) attachAudio(ctx context.Context, o *tuneOptions) error {
 
 // teardown destroys the channel and, when this run created the capture and
 // nothing else uses it, the capture. Uses a fresh context: the run's may be
-// cancelled already.
+// cancelled already. Whether the capture is still in use is asked of the
+// daemon, not the mirror: another client may have added a channel since the
+// last event was folded, and DestroyCapture would silence it. A failed
+// destroy is reported on stderr with the recovery, since the next tune would
+// otherwise fail with DEVICE_BUSY and no explanation.
 func (s *session) teardown() {
 	ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
 	defer cancel()
 	if s.channel != nil {
-		_, _ = s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: s.channel.ChannelId})
-	}
-	if s.capture != nil && s.createdCapture {
-		inUse := false
-		for _, ch := range s.state.Channels {
-			if ch.CaptureId == s.capture.CaptureId && (s.channel == nil || ch.ChannelId != s.channel.ChannelId) {
-				inUse = true
-			}
-		}
-		if !inUse {
-			_, _ = s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: s.capture.CaptureId})
+		if _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: s.channel.ChannelId}); err != nil && leyline.Code(err) != leyline.CodeChannelNotFound {
+			s.cleanupFailed("channel "+s.channel.ChannelId, err)
 		}
 	}
+	if s.capture == nil || !s.createdCapture {
+		return
+	}
+	if st, err := s.client.State(ctx); err == nil {
+		s.state = st
+	}
+	var others []string
+	for _, ch := range s.state.Channels {
+		if ch.CaptureId == s.capture.CaptureId && (s.channel == nil || ch.ChannelId != s.channel.ChannelId) {
+			others = append(others, ch.ChannelId)
+		}
+	}
+	if len(others) > 0 {
+		fmt.Fprintf(s.app.Stderr, "leaving capture %s running: %s still on it (%s); ley stop --all frees the radio\n",
+			s.capture.CaptureId, plural(len(others), "other channel"), strings.Join(others, ", "))
+		return
+	}
+	if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: s.capture.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
+		s.cleanupFailed("capture "+s.capture.CaptureId, err)
+	}
+}
+
+// cleanupFailed reports a teardown RPC failure with the way out.
+func (s *session) cleanupFailed(what string, err error) {
+	fmt.Fprintf(s.app.Stderr, "warning: could not remove %s: %v; the radio may still be held, free it with: ley stop --all\n", what, err)
 }
 
 // meterLine renders the in-place status line in plain words: the signal

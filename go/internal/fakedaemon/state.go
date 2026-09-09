@@ -49,23 +49,54 @@ func (d *Daemon) emit(by *leylinev1.ClientInfo, body any) {
 		ev.Body = &leylinev1.Event_Anchor{Anchor: proto.Clone(b).(*leylinev1.CaptureAnchor)}
 		captureID = b.CaptureId
 	}
+	d.history = append(d.history, retainedEvent{captureID: captureID, event: ev})
+	if n := len(d.history) - eventHistoryLimit; n > 0 {
+		d.history = d.history[n:]
+	}
 	for w := range d.watchers {
-		if cid, ok := w.scope.Scope.(*leylinev1.EventScope_CaptureId); ok && captureID != "" && cid.CaptureId != captureID {
-			continue
+		if w.admits(captureID) {
+			w.offer(ev)
+		}
+	}
+}
+
+// admits reports whether an event scoped to captureID ("" = daemon-wide)
+// is delivered to this watcher's scope.
+func (w *watcher) admits(captureID string) bool {
+	cid, ok := w.scope.Scope.(*leylinev1.EventScope_CaptureId)
+	return !ok || captureID == "" || cid.CaptureId == captureID
+}
+
+// offer queues ev for the watcher; bufferingNewest: a full buffer drops the
+// oldest event and keeps the newest, so a slow watcher sees a seq gap.
+func (w *watcher) offer(ev *leylinev1.Event) {
+	select {
+	case w.ch <- ev:
+	default:
+		select {
+		case <-w.ch:
+		default:
 		}
 		select {
 		case w.ch <- ev:
-		default: // bufferingNewest: drop the oldest, keep the newest
-			select {
-			case <-w.ch:
-			default:
-			}
-			select {
-			case w.ch <- ev:
-			default:
-			}
+		default:
 		}
 	}
+}
+
+// streamContext derives a streaming handler's context that also ends when
+// the daemon is shutting down (Serve's context cancelled), so the handler
+// returns nil and the client sees a clean end of stream.
+func (d *Daemon) streamContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	sctx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-d.closing:
+			cancel()
+		case <-sctx.Done():
+		}
+	}()
+	return sctx, cancel
 }
 
 // snapshot builds a GetStateResponse. Call with d.mu held.

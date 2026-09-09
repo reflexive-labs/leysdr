@@ -39,7 +39,8 @@ func parseNumber(s string) (float64, bool) {
 // caller picks a level from the daemon's spectrum; auto=true, db=0). Levels
 // are dBFS, where 0 is the loudest possible signal, so a positive number is
 // an error that explains the scale rather than a silent threshold above
-// full scale.
+// full scale; below -200 dBFS (the daemon's floor) is an error too, so the
+// daemon never has to reject what the flag accepted.
 func ParseSquelch(s string) (db float64, auto bool, err error) {
 	t := strings.ToLower(strings.TrimSpace(s))
 	switch t {
@@ -56,6 +57,9 @@ func ParseSquelch(s string) (db float64, auto bool, err error) {
 	}
 	if v > 0 {
 		return 0, false, fmt.Errorf("%q is above full scale; levels are dBFS, 0 is loudest; try -40 or auto", s)
+	}
+	if v < -200 {
+		return 0, false, fmt.Errorf("%q is below -200 dBFS, the quietest level the daemon accepts; try -40 or auto", s)
 	}
 	return v, false, nil
 }

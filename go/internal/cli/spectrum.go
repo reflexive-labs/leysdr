@@ -164,6 +164,10 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 		return err
 	}
 	defer sub.Close()
+	// Keep the event stream flowing (and the mirror current) while rows render;
+	// stopped before teardown reads the mirror.
+	stopDrain := s.drainEvents()
+	defer stopDrain()
 	desc := sub.Descriptor
 	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
 	out := bufio.NewWriter(app.Stdout)

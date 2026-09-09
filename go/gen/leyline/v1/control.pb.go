@@ -1888,7 +1888,14 @@ type EventScope struct {
 	//
 	//	*EventScope_Daemon
 	//	*EventScope_CaptureId
-	Scope         isEventScope_Scope `protobuf_oneof:"scope"`
+	Scope isEventScope_Scope `protobuf_oneof:"scope"`
+	// WatchEvents only: when set, replay retained events with seq > since_seq
+	// (the seq of a GetState snapshot, 0 included) before going live, so
+	// "GetState then WatchEvents" misses nothing. Unset = live only. The daemon
+	// retains a bounded window; when since_seq is older than it, the first
+	// delivered seq is more than since_seq + 1 and the client re-fetches
+	// GetState (the seq-gap rule).
+	SinceSeq      *uint64 `protobuf:"varint,3,opt,name=since_seq,json=sinceSeq,proto3,oneof" json:"since_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1946,6 +1953,13 @@ func (x *EventScope) GetCaptureId() string {
 		}
 	}
 	return ""
+}
+
+func (x *EventScope) GetSinceSeq() uint64 {
+	if x != nil && x.SinceSeq != nil {
+		return *x.SinceSeq
+	}
+	return 0
 }
 
 type isEventScope_Scope interface {
@@ -2829,13 +2843,16 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x04body\"P\n" +
 	"\rWriteRejected\x12\x10\n" +
 	"\x03tag\x18\x01 \x01(\x04R\x03tag\x12-\n" +
-	"\x05error\x18\x02 \x01(\v2\x17.leyline.v1.ErrorDetailR\x05error\"P\n" +
+	"\x05error\x18\x02 \x01(\v2\x17.leyline.v1.ErrorDetailR\x05error\"\x80\x01\n" +
 	"\n" +
 	"EventScope\x12\x18\n" +
 	"\x06daemon\x18\x01 \x01(\bH\x00R\x06daemon\x12\x1f\n" +
 	"\n" +
-	"capture_id\x18\x02 \x01(\tH\x00R\tcaptureIdB\a\n" +
-	"\x05scope\"\a\n" +
+	"capture_id\x18\x02 \x01(\tH\x00R\tcaptureId\x12 \n" +
+	"\tsince_seq\x18\x03 \x01(\x04H\x01R\bsinceSeq\x88\x01\x01B\a\n" +
+	"\x05scopeB\f\n" +
+	"\n" +
+	"_since_seq\"\a\n" +
 	"\x05Empty\"\x14\n" +
 	"\x12ListDevicesRequest\"M\n" +
 	"\x13ListDevicesResponse\x126\n" +

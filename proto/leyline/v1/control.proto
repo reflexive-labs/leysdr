@@ -150,6 +150,13 @@ message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
 
 message EventScope {
   oneof scope { bool daemon = 1; string capture_id = 2; }
+  // WatchEvents only: when set, replay retained events with seq > since_seq
+  // (the seq of a GetState snapshot, 0 included) before going live, so
+  // "GetState then WatchEvents" misses nothing. Unset = live only. The daemon
+  // retains a bounded window; when since_seq is older than it, the first
+  // delivered seq is more than since_seq + 1 and the client re-fetches
+  // GetState (the seq-gap rule).
+  optional uint64 since_seq = 3;
 }
 
 // ---------- Service ----------

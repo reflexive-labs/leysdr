@@ -47,6 +47,10 @@ type Options struct {
 	WriteAwaitsWatcher bool
 	// WatcherWait bounds WriteAwaitsWatcher. Default 2 s.
 	WatcherWait time.Duration
+	// RejectWrites, when set, is consulted before every ParamWrite: a non-nil
+	// error rejects the write (WriteRejected with that code) in place of the
+	// fake's own validation. A test hook for clients' rejection handling.
+	RejectWrites func(w *leylinev1.ParamWrite) *leyline.Error
 }
 
 // Daemon is the in-memory state store plus all five service implementations.
@@ -68,6 +72,21 @@ type Daemon struct {
 	watchers map[*watcher]struct{}
 	presence map[string]*presence // by client id
 	socket   string
+	// history holds the last eventHistoryLimit events, oldest first, for
+	// WatchEvents(since_seq) replay (the Swift daemon keeps the same window).
+	history []retainedEvent
+	// closing is closed when Serve's context ends so streaming handlers
+	// return cleanly (EOF on the client) before the server is stopped, as the
+	// Swift daemon finishes its subscriber streams on shutdown.
+	closing chan struct{}
+}
+
+// eventHistoryLimit is how many events WatchEvents(since_seq) can replay.
+const eventHistoryLimit = 256
+
+type retainedEvent struct {
+	captureID string // "" = daemon-wide
+	event     *leylinev1.Event
 }
 
 type capture struct {
@@ -110,6 +129,7 @@ func New(opts Options) *Daemon {
 		watchers:  map[*watcher]struct{}{},
 		presence:  map[string]*presence{},
 		socket:    opts.SocketPath,
+		closing:   make(chan struct{}),
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()
@@ -147,7 +167,16 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 	go func() { done <- srv.Serve(l) }()
 	select {
 	case <-ctx.Done():
-		srv.Stop()
+		// End every stream cleanly first (clients see EOF, not a dropped
+		// transport), then wait briefly for handlers before forcing the stop.
+		close(d.closing)
+		graceful := make(chan struct{})
+		go func() { srv.GracefulStop(); close(graceful) }()
+		select {
+		case <-graceful:
+		case <-time.After(2 * time.Second):
+			srv.Stop()
+		}
 		<-done
 		_ = os.Remove(socketPath)
 		return nil

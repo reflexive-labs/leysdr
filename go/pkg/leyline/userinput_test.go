@@ -66,6 +66,8 @@ func TestParseSquelch(t *testing.T) {
 		{"Auto", 0, true, false, ""},
 		{"5", 0, false, false, "dBFS"},
 		{"12 dB", 0, false, false, "0 is loudest"},
+		{"-200", -200, false, false, ""},
+		{"-1000", 0, false, false, "below -200 dBFS"},
 		{"loud", 0, false, false, "cannot read"},
 		{"", 0, false, false, "empty"},
 	}

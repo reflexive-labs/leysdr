@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
@@ -258,10 +259,24 @@ func CaptureScope(captureID string) *leylinev1.EventScope {
 	return &leylinev1.EventScope{Scope: &leylinev1.EventScope_CaptureId{CaptureId: captureID}}
 }
 
+// ScopeSince returns scope with since_seq set: WatchEvents replays the
+// daemon's retained events newer than seq (a GetState snapshot's event_seq,
+// 0 included) before going live, so "GetState then WatchEvents" misses
+// nothing. A nil scope means the daemon scope.
+func ScopeSince(scope *leylinev1.EventScope, seq uint64) *leylinev1.EventScope {
+	if scope == nil {
+		scope = DaemonScope()
+	}
+	out := proto.Clone(scope).(*leylinev1.EventScope)
+	out.SinceSeq = proto.Uint64(seq)
+	return out
+}
+
 // Events opens WatchEvents and pumps it into a channel. The event channel is
 // closed when the stream ends; the error channel then receives exactly one value
 // (nil on a clean end, ctx.Err() on cancellation, or the mapped *Error). Holding
 // the stream open is what keeps this client's non-persistent channels alive.
+// Pass ScopeSince(scope, state.EventSeq) to resume from a GetState snapshot.
 func (c *Client) Events(ctx context.Context, scope *leylinev1.EventScope) (<-chan *Event, <-chan error, error) {
 	if scope == nil {
 		scope = DaemonScope()
@@ -270,31 +285,54 @@ func (c *Client) Events(ctx context.Context, scope *leylinev1.EventScope) (<-cha
 	if err != nil {
 		return nil, nil, err
 	}
-	events := make(chan *Event, 64)
+	events, errs := pump(ctx, stream.Recv, 64)
+	return events, errs, nil
+}
+
+// WatchTelemetry opens Telemetry.Subscribe and pumps it into a channel with
+// the same contract as Events: the message channel closes when the stream
+// ends and the error channel then carries exactly one value (nil on a clean
+// end, ctx.Err() on cancellation, or the mapped *Error).
+func (c *Client) WatchTelemetry(ctx context.Context, sub *leylinev1.TelemetrySubscription) (<-chan *leylinev1.TelemetryMsg, <-chan error, error) {
+	stream, err := c.Telemetry.Subscribe(ctx, sub)
+	if err != nil {
+		return nil, nil, err
+	}
+	msgs, errs := pump(ctx, stream.Recv, 16)
+	return msgs, errs, nil
+}
+
+// pump is the one server-stream reader behind Events, WatchTelemetry and
+// Subscribe: recv until the stream ends, forward each message, close the
+// message channel, then report exactly one terminal error: nil on io.EOF
+// (the daemon ended the stream), ctx.Err() when ctx ended, else the error.
+func pump[T any](ctx context.Context, recv func() (T, error), buffer int) (<-chan T, <-chan error) {
+	out := make(chan T, buffer)
 	errs := make(chan error, 1)
 	go func() {
-		defer close(events)
+		defer close(out)
 		for {
-			ev, err := stream.Recv()
+			m, err := recv()
 			if err != nil {
-				if err == io.EOF {
+				switch {
+				case err == io.EOF:
 					errs <- nil
-				} else if ctx.Err() != nil {
+				case ctx.Err() != nil:
 					errs <- ctx.Err()
-				} else {
+				default:
 					errs <- err
 				}
 				return
 			}
 			select {
-			case events <- ev:
+			case out <- m:
 			case <-ctx.Done():
 				errs <- ctx.Err()
 				return
 			}
 		}
 	}()
-	return events, errs, nil
+	return out, errs
 }
 
 // WriteParams opens one WriteParams stream, sends every write in order, closes
@@ -367,30 +405,7 @@ func (c *Client) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 		cancel()
 		return nil, err
 	}
-	frames := make(chan *Frame, 16)
-	errs := make(chan error, 1)
-	go func() {
-		defer close(frames)
-		for {
-			f, err := stream.Recv()
-			if err != nil {
-				if err == io.EOF {
-					errs <- nil
-				} else if sctx.Err() != nil {
-					errs <- sctx.Err()
-				} else {
-					errs <- err
-				}
-				return
-			}
-			select {
-			case frames <- f:
-			case <-sctx.Done():
-				errs <- sctx.Err()
-				return
-			}
-		}
-	}()
+	frames, errs := pump(sctx, stream.Recv, 16)
 	return &Subscription{Descriptor: desc, Frames: frames, errs: errs, cancel: cancel, client: c}, nil
 }
 

@@ -63,7 +63,7 @@ Drag-to-tune emits writes at display rate. Setter RPCs are fire-and-forget withi
 
 ## Events and lifecycle
 
-One event stream per scope: daemon scope (device arrival/removal, capture created/destroyed) and capture scope (state changes, lease changes, channel lifecycle, errors). Events carry the full new state of the changed object, not deltas — clients never patch state and can always render from the latest event. Sequence numbers per stream; a client that reconnects issues a state fetch and resumes from live.
+One event stream per scope: daemon scope (device arrival/removal, capture created/destroyed) and capture scope (state changes, lease changes, channel lifecycle, errors). Events carry the full new state of the changed object, not deltas — clients never patch state and can always render from the latest event. Sequence numbers per stream; a client that reconnects issues a state fetch and resumes from its seq (`WatchEvents` with `since_seq` replays the daemon's retained window of events newer than the snapshot before going live, so nothing between the fetch and the stream's registration is missed; a snapshot older than the window shows as a seq gap, and the client fetches state again).
 
 Device removal does not destroy the capture: it enters `detached`, channels pause, and replug of a device with the same serial rebinds automatically. This makes the V1a unplug/replug story a state transition rather than a teardown.
 

@@ -15,7 +15,8 @@ import (
 // the subscription is torn down. Under GAP_MARKED every 50th frame carries a Gap.
 func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer[leylinev1.Frame]) error {
 	d := b.d
-	ctx := srv.Context()
+	ctx, stop := d.streamContext(srv.Context())
+	defer stop()
 	d.mu.Lock()
 	s := d.streams[ref.GetStreamId()]
 	if s == nil {

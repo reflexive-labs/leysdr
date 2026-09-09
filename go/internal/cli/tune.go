@@ -203,9 +203,9 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 		return err
 	}
 	if err := s.createChannel(ctx, o); err != nil {
-		if s.createdCapture {
-			s.teardown()
-		}
+		// The channel may exist already (a rejected initial squelch): remove
+		// what this tune created, the capture included when it was ours.
+		s.teardown()
 		return err
 	}
 	if !o.noAudio {
@@ -282,52 +282,10 @@ func (s *session) banner(o *tuneOptions) string {
 		leyline.FormatFrequency(o.freq), where, s.device.Model, gainString(s.capture), squelch)
 }
 
-// telemetryPump opens Telemetry.Subscribe on the channel and pumps messages
-// into a channel; the returned error channel gets one value when it ends.
-func telemetryPump(ctx context.Context, c *leyline.Client, channelID string) (<-chan *leylinev1.TelemetryMsg, <-chan error, error) {
-	stream, err := c.Telemetry.Subscribe(ctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: channelID},
-		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_METER, leylinev1.TelemetryType_SQUELCH_TRANSITION},
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	msgs := make(chan *leylinev1.TelemetryMsg, 16)
-	errs := make(chan error, 1)
-	go func() {
-		defer close(msgs)
-		for {
-			m, err := stream.Recv()
-			if err != nil {
-				if ctx.Err() != nil {
-					errs <- ctx.Err()
-				} else {
-					errs <- err
-				}
-				return
-			}
-			select {
-			case msgs <- m:
-			case <-ctx.Done():
-				errs <- ctx.Err()
-				return
-			}
-		}
-	}()
-	return msgs, errs, nil
-}
-
 // live holds the session open, refreshing the meter line in place and
 // printing events caused by other clients, until ctx is cancelled (Ctrl-C).
 // Under --json stdout carries NDJSON only; the banner goes to stderr.
 func (s *session) live(ctx context.Context, o *tuneOptions) error {
-	tctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	msgs, terrs, err := telemetryPump(tctx, s.client, s.channel.ChannelId)
-	if err != nil {
-		return err
-	}
-	s.say("%s", s.banner(o))
 	lastLen := 0
 	clear := func() {
 		if lastLen > 0 {
@@ -335,6 +293,30 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			lastLen = 0
 		}
 	}
+	tctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
+		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_METER, leylinev1.TelemetryType_SQUELCH_TRANSITION},
+	})
+	if err != nil {
+		return err
+	}
+	// ended handles a stream's end: Ctrl-C and a daemon error are the
+	// caller's; a clean end (the daemon closed the stream, as it does when
+	// shutting down) is said once on stderr and the run stops with exit 0.
+	ended := func(what string, err error) error {
+		clear()
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(s.app.Stderr, "the daemon closed the %s stream (shutting down?); ley daemon status says whether it is still running\n", what)
+		return nil
+	}
+	s.say("%s", s.banner(o))
 	for {
 		select {
 		case <-ctx.Done():
@@ -342,10 +324,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			return nil
 		case m, ok := <-msgs:
 			if !ok {
-				if err := <-terrs; err != nil && ctx.Err() == nil {
-					return err
-				}
-				return nil
+				return ended("telemetry", <-terrs)
 			}
 			if s.app.JSON {
 				if err := s.app.printJSON(m); err != nil {
@@ -360,12 +339,11 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			}
 		case ev, ok := <-s.events:
 			if !ok {
-				if err := <-s.eventErrs; err != nil && ctx.Err() == nil {
-					return err
-				}
-				return nil
+				return ended("event", <-s.eventErrs)
 			}
-			s.apply(ev)
+			if !s.apply(ev) {
+				continue
+			}
 			if ch, gone := ev.Body.(*leylinev1.Event_Channel); gone && ch.Channel.ChannelId == s.channel.ChannelId && ch.Channel.State == leylinev1.ChannelState_OUT_OF_CAPTURE && !s.mine(ev) {
 				clear()
 				fmt.Fprintln(s.app.Stderr, "another client retuned the radio away from this channel; ley state shows who, ley tune again to follow")
