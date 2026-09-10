@@ -182,10 +182,19 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
             try? await BlockingWork.run { [joined] in joined.wait() }
             withLock { streaming = false; thread = nil; lock.broadcast() }
         case .awaitJoiner:
-            // Another caller owns the single-signal semaphore; wait for it to finish the join.
-            try? await BlockingWork.run { [self] in
+            // Another caller owns the single-signal semaphore; wait for it to finish the join. The
+            // wait is bounded for the same reason `RTLSDRDevice`'s join is: a stuck I/O thread must
+            // not wedge the capture actor and every client behind it.
+            let joinedInTime = (try? await BlockingWork.run { [self] in
+                let deadline = Date(timeIntervalSinceNow: 3)
                 lock.lock(); defer { lock.unlock() }
-                while streaming { lock.wait() }
+                while streaming {
+                    guard lock.wait(until: deadline) else { return false }
+                }
+                return true
+            }) ?? false
+            if !joinedInTime {
+                FilePlaybackDevice.logger.error("IQ playback on \(path) did not finish stopping within 3s; returning with the stream still marked live")
             }
         }
     }

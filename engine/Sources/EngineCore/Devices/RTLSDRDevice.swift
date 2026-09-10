@@ -348,10 +348,10 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     public func close() async {
         await stopStreaming()
-        // Snapshotted outside the critical section: `lock` is not recursive, so nothing inside a
-        // `withLock` body may reach for an accessor that takes it (`descriptor`, `gains`,
-        // `streamError`) -- a self-deadlock here wedges the capture actor awaiting `close()` and
-        // every later caller behind it. Read `_descriptor` and the other stored properties directly.
+        // `descriptor` is one of the accessors that takes `lock`, which is why it is read here and
+        // not below: the lock is not recursive, so an accessor called from inside a `withLock` body
+        // self-deadlocks, wedging the capture actor awaiting `close()` and every caller behind it.
+        // Inside the body, read the stored `_descriptor` and its siblings directly.
         let idString = descriptor.id.string
         withLock {
             // `stopStreaming` gives up after 3 s and leaves the USB thread detached rather than

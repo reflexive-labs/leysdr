@@ -180,8 +180,9 @@ public final class CaptureDSPCore: @unchecked Sendable {
             case .cs16:
                 Kernels.convertCS16(buffer.base.assumingMemoryBound(to: Int16.self) + offset * 2, to: dst, count: floats)
             case .f32:
-                // Refused before the loop; releasing the slot keeps the ring consistent should that
-                // guard ever be weakened.
+                // Real f32 is not a capture format, and `deliver` refuses it before this loop. Should
+                // that guard ever be weakened, the acquired slot is still handed back -- committed
+                // with no samples, which the DSP thread skips -- rather than leaking out of the ring.
                 ring.commit(index: index, count: 0, time: time)
                 return
             }

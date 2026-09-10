@@ -2,6 +2,7 @@
 // engines; every configuration change ends in a table swap on the core.
 
 import Foundation
+import Logging
 import Synchronization
 
 /// Default `CaptureEngine`: one device, one DSP thread, N channels, spectrum ladder, taps.
@@ -20,6 +21,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     private var channelTable: [ChannelID: DefaultChannelEngine] = [:]
     private var channelOrder: [ChannelID] = []
     private var tapTable: [any CaptureTap] = []
+    private static let logger = Logger(label: "leyline.capture")
 
     public init(id: CaptureID = CaptureID(), device: any RadioDevice, centerHz: UInt64, sampleRate: UInt64) {
         self.id = id
@@ -50,6 +52,10 @@ public actor DefaultCaptureEngine: CaptureEngine {
     public func start() async throws {
         guard !started else { return }
         try await device.open()
+        // Marked started as soon as the device is open, before the awaits below: a `stop()` that
+        // interleaves must see a capture that owns an open device, and `beginStreaming` reads this
+        // flag to know whether the engine still wants a stream. The catch clears it again.
+        started = true
         do {
             try await device.tune(centerHz: centerHz)
             try await device.setSampleRate(sampleRate)
@@ -65,7 +71,6 @@ public actor DefaultCaptureEngine: CaptureEngine {
             started = false
             throw error
         }
-        started = true
     }
 
     /// Stops streaming, closes the device, joins the DSP thread, closes channels and taps.
@@ -93,11 +98,22 @@ public actor DefaultCaptureEngine: CaptureEngine {
     private func beginStreaming() async throws {
         let core = self.core
         // The channel resets below touch state the DSP thread owns, so wait for the blocks the
-        // stopped device left behind to finish going through it. A quiet ring returns at once.
-        _ = await core.drainPending()
+        // stopped device left behind to finish going through it. A quiet ring returns at once; a
+        // busy one can outlast the wait, which is bounded and reports that it gave up.
+        let drained = await core.drainPending()
+        // Each await here is a seam another actor method can slip through: `stop()` and
+        // `setSampleRate` both reach the same device. If the engine no longer wants a stream, or
+        // someone else already started one, leave the device alone.
+        guard started, !streaming else { return }
         core.expectNewAnchor()
-        for id in channelOrder {
-            await channelTable[id]?.captureStreamRestarted()
+        if drained || !core.isRunning {
+            // No DSP thread means nothing is in flight, whatever the drain said.
+            for id in channelOrder {
+                await channelTable[id]?.captureStreamRestarted()
+                guard started, !streaming else { return }
+            }
+        } else {
+            DefaultCaptureEngine.logger.warning("channel reset skipped: a block is still in flight after the drain deadline; resetting a channel under the DSP thread would race it")
         }
         try await device.startStreaming(captureID: id) { buffer, time in core.deliver(buffer, at: time) }
         streaming = true
@@ -227,8 +243,11 @@ public actor DefaultCaptureEngine: CaptureEngine {
         try await newDevice.tune(centerHz: centerHz)
         try await newDevice.setSampleRate(sampleRate)
         if !core.isRunning { core.startThread() }
-        try await beginStreaming()
+        // Marked before the restart for the same reason `start()` does it: the engine owns an open
+        // device from here, and `beginStreaming` leaves the device alone unless the engine wants a
+        // stream. A throw leaves it set, which is what `stop()` needs to close the device it opened.
         started = true
+        try await beginStreaming()
         detached = false
     }
 }

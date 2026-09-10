@@ -451,15 +451,15 @@ final class DevicesRegistryTests: XCTestCase {
         let reg = DefaultDeviceRegistry()
         let first = ClosableVirtualDevice(serial: "vd-1")
         let second = ClosableVirtualDevice(serial: "vd-1")
-        let a = try await reg.attachVirtualDevice(first)
-        let b = try await reg.attachVirtualDevice(second)
+        let a = try await reg.attachVirtualDevice(first).descriptor
+        let b = try await reg.attachVirtualDevice(second).descriptor
         XCTAssertEqual(a.id, b.id)
         XCTAssertEqual(second.closes, 1, "the discarded instance is closed")
         XCTAssertEqual(first.closes, 0, "the hosted instance keeps running")
         let hosted = await reg.device(id: a.id)
         XCTAssertTrue(hosted === first)
         // Re-attaching the hosted instance itself is still a no-op.
-        _ = try await reg.attachVirtualDevice(first)
+        _ = try await reg.attachVirtualDevice(first).descriptor
         XCTAssertEqual(first.closes, 0)
     }
 

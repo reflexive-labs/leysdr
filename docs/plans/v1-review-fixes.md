@@ -150,7 +150,7 @@ fixture within the quantisation step).
 q-go-lib-3: `fits()` considers the built sources, so `scan_band` is refused at a rate its carriers
 alias in; `TestCheckReducedGeneration` adjusts accordingly.
 
-### GO-6 `[ ]` The fake tells the daemon's story, part one
+### GO-6 `[x]` The fake tells the daemon's story, part one
 
 q-go-fake-1 … q-go-fake-18, in file order. The verifiers downgraded -3 and -7 to P3 but both stay:
 they are cheap and the point of the fake is parity. For each behavioural change add the CLI test
@@ -282,7 +282,7 @@ with `--json`, against the fake and in the e2e.
 
 ## Second look (Opus, sequential, after the lanes)
 
-### SW-10 `[ ]` What the audit of the engine lanes found
+### SW-10 `[x]` What the audit of the engine lanes found
 
 An independent read of commits `6044fcb..HEAD` on the engine side, made after the per-item
 verifiers, which each saw one item in isolation. Line numbers are as of `c25b12d`.

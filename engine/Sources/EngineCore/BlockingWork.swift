@@ -8,8 +8,12 @@ import Foundation
 /// wait onto a fresh `Thread` and suspends the caller until it finishes (docs/engine-internals.md,
 /// "Threads").
 ///
-/// Not for the hot path: spawning a thread per call is fine for open/close-class operations and
-/// nothing else. Cancellation is not propagated — the body always runs to completion once started.
+/// Not for the hot path: spawning a thread per call is fine for open/close-class operations and for
+/// the device registry's enumeration pass, which runs once a second. A thread costs microseconds to
+/// create against an enumeration that blocks for hundreds of milliseconds, so a pool would save
+/// nothing and would have to answer what happens when a call never returns; a thread that leaks is
+/// one thread. Anything more frequent than that belongs somewhere else.
+/// Cancellation is not propagated — the body always runs to completion once started.
 public enum BlockingWork {
     /// Executes `body` on a new thread and resumes the caller with its result or thrown error.
     public static func run<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {

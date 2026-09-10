@@ -821,7 +821,7 @@ final class DaemonTests: XCTestCase {
     func testStructuralWritesOnOutOfCaptureChannelAreStored() async throws {
         try await withDaemon { c in
             let device = RebindableDevice()
-            let d = try await c.daemon.registry.attachVirtualDevice(device)
+            let d = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             for _ in 0..<150 {
                 let s = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
                 if s.devices.contains(where: { $0.deviceID == d.id.string }) { break }
@@ -1003,7 +1003,7 @@ final class CaptureLifecycleDaemonTests: XCTestCase {
         try await withDaemon { c in
             let dev = FaultyStreamDevice()
             dev.failStartStreaming.value = true
-            let d = try await c.daemon.registry.attachVirtualDevice(dev)
+            let d = try await c.daemon.registry.attachVirtualDevice(dev).descriptor
             // The session store mirrors the registry asynchronously; wait for the device to show up.
             var state = Leyline_V1_GetStateResponse()
             for _ in 0..<150 {
@@ -1063,7 +1063,7 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
     func testDetachRejectsNonFileAndUnknownDevicesWithoutTouchingCaptures() async throws {
         try await withDaemon { c in
             let dev = FaultyStreamDevice()
-            let d = try await c.daemon.registry.attachVirtualDevice(dev)
+            let d = try await c.daemon.registry.attachVirtualDevice(dev).descriptor
             var state = try await self.waitForDevice(c, d.id.string)
             XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [d.id.string])
 

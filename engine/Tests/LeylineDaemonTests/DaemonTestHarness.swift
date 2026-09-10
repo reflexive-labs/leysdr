@@ -63,14 +63,27 @@ func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, shutdownDeadlineNs: UIn
     }
     let teardownStart = DispatchTime.now().uptimeNanoseconds
     if let deadline = shutdownDeadlineNs {
+        // The shutdown runs unstructured and reports through a stream. A task group would wait for
+        // every child at scope exit, and `shutdown()` does not answer cancellation, so a watchdog
+        // child inside the group could never outrun the hang it is here to catch.
+        let (finished, finishedContinuation) = AsyncStream<Void>.makeStream()
+        Task {
+            await daemon.shutdown()
+            _ = try? await serverTask.value
+            finishedContinuation.finish()
+        }
         let stopped = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { await daemon.shutdown(); _ = try? await serverTask.value; return true }
+            group.addTask { for await _ in finished {}; return !Task.isCancelled }
             group.addTask { try? await Task.sleep(nanoseconds: deadline); return false }
             let first = await group.next() ?? false
             group.cancelAll()
             return first
         }
-        XCTAssertTrue(stopped, "daemon.shutdown() did not finish within \(Double(deadline) / 1e9) s (a handler is still alive)")
+        guard stopped else {
+            XCTFail("daemon.shutdown() did not finish within \(Double(deadline) / 1e9) s (a handler is still alive)")
+            if let e = bodyError { throw e }
+            return
+        }
         XCTAssertLessThan(DispatchTime.now().uptimeNanoseconds - teardownStart, deadline)
     } else {
         await daemon.shutdown()

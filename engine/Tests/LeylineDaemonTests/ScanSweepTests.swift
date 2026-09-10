@@ -259,7 +259,7 @@ final class ScanSweepTests: XCTestCase {
     func testTakeOverBorrowsAndRestores() async throws {
         try await withDaemon { c in
             let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)])
-            let desc = try await c.daemon.registry.attachVirtualDevice(device)
+            let desc = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             try await Task.sleep(nanoseconds: 200_000_000)
 
             // Somebody is listening on 146.9 MHz.
@@ -323,7 +323,7 @@ final class ScanSweepTests: XCTestCase {
     func testAPollingClientKeepsItsScan() async throws {
         try await withDaemon(presenceGraceNs: 300_000_000) { c in
             let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)])
-            _ = try await c.daemon.registry.attachVirtualDevice(device)
+            _ = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             try await Task.sleep(nanoseconds: 200_000_000)
             // The first call arms the grace, as any client's does. Nothing after this touches the
             // control plane or opens a stream.
@@ -353,7 +353,7 @@ final class ScanSweepTests: XCTestCase {
     func testASweptRadioRefusesGainAndDestroy() async throws {
         try await withDaemon { c in
             let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)])
-            _ = try await c.daemon.registry.attachVirtualDevice(device)
+            _ = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             try await Task.sleep(nanoseconds: 200_000_000)
             let events = await EventCollector.start(c.control, daemon: c.daemon)
 
@@ -410,7 +410,7 @@ final class ScanSweepTests: XCTestCase {
     {
         try await withDaemon { c in
             let device = SyntheticBandDevice(carriers: carriers)
-            _ = try await c.daemon.registry.attachVirtualDevice(device)
+            _ = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             // Let the registry publish it.
             try await Task.sleep(nanoseconds: 200_000_000)
 

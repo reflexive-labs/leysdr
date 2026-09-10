@@ -128,6 +128,23 @@ final class CaptureTests: XCTestCase {
         XCTAssertEqual(core.deliveredEnd, 0, "the capture timeline did not move")
         core.finish()
     }
+
+    /// `beginStreaming` suspends before it touches the device, and `stop()` reaches the same device.
+    /// A stop that lands in that window wins: the rate change must not start a stream on a capture
+    /// that has been torn down and a device that has been closed.
+    func testStopDuringARateChangeLeavesTheDeviceClosed() async throws {
+        let device = GatedRateDevice()
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        XCTAssertEqual(device.startCount, 1)
+        device.armGate()
+        let rateChange = Task { try await capture.setSampleRate(1_200_000) }
+        await device.waitUntilInRateChange()
+        await capture.stop()
+        device.releaseRate()
+        _ = try await rateChange.value
+        XCTAssertEqual(device.startCount, 1, "the stopped capture must not have restarted the stream")
+    }
 }
 
 /// A device whose `startStreaming` / `setSampleRate` throw `DEVICE_IO` while the matching flag is
@@ -331,4 +348,52 @@ final class CaptureDeviceLossTests: XCTestCase {
         XCTAssertFalse(snap.detached)
         await capture.stop()
     }
+}
+
+/// A device whose `setSampleRate` parks after the first call, so a test can run another actor method
+/// while the capture engine is suspended inside it. Counts the streams it was asked to start.
+final class GatedRateDevice: RadioDevice, @unchecked Sendable {
+    let descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "gated", serial: "g",
+                                      tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
+                                      sampleRates: [2_400_000, 1_200_000], nativeFormat: .cf32)
+    var gains: [GainState] { [] }
+    private let starts = Atomic<Int>(0)
+    private let gated = Atomic<Bool>(false)
+    private let entered: AsyncStream<Void>
+    private let enteredContinuation: AsyncStream<Void>.Continuation
+    private let released: AsyncStream<Void>
+    private let releasedContinuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        (released, releasedContinuation) = AsyncStream<Void>.makeStream()
+    }
+
+    /// Streams the engine asked this device to start.
+    var startCount: Int { starts.load(ordering: .relaxed) }
+    /// From here on, `setSampleRate` parks until `releaseRate()`.
+    func armGate() { gated.store(true, ordering: .relaxed) }
+    func releaseRate() { releasedContinuation.finish() }
+    /// Returns once a gated `setSampleRate` is parked.
+    func waitUntilInRateChange() async {
+        var it = entered.makeAsyncIterator()
+        _ = await it.next()
+    }
+
+    func open() async throws {}
+    func close() async {}
+    func tune(centerHz: UInt64) async throws {}
+    func setGain(element: String, value: GainValue) async throws { throw EngineError.gainElementUnknown(element, target: "") }
+
+    func setSampleRate(_ hz: UInt64) async throws {
+        guard gated.load(ordering: .relaxed) else { return }
+        enteredContinuation.yield()
+        for await _ in released {}
+    }
+
+    func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
+        starts.wrappingAdd(1, ordering: .relaxed)
+    }
+
+    func stopStreaming() async {}
 }

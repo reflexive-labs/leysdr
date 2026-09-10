@@ -68,7 +68,7 @@ final class FailedRateWriteDaemonTests: XCTestCase {
     /// Attaches `device`, waits for the store to mirror it, opens a watch, and creates one capture
     /// (2.4 MSPS) with one NFM channel on it.
     private func setUp(_ c: DaemonClients, device: RateRefusingDevice) async throws -> Fixture {
-        let d = try await c.daemon.registry.attachVirtualDevice(device)
+        let d = try await c.daemon.registry.attachVirtualDevice(device).descriptor
         let mirrored = try await eventually {
             let s = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             return s.devices.contains(where: { $0.deviceID == d.id.string })

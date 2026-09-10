@@ -92,7 +92,7 @@ final class DeviceLossDaemonTests: XCTestCase {
     func testDeviceLossDetachesCaptureAndReArrivalRebinds() async throws {
         try await withDaemon { c in
             let first = RebindableDevice()
-            let d = try await c.daemon.registry.attachVirtualDevice(first)
+            let d = try await c.daemon.registry.attachVirtualDevice(first).descriptor
             let mirrored = try await self.eventually {
                 let s = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
                 return s.devices.contains(where: { $0.deviceID == d.id.string })
@@ -139,7 +139,7 @@ final class DeviceLossDaemonTests: XCTestCase {
             try await c.daemon.registry.detachFileDevice(id: d.id)
             XCTAssertEqual(first.closes.value, 1)
             let second = RebindableDevice()
-            let again = try await c.daemon.registry.attachVirtualDevice(second)
+            let again = try await c.daemon.registry.attachVirtualDevice(second).descriptor
             XCTAssertEqual(again.id, d.id, "same identity key mints the same stable id")
             let rebound = await events.waitFor { ev in
                 if case .capture(let cap)? = ev.body, cap.captureID == capture.captureID, cap.state == .captureActive {

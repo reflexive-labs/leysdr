@@ -157,8 +157,13 @@ final class Daemon: @unchecked Sendable {
             let device = RTLTCPDevice(host: ep.host, port: ep.port)
             do {
                 try await device.open()
-                let d = try await registry.attachVirtualDevice(device)
-                log.info("attached rtl_tcp \(ep.host):\(ep.port) as \(d.id.string) (\(device.tunerName))")
+                let attachment = try await registry.attachVirtualDevice(device)
+                let id = attachment.descriptor.id.string
+                if attachment.alreadyHosted {
+                    log.info("rtl_tcp \(ep.host):\(ep.port) already attached as \(id)")
+                } else {
+                    log.info("attached rtl_tcp \(ep.host):\(ep.port) as \(id) (\(device.tunerName))")
+                }
             } catch {
                 log.error("rtl_tcp \(ep.host):\(ep.port): \(error)")
                 await device.close()

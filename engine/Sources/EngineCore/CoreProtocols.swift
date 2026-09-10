@@ -67,6 +67,10 @@ public protocol RadioDevice: AnyObject, Sendable {
     func open() async throws
     func close() async
     func tune(centerHz: UInt64) async throws
+    /// Set the sample rate. A device may refuse the call while it is streaming with `DEVICE_BUSY`
+    /// rather than restart itself under the caller (`RTLSDRDevice` does); the capture engine always
+    /// stops streaming first, so both kinds work. `RTLTCPDevice` and `FilePlaybackDevice` accept a
+    /// live change.
     func setSampleRate(_ hz: UInt64) async throws
     func setGain(element: String, value: GainValue) async throws
 
@@ -120,11 +124,24 @@ public protocol DeviceRegistry: AnyObject, Sendable {
 
     func attachFileDevice(path: String, loop: Bool) async throws -> DeviceDescriptor
     /// Hosts an already-constructed virtual device (network source, synthetic source). The registry
-    /// assigns the stable id, installs its state-change hook and publishes `arrived`. Attaching a
-    /// device whose identity is already hosted returns the existing descriptor.
-    func attachVirtualDevice(_ device: any RadioDevice) async throws -> DeviceDescriptor
+    /// assigns the stable id, installs its state-change hook and publishes `arrived`.
+    func attachVirtualDevice(_ device: any RadioDevice) async throws -> VirtualAttachment
     /// Detaches any virtual device (file or `attachVirtualDevice`): closes it and publishes `removed`.
     func detachFileDevice(id: DeviceID) async throws
+}
+
+/// What hosting a virtual device produced: the descriptor it is known by, and whether that identity
+/// was already hosted. An identity attached twice -- the same rtl_tcp endpoint named twice on the
+/// command line -- keeps the first device and closes the second, so a caller that announces every
+/// attach needs to know which of the two happened.
+public struct VirtualAttachment: Sendable {
+    public let descriptor: DeviceDescriptor
+    public let alreadyHosted: Bool
+
+    public init(descriptor: DeviceDescriptor, alreadyHosted: Bool) {
+        self.descriptor = descriptor
+        self.alreadyHosted = alreadyHosted
+    }
 }
 
 public enum DeviceEvent: Sendable {

@@ -552,7 +552,8 @@ final class ChannelTests: XCTestCase {
         core.reset()
         feed(loud, blocks: 4)
         let afterReset = edges()
-        XCTAssertEqual(afterReset.map(\.squelchOpen), [true], "a reset squelch opens again on the same tone")
+        XCTAssertEqual(afterReset.map(\.squelchOpen), [false, true],
+                       "the reset ends the open transmission, then the same tone opens a new one")
         feed(quiet, blocks: 4)
         let closes = edges().filter { !$0.squelchOpen }
         let close = try XCTUnwrap(closes.first, "silence must close the squelch")
@@ -591,6 +592,45 @@ final class ChannelTests: XCTestCase {
         XCTAssertEqual(core.squelchCloseCount, 1, "opening again ends nothing")
         feed(quiet, blocks: 8)
         XCTAssertEqual(core.squelchCloseCount, 2)
+    }
+
+    /// A stream restart across an open squelch is a close edge like any other: the fresh squelch
+    /// starts closed, and without a record for the transition every watcher of the edge -- the
+    /// transmission summary on the wire, the sub-audible detector's phase history -- would carry
+    /// pre-gap state into the new stream.
+    func testResetClosesAnOpenSquelch() throws {
+        let rate: UInt64 = 240_000
+        let queue = ChannelTelemetryQueue()
+        let core = try ChannelDSPCore(captureRate: rate,
+                                      config: ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40),
+                                      telemetry: queue)
+        let block = 4096
+        let loud = DSPTest.storage(DSPTest.fmTone(carrierHz: 0, audioHz: 1000, deviationHz: 2500, rate: Double(rate), count: block))
+        let cap = CaptureID()
+        var index: UInt64 = 0
+        for _ in 0 ..< 8 {
+            core.process(block: loud.view(count: block), at: SampleTime(captureID: cap, sampleIndex: index))
+            index &+= UInt64(block)
+        }
+        var opens = 0
+        while let r = queue.pop() { if r.kind == .squelch, r.squelchOpen { opens += 1 } }
+        XCTAssertEqual(opens, 1, "the tone opens the squelch once")
+        XCTAssertEqual(core.squelchCloseCount, 0)
+
+        core.reset()
+        XCTAssertEqual(core.squelchCloseCount, 1, "the restart ends the transmission in progress")
+        var closes: [ChannelTelemetryRecord] = []
+        while let r = queue.pop() { if r.kind == .squelch { closes.append(r) } }
+        XCTAssertEqual(closes.count, 1, "one record for the close edge, none for anything else")
+        let close = try XCTUnwrap(closes.first)
+        XCTAssertFalse(close.squelchOpen)
+        XCTAssertEqual(close.time.sampleIndex, index - UInt64(block), "stamped with the last block the channel saw")
+        XCTAssertEqual(close.openSamples, UInt64(8 * block), "the summary covers the whole transmission")
+
+        // A reset with the squelch already closed has no transmission to end.
+        core.reset()
+        XCTAssertEqual(core.squelchCloseCount, 1)
+        XCTAssertNil(queue.pop())
     }
 
     func testStopLeavesNoEngineThreads() async throws {

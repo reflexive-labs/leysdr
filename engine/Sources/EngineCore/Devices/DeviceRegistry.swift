@@ -72,7 +72,14 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     public let pollIntervalMs: Int
 
     private let hub = DeviceEventHub()
-    private var entries: [DeviceID: Entry] = [:]
+    /// Every write bumps `tableGeneration`, which is how `poll` knows the table it diffed against
+    /// is the table it is about to overwrite.
+    private var entries: [DeviceID: Entry] = [:] {
+        didSet { tableGeneration &+= 1 }
+    }
+    /// Count of writes to `entries`. Only `poll` reads it: it enumerates off the actor, so an
+    /// attach, detach or claim can land while it is suspended.
+    private var tableGeneration: UInt64 = 0
     private var idMap = DeviceIDMap()
     private var pollTask: Task<Void, Never>?
     private var started = false
@@ -193,14 +200,14 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// of the device's own descriptor; the stable id is minted from that. Devices conforming to
     /// `VirtualDevice` get the registry id assigned and the state-change hook installed so their
     /// own `.disconnected` transitions publish `changed` like an unplug.
-    public func attachVirtualDevice(_ device: any RadioDevice) async throws -> DeviceDescriptor {
+    public func attachVirtualDevice(_ device: any RadioDevice) async throws -> VirtualAttachment {
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: provisional.driver, product: provisional.model)
         if let existing = entries.values.first(where: { $0.key == key && $0.rtlIndex == nil }) {
             // Callers open before attaching, so a second instance of the same identity arrives with a
             // live socket and a reader thread that nothing else holds a reference to: close it here.
             if !(existing.device === device) { await device.close() }
-            return existing.descriptor
+            return VirtualAttachment(descriptor: existing.descriptor, alreadyHosted: true)
         }
         let id = stableID(for: key)
         if let v = device as? VirtualDevice {
@@ -214,7 +221,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         let descriptor = device.descriptor
         entries[id] = Entry(descriptor: descriptor, device: device, rtlIndex: nil, key: key)
         publish(.arrived(descriptor))
-        return descriptor
+        return VirtualAttachment(descriptor: descriptor, alreadyHosted: false)
     }
 
     /// Records a state flip reported by a device (e.g. file playback reaching EOF → `.disconnected`).
@@ -287,8 +294,13 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             // An empty probe list is not a neutral pass: `applyProbes` reads it as every dongle
             // unplugged. A failed enumeration therefore leaves the known set untouched until the
             // next tick rather than announcing a device-loss storm.
+            let generation = tableGeneration
             let probes = try await BlockingWork.run { RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate) }
-            applyProbes(probes)
+            // Someone attached, detached or claimed a device while the enumeration ran, so these
+            // probes describe a table that no longer exists and `applyProbes` would diff them
+            // against the wrong one -- announcing a removal for a dongle that just arrived, say.
+            // Dropping the pass costs a second.
+            if tableGeneration == generation { applyProbes(probes) }
         } catch {
             DefaultDeviceRegistry.logger.warning("device enumeration failed (\(error)); keeping the known dongles until the next poll")
         }

@@ -32,7 +32,7 @@ final class ChannelRateRetuneDaemonTests: XCTestCase {
     func testRateChangeOutOfCaptureThenRetuneBackFollowsNewAudioRate() async throws {
         try await withDaemon { c in
             let device = RebindableDevice()
-            let d = try await c.daemon.registry.attachVirtualDevice(device)
+            let d = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             let mirrored = try await self.eventually {
                 let s = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
                 return s.devices.contains(where: { $0.deviceID == d.id.string })

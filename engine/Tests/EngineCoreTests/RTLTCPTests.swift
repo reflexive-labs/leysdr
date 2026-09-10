@@ -442,7 +442,7 @@ final class RTLTCPDeviceTests: XCTestCase {
         var iter = events.makeAsyncIterator()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: port)
         try await dev.open()
-        let d = try await registry.attachVirtualDevice(dev)
+        let d = try await registry.attachVirtualDevice(dev).descriptor
         guard case .arrived? = await iter.next() else { return XCTFail("expected arrived") }
         server.stop()
         guard case .changed(let gone)? = await iter.next() else { return XCTFail("expected changed") }
@@ -486,7 +486,7 @@ final class RTLTCPDeviceTests: XCTestCase {
         var iter = events.makeAsyncIterator()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port)
         try await dev.open()
-        let d = try await registry.attachVirtualDevice(dev)
+        let d = try await registry.attachVirtualDevice(dev).descriptor
         guard case .arrived? = await iter.next() else { return XCTFail("expected arrived") }
         // Server drops the link: the device flips to .disconnected and the registry records it.
         server.stop()
@@ -525,12 +525,12 @@ final class RTLTCPDeviceTests: XCTestCase {
         var iter = events.makeAsyncIterator()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port)
         try await dev.open()
-        let d = try await registry.attachVirtualDevice(dev)
+        let d = try await registry.attachVirtualDevice(dev).descriptor
         XCTAssertEqual(d.driver, "rtltcp")
         XCTAssertEqual(d.id, dev.descriptor.id, "registry id is assigned to the device")
         guard case .arrived(let a)? = await iter.next() else { return XCTFail("expected arrived") }
         XCTAssertEqual(a.id, d.id)
-        let again = try await registry.attachVirtualDevice(dev)
+        let again = try await registry.attachVirtualDevice(dev).descriptor
         XCTAssertEqual(again.id, d.id)
         let devices = await registry.devices
         XCTAssertEqual(devices.map(\.id), [d.id])

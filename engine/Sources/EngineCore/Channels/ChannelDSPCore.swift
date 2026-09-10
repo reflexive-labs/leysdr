@@ -194,6 +194,10 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private var openSamples: UInt64 = 0
     private var peakPowerDBFS: Float = .nan
     private var peakSNRDB: Float = .nan
+    /// Start time of the most recent block, owned by the DSP thread alone. `reset()` needs a time to
+    /// stamp the close edge it synthesises, and the last block is the last moment this channel had
+    /// signal; nothing after it belongs to the transmission being ended.
+    private var lastBlockTime: SampleTime?
 
     /// Blocks processed so far.
     public var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
@@ -238,6 +242,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
         guard n > 0 else { return }
         iq.count = n
         let power = meter.measure(iq)
+        lastBlockTime = time
         squelch.thresholdDB = Float(bitPattern: squelchBits.load(ordering: .relaxed))
         // Track the transmission in progress: two compares, no branch on the common path. The block
         // that opens the squelch counts, so a short transmission is never measured as zero samples.
@@ -325,11 +330,28 @@ public final class ChannelDSPCore: @unchecked Sendable {
     /// air. Call it only while no block is in flight (the device is stopped and the DSP thread
     /// drained); the state it touches belongs to the DSP thread.
     public func reset() {
+        // A squelch that was open ends here rather than silently: the fresh squelch below starts
+        // closed, so without this record the close edge never reaches anyone and every watcher of
+        // the edge -- the transmission summary, the sub-audible task's phase history -- would carry
+        // pre-gap state into the new stream. The telemetry queue has one producer, and the caller's
+        // contract above (no block in flight) is what makes this push that one producer.
+        if squelch.isOpen, let time = lastBlockTime {
+            var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: .nan, snrDB: .nan, squelchOpen: false)
+            rec.openSamples = openSamples
+            rec.peakPowerDBFS = peakPowerDBFS
+            rec.peakSNRDB = peakSNRDB
+            squelchCloses.wrappingAdd(1, ordering: .relaxed)
+            telemetry.push(rec)
+        }
         channelizer.reset()
         demodulator.reset()
         meter.reset()
+        // The tapped samples describe the stream before the gap. `requestFlush` rather than `clear`
+        // because the detection task owns the read side and is still running.
+        subAudibleTap?.requestFlush()
         samplesSinceMeter = 0
         squelch = Squelch(thresholdDB: squelch.thresholdDB)
+        lastBlockTime = nil
         openSamples = 0
         peakPowerDBFS = .nan
         peakSNRDB = .nan

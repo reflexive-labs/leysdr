@@ -129,7 +129,11 @@ channel's `ChannelDSPCore`: filter history, NCO phase, demodulator, the meter's 
 transmission in progress all go. The samples either side of the gap are not continuous, so filtering
 the first blocks against pre-gap history, judging them against a floor measured on the old stream,
 or reporting an open duration that spans the dead air would all describe air that was never heard.
-Nothing is in flight at that point: the device is stopped and the DSP thread drained.
+A squelch that was open when the reset lands gets a close record stamped with the last block the
+channel saw, so the transmission ends on the wire instead of vanishing and the sub-audible detector
+drops the phase history it had been building. The reset needs nothing in flight: the device is
+stopped and the ring drained first. That drain is bounded, and if it expires while the DSP thread is
+still running the resets are skipped and logged rather than run against a block mid-flight.
 
 ### Channelizer plan
 
