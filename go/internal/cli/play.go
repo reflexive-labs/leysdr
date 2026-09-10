@@ -147,7 +147,7 @@ needed.`,
 			if freq != "" {
 				hz = freqHz
 			}
-			o, err := f.parse(app, freq, hz, def)
+			o, err := f.parse(freq, hz, def)
 			if err != nil {
 				return err
 			}

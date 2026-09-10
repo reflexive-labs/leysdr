@@ -56,8 +56,8 @@ type modeDefault struct {
 // parse converts raw flags into tuneOptions. Mode precedence: explicit
 // --mode > def (sidecar/preset) > band default > NFM; the rationale is kept
 // only when the mode was inferred. Squelch: explicit flag, else auto for NFM
-// and AM in interactive runs, else off.
-func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) (*tuneOptions, error) {
+// and AM, else off.
+func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOptions, error) {
 	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
 	if f.gain != "" {
 		if _, _, err := leyline.ParseGain(f.gain); err != nil {
@@ -162,7 +162,7 @@ moves it anyway.`,
 			if err != nil {
 				return err
 			}
-			o, err := f.parse(app, arg, freq, def)
+			o, err := f.parse(arg, freq, def)
 			if err != nil {
 				return err
 			}

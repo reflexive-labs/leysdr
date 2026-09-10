@@ -110,7 +110,7 @@ here; with --format bin it is a usage error.`,
 					return err
 				}
 				f.noAudio, f.volume = true, "1"
-				if o, err = f.parse(app, arg, hz, def); err != nil {
+				if o, err = f.parse(arg, hz, def); err != nil {
 					return err
 				}
 				// A machine verb takes no interactive default: without an
