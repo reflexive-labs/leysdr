@@ -339,7 +339,7 @@ names the flag. Not required for the cut but it is what "play IQ files back" mea
 `LICENSE` at the root; `NOTICE` listing librtlsdr (GPL-2.0-or-later, dynamically linked by
 `leylined`) and the Apache-2.0 Go dependencies; a licence line in README and in `ley version`'s help.
 
-### R-8 `[ ]` README written for a stranger (S)
+### R-8 `[x]` README written for a stranger (S)
 
 What it is (a daemon that owns an RTL-SDR and a CLI that drives it, today), what it is not yet (no
 app, no MCP adapter, no recording), requirements (macOS 26, Xcode 26, Homebrew, Go 1.25, an RTL-SDR),
@@ -350,7 +350,7 @@ than paraphrasing), the docs map, a status section that agrees with `docs/build-
 (placeholder until D2), and where to report problems (the module path already names
 `github.com/dpup/leysdr`). The GOAWAY/ping note for client authors is linked, not buried.
 
-### R-9 `[ ]` CONTRIBUTING, SECURITY, CHANGELOG (S)
+### R-9 `[x]` CONTRIBUTING, SECURITY, CHANGELOG (S)
 
 - `CONTRIBUTING.md`: the gate (`make check`, both hosts), the invariants (CLAUDE.md is the review
   checklist), proto additivity, generated code, how fixtures work.
@@ -419,7 +419,7 @@ the DC guard). Split into two commits if it helps: bulk/telemetry parity, then j
   `--dwell` values, does the reported frequency drift.
 - The audio acceptance run from R-17.
 
-### R-17 `[ ]` A release checklist (S)
+### R-17 `[x]` A release checklist (S)
 
 `docs/release-checklist.md`: the manual acceptance pass a Mac must complete before a tag — fixture
 tone audible, a real station audible, `set` from a second terminal, `scan` of a known band,
