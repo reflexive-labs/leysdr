@@ -174,14 +174,14 @@ public final class ChannelDSPCore: @unchecked Sendable {
         setAGC(config.agc)
     }
 
-    /// Audio energy accumulated since the last meter record, owned by the DSP thread alone. The sum
-    /// is a Double because a 100 ms interval at 48 kHz is 4800 squares and Float would drift.
     /// The sub-audible tap, when this channel asked for one. Read by the slow detection task; the
     /// DSP thread writes it through the demodulator and never looks at these.
     public private(set) var subAudibleTap: FloatRing?
     public private(set) var subAudibleRate: Double = 0
     public private(set) var subAudibleFullScale: Double = 0
 
+    /// Audio energy accumulated since the last meter record, owned by the DSP thread alone. The sum
+    /// is a Double because a 100 ms interval at 48 kHz is 4800 squares and Float would drift.
     private var audioSumSquares: Double = 0
     private var audioSamples: Int = 0
     private var audioPeak: Float = 0

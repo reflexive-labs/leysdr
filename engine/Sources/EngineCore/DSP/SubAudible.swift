@@ -19,8 +19,8 @@ public enum CTCSS {
         186.2, 192.8, 203.5, 210.7, 218.1, 225.7, 233.6, 241.8,
     ]
 
-    /// Half the distance to the nearest neighbour of `tones[i]`: the widest a measurement may sit
-    /// from a tone and still be unambiguously that one.
+    /// Distance to the nearest neighbour of `tones[i]`. Callers scale this down to get the widest
+    /// a measurement may sit from a tone and still be unambiguously that one.
     static func neighbourGap(_ i: Int) -> Double {
         var gap = Double.infinity
         if i > 0 { gap = Swift.min(gap, tones[i] - tones[i - 1]) }

@@ -10,8 +10,11 @@ import Foundation
 /// Counts of (bin, level) pairs, decayed so that "usual" means "usual lately".
 ///
 /// Fed from the FFT ladder as an ordinary sink, so the transform is shared rather than duplicated.
-/// `add` runs on the DSP thread and allocates nothing; `snapshot` runs on whatever thread is
-/// serving a subscriber and copies under a lock.
+///
+/// `add` takes a lock, which the hot path otherwise never does: its only caller
+/// (`PersistenceFrameSink`) calls `add` and `snapshot` back to back from the same `write`, itself
+/// invoked from the DSP thread, so the lock is never actually contended. It exists for the day a
+/// subscriber reads `snapshot` from its own thread concurrently with a fold.
 public final class PersistenceAccumulator: @unchecked Sendable {
     public let bins: Int
     public let levels: Int

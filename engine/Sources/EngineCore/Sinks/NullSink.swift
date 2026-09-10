@@ -1,5 +1,5 @@
-// Sinks that discard or forward audio. Used by tests, the S2 harness and the channel engine's
-// squelch path; both are allocation-free in `write`.
+// A sink that discards everything it receives. Used by tests, the S2 harness and the channel
+// engine's squelch path; allocation-free in `write`.
 
 import Foundation
 import Synchronization

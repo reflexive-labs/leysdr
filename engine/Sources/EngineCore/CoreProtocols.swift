@@ -2,8 +2,7 @@
 // The wire contract (leyline.v1 protos, target LeylineProto) is a separate artifact; the daemon
 // target maps between the two. EngineCore never imports LeylineProto.
 //
-// This file is the engine's contract. It was transcribed from the planning-phase signature sketch
-// (docs/sdr-planning-todo.md §5) into compiling Swift; the concrete model types it references live in
+// This file is the engine's contract. The concrete model types it references live in
 // Model.swift, Identifiers.swift and Buffers.swift. Threading and ownership rules are in
 // docs/engine-internals.md — read that before implementing anything here.
 //
@@ -390,7 +389,7 @@ public protocol AudioSink: AnyObject, Sendable {
 // MARK: - Detector
 
 /// v0: energy detection over the FFT ladder. Noise-floor estimation, threshold crossing,
-/// carrier/bandwidth/SNR estimation, persistence tracking across sweep passes. (Milestone D.)
+/// carrier/bandwidth/SNR estimation, persistence tracking across sweep passes.
 public protocol Detector: AnyObject, Sendable {
     func observe(fftRow: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64)
     func detections() -> AsyncStream<Detection>
@@ -408,10 +407,13 @@ public struct Detection: Hashable, Sendable {
     public var guessConfidence: Double
 }
 
-// MARK: - Jobs (Milestone D)
+// MARK: - Jobs
 
 /// Daemon-owned persistent intents. Respawned from the store on daemon start.
 /// A table of watches, not a workflow engine.
+///
+/// This is the Milestone D.15 contract (docs/build-order.md) for the watch job; there is no
+/// implementation yet, and the scan job (`ScanRunner`) does not go through it.
 public protocol JobRunner: AnyObject, Sendable {
     var id: JobID { get }
     func start(context: JobContext) async throws
@@ -420,7 +422,9 @@ public protocol JobRunner: AnyObject, Sendable {
 }
 
 public struct JobContext: Sendable {
-    // store, capture allocator (don't-disturb policy lives here), telemetry out — filled in with Milestone D.
+    // Part of the Milestone D.15 contract; empty until a JobRunner conformance exists to fill it
+    // in with the store, the capture allocator (don't-disturb policy lives here), and a telemetry
+    // outlet.
     public init() {}
 }
 
@@ -485,9 +489,12 @@ public protocol CaptureLease: AnyObject, Sendable {
     func release() async
 }
 
-// MARK: - Store (Milestone C/D)
+// MARK: - Store
 
 /// Resources: a plain directory Finder can see, plus a metadata index.
+///
+/// This is the Milestone D.15 contract (docs/build-order.md); no implementation exists yet, and it
+/// declares the shape jobs will persist their outputs through.
 public protocol ResourceStore: AnyObject, Sendable {
     func create(kind: ResourceKind, metadata: [String: String]) async throws -> ResourceHandle
     func find(kind: ResourceKind?, matching: [String: String]) async -> [ResourceRecord]
