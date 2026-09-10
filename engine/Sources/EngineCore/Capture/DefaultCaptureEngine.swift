@@ -92,6 +92,9 @@ public actor DefaultCaptureEngine: CaptureEngine {
 
     private func beginStreaming() async throws {
         let core = self.core
+        // The channel resets below touch state the DSP thread owns, so wait for the blocks the
+        // stopped device left behind to finish going through it. A quiet ring returns at once.
+        _ = await core.drainPending()
         core.expectNewAnchor()
         for id in channelOrder {
             await channelTable[id]?.captureStreamRestarted()
