@@ -350,6 +350,10 @@ least 60 columns wide and never when piped or under `--ascii`.
 
 ### Follow-ups
 
+Now tracked in `cli-papercuts.md`, which is where small CLI improvements collect so they are not
+lost in the Closing section of whichever plan was open when they were noticed. Kept here for the
+context they were written in.
+
 - The `ley state` device line and `ley devices` disagree on how a one-frequency tuning range reads;
   state should use the same collapsing helper.
 - `ley play`'s banner did not get the one-fact-per-line treatment `tune`'s did; it still reads as
