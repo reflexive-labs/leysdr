@@ -13,7 +13,8 @@ import (
 )
 
 // Stream implements Bulk: writes synthetic frames until the client cancels or
-// the subscription is torn down. Under GAP_MARKED every 50th frame carries a Gap.
+// the subscription is torn down. Under GAP_MARKED a frame the reader was too slow to take is
+// reported as the gap its samples left behind.
 func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer[leylinev1.Frame]) error {
 	d := b.d
 	ctx, stop := d.streamContext(srv.Context())
@@ -88,7 +89,15 @@ func (d *Daemon) produce(ctx context.Context, s *stream, interval time.Duration,
 	defer close(frames)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	var seq, prevIdx uint64
+	var seq uint64
+	// A frame carries the samples since the previous tick, so its SampleTime is where that span
+	// starts: the capture's position when the producer began, for the first frame.
+	var prevIdx uint64
+	d.mu.Lock()
+	if c := d.captures[s.captureID]; c != nil {
+		prevIdx = c.sampleIndex(time.Now())
+	}
+	d.mu.Unlock()
 	for {
 		select {
 		case <-ctx.Done():
@@ -118,9 +127,6 @@ func (d *Daemon) produce(ctx context.Context, s *stream, interval time.Duration,
 				return
 			}
 			seq++
-			if seq == 1 {
-				prevIdx = idx
-			}
 			of := outFrame{
 				frame: &leylinev1.Frame{
 					StreamId: s.id, Seq: seq,

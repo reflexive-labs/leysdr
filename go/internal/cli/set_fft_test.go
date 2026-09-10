@@ -422,3 +422,24 @@ func TestSetBandwidthBeyondTheNarrowLimit(t *testing.T) {
 		t.Errorf("nfm cannot carry the 100 kHz this channel has: %v", err)
 	}
 }
+
+// TestFFTRowsCarryTheirOwnPosition: every row's SampleTime is the start of the
+// samples that row was built from, so the indices advance by one row interval
+// and never repeat. Two rows sharing an index would put the second one back in
+// time for anything that plots or seeks by sample position.
+func TestFFTRowsCarryTheirOwnPosition(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "fft", "--format", "json", "--count", "4", "--bins", "256", "--rate", "30", "--freq", "100M")
+	var prev FFTRow
+	for i, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		var row FFTRow
+		if err := json.Unmarshal([]byte(l), &row); err != nil {
+			t.Fatalf("row %q: %v", l, err)
+		}
+		if i > 0 && row.SampleIndex <= prev.SampleIndex {
+			t.Fatalf("row %d (seq %d) is at sample %d, not past row %d's %d",
+				i, row.Seq, row.SampleIndex, i-1, prev.SampleIndex)
+		}
+		prev = row
+	}
+}
