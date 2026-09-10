@@ -94,6 +94,9 @@ func (d *Daemon) CreateCapture(ctx context.Context, req *leylinev1.CreateCapture
 	if dev.State == leylinev1.DeviceState_DISCONNECTED {
 		return nil, fail(ctx, errorf(leyline.CodeDeviceDetached, req.DeviceId, "device is disconnected"))
 	}
+	if err := d.refuseIfSweeping(ctx, req.DeviceId); err != nil {
+		return nil, err
+	}
 	for _, c := range d.captures {
 		if c.DeviceId == req.DeviceId {
 			return nil, fail(ctx, errorf(leyline.CodeDeviceBusy, req.DeviceId, "device already has a capture"))
@@ -181,6 +184,9 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 	c := d.captures[req.CaptureId]
 	if c == nil {
 		return nil, fail(ctx, errorf(leyline.CodeCaptureNotFound, req.CaptureId, "no such capture"))
+	}
+	if err := d.refuseIfSweeping(ctx, c.DeviceId); err != nil {
+		return nil, err
 	}
 	mode := req.Mode
 	if mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
@@ -327,4 +333,14 @@ func (d *Daemon) DetachFileDevice(ctx context.Context, req *leylinev1.DetachFile
 	dev.State = leylinev1.DeviceState_DISCONNECTED
 	d.emit(ci, dev)
 	return &leylinev1.Empty{}, nil
+}
+
+// refuseIfSweeping mirrors SessionStore.refuseIfSwept: while a scan owns a radio it is the only
+// thing tuning it, and a channel created on a capture that is walking a band would be dragged
+// across megahertz with no explanation. Caller holds the lock.
+func (d *Daemon) refuseIfSweeping(ctx context.Context, deviceID string) error {
+	if d.sweeping == "" || d.sweeping != deviceID {
+		return nil
+	}
+	return fail(ctx, errorf(leyline.CodeDeviceSweeping, deviceID, "a scan is sweeping this radio; it is free again when the scan ends"))
 }

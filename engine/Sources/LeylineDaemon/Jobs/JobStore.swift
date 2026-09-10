@@ -13,7 +13,9 @@ import Logging
 actor JobStore {
     /// Finished jobs kept so a client can re-read one. Bounded: this is memory, not a store.
     static let keepFinished = 16
-    /// How long CancelJob waits for a sweep to settle before answering anyway.
+    /// How long CancelJob waits for a sweep to settle before answering anyway. The teardown it is
+    /// waiting on is uncancellable USB work -- `device.open` on the way in, `stopStreaming`'s own
+    /// 1 s + 3 s budget on the way out -- so this is a bound on the answer, not on the work.
     static let cancelWaitSeconds = 3.0
 
     private struct Entry {
@@ -85,7 +87,15 @@ actor JobStore {
         // the job is answered as cancelled and the task finishes on its own -- a stale answer to
         // CancelJob is better than an RPC that never returns, and worse than neither is a daemon
         // shutdown that hangs on it.
-        if let t = e.task { await withTimeout(seconds: Self.cancelWaitSeconds) { await t.value } }
+        // Poll the job's own state rather than awaiting the task. `Task.value` is not
+        // cancellation-aware, so racing it in a task group does not bound anything: the group
+        // still awaits the parked child on the way out, and a measured `withTimeout(1.0)` around
+        // six seconds of uncancellable work returned after six. This loop is bounded by
+        // construction.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(Self.cancelWaitSeconds))
+        while entries[id]?.proto.state == .running, ContinuousClock.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
         if entries[id]?.proto.state == .running {
             await finish(id, state: .cancelled, detail: "cancelled")
         }
@@ -313,16 +323,5 @@ actor JobStore {
             entries[drop] = nil
             order.removeAll { $0 == drop }
         }
-    }
-}
-
-/// Runs `body`, giving up after `seconds`. The work is not cancelled -- it is already cancelled or
-/// uncancellable; this only bounds how long somebody waits to hear about it.
-func withTimeout(seconds: Double, _ body: @escaping @Sendable () async -> Void) async {
-    await withTaskGroup(of: Void.self) { group in
-        group.addTask { await body() }
-        group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
-        await group.next()
-        group.cancelAll()
     }
 }

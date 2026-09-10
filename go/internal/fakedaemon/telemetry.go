@@ -52,8 +52,12 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 		return srv.Send(m)
 	}
 	// Detections are pushed by a running scan rather than produced on the tick, so each
-	// subscriber walks the shared log from its own cursor.
-	detectionCursor := 0
+	// subscriber walks the shared log from its own cursor -- starting at the end, because
+	// telemetry is live. The daemon's hub has no history at all; replaying a finished scan's
+	// detections to a subscriber that arrived afterwards would report old readings as current.
+	d.mu.Lock()
+	detectionCursor := len(d.detectionLog)
+	d.mu.Unlock()
 	squelchOpen := map[string]bool{}
 	// What the real daemon accumulates on the DSP thread while the squelch is
 	// open, so the close edge can summarise the transmission that just ended.

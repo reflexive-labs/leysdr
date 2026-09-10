@@ -405,6 +405,10 @@ actor SessionStore {
             throw EngineError.deviceNotFound(deviceID.string)
         }
         if desc.state == .disconnected { throw EngineError.deviceDetached(deviceID.string) }
+        if let existing = captures.first(where: { $0.value.deviceID == deviceID })?.key, swept.contains(existing) {
+            // Say what has it. "The radio is busy" sends somebody looking for another client.
+            throw EngineError(code: "DEVICE_SWEEPING", message: "a scan is sweeping this radio; it is free again when the scan ends", target: deviceID.string)
+        }
         if captures.values.contains(where: { $0.deviceID == deviceID }) || startingDevices.contains(deviceID) {
             throw EngineError.deviceBusy(deviceID.string)
         }
@@ -485,7 +489,7 @@ actor SessionStore {
 
     private func refuseIfSwept(_ id: CaptureID) throws {
         if swept.contains(id) {
-            throw EngineError(code: "DEVICE_BUSY", message: "a scan is sweeping this radio; it is free again when the scan ends", target: id.string)
+            throw EngineError(code: "DEVICE_SWEEPING", message: "a scan is sweeping this radio; it is free again when the scan ends", target: id.string)
         }
     }
 

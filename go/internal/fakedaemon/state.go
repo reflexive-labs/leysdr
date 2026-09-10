@@ -2,6 +2,7 @@ package fakedaemon
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/dpup/leysdr/go/pkg/leyline"
@@ -214,6 +215,16 @@ func (d *Daemon) reap(clientID string) {
 	}
 	delete(d.presence, clientID)
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "daemon", Label: "presence"}
+	// A sweep nobody is reading is a radio nobody can use; the daemon's clientGone hook does the
+	// same. A hard-killed `ley scan` must not leave the fake sweeping for ever either.
+	for id, j := range d.jobs {
+		if j.owner == clientID && j.proto.State == leylinev1.JobState_RUNNING {
+			j.proto.State = leylinev1.JobState_CANCELLED
+			j.proto.StatusDetail = fmt.Sprintf("stopped, %d found", len(j.scan.GetDetections()))
+			d.emit(by, j.proto)
+			_ = id
+		}
+	}
 	for id, ch := range d.channels {
 		if ch.Persistent || ch.Owner == nil || ch.Owner.ClientId != clientID {
 			continue

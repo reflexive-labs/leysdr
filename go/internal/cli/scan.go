@@ -169,7 +169,11 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	}
 	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
 	if err != nil {
+		// Interrupted, and the daemon was still handing the radio back when we asked. Say so:
+		// exiting 0 with an empty screen reads as an empty band.
 		if ctx.Err() != nil && !s.app.JSON {
+			s.say("stopped before the daemon could report what it found (%s says whether the scan is still running)\n",
+				st.Cmd("ley state"))
 			return nil
 		}
 		return err

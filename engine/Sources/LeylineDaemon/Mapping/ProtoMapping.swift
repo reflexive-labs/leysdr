@@ -199,7 +199,7 @@ enum ProtoMapping {
         case "DEVICE_NOT_FOUND", "CAPTURE_NOT_FOUND", "CHANNEL_NOT_FOUND", "SINK_NOT_FOUND", "STREAM_NOT_FOUND",
              "JOB_NOT_FOUND", "SCAN_NOT_FOUND":
             return .notFound
-        case "DEVICE_BUSY": return .resourceExhausted
+        case "DEVICE_BUSY", "DEVICE_SWEEPING": return .resourceExhausted
         case "DEVICE_DETACHED": return .failedPrecondition
         case "DEVICE_IO": return .unavailable
         case "FREQ_OUT_OF_RANGE", "RATE_UNSUPPORTED", "OFFSET_OUT_OF_CAPTURE", "GAIN_ELEMENT_UNKNOWN",

@@ -23,6 +23,7 @@ const ErrorTrailerKey = "leyline-error-bin"
 const (
 	CodeDeviceNotFound      = "DEVICE_NOT_FOUND"
 	CodeDeviceBusy          = "DEVICE_BUSY"
+	CodeDeviceSweeping      = "DEVICE_SWEEPING"
 	CodeDeviceDetached      = "DEVICE_DETACHED"
 	CodeDeviceIO            = "DEVICE_IO"
 	CodeFreqOutOfRange      = "FREQ_OUT_OF_RANGE"
@@ -179,7 +180,7 @@ func GRPCCode(code string) codes.Code {
 	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeGainElementUnknown,
 		CodeJobNotFound, CodeScanNotFound:
 		return codes.NotFound
-	case CodeDeviceBusy:
+	case CodeDeviceBusy, CodeDeviceSweeping:
 		return codes.FailedPrecondition
 	case CodeDeviceDetached, CodeDeviceIO:
 		return codes.Unavailable

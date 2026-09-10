@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/ui"
@@ -179,4 +180,79 @@ func firstFreq(table string) string {
 		}
 	}
 	return ""
+}
+
+// The fake daemon is what every test above runs against, so a fake that disagrees with the Swift
+// daemon makes them worthless. These pin the behaviours that diverged.
+func TestScanContractParityWithTheDaemon(t *testing.T) {
+	t.Run("a missing radio fails the job, not the RPC", func(t *testing.T) {
+		sock, _ := harness(t, fakedaemon.Options{})
+		// Far outside the fake RTL-SDR's tuning range.
+		_, errOut, err := run(t, t.Context(), sock, "scan", "2400M..2410M")
+		if err == nil {
+			t.Fatalf("an unreachable range must fail:\n%s", errOut)
+		}
+		// The daemon always returns a RUNNING job and fails it from the allocator, so the message
+		// is the job's reason and not a raw gRPC error.
+		if !strings.Contains(err.Error(), "tune") {
+			t.Errorf("want the allocator's reason, got %q", err)
+		}
+	})
+
+	t.Run("a scan owns the radio while it runs", func(t *testing.T) {
+		sock, c := harness(t, fakedaemon.Options{})
+		st, serr := c.State(t.Context())
+		if serr != nil || len(st.Devices) == 0 {
+			t.Fatalf("state: %v", serr)
+		}
+		// A long sweep, then try to join the radio while it is walking.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _, _ = run(t, t.Context(), sock, "scan", "145M..147M", "--dwell", "150")
+		}()
+		time.Sleep(120 * time.Millisecond)
+		_, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--persistent")
+		<-done
+		if err == nil {
+			t.Fatal("tune must not join a capture a scan is sweeping")
+		}
+		if !strings.Contains(err.Error(), "scan is sweeping") {
+			t.Errorf("want the sweeping reason, got %q", err)
+		}
+	})
+
+	t.Run("GetState carries the job table", func(t *testing.T) {
+		sock, c := harness(t, fakedaemon.Options{})
+		mustRun(t, sock, "scan", "145M..147M")
+		st, err := c.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(st.Jobs) == 0 {
+			t.Fatal("a finished scan must still be in GetState: that is what makes reconnect work")
+		}
+		if st.Jobs[0].State.String() != "COMPLETED" {
+			t.Errorf("job state %v", st.Jobs[0].State)
+		}
+	})
+
+	t.Run("the Scan says how finely it looked and what it covered", func(t *testing.T) {
+		sock, _ := harness(t, fakedaemon.Options{})
+		out := mustRun(t, sock, "--json", "scan", "145M..147M")
+		var scan map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &scan); err != nil {
+			t.Fatal(err)
+		}
+		if scan["resolutionHz"] == nil {
+			t.Error("no resolutionHz: every dB in the message is per bin, and a bin needs a width")
+		}
+		if scan["covered"] == nil {
+			t.Error("no covered range: a client cannot tell what was searched from what was asked")
+		}
+		cfg, _ := scan["config"].(map[string]any)
+		if cfg["stepHz"] == nil {
+			t.Error("no stepHz")
+		}
+	})
 }

@@ -32,8 +32,11 @@ type fakeJob struct {
 }
 
 // publishDetection appends to the log every telemetry subscriber reads. Caller holds the lock.
+//
+// Deduped within a scan (the sweep re-reports the same carrier as it accumulates looks) but not
+// across scans, which are separate observations of the band.
 func (d *Daemon) publishDetection(det *leylinev1.Detection) {
-	for _, x := range d.detectionLog {
+	for _, x := range d.detectionLog[d.detectionEpoch:] {
 		if x.CenterHz == det.CenterHz {
 			return
 		}
@@ -41,6 +44,7 @@ func (d *Daemon) publishDetection(det *leylinev1.Detection) {
 	d.detectionLog = append(d.detectionLog, proto.Clone(det).(*leylinev1.Detection))
 	if n := len(d.detectionLog) - 256; n > 0 {
 		d.detectionLog = d.detectionLog[n:]
+		d.detectionEpoch = max(0, d.detectionEpoch-n)
 	}
 }
 
@@ -65,14 +69,10 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	d.touchUnary(ci)
 
 	d.mu.Lock()
-	dev := d.scanDevice(sc.DeviceId)
-	if dev == nil {
-		d.mu.Unlock()
-		if sc.DeviceId != "" {
-			return nil, fail(ctx, errorf(leyline.CodeDeviceNotFound, sc.DeviceId, "no such radio, or it cannot tune that range"))
-		}
-		return nil, fail(ctx, errorf(leyline.CodeDeviceNotFound, "", "no radio here can tune that range"))
-	}
+	// The daemon allocates inside the job, not inside StartJob: a radio that is missing or busy is
+	// a FAILED job with a reason, never an RPC error. A fake that refused synchronously would give
+	// every CLI test a code path the real daemon never takes.
+	dev := d.scanDevice(sc.DeviceId, sc.Range)
 	job := &leylinev1.Job{
 		JobId:        newID("job_"),
 		State:        leylinev1.JobState_RUNNING,
@@ -84,7 +84,7 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	scanID := newID("scan_")
 	job.ResultUris = []string{"ley://scans/" + scanID}
 	rate := uint64(2_400_000)
-	if len(dev.SampleRates) > 0 {
+	if dev != nil && len(dev.SampleRates) > 0 {
 		rate = dev.SampleRates[len(dev.SampleRates)-1]
 	}
 	stored := proto.Clone(sc).(*leylinev1.ScanConfig)
@@ -94,6 +94,8 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 		ResolutionHz: uint32(rate / 1024),
 	}, owner: ci.GetClientId()}
 	d.jobOrder = append(d.jobOrder, job.JobId)
+	d.detectionEpoch = len(d.detectionLog)
+	d.trimJobsLocked()
 	d.emit(ci, job)
 	d.mu.Unlock()
 
@@ -122,12 +124,25 @@ func (d *Daemon) busyReason(deviceID string) string {
 		if cap.GetActivity().GetLiveAudioSinks() > 0 {
 			return "audio is playing from this radio"
 		}
+		if last := cap.GetActivity().GetLastInteractiveWriteNs(); last > 0 {
+			if age := time.Since(time.Unix(0, last)); age < dontDisturb {
+				return fmt.Sprintf("somebody was tuning this radio %d s ago", int(age.Seconds()))
+			}
+		}
 	}
 	return ""
 }
 
 // runScan walks the range and reports the fake device's carriers that fall inside it.
 func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.DeviceDescriptor) {
+	if dev == nil {
+		if sc.DeviceId != "" {
+			d.failScan(jobID, "NO_DEVICE", sc.DeviceId+" cannot tune that range, or is not here")
+		} else {
+			d.failScan(jobID, "NO_DEVICE", "no radio here can tune that range")
+		}
+		return
+	}
 	rate := uint64(2_400_000)
 	if len(dev.SampleRates) > 0 {
 		rate = dev.SampleRates[len(dev.SampleRates)-1]
@@ -153,19 +168,32 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	if dwell > 200*time.Millisecond {
 		dwell = 200 * time.Millisecond // tests must not wait for a real sweep
 	}
+	d.mu.Lock()
+	reason := ""
 	if !sc.TakeOver {
-		d.mu.Lock()
-		reason := d.busyReason(dev.DeviceId)
-		d.mu.Unlock()
-		if reason != "" {
-			d.failScan(jobID, "DEVICE_BUSY", reason)
-			return
-		}
+		reason = d.busyReason(dev.DeviceId)
 	}
+	if reason == "" && d.sweeping != "" {
+		reason = "another scan already has " + d.devices[d.sweeping].GetModel()
+	}
+	if reason == "" {
+		d.sweeping = dev.DeviceId
+	}
+	d.mu.Unlock()
+	if reason != "" {
+		d.failScan(jobID, "DEVICE_BUSY", reason)
+		return
+	}
+	defer func() {
+		d.mu.Lock()
+		d.sweeping = ""
+		d.mu.Unlock()
+	}()
 	var found []*leylinev1.Detection
 	var floors []*leylinev1.NoiseFloorSegment
 	for i, c := range centers {
 		if d.jobCancelled(jobID) {
+			d.keepPartial(jobID, found, floors, uint64(math.Max(0, lo)), uint64(hi))
 			return
 		}
 		time.Sleep(dwell)
@@ -213,6 +241,9 @@ var fakeCarriers = []struct {
 
 const fakeFloorDbfs = -88.2
 
+// dontDisturb matches the daemon's dontDisturbNs.
+const dontDisturb = 60 * time.Second
+
 func mergeDetection(list []*leylinev1.Detection, d *leylinev1.Detection) []*leylinev1.Detection {
 	for _, x := range list {
 		if x.CenterHz == d.CenterHz {
@@ -224,8 +255,10 @@ func mergeDetection(list []*leylinev1.Detection, d *leylinev1.Detection) []*leyl
 	return append(list, d)
 }
 
-// scanDevice picks a radio for a sweep, honouring an explicit id. Caller holds the lock.
-func (d *Daemon) scanDevice(want string) *leylinev1.DeviceDescriptor {
+// scanDevice picks a radio for a sweep, honouring an explicit id and the range it must hear.
+// Caller holds the lock. Mirrors SessionCaptureAllocator: what a capture can hear, not just where
+// the tuner can point, so a device whose range is one point still serves a sweep around it.
+func (d *Daemon) scanDevice(want string, r *leylinev1.FrequencyRange) *leylinev1.DeviceDescriptor {
 	var best *leylinev1.DeviceDescriptor
 	for _, x := range d.devices {
 		if x == nil || x.State == leylinev1.DeviceState_DISCONNECTED {
@@ -234,12 +267,55 @@ func (d *Daemon) scanDevice(want string) *leylinev1.DeviceDescriptor {
 		if want != "" && x.DeviceId != want {
 			continue
 		}
+		if r != nil && !audible(x, r) {
+			continue
+		}
 		if best == nil || x.DeviceId < best.DeviceId {
 			best = x
 		}
 	}
 	return best
 }
+
+// audible reports whether a capture on this device could hear any of the range.
+func audible(dev *leylinev1.DeviceDescriptor, r *leylinev1.FrequencyRange) bool {
+	rate := float64(2_400_000)
+	if n := len(dev.SampleRates); n > 0 {
+		rate = float64(dev.SampleRates[n-1])
+	}
+	edge := 0.45 * rate
+	for _, t := range dev.TuningRanges {
+		if float64(t.MinHz)-edge <= float64(r.MaxHz) && float64(t.MaxHz)+edge >= float64(r.MinHz) {
+			return true
+		}
+	}
+	return len(dev.TuningRanges) == 0
+}
+
+// trimJobsLocked keeps the last keepFinishedJobs finished jobs, as the daemon does: a client that
+// loops over scans must not find the fake remembering what the daemon forgot.
+func (d *Daemon) trimJobsLocked() {
+	var finished []string
+	for _, id := range d.jobOrder {
+		if j := d.jobs[id]; j != nil && j.proto.State != leylinev1.JobState_RUNNING {
+			finished = append(finished, id)
+		}
+	}
+	for len(finished) > keepFinishedJobs {
+		drop := finished[0]
+		finished = finished[1:]
+		delete(d.jobs, drop)
+		for i, id := range d.jobOrder {
+			if id == drop {
+				d.jobOrder = append(d.jobOrder[:i], d.jobOrder[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+// keepFinishedJobs matches JobStore.keepFinished.
+const keepFinishedJobs = 16
 
 func (d *Daemon) jobCancelled(id string) bool {
 	d.mu.Lock()
@@ -266,6 +342,23 @@ func (d *Daemon) setJobDetail(id, detail string, found []*leylinev1.Detection, f
 		d.publishDetection(det)
 	}
 	d.emit(nil, j.proto)
+}
+
+// keepPartial writes what a stopped sweep found, the way the daemon does: somebody who
+// interrupts a scan still wants the part that ran.
+func (d *Daemon) keepPartial(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, lo, hi uint64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	j := d.jobs[id]
+	if j == nil || j.scan == nil {
+		return
+	}
+	j.scan.Detections = cloneDetections(found)
+	j.scan.NoiseFloor = floors
+	j.scan.Covered = &leylinev1.FrequencyRange{MinHz: lo, MaxHz: hi}
+	if j.scan.CompletedAtNs == 0 {
+		j.scan.CompletedAtNs = time.Now().UnixNano()
+	}
 }
 
 func cloneDetections(in []*leylinev1.Detection) []*leylinev1.Detection {
@@ -302,6 +395,7 @@ func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*l
 	j.proto.State = leylinev1.JobState_COMPLETED
 	j.proto.StatusDetail = fmt.Sprintf("%d found", len(found))
 	d.emit(nil, j.proto)
+	d.trimJobsLocked()
 }
 
 // ListJobs implements Jobs.

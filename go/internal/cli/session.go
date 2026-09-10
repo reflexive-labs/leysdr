@@ -137,6 +137,15 @@ type friendlyError struct {
 func (e *friendlyError) Error() string { return e.msg }
 func (e *friendlyError) Unwrap() error { return e.cause }
 
+// daemonMessage is the daemon's own prose for an error, without the code prefix.
+func daemonMessage(err error) string {
+	var le *leyline.Error
+	if errors.As(err, &le) && le.Message != "" {
+		return le.Message
+	}
+	return leyline.FromStatus(err).Message
+}
+
 // friendly rewrites the daemon errors a newcomer is likely to hit into one
 // sentence that says what to do next. input/hz describe the frequency the
 // user asked for (hz 0 when none). Other errors pass through unchanged.
@@ -149,6 +158,10 @@ func (s *session) friendly(err error, input string, hz uint64) error {
 		return err
 	}
 	switch leyline.Code(err) {
+	case leyline.CodeDeviceSweeping:
+		// The daemon already said what has the radio and when it will be free. A generic
+		// "another client holds it" would send the reader looking for the wrong thing.
+		return &friendlyError{msg: daemonMessage(err), cause: err}
 	case leyline.CodeDeviceBusy:
 		if s.device != nil && heldExternally(s.device) {
 			return &friendlyError{msg: fmt.Sprintf("%s is held by another program (rtl_tcp, SDR++, GQRX?): quit it, or pick another radio with --device (ley devices lists them)", s.device.Model), cause: err}

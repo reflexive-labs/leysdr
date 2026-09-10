@@ -74,10 +74,16 @@ type Daemon struct {
 	presence map[string]*presence // by client id
 	jobs     map[string]*fakeJob
 	jobOrder []string
+	// sweeping is the device a scan currently owns, so a second scan is declined and a channel
+	// cannot join a capture that is walking a band (the daemon's `swept` set).
+	sweeping string
 	// detectionLog is append-only and capped; every telemetry subscriber reads it from its own
 	// cursor, so a detection reaches all of them exactly once.
 	detectionLog []*leylinev1.Detection
-	socket       string
+	// Where the current scan's detections begin in the log, so a carrier is deduped within a scan
+	// and reported afresh by the next one.
+	detectionEpoch int
+	socket         string
 	// history holds the last eventHistoryLimit events, oldest first, for
 	// WatchEvents(since_seq) replay (the Swift daemon keeps the same window).
 	history []retainedEvent

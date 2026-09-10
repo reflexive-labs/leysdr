@@ -106,6 +106,12 @@ spots. `ScanConfig.device_id` names the radio when there is more than one. `snr_
 numerically with `Meter.snr_db`, which is a block's power against a five-second running minimum.
 Full design, with the measured numbers: `docs/design-scan.md`.
 
+While a sweep holds a radio it is the only thing tuning it: `CreateCapture`, `CreateChannel` and
+centre or rate writes on that capture are refused with the stable code `DEVICE_SWEEPING`, which is
+distinct from `DEVICE_BUSY` precisely so a client does not tell the reader to go looking for another
+client. Without it a channel created on a capture that is walking a band would be dragged across
+megahertz with no explanation.
+
 **Jobs.** `Job` appears on the event stream (`Event.job`) and in `GetState` (`GetStateResponse.jobs`),
 so job state is rendered by subscription like every other piece of daemon state rather than polled.
 A v0 scan job is **not persistent**: it belongs to the connection that started it and the daemon
