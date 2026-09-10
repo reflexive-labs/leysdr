@@ -102,8 +102,8 @@ What was decided, and how to override it:
   sits 10 dB above it. `--squelch -50` sets a level (dBFS: 0 is the loudest the radio can hear,
   the floor depends on gain; the banner prints it), `--squelch off` never mutes. If no spectrum row arrives
   within two seconds squelch stays off and the banner says so. `ley help squelch`.
-- **Bandwidth** (`--bw`, a bare number is kHz) and **volume** (`--volume 50%`) have the mode's
-  usual values. Gain starts on auto; `ley help gain`.
+- **Bandwidth** (`--bw`, a bare number is kHz) has the mode's usual value. **Volume**
+  (`--volume 50%`) defaults to 100% for every mode. Gain starts on auto; `ley help gain`.
 
 The last line is a live meter: on a terminal a bar scaled from -90 dBFS to 0 with a marker at
 the squelch threshold, then the signal level and whether audio is playing or `muted, waiting for
@@ -261,7 +261,51 @@ tenth of a false signal. `docs/design-scan.md` has the measurements.
 everywhere else in `ley`. `--dwell 1000` looks longer at each stop and finds weaker signals.
 `--sort snr` puts the loudest first. `--json` prints one `Scan` object and nothing before it.
 
-## 6. Two channels on one radio
+## 6. Watch a band over time
+
+`spectrum` and `scan` both answer "what is here right now". Two more views trade that snapshot for
+history, and answer different questions.
+
+**`ley waterfall`** draws the band as a scrolling map: left to right is frequency, down the screen
+is time, newest row at the bottom, a denser cell for a stronger signal. It is the only view that
+answers *is that signal always there, or did it start and stop?* — a birdie draws a dead straight
+line, a transmission draws a block with a beginning and an end, a pager burst draws a dash, and none
+of the three can be told apart in a single `spectrum` frame. Each row covers the whole interval
+since the last one, not an instant, so a transmission shorter than a row still shows up, and the dB
+scale is chosen from the first rows and held for the run so shading stays comparable across it. At a
+wide span each column covers tens of kHz — a map of where energy is, not a picture of a signal's
+shape — so narrow `--span` to see shape.
+
+```console
+$ ley waterfall 146.52              # is the local repeater busy?
+$ ley waterfall 162.55 --span 250k  # narrow: a channel at a time
+$ ley waterfall --rate 4            # four rows a second
+$ ley waterfall 101.1 --count 40    # forty rows, then stop
+```
+
+**`ley phosphor`** draws the band the way `spectrum` does — frequency across, level up — but shades
+each cell by how often that frequency has sat at that level, not by where it is right now. Bright
+means usual, faint means it happens but rarely. That answers *what is here that I keep missing*: a
+signal that transmits for 80 ms once a minute is invisible on a live spectrum and obvious here,
+because the display accumulates over time instead of trying to catch the moment — a steady carrier
+piles into one thin line, noise spreads into a band, an intermittent burst leaves a faint mark
+exactly where it lives. Counts fade on a half-life (`--half-life`, seconds, default 20) so "usual"
+means "usual lately", not "at some point since you started" — the header states the window. Reach
+for it when you suspect something is on a band but never see it: ISM and paging bands, telemetry,
+anything bursty.
+
+```console
+$ ley phosphor 910                      # what lives on the 915 MHz ISM band?
+$ ley phosphor 462.5625 --half-life 60  # a slower fade, for rare traffic
+$ ley phosphor 144.39 --span 250k       # narrow in on one channel
+```
+
+Both share `spectrum`'s device and framing flags (`--span`, `--band`, `--bins`, `--device`,
+`--retune`, `--width`) plus `--rate` (rows or redraws a second) and `--count` (stop after N, default
+runs until Ctrl-C). Neither calls out carriers by name the way `scan` does — they are pictures to
+read, not a list to act on.
+
+## 7. Two channels on one radio
 
 A capture is a wide slice of the band (2.4 MHz on an RTL-SDR), so one radio can feed several
 channels at once. `--persistent` leaves a channel running after the command exits and prints
@@ -339,7 +383,7 @@ a state too large to read as a tree or a line you want to `awk`; `--ascii` swaps
 drawing for `+-` and `\-`. `ley state --json` is still the machine snapshot, and it is unchanged
 by any of this.
 
-## 7. Play a recording
+## 8. Play a recording
 
 `play` attaches an IQ recording (a `.cf32` file: the raw samples a radio produced) as a pretend
 radio and tunes on it exactly as `tune` would, so `set` and `spectrum` work on it unchanged. No
@@ -365,7 +409,7 @@ channels.
 Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12;
 `ley help roadmap`).
 
-## 8. For scripts and agents
+## 9. For scripts and agents
 
 `ley help scripting` is the authoritative short version; the contract is `docs/interfaces.md`.
 
@@ -419,7 +463,7 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
-## 9. When things go wrong
+## 10. When things go wrong
 
 Every error is one line that says what happened and what to run next. The ones a newcomer
 meets first:
@@ -443,7 +487,7 @@ meets first:
 | full-scale static as soon as `tune` starts | squelch is off (scripts, `--persistent`, non-voice modes, or no spectrum row arrived) | `ley set squelch auto` |
 | `record`, `watch` exit 2 with "not implemented yet" | planned verbs | `ley help roadmap` says what to use today |
 | `ley: somebody was tuning this radio 12 s ago. ley scan --take-over sweeps anyway, and hands the radio back afterwards` | a sweep owns the radio for seconds, so it declines a radio in use rather than interrupting | wait, stop the channel, or `--take-over` |
-| `ley: all of that range sits within 120.000 kHz of 146.000 MHz, where this radio'"'"'s own DC spike is; a scan does not look there` | scan never reports the tuner'"'"'s own centre; on a radio with one tuning point (a recording) that blind spot cannot be covered from elsewhere | `ley spectrum` draws it, DC spike and all |
+| `ley: all of that range sits within 120.000 kHz of 146.000 MHz, where this radio's own DC spike is; a scan does not look there` | scan never reports the tuner's own centre; on a radio with one tuning point (a recording) that blind spot cannot be covered from elsewhere | `ley spectrum` draws that span instead, DC spike and all |
 
 When the message is not enough: `ley state` is the whole picture, `ley daemon logs -f` follows
 the daemon, and `ley --socket PATH` talks to a daemon on another socket.
