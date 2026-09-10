@@ -3,6 +3,10 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,10 +57,28 @@ func TestScanShowsTheEvidence(t *testing.T) {
 	if !strings.Contains(out, "/") {
 		t.Errorf("no SEEN counts in:\n%s", out)
 	}
-	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "145.230") && !strings.Contains(line, "8/8") {
-			t.Errorf("want a look count on the row: %q", line)
+	// The counts are the sweep's own arithmetic -- rows per step, and the steps whose windows
+	// covered the frequency -- so the assertion is the invariant, not a number: something was
+	// looked at, and nothing was found more often than it was looked for.
+	seen := regexp.MustCompile(`\s(\d+)/(\d+)\s`)
+	var checked bool
+	for _, line := range strings.Split(ui.Strip(out), "\n") {
+		if !strings.Contains(line, "145.230") {
+			continue
 		}
+		m := seen.FindStringSubmatch(line)
+		if m == nil {
+			t.Fatalf("want a look count on the row: %q", line)
+		}
+		looks, _ := strconv.Atoi(m[1])
+		possible, _ := strconv.Atoi(m[2])
+		if looks < 2 || looks > possible {
+			t.Errorf("looks %d of %d: %q", looks, possible, line)
+		}
+		checked = true
+	}
+	if !checked {
+		t.Fatalf("no row for the carrier:\n%s", out)
 	}
 }
 
@@ -418,5 +440,88 @@ func waitForSweep(t *testing.T, c *leyline.Client, cancel context.CancelFunc, do
 			t.Fatal("the scan never reported RUNNING")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A scan is a measurement, and a measurement is only comparable with another taken the same way.
+// The sweep pins the tuner for its duration and says where, so two scans of a band can be read
+// against each other.
+func TestScanSaysWhatGainItRanAt(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M")
+	if err != nil {
+		t.Fatalf("ley scan: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "gain tuner ") {
+		t.Errorf("the summary should name the gain the sweep ran at:\n%s", errOut)
+	}
+	if strings.Contains(out, "gain tuner ") {
+		t.Errorf("prose reached stdout:\n%s", out)
+	}
+	// And the machine-readable answer carries it as a GainState, with the automatic gain frozen.
+	js := mustRun(t, sock, "--json", "scan", "145M..147M")
+	var scan struct {
+		Gains []struct {
+			Element string  `json:"element"`
+			Db      float64 `json:"db"`
+			Auto    bool    `json:"auto"`
+		} `json:"gains"`
+		Detections []struct {
+			FirstSeen struct {
+				CaptureID   string `json:"captureId"`
+				SampleIndex string `json:"sampleIndex"`
+			} `json:"firstSeen"`
+			LastSeen struct {
+				SampleIndex string `json:"sampleIndex"`
+			} `json:"lastSeen"`
+		} `json:"detections"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(js)), &scan); err != nil {
+		t.Fatalf("%v\n%s", err, js)
+	}
+	if len(scan.Gains) != 1 || scan.Gains[0].Element != "TUNER" || scan.Gains[0].Db <= 0 || scan.Gains[0].Auto {
+		t.Fatalf("scan gains = %+v", scan.Gains)
+	}
+	// When a detection was seen is part of the evidence: a carrier heard once at the start of a
+	// sweep and a carrier heard throughout are not the same finding.
+	if len(scan.Detections) == 0 {
+		t.Fatal("no detections")
+	}
+	for _, d := range scan.Detections {
+		first, _ := strconv.ParseUint(d.FirstSeen.SampleIndex, 10, 64)
+		last, _ := strconv.ParseUint(d.LastSeen.SampleIndex, 10, 64)
+		if first == 0 || last < first {
+			t.Errorf("detection seen from %d to %d", first, last)
+		}
+	}
+}
+
+// A sweep does not look at the middle of its own span, because the radio's DC spike lives there,
+// and a request that fits entirely inside that hole is a range nothing can see. A file device has
+// one tuning point and so no neighbouring step to cover the hole, which is where this happens:
+// the daemon refuses with BLIND_SPOT rather than reporting an empty band as a quiet one.
+func TestScanRefusesTheBlindSpot(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	dir := t.TempDir()
+	iq := filepath.Join(dir, "tone.cf32")
+	if err := os.WriteFile(iq, make([]byte, 8*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	side := `{"format":"cf32","sample_rate":2400000,"center_hz":146520000}`
+	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dev, err := c.Control.AttachFileDevice(context.Background(), &leylinev1.AttachFileDeviceRequest{Path: iq, Loop: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run(t, context.Background(), sock, "scan", "146.45M..146.59M", "--device", dev.DeviceId)
+	if err == nil {
+		t.Fatal("a scan of nothing but the DC guard should fail")
+	}
+	for _, want := range []string{"DC spike", "146.520 MHz", "ley spectrum"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("blind-spot refusal lacks %q: %v", want, err)
+		}
 	}
 }

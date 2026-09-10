@@ -446,7 +446,7 @@ the state mirror with event folding (`fold`), bring-up of a capture and channel 
 logic, the auto-squelch measurement, the live parameter write with confirmation, and following a scan
 job to completion. The CLI becomes a renderer over those. Prerequisite for R-12 and for D.14.
 
-### R-14 `[ ]` The fake daemon tells the daemon's story (M, Opus)
+### R-14 `[x]` The fake daemon tells the daemon's story (M, Opus)
 
 The ten divergences listed under "The wire contract". For each: make the fake match the Swift daemon's
 semantics, and add the CLI test that could not exist before (a `ley phosphor` run against the fake;

@@ -158,7 +158,7 @@ that could not exist before (a bandwidth the daemon refuses; Ctrl-C then `GetSca
 partial scan; a write refused with `DEVICE_SWEEPING` during a scan; no fabricated squelch edge;
 `CreateChannel` stamping activity so `busyReason` reports a recent write).
 
-### GO-7 `[ ]` The fake tells the daemon's story, part two (R-14 of the release plan)
+### GO-7 `[x]` The fake tells the daemon's story, part two (R-14 of the release plan)
 
 The ten divergences listed under "The wire contract" in `docs/plans/v1-release.md`, each with its
 CLI test. Check `RTLSDRDevice.swift` for the feature keys the real driver emits and fix

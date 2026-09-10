@@ -143,7 +143,10 @@ func TestDevicesTableAndJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &resp); err != nil || len(resp.Devices) != 2 {
 		t.Fatalf("json devices: %v %s", err, out)
 	}
-	if strings.Contains(out, "other program") || strings.Contains(out, "unknown") {
+	// The table's own words -- who holds the radio, and the placeholder it prints for a gain
+	// table it could not read -- are the renderer's, not the daemon's. ("unknown" alone is the
+	// daemon's: a dongle it never opened reports its tuner that way.)
+	if strings.Contains(out, "other program") || strings.Contains(out, "TUNER unknown") {
 		t.Fatalf("--json must not carry table-only wording: %s", out)
 	}
 	for _, d := range resp.Devices {

@@ -96,8 +96,6 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stopDrain := s.drainEvents()
-	defer stopDrain()
 
 	// The scale is the client's to state, so find it the same way a one-shot
 	// ley spectrum does: take a row and read its floor. The daemon will not
@@ -113,6 +111,10 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 		return err
 	}
 	defer sub.Close()
+	// Keep the event stream flowing (and the mirror current) while frames render; the drain owns
+	// the mirror while it runs, so it starts after the last read of it and stops before teardown.
+	stopDrain := s.drainEvents()
+	defer stopDrain()
 
 	desc := sub.Descriptor
 	p := desc.GetPersistence()

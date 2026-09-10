@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -108,9 +107,8 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	return reply, nil
 }
 
-// busyReason names who has the radio, or "" when nobody does. The real daemon's allocator applies
-// the same rule (no channels, no live audio sink, no recent interactive write); the fake keeps the
-// first two, which is what a CLI test can set up. Caller holds the lock.
+// busyReason names who has the radio, or "" when nobody does: the allocator's rule -- no
+// channels, no live audio sink, and nobody tuning it in the last minute. Caller holds the lock.
 func (d *Daemon) busyReason(deviceID string) string {
 	for _, cap := range d.captures {
 		if cap.DeviceId != deviceID {
@@ -152,26 +150,18 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	if len(dev.SampleRates) > 0 {
 		rate = dev.SampleRates[len(dev.SampleRates)-1]
 	}
-	// The same geometry the daemon uses: quarter bands 5%-45% either side of centre, advancing
-	// half a window, plus a step at each end.
-	span := float64(rate)
-	guardHz, edgeHz := 0.05*span, 0.45*span
-	advance := edgeHz - guardHz
-	lo, hi := float64(sc.Range.MinHz), float64(sc.Range.MaxHz)
-	centers := []float64{lo - guardHz, hi + guardHz}
-	if hi-lo > advance {
-		for c := lo + edgeHz; c-edgeHz < hi; c += advance {
-			centers = append(centers, c)
-		}
+	// The pacing of the sweep, which is not its arithmetic: a test must not wait for a real
+	// dwell, but the looks a step is meant to yield are the ones the daemon would have taken.
+	dwellMs := float64(sc.DwellMs)
+	if dwellMs <= 0 {
+		dwellMs = defaultDwellMs
 	}
-	sort.Float64s(centers)
-
-	dwell := time.Duration(sc.DwellMs) * time.Millisecond
-	if dwell <= 0 {
-		dwell = 20 * time.Millisecond
+	sleep := time.Duration(sc.DwellMs) * time.Millisecond
+	if sleep <= 0 {
+		sleep = 20 * time.Millisecond
 	}
-	if dwell > 200*time.Millisecond {
-		dwell = 200 * time.Millisecond // tests must not wait for a real sweep
+	if sleep > 200*time.Millisecond {
+		sleep = 200 * time.Millisecond
 	}
 	d.mu.Lock()
 	reason := ""
@@ -206,40 +196,76 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 		d.sweeping = ""
 		d.mu.Unlock()
 	}()
+	// The radio is in hand, so now the geometry: where the steps go, and which parts of each span
+	// a detector is allowed to believe.
+	plan := planSweep(sc.Range.MinHz, sc.Range.MaxHz, rate, dev.TuningRanges)
+	if plan == nil {
+		d.failScan(jobID, leyline.CodeFreqOutOfRange, "this radio cannot tune any of that range")
+		return
+	}
+	if plan.analysedHz() == 0 {
+		// Every window missed the request, which happens when the whole of it sits in one step's
+		// DC guard: a radio with a single tuning point has no neighbouring step to cover its hole.
+		centre := sc.Range.MinHz
+		if len(plan.steps) > 0 {
+			centre = plan.steps[0].centerHz
+		}
+		d.failScan(jobID, leyline.CodeBlindSpot, fmt.Sprintf(
+			"all of that range sits within %s of %s, where this radio's own DC spike is; a scan does not look there",
+			leyline.FormatFrequency(uint64(guardFraction*float64(rate))), leyline.FormatFrequency(centre)))
+		return
+	}
+	gains := d.sweepGains(dev)
+	// Rows the dwell is meant to yield, fixed up front the way the daemon fixes its threshold:
+	// each row is one chance a signal has to appear, so this is what looks are counted in.
+	rows := uint32(max(2, int(dwellMs/rowIntervalMs(rate))))
+	lo, hi := plan.covered.lo, plan.covered.hi
+	started := time.Now()
 	var found []*leylinev1.Detection
 	var floors []*leylinev1.NoiseFloorSegment
-	for i, c := range centers {
+	for i, step := range plan.steps {
 		if d.jobCancelled(jobID) {
-			d.stopScan(jobID, found, floors, uint64(math.Max(0, lo)), uint64(hi), i, len(centers))
+			d.stopScan(jobID, found, floors, gains, lo, hi, i, len(plan.steps))
 			return
 		}
-		time.Sleep(dwell)
-		windows := [2][2]float64{{c - edgeHz, c - guardHz}, {c + guardHz, c + edgeHz}}
-		for _, w := range windows {
+		time.Sleep(sleep)
+		seen := d.sweepSample(sweepCapture, rate, started)
+		for _, w := range []sweepWindow{step.low, step.high} {
 			for _, sig := range fakeCarriers {
-				f := float64(sig.hz)
-				if f < w[0] || f >= w[1] || f < lo || f > hi {
+				if !w.contains(sig.hz) || sig.hz < lo || sig.hz >= hi {
 					continue
 				}
+				at := &leylinev1.SampleTime{CaptureId: sweepCapture, SampleIndex: seen}
 				found = mergeDetection(found, &leylinev1.Detection{
-					DetectionId:   fmt.Sprintf("det_%d", sig.hz),
-					CaptureId:     sweepCapture,
-					CenterHz:      sig.hz,
-					BandwidthHz:   sig.bw,
-					SnrDb:         sig.snr,
-					FloorDbfs:     fakeFloorDbfs,
-					Looks:         4,
-					LooksPossible: 4,
+					DetectionId: fmt.Sprintf("det_%d", sig.hz),
+					CaptureId:   sweepCapture,
+					CenterHz:    sig.hz,
+					BandwidthHz: sig.bw,
+					SnrDb:       sig.snr,
+					FloorDbfs:   fakeFloorDbfs,
+					// A synthetic carrier is on for the whole dwell, so every row of the step
+					// that covered it found it.
+					Looks:         rows,
+					LooksPossible: rows,
+					FirstSeen:     at,
+					LastSeen:      at,
 				})
 			}
 		}
 		floors = append(floors, &leylinev1.NoiseFloorSegment{
-			Range:     &leylinev1.FrequencyRange{MinHz: uint64(math.Max(0, c-edgeHz)), MaxHz: uint64(c + edgeHz)},
+			Range:     &leylinev1.FrequencyRange{MinHz: step.low.lo, MaxHz: step.high.hi},
 			FloorDbfs: fakeFloorDbfs,
 		})
-		d.setJobDetail(jobID, fmt.Sprintf("step %d/%d, %d found", i+1, len(centers), len(found)), found, floors, uint64(math.Max(0, lo)), uint64(hi))
+		d.setJobDetail(jobID, fmt.Sprintf("step %d/%d, %d found", i+1, len(plan.steps), len(found)), found, floors, lo, hi)
 	}
-	d.finishScan(jobID, found, floors)
+	// Every row of every step whose window covered this frequency was a chance the signal had to
+	// appear, whether or not that step found it.
+	for _, det := range found {
+		if chances := rows * uint32(plan.looksAt(det.CenterHz)); chances > det.LooksPossible {
+			det.LooksPossible = chances
+		}
+	}
+	d.finishScan(jobID, found, floors, gains)
 }
 
 // fakeCarriers is the synthetic band the fake daemon reports: what a scan finds, and what a
@@ -275,14 +301,81 @@ func carrierTone(hz uint64) float64 {
 
 const fakeFloorDbfs = -88.2
 
+// defaultDwellMs is the dwell the daemon applies when a scan asks for none.
+const defaultDwellMs = 250
+
+// rowIntervalMs is how long one analysis row takes at this capture rate. The ladder takes at most
+// one look per block, so the row rate is chosen to fit the looks a row averages, and the dwell
+// divided by this is how many rows -- how many chances -- a step gets.
+func rowIntervalMs(rate uint64) float64 {
+	const blockSize, targetLooks = 16384, 16
+	rows := math.Max(0.5, float64(rate)/blockSize/targetLooks)
+	return 1000 / rows
+}
+
+// sweepGains is what the sweep froze the tuner at. AGC is pinned for the duration -- SNR measured
+// against a moving reference is not a number -- and where it was pinned is part of the answer,
+// because a scan without its gain is not comparable with another. An element already on a fixed
+// level keeps it; an automatic one is pinned where the middle of its table sits, which is what the
+// allocator falls back to when the driver will not say where AGC settled.
+func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor) []*leylinev1.GainState {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out []*leylinev1.GainState
+	for _, el := range dev.GainElements {
+		g := &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, el.MaxDb/2)}
+		for _, c := range d.captures {
+			if c.DeviceId == dev.DeviceId {
+				for _, have := range c.Gains {
+					if have.Element == el.Name {
+						g = proto.Clone(have).(*leylinev1.GainState)
+					}
+				}
+			}
+		}
+		if g.Auto {
+			g.Auto = false
+			if n := len(el.ValidDb); n > 0 {
+				g.Db = el.ValidDb[n/2]
+			} else {
+				g.Db = (el.MinDb + el.MaxDb) / 2
+			}
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+// sweepSample is the sample position a detection is timed at: the capture's own clock when the
+// sweep borrowed one, and otherwise the samples that have gone by since it started, so a
+// detection carries a timebase either way.
+func (d *Daemon) sweepSample(captureID string, rate uint64, started time.Time) uint64 {
+	now := time.Now()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if c := d.captures[captureID]; c != nil {
+		return c.sampleIndex(now)
+	}
+	return uint64(now.Sub(started).Seconds() * float64(rate))
+}
+
 // dontDisturb matches the daemon's dontDisturbNs.
 const dontDisturb = 60 * time.Second
 
+// mergeDetection folds a step's reading into what the sweep has found so far: the same carrier
+// seen from another tuner position is one detection with more looks behind it, spanning from when
+// it was first seen to when it was last.
 func mergeDetection(list []*leylinev1.Detection, d *leylinev1.Detection) []*leylinev1.Detection {
 	for _, x := range list {
 		if x.CenterHz == d.CenterHz {
 			x.Looks += d.Looks
 			x.LooksPossible += d.LooksPossible
+			if d.GetFirstSeen().GetSampleIndex() < x.GetFirstSeen().GetSampleIndex() {
+				x.FirstSeen = d.FirstSeen
+			}
+			if d.GetLastSeen().GetSampleIndex() > x.GetLastSeen().GetSampleIndex() {
+				x.LastSeen = d.LastSeen
+			}
 			return list
 		}
 	}
@@ -381,7 +474,9 @@ func (d *Daemon) setJobDetail(id, detail string, found []*leylinev1.Detection, f
 // stopScan ends an interrupted sweep: what it found is written first and the terminal event goes
 // out last, so a client that calls GetScan when it sees CANCELLED reads the part that ran rather
 // than an empty scan. The daemon stores and then finishes for the same reason.
-func (d *Daemon) stopScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, lo, hi uint64, stepsDone, steps int) {
+func (d *Daemon) stopScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment,
+	gains []*leylinev1.GainState, lo, hi uint64, stepsDone, steps int,
+) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	j := d.jobs[id]
@@ -394,7 +489,7 @@ func (d *Daemon) stopScan(id string, found []*leylinev1.Detection, floors []*ley
 	if j.scan.CompletedAtNs == 0 {
 		j.scan.CompletedAtNs = time.Now().UnixNano()
 	}
-	j.scan.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 28.0}}
+	j.scan.Gains = gains
 	if j.proto.State != leylinev1.JobState_RUNNING {
 		return
 	}
@@ -428,7 +523,7 @@ func (d *Daemon) failScan(id, code, reason string) {
 	d.emit(byDaemon(), j.proto)
 }
 
-func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment) {
+func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, gains []*leylinev1.GainState) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	j := d.jobs[id]
@@ -438,7 +533,7 @@ func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*l
 	j.scan.Detections = cloneDetections(found)
 	j.scan.NoiseFloor = floors
 	j.scan.CompletedAtNs = time.Now().UnixNano()
-	j.scan.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 28.0}}
+	j.scan.Gains = gains
 	j.proto.State = leylinev1.JobState_COMPLETED
 	j.proto.StatusDetail = fmt.Sprintf("%d found", len(found))
 	d.emit(byDaemon(), j.proto)

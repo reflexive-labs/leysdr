@@ -456,3 +456,29 @@ func TestTuneSaysNothingWithoutATone(t *testing.T) {
 		t.Errorf("no tone on this frequency, so no line:\n%s", errOut)
 	}
 }
+
+// Whether a channel is listening for a tone is part of its state, not a client-side guess: NFM is
+// the only mode CTCSS is sent under, so that is the mode the daemon turns the detector on for.
+func TestChannelSaysWhetherItListensForATone(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
+	mustRun(t, sock, "tune", "146.6", "--no-audio", "--persistent", "--mode", "am")
+	var st struct {
+		Channels []struct {
+			Mode             string `json:"mode"`
+			SubaudibleDetect bool   `json:"subaudibleDetect"`
+		} `json:"channels"`
+	}
+	out := mustRun(t, sock, "--json", "state")
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if len(st.Channels) != 2 {
+		t.Fatalf("want two channels: %s", out)
+	}
+	for _, ch := range st.Channels {
+		if want := ch.Mode == "NFM"; ch.SubaudibleDetect != want {
+			t.Errorf("%s channel: subaudible_detect %v, want %v", ch.Mode, ch.SubaudibleDetect, want)
+		}
+	}
+}

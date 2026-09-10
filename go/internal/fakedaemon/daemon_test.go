@@ -66,6 +66,47 @@ func TestStateAndDevices(t *testing.T) {
 	if leyline.FindCapture(st, dev.DeviceId) != nil || leyline.CurrentChannel(st, c.ClientID()) != nil {
 		t.Error("fresh daemon should have no capture/channel")
 	}
+	// The features are the driver's contract with a client: these are the knobs the RTL-SDR
+	// driver publishes and the ones WriteParams has a case for. Advertising one the daemon
+	// cannot do -- transmit, say -- invites a write that can only be refused.
+	want := map[string]string{
+		"tuner": "text", "bias_tee": "flag", "direct_sampling": "integer",
+		"ppm_correction": "integer", "rtl_agc": "flag", "serial_collision": "flag",
+	}
+	for name, kind := range want {
+		f := dev.GetFeatures()[name]
+		if f == nil {
+			t.Errorf("device has no %q feature: %v", name, dev.GetFeatures())
+			continue
+		}
+		got := ""
+		switch f.Value.(type) {
+		case *leylinev1.FeatureValue_Flag:
+			got = "flag"
+		case *leylinev1.FeatureValue_Integer:
+			got = "integer"
+		case *leylinev1.FeatureValue_Text:
+			got = "text"
+		}
+		if got != kind {
+			t.Errorf("feature %q is a %s, want %s", name, got, kind)
+		}
+	}
+	for name := range dev.GetFeatures() {
+		if _, ok := want[name]; !ok {
+			t.Errorf("device advertises %q, which the driver does not", name)
+		}
+	}
+	// The sample rates are the ones librtlsdr takes without complaint; a rate the real driver
+	// would refuse is a capture a CLI test could create and a radio never could.
+	if len(dev.SampleRates) == 0 || dev.SampleRates[len(dev.SampleRates)-1] != 3_200_000 {
+		t.Errorf("sample rates = %v", dev.SampleRates)
+	}
+	for _, r := range dev.SampleRates {
+		if r == 1_792_000 || r == 2_160_000 {
+			t.Errorf("rate %d is not one librtlsdr accepts: %v", r, dev.SampleRates)
+		}
+	}
 }
 
 func TestLifecycleAndEvents(t *testing.T) {

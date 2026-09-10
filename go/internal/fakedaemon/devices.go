@@ -11,8 +11,9 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// RTLSDRRates is the RTL-SDR sample-rate list the fake device advertises.
-var RTLSDRRates = []uint64{250_000, 1_024_000, 1_536_000, 1_792_000, 1_920_000, 2_048_000, 2_160_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000}
+// RTLSDRRates is the RTL-SDR sample-rate list the fake device advertises: the rates librtlsdr
+// accepts without warnings, which is what the real driver offers (docs/engine-internals.md).
+var RTLSDRRates = []uint64{250_000, 1_024_000, 1_536_000, 1_800_000, 1_920_000, 2_048_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000}
 
 // RTLSDRDefaultRate is the rate used when CreateCapture asks for 0.
 const RTLSDRDefaultRate uint64 = 2_400_000
@@ -35,10 +36,17 @@ func fakeRTLSDR() *leylinev1.DeviceDescriptor {
 		GainElements: []*leylinev1.GainElement{{
 			Name: "TUNER", MinDb: 0, MaxDb: 49.6, StepDb: 0, SupportsAuto: true, ValidDb: R820TGains,
 		}},
+		// What the RTL-SDR driver actually publishes: the tuner it found, the settable knobs at
+		// their power-on values, and the registry's note that no other dongle shares this serial.
+		// A feature nothing implements (transmit, say) would have clients writing to a knob the
+		// daemon has no case for.
 		Features: map[string]*leylinev1.FeatureValue{
-			"bias_tee":        {Value: &leylinev1.FeatureValue_Flag{Flag: true}},
-			"direct_sampling": {Value: &leylinev1.FeatureValue_Flag{Flag: true}},
-			"tx_capable":      {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
+			"tuner":            {Value: &leylinev1.FeatureValue_Text{Text: "R820T"}},
+			"bias_tee":         {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
+			"direct_sampling":  {Value: &leylinev1.FeatureValue_Integer{Integer: 0}},
+			"ppm_correction":   {Value: &leylinev1.FeatureValue_Integer{Integer: 0}},
+			"rtl_agc":          {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
+			"serial_collision": {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
 		},
 	}
 }
@@ -60,7 +68,9 @@ func HeldRTLSDR() *leylinev1.DeviceDescriptor {
 		NativeFormat: leylinev1.SampleFormat_CS8,
 		GainElements: []*leylinev1.GainElement{{Name: "TUNER", SupportsAuto: true}},
 		Features: map[string]*leylinev1.FeatureValue{
-			"held_externally": {Value: &leylinev1.FeatureValue_Flag{Flag: true}},
+			"tuner":            {Value: &leylinev1.FeatureValue_Text{Text: "unknown"}},
+			"held_externally":  {Value: &leylinev1.FeatureValue_Flag{Flag: true}},
+			"serial_collision": {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
 		},
 	}
 }
