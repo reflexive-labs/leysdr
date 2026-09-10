@@ -71,10 +71,14 @@ actor JobStore {
     }
 
     func cancel(_ id: JobID) async -> Leyline_V1_Job? {
-        guard var e = entries[id] else { return nil }
+        guard let e = entries[id] else { return nil }
         e.task?.cancel()
-        entries[id] = e
-        if e.proto.state == .running {
+        // Wait for the sweep to put down what it found before answering. Without this the caller
+        // reads the Scan while the sweep is still writing it, and an interrupted scan looks empty
+        // rather than partial. Awaiting here is safe: an actor is re-entrant at an await, so the
+        // task's own calls back into this store still run.
+        if let t = e.task { await t.value }
+        if entries[id]?.proto.state == .running {
             await finish(id, state: .cancelled, detail: "cancelled")
         }
         return entries[id]?.proto
@@ -89,8 +93,10 @@ actor JobStore {
     }
 
     func cancelAll() async {
-        for (id, e) in entries where e.proto.state == .running {
-            e.task?.cancel()
+        // Cancel every task first, then wait: a shutdown with several sweeps running should not
+        // serialise their teardowns.
+        for e in entries.values where e.proto.state == .running { e.task?.cancel() }
+        for id in entries.keys where entries[id]?.proto.state == .running {
             _ = await cancel(id)
         }
     }
@@ -168,7 +174,7 @@ actor JobStore {
         let captureID = lease.captureID
         do {
             let dwell = config.dwellMs == 0 ? 250 : config.dwellMs
-            let (hits, floors) = try await ScanRunner.sweep(
+            let result = try await ScanRunner.sweep(
                 lease: lease, plan: plan, dwellMs: dwell,
                 onStep: { [weak self] p in
                     await self?.setDetail(id, "step \(p.step)/\(p.steps), \(p.found) found")
@@ -181,10 +187,22 @@ actor JobStore {
             // would let the next scan see a capture that is still leased and be declined, and the
             // await is safe in a cancelled task because release checks no cancellation of its own.
             await lease.release()
-            await complete(id, hits: hits, floors: floors, plan: plan, gains: gains, captureID: captureID)
+            // A stopped sweep still keeps what it found: somebody who interrupts one wants the
+            // part that ran, and a Scan that says how far it got is honest about the rest.
+            await store(id, result: result, plan: plan, gains: gains, captureID: captureID)
+            if Task.isCancelled || !result.complete {
+                // The step it was in, not the ones it finished: "0 of 1" reads as having done
+                // nothing, when a partial step can have found everything there was.
+                await finish(id, state: .cancelled,
+                             detail: "stopped in step \(Swift.min(result.stepsDone + 1, result.steps)) of \(result.steps), \(result.hits.count) found")
+            } else {
+                let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
+                let steps = result.steps == 1 ? "1 step" : "\(result.steps) steps"
+                await finish(id, state: .completed, detail: "\(result.hits.count) found in \(steps)\(clipped)")
+            }
         } catch is CancellationError {
             await lease.release()
-            await finish(id, state: .cancelled, detail: "cancelled")
+            await finish(id, state: .cancelled, detail: "cancelled before the first step")
         } catch {
             await lease.release()
             let e = error as? EngineError
@@ -217,19 +235,23 @@ actor JobStore {
         await store.publishJob(e.proto)
     }
 
-    private func complete(_ id: JobID, hits: [ScanHit], floors: [Leyline_V1_NoiseFloorSegment],
-                          plan: SweepPlan, gains: [GainState], captureID: CaptureID) async
+    /// Writes what the sweep found into the job's Scan, complete or not.
+    private func store(_ id: JobID, result: ScanRunner.Result, plan: SweepPlan,
+                       gains: [GainState], captureID: CaptureID)
     {
         guard var e = entries[id], var scan = e.scan else { return }
-        scan.detections = hits.map { proto($0, captureID: captureID) }
-        scan.noiseFloor = floors
+        scan.detections = result.hits.map { proto($0, captureID: captureID) }
+        scan.noiseFloor = result.floors
         scan.completedAtNs = realtimeNs()
         scan.gains = gains.map(ProtoMapping.gainState)
+        // The range a partial sweep actually covered, so nothing reads it as the whole request.
+        if !result.complete, result.stepsDone > 0 {
+            let done = plan.steps.prefix(result.stepsDone)
+            scan.config.range.minHz = Swift.max(plan.covered.lowHz, done.map(\.low.lowHz).min() ?? plan.covered.lowHz)
+            scan.config.range.maxHz = Swift.min(plan.covered.highHz, done.map(\.high.highHz).max() ?? plan.covered.highHz)
+        }
         e.scan = scan
         entries[id] = e
-        let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
-        let steps = plan.steps.count == 1 ? "1 step" : "\(plan.steps.count) steps"
-        await finish(id, state: .completed, detail: "\(hits.count) found in \(steps)\(clipped)")
     }
 
     private func finish(_ id: JobID, state: Leyline_V1_JobState, detail: String, code: String? = nil) async {

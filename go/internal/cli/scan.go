@@ -124,32 +124,42 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	st := s.app.ErrStyle
 	s.say("sweeping %s to %s\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
 
-	// A scan is not persistent: it belongs to this connection and the daemon ends it when the
-	// connection goes. Cancelling explicitly hands the radio back now rather than after the
-	// presence grace, which matters when the next thing the user does is tune.
-	defer func() {
-		if ctx.Err() != nil {
-			c, stop := context.WithTimeout(context.Background(), confirmTimeout)
-			defer stop()
-			_, _ = s.client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId})
-		}
-	}()
-
 	progress := newScanProgress(s.app)
 	final, err := s.followJob(ctx, job, progress)
 	progress.clear()
 	if err != nil {
 		return err
 	}
-	switch final.State {
-	case leylinev1.JobState_FAILED:
+	// Interrupted: stop the sweep now rather than waiting for the presence grace -- the next thing
+	// somebody does after Ctrl-C is usually tune -- and then print what it found before it stopped.
+	// A sweep somebody cut short still measured the part that ran.
+	read := ctx
+	if ctx.Err() != nil {
+		c, stop := context.WithTimeout(context.Background(), confirmTimeout)
+		defer stop()
+		read = c
+		if j, cerr := s.client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
+			final = j
+		}
+	}
+	if final.State == leylinev1.JobState_FAILED {
 		return &ExitError{Code: 1, Message: scanFailure(final, st)}
-	case leylinev1.JobState_CANCELLED:
+	}
+	id := scanIDOf(final)
+	if id == "" {
+		// A daemon that named no scan has nothing to show; the job's own words are the answer.
+		s.say("%s\n", final.StatusDetail)
 		return nil
 	}
-	scan, err := s.client.Jobs.GetScan(ctx, &leylinev1.ScanRef{ScanId: scanIDOf(final)})
+	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
+	}
+	if final.State == leylinev1.JobState_CANCELLED && !s.app.JSON {
+		s.say("stopped early: %s\n", final.StatusDetail)
 	}
 	if s.app.JSON {
 		return s.app.printJSON(scan)

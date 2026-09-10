@@ -106,10 +106,22 @@ actor ScanRunner {
         var found: Int
     }
 
-    /// Sweeps and returns the hits, calling `onStep` after each one and `onHit` as they are found.
+    /// What a sweep found, and whether it got all the way through.
+    struct Result: Sendable {
+        var hits: [ScanHit]
+        var floors: [Leyline_V1_NoiseFloorSegment]
+        /// Steps that ran to the end of their dwell.
+        var stepsDone: Int
+        var steps: Int
+        var complete: Bool { stepsDone >= steps }
+    }
+
+    /// Sweeps and returns what it found, calling `onStep` after each one and `onHit` as they are
+    /// found. Cancellation stops the sweep and returns the partial answer rather than throwing it
+    /// away: somebody who interrupts a long sweep still wants what it had.
     static func sweep(lease: any CaptureLease, plan: SweepPlan, dwellMs: UInt32,
                       onStep: @Sendable (Progress) async -> Void,
-                      onHit: @Sendable (ScanHit) async -> Void) async throws -> ([ScanHit], [Leyline_V1_NoiseFloorSegment])
+                      onHit: @Sendable (ScanHit) async -> Void) async throws -> Result
     {
         let collector = RowCollector(bins: bins)
         let ladder = lease.spectrum
@@ -138,8 +150,9 @@ actor ScanRunner {
         // makes the settle window exact arithmetic instead of a guess about wall-clock timing.
         var newestIndex: UInt64 = 0
 
+        var stepsDone = 0
         for (index, step) in plan.steps.enumerated() {
-            try Task.checkCancellation()
+            if Task.isCancelled { break }
             for row in collector.drain() { newestIndex = Swift.max(newestIndex, row.time.sampleIndex) }
             let hopAt = Swift.max(newestIndex, await lease.sampleIndex)
             try await lease.retune(centerHz: step.centerHz)
@@ -161,9 +174,10 @@ actor ScanRunner {
             let deadline = ContinuousClock.now.advanced(
                 by: .nanoseconds(Int64(2 * (settleNs(settle, rate: plan.sampleRateHz) + dwellNs) + 1_000_000_000)))
 
-            while believedRows < rowsPerStep, ContinuousClock.now < deadline {
-                try Task.checkCancellation()
-                try await Task.sleep(nanoseconds: 20_000_000)
+            while believedRows < rowsPerStep, ContinuousClock.now < deadline, !Task.isCancelled {
+                // Sleep, not checkCancellation: a cancelled sweep leaves the loop through the
+                // condition above and returns what it has.
+                try? await Task.sleep(nanoseconds: 20_000_000)
                 for row in collector.drain() {
                     newestIndex = Swift.max(newestIndex, row.time.sampleIndex)
                     guard row.centerHz == step.centerHz, row.looks > 0,
@@ -218,9 +232,10 @@ actor ScanRunner {
                 let median = stepFloors.sorted()[stepFloors.count / 2]
                 floors.append(segment(step, floorDBFS: median))
             }
+            if believedRows >= rowsPerStep { stepsDone += 1 }
             await onStep(Progress(step: index + 1, steps: plan.steps.count, found: merged.count))
         }
-        return (merged, floors)
+        return Result(hits: merged, floors: floors, stepsDone: stepsDone, steps: plan.steps.count)
     }
 
     /// The settle window in nanoseconds, for the dwell deadline.
