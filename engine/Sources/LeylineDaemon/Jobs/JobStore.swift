@@ -150,7 +150,12 @@ actor JobStore {
 
     private func run(_ id: JobID, config: Leyline_V1_ScanConfig) async {
         let range = config.range.minHz ... config.range.maxHz
-        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, takeOver: config.takeOver), for: id)
+        let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
+        if !config.deviceID.isEmpty, deviceID == nil {
+            await finish(id, state: .failed, detail: "no device with id \(config.deviceID)", code: "DEVICE_NOT_FOUND")
+            return
+        }
+        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, deviceID: deviceID, takeOver: config.takeOver), for: id)
         guard case .capture(let lease) = allocation else {
             if case .declined(let code, let reason) = allocation {
                 await finish(id, state: .failed, detail: reason, code: code)
@@ -219,14 +224,13 @@ actor JobStore {
 
     private func setStep(_ id: JobID, plan: SweepPlan) {
         guard var e = entries[id], var scan = e.scan else { return }
-        // The advance the plan actually used. With a single step (a file device, whose tuning
-        // range is one point) there is no gap to measure, so report the advance the geometry
-        // would have taken -- a client divides by it to recover the analysis resolution, and the
-        // sample rate would make that four decimal places wrong.
-        let advance = plan.steps.count > 1
-            ? plan.steps[1].centerHz &- plan.steps[0].centerHz
-            : UInt64((SweepPlan.edgeFraction - SweepPlan.guardFraction) * Double(plan.sampleRateHz))
-        scan.config.stepHz = UInt32(clamping: advance)
+        // The advance the geometry uses, stated rather than measured off the step positions: the
+        // first gap is between the low end-cap and the first interior centre, which is edge+guard
+        // and not edge-guard, so measuring it reported a step 25% too wide.
+        scan.config.stepHz = UInt32(((SweepPlan.edgeFraction - SweepPlan.guardFraction) * Double(plan.sampleRateHz)).rounded())
+        // How finely it looked, which is what every dB in the message is per. A client should not
+        // have to know the geometry constants and the bin count to print a floor.
+        scan.resolutionHz = UInt32((Double(plan.sampleRateHz) / Double(ScanRunner.bins)).rounded())
         e.scan = scan
         entries[id] = e
     }
@@ -247,11 +251,15 @@ actor JobStore {
         scan.noiseFloor = result.floors
         scan.completedAtNs = realtimeNs()
         scan.gains = gains.map(ProtoMapping.gainState)
-        // The range a partial sweep actually covered, so nothing reads it as the whole request.
-        if !result.complete, result.stepsDone > 0 {
-            let done = plan.steps.prefix(result.stepsDone)
-            scan.config.range.minHz = Swift.max(plan.covered.lowHz, done.map(\.low.lowHz).min() ?? plan.covered.lowHz)
-            scan.config.range.maxHz = Swift.min(plan.covered.highHz, done.map(\.high.highHz).max() ?? plan.covered.highHz)
+        // What was actually looked at, always -- not only when the sweep was cut short. A radio
+        // that cannot reach all of a range, a request that falls partly in the tuner's blind spot
+        // and a sweep somebody stopped all leave coverage behind, and a client that printed the
+        // request as though it had been searched would be claiming what nobody measured.
+        // `stepsDone` is a count of steps that succeeded, not a prefix of them, so the coverage
+        // comes from the windows the runner really analysed.
+        if let lo = result.covered.first?.lowHz, let hi = result.covered.last?.highHz {
+            scan.covered.minHz = lo
+            scan.covered.maxHz = hi
         }
         e.scan = scan
         entries[id] = e

@@ -89,12 +89,26 @@ public protocol RadioDevice: AnyObject, Sendable {
     /// Zero for a device with no queue ahead of it. A bound, not a measurement: it is derived from
     /// the driver's own buffer geometry.
     var inFlightSamples: UInt64 { get }
+
+    /// The level an element is actually at, in dB, even when it is in auto.
+    ///
+    /// `gains` reports `.auto` for an element under AGC, which says how it is being driven and not
+    /// where it ended up. A sweep has to pin the gain -- SNR against a moving reference is not a
+    /// number -- and pinning it at anything other than what AGC had settled on changes the radio's
+    /// sensitivity for the whole scan. nil when the driver cannot say.
+    func settledGainDB(element: String) async -> Double?
 }
 
 public extension RadioDevice {
     /// Devices with no driver queue -- file playback, synthetic sources -- deliver what they are
     /// asked for when they are asked for it.
     var inFlightSamples: UInt64 { 0 }
+
+    /// A device whose gain is whatever it published.
+    func settledGainDB(element: String) async -> Double? {
+        if case .db(let v)? = gains.first(where: { $0.element == element })?.value { return v }
+        return nil
+    }
 }
 
 /// Discovers devices, tracks hot-plug, maps serials to stable DeviceIDs across replug.
@@ -435,7 +449,8 @@ public enum AllocationRequest: Sendable {
     /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the politeness
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
-    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, takeOver: Bool)
+    /// `deviceID` nil means the allocator picks; naming one is how a two-radio rig says which.
+    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool)
 }
 
 public enum AllocationResult: Sendable {

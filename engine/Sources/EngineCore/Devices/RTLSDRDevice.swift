@@ -45,6 +45,18 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     static let usbBuffers: UInt32 = 32
     static let usbBufferBytes: UInt32 = 32768
 
+    /// `rtlsdr_get_tuner_gain` answers in tenths of a dB and works in auto mode, which is the
+    /// whole point: it is the only way to learn where the tuner's own AGC settled.
+    public func settledGainDB(element: String) async -> Double? {
+        guard element == "TUNER" else { return nil }
+        return try? withLock {
+            let d = try requireDev()
+            let tenths = rtlsdr_get_tuner_gain(d)
+            guard tenths != 0 else { throw EngineError.deviceIO("rtlsdr_get_tuner_gain returned 0", target: _descriptor.id.string) }
+            return Double(tenths) / 10
+        }
+    }
+
     public var inFlightSamples: UInt64 {
         UInt64(Self.usbBuffers) * UInt64(Self.usbBufferBytes) / 2
     }

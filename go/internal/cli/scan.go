@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,6 +25,7 @@ type scanOptions struct {
 	sortBySNR  bool
 	takeOver   bool
 	device     string
+	deviceID   string
 }
 
 func newScanCommand(app *App) *cobra.Command {
@@ -95,6 +97,15 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				return err
 			}
 			defer s.close()
+			// The daemon takes a device id, not a row number or a prefix, so the selector is
+			// resolved here against the same list every other verb uses.
+			if o.device != "" {
+				d, derr := pickDevice(s.state, o.device)
+				if derr != nil {
+					return derr
+				}
+				o.deviceID = d.DeviceId
+			}
 			// Everything scan says is for a person; the table and the JSON are the machine's.
 			s.proseToStderr = true
 			return runScan(cmd.Context(), s, o)
@@ -116,6 +127,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 		DwellMs:  o.dwellMs,
 		Schedule: &leylinev1.ScanConfig_Once{Once: true},
 		TakeOver: o.takeOver,
+		DeviceId: o.deviceID,
 	}
 	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
@@ -147,13 +159,17 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	}
 	id := scanIDOf(final)
 	if id == "" {
-		// A daemon that named no scan has nothing to show; the job's own words are the answer.
+		// A daemon that named no scan has nothing to show. Under --json that is a failure, not an
+		// empty success: a consumer reading nothing on stdout and exit 0 concludes an empty band.
+		if s.app.JSON {
+			return &ExitError{Code: 1, Message: "the daemon started no scan: " + final.StatusDetail}
+		}
 		s.say("%s\n", final.StatusDetail)
 		return nil
 	}
 	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
 	if err != nil {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && !s.app.JSON {
 			return nil
 		}
 		return err
@@ -172,13 +188,48 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 // arrives on the event stream every client already drains -- there is no polling here.
 func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *scanProgress) (*leylinev1.Job, error) {
 	last := job
+	// A backstop, not the mechanism: job state arrives on the event stream. But a stream can end
+	// cleanly (a daemon reload) or drop an event (the fan-out buffer is bounded and says so), and
+	// without this the verb would either report a running sweep as finished or wait for ever.
+	poll := time.NewTicker(2 * time.Second)
+	defer poll.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return last, nil
+		case <-poll.C:
+			j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+			if err != nil {
+				if ctx.Err() != nil {
+					return last, nil
+				}
+				return last, err
+			}
+			last = j
+			if !s.app.JSON {
+				progress.show(last.StatusDetail)
+			}
+			if last.State != leylinev1.JobState_RUNNING {
+				return last, nil
+			}
 		case ev, ok := <-s.events:
 			if !ok {
-				return last, <-s.eventErrs
+				// The stream ended. pump reports a clean EOF as a nil error, so nothing here can
+				// distinguish "the daemon went away" from "the daemon finished with us" -- ask.
+				if err := <-s.eventErrs; err != nil {
+					return last, err
+				}
+				j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+				if err != nil {
+					if ctx.Err() != nil {
+						return last, nil
+					}
+					return last, err
+				}
+				if j.State == leylinev1.JobState_RUNNING {
+					return j, fmt.Errorf("the daemon closed the event stream while the scan was still running; ley daemon status says whether it is still there")
+				}
+				return j, nil
 			}
 			b, isJob := ev.Body.(*leylinev1.Event_Job)
 			if !isJob || b.Job.JobId != job.JobId {
@@ -221,7 +272,9 @@ func scanFailure(job *leylinev1.Job, st ui.Style) string {
 		case "NO_DEVICE", "FREQ_OUT_OF_RANGE":
 			return rest + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune"
 		}
-		return rest
+		// interfaces.md: an error line keeps the daemon's stable code unless ley has a plainer
+		// sentence for it. The cases above are the plainer sentences; everything else keeps it.
+		return rest + " [" + code + "]"
 	}
 	return detail
 }
@@ -279,8 +332,17 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 	})
 	st := app.ErrStyle
 	if len(rows) == 0 {
+		// Hiding what was found is not the same answer as finding nothing, and the remedy is not
+		// the same either: a longer dwell will not bring back a row --min-snr filtered out.
+		if hidden := len(scan.Detections); hidden > 0 {
+			fmt.Fprintf(app.Stderr, "%s below %.0f dB, so nothing to show%s\n",
+				plural(hidden, "signal"), o.minSNR, floorPhrase(scan))
+			fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley scan "+scanArg(o)))
+			return
+		}
 		fmt.Fprintf(app.Stderr, "nothing stood above the noise floor%s\n", floorPhrase(scan))
 		fmt.Fprintf(app.Stderr, "a longer look finds weaker signals: %s\n", st.Cmd("ley scan "+scanArg(o)+" --dwell 1000"))
+		coverageNote(app, scan, o)
 		return
 	}
 	cols := []column{
@@ -290,12 +352,32 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 		{head: "SEEN", cells: mapDet(rows, seenCell), min: 4},
 		{head: "BAND", cells: mapDet(rows, bandCell), min: 8, drop: 1},
 	}
-	out, _ := printColumns(app.Stdout, app.Style, cols, nil)
-	_ = out
+	// tableStyle, not app.Style: off a terminal the width is unknown rather than 80, and fitting
+	// to 80 would silently drop the BAND column out of a piped table.
+	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
 	fmt.Fprintf(app.Stderr, "%s%s\n", plural(len(rows), "signal"), floorPhrase(scan))
+	coverageNote(app, scan, o)
 	if best := strongest(rows); best != nil {
 		fmt.Fprintf(app.Stderr, "  %s\n", st.Cmd("ley listen "+trimZeros(float64(best.CenterHz)/1e6)))
 	}
+}
+
+// coverageNote says what the sweep actually looked at when that is not what was asked for. A
+// table printed under the heading of a range nobody searched claims coverage that was never
+// measured -- a radio that cannot reach the whole request, a request partly inside the tuner's
+// blind spot, or a sweep somebody stopped.
+func coverageNote(app *App, scan *leylinev1.Scan, o scanOptions) {
+	c := scan.GetCovered()
+	if c == nil || c.MaxHz <= c.MinHz {
+		return
+	}
+	const slack = 1000 // a rounded edge is not a gap
+	if c.MinHz <= o.minHz+slack && c.MaxHz+slack >= o.maxHz {
+		return
+	}
+	fmt.Fprintf(app.Stderr, "covered %s to %s of the %s to %s asked for\n",
+		leyline.FormatFrequency(c.MinHz), leyline.FormatFrequency(c.MaxHz),
+		leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
 }
 
 func mapDet(rows []*leylinev1.Detection, f func(*leylinev1.Detection) string) []string {
@@ -319,16 +401,10 @@ func widthCell(d *leylinev1.Detection, scan *leylinev1.Scan) string {
 	return leyline.FormatFrequency(uint64(d.BandwidthHz))
 }
 
-// binWidth is the analysis resolution: the span of one step divided by the bins in a row. The
-// daemon reports the step it used, and a row is 1024 bins.
-func binWidth(scan *leylinev1.Scan) float64 {
-	step := float64(scan.GetConfig().GetStepHz())
-	if step <= 0 {
-		return 0
-	}
-	// A step advances 0.4 of a span, so the span is the step over 0.4.
-	return step / 0.4 / 1024
-}
+// binWidth is the analysis resolution: how finely the sweep looked, which is what every dB it
+// reports is per. The daemon states it; deriving it from step_hz meant knowing the geometry
+// constants and the bin count, and got it 25% wrong when either changed.
+func binWidth(scan *leylinev1.Scan) float64 { return float64(scan.GetResolutionHz()) }
 
 // seenCell is the evidence: how many looks found it, out of how many looked.
 func seenCell(d *leylinev1.Detection) string {

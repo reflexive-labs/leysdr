@@ -251,6 +251,10 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
   /// interactive write, and names what is using it. This is the explicit override.
   public var takeOver: Bool = false
 
+  /// Which radio to sweep. Empty means the daemon picks: an idle device first, then one whose
+  /// capture nobody is using. Without this a two-radio setup has no way to say which.
+  public var deviceID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Schedule: Equatable, Sendable {
@@ -369,11 +373,31 @@ public nonisolated struct Leyline_V1_Scan: Sendable {
   /// scan that does not say which gain it ran at cannot be compared with another.
   public var gains: [Leyline_V1_GainState] = []
 
+  /// The analysis bin width, in Hz. Every dB in this message -- floor_dbfs, snr_db -- is per bin,
+  /// and a bin's width is what makes those numbers mean anything: a wider bin holds more noise. A
+  /// client should print this alongside the floor rather than deriving it from step_hz, which
+  /// describes where the radio pointed and not how finely it looked.
+  public var resolutionHz: UInt32 = 0
+
+  /// What the sweep actually covered. Never wider than config.range, and narrower whenever the
+  /// radio could not reach all of it, the request fell partly in the tuner's own blind spot, or the
+  /// sweep was stopped early. A client that reports config.range as though it were searched is
+  /// claiming coverage nobody measured.
+  public var covered: Leyline_V1_FrequencyRange {
+    get {_covered ?? Leyline_V1_FrequencyRange()}
+    set {_covered = newValue}
+  }
+  /// Returns true if `covered` has been explicitly set.
+  public var hasCovered: Bool {self._covered != nil}
+  /// Clears the value of `covered`. Subsequent reads from it will return its default value.
+  public mutating func clearCovered() {self._covered = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _config: Leyline_V1_ScanConfig? = nil
+  fileprivate var _covered: Leyline_V1_FrequencyRange? = nil
 }
 
 public nonisolated struct Leyline_V1_NoiseFloorSegment: Sendable {
@@ -760,7 +784,7 @@ nonisolated extension Leyline_V1_WatchConfig: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScanConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}step_hz\0\u{3}dwell_ms\0\u{1}once\0\u{1}recurring\0\u{3}take_over\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}step_hz\0\u{3}dwell_ms\0\u{1}once\0\u{1}recurring\0\u{3}take_over\0\u{3}device_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -788,6 +812,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
         }
       }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
       default: break
       }
     }
@@ -821,6 +846,9 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
     if self.takeOver != false {
       try visitor.visitSingularBoolField(value: self.takeOver, fieldNumber: 6)
     }
+    if !self.deviceID.isEmpty {
+      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -830,6 +858,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
     if lhs.dwellMs != rhs.dwellMs {return false}
     if lhs.schedule != rhs.schedule {return false}
     if lhs.takeOver != rhs.takeOver {return false}
+    if lhs.deviceID != rhs.deviceID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -976,7 +1005,7 @@ nonisolated extension Leyline_V1_Transcript: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Scan"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scan_id\0\u{1}config\0\u{1}detections\0\u{3}noise_floor\0\u{3}started_at_ns\0\u{3}completed_at_ns\0\u{1}gains\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scan_id\0\u{1}config\0\u{1}detections\0\u{3}noise_floor\0\u{3}started_at_ns\0\u{3}completed_at_ns\0\u{1}gains\0\u{3}resolution_hz\0\u{1}covered\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -991,6 +1020,8 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.startedAtNs) }()
       case 6: try { try decoder.decodeSingularInt64Field(value: &self.completedAtNs) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.resolutionHz) }()
+      case 9: try { try decoder.decodeSingularMessageField(value: &self._covered) }()
       default: break
       }
     }
@@ -1022,6 +1053,12 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.gains.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 7)
     }
+    if self.resolutionHz != 0 {
+      try visitor.visitSingularUInt32Field(value: self.resolutionHz, fieldNumber: 8)
+    }
+    try { if let v = self._covered {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1033,6 +1070,8 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.startedAtNs != rhs.startedAtNs {return false}
     if lhs.completedAtNs != rhs.completedAtNs {return false}
     if lhs.gains != rhs.gains {return false}
+    if lhs.resolutionHz != rhs.resolutionHz {return false}
+    if lhs._covered != rhs._covered {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

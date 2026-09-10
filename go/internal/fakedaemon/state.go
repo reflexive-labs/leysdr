@@ -118,6 +118,16 @@ func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateRespon
 	for _, dev := range d.devices {
 		resp.Devices = append(resp.Devices, proto.Clone(dev).(*leylinev1.DeviceDescriptor))
 	}
+	// Daemon-scoped only, like the Swift daemon: a job is not tied to one capture's lifetime, and
+	// the whole reason GetStateResponse.jobs exists is that reconnect stays GetState +
+	// resume-from-seq for jobs too.
+	if capFilter == "" {
+		for _, id := range d.jobOrder {
+			if j := d.jobs[id]; j != nil {
+				resp.Jobs = append(resp.Jobs, proto.Clone(j.proto).(*leylinev1.Job))
+			}
+		}
+	}
 	for _, c := range d.captures {
 		if capFilter == "" || c.CaptureId == capFilter {
 			resp.Captures = append(resp.Captures, proto.Clone(c.Capture).(*leylinev1.Capture))

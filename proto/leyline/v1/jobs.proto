@@ -52,6 +52,9 @@ message ScanConfig {
   // time, so the allocator declines a capture with channels, a live audio sink or a recent
   // interactive write, and names what is using it. This is the explicit override.
   bool take_over = 6;
+  // Which radio to sweep. Empty means the daemon picks: an idle device first, then one whose
+  // capture nobody is using. Without this a two-radio setup has no way to say which.
+  string device_id = 7;
 }
 
 message RecordConfig {
@@ -89,6 +92,16 @@ message Scan {
   // -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
   // scan that does not say which gain it ran at cannot be compared with another.
   repeated GainState gains = 7;
+  // The analysis bin width, in Hz. Every dB in this message -- floor_dbfs, snr_db -- is per bin,
+  // and a bin's width is what makes those numbers mean anything: a wider bin holds more noise. A
+  // client should print this alongside the floor rather than deriving it from step_hz, which
+  // describes where the radio pointed and not how finely it looked.
+  uint32 resolution_hz = 8;
+  // What the sweep actually covered. Never wider than config.range, and narrower whenever the
+  // radio could not reach all of it, the request fell partly in the tuner's own blind spot, or the
+  // sweep was stopped early. A client that reports config.range as though it were searched is
+  // claiming coverage nobody measured.
+  FrequencyRange covered = 9;
 }
 message NoiseFloorSegment { FrequencyRange range = 1; double floor_dbfs = 2; }
 

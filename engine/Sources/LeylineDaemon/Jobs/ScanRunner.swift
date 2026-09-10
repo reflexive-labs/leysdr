@@ -136,6 +136,9 @@ actor ScanRunner {
         /// Steps that ran to the end of their dwell.
         var stepsDone: Int
         var steps: Int
+        /// The windows the sweep actually looked at, merged. Not the request and not the plan:
+        /// what was measured. A step that produced no believable row contributes nothing.
+        var covered: [SweepPlan.Window]
         /// Why the sweep stopped early, when it was not cancellation. Empty on a clean run.
         var failure: EngineError?
         var complete: Bool { stepsDone >= steps && failure == nil }
@@ -176,6 +179,7 @@ actor ScanRunner {
         var newestIndex: UInt64 = 0
 
         var stepsDone = 0
+        var analysed: [SweepPlan.Window] = []
         var failure: EngineError?
         for (index, step) in plan.steps.enumerated() {
             if Task.isCancelled { break }
@@ -201,6 +205,7 @@ actor ScanRunner {
             var believedRows = 0
             var stepHits: [ScanHit] = []
             var stepFloors: [Double] = []
+            var stepWindows: [SweepPlan.Window] = []
             let pFalse = SpectrumDetect.sweepPFalse(expected: falseAlarmBudget, bins: sub.actualBins,
                                                     rowsPerStep: rowsPerStep, steps: plan.steps.count)
             // A backstop, not the schedule: the step ends when it has its rows. Twice the settle
@@ -224,6 +229,7 @@ actor ScanRunner {
                         // nobody put.
                         let window = raw.clamped(to: plan.covered)
                         guard window.highHz > window.lowHz else { continue }
+                        if !stepWindows.contains(window) { stepWindows.append(window) }
                         let hits = power.withUnsafeMutableBufferPointer { p in
                             floorBuf.withUnsafeMutableBufferPointer { f in
                                 scratch.withUnsafeMutableBufferPointer { sc in
@@ -254,11 +260,20 @@ actor ScanRunner {
             if believedRows == 0 {
                 Self.log.warning("scan step \(index + 1)/\(plan.steps.count) at \(step.centerHz) Hz saw no rows it could believe")
             }
+            if believedRows > 0 { analysed.append(contentsOf: stepWindows) }
             // Every hit in this step had as many chances as the step actually got rows.
             for i in stepHits.indices { stepHits[i].looksPossible = UInt32(Swift.max(1, believedRows)) }
             for h in stepHits {
                 await onHit(h)
                 merge(h, into: &merged)
+            }
+            // A step that looked at a frequency and found nothing there is evidence too, and the
+            // denominator is a lie without it: a carrier one of two steps missed reads 8/8 rather
+            // than 8/16 if only the finding steps are counted.
+            for i in merged.indices where !stepHits.contains(where: { near($0.centerHz, merged[i].centerHz, merged[i].bandwidthHz) }) {
+                if stepWindows.contains(where: { $0.contains(merged[i].centerHz) }) {
+                    merged[i].looksPossible += UInt32(Swift.max(1, believedRows))
+                }
             }
             if !stepFloors.isEmpty {
                 let median = stepFloors.sorted()[stepFloors.count / 2]
@@ -267,7 +282,8 @@ actor ScanRunner {
             if believedRows >= rowsPerStep { stepsDone += 1 }
             await onStep(Progress(step: index + 1, steps: plan.steps.count, found: merged.count))
         }
-        return Result(hits: merged, floors: floors, stepsDone: stepsDone, steps: plan.steps.count, failure: failure)
+        return Result(hits: merged, floors: floors, stepsDone: stepsDone, steps: plan.steps.count,
+                      covered: union(analysed), failure: failure)
     }
 
     /// The settle window in nanoseconds, for the dwell deadline.
@@ -276,9 +292,12 @@ actor ScanRunner {
     }
 
     /// Folds a hit into a step's list, keeping the strongest reading and counting the looks.
+    ///
+    /// One look per row, not per run: a wide signal with a notch wider than the join gap arrives
+    /// as two runs from the same row, and counting both would put `looks` above `looks_possible`.
     private static func fold(_ h: SpectrumDetect.Hit, at time: SampleTime, into list: inout [ScanHit]) {
         if let i = list.firstIndex(where: { near($0.centerHz, h.centerHz, $0.bandwidthHz) }) {
-            list[i].looks += 1
+            if list[i].lastSeen.sampleIndex != time.sampleIndex { list[i].looks += 1 }
             list[i].lastSeen = time
             if h.snrDB > list[i].snrDB {
                 list[i].snrDB = h.snrDB
@@ -296,7 +315,7 @@ actor ScanRunner {
     /// Merges one step's hit into the sweep's list. Almost every frequency is analysed from two
     /// tuner positions, so the same carrier arrives twice and the counts add.
     private static func merge(_ h: ScanHit, into list: inout [ScanHit]) {
-        if let i = list.firstIndex(where: { near($0.centerHz, h.centerHz, Swift.max($0.bandwidthHz, h.bandwidthHz)) }) {
+        if let i = list.firstIndex(where: { near($0.centerHz, h.centerHz, Swift.min($0.bandwidthHz, h.bandwidthHz)) }) {
             list[i].looks += h.looks
             list[i].looksPossible += h.looksPossible
             if h.firstSeen.sampleIndex < list[i].firstSeen.sampleIndex { list[i].firstSeen = h.firstSeen }
@@ -312,9 +331,30 @@ actor ScanRunner {
         list.append(h)
     }
 
+    /// Two readings are the same signal when their centres are within half the narrower one's
+    /// width, or a few kHz for anything narrow.
+    ///
+    /// The tolerance was the *wider* bandwidth, which let a 198 kHz broadcast carrier swallow a
+    /// neighbouring station 150 kHz away -- normal spacing outside the US -- and report one signal
+    /// where there were two.
     private static func near(_ a: UInt64, _ b: UInt64, _ bandwidthHz: UInt32) -> Bool {
-        let tol = Swift.max(mergeToleranceHz, UInt64(bandwidthHz))
+        let tol = Swift.max(mergeToleranceHz, UInt64(bandwidthHz) / 2)
         return a > b ? a - b <= tol : b - a <= tol
+    }
+
+    /// Merges overlapping windows into a minimal cover.
+    private static func union(_ windows: [SweepPlan.Window]) -> [SweepPlan.Window] {
+        let sorted = windows.filter { $0.highHz > $0.lowHz }.sorted { $0.lowHz < $1.lowHz }
+        var out: [SweepPlan.Window] = []
+        for w in sorted {
+            if var last = out.last, w.lowHz <= last.highHz {
+                last.highHz = Swift.max(last.highHz, w.highHz)
+                out[out.count - 1] = last
+            } else {
+                out.append(w)
+            }
+        }
+        return out
     }
 
     private static func segment(_ step: SweepPlan.Step, floorDBFS: Double) -> Leyline_V1_NoiseFloorSegment {

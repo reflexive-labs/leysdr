@@ -22,17 +22,18 @@ actor SessionCaptureAllocator: CaptureAllocator {
         case .channel:
             // Watch jobs land here (Milestone D.15). A sweep is the only caller today.
             return .declined(code: "UNIMPLEMENTED", reason: "channel allocation arrives with watch jobs")
-        case .exclusiveCapture(let range, let takeOver):
-            return await allocateCapture(range: range, takeOver: takeOver, job: job)
+        case .exclusiveCapture(let range, let deviceID, let takeOver):
+            return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, job: job)
         }
     }
 
-    private func allocateCapture(range: ClosedRange<UInt64>, takeOver: Bool, job: JobID) async -> AllocationResult {
+    private func allocateCapture(range: ClosedRange<UInt64>, deviceID wanted: DeviceID?, takeOver: Bool, job: JobID) async -> AllocationResult {
         let state = await store.snapshot(scope: .daemon)
         // A device that can hear any of the range. Prefer one with no capture at all: creating and
         // destroying is cleaner than borrowing and restoring, and it disturbs nobody.
         var candidates: [(Leyline_V1_DeviceDescriptor, Leyline_V1_Capture?)] = []
         for d in state.devices where d.state != .disconnected {
+            if let want = wanted, d.deviceID != want.string { continue }
             // What a capture on this device can hear, not just where it can point: a capture
             // centred at the edge of the tuning range still covers half a span either side of it,
             // which is how a file device -- whose range is the single point its recording was made
@@ -45,6 +46,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
             candidates.append((d, state.captures.first { $0.deviceID == d.deviceID }))
         }
         guard !candidates.isEmpty else {
+            if let want = wanted {
+                return .declined(code: "NO_DEVICE", reason: "\(want.string) cannot tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound)), or is not here")
+            }
             return .declined(code: "NO_DEVICE", reason: "no radio here can tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound))")
         }
         candidates.sort { ($0.1 == nil ? 0 : 1) < ($1.1 == nil ? 0 : 1) }
@@ -138,7 +142,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             await self?.releaseLease(id)
         }
         await store.setSwept(id, true)
-        await lease.pinGain()
+        await lease.pinGain(device: device)
         return lease
     }
 
@@ -221,10 +225,13 @@ actor SessionCaptureLease: CaptureLease {
 
     /// Freezes the tuner's gain for the sweep. Under AGC the gain moves after every hop and SNR
     /// measured against a moving reference is not a number.
-    func pinGain() async {
+    func pinGain(device: (any RadioDevice)?) async {
         entryGains = await engine.snapshot.gains
         for g in entryGains where g.value == .auto {
-            let level = midpoint(element: g.element)
+            // Where AGC actually settled, so the sweep is exactly as sensitive as the radio was a
+            // moment ago. Only when the driver cannot say does this fall back to the middle of the
+            // element's range, which is a guess and is 20 dB from the truth on a quiet band.
+            let level = await device?.settledGainDB(element: g.element) ?? midpoint(element: g.element)
             do {
                 try await engine.setGain(element: g.element, value: .db(level))
             } catch {
@@ -234,8 +241,8 @@ actor SessionCaptureLease: CaptureLease {
         pinned = await engine.snapshot.gains
     }
 
-    /// A gain to freeze at when the driver was in auto and will not say what it settled on: the
-    /// middle of the element's range. Never the minimum, which deafens the radio.
+    /// Where to freeze when the driver will not say what auto settled on: the middle of the
+    /// element's range. Never the minimum, which deafens the radio.
     private func midpoint(element: String) -> Double {
         guard let d = gainElements.first(where: { $0.name == element }) else { return 0 }
         if !d.validDB.isEmpty {

@@ -65,9 +65,12 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	d.touchUnary(ci)
 
 	d.mu.Lock()
-	dev := d.scanDevice()
+	dev := d.scanDevice(sc.DeviceId)
 	if dev == nil {
 		d.mu.Unlock()
+		if sc.DeviceId != "" {
+			return nil, fail(ctx, errorf(leyline.CodeDeviceNotFound, sc.DeviceId, "no such radio, or it cannot tune that range"))
+		}
 		return nil, fail(ctx, errorf(leyline.CodeDeviceNotFound, "", "no radio here can tune that range"))
 	}
 	job := &leylinev1.Job{
@@ -80,8 +83,15 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	}
 	scanID := newID("scan_")
 	job.ResultUris = []string{"ley://scans/" + scanID}
+	rate := uint64(2_400_000)
+	if len(dev.SampleRates) > 0 {
+		rate = dev.SampleRates[len(dev.SampleRates)-1]
+	}
+	stored := proto.Clone(sc).(*leylinev1.ScanConfig)
+	stored.StepHz = uint32(0.4 * float64(rate))
 	d.jobs[job.JobId] = &fakeJob{proto: job, scan: &leylinev1.Scan{
-		ScanId: scanID, Config: sc, StartedAtNs: job.CreatedAtNs,
+		ScanId: scanID, Config: stored, StartedAtNs: job.CreatedAtNs,
+		ResolutionHz: uint32(rate / 1024),
 	}, owner: ci.GetClientId()}
 	d.jobOrder = append(d.jobOrder, job.JobId)
 	d.emit(ci, job)
@@ -182,7 +192,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 			Range:     &leylinev1.FrequencyRange{MinHz: uint64(math.Max(0, c-edgeHz)), MaxHz: uint64(c + edgeHz)},
 			FloorDbfs: fakeFloorDbfs,
 		})
-		d.setJobDetail(jobID, fmt.Sprintf("step %d/%d, %d found", i+1, len(centers), len(found)), found)
+		d.setJobDetail(jobID, fmt.Sprintf("step %d/%d, %d found", i+1, len(centers), len(found)), found, floors, uint64(math.Max(0, lo)), uint64(hi))
 	}
 	d.finishScan(jobID, found, floors)
 }
@@ -214,11 +224,14 @@ func mergeDetection(list []*leylinev1.Detection, d *leylinev1.Detection) []*leyl
 	return append(list, d)
 }
 
-// scanDevice picks a radio for a sweep. Caller holds the lock.
-func (d *Daemon) scanDevice() *leylinev1.DeviceDescriptor {
+// scanDevice picks a radio for a sweep, honouring an explicit id. Caller holds the lock.
+func (d *Daemon) scanDevice(want string) *leylinev1.DeviceDescriptor {
 	var best *leylinev1.DeviceDescriptor
 	for _, x := range d.devices {
 		if x == nil || x.State == leylinev1.DeviceState_DISCONNECTED {
+			continue
+		}
+		if want != "" && x.DeviceId != want {
 			continue
 		}
 		if best == nil || x.DeviceId < best.DeviceId {
@@ -235,7 +248,10 @@ func (d *Daemon) jobCancelled(id string) bool {
 	return j == nil || j.proto.State != leylinev1.JobState_RUNNING
 }
 
-func (d *Daemon) setJobDetail(id, detail string, found []*leylinev1.Detection) {
+// setJobDetail also writes what has been found so far into the job's Scan, so a CancelJob that
+// lands mid-sweep answers with the part that ran -- which is what the Swift daemon does, and what
+// the CLI prints after Ctrl-C.
+func (d *Daemon) setJobDetail(id, detail string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, coveredLo, coveredHi uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	j := d.jobs[id]
@@ -243,10 +259,21 @@ func (d *Daemon) setJobDetail(id, detail string, found []*leylinev1.Detection) {
 		return
 	}
 	j.proto.StatusDetail = detail
+	j.scan.Detections = cloneDetections(found)
+	j.scan.NoiseFloor = floors
+	j.scan.Covered = &leylinev1.FrequencyRange{MinHz: coveredLo, MaxHz: coveredHi}
 	for _, det := range found {
 		d.publishDetection(det)
 	}
 	d.emit(nil, j.proto)
+}
+
+func cloneDetections(in []*leylinev1.Detection) []*leylinev1.Detection {
+	out := make([]*leylinev1.Detection, len(in))
+	for i, d := range in {
+		out[i] = proto.Clone(d).(*leylinev1.Detection)
+	}
+	return out
 }
 
 func (d *Daemon) failScan(id, code, reason string) {
@@ -268,7 +295,7 @@ func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*l
 	if j == nil || j.proto.State != leylinev1.JobState_RUNNING {
 		return
 	}
-	j.scan.Detections = found
+	j.scan.Detections = cloneDetections(found)
 	j.scan.NoiseFloor = floors
 	j.scan.CompletedAtNs = time.Now().UnixNano()
 	j.scan.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 28.0}}

@@ -189,7 +189,16 @@ final class ScanSweepTests: XCTestCase {
             SyntheticBandDevice.Carrier(hz: 148_300_000, dbfs: -35, widthHz: 12_500),
         ]
         try await withSweepDaemon(carriers) { c, scan in
-            XCTAssertGreaterThan(scan.config.stepHz, 0)
+            // The advance the geometry uses, not the gap between the first two centres: the first
+            // gap is between the low end-cap and the first interior step, which is edge+guard.
+            let span = Double(SyntheticBandDevice.rate)
+            XCTAssertEqual(Double(scan.config.stepHz),
+                           (SweepPlan.edgeFraction - SweepPlan.guardFraction) * span, accuracy: 1)
+            // How finely it looked, stated rather than left for a client to reverse-engineer.
+            XCTAssertEqual(Double(scan.resolutionHz), span / 1024, accuracy: 1)
+            // What it actually covered, which for a whole sweep is the range asked for.
+            XCTAssertLessThanOrEqual(scan.covered.minHz, 145_100_000)
+            XCTAssertGreaterThanOrEqual(scan.covered.maxHz, 148_500_000)
             let found = scan.detections.map(\.centerHz).sorted()
             for want in carriers.map({ UInt64($0.hz) }) {
                 XCTAssertTrue(found.contains { $0 > want - 20_000 && $0 < want + 20_000 },
@@ -223,6 +232,9 @@ final class ScanSweepTests: XCTestCase {
             let d = try XCTUnwrap(scan.detections.first)
             XCTAssertGreaterThan(d.looks, 0)
             XCTAssertGreaterThanOrEqual(d.looksPossible, d.looks)
+            // The denominator counts every look that covered the frequency, including the steps
+            // that saw nothing there -- otherwise a carrier one of two steps missed reads 8/8.
+            XCTAssertGreaterThan(d.looksPossible, 1, "a frequency the geometry looks at twice cannot have one opportunity")
             XCTAssertLessThan(d.floorDbfs, -40)
             XCTAssertGreaterThan(d.snrDb, 10)
             XCTAssertEqual(d.modulationGuess, "", "invariant 12: v0 has no opinion about modulation")

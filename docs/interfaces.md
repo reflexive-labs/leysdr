@@ -96,9 +96,13 @@ spectrum rows in which it cleared the threshold, out of the rows that covered th
 never a filter: a signal seen once in eight is reported as such rather than dropped, because an
 intermittent transmission is exactly what somebody may be scanning for. `Scan.gains` is the gain the
 sweep pinned for its whole duration, because a scan run at a different gain is a different
-measurement. `Scan.config.step_hz` is the advance the daemon chose, from which a client recovers the
-analysis resolution; there is no `--step`, because the step geometry is what keeps the sweep free of
-blind spots. `snr_db` here is *spectral* -- a bin against a spectral floor -- and will not agree
+measurement. `Scan.resolution_hz` is the analysis bin width, which every dB in the message is per --
+a wider bin holds more noise -- and `Scan.covered` is the range actually looked at, never wider than
+`config.range` and narrower whenever the radio could not reach all of it, part of the request fell
+in the tuner's own blind spot, or the sweep was stopped early; a client that reported `config.range`
+as searched would be claiming coverage nobody measured. `Scan.config.step_hz` is the advance the
+daemon chose; there is no `--step`, because the step geometry is what keeps the sweep free of blind
+spots. `ScanConfig.device_id` names the radio when there is more than one. `snr_db` here is *spectral* -- a bin against a spectral floor -- and will not agree
 numerically with `Meter.snr_db`, which is a block's power against a five-second running minimum.
 Full design, with the measured numbers: `docs/design-scan.md`.
 

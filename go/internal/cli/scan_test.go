@@ -110,8 +110,21 @@ func TestScanMinSNRHides(t *testing.T) {
 	if strings.Contains(filtered, "162.400 MHz") {
 		t.Errorf("--min-snr 20 should have hidden a 12 dB signal:\n%s", filtered)
 	}
-	if !strings.Contains(filtered, "nothing stood above") {
-		t.Errorf("an empty result must say so:\n%s", filtered)
+	// Hiding what was found is a different answer from finding nothing, and needs a different
+	// remedy: a longer dwell will not bring back a row the filter removed.
+	if !strings.Contains(filtered, "below 20 dB") {
+		t.Errorf("must say the filter hid them:\n%s", filtered)
+	}
+	if strings.Contains(filtered, "nothing stood above the noise floor") {
+		t.Errorf("the band was not empty; the filter emptied the table:\n%s", filtered)
+	}
+	if strings.Contains(filtered, "--dwell") {
+		t.Errorf("a longer dwell is the wrong remedy for a filtered table:\n%s", filtered)
+	}
+	// A genuinely empty band still says so.
+	empty := mustSay(t, sock, "scan", "170M..172M")
+	if !strings.Contains(empty, "nothing stood above the noise floor") {
+		t.Errorf("an empty band must say so:\n%s", empty)
 	}
 }
 
