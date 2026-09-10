@@ -93,12 +93,25 @@ Tests: `TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen` (no cursor-up
 the reason is said exactly once, and every frame still arrives) and
 `TestSpectrumWatchRedrawsWhenHeightIsUnknown`.
 
-## PC-6 `[ ]` Reconcile the style guide on error inking
+## PC-6 `[x]` Reconcile the style guide on error inking
 
-`docs/cli-style.md` section 6 says only the `ley:` prefix and the `[CODE]` suffix may take ink on an
-error line, while the VIS-5 work item also allowed a muted path and a highlighted remedy. The
-implementation followed the item. The guide should be reconciled to match, or the implementation
-pulled back to the guide -- but they should not disagree. (from `cli-visuals.md`)
+`docs/cli-style.md` section 6 said only the `ley:` prefix and the `[CODE]` suffix may take ink on an
+error line, while the VIS-5 work item also allowed a muted path and a highlighted remedy. (from
+`cli-visuals.md`)
+
+The guide was widened, because the implementation is already inside the guide's own principles:
+every span is redundant on words present with colour off, ink is SGR-only so ids and `ley ...`
+strings stay copy-pasteable, and no span is the only difference between two states.
+
+**The papercut undercounted, twice.** There are *five* inked spans, not four: beyond the muted path
+and the `Cmd` remedy, `inkCode` mutes a trailing `[CODE]` and `inkNotRunning` gives `Err` to the
+words "not running" -- a span in neither VIS-5 nor the guide. And the guide's "only in `cmd/ley`'s
+printer" was simply wrong: the printer is `errorLine`/`inkMessage` in `internal/cli/errink.go`, and
+`ley daemon status` reuses it on **stdout**, so a literal reading made that a violation.
+
+The new prose names all five, says the list is closed, and names the real renderer.
+`TestErrorLinePlainAndStyled` and `TestErrorLineInkTargets` already pin every span and the
+strip-identity, so the guide now describes tests that exist rather than a rule nothing enforced.
 
 ## PC-7 `[ ]` The live session writes its two halves to different streams
 

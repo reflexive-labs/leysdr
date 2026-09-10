@@ -182,9 +182,18 @@ Styling may add SGR and may re-lay a screen, but these do not move:
 
 - Exit codes `0` success, `1` daemon or runtime error, `2` usage, `3` daemon not
   running, `130` interrupted before the live phase (docs/interfaces.md).
-- The error shape `ley: <sentence> [CODE]`. Only the `ley:` prefix and the `[CODE]`
-  suffix may take ink, and only in `cmd/ley`'s printer; `ExitError.Message` stays a
-  plain string because tests inspect it.
+- The error shape `ley: <sentence> [CODE]`. The sentence is the verb's own words and is
+  never rewritten for ink. **Five spans may take ink**, by SGR only, each redundant on
+  words that are there with colour off: the `ley:` prefix (`Err`); a parenthetical
+  holding a path (`Muted`) -- one listing accepted values stays plain; the remedy
+  `ley ...` command following one of the leads in `remedyLeads` (`Cmd`); the daemon's
+  state words `not running` (`Err`); a trailing `[CODE]` (`Muted`). That list is closed:
+  a sixth span is a change to this guide.
+  One renderer applies it -- `errorLine`/`inkMessage` in `go/internal/cli/errink.go` --
+  called by `cmd/ley`'s printer and by any screen repeating one of these sentences
+  (`ley daemon status` does, on **stdout**). No other call site inks an error sentence.
+  `ExitError.Message` stays a plain string because tests inspect it, and stripping the
+  styled line gives back the plain one byte for byte.
 - Every `--json` shape, the bulk row shapes, and `ley version --json`.
 - Ids and `ley ...` command strings stay verbatim and copy-pasteable.
 - The golden help snapshots in `go/internal/cli/testdata/help/`: help is captured
