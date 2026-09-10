@@ -74,7 +74,7 @@ final class Daemon: @unchecked Sendable {
                 ControlService(store: store),
                 TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
-                JobsService(jobs: jobs),
+                JobsService(jobs: jobs, store: store),
                 ResourcesService(),
             ],
             interceptors: [ClientContextInterceptor()]

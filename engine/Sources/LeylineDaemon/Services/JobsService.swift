@@ -12,9 +12,14 @@ private func unimplemented(_ what: String) -> RPCError {
 
 struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
     let jobs: JobStore
+    /// Presence, not state: a job-only client -- an agent or a script that starts a scan and polls
+    /// -- holds no stream, so without a touch on every call the session store reaps it mid-sweep
+    /// and the client-gone hook cancels the job it is still asking about.
+    let store: SessionStore
 
     func startJob(request: Leyline_V1_StartJobRequest, context _: ServerContext) async throws -> Leyline_V1_Job {
         let client = ClientContext.current
+        await store.touchUnary(client)
         switch request.config {
         case .scan(let config)?:
             return try await mapErrors { try await jobs.startScan(config: config, by: client) }
@@ -28,6 +33,7 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
     }
 
     func listJobs(request: Leyline_V1_ListJobsRequest, context _: ServerContext) async throws -> Leyline_V1_ListJobsResponse {
+        await store.touchUnary(ClientContext.current)
         let want = Set(request.states)
         var out = Leyline_V1_ListJobsResponse()
         out.jobs = await jobs.snapshot().filter { want.isEmpty || want.contains($0.state) }
@@ -35,6 +41,7 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
     }
 
     func getJob(request: Leyline_V1_JobRef, context _: ServerContext) async throws -> Leyline_V1_Job {
+        await store.touchUnary(ClientContext.current)
         guard let id = JobID(string: request.jobID), let job = await jobs.job(id) else {
             throw ProtoMapping.rpcError(EngineError.jobNotFound(request.jobID))
         }
@@ -42,6 +49,7 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
     }
 
     func cancelJob(request: Leyline_V1_JobRef, context _: ServerContext) async throws -> Leyline_V1_Job {
+        await store.touchUnary(ClientContext.current)
         guard let id = JobID(string: request.jobID), let job = await jobs.cancel(id) else {
             throw ProtoMapping.rpcError(EngineError.jobNotFound(request.jobID))
         }
@@ -53,6 +61,7 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
     }
 
     func getScan(request: Leyline_V1_ScanRef, context _: ServerContext) async throws -> Leyline_V1_Scan {
+        await store.touchUnary(ClientContext.current)
         guard let id = ScanID(string: request.scanID), let scan = await jobs.scan(id) else {
             throw ProtoMapping.rpcError(EngineError.scanNotFound(request.scanID))
         }

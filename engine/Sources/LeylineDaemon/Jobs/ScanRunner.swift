@@ -107,7 +107,7 @@ final class RowCollector: SpectrumSink, @unchecked Sendable {
 }
 
 /// Runs one sweep and accumulates a Scan.
-actor ScanRunner {
+enum ScanRunner {
     /// Bins per row. 1024 at 2.4 MSPS is 2.34 kHz, which resolves a 12.5 kHz channel comfortably
     /// and keeps the CFAR reference window (192 bins, 450 kHz) well inside a quarter-band.
     static let bins = 1024

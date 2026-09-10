@@ -123,7 +123,7 @@ actor JobStore {
 
     func startScan(config: Leyline_V1_ScanConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
         if case .recurring = config.schedule {
-            throw EngineError.invalidArgument("a recurring scan needs a job store that survives a restart (Milestone D.15); use once",
+            throw EngineError.invalidArgument("a recurring scan needs a job store that survives a restart, which does not exist yet; use once",
                                               target: "")
         }
         guard config.hasRange, config.range.maxHz > config.range.minHz else {
@@ -145,20 +145,24 @@ actor JobStore {
         scan.config = config
         scan.startedAtNs = job.createdAtNs
 
-        entries[id] = Entry(proto: job, scan: scan, task: nil, ownerClientID: client.id)
-        order.append(id)
-        trim()
-        await store.publishJob(job)
-
+        // The task goes in before the first suspension. An actor is re-entrant at an await, so a
+        // CancelJob or a departing client arriving while `publishJob` runs would otherwise find no
+        // task on the entry, cancel nothing, and mark a sweep cancelled that is about to start.
         let task = Task { [weak self] in
             guard let self else { return }
             await self.run(id, config: config)
         }
-        entries[id]?.task = task
+        entries[id] = Entry(proto: job, scan: scan, task: task, ownerClientID: client.id)
+        order.append(id)
+        trim()
+        await store.publishJob(job)
         return job
     }
 
     private func run(_ id: JobID, config: Leyline_V1_ScanConfig) async {
+        // Cancelled before the sweep got the actor back: nothing has been allocated yet, so there
+        // is nothing to do but leave the terminal state alone.
+        guard entries[id]?.proto.state == .running else { return }
         let range = config.range.minHz ... config.range.maxHz
         let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
         if !config.deviceID.isEmpty, deviceID == nil {
@@ -172,6 +176,13 @@ actor JobStore {
             } else {
                 await finish(id, state: .failed, detail: "no radio could be allocated", code: "NO_DEVICE")
             }
+            return
+        }
+        // Allocating suspends -- it creates or borrows a capture -- and a cancel in that window has
+        // already answered. Hand the radio back at once rather than sweeping for a job nobody is
+        // waiting on: the lease is what locks every other client out of the device.
+        guard entries[id]?.proto.state == .running else {
+            await lease.release()
             return
         }
         let device = await store.deviceDescriptor(for: lease.captureID)

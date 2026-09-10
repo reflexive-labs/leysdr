@@ -191,7 +191,7 @@ critical sections), c-swift-core-4 (reset `runningIndex` on every `startStreamin
 `RTLSDRDevice` and `FilePlaybackDevice`, so the contract `CaptureDSPCore` documents is true for all
 three devices).
 
-### SW-3 `[ ]` Jobs: presence, the cancel window, and what a sweep protects
+### SW-3 `[x]` Jobs: presence, the cancel window, and what a sweep protects
 
 a-layering-1 / a-invariants-1 (`JobsService` touches presence on every unary; daemon test that
 starts a scan and polls `GetJob` with no stream open for longer than the grace), a-evolution-1

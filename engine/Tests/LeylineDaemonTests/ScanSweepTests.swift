@@ -34,7 +34,8 @@ final class SyntheticBandDevice: VirtualDevice, @unchecked Sendable {
     private let lock = NSLock()
     private var _descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "synthetic-band", serial: "synth-1",
                                                tuningRanges: [FrequencyRange(minHz: 100_000_000, maxHz: 200_000_000)],
-                                               sampleRates: [rate], nativeFormat: .cf32)
+                                               sampleRates: [rate], nativeFormat: .cf32,
+                                               gainElements: [GainElement(name: "TUNER", minDB: 0, maxDB: 49.6, stepDB: 0.9, supportsAuto: true)])
     private var _onStateChange: (@Sendable (DeviceState) -> Void)?
     private var _gain = GainState(element: "TUNER", value: .auto)
     private let carriers: [Carrier]
@@ -306,6 +307,91 @@ final class ScanSweepTests: XCTestCase {
             XCTAssertEqual(state.captures.first?.centerHz, 146_900_000, "a borrowed capture must be given back")
             XCTAssertEqual(state.channels.count, 1, "the listener's channel must survive")
             XCTAssertEqual(state.channels.first?.state, .channelActive)
+        }
+    }
+
+    /// A client whose only calls are on the Jobs plane keeps its scan. An agent that starts a sweep
+    /// and polls for it holds no stream, and presence that only the control plane can renew would
+    /// have the session store reap it and cancel the job mid-sweep.
+    func testAPollingClientKeepsItsScan() async throws {
+        try await withDaemon(presenceGraceNs: 300_000_000) { c in
+            let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)])
+            _ = try await c.daemon.registry.attachVirtualDevice(device)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            // The first call arms the grace, as any client's does. Nothing after this touches the
+            // control plane or opens a stream.
+            _ = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+
+            var config = Leyline_V1_ScanConfig()
+            config.range.minHz = 145_000_000
+            config.range.maxHz = 148_600_000
+            config.dwellMs = 800
+            config.once = true
+            let job = try await c.jobs.startJob(.with { $0.config = .scan(config) }, metadata: testMetadata)
+
+            // Five grace periods of polling and nothing else.
+            var seen = job
+            for _ in 0 ..< 15 {
+                try await Task.sleep(nanoseconds: 100_000_000)
+                seen = try await c.jobs.getJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
+                XCTAssertNotEqual(seen.state, .cancelled, "a polling client's scan was reaped: \(seen.statusDetail)")
+            }
+            XCTAssertEqual(seen.state, .running, seen.statusDetail)
+            _ = try await c.jobs.cancelJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
+        }
+    }
+
+    /// While a sweep holds a radio, the two writes that would move it out from under the lease are
+    /// refused: the gain the sweep pinned, and destroying the capture outright.
+    func testASweptRadioRefusesGainAndDestroy() async throws {
+        try await withDaemon { c in
+            let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)])
+            _ = try await c.daemon.registry.attachVirtualDevice(device)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+
+            var config = Leyline_V1_ScanConfig()
+            config.range.minHz = 145_000_000
+            config.range.maxHz = 148_600_000
+            config.dwellMs = 800
+            config.once = true
+            let job = try await c.jobs.startJob(.with { $0.config = .scan(config) }, metadata: testMetadata)
+
+            // The lease is held once the sweep is stepping.
+            var capture: Leyline_V1_Capture?
+            for _ in 0 ..< 200 {
+                let now = try await c.jobs.getJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
+                if now.statusDetail.hasPrefix("sweeping") || now.statusDetail.hasPrefix("step") {
+                    let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                    if let cap = state.captures.first { capture = cap; break }
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            let cap = try XCTUnwrap(capture, "the sweep never opened a capture")
+
+            let summary = try await c.control.writeParams(metadata: testMetadata) { writer in
+                var w = Leyline_V1_ParamWrite()
+                w.tag = 41
+                w.targetID = cap.captureID
+                w.gain = .with { $0.element = "TUNER"; $0.db = 20 }
+                try await writer.write(w)
+            }
+            XCTAssertEqual(summary.writesApplied, 0, "the gain a sweep pinned must not move")
+            let rejected = await events.waitFor { ev in
+                if case .writeRejected(let wr)? = ev.body { return wr.tag == 41 }
+                return false
+            }
+            XCTAssertEqual(rejected?.writeRejected.error.code, "DEVICE_SWEEPING")
+
+            do {
+                _ = try await c.control.destroyCapture(.with { $0.captureID = cap.captureID }, metadata: testMetadata)
+                XCTFail("destroying a swept capture must be refused")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, "DEVICE_SWEEPING")
+            }
+
+            await events.stop()
+            _ = try await c.jobs.cancelJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
         }
     }
 

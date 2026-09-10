@@ -535,8 +535,20 @@ actor SessionStore {
         }
     }
 
+    /// Destroys the capture a `createCapture` returned, named by the id string from its message.
+    /// A caller holding only the proto can undo a create it decided against even if that string is
+    /// one this daemon cannot parse back into an id.
+    func destroyCapture(idString: String, by: ClientContext) async {
+        guard let id = CaptureID(string: idString) ?? captures.keys.first(where: { $0.string == idString }) else { return }
+        await destroyCapture(id: id, by: by)
+    }
+
     func destroyCaptureChecked(id: CaptureID, by: ClientContext) async throws {
         guard captures[id] != nil else { throw EngineError.captureNotFound(id.string) }
+        // Ending a capture a sweep holds would stop the engine under the lease, and the sweep would
+        // report the radio as gone. The internal `destroyCapture` stays unguarded: the lease itself
+        // uses it to put down a capture it created.
+        try refuseIfSwept(id)
         await destroyCapture(id: id, by: by)
     }
 
@@ -767,6 +779,10 @@ actor SessionStore {
                 await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
             case .gain(let g)?:
                 let (id, entry) = try captureTarget(w.targetID)
+                // The lease pins gain for the length of a sweep so every dB it reports is measured
+                // against one sensitivity; a write here would move the reference mid-answer and be
+                // silently undone when the lease restores what it pinned.
+                try refuseIfSwept(id)
                 // Argument shape first, then the element: a NaN/inf level is malformed whatever
                 // the device offers (`snapped` would otherwise search the table with NaN).
                 if case .db(let db)? = g.value, !db.isFinite {
