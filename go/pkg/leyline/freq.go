@@ -258,3 +258,40 @@ func NearestRate(rates []uint64, want uint64) uint64 {
 	}
 	return best
 }
+
+// ParseUserRange reads a frequency range in the form a person types at a
+// radio: "144M..148M", "144..148" (both MHz), "162.4M..162.55M". Each half
+// goes through ParseUserFrequency, so a bare number is MHz on both sides and
+// the units are the same ones every other argument takes.
+//
+// ".." is the only separator. A dash was considered and rejected: "144-148"
+// reads as a subtraction to half the people who type it and as a range to the
+// other half, and FormatFrequency already spends the dash on "24 MHz-1.766
+// GHz" in device tables.
+//
+// A band name is refused rather than resolved. Half the metre names already
+// parse as frequencies ("2m" is 2 MHz everywhere in ley), so accepting them
+// here would make "2m..70cm" silently mean 2 MHz to something that does not
+// parse -- which is the quiet wrong answer that kept band names off every
+// positional in the first place. --band is the flag that takes them.
+func ParseUserRange(s string) (minHz, maxHz uint64, err error) {
+	orig := strings.TrimSpace(s)
+	lo, hi, found := strings.Cut(orig, "..")
+	if !found {
+		if _, err := ResolveBand(orig); err == nil {
+			return 0, 0, fmt.Errorf("range: %q is a band, not a range; say --band %s", orig, orig)
+		}
+		return 0, 0, fmt.Errorf("range: %q is not a range; two frequencies with .. between them, as in 144M..148M", orig)
+	}
+	lo, hi = strings.TrimSpace(lo), strings.TrimSpace(hi)
+	if minHz, err = ParseUserFrequency(lo); err != nil {
+		return 0, 0, fmt.Errorf("range: the low end of %q: %w", orig, err)
+	}
+	if maxHz, err = ParseUserFrequency(hi); err != nil {
+		return 0, 0, fmt.Errorf("range: the high end of %q: %w", orig, err)
+	}
+	if minHz >= maxHz {
+		return 0, 0, fmt.Errorf("range: %s is not below %s; a range runs low..high", FormatFrequency(minHz), FormatFrequency(maxHz))
+	}
+	return minHz, maxHz, nil
+}
