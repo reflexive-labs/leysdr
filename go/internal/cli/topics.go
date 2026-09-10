@@ -103,6 +103,9 @@ func newHelpCommand(app *App) *cobra.Command {
 			return out, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(c *cobra.Command, args []string) error {
+			if app.JSON {
+				return noJSONErrorf("help", "ley help scripting says what --json prints and which verbs print it")
+			}
 			root := c.Root()
 			if len(args) == 0 {
 				root.InitDefaultHelpFlag()
@@ -343,15 +346,24 @@ id           every object has one: dev_..., cap_..., chan_.... ley also
 }
 
 func topicScripting() string {
-	return `Machine output: add --json to any command. It prints the proto3 JSON
-mapping of the leyline.v1 messages (docs/interfaces.md): lowerCamelCase
-keys, 64-bit integers as strings, one object per line for streams (NDJSON).
-Anything meant for a person (banners, "using NFM: ...") goes to stderr, so
-stdout is always parseable. Documented exceptions to the proto3 rule: bulk
-rows have no proto message, so 'ley fft' and 'ley spectrum --json' print
+	return `Machine output: add --json to any command that has data to give.
+It prints the proto3 JSON mapping of the leyline.v1 messages
+(docs/interfaces.md): lowerCamelCase keys, 64-bit integers as strings, one
+object per line for streams (NDJSON). Anything meant for a person (banners,
+"using NFM: ...") goes to stderr, so stdout is always parseable. A verb
+whose output is a script, a file or a launchd action ('ley help', 'ley
+completion', 'ley daemon install|uninstall|logs') refuses --json with a
+usage error and exit 2 rather than ignoring it, so a pipeline stops where
+it went wrong.
+
+Documented exceptions to the proto3 rule: bulk rows have no proto message,
+so 'ley fft' and 'ley spectrum --json' print
 {seq, sample_index, center_hz, span_hz, bins, floor_db} (plus peaks for
-spectrum) and 'ley listen' prints {seq, sample_index, sample_rate, format,
-pcm} with pcm base64-encoded; fft rows are gap-marked, so a
+spectrum), 'ley waterfall --json' the same with looks, 'ley phosphor --json'
+{seq, sample_index, center_hz, span_hz, bins, levels, floor_db, range_db,
+counts} with counts the base64 histogram grid, and 'ley listen'
+{seq, sample_index, sample_rate, format, pcm} with pcm base64-encoded; fft
+and waterfall rows are gap-marked, so a
 {"gap":{"from_sample","to_sample"}} line precedes the first row after the
 daemon dropped some. 'ley presets --json' and 'ley bands --json' print
 arrays of the client-local tables, and 'ley version --json' a client-local

@@ -62,7 +62,7 @@ to the ley executable, then PATH.`,
 	sub := func(use, short, long, example string, jsonOK bool, run func(context.Context, *daemonFlags) error) *cobra.Command {
 		return &cobra.Command{Use: use, Short: short, Long: long, Example: example, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			if app.JSON && !jsonOK {
-				return usageErrorf("daemon %s has no --json output; drop the flag (ley daemon status --json reports the daemon)", use)
+				return noJSONErrorf("daemon "+use, "ley daemon status --json reports the daemon")
 			}
 			return run(cmd.Context(), &f)
 		}}

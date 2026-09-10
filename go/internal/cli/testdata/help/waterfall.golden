@@ -18,6 +18,11 @@ Read the header: at a wide span each column covers tens of kHz, so this is a
 map of where energy is, not a picture of a signal's shape. Narrow the span
 with --span to see shape, or use 'ley spectrum' for levels.
 
+--json prints the rows instead of drawing them, one per line:
+{seq, sample_index, center_hz, span_hz, bins, floor_db, looks} -- what
+'ley fft' prints plus the looks folded into the row. A drop shows up as a
+{"gap":{"from_sample":A,"to_sample":B}} line, as it does there.
+
 Usage:
   ley waterfall [frequency] [flags]
 

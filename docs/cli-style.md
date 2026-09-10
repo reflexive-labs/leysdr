@@ -20,9 +20,10 @@ turned off, or that leaks into a pipe, breaks the second audience silently.
    warnings and the live meter go to stderr. stdout carries tables, ids, JSON and bulk
    rows. Styling follows the stream, so `ley state | grep chan_` keeps coloured prose
    on the terminal and clean text in the pipe.
-4. **Never style machine output.** `--json`, the bulk row streams (`fft`, `listen`,
-   `spectrum --json`) and `--format bin` force the profile off before any renderer
-   exists. This is decided once at start-up, not per call site.
+4. **Never style machine output.** `--json`, the bulk row streams (`fft`, `listen`, and
+   `spectrum`, `waterfall`, `phosphor` under `--json`) and `--format bin` force the
+   profile off before any renderer exists. This is decided once at start-up, not per
+   call site.
 5. **Restraint.** Six ink roles, one glyph ramp, one level ramp, and a frame only where
    it earns its width. If everything is emphasised, nothing is. A screen that needs more
    than three levels of emphasis is a screen that needs restructuring instead.

@@ -164,7 +164,7 @@ The ten divergences listed under "The wire contract" in `docs/plans/v1-release.m
 CLI test. Check `RTLSDRDevice.swift` for the feature keys the real driver emits and fix
 `docs/engine-internals.md` if it disagrees.
 
-### GO-8 `[ ]` Every verb answers `--json` or refuses it (R-5 of the release plan)
+### GO-8 `[x]` Every verb answers `--json` or refuses it (R-5 of the release plan)
 
 `docs/plans/v1-release.md` section R-5 in full, plus q-go-render-4's package-doc and help-topic
 claims made true.

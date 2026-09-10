@@ -1,6 +1,8 @@
 // Package cli implements the `ley` command tree: Cobra verbs over the
-// leyline.v1 client library. Every verb honours --json (proto3 JSON, NDJSON for
-// streams) and --socket, and renders human output with text/tabwriter.
+// leyline.v1 client library. Every verb answers --json (proto3 JSON, NDJSON for
+// streams) or refuses the flag with a usage error when its output is a script,
+// a file or a launchd action rather than data; every verb takes --socket, and
+// human output is rendered with text/tabwriter.
 package cli
 
 import (
@@ -176,6 +178,20 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 	root.SetHelpCommand(newHelpCommand(app))
 	root.SetHelpCommandGroupID(GroupLooking)
 	root.SetCompletionCommandGroupID(GroupData)
+	// Cobra builds the completion verb, so the refusal every verb without
+	// machine output makes has to be wrapped around it: a shell script is not
+	// JSON, and a pipeline asking for one should stop here rather than feed
+	// jq a function definition.
+	root.InitDefaultCompletionCmd()
+	for _, c := range root.Commands() {
+		if c.Name() != compCmdName {
+			continue
+		}
+		refuseJSON(app, c, "completion writes a shell script for your shell to source")
+		for _, shell := range c.Commands() {
+			refuseJSON(app, shell, "completion writes a shell script for your shell to source")
+		}
+	}
 	// `ley --help` ends with the help topics; children inherit the template
 	// and the HasParent guard keeps the block off their help.
 	root.SetUsageTemplate(strings.Replace(root.UsageTemplate(),
@@ -339,6 +355,33 @@ func usageError(err error) error {
 }
 
 // usageErrorf builds an exit-2 usage error from a format string.
+// compCmdName is Cobra's name for the completion verb.
+const compCmdName = "completion"
+
+// noJSONErrorf is the refusal a verb with no machine output makes. The flag is
+// a usage error rather than a no-op so a script that pipes the verb through jq
+// fails where it went wrong, and instead names what to run for the same answer.
+func noJSONErrorf(verb, instead string) error {
+	return usageErrorf("%s has no --json output; drop the flag (%s)", verb, instead)
+}
+
+// refuseJSON wraps a command Cobra owns so --json is refused before it runs.
+// A command with no RunE of its own (the bare `ley completion`) prints its
+// help, which is what Cobra does with it.
+func refuseJSON(app *App, cmd *cobra.Command, instead string) {
+	run := cmd.RunE
+	name := strings.TrimPrefix(cmd.CommandPath(), "ley ")
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if app.JSON {
+			return noJSONErrorf(name, instead)
+		}
+		if run == nil {
+			return c.Help()
+		}
+		return run(c, args)
+	}
+}
+
 func usageErrorf(format string, args ...any) error {
 	return &ExitError{Code: ExitUsage, Message: fmt.Sprintf(format, args...)}
 }

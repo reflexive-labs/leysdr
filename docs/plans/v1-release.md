@@ -365,7 +365,7 @@ the listener is closed and joined, or whether the device's reconnect path has a 
 harness or the device accordingly, and prove it with ten consecutive full runs. If the fix is in
 `RTLTCPDevice`, add the regression test.
 
-### R-5 `[ ]` Every verb answers `--json` or refuses it (M, Opus)
+### R-5 `[x]` Every verb answers `--json` or refuses it (M, Opus)
 
 - `ley waterfall --json` prints one NDJSON object per rendered row in the existing bulk-row shape
   (`{seq, sample_index, center_hz, span_hz, bins, floor_db}`) plus `looks` (the look count the daemon

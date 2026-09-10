@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"encoding/binary"
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -208,5 +210,39 @@ func TestPhosphorAgainstDaemon(t *testing.T) {
 	}
 	if !filled {
 		t.Errorf("the noise floor should accumulate into a bright row:\n%s", out)
+	}
+}
+
+// `phosphor --json` is the histogram itself, not the chart: one NDJSON frame
+// per redraw, with the grid the daemon sent carried whole so a consumer can
+// re-derive every cell the chart shades.
+func TestPhosphorJSONFrames(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, _, err := run(t, context.Background(), sock, "--json", "phosphor", "146.52", "--count", "2", "--half-life", "5", "--bins", "64", "--levels", "16")
+	if err != nil {
+		t.Fatalf("phosphor --json: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 frames, got %d:\n%s", len(lines), out)
+	}
+	for _, l := range lines {
+		var row PersistenceRow
+		if err := json.Unmarshal([]byte(l), &row); err != nil {
+			t.Fatalf("frame is not JSON: %v %s", err, l)
+		}
+		if row.Bins == 0 || row.Levels == 0 || row.RangeDb != phosphorRangeDb {
+			t.Errorf("frame is missing the scale it is measured on: %s", l)
+		}
+		// The counts are the wire grid: bins x levels little-endian uint16.
+		if want := int(row.Bins) * int(row.Levels) * 2; len(row.Counts) != want {
+			t.Fatalf("counts must be %d bytes, got %d", want, len(row.Counts))
+		}
+		if _, ok := leyline.DecodePersistence(row.Counts, int(row.Bins), int(row.Levels)); !ok {
+			t.Errorf("counts must decode as the histogram the chart draws: %s", l)
+		}
+	}
+	if strings.Contains(out, "shade is how often") {
+		t.Errorf("--json must not draw the chart:\n%s", out)
 	}
 }

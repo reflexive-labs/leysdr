@@ -1,0 +1,223 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/testutil"
+	"github.com/dpup/leysdr/go/pkg/leyline"
+)
+
+// jsonVerbCase is one command and what --json owes a script that types it:
+// either machine output on stdout, or a usage error saying so. There is no
+// third answer, and this table is where that is written down.
+type jsonVerbCase struct {
+	// path is the command path under `ley`, as the tree spells it.
+	path string
+	// args run the verb far enough to answer; the path leads them.
+	args []string
+	// refuse is a fragment of the usage error the verb must exit 2 with.
+	// Empty means it prints JSON instead.
+	refuse string
+	// prep runs before the verb against the same fake daemon and appends
+	// arguments the daemon only just minted (a job id, a device id, a file).
+	prep func(t *testing.T, sock string, c *leyline.Client) []string
+	// noDaemon points the verb at a socket nothing answers on.
+	noDaemon bool
+	// timeout bounds a verb that otherwise streams until Ctrl-C.
+	timeout time.Duration
+}
+
+// jsonNoOutput is the refusal shared by every verb whose output is a script, a
+// file or a launchd action rather than data.
+const jsonNoOutput = "no --json output"
+
+var jsonVerbs = []jsonVerbCase{
+	{path: "bands", args: []string{"bands"}},
+	{path: "completion", args: []string{"completion"}, refuse: jsonNoOutput},
+	{path: "completion bash", args: []string{"completion", "bash"}, refuse: jsonNoOutput},
+	{path: "completion fish", args: []string{"completion", "fish"}, refuse: jsonNoOutput},
+	{path: "completion powershell", args: []string{"completion", "powershell"}, refuse: jsonNoOutput},
+	{path: "completion zsh", args: []string{"completion", "zsh"}, refuse: jsonNoOutput},
+	{path: "daemon install", args: []string{"daemon", "install"}, refuse: jsonNoOutput},
+	{path: "daemon logs", args: []string{"daemon", "logs"}, refuse: jsonNoOutput},
+	{path: "daemon uninstall", args: []string{"daemon", "uninstall"}, refuse: jsonNoOutput},
+	// start against a daemon already answering reports it rather than
+	// spawning a second one; stop is the one verb that must not find one,
+	// because the pid the fake reports is this test process.
+	{path: "daemon start", args: []string{"daemon", "start"}},
+	{path: "daemon status", args: []string{"daemon", "status"}},
+	{path: "daemon stop", args: []string{"daemon", "stop"}, noDaemon: true},
+	{path: "devices", args: []string{"devices"}},
+	{path: "devices detach", args: []string{"devices", "detach"}, prep: prepPlaybackDevice},
+	{path: "fft", args: []string{"fft", "--freq", "146.52", "--count", "2"}},
+	{path: "help", args: []string{"help"}, refuse: jsonNoOutput},
+	{path: "jobs", args: []string{"jobs"}, prep: prepSweepOnly},
+	{path: "jobs cancel", args: []string{"jobs", "cancel"}, prep: prepSweep},
+	{path: "listen", args: []string{"listen", "146.52", "--count", "2"}},
+	{path: "phosphor", args: []string{"phosphor", "146.52", "--count", "1", "--bins", "32", "--levels", "8"}},
+	{path: "play", args: []string{"play"}, prep: prepIQFile, timeout: 2 * time.Second},
+	{path: "presets", args: []string{"presets"}},
+	{path: "record", args: []string{"record"}, refuse: "not implemented yet"},
+	{path: "scan", args: []string{"scan", "145M..147M"}},
+	{path: "set", args: []string{"set"}, prep: prepChannel},
+	{path: "spectrum", args: []string{"spectrum", "146.52"}},
+	{path: "state", args: []string{"state"}},
+	{path: "stop", args: []string{"stop", "all"}, prep: prepChannel},
+	{path: "tune", args: []string{"tune", "146.52", "--no-audio"}, timeout: 2 * time.Second},
+	{path: "version", args: []string{"version"}},
+	{path: "watch", args: []string{"watch"}, refuse: "not implemented yet"},
+	{path: "waterfall", args: []string{"waterfall", "146.52", "--count", "2", "--rate", "10"}},
+}
+
+// prepChannel leaves a channel running for the verbs that adjust or stop one.
+func prepChannel(t *testing.T, sock string, _ *leyline.Client) []string {
+	t.Helper()
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
+	return nil
+}
+
+// prepSweep leaves a job in the list, and names it for `jobs cancel`. The
+// harness client starts it: the daemon cancels a sweep whose client has gone.
+func prepSweep(t *testing.T, _ string, c *leyline.Client) []string {
+	t.Helper()
+	return []string{startSweep(t, c)}
+}
+
+// prepSweepOnly leaves the same job for a verb that takes no id.
+func prepSweepOnly(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	prepSweep(t, sock, c)
+	return nil
+}
+
+// prepIQFile writes the smallest file `ley play` will open, and names it.
+func prepIQFile(t *testing.T, _ string, _ *leyline.Client) []string {
+	t.Helper()
+	dir := t.TempDir()
+	iq := filepath.Join(dir, "tone.cf32")
+	if err := os.WriteFile(iq, make([]byte, 8*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	side := `{"format":"cf32","sample_rate":2400000,"center_hz":146520000}`
+	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return []string{iq, "--no-audio"}
+}
+
+// prepPlaybackDevice leaves a file playback device attached, and names it:
+// detach refuses a real radio, so there has to be one to remove.
+func prepPlaybackDevice(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	args := prepIQFile(t, sock, c)
+	mustRun(t, sock, "play", args[0], "--no-audio", "--persistent")
+	st, err := c.State(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range st.Devices {
+		if d.Driver == "file" {
+			return []string{d.DeviceId}
+		}
+	}
+	t.Fatal("ley play --persistent left no playback device to detach")
+	return nil
+}
+
+// Every verb answers --json or refuses it. A verb that draws a picture under
+// --json and exits 0 hands a script unparseable text with no way to tell that
+// anything went wrong, which is how `ley waterfall --json | jq` used to fail.
+func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
+	for _, c := range jsonVerbs {
+		t.Run(c.path, func(t *testing.T) {
+			sock := testutil.SocketPath(t, "gone.sock")
+			var client *leyline.Client
+			if !c.noDaemon {
+				sock, client = harness(t, fakedaemon.Options{})
+			}
+			args := append([]string{"--json"}, c.args...)
+			if c.prep != nil {
+				args = append(args, c.prep(t, sock, client)...)
+			}
+			// A verb that streams until Ctrl-C is stopped the way Ctrl-C
+			// stops it, by cancelling: a deadline reaches the daemon as
+			// DEADLINE_EXCEEDED, which is a real error rather than the
+			// clean exit this checks for.
+			ctx := context.Background()
+			if c.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				defer cancel()
+				time.AfterFunc(c.timeout, cancel)
+			}
+			out, errOut, err := run(t, ctx, sock, args...)
+			if c.refuse != "" {
+				if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), c.refuse) {
+					t.Fatalf("ley %v: want exit %d saying %q, got exit %d (%v)", args, ExitUsage, c.refuse, exitCode(err), err)
+				}
+				if out != "" {
+					t.Errorf("a refused verb writes nothing to stdout, got:\n%s", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ley %v: %v\nstdout: %s\nstderr: %s", args, err, out, errOut)
+			}
+			lines := strings.Split(strings.TrimSpace(out), "\n")
+			if strings.TrimSpace(out) == "" {
+				t.Fatalf("ley %v printed nothing on stdout; stderr:\n%s", args, errOut)
+			}
+			for _, l := range lines {
+				var any any
+				if err := json.Unmarshal([]byte(l), &any); err != nil {
+					t.Fatalf("ley %v: stdout is not NDJSON (%v): %q", args, err, l)
+				}
+			}
+		})
+	}
+}
+
+// The table above is only a rule if it covers the tree, so the tree is walked
+// and every command that runs has to be in it. The bare `ley` is left out: it
+// is the orientation screen rather than a verb, and under --json it says so
+// and names `ley state --json`. The help topics are left out too -- they are
+// `ley help <topic>` under another name, print prose whatever the flags, and
+// never reach the daemon.
+func TestJSONVerbTableCoversTheTree(t *testing.T) {
+	root := NewRootCommand(&App{LookupEnv: func(string) (string, bool) { return "", false }})
+	root.InitDefaultHelpCmd()
+	listed := map[string]bool{}
+	for _, c := range jsonVerbs {
+		listed[c.path] = true
+	}
+	found := map[string]bool{}
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+		if !c.Runnable() || c == root {
+			return
+		}
+		path := strings.TrimPrefix(c.CommandPath(), "ley ")
+		found[path] = true
+		if !listed[path] {
+			t.Errorf("`ley %s` runs but no jsonVerbs row says what --json does with it", path)
+		}
+	}
+	walk(root)
+	for path := range listed {
+		if !found[path] {
+			t.Errorf("jsonVerbs names %q, which the command tree no longer has", path)
+		}
+	}
+}

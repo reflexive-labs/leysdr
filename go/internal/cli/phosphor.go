@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -46,7 +47,12 @@ rather than "at some point since you started". The header says the window.
 
 Use it when you suspect something is on a band but never see it: ISM and
 paging bands, telemetry, anything bursty. For reading levels right now use
-'ley spectrum', and for when things happened use 'ley waterfall'.`,
+'ley spectrum', and for when things happened use 'ley waterfall'.
+
+--json prints the histogram instead of drawing it, one frame per line:
+{seq, sample_index, center_hz, span_hz, bins, levels, floor_db, range_db,
+counts}, where counts is the daemon's bins x levels grid of little-endian
+uint16 counts, bin-major, base64-encoded the way 'ley listen' carries pcm.`,
 		Example: `  ley phosphor 910                      # what lives on the 915 ISM band?
   ley phosphor 462.5625 --half-life 60  # a slower fade, for rare traffic
   ley phosphor 144.39 --span 250k       # narrow in on one channel`,
@@ -118,6 +124,9 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 
 	desc := sub.Descriptor
 	p := desc.GetPersistence()
+	if app.JSON {
+		return phosphorRows(ctx, app, desc, sub, o)
+	}
 	view := newPhosphorView(app.Style, o.width, o.freq)
 	view.centerHz, view.spanHz = desc.CenterHz, desc.SpanHz
 	view.floorDb, view.rangeDb = p.GetFloorDb(), p.GetRangeDb()
@@ -182,6 +191,73 @@ func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error
 				continue
 			}
 			return medianDb(leyline.DecodeFFTBins(fr.Payload, binFormat)), nil
+		}
+	}
+}
+
+// PersistenceRow is one JSON row of `ley phosphor --json`. The histogram has no
+// proto message of its own, so this shape is part of the CLI contract: Counts
+// is the daemon's grid exactly as it arrived -- Bins x Levels little-endian
+// uint16 counts, bin-major -- carried base64 the way `ley listen` carries pcm,
+// because a JSON array of tens of thousands of small integers costs more to
+// write and to read than the bytes themselves. FloorDb and RangeDb are what the
+// levels are measured against: level l covers floor_db + l*range_db/levels
+// upwards.
+type PersistenceRow struct {
+	Seq         uint64  `json:"seq"`
+	SampleIndex uint64  `json:"sample_index"`
+	CenterHz    uint64  `json:"center_hz"`
+	SpanHz      uint64  `json:"span_hz"`
+	Bins        uint32  `json:"bins"`
+	Levels      uint32  `json:"levels"`
+	FloorDb     float64 `json:"floor_db"`
+	RangeDb     float64 `json:"range_db"`
+	Counts      []byte  `json:"counts"`
+}
+
+// phosphorRows is `ley phosphor --json`: one NDJSON row per persistence frame,
+// and no chart.
+func phosphorRows(ctx context.Context, app *App, desc *leylinev1.StreamDescriptor,
+	sub *leyline.Subscription, o phosphorOptions,
+) error {
+	p := desc.GetPersistence()
+	bins, levels := int(p.GetBins()), int(p.GetLevels())
+	out := bufio.NewWriter(app.Stdout)
+	defer out.Flush()
+	n := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case fr, ok := <-sub.Frames:
+			if !ok {
+				return spectrumEnd(ctx, "persistence", sub.Err(), n)
+			}
+			// A frame too short for the grid the descriptor promised is
+			// dropped rather than half-read, as the chart drops it.
+			if bins <= 0 || levels <= 0 || len(fr.Payload) < bins*levels*2 {
+				continue
+			}
+			row := PersistenceRow{
+				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
+				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				Bins: p.GetBins(), Levels: p.GetLevels(),
+				FloorDb: p.GetFloorDb(), RangeDb: p.GetRangeDb(),
+				Counts: fr.Payload[:bins*levels*2],
+			}
+			b, err := json.Marshal(row)
+			if err != nil {
+				return err
+			}
+			out.Write(b)
+			out.WriteByte('\n')
+			if err := out.Flush(); err != nil {
+				return err
+			}
+			n++
+			if o.count > 0 && n >= o.count {
+				return nil
+			}
 		}
 	}
 }

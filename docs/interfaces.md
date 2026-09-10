@@ -70,7 +70,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 └── (planned) jobs, transcript, recordings   # arrive with the durable job store and Resources (Milestones C.12, D.15)
 ```
 
-Global flags: `--json` everywhere; `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
+Global flags: `--json` on every verb (answered, or refused with exit 2 where there is no machine form); `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
 
 **Input conventions** (`go/pkg/leyline`, shared by every verb): a bare frequency number is MHz
 (`146.52`, `1010`); units `k`, `M`, `G`, `Hz`, `e6` are exact; commas are refused with a hint.
@@ -86,17 +86,28 @@ adds no capability the protocol lacks.
 
 **`--json`** is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`,
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
-to stderr, so stdout is parseable. **Three documented exceptions.** The first sits beside the
+to stderr, so stdout is parseable. Every verb either answers the flag or refuses it: a verb whose
+output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
+`ley daemon install|uninstall|logs` — exits 2 with `<verb> has no --json output; drop the flag
+(<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
+pipeline unparseable text and exit 0. **Three documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, floor_db}` (snake_case,
 numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
-presentation only, never called signals. `ley listen --format json` is the audio member of the same
+presentation only, never called signals. `ley waterfall --json` is the same row plus `looks`, the
+number of looks the daemon folded into it, since the view negotiates ROW_MAX accumulation and a row
+means nothing without it; the map is drawn only when the flag is absent. `ley phosphor --json` is the
+histogram member: one object per frame, `{seq, sample_index, center_hz, span_hz, bins, levels,
+floor_db, range_db, counts}`, where `counts` is the daemon's `bins × levels` grid of little-endian
+uint16 counts, bin-major, base64-encoded (an array of tens of thousands of small integers costs more
+to write and to read than the bytes) and level `l` covers `floor_db + l*range_db/levels` upwards.
+`ley listen --format json` is the audio member of the same
 exception: `{seq, sample_index, sample_rate, format, pcm}`, `pcm` being the frame's PCM bytes
 base64-encoded and `format` the `AudioSampleFormat` the daemon settled on (`S16` in v0); every row
 repeats the rate and format so a consumer needs no header. `--format bin` writes those same frames
-raw, back to back and nothing else. `ley fft` subscribes GAP_MARKED (audio and IQ stay
-LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sample":B}}` line before the
-next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value
+raw, back to back and nothing else. `ley fft` and `ley waterfall` subscribe GAP_MARKED (audio and
+IQ stay LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sample":B}}` line before
+the next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
 that order (pinned by a golden test). The third is the client-local tables: `ley presets --json`
 prints one array of `{name, aliases, hz, mode, description}` and `ley bands --json` one array of

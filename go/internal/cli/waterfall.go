@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -41,7 +42,12 @@ compared.
 
 Read the header: at a wide span each column covers tens of kHz, so this is a
 map of where energy is, not a picture of a signal's shape. Narrow the span
-with --span to see shape, or use 'ley spectrum' for levels.`,
+with --span to see shape, or use 'ley spectrum' for levels.
+
+--json prints the rows instead of drawing them, one per line:
+{seq, sample_index, center_hz, span_hz, bins, floor_db, looks} -- what
+'ley fft' prints plus the looks folded into the row. A drop shows up as a
+{"gap":{"from_sample":A,"to_sample":B}} line, as it does there.`,
 		Example: `  ley waterfall 146.52              # is the local repeater busy?
   ley waterfall 162.55 --span 250k  # narrow: a channel at a time
   ley waterfall --rate 4            # four rows a second
@@ -104,6 +110,9 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
 
+	if app.JSON {
+		return waterfallRows(ctx, out, desc, sub, o)
+	}
 	view := newWaterfallView(app.Style, o.width, o.freq)
 	view.centerHz, view.spanHz = desc.CenterHz, desc.SpanHz
 	cols := view.cols(int(desc.GetFft().GetBins()))
@@ -152,6 +161,63 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 				}
 			}
 			fmt.Fprintln(out, view.row(bins, time.Since(start).Seconds()))
+			if err := out.Flush(); err != nil {
+				return err
+			}
+			n++
+			if o.count > 0 && n >= o.count {
+				return nil
+			}
+		}
+	}
+}
+
+// WaterfallRow is one JSON row of `ley waterfall --json`: the bulk-row shape
+// `ley fft` prints, plus the number of looks the daemon folded into the row.
+// Looks belongs on every row because this view asks for ROW_MAX accumulation:
+// without it a reader cannot tell a row that saw the whole interval from one
+// that sampled a single block of it, and the two mean different things.
+type WaterfallRow struct {
+	FFTRow
+	Looks uint32 `json:"looks"`
+}
+
+// waterfallRows is `ley waterfall --json`: one NDJSON row per accumulated FFT
+// row, gap-marked the way `ley fft` is, and no chart.
+func waterfallRows(ctx context.Context, out *bufio.Writer, desc *leylinev1.StreamDescriptor,
+	sub *leyline.Subscription, o waterfallOptions,
+) error {
+	binFormat := desc.GetFft().GetBinFormat()
+	looks := desc.GetFft().GetLooksPerRow()
+	n := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case fr, ok := <-sub.Frames:
+			if !ok {
+				return spectrumEnd(ctx, "waterfall", sub.Err(), n)
+			}
+			if fr.Gap != nil {
+				if err := writeGap(out, fr.Gap); err != nil {
+					return err
+				}
+			}
+			if len(fr.Payload) == 0 {
+				continue
+			}
+			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
+			row := WaterfallRow{FFTRow{
+				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
+				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				Bins: bins, FloorDb: floorOf(bins),
+			}, looks}
+			b, err := json.Marshal(row)
+			if err != nil {
+				return err
+			}
+			out.Write(b)
+			out.WriteByte('\n')
 			if err := out.Flush(); err != nil {
 				return err
 			}

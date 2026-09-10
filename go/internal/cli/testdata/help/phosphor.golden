@@ -16,6 +16,11 @@ Use it when you suspect something is on a band but never see it: ISM and
 paging bands, telemetry, anything bursty. For reading levels right now use
 'ley spectrum', and for when things happened use 'ley waterfall'.
 
+--json prints the histogram instead of drawing it, one frame per line:
+{seq, sample_index, center_hz, span_hz, bins, levels, floor_db, range_db,
+counts}, where counts is the daemon's bins x levels grid of little-endian
+uint16 counts, bin-major, base64-encoded the way 'ley listen' carries pcm.
+
 Usage:
   ley phosphor [frequency] [flags]
 

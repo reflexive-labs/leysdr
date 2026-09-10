@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"math/rand"
 	"strings"
@@ -198,5 +199,34 @@ func TestWaterfallSaysHowManyLooksARowIs(t *testing.T) {
 	}
 	if strings.Count(out, "\n") < 3 {
 		t.Errorf("expected rows:\n%s", out)
+	}
+}
+
+// `waterfall --json` is the row feed, not the map: NDJSON in the bulk-row shape
+// plus the look count, and nothing drawn.
+func TestWaterfallJSONRows(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, _, err := run(t, context.Background(), sock, "--json", "waterfall", "146.52", "--count", "3", "--rate", "10", "--bins", "64")
+	if err != nil {
+		t.Fatalf("waterfall --json: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want 3 rows, got %d:\n%s", len(lines), out)
+	}
+	for _, l := range lines {
+		var row WaterfallRow
+		if err := json.Unmarshal([]byte(l), &row); err != nil {
+			t.Fatalf("row is not JSON: %v %s", err, l)
+		}
+		if row.Seq == 0 || row.CenterHz == 0 || len(row.Bins) == 0 {
+			t.Errorf("row is missing the bulk-row fields: %s", l)
+		}
+		if row.Looks != 64 {
+			t.Errorf("every row carries the daemon's look count, got %d: %s", row.Looks, l)
+		}
+	}
+	if strings.ContainsAny(ui.Strip(out), "#") {
+		t.Errorf("--json must not draw the map:\n%s", out)
 	}
 }
