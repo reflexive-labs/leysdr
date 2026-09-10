@@ -97,10 +97,13 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	d.detectionEpoch = len(d.detectionLog)
 	d.trimJobsLocked()
 	d.emit(ci, job)
+	// The scan goroutine edits this job under the lock as it runs, so the reply is copied while
+	// the lock is still held.
+	reply := proto.Clone(job).(*leylinev1.Job)
 	d.mu.Unlock()
 
 	go d.runScan(job.JobId, sc, dev)
-	return proto.Clone(job).(*leylinev1.Job), nil
+	return reply, nil
 }
 
 // busyReason names who has the radio, or "" when nobody does. The real daemon's allocator applies

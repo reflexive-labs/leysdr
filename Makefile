@@ -3,6 +3,7 @@
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
 #   make go         build the Go clients (ley, leyfix) into go/bin
 #   make go-test    Go unit + contract tests
+#   make race       Go tests that exercise goroutines, under the race detector
 #   make swift      build the engine (leylined) — macOS for the real thing, Linux compiles the non-DSP core
 #   make swift-test engine tests; depends on fixtures so the fixture round-trips actually run (set
 #                   LEYLINE_FIXTURES to point the tests elsewhere)
@@ -21,7 +22,7 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: all proto proto-check go go-test swift swift-release swift-test fixtures e2e lint check clean
+.PHONY: all proto proto-check go go-test race swift swift-release swift-test fixtures e2e lint check clean
 
 all: go swift
 
@@ -38,6 +39,12 @@ go:
 
 go-test:
 	cd go && go test ./...
+
+# The verbs stream events on a background goroutine while the foreground reads the session mirror,
+# which only the race detector can police; it is a separate target because -race is slow enough that
+# nobody would run the whole suite that way.
+race:
+	cd go && go test -race ./internal/cli/...
 
 swift:
 	cd engine && swift build -c $(SWIFT_CONFIG)
@@ -68,7 +75,7 @@ $(TOOLS)/gofumpt:
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 
-check: proto-check go-test lint swift swift-test e2e
+check: proto-check go-test race lint swift swift-test e2e
 
 clean:
 	rm -rf go/bin engine/.build

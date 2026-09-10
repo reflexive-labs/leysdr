@@ -144,7 +144,7 @@ here; with --format bin it is a usage error.`,
 // runListen taps an existing channel or makes one like tune (minus the
 // speakers), then writes audio frames until --count, Ctrl-C or the end of the
 // stream, tearing down whatever it created.
-func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions) error {
+func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions) (err error) {
 	if lo.channel != "" {
 		ch, err := leyline.ResolveChannel(s.state, lo.channel)
 		if err != nil {
@@ -182,19 +182,27 @@ func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions
 		return err
 	}
 	defer sub.Close()
-	// Keep the event stream flowing (and the mirror current) while frames are
-	// written; stopped before teardown reads the mirror.
-	stopDrain := s.drainEvents()
-	defer stopDrain()
 	ap := sub.Descriptor.GetAudio()
 	rate, name := ap.GetSampleRate(), ap.GetFormat().String()
 	// The two things a person checks -- what is being decoded and what the
 	// rows carry -- sit next to each other; the channel id follows them,
 	// Muted, rather than separating them with 32 characters of base32.
 	st := s.app.ErrStyle
+	// The note reads the mirror, so it is built while this goroutine still
+	// owns it -- before the drain below starts folding events into it.
 	s.say("streaming %s: %d Hz %s mono. Ctrl-C stops. %s\n", audioWhat(s), rate, name, st.Muted("from "+s.channel.ChannelId))
+	// Keep the event stream flowing (and the mirror current) while frames are
+	// written; stopped before teardown reads the mirror.
+	stopDrain := s.drainEvents()
+	defer stopDrain()
 	out := bufio.NewWriter(s.app.Stdout)
-	defer out.Flush()
+	// A row buffered and never written is a truncated file with exit 0, so the
+	// flush error is the command's error whenever nothing worse happened.
+	defer func() {
+		if ferr := out.Flush(); err == nil {
+			err = ferr
+		}
+	}()
 	n := 0
 	for fr := range sub.Frames {
 		if len(fr.Payload) == 0 {
