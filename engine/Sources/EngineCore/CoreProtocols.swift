@@ -455,6 +455,10 @@ public protocol CaptureLease: AnyObject, Sendable {
     /// Samples the driver has queued ahead of the retune -- the settle window (see
     /// `RadioDevice.inFlightSamples`), plus whatever is already in the capture's own ring.
     var settleSamples: UInt64 { get async }
+    /// Where the capture's timeline has reached. A sweep needs this and not merely the newest row
+    /// it has seen: rows arrive at the row rate, so the last one can be a whole row interval
+    /// behind the radio, and a settle window measured from it starts too early.
+    var sampleIndex: UInt64 { get async }
     /// The ladder this capture computes, for a detector to subscribe to.
     var spectrum: any SpectrumLadder { get }
     /// The gain the lease pinned for its duration.

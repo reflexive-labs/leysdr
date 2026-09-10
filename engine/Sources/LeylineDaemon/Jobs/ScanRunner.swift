@@ -141,11 +141,15 @@ actor ScanRunner {
         for (index, step) in plan.steps.enumerated() {
             try Task.checkCancellation()
             for row in collector.drain() { newestIndex = Swift.max(newestIndex, row.time.sampleIndex) }
+            let hopAt = Swift.max(newestIndex, await lease.sampleIndex)
             try await lease.retune(centerHz: step.centerHz)
             let settle = await lease.settleSamples
-            // Everything up to here was captured at the previous frequency, and so is everything
-            // the driver and the ring already hold.
-            let believeFrom = newestIndex + settle
+            // Everything up to the hop was captured at the previous frequency, and so is
+            // everything the driver and the ring already held. One more row interval on top,
+            // because a row is stamped with the block that completed it and reaches back a whole
+            // interval: a row whose stamp clears the settle window can still contain samples from
+            // inside it, and those are the ones that put a carrier at the wrong frequency.
+            let believeFrom = hopAt + settle + UInt64(plan.sampleRateHz) / UInt64(Swift.max(1, Int(sub.actualRate.rounded())))
 
             var believedRows = 0
             var stepHits: [ScanHit] = []

@@ -185,6 +185,8 @@ actor SessionCaptureLease: CaptureLease {
 
     var pinnedGains: [GainState] { pinned }
 
+    var sampleIndex: UInt64 { engine.stats.samplesProcessed }
+
     /// The settle window: what the driver has already asked for plus what is sitting in the
     /// capture's ring, both of which were captured before the retune and arrive after it.
     var settleSamples: UInt64 {
