@@ -340,9 +340,9 @@ enum ScanRunner {
     /// Two readings are the same signal when their centres are within half the narrower one's
     /// width, or a few kHz for anything narrow.
     ///
-    /// The tolerance was the *wider* bandwidth, which let a 198 kHz broadcast carrier swallow a
-    /// neighbouring station 150 kHz away -- normal spacing outside the US -- and report one signal
-    /// where there were two.
+    /// Using the wider bandwidth would let a wide broadcast carrier swallow a legitimately
+    /// separate neighbouring station within normal international channel spacing; the narrower
+    /// bandwidth avoids that.
     private static func near(_ a: UInt64, _ b: UInt64, _ bandwidthHz: UInt32) -> Bool {
         let tol = Swift.max(mergeToleranceHz, UInt64(bandwidthHz) / 2)
         return a > b ? a - b <= tol : b - a <= tol
