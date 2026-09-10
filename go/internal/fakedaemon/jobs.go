@@ -380,7 +380,9 @@ func (d *Daemon) failScan(id, code, reason string) {
 		return
 	}
 	j.proto.State = leylinev1.JobState_FAILED
-	j.proto.StatusDetail = code + ": " + reason
+	// The daemon splits the two: prose in status_detail, the stable code in error.
+	j.proto.StatusDetail = reason
+	j.proto.Error = &leylinev1.ErrorDetail{Code: code, Message: reason, Target: id}
 	d.emit(nil, j.proto)
 }
 

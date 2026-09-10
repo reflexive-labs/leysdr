@@ -23,6 +23,11 @@ message Job {
   }
   repeated string result_uris = 8;  // ley:// resources produced so far
   string status_detail = 9;         // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
+  // Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
+  // daemon's own sentence about it. Set only on FAILED; `status_detail` is prose and never carries
+  // the code, so a client that wants to tell "the radio cannot tune that" from "somebody is using
+  // it" reads this rather than splitting an English sentence.
+  ErrorDetail error = 10;
 }
 
 enum JobState {
@@ -45,6 +50,9 @@ message WatchConfig {
 // Sweep -> persisted Scan resource. Respects don't-disturb: idle device or decline with reason.
 message ScanConfig {
   FrequencyRange range = 1;
+  // The advance between hops, chosen by the daemon from the radio's sample rate and its own
+  // geometry: a value sent here is ignored. `Job.config` echoes the request as it was made, and
+  // the copy carried by the resulting Scan states the advance the sweep really used.
   uint32 step_hz = 2;
   uint32 dwell_ms = 3;
   oneof schedule { bool once = 4; string recurring = 5; } // recurring: cron expression

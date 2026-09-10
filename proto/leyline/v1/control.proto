@@ -84,7 +84,10 @@ message Channel {
   GainMode agc = 7;
   ChannelState state = 8;  // unset on an event is the tombstone; see Capture.state
   bool persistent = 9;           // survives owner disconnect; jobs set this
-  uint64 required_hz = 10;       // set by jobs: rebind target when OUT_OF_CAPTURE
+  // Set by jobs: the absolute frequency a channel wants back when its capture moves out from
+  // under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
+  // on it yet.
+  uint64 required_hz = 10;
   ClientInfo owner = 11;
   // Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
   // ignored for every other mode. Detection is reported on the telemetry plane
@@ -103,7 +106,10 @@ message Sink {
   string channel_id = 2;
   oneof kind {
     SystemAudioSink system_audio = 3;  // daemon plays via CoreAudio
-    StreamSink stream = 4;             // client pulls over bulk plane
+    // Client pulls over the bulk plane. `AttachSink` refuses this kind -- a client that wants
+    // channel audio or IQ negotiates it with `Bulk.Subscribe`, which is where delivery policy and
+    // transport are agreed.
+    StreamSink stream = 4;
     FileSink file = 5;                 // daemon records; lossless lives here, never on the network
   }
   // A detached sink is emitted one last time with state unset -- the tombstone
@@ -230,7 +236,9 @@ message DestroyChannelRequest { string channel_id = 1; }
 message AttachSinkRequest { string channel_id = 1; Sink sink = 2; } // sink_id ignored on input
 message DetachSinkRequest { string sink_id = 1; }
 message AttachFileDeviceRequest {
-  string path = 1;   // local path to <name>.cf32 (+ <name>.json sidecar) or a ley://recordings/<id> URI
+  // Filesystem path to <name>.cf32 (+ <name>.json sidecar). A ley://recordings/<id> URI is the
+  // intended spelling once Resources can resolve one; today only a path is understood.
+  string path = 1;
   bool loop = 2;     // wrap at EOF instead of ending the capture
 }
 message DetachFileDeviceRequest { string device_id = 1; }

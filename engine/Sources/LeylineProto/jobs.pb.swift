@@ -123,57 +123,88 @@ public nonisolated enum Leyline_V1_ResourceKind: SwiftProtobuf.Enum, Swift.CaseI
 
 }
 
-public nonisolated struct Leyline_V1_Job: Sendable {
+public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var jobID: String = String()
+  public var jobID: String {
+    get {_storage._jobID}
+    set {_uniqueStorage()._jobID = newValue}
+  }
 
-  public var state: Leyline_V1_JobState = .unspecified
+  public var state: Leyline_V1_JobState {
+    get {_storage._state}
+    set {_uniqueStorage()._state = newValue}
+  }
 
-  public var createdAtNs: Int64 = 0
+  public var createdAtNs: Int64 {
+    get {_storage._createdAtNs}
+    set {_uniqueStorage()._createdAtNs = newValue}
+  }
 
   public var createdBy: Leyline_V1_ClientInfo {
-    get {_createdBy ?? Leyline_V1_ClientInfo()}
-    set {_createdBy = newValue}
+    get {_storage._createdBy ?? Leyline_V1_ClientInfo()}
+    set {_uniqueStorage()._createdBy = newValue}
   }
   /// Returns true if `createdBy` has been explicitly set.
-  public var hasCreatedBy: Bool {self._createdBy != nil}
+  public var hasCreatedBy: Bool {_storage._createdBy != nil}
   /// Clears the value of `createdBy`. Subsequent reads from it will return its default value.
-  public mutating func clearCreatedBy() {self._createdBy = nil}
+  public mutating func clearCreatedBy() {_uniqueStorage()._createdBy = nil}
 
-  public var config: Leyline_V1_Job.OneOf_Config? = nil
+  public var config: OneOf_Config? {
+    get {return _storage._config}
+    set {_uniqueStorage()._config = newValue}
+  }
 
   public var watch: Leyline_V1_WatchConfig {
     get {
-      if case .watch(let v)? = config {return v}
+      if case .watch(let v)? = _storage._config {return v}
       return Leyline_V1_WatchConfig()
     }
-    set {config = .watch(newValue)}
+    set {_uniqueStorage()._config = .watch(newValue)}
   }
 
   public var scan: Leyline_V1_ScanConfig {
     get {
-      if case .scan(let v)? = config {return v}
+      if case .scan(let v)? = _storage._config {return v}
       return Leyline_V1_ScanConfig()
     }
-    set {config = .scan(newValue)}
+    set {_uniqueStorage()._config = .scan(newValue)}
   }
 
   public var record: Leyline_V1_RecordConfig {
     get {
-      if case .record(let v)? = config {return v}
+      if case .record(let v)? = _storage._config {return v}
       return Leyline_V1_RecordConfig()
     }
-    set {config = .record(newValue)}
+    set {_uniqueStorage()._config = .record(newValue)}
   }
 
   /// ley:// resources produced so far
-  public var resultUris: [String] = []
+  public var resultUris: [String] {
+    get {_storage._resultUris}
+    set {_uniqueStorage()._resultUris = newValue}
+  }
 
   /// human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
-  public var statusDetail: String = String()
+  public var statusDetail: String {
+    get {_storage._statusDetail}
+    set {_uniqueStorage()._statusDetail = newValue}
+  }
+
+  /// Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
+  /// daemon's own sentence about it. Set only on FAILED; `status_detail` is prose and never carries
+  /// the code, so a client that wants to tell "the radio cannot tune that" from "somebody is using
+  /// it" reads this rather than splitting an English sentence.
+  public var error: Leyline_V1_ErrorDetail {
+    get {_storage._error ?? Leyline_V1_ErrorDetail()}
+    set {_uniqueStorage()._error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {_storage._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {_uniqueStorage()._error = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -186,7 +217,7 @@ public nonisolated struct Leyline_V1_Job: Sendable {
 
   public init() {}
 
-  fileprivate var _createdBy: Leyline_V1_ClientInfo? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// "Watch 146.52 and log anything heard." Owns a persistent channel; produces a transcript.
@@ -224,6 +255,9 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
   /// Clears the value of `range`. Subsequent reads from it will return its default value.
   public mutating func clearRange() {self._range = nil}
 
+  /// The advance between hops, chosen by the daemon from the radio's sample rate and its own
+  /// geometry: a value sent here is ignored. `Job.config` echoes the request as it was made, and
+  /// the copy carried by the resulting Scan states the advance the sweep really used.
   public var stepHz: UInt32 = 0
 
   public var dwellMs: UInt32 = 0
@@ -625,113 +659,168 @@ nonisolated extension Leyline_V1_ResourceKind: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Job"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}job_id\0\u{1}state\0\u{3}created_at_ns\0\u{3}created_by\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{3}result_uris\0\u{3}status_detail\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}job_id\0\u{1}state\0\u{3}created_at_ns\0\u{3}created_by\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{3}result_uris\0\u{3}status_detail\0\u{1}error\0")
+
+  fileprivate class _StorageClass {
+    var _jobID: String = String()
+    var _state: Leyline_V1_JobState = .unspecified
+    var _createdAtNs: Int64 = 0
+    var _createdBy: Leyline_V1_ClientInfo? = nil
+    var _config: Leyline_V1_Job.OneOf_Config?
+    var _resultUris: [String] = []
+    var _statusDetail: String = String()
+    var _error: Leyline_V1_ErrorDetail? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _jobID = source._jobID
+      _state = source._state
+      _createdAtNs = source._createdAtNs
+      _createdBy = source._createdBy
+      _config = source._config
+      _resultUris = source._resultUris
+      _statusDetail = source._statusDetail
+      _error = source._error
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.jobID) }()
-      case 2: try { try decoder.decodeSingularEnumField(value: &self.state) }()
-      case 3: try { try decoder.decodeSingularInt64Field(value: &self.createdAtNs) }()
-      case 4: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
-      case 5: try {
-        var v: Leyline_V1_WatchConfig?
-        var hadOneofValue = false
-        if let current = self.config {
-          hadOneofValue = true
-          if case .watch(let m) = current {v = m}
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._jobID) }()
+        case 2: try { try decoder.decodeSingularEnumField(value: &_storage._state) }()
+        case 3: try { try decoder.decodeSingularInt64Field(value: &_storage._createdAtNs) }()
+        case 4: try { try decoder.decodeSingularMessageField(value: &_storage._createdBy) }()
+        case 5: try {
+          var v: Leyline_V1_WatchConfig?
+          var hadOneofValue = false
+          if let current = _storage._config {
+            hadOneofValue = true
+            if case .watch(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._config = .watch(v)
+          }
+        }()
+        case 6: try {
+          var v: Leyline_V1_ScanConfig?
+          var hadOneofValue = false
+          if let current = _storage._config {
+            hadOneofValue = true
+            if case .scan(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._config = .scan(v)
+          }
+        }()
+        case 7: try {
+          var v: Leyline_V1_RecordConfig?
+          var hadOneofValue = false
+          if let current = _storage._config {
+            hadOneofValue = true
+            if case .record(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._config = .record(v)
+          }
+        }()
+        case 8: try { try decoder.decodeRepeatedStringField(value: &_storage._resultUris) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._statusDetail) }()
+        case 10: try { try decoder.decodeSingularMessageField(value: &_storage._error) }()
+        default: break
         }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.config = .watch(v)
-        }
-      }()
-      case 6: try {
-        var v: Leyline_V1_ScanConfig?
-        var hadOneofValue = false
-        if let current = self.config {
-          hadOneofValue = true
-          if case .scan(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.config = .scan(v)
-        }
-      }()
-      case 7: try {
-        var v: Leyline_V1_RecordConfig?
-        var hadOneofValue = false
-        if let current = self.config {
-          hadOneofValue = true
-          if case .record(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.config = .record(v)
-        }
-      }()
-      case 8: try { try decoder.decodeRepeatedStringField(value: &self.resultUris) }()
-      case 9: try { try decoder.decodeSingularStringField(value: &self.statusDetail) }()
-      default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.jobID.isEmpty {
-      try visitor.visitSingularStringField(value: self.jobID, fieldNumber: 1)
-    }
-    if self.state != .unspecified {
-      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 2)
-    }
-    if self.createdAtNs != 0 {
-      try visitor.visitSingularInt64Field(value: self.createdAtNs, fieldNumber: 3)
-    }
-    try { if let v = self._createdBy {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
-    } }()
-    switch self.config {
-    case .watch?: try {
-      guard case .watch(let v)? = self.config else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
-    }()
-    case .scan?: try {
-      guard case .scan(let v)? = self.config else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-    }()
-    case .record?: try {
-      guard case .record(let v)? = self.config else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
-    }()
-    case nil: break
-    }
-    if !self.resultUris.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.resultUris, fieldNumber: 8)
-    }
-    if !self.statusDetail.isEmpty {
-      try visitor.visitSingularStringField(value: self.statusDetail, fieldNumber: 9)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._jobID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._jobID, fieldNumber: 1)
+      }
+      if _storage._state != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._state, fieldNumber: 2)
+      }
+      if _storage._createdAtNs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._createdAtNs, fieldNumber: 3)
+      }
+      try { if let v = _storage._createdBy {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      } }()
+      switch _storage._config {
+      case .watch?: try {
+        guard case .watch(let v)? = _storage._config else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      }()
+      case .scan?: try {
+        guard case .scan(let v)? = _storage._config else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      }()
+      case .record?: try {
+        guard case .record(let v)? = _storage._config else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      }()
+      case nil: break
+      }
+      if !_storage._resultUris.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._resultUris, fieldNumber: 8)
+      }
+      if !_storage._statusDetail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._statusDetail, fieldNumber: 9)
+      }
+      try { if let v = _storage._error {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_Job, rhs: Leyline_V1_Job) -> Bool {
-    if lhs.jobID != rhs.jobID {return false}
-    if lhs.state != rhs.state {return false}
-    if lhs.createdAtNs != rhs.createdAtNs {return false}
-    if lhs._createdBy != rhs._createdBy {return false}
-    if lhs.config != rhs.config {return false}
-    if lhs.resultUris != rhs.resultUris {return false}
-    if lhs.statusDetail != rhs.statusDetail {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._jobID != rhs_storage._jobID {return false}
+        if _storage._state != rhs_storage._state {return false}
+        if _storage._createdAtNs != rhs_storage._createdAtNs {return false}
+        if _storage._createdBy != rhs_storage._createdBy {return false}
+        if _storage._config != rhs_storage._config {return false}
+        if _storage._resultUris != rhs_storage._resultUris {return false}
+        if _storage._statusDetail != rhs_storage._statusDetail {return false}
+        if _storage._error != rhs_storage._error {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

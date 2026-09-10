@@ -883,8 +883,11 @@ type Channel struct {
 	Agc         GainMode               `protobuf:"varint,7,opt,name=agc,proto3,enum=leyline.v1.GainMode" json:"agc,omitempty"`
 	State       ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"` // unset on an event is the tombstone; see Capture.state
 	Persistent  bool                   `protobuf:"varint,9,opt,name=persistent,proto3" json:"persistent,omitempty"`                    // survives owner disconnect; jobs set this
-	RequiredHz  uint64                 `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"` // set by jobs: rebind target when OUT_OF_CAPTURE
-	Owner       *ClientInfo            `protobuf:"bytes,11,opt,name=owner,proto3" json:"owner,omitempty"`
+	// Set by jobs: the absolute frequency a channel wants back when its capture moves out from
+	// under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
+	// on it yet.
+	RequiredHz uint64      `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"`
+	Owner      *ClientInfo `protobuf:"bytes,11,opt,name=owner,proto3" json:"owner,omitempty"`
 	// Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
 	// ignored for every other mode. Detection is reported on the telemetry plane
 	// and never gates audio -- tone squelch is a separate, later decision, and
@@ -1122,7 +1125,10 @@ type Sink_SystemAudio struct {
 }
 
 type Sink_Stream struct {
-	Stream *StreamSink `protobuf:"bytes,4,opt,name=stream,proto3,oneof"` // client pulls over bulk plane
+	// Client pulls over the bulk plane. `AttachSink` refuses this kind -- a client that wants
+	// channel audio or IQ negotiates it with `Bulk.Subscribe`, which is where delivery policy and
+	// transport are agreed.
+	Stream *StreamSink `protobuf:"bytes,4,opt,name=stream,proto3,oneof"`
 }
 
 type Sink_File struct {
@@ -2597,9 +2603,11 @@ func (x *DetachSinkRequest) GetSinkId() string {
 }
 
 type AttachFileDeviceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`  // local path to <name>.cf32 (+ <name>.json sidecar) or a ley://recordings/<id> URI
-	Loop          bool                   `protobuf:"varint,2,opt,name=loop,proto3" json:"loop,omitempty"` // wrap at EOF instead of ending the capture
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Filesystem path to <name>.cf32 (+ <name>.json sidecar). A ley://recordings/<id> URI is the
+	// intended spelling once Resources can resolve one; today only a path is understood.
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Loop          bool   `protobuf:"varint,2,opt,name=loop,proto3" json:"loop,omitempty"` // wrap at EOF instead of ending the capture
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

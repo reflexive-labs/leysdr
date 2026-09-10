@@ -306,7 +306,16 @@ actor JobStore {
         guard var e = entries[id] else { return }
         guard e.proto.state == .running else { return }
         e.proto.state = state
-        e.proto.statusDetail = code.map { "\($0): \(detail)" } ?? detail
+        // The prose and the machine code go to different fields: `status_detail` is the sentence a
+        // person reads, `error` the code a client branches on.
+        e.proto.statusDetail = detail
+        if let code {
+            var err = Leyline_V1_ErrorDetail()
+            err.code = code
+            err.message = detail
+            err.target = id.string
+            e.proto.error = err
+        }
         if state != .completed, var scan = e.scan {
             scan.completedAtNs = realtimeNs()
             e.scan = scan

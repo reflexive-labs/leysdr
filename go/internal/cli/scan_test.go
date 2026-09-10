@@ -10,6 +10,7 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // The fake daemon's synthetic band, from internal/fakedaemon/jobs.go.
@@ -157,6 +158,27 @@ func TestScanReportsWhoHasTheRadio(t *testing.T) {
 	}
 	if strings.Contains(msg, "DEVICE_BUSY:") {
 		t.Errorf("the stable code belongs in --json, not in the sentence: %q", msg)
+	}
+	// The code the sentence leaves out is a field on the job, so a client that wants to branch on
+	// it does not have to split prose.
+	st, serr := c.State(t.Context())
+	if serr != nil {
+		t.Fatalf("state: %v", serr)
+	}
+	var failed *leylinev1.Job
+	for _, j := range st.Jobs {
+		if j.State == leylinev1.JobState_FAILED {
+			failed = j
+		}
+	}
+	if failed == nil {
+		t.Fatalf("the refused scan left no failed job: %v", st.Jobs)
+	}
+	if failed.GetError().GetCode() != leyline.CodeDeviceBusy {
+		t.Errorf("want %s in job.error, got %+v", leyline.CodeDeviceBusy, failed.GetError())
+	}
+	if strings.Contains(failed.StatusDetail, "DEVICE_BUSY") || failed.StatusDetail == "" {
+		t.Errorf("status_detail is prose: %q", failed.StatusDetail)
 	}
 	// And --take-over gets through.
 	out := mustRun(t, sock, "scan", "145M..147M", "--take-over")

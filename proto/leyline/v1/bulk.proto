@@ -19,7 +19,10 @@ message SubscribeRequest {
   StreamKind kind = 3;
   DeliveryPolicy policy = 4;     // default LATEST_WINS
   StreamPosition start = 5;      // v0: LIVE only
-  Transport transport = 6;       // default GRPC; SHM_RING local-only
+  // Default GRPC. SHM_RING is the one documented bypass for local bulk streams; the daemon
+  // answers every subscription with GRPC until the ring exists, so read the transport off the
+  // StreamDescriptor rather than assuming the one requested.
+  Transport transport = 6;
   // Desired parameters; daemon may downgrade, never upgrade.
   oneof params {
     IqParams iq = 7;

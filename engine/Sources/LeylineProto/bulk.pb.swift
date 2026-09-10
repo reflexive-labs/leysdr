@@ -283,7 +283,9 @@ public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
   /// Clears the value of `start`. Subsequent reads from it will return its default value.
   public mutating func clearStart() {self._start = nil}
 
-  /// default GRPC; SHM_RING local-only
+  /// Default GRPC. SHM_RING is the one documented bypass for local bulk streams; the daemon
+  /// answers every subscription with GRPC until the ring exists, so read the transport off the
+  /// StreamDescriptor rather than assuming the one requested.
   public var transport: Leyline_V1_Transport = .unspecified
 
   /// Desired parameters; daemon may downgrade, never upgrade.

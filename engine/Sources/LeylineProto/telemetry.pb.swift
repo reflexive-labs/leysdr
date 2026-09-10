@@ -281,7 +281,8 @@ public nonisolated struct Leyline_V1_SubAudible: Sendable {
   /// classified; 0 = measured but not classifiable
   public var standardToneHz: Double = 0
 
-  /// octal as decimal (023 -> 23); 0 unless DCS
+  /// Reserved for the DCS decoder, which does not exist yet: the CTCSS detector leaves both at
+  /// their zero values, so a client cannot read `dcs_code == 0` as "not a DCS squelch".
   public var dcsCode: UInt32 = 0
 
   public var dcsInverted: Bool = false
@@ -304,6 +305,9 @@ public nonisolated struct Leyline_V1_SubAudible: Sendable {
   /// Clears the value of `firstSeen`. Subsequent reads from it will return its default value.
   public mutating func clearFirstSeen() {self._firstSeen = nil}
 
+  /// How many recent analysis hops agreed on the tone. The detector counts them for the
+  /// confidence formula above but does not report the count, so this stays 0; a client reads
+  /// confidence rather than deriving its own from this.
   public var hopsAgreeing: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

@@ -516,7 +516,9 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// survives owner disconnect; jobs set this
   public var persistent: Bool = false
 
-  /// set by jobs: rebind target when OUT_OF_CAPTURE
+  /// Set by jobs: the absolute frequency a channel wants back when its capture moves out from
+  /// under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
+  /// on it yet.
   public var requiredHz: UInt64 = 0
 
   public var owner: Leyline_V1_ClientInfo {
@@ -562,7 +564,9 @@ public nonisolated struct Leyline_V1_Sink: Sendable {
     set {kind = .systemAudio(newValue)}
   }
 
-  /// client pulls over bulk plane
+  /// Client pulls over the bulk plane. `AttachSink` refuses this kind -- a client that wants
+  /// channel audio or IQ negotiates it with `Bulk.Subscribe`, which is where delivery policy and
+  /// transport are agreed.
   public var stream: Leyline_V1_StreamSink {
     get {
       if case .stream(let v)? = kind {return v}
@@ -591,7 +595,9 @@ public nonisolated struct Leyline_V1_Sink: Sendable {
   public nonisolated enum OneOf_Kind: Equatable, Sendable {
     /// daemon plays via CoreAudio
     case systemAudio(Leyline_V1_SystemAudioSink)
-    /// client pulls over bulk plane
+    /// Client pulls over the bulk plane. `AttachSink` refuses this kind -- a client that wants
+    /// channel audio or IQ negotiates it with `Bulk.Subscribe`, which is where delivery policy and
+    /// transport are agreed.
     case stream(Leyline_V1_StreamSink)
     /// daemon records; lossless lives here, never on the network
     case file(Leyline_V1_FileSink)
@@ -1193,7 +1199,8 @@ public nonisolated struct Leyline_V1_AttachFileDeviceRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// local path to <name>.cf32 (+ <name>.json sidecar) or a ley://recordings/<id> URI
+  /// Filesystem path to <name>.cf32 (+ <name>.json sidecar). A ley://recordings/<id> URI is the
+  /// intended spelling once Resources can resolve one; today only a path is understood.
   public var path: String = String()
 
   /// wrap at EOF instead of ending the capture

@@ -291,11 +291,14 @@ type SubscribeRequest struct {
 	//
 	//	*SubscribeRequest_CaptureId
 	//	*SubscribeRequest_ChannelId
-	Source    isSubscribeRequest_Source `protobuf_oneof:"source"`
-	Kind      StreamKind                `protobuf:"varint,3,opt,name=kind,proto3,enum=leyline.v1.StreamKind" json:"kind,omitempty"`
-	Policy    DeliveryPolicy            `protobuf:"varint,4,opt,name=policy,proto3,enum=leyline.v1.DeliveryPolicy" json:"policy,omitempty"`  // default LATEST_WINS
-	Start     *StreamPosition           `protobuf:"bytes,5,opt,name=start,proto3" json:"start,omitempty"`                                    // v0: LIVE only
-	Transport Transport                 `protobuf:"varint,6,opt,name=transport,proto3,enum=leyline.v1.Transport" json:"transport,omitempty"` // default GRPC; SHM_RING local-only
+	Source isSubscribeRequest_Source `protobuf_oneof:"source"`
+	Kind   StreamKind                `protobuf:"varint,3,opt,name=kind,proto3,enum=leyline.v1.StreamKind" json:"kind,omitempty"`
+	Policy DeliveryPolicy            `protobuf:"varint,4,opt,name=policy,proto3,enum=leyline.v1.DeliveryPolicy" json:"policy,omitempty"` // default LATEST_WINS
+	Start  *StreamPosition           `protobuf:"bytes,5,opt,name=start,proto3" json:"start,omitempty"`                                   // v0: LIVE only
+	// Default GRPC. SHM_RING is the one documented bypass for local bulk streams; the daemon
+	// answers every subscription with GRPC until the ring exists, so read the transport off the
+	// StreamDescriptor rather than assuming the one requested.
+	Transport Transport `protobuf:"varint,6,opt,name=transport,proto3,enum=leyline.v1.Transport" json:"transport,omitempty"`
 	// Desired parameters; daemon may downgrade, never upgrade.
 	//
 	// Types that are valid to be assigned to Params:

@@ -267,7 +267,7 @@ for entry), and R-15's first bullet from the release plan (Go constants for `BLI
 `NO_DEVICE`, `FAILED_PRECONDITION`, `INTERNAL`; `scan.go` uses them; a test that the Go list and the
 engine's registry are the same set).
 
-### X-3 `[ ]` `Job.error`, and the request stays the request
+### X-3 `[x]` `Job.error`, and the request stays the request
 
 a-evolution-8 and a-evolution-13 per the decision: `make proto`, daemon `finish` sets `error`,
 `status_detail` becomes prose only, the fake mirrors, `scan.go` reads `error.code` (falling back to

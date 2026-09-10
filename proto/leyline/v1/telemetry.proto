@@ -60,12 +60,17 @@ message SubAudible {
   SubAudibleKind kind = 2;
   double tone_hz = 3;           // measured; NaN when nothing was measured
   double standard_tone_hz = 4;  // classified; 0 = measured but not classifiable
-  uint32 dcs_code = 5;          // octal as decimal (023 -> 23); 0 unless DCS
+  // Reserved for the DCS decoder, which does not exist yet: the CTCSS detector leaves both at
+  // their zero values, so a client cannot read `dcs_code == 0` as "not a DCS squelch".
+  uint32 dcs_code = 5;          // octal as decimal (023 -> 23)
   bool dcs_inverted = 6;
   double deviation_hz = 7;      // peak deviation the tone was sent at
   double tone_snr_db = 8;       // the tone against the rest of the 60-260 Hz band
   double confidence = 9;        // stated score, not a probability; formula above
   SampleTime first_seen = 10;
+  // How many recent analysis hops agreed on the tone. The detector counts them for the
+  // confidence formula above but does not report the count, so this stays 0; a client reads
+  // confidence rather than deriving its own from this.
   uint32 hops_agreeing = 11;
 }
 enum SubAudibleKind {

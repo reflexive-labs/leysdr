@@ -295,12 +295,19 @@ final class ScanSweepTests: XCTestCase {
             XCTAssertEqual(refused.state, .failed)
             XCTAssertTrue(refused.statusDetail.contains("listening"), refused.statusDetail)
             XCTAssertTrue(refused.statusDetail.contains("146.900"), refused.statusDetail)
+            // Why it failed is a field, not a prefix: a client branches on the code and prints
+            // the prose.
+            XCTAssertEqual(refused.error.code, EngineError.Code.deviceBusy)
+            XCTAssertEqual(refused.error.message, refused.statusDetail)
+            XCTAssertEqual(refused.error.target, refused.jobID)
+            XCTAssertFalse(refused.statusDetail.contains(EngineError.Code.deviceBusy), refused.statusDetail)
             // The refusal must not have moved anything.
             var state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertEqual(state.captures.first?.centerHz, 146_900_000)
 
             let took = try await sweep(takeOver: true)
             XCTAssertEqual(took.state, .completed, took.statusDetail)
+            XCTAssertTrue(took.error.code.isEmpty, took.error.code)
 
             // The radio is back where its owner left it, and the channel is still theirs.
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)

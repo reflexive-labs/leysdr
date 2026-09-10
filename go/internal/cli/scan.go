@@ -269,24 +269,28 @@ func scanIDOf(job *leylinev1.Job) (string, error) {
 	return "", errors.New("the daemon named no scan")
 }
 
-// scanFailure turns a failed job into the sentence the user reads. The daemon puts the stable
-// code in front of its reason; the reason is the part a person needs.
+// scanFailure turns a failed job into the sentence the user reads. The daemon says why in
+// job.error: the code is what ley branches on, status_detail the sentence a person needs.
 func scanFailure(job *leylinev1.Job, st ui.Style) string {
 	detail := job.StatusDetail
-	if code, rest, ok := strings.Cut(detail, ": "); ok && code == strings.ToUpper(code) && code != "" {
-		switch code {
-		case leyline.CodeDeviceBusy:
-			return rest + ". " + st.Cmd("ley scan --take-over") + " sweeps anyway, and hands the radio back afterwards"
-		case leyline.CodeBlindSpot:
-			return rest + ". " + st.Cmd("ley spectrum") + " draws that span instead, DC spike and all"
-		case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
-			return rest + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune"
-		}
-		// interfaces.md: an error line keeps the daemon's stable code unless ley has a plainer
-		// sentence for it. The cases above are the plainer sentences; everything else keeps it.
-		return rest + " [" + code + "]"
+	code := job.GetError().GetCode()
+	if code == "" {
+		return detail
 	}
-	return detail
+	if detail == "" {
+		detail = job.GetError().GetMessage()
+	}
+	switch code {
+	case leyline.CodeDeviceBusy:
+		return detail + ". " + st.Cmd("ley scan --take-over") + " sweeps anyway, and hands the radio back afterwards"
+	case leyline.CodeBlindSpot:
+		return detail + ". " + st.Cmd("ley spectrum") + " draws that span instead, DC spike and all"
+	case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
+		return detail + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune"
+	}
+	// interfaces.md: an error line keeps the daemon's stable code unless ley has a plainer
+	// sentence for it. The cases above are the plainer sentences; everything else keeps it.
+	return detail + " [" + code + "]"
 }
 
 // scanProgress is the one line a sweep leaves on stderr while it runs, rewritten in place on a
