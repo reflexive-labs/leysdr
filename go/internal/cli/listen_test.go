@@ -129,21 +129,18 @@ func TestListenUsage(t *testing.T) {
 	}
 }
 
-// shortDisk accepts writes until its budget is spent and fails from then on,
-// standing in for a full disk or a pipe whose reader has gone.
+// shortDisk accepts whole rows until it has taken two of them and fails from
+// then on, standing in for a full disk or a pipe whose reader has gone.
 type shortDisk struct {
-	budget int
-	seen   int
+	rows int
 }
 
 func (d *shortDisk) Write(p []byte) (int, error) {
-	if d.seen+len(p) <= d.budget {
-		d.seen += len(p)
-		return len(p), nil
+	if d.rows >= 2 {
+		return 0, errors.New("no space left on device")
 	}
-	n := d.budget - d.seen
-	d.seen = d.budget
-	return n, errors.New("no space left on device")
+	d.rows += bytes.Count(p, []byte{'\n'})
+	return len(p), nil
 }
 
 // TestListenReportsAWriteFailureOnTheLastRow: the row that --count stops on is
@@ -152,13 +149,10 @@ func (d *shortDisk) Write(p []byte) (int, error) {
 // otherwise keep a truncated file.
 func TestListenReportsAWriteFailureOnTheLastRow(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	whole := len(mustRun(t, sock, "listen", "146.52M", "--count", "3"))
-	if whole == 0 {
-		t.Fatal("listen wrote nothing to measure")
-	}
-	// One byte short of the whole stream: everything up to the final row's
-	// flush lands, and that flush is what fails.
-	disk := &shortDisk{budget: whole - 1}
+	// Rows one and two are flushed inside the loop and land; the third is
+	// still buffered when the loop returns, so its deferred flush is the
+	// write that fails.
+	disk := &shortDisk{}
 	var errb bytes.Buffer
 	app := &App{Stdout: disk, Stderr: &errb, LookupEnv: func(string) (string, bool) { return "", false }}
 	err := Execute(context.Background(), app, []string{"--socket", sock, "listen", "146.52M", "--count", "3"})
