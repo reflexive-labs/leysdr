@@ -184,7 +184,7 @@ func deviceNode(s ui.Style, d *leylinev1.DeviceDescriptor) treeNode {
 	if d.Serial != "" {
 		n.detail = append(n.detail, s.Muted("serial "+d.Serial))
 	}
-	n.detail = append(n.detail, s.Muted("tunes "+rangesPhrase(d.TuningRanges)))
+	n.detail = append(n.detail, s.Muted("tunes "+absentIfEmpty(s, rangesPhrase(d.TuningRanges))))
 	return n
 }
 
@@ -296,19 +296,6 @@ func writeSegments(b *strings.Builder, first, cont string, segs []string, width 
 	if started {
 		b.WriteString("\n")
 	}
-}
-
-// rangesPhrase renders tuning ranges as "24.000 MHz to 1.766 GHz", so a dash
-// always means "no value".
-func rangesPhrase(rs []*leylinev1.FrequencyRange) string {
-	parts := make([]string, 0, len(rs))
-	for _, r := range rs {
-		parts = append(parts, leyline.FormatFrequency(r.MinHz)+" to "+leyline.FormatFrequency(r.MaxHz))
-	}
-	if len(parts) == 0 {
-		return "-"
-	}
-	return strings.Join(parts, ", ")
 }
 
 // deviceStateWords is the device's state as a phrase: "in use (other program)"

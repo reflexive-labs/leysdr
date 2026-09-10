@@ -230,3 +230,26 @@ func gainStatesString(gains []*leylinev1.GainState) string {
 	}
 	return b.String()
 }
+
+// rangesPhrase renders tuning ranges as "24.000 MHz to 1.766 GHz", never with a
+// dash, so a dash always means "no value" (docs/cli-style.md section 4). A range
+// with one frequency in it -- a file device plays back a single centre --
+// collapses to that frequency rather than spending the columns saying it twice.
+//
+// It returns "" for no ranges rather than a glyph: the absent form belongs to
+// the caller, which knows whether it is filling a table cell or a prose line.
+func rangesPhrase(rs []*leylinev1.FrequencyRange) string {
+	parts := make([]string, 0, len(rs))
+	for _, r := range rs {
+		if r == nil {
+			continue
+		}
+		lo, hi := r.GetMinHz(), r.GetMaxHz()
+		if lo == hi {
+			parts = append(parts, leyline.FormatFrequency(lo))
+			continue
+		}
+		parts = append(parts, leyline.FormatFrequency(lo)+" to "+leyline.FormatFrequency(hi))
+	}
+	return strings.Join(parts, ", ")
+}

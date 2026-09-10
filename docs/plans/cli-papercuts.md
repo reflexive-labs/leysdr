@@ -44,11 +44,30 @@ presentations of the same data -- `ley bands` (ranges), `ley presets` (points, g
 `ley help presets` (both, in prose). NOAA appears twice, as a band and as seven presets. Worth
 deciding deliberately at some point rather than growing a fourth.
 
-## PC-2 `[ ]` `ley state` collapses a one-frequency tuning range
+## PC-2 `[x]` `ley state` collapses a one-frequency tuning range
 
-`ley state`'s per-device line prints `146.520 MHz to 146.520 MHz` for a file device where
-`ley devices` collapses it to a single frequency. They should share the helper. (from
-`cli-visuals.md`, where it was recorded twice)
+`ley state`'s per-device line printed `146.520 MHz to 146.520 MHz` for a file device where
+`ley devices` collapsed it to a single frequency. (from `cli-visuals.md`, where it was recorded
+twice)
+
+**There were four renderers of a frequency range, not two**, and only one was wrong:
+
+- `state.go rangesPhrase` -- no collapse. Used by the `ley state` tree alone. The bug.
+- `devices.go deviceRangesString` -- collapses. Used by `printDeviceTable`, which also backs
+  `ley state --wide`, so `--wide` already collapsed and only the tree did not.
+- `format.go rangesString` -- dash separator, used by the bare `ley` orientation screen.
+- `leyline.FormatRanges` -- en dash, used in error sentences.
+
+The first two are now one pure `rangesPhrase` in `format.go`, returning `""` for none so the caller
+supplies the absent form. The other two were **deliberately left alone**: both use a dash where the
+style guide says a dash means "no value", but both spellings are documented in `docs/cli-guide.md`,
+which section 6 freezes, and both are pinned by tests. Folding them in is a separate, deliberate
+change, not a drive-by.
+
+The shared version also skips a nil range element, which the old one would have panicked on.
+
+Tests: `TestRangesPhraseCollapses` (including that no dash appears as a separator) and two
+assertions in `TestStateTreeContent`.
 
 ## PC-3 `[ ]` `ley play`'s banner
 

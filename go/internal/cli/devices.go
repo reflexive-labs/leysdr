@@ -164,7 +164,7 @@ func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool
 		cells := []string{
 			d.Model,
 			deviceStateCell(s, d),
-			deviceRangesString(s, d.TuningRanges),
+			absentIfEmpty(s, rangesPhrase(d.TuningRanges)),
 			ratesString(d.SampleRates),
 			gainsString(d.GainElements),
 		}
@@ -213,26 +213,6 @@ func deviceStateCell(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 		return s.Err(text)
 	}
 	return s.Muted(text)
-}
-
-// deviceRangesString renders the RANGE column as "24.000 MHz to 1.766 GHz",
-// the same spelling `ley bands` uses. A range with one frequency in it (a
-// file device plays back one centre) collapses to that frequency rather than
-// spending 24 columns saying it twice, and a radio that reports no range at
-// all reads as the absent glyph, never as a blank cell.
-func deviceRangesString(s ui.Style, rs []*leylinev1.FrequencyRange) string {
-	parts := make([]string, 0, len(rs))
-	for _, r := range rs {
-		if r.MinHz == r.MaxHz {
-			parts = append(parts, leyline.FormatFrequency(r.MinHz))
-			continue
-		}
-		parts = append(parts, leyline.FormatFrequency(r.MinHz)+" to "+leyline.FormatFrequency(r.MaxHz))
-	}
-	if len(parts) == 0 {
-		return s.Glyphs().Absent
-	}
-	return strings.Join(parts, ", ")
 }
 
 // absentIfEmpty keeps a table cell from going blank: an absent value is the

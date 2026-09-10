@@ -115,6 +115,14 @@ func TestStateTreeSurvivesColourOff(t *testing.T) {
 func TestStateTreeContent(t *testing.T) {
 	st := busyState()
 	out := renderStateTree(ui.Style{Unicode: true, Width: 100}, st)
+	// A file device tunes to exactly one frequency. The tree used to print it
+	// twice where `ley devices` collapsed it; they share the renderer now.
+	if !strings.Contains(out, "tunes 146.520 MHz") {
+		t.Errorf("want the collapsed one-frequency range:\n%s", out)
+	}
+	if strings.Contains(out, "146.520 MHz to 146.520 MHz") {
+		t.Errorf("a one-frequency range must not be said twice:\n%s", out)
+	}
 	for _, want := range []string{
 		"Generic RTL2832U (R820T)", "nfm_tone.cf32", "in use", "disconnected",
 		"146.500 MHz", "2.4 MSPS", "gain tuner 20.7 dB", "gain tuner auto",
