@@ -171,16 +171,18 @@ final class SubAudibleTests: XCTestCase {
     /// disagree, a measurement `classify` accepts can still score near zero for being far from the
     /// tone -- which reads as doubt the detector does not actually have.
     func testConfidenceUsesTheTonesOwnTolerance() {
-        // 203.5 sits 6.7 Hz from its neighbours, so its tolerance is the 1% term: 2.035 Hz.
+        // 203.5's nearest neighbour is 210.7, 7.2 Hz away, so 40% of that gap is 2.88 Hz and the
+        // tighter 1% term wins: the tolerance here is 2.035 Hz.
         let standard = 203.5
         let measured = standard + 1.0
         XCTAssertEqual(SubAudibleDetector.classify(measured), standard, "the measurement must be classifiable")
         let c = SubAudibleDetector.confidence(snrDB: 30, measured: measured, standard: standard, hops: 5)
-        // The old 0.4 * 2.3 Hz literal would put this measurement outside tolerance and score 0.
+        // A fixed tolerance taken from the tightest gap in the ladder (0.4 * 2.3 Hz = 0.92 Hz)
+        // would put this measurement outside tolerance and score it 0, which is doubt the detector
+        // does not have.
         XCTAssertGreaterThan(c, 0.4, "confidence \(c) understates a cleanly resolved tone")
         XCTAssertLessThan(c, SubAudibleDetector.confidence(snrDB: 30, measured: standard, standard: standard, hops: 5))
     }
-
 }
 
 /// The tap is taken from the discriminator, before the 300 Hz high-pass that makes CTCSS
