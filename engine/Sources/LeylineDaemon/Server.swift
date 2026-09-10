@@ -7,6 +7,7 @@ import GRPCNIOTransportHTTP2
 import GRPCProtobuf
 import LeylineProto
 import Logging
+import Synchronization
 
 /// The version reported in `DaemonInfo` and by `--version`.
 let leylinedVersion = "0.1.0-dev"
@@ -52,6 +53,7 @@ final class Daemon: @unchecked Sendable {
     let jobs: JobStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
+    private let teardown = TeardownGate()
 
     init(config: Config) {
         self.config = config
@@ -137,11 +139,15 @@ final class Daemon: @unchecked Sendable {
         await store.setJobsProvider { await table.snapshot() }
         await store.setClientGoneHook { await table.clientGone($0) }
         log.info("leylined \(leylinedVersion) listening on \(config.socketPath)")
-        defer {
-            try? FileManager.default.removeItem(atPath: config.socketPath)
-            if let pid = config.pidfile { try? FileManager.default.removeItem(atPath: pid) }
-        }
-        try await server.serve()
+        var served: (any Error)?
+        do { try await server.serve() } catch { served = error }
+        // The listener stops at the top of `shutdown()`, long before the captures and devices go,
+        // so the socket and pidfile wait for teardown to finish: while those paths exist a second
+        // daemon takes itself for the live one and races this one for the radios.
+        await teardown.wait()
+        try? FileManager.default.removeItem(atPath: config.socketPath)
+        if let pid = config.pidfile { try? FileManager.default.removeItem(atPath: pid) }
+        if let served { throw served }
     }
 
     /// Opens and attaches each configured rtl_tcp source. An unreachable server is logged and
@@ -174,6 +180,8 @@ final class Daemon: @unchecked Sendable {
     /// devices close.
     func shutdown() async {
         log.info("shutting down")
+        teardown.arm()
+        defer { teardown.open() }
         // First of all: teardown takes seconds (a running sweep can hold a capture for ~3 s), and an
         // RPC accepted during that window would build state after the store that owns it is gone.
         server.beginGracefulShutdown()
@@ -183,5 +191,31 @@ final class Daemon: @unchecked Sendable {
         await streams.closeAll()
         await store.shutdown()
         await registry.stop()
+    }
+}
+
+/// A one-shot gate with a single waiter, used to hold the daemon's socket and pidfile until
+/// teardown has finished. `arm()` closes it, `open()` releases the waiter, and a wait on a gate
+/// that was never armed returns at once. Waiting ends on cancellation, like any stream read.
+final class TeardownGate: Sendable {
+    private let armed = Mutex(false)
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncStream<Void>.makeStream()
+    }
+
+    func arm() {
+        armed.withLock { $0 = true }
+    }
+
+    func open() {
+        continuation.finish()
+    }
+
+    func wait() async {
+        guard armed.withLock({ $0 }) else { return }
+        for await _ in stream {}
     }
 }

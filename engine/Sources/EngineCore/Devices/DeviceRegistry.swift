@@ -283,8 +283,15 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         // libusb enumeration plus a probe `rtlsdr_open` blocks for hundreds of milliseconds, and
         // every caller of the registry queues behind the actor while it runs, so it goes off-actor
         // and only the diff comes back here.
-        let probes = (try? await BlockingWork.run { RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate) }) ?? []
-        applyProbes(probes)
+        do {
+            // An empty probe list is not a neutral pass: `applyProbes` reads it as every dongle
+            // unplugged. A failed enumeration therefore leaves the known set untouched until the
+            // next tick rather than announcing a device-loss storm.
+            let probes = try await BlockingWork.run { RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate) }
+            applyProbes(probes)
+        } catch {
+            DefaultDeviceRegistry.logger.warning("device enumeration failed (\(error)); keeping the known dongles until the next poll")
+        }
         reconnectDisconnectedRemotes()
     }
 

@@ -404,6 +404,12 @@ resolved values in `PersistenceParams` on the stream descriptor.
 - Pidfile next to the socket (`leylined.pid` by default; `ley daemon start` passes `--pidfile` named
   after the socket, `leyline.pid` / `/tmp/leyline-<uid>.pid`, so two sockets in one directory never
   share it). `SIGTERM`/`SIGINT` → graceful stop (captures stopped, devices closed, socket unlinked).
+- Stop order: the listener stops accepting first, because an RPC admitted during teardown builds
+  state the store that owns it is about to drop; then jobs are cancelled (a running sweep gets its
+  seconds to hand a capture lease back), streams close, the store shuts down and the registry stops.
+  The socket and pidfile are unlinked last, after the devices are closed — while those paths exist a
+  replacement daemon takes itself for the live one and races this one for the radios. Teardown runs
+  in the process's own task, never in a child that the serve loop's return could cancel.
 - Logs to stderr via swift-log; launchd redirects to `~/Library/Logs/Leyline/leylined.log`.
 - `ley daemon install` writes `~/Library/LaunchAgents/com.leyline.daemon.plist` (KeepAlive, RunAtLoad)
   pointing at the `leylined` binary and bootstraps it; `start/stop/status/logs` drive launchctl when

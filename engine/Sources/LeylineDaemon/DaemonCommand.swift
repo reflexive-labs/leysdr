@@ -55,19 +55,38 @@ struct DaemonCommand: AsyncParsableCommand {
         signal(SIGPIPE, SIG_IGN)
         let signals = SignalWatcher([SIGTERM, SIGINT])
         do {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask { try await daemon.run() }
-                group.addTask {
-                    await signals.wait()
-                    await daemon.shutdown()
-                }
-                try await group.next()
-                group.cancelAll()
-            }
+            try await serveUntilStopped(
+                serve: { try await daemon.run() },
+                stopRequested: { await signals.wait() },
+                teardown: { await daemon.shutdown() }
+            )
         } catch let e as EngineError where e.code == "SOCKET_IN_USE" {
             FileHandle.standardError.write(Data("leylined: \(e.message)\n".utf8))
             throw ExitCode(2)
         }
+    }
+}
+
+/// Serves until `stopRequested` resolves, then tears the daemon down; returns early, propagating the
+/// error, if serving stops on its own.
+///
+/// `teardown` runs here rather than inside the child that waits for the stop, because teardown
+/// closes the listener first: `serve` returns within milliseconds while captures, leases and
+/// devices are still being handed back, and a task group cancelled at that moment would cut the
+/// rest of the teardown short. Split from the command so tests can drive the same shape.
+func serveUntilStopped(
+    serve: @escaping @Sendable () async throws -> Void,
+    stopRequested: @escaping @Sendable () async -> Void,
+    teardown: @escaping @Sendable () async -> Void
+) async throws {
+    enum Stop { case served, stopped }
+    try await withThrowingTaskGroup(of: Stop.self) { group in
+        group.addTask { try await serve(); return .served }
+        group.addTask { await stopRequested(); return .stopped }
+        if try await group.next() == .stopped { await teardown() }
+        // Whichever watcher is still parked -- the signal wait, or a serve that outlives its
+        // listener -- has nothing left to report.
+        group.cancelAll()
     }
 }
 
