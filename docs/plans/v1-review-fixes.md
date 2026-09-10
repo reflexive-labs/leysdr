@@ -235,7 +235,7 @@ documented), -15 (a single-bin believe window is either handled or rejected cons
 unknown), -12 (ULID comparison without a heap array), -13 and -14 (the S2 harness: a valid
 `timespec`, `EINTR` handled, a negative `--seconds` refused).
 
-### SW-8 `[ ]` Sub-audible detector: reset, first window, confidence
+### SW-8 `[x]` Sub-audible detector: reset, first window, confidence
 
 q-swift-dsp-4 (the sub-audible task reads the core's squelch state and calls `detector.reset()` on
 every close edge), -5 (no `detected` and no `recent.append` before a phase reference exists), -11
