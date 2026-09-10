@@ -29,9 +29,6 @@ type fakeJob struct {
 	proto *leylinev1.Job
 	scan  *leylinev1.Scan
 	owner string
-	// cancelled is CancelJob's request to stop. The sweep is what ends the job, so the partial
-	// results are stored before the terminal event goes out.
-	cancelled bool
 }
 
 // publishDetection appends to the log every telemetry subscriber reads. Caller holds the lock.
@@ -97,8 +94,9 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 		ResolutionHz: uint32(rate / 1024),
 	}, owner: ci.GetClientId()}
 	d.jobOrder = append(d.jobOrder, job.JobId)
+	d.detectionEpoch = len(d.detectionLog)
 	d.trimJobsLocked()
-	d.emit(byDaemon(), job)
+	d.emit(ci, job)
 	// The scan goroutine edits this job under the lock as it runs, so the reply is copied while
 	// the lock is still held.
 	reply := proto.Clone(job).(*leylinev1.Job)
@@ -181,20 +179,8 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	if reason == "" && d.sweeping != "" {
 		reason = "another scan already has " + d.devices[d.sweeping].GetModel()
 	}
-	sweepCapture := ""
 	if reason == "" {
 		d.sweeping = dev.DeviceId
-		// Only a sweep that actually starts opens a new dedup epoch: a declined second scan that
-		// reset it would have the running one re-report carriers it has already published.
-		d.detectionEpoch = len(d.detectionLog)
-		// The capture the sweep listens on, so a telemetry subscriber scoped to another radio is
-		// not shown this one's detections. The daemon's lease always has one; the fake borrows the
-		// capture already on the device, and reports no capture when there is none.
-		for _, c := range d.captures {
-			if c.DeviceId == dev.DeviceId {
-				sweepCapture = c.CaptureId
-			}
-		}
 	}
 	d.mu.Unlock()
 	if reason != "" {
@@ -210,7 +196,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	var floors []*leylinev1.NoiseFloorSegment
 	for i, c := range centers {
 		if d.jobCancelled(jobID) {
-			d.stopScan(jobID, found, floors, uint64(math.Max(0, lo)), uint64(hi), i, len(centers))
+			d.keepPartial(jobID, found, floors, uint64(math.Max(0, lo)), uint64(hi))
 			return
 		}
 		time.Sleep(dwell)
@@ -223,7 +209,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 				}
 				found = mergeDetection(found, &leylinev1.Detection{
 					DetectionId:   fmt.Sprintf("det_%d", sig.hz),
-					CaptureId:     sweepCapture,
+					CaptureId:     "",
 					CenterHz:      sig.hz,
 					BandwidthHz:   sig.bw,
 					SnrDb:         sig.snr,
@@ -338,7 +324,7 @@ func (d *Daemon) jobCancelled(id string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	j := d.jobs[id]
-	return j == nil || j.cancelled || j.proto.State != leylinev1.JobState_RUNNING
+	return j == nil || j.proto.State != leylinev1.JobState_RUNNING
 }
 
 // setJobDetail also writes what has been found so far into the job's Scan, so a CancelJob that
@@ -358,13 +344,12 @@ func (d *Daemon) setJobDetail(id, detail string, found []*leylinev1.Detection, f
 	for _, det := range found {
 		d.publishDetection(det)
 	}
-	d.emit(byDaemon(), j.proto)
+	d.emit(nil, j.proto)
 }
 
-// stopScan ends an interrupted sweep: what it found is written first and the terminal event goes
-// out last, so a client that calls GetScan when it sees CANCELLED reads the part that ran rather
-// than an empty scan. The daemon stores and then finishes for the same reason.
-func (d *Daemon) stopScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, lo, hi uint64, stepsDone, steps int) {
+// keepPartial writes what a stopped sweep found, the way the daemon does: somebody who
+// interrupts a scan still wants the part that ran.
+func (d *Daemon) keepPartial(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, lo, hi uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	j := d.jobs[id]
@@ -377,16 +362,6 @@ func (d *Daemon) stopScan(id string, found []*leylinev1.Detection, floors []*ley
 	if j.scan.CompletedAtNs == 0 {
 		j.scan.CompletedAtNs = time.Now().UnixNano()
 	}
-	j.scan.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 28.0}}
-	if j.proto.State != leylinev1.JobState_RUNNING {
-		return
-	}
-	j.proto.State = leylinev1.JobState_CANCELLED
-	// The step it was in, not the ones it finished: "0 of 1" reads as having done nothing, when a
-	// partial step can have found everything there was.
-	j.proto.StatusDetail = fmt.Sprintf("stopped in step %d of %d, %d found", min(stepsDone+1, steps), steps, len(found))
-	d.emit(byDaemon(), j.proto)
-	d.trimJobsLocked()
 }
 
 func cloneDetections(in []*leylinev1.Detection) []*leylinev1.Detection {
@@ -408,7 +383,7 @@ func (d *Daemon) failScan(id, code, reason string) {
 	// The daemon splits the two: prose in status_detail, the stable code in error.
 	j.proto.StatusDetail = reason
 	j.proto.Error = &leylinev1.ErrorDetail{Code: code, Message: reason, Target: id}
-	d.emit(byDaemon(), j.proto)
+	d.emit(nil, j.proto)
 }
 
 func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment) {
@@ -424,7 +399,7 @@ func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*l
 	j.scan.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 28.0}}
 	j.proto.State = leylinev1.JobState_COMPLETED
 	j.proto.StatusDetail = fmt.Sprintf("%d found", len(found))
-	d.emit(byDaemon(), j.proto)
+	d.emit(nil, j.proto)
 	d.trimJobsLocked()
 }
 
@@ -462,62 +437,21 @@ func (d *Daemon) GetJob(ctx context.Context, req *leylinev1.JobRef) (*leylinev1.
 
 // CancelJob implements Jobs.
 func (d *Daemon) CancelJob(ctx context.Context, req *leylinev1.JobRef) (*leylinev1.Job, error) {
-	d.touchUnary(clientFrom(ctx))
-	d.mu.Lock()
-	j := d.jobs[req.JobId]
-	if j == nil {
-		d.mu.Unlock()
-		return nil, fail(ctx, errorf(leyline.CodeJobNotFound, req.JobId, "no such job"))
-	}
-	running := j.proto.State == leylinev1.JobState_RUNNING
-	j.cancelled = true
-	d.mu.Unlock()
-	if running {
-		d.awaitStopped(ctx, req.JobId)
-	}
+	ci := clientFrom(ctx)
+	d.touchUnary(ci)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	j = d.jobs[req.JobId]
+	j := d.jobs[req.JobId]
 	if j == nil {
 		return nil, fail(ctx, errorf(leyline.CodeJobNotFound, req.JobId, "no such job"))
 	}
-	// The sweep did not put itself down inside the wait: answer cancelled anyway. A stale answer
-	// is better than an RPC that never returns, and the goroutine still ends on its own.
 	if j.proto.State == leylinev1.JobState_RUNNING {
 		j.proto.State = leylinev1.JobState_CANCELLED
 		j.proto.StatusDetail = "cancelled"
-		d.emit(byDaemon(), j.proto)
+		d.emit(ci, j.proto)
 	}
 	return proto.Clone(j.proto).(*leylinev1.Job), nil
 }
-
-// awaitStopped waits for a sweep to reach a terminal state after it has been asked to stop, so
-// CancelJob answers with the partial scan already stored, as JobStore.cancel does. Bounded: a job
-// whose sweep is wedged still answers.
-func (d *Daemon) awaitStopped(ctx context.Context, id string) {
-	deadline := time.Now().Add(cancelWait)
-	for time.Now().Before(deadline) {
-		if d.jobStopped(id) {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
-}
-
-func (d *Daemon) jobStopped(id string) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	j := d.jobs[id]
-	return j == nil || j.proto.State != leylinev1.JobState_RUNNING
-}
-
-// cancelWait matches JobStore.cancelWaitSeconds. The fake's dwell is capped at 200 ms, so a sweep
-// that is running notices well inside it.
-const cancelWait = 3 * time.Second
 
 // GetTranscript implements Jobs.
 func (d *Daemon) GetTranscript(ctx context.Context, _ *leylinev1.TranscriptRequest) (*leylinev1.Transcript, error) {

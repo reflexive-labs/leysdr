@@ -109,11 +109,6 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 		}
 		s.channelID = ch.ChannelId
 		c = d.captures[ch.CaptureId]
-		// Ahead of the audio negotiation, which reads the capture's rate: a channel outliving its
-		// capture must answer CAPTURE_NOT_FOUND rather than panic inside the handler.
-		if c == nil {
-			return nil, fail(ctx, errorf(leyline.CodeCaptureNotFound, ch.CaptureId, "channel has no capture"))
-		}
 		if req.GetKind() == leylinev1.StreamKind_AUDIO {
 			a := req.GetAudio()
 			rate := audioRate(c.GetSampleRate())
@@ -131,11 +126,8 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 	default:
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "source is required"))
 	}
-	// Nothing flows from a capture whose radio has gone -- a playback file that ran out, an
-	// unplugged dongle: the daemon has no source to read and ends the streams it had, so a fresh
-	// subscription is refused rather than served frames from a stopped timebase.
-	if c.State != leylinev1.CaptureState_CAPTURE_ACTIVE {
-		return nil, fail(ctx, errorf(leyline.CodeDeviceDetached, c.CaptureId, "the capture is detached; there is nothing to stream"))
+	if c == nil {
+		return nil, fail(ctx, errorf(leyline.CodeCaptureNotFound, "", "channel has no capture"))
 	}
 	s.captureID = c.CaptureId
 	desc.CenterHz, desc.SpanHz = c.CenterHz, c.SampleRate

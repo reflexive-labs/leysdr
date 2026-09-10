@@ -103,6 +103,11 @@ message. Invariant 7 says state lives in the daemon, which means an additive `Bo
 small store; the alternative is app-local data the CLI and agents cannot see. Additive either way, so
 not a blocker, but decide before the app starts.
 
+**D7 — Remote radios as daemon state.** R-20 replaces the `--rtltcp` flag with an attach RPC and a
+remembered device list. It is what the "dongle on another machine" story the README advertises
+needs to be usable under launchd. Decide whether it is in v1.0 (recommended if the cut includes
+that story) or first after.
+
 Decisions taken here without waiting, because there is one reasonable answer and the work is small:
 `ley waterfall --json` and `ley phosphor --json` get row shapes under the existing bulk-row exception
 (R-5); the version gets one source of truth stamped at build time (R-2); the dead launchd template goes
@@ -491,3 +496,33 @@ steps (VERSION bump, `make check` on both hosts, tag, release notes).
 `CallbackSink`), the daemon's `FrameRing` writes, the persistence accumulator, or the sweep's row
 collection. Add the names and the intervals (the wrappers are already allocation-free and compile to
 nothing off macOS), so the S1/S2 Instruments runs in R-16 can see the whole path.
+
+### R-20 `[d]` Remote radios become daemon state (M, Opus; after D7)
+
+Today a dongle served by `rtl_tcp` is a daemon flag (`leylined --rtltcp host:port`) or an environment
+variable, read once at startup. Under launchd that means editing the plist and restarting the
+daemon to add a Pi on the roof, the device is invisible to `ley devices` until then, and
+`ley devices detach` refuses it afterwards. Everything else about a device is daemon state a client
+drives over the one protocol; this should be too.
+
+- Contract, additive: `Control.AttachDevice(DeviceSource)` and `Control.DetachDevice(device_id)`,
+  where `DeviceSource` is a oneof of `file { path, loop }` and `rtl_tcp { host, port }`. The
+  existing `AttachFileDevice` stays and becomes sugar over the new RPC; the oneof is where any later
+  network source lands without another RPC.
+- Persistence follows intent: a file you play is ephemeral, a radio you attach is part of the
+  station. The daemon writes attached remotes to `devices.json` beside its socket and re-attaches
+  them at startup; `DetachDevice` forgets. No flag: attach adds, detach removes, and it survives
+  restarts like everything else the daemon owns. `--rtltcp` can stay for foreground dev runs but is
+  no longer the documented path.
+- CLI: `ley devices attach rtltcp pi.local:1234`, pairing with the `detach` that exists; `--watch`
+  sees the arrival because device events exist. Attach connects once with the existing 5 s timeout
+  and, if the host cannot be reached, fails naming the host and remembers nothing (a radio never
+  reached is usually a typo). A later drop goes `DISCONNECTED` and the registry's reconnect-on-poll
+  brings it back, which is already built.
+- Fake and e2e: the fake accepts any `rtl_tcp` source and manufactures the descriptor; the e2e
+  attaches the engine tests' fake `rtl_tcp` server.
+- Attach dedupes on host and port before connecting, which closes the duplicate-attach leak the
+  review found (q-swift-control-3) for good.
+
+Remote *control* of the daemon (a TCP listener with authentication) is a separate milestone and
+this does not touch it. Discovery (Bonjour) is not worth it yet: `rtl_tcp` does not advertise.

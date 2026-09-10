@@ -23,22 +23,8 @@ func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer
 		d.mu.Unlock()
 		return fail(ctx, errorf(leyline.CodeStreamNotFound, ref.GetStreamId(), "no such stream"))
 	}
-	// One reader per subscription, as the daemon's registry claims it: two Stream calls on one id
-	// would hand out two frame sequences that both start at seq 1.
-	if s.reading {
-		d.mu.Unlock()
-		return fail(ctx, errorf(leyline.CodeFailedPrecondition, s.id, "stream already has a reader"))
-	}
 	s.reading = true
 	d.mu.Unlock()
-	// A reader that goes away leaves the subscription claimable again, on a fresh grace: a client
-	// whose Stream RPC dropped has that long to come back before the daemon reaps it.
-	defer func() {
-		d.mu.Lock()
-		s.reading = false
-		d.mu.Unlock()
-		time.AfterFunc(readerReapWait, func() { d.reapStream(s.id) })
-	}()
 	done := d.streamOpened(ctx)
 	defer done()
 
@@ -62,20 +48,21 @@ func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer
 		case now := <-ticker.C:
 			d.mu.Lock()
 			c := d.captures[s.captureID]
+			var ch *leylinev1.Channel
+			if s.channelID != "" {
+				ch = d.channels[s.channelID]
+			}
 			var payload []byte
 			var idx uint64
 			if c != nil && c.State == leylinev1.CaptureState_CAPTURE_ACTIVE && c.atEOF(now) {
 				// The file ran out (no loop): the device is gone from the
 				// capture's point of view, exactly as the daemon reports it.
 				d.fileEOFLocked(c)
-			}
-			// Any capture that is not active has no samples to serve, however it got there.
-			if c != nil && c.State != leylinev1.CaptureState_CAPTURE_ACTIVE {
 				c = nil
 			}
 			if c != nil {
 				idx = c.sampleIndex(now)
-				payload = d.renderLocked(s, c, now)
+				payload = d.renderLocked(s, c, ch, now)
 			}
 			d.mu.Unlock()
 			if c == nil {
@@ -115,7 +102,7 @@ func (d *Daemon) fileEOFLocked(c *capture) {
 }
 
 // renderLocked produces one frame payload in the negotiated format.
-func (d *Daemon) renderLocked(s *stream, c *capture, now time.Time) []byte {
+func (d *Daemon) renderLocked(s *stream, c *capture, ch *leylinev1.Channel, now time.Time) []byte {
 	switch p := s.desc.Params.(type) {
 	case *leylinev1.StreamDescriptor_Fft:
 		return d.renderFFTLocked(c, p.Fft, now)

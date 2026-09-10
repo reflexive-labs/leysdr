@@ -66,8 +66,7 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 	peakSNR := map[string]float64{}
 	ticker := time.NewTicker(d.opts.MeterInterval)
 	defer ticker.Stop()
-	// At least one tick, so a Meter cadence slower than a second still has a tick to land on.
-	activityEvery := max(int64(1), int64(time.Second/d.opts.MeterInterval))
+	activityEvery := time.Second / d.opts.MeterInterval
 	var tick int64
 	for {
 		select {
@@ -80,11 +79,6 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 			if wants(leylinev1.TelemetryType_DETECTION) && chanFilter == "" {
 				for ; detectionCursor < len(d.detectionLog); detectionCursor++ {
 					det := proto.Clone(d.detectionLog[detectionCursor]).(*leylinev1.Detection)
-					// A sweep runs on one capture, and a subscriber scoped to another one is not
-					// looking at that radio: the daemon's job hub filters detections the same way.
-					if capFilter != "" && det.CaptureId != capFilter {
-						continue
-					}
 					out = append(out, &leylinev1.TelemetryMsg{
 						Time: &leylinev1.SampleTime{CaptureId: det.CaptureId},
 						Body: &leylinev1.TelemetryMsg_Detection{Detection: det},
@@ -113,13 +107,8 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 						peakSNR[ch.ChannelId] = power + 90
 					}
 				}
-				// Only a change of state is an edge. A subscriber that arrives mid-transmission
-				// has no open to report the close against, and the daemon forwards only the
-				// edges the engine actually crossed.
-				prev, seen := squelchOpen[ch.ChannelId]
-				edge := seen && prev != open
-				if edge || !seen {
-					if edge && wants(leylinev1.TelemetryType_SQUELCH_TRANSITION) {
+				if prev, seen := squelchOpen[ch.ChannelId]; !seen || prev != open {
+					if wants(leylinev1.TelemetryType_SQUELCH_TRANSITION) {
 						sq := &leylinev1.SquelchTransition{ChannelId: ch.ChannelId, Open: open}
 						if open {
 							// A transmission in progress has no duration and no
@@ -162,7 +151,7 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 					}})
 				}
 			}
-			if tick%activityEvery == 0 && wants(leylinev1.TelemetryType_CAPTURE_ACTIVITY) && chanFilter == "" {
+			if tick%int64(activityEvery) == 0 && wants(leylinev1.TelemetryType_CAPTURE_ACTIVITY) && chanFilter == "" {
 				for _, c := range d.captures {
 					if capFilter != "" && c.CaptureId != capFilter {
 						continue
