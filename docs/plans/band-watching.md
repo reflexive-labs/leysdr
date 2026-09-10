@@ -56,6 +56,31 @@ picture, and the only view here that survives being left running for an hour.
 Inferring channel edges from energy is out: it silently misattributes traffic, which is the class of
 thing invariant 12 exists to stop.
 
+**Design input, measured on a real 915 ISM band before building this.** A first cut at the occupancy
+metric compared each channel's *max over its bins* against the *band's median bin*, and reported two
+channels as 99-100% busy. That was an artefact: the maximum of ~53 noise bins sits about 8 dB over
+the median of all of them, so a 12 dB threshold had only 4 dB of real margin and quiet channels
+tripped constantly. It is the same max-versus-median bias that made `ley spectrum`'s scale
+misbehave, in a new place.
+
+Comparing each channel against **its own** 10th percentile over time instead separates three states
+cleanly, and those are the three the table should report:
+
+```
+chan  MHz     quiet  median   peak   busy%   what it is
+34    909.1   -41.3   -38.1  -25.5    0.3%   CONTINUOUS: quiet level 11 dB over the band
+39    910.1   -35.5   -32.2  -12.4    0.3%   CONTINUOUS: 18 dB over the band
+38    909.9   -52.0   -50.5  -10.8    1.3%   bursty: 41 dB excursions, 1% of the time
+41    910.5   -53.2   -51.5  -36.2    3.3%   bursty
+36    909.5   -53.1   -51.7  -46.1    0.0%   quiet
+```
+
+So the metric is per-channel, never band-relative, and "busy" and "continuously occupied" are
+different columns: a channel that is *always* loud has a busy fraction near zero against its own
+baseline, which is correct and would read as a bug if the table only had one number. `ley phosphor`
+already draws this distinction correctly -- the two continuous channels are its dense clumps and the
+bursty ones its faint scattered marks.
+
 ## BW-3 `[ ]` Burst capture
 
 The only view that shows a LoRa chirp, and by far the largest piece.
