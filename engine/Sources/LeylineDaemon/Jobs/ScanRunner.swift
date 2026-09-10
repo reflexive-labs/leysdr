@@ -165,7 +165,12 @@ actor ScanRunner {
                     guard row.centerHz == step.centerHz, row.looks > 0,
                           row.time.sampleIndex >= believeFrom else { continue }
                     believedRows += 1
-                    for window in [step.low, step.high] {
+                    for raw in [step.low, step.high] {
+                        // A step's window is what the radio can see from there; the answer is
+                        // what was asked for. Without the intersection a narrow request reports
+                        // signals from either side of it, which is a scan answering a question
+                        // nobody put.
+                        let window = raw.clamped(to: plan.covered)
                         guard window.highHz > window.lowHz else { continue }
                         let hits = row.db.withUnsafeBufferPointer { r in
                             power.withUnsafeMutableBufferPointer { p in
@@ -181,8 +186,16 @@ actor ScanRunner {
                                 }
                             }
                         }
+                        let windowFloor = floorBuf.withUnsafeMutableBufferPointer { f in
+                            scratch.withUnsafeMutableBufferPointer { sc in
+                                SpectrumDetect.windowFloorDBFS(floor: f.baseAddress!, count: row.db.count,
+                                                               centerHz: row.centerHz, spanHz: row.spanHz,
+                                                               believe: window.lowHz ... (window.highHz - 1),
+                                                               scratch: sc.baseAddress!)
+                            }
+                        }
+                        if windowFloor.isFinite { stepFloors.append(windowFloor) }
                         for h in hits {
-                            stepFloors.append(h.floorDBFS)
                             fold(h, at: row.time, into: &stepHits)
                         }
                     }

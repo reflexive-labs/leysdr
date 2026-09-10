@@ -55,6 +55,7 @@ and the channelizer's NCO are exercised.
 | `wfm_tone` | 1 kHz tone FM-modulated, ±75 kHz deviation, carrier +400 kHz, −20 dBFS | WFM @ +400 k, bw 200 k → 1 kHz tone, SNR ≥ 30 dB |
 | `noise_floor` | complex white noise only, −60 dBFS | any channel: meter power within ±1.5 dB of the expected in-bandwidth floor; squelch closed at −40 dBFS |
 | `two_nfm` | two NFM tones (1 kHz @ +100 k, 2 kHz @ −300 k) | two channels in one capture, each hears only its tone |
+| `scan_band` | four carriers at −800/−400/+400/+800 kHz, −20 to −44 dBFS | the sweep detector: floor, threshold, centroid and equivalent width. No `expect` entries -- it exists for the spectrum, not for a demod, and the sidecar has no vocabulary for expected detections. The carriers sit outside the sweep's 5% DC guard and inside its 45% analysis edge, so a single-step sweep over the file sees all four |
 | `nfm_pl` | NFM voice plus a 100.0 Hz CTCSS tone at 700 Hz deviation | the everyday case: detect 100.0 Hz |
 | `nfm_pl_67` | NFM voice plus a 67.0 Hz CTCSS tone | detect 67.0, **not** 69.3 |
 | `nfm_pl_69` | NFM voice plus a 69.3 Hz CTCSS tone | detect 69.3, **not** 67.0 |

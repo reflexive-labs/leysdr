@@ -145,19 +145,24 @@ actor JobStore {
             }
             return
         }
-        // Release runs on cancellation too, and cancellation is the normal ending (Ctrl-C). A bare
-        // defer with an await inside a cancelled task would not finish, so it is detached.
-        defer { Task.detached { await lease.release() } }
-
         let device = await store.deviceDescriptor(for: lease.captureID)
         guard let plan = SweepPlan.plan(minHz: range.lowerBound, maxHz: range.upperBound,
                                         sampleRateHz: lease.sampleRateHz,
                                         tuningRanges: device?.tuningRanges ?? [])
         else {
+            await lease.release()
             await finish(id, state: .failed, detail: "this radio cannot tune any of that range", code: "FREQ_OUT_OF_RANGE")
             return
         }
-        await setDetail(id, "sweeping \(plan.steps.count) steps")
+        guard plan.analysedHz > 0 else {
+            await lease.release()
+            let centre = plan.steps.first?.centerHz ?? range.lowerBound
+            await finish(id, state: .failed,
+                         detail: "all of that range sits within \(fmtMHz(UInt64(SweepPlan.guardFraction * Double(lease.sampleRateHz)))) of \(fmtMHz(centre)), where this radio's own DC spike is; a scan does not look there",
+                         code: "BLIND_SPOT")
+            return
+        }
+        await setDetail(id, plan.steps.count == 1 ? "sweeping 1 step" : "sweeping \(plan.steps.count) steps")
         await setStep(id, plan: plan)
 
         let captureID = lease.captureID
@@ -171,11 +176,17 @@ actor JobStore {
                 onHit: { [weak self] hit in
                     await self?.detected(hit, captureID: captureID)
                 })
-            await complete(id, hits: hits, floors: floors, plan: plan,
-                           gains: await lease.pinnedGains, captureID: captureID)
+            let gains = await lease.pinnedGains
+            // The radio goes back before the job reaches a terminal state. A detached release
+            // would let the next scan see a capture that is still leased and be declined, and the
+            // await is safe in a cancelled task because release checks no cancellation of its own.
+            await lease.release()
+            await complete(id, hits: hits, floors: floors, plan: plan, gains: gains, captureID: captureID)
         } catch is CancellationError {
+            await lease.release()
             await finish(id, state: .cancelled, detail: "cancelled")
         } catch {
+            await lease.release()
             let e = error as? EngineError
             await finish(id, state: .failed, detail: e?.message ?? "\(error)", code: e?.code ?? "INTERNAL")
         }
@@ -187,9 +198,14 @@ actor JobStore {
 
     private func setStep(_ id: JobID, plan: SweepPlan) {
         guard var e = entries[id], var scan = e.scan else { return }
-        scan.config.stepHz = UInt32(clamping: plan.steps.count > 1
+        // The advance the plan actually used. With a single step (a file device, whose tuning
+        // range is one point) there is no gap to measure, so report the advance the geometry
+        // would have taken -- a client divides by it to recover the analysis resolution, and the
+        // sample rate would make that four decimal places wrong.
+        let advance = plan.steps.count > 1
             ? plan.steps[1].centerHz &- plan.steps[0].centerHz
-            : UInt64(plan.sampleRateHz))
+            : UInt64((SweepPlan.edgeFraction - SweepPlan.guardFraction) * Double(plan.sampleRateHz))
+        scan.config.stepHz = UInt32(clamping: advance)
         e.scan = scan
         entries[id] = e
     }
@@ -212,7 +228,8 @@ actor JobStore {
         e.scan = scan
         entries[id] = e
         let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
-        await finish(id, state: .completed, detail: "\(hits.count) found in \(plan.steps.count) steps\(clipped)")
+        let steps = plan.steps.count == 1 ? "1 step" : "\(plan.steps.count) steps"
+        await finish(id, state: .completed, detail: "\(hits.count) found in \(steps)\(clipped)")
     }
 
     private func finish(_ id: JobID, state: Leyline_V1_JobState, detail: String, code: String? = nil) async {
@@ -246,6 +263,14 @@ actor JobStore {
         d.modulationGuess = ""
         d.guessConfidence = 0
         return d
+    }
+
+    /// The largest fitting SI unit, matching how every other frequency in the CLI reads.
+    private nonisolated func fmtMHz(_ hz: UInt64) -> String {
+        if hz >= 1_000_000_000 { return String(format: "%.3f GHz", Double(hz) / 1e9) }
+        if hz >= 1_000_000 { return String(format: "%.3f MHz", Double(hz) / 1e6) }
+        if hz >= 1000 { return String(format: "%.3f kHz", Double(hz) / 1e3) }
+        return "\(hz) Hz"
     }
 
     private func trim() {

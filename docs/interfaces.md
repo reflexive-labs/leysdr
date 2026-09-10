@@ -10,7 +10,7 @@ Both are renderings of the leyline.v1 protos. The CLI is the reference client; `
 | `get_state` | Control.GetState | orientation: captures, channels, activity |
 | `tune` | CreateCapture/CreateChannel/WriteParams | refuses to retune active captures (don't-disturb) unless `override: true`; returns refusal reason |
 | `listen_summary` | Telemetry.Subscribe (bounded) | subscribes for `duration_s`, returns activity segments observed |
-| `scan` | ad-hoc sweep via Jobs machinery | inline results, ephemeral; suggests `start_job` for persistence |
+| `scan` | Jobs.StartJob(ScanConfig{once}) + Jobs.GetScan | inline results, ephemeral: the job dies with the client that started it. Recurring scans need the durable store (D.15) and are refused |
 | `snapshot` | Bulk.Subscribe(FFT, one row) | returns PNG (adapter-rendered) + binned data |
 | `start_job` / `list_jobs` / `get_job` / `cancel_job` | Jobs service | watch, scan, record configs as typed payloads |
 | `get_transcript` | Jobs.GetTranscript | segments + coverage gaps; adapter adds waterfall thumbnails |
@@ -34,6 +34,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
+├── scan <lo>..<hi> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--take-over] [--device SEL]
+│                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
+│                                    # telemetry, the aggregate comes from Jobs.GetScan
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
 ├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
@@ -42,8 +45,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── daemon [install|uninstall|start|stop|status|logs]
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
-├── record | scan | watch            # hidden stubs: exit 2 "not implemented yet (Milestone …)"; listed by `ley help roadmap`
-└── (planned) jobs, transcript, recordings   # arrive with the Jobs/Resources services (Milestones C.12, D)
+├── record | watch                   # hidden stubs: exit 2 "not implemented yet (Milestone …)"; listed by `ley help roadmap`
+└── (planned) jobs, transcript, recordings   # arrive with the durable job store and Resources (Milestones C.12, D.15)
 ```
 
 Global flags: `--json` everywhere; `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
@@ -84,6 +87,30 @@ is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `
 does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script asking "what would
 tune do here" came for, and they are always present. Neither verb dials the daemon; `ley help
 presets` is the same data in prose, and `ley presets` (the verb) owns the bare name.
+
+**`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
+it: the answer is the whole scan, not the steps it took to get there, and progress belongs on
+stderr where a person can see it. Each `Detection` in it carries `looks` and `looksPossible` -- the
+spectrum rows in which it cleared the threshold, out of the rows that covered that frequency -- and
+`floor_dbfs`, the local noise floor its `snr_db` was measured against. Those counts are evidence,
+never a filter: a signal seen once in eight is reported as such rather than dropped, because an
+intermittent transmission is exactly what somebody may be scanning for. `Scan.gains` is the gain the
+sweep pinned for its whole duration, because a scan run at a different gain is a different
+measurement. `Scan.config.step_hz` is the advance the daemon chose, from which a client recovers the
+analysis resolution; there is no `--step`, because the step geometry is what keeps the sweep free of
+blind spots. `snr_db` here is *spectral* -- a bin against a spectral floor -- and will not agree
+numerically with `Meter.snr_db`, which is a block's power against a five-second running minimum.
+Full design, with the measured numbers: `docs/design-scan.md`.
+
+**Jobs.** `Job` appears on the event stream (`Event.job`) and in `GetState` (`GetStateResponse.jobs`),
+so job state is rendered by subscription like every other piece of daemon state rather than polled.
+A v0 scan job is **not persistent**: it belongs to the connection that started it and the daemon
+cancels it when that connection goes, which is what makes Ctrl-C hand the radio back. Its
+`result_uris` carries `ley://scans/<id>`, which names the scan and is resolved by `Jobs.GetScan`; it
+is deliberately not yet a Resource, because an ad-hoc scan is ephemeral and there is no file. The
+daemon keeps the last sixteen finished jobs in memory and loses them on restart. `Jobs.StartJob` with
+a watch or record config, `Jobs.GetTranscript` and the whole `Resources` service remain UNIMPLEMENTED
+until Milestone D.15.
 
 Destructive verbs echo nothing stale: `ley stop`, `ley stop --all` and `ley devices detach` print
 the daemon's `Empty` answer (`{}`) under `--json` — one line for the whole action — and the exit
@@ -128,9 +155,9 @@ snapshot, and every client would have to repeat it. The recorded follow-up is an
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 
-**Roadmap stubs.** `record` (Milestone C.12), `scan` (Milestone D) and `watch` (the V0.5
-dashboard) exist as hidden verbs so a newcomer who types them learns what is coming and what to
-use today (`ley play`, `ley spectrum`, bare `ley`); they exit 2 and never reach the daemon.
+**Roadmap stubs.** `record` (Milestone C.12) and `watch` (the V0.5 dashboard) exist as hidden verbs
+so a newcomer who types them learns what is coming and what to use today (`ley play`, bare `ley`);
+they exit 2 and never reach the daemon. `scan` was one of them until Milestone D.13.
 
 Deliberate omissions at v0: no remote flags (UDS-only), no TX verbs, no decode verbs (arrive with digital modes).
 

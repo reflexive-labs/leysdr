@@ -22,12 +22,6 @@ var Stubs = []stub{
 		today:     "ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build",
 	},
 	{
-		use:       "scan",
-		short:     "Find active signals in a band and list them",
-		milestone: "Milestone D",
-		today:     "ley spectrum <frequency> shows the band and its loudest bins; picking signals out of it is up to you for now",
-	},
-	{
 		use:       "watch",
 		short:     "Live dashboard: devices, channels and spectrum in one terminal",
 		milestone: "V0.5",

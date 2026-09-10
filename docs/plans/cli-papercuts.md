@@ -130,7 +130,7 @@ Tests: `TestPlayedSource`, `TestPlayedSourceSurvivesAThinDescriptor`,
 the strip-identity across both alphabets at widths 0/40/100 -- the ASCII ellipsis is `...` and the
 Unicode one is a single glyph, so a mismatched alphabet is not what that assertion is for).
 
-`docs/cli-guide.md` section 6's transcript was the old block verbatim; it is now the verified output
+`docs/cli-guide.md`'s playback transcript was the old block verbatim; it is now the verified output
 of `ley play fixtures/nfm_tone.cf32` against the daemon.
 
 ## PC-4 `[x]` `ley fft` rows carry no noise floor

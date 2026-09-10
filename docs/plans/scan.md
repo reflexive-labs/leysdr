@@ -54,18 +54,18 @@ client, 16–17 the harness and the docs.
 
 ## Client
 
-- [ ] **SC-13 fakedaemon jobs.** A scan the Go tests can run without the Swift daemon.
-- [ ] **SC-14 `ley scan`.** Range positional or `--band`, live progress on stderr, table on stdout,
+- [x] **SC-13 fakedaemon jobs.** A scan the Go tests can run without the Swift daemon.
+- [x] **SC-14 `ley scan`.** Range positional or `--band`, live progress on stderr, table on stdout,
       `--json` as the proto3 `Scan`. Un-hide the verb.
-- [ ] **SC-15 CLI tests.** Range parsing, the conflict, the table, the empty case, the clipped case,
+- [x] **SC-15 CLI tests.** Range parsing, the conflict, the table, the empty case, the clipped case,
       strip-to-plain, `--json`.
 
 ## Harness and docs
 
-- [ ] **SC-16 Fixtures and a synthetic retunable device.** A multi-carrier fixture with carriers at
+- [x] **SC-16 Fixtures and a synthetic retunable device.** A multi-carrier fixture with carriers at
       known offsets and levels for the one-step detector test; a test-only device in the daemon
       tests that changes its content late after `tune`, for the multi-step loop.
-- [ ] **SC-17 Docs.** `interfaces.md` (the CLI tree, the JSON shape, the additive fields),
+- [x] **SC-17 Docs.** `interfaces.md` (the CLI tree, the JSON shape, the additive fields),
       `cli-guide.md` (a section), `build-order.md` (D.13 done), `fixtures.md` (the new fixture).
 
 ## Notes
@@ -102,3 +102,31 @@ than its own arithmetic says.
 false-alarm budget, so a budget that moved as rows arrived would make a step's first row stricter
 than its last -- a detector whose sensitivity depends on when in the dwell a signal appeared.
 
+**Three bugs the fixture run found that no unit test would have.**
+
+- `SweepPlan` refused a **point tuning range** (`guard r.maxHz > r.minHz`), which is exactly what a
+  file device has -- so the one-step fixture sweep the design calls for could not run at all. The
+  guard is now `>=`.
+- A narrow request reported **signals from outside it**: a step's analysis window is what the radio
+  can see from that tuner position, and the answer is what was asked for. The window is now clamped
+  to the plan's covered range before anything is reported.
+- Back-to-back scans failed every other time. The lease was released in a detached task after the
+  job reached its terminal state, so the next scan found the capture still leased and was declined.
+  The release is now awaited before the job finishes -- safe in a cancelled task, because nothing
+  in the release path checks cancellation.
+
+**A request entirely inside the DC guard is a failure, not an empty result.** On a radio with one
+tuning point there is no neighbouring step to cover the hole, so `ley scan 145.95M..146.05M` over a
+recording centred at 146 MHz can see nothing at all. Reporting "nothing found" there would be a lie;
+it names the blind spot and points at `ley spectrum`.
+
+**The floor is reported even when nothing is found.** It was originally taken from the detections'
+own floor readings, so an empty band had no floor to report -- which is the one case where a reader
+most wants it.
+
+**`--json` is one `Scan` and nothing else.** Job events under `--json` were an NDJSON stream with the
+answer on the last line; a consumer wants the answer.
+
+**Verified against the daemon**, sweeping `fixtures/scan_band.cf32`: four of four carriers found at
+the right frequencies, widths within a bin of the truth, SNRs matching the synthesis, and one 4 dB
+false positive marked `1/4` in three runs out of four.

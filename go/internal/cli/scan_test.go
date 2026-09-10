@@ -1,0 +1,169 @@
+package cli
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/ui"
+)
+
+// The fake daemon's synthetic band, from internal/fakedaemon/jobs.go.
+const (
+	fakeStrongest = "146.520 MHz"
+	fakeWide      = "101.100 MHz"
+)
+
+func TestScanTable(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
+	if err != nil {
+		t.Fatalf("ley scan: %v\n%s\n%s", err, out, errOut)
+	}
+	for _, want := range []string{"FREQUENCY", "WIDTH", "SNR", "SEEN", "BAND", "145.230 MHz", fakeStrongest} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table lacks %q:\n%s", want, out)
+		}
+	}
+	// Out of range, and therefore not in the answer.
+	if strings.Contains(out, fakeWide) {
+		t.Errorf("101.1 MHz is outside 145-147 MHz:\n%s", out)
+	}
+	// The table is the answer and goes to stdout; the prose is for the person.
+	for _, want := range []string{"sweeping 145.000 MHz to 147.000 MHz", "floor", "ley listen"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(out, "sweeping") || strings.Contains(out, "signals,") {
+		t.Errorf("prose reached stdout:\n%s", out)
+	}
+}
+
+// SEEN is the evidence a reader needs to tell a carrier from a burst, and it is never used to
+// hide a row -- an intermittent signal is exactly what somebody might be scanning for.
+func TestScanShowsTheEvidence(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "scan", "145M..147M")
+	if !strings.Contains(out, "/") {
+		t.Errorf("no SEEN counts in:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "145.230") && !strings.Contains(line, "8/8") {
+			t.Errorf("want a look count on the row: %q", line)
+		}
+	}
+}
+
+func TestScanJSONIsTheScanMessageAlone(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "--json", "scan", "145M..147M")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("want exactly one Scan object, got %d lines:\n%s", len(lines), out)
+	}
+	var scan map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &scan); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	// The proto3 JSON mapping: lowerCamelCase, 64-bit integers as strings.
+	for _, k := range []string{"scanId", "config", "detections", "noiseFloor"} {
+		if _, ok := scan[k]; !ok {
+			t.Errorf("Scan lacks %q: %s", k, lines[0])
+		}
+	}
+	dets, _ := scan["detections"].([]any)
+	if len(dets) == 0 {
+		t.Fatalf("no detections: %s", lines[0])
+	}
+	first, _ := dets[0].(map[string]any)
+	for _, k := range []string{"centerHz", "bandwidthHz", "snrDb", "looks", "looksPossible", "floorDbfs"} {
+		if _, ok := first[k]; !ok {
+			t.Errorf("detection lacks %q: %v", k, first)
+		}
+	}
+	if _, ok := first["centerHz"].(string); !ok {
+		t.Errorf("centerHz must be a string (proto3 JSON, 64-bit): %v", first["centerHz"])
+	}
+}
+
+func TestScanSortsBySNR(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	byFreq := mustRun(t, sock, "scan", "145M..147M")
+	bySNR := mustRun(t, sock, "scan", "145M..147M", "--sort", "snr")
+	if firstFreq(byFreq) != "145.230" {
+		t.Errorf("freq order starts at %q:\n%s", firstFreq(byFreq), byFreq)
+	}
+	if firstFreq(bySNR) != "146.520" {
+		t.Errorf("snr order starts at %q:\n%s", firstFreq(bySNR), bySNR)
+	}
+}
+
+func TestScanMinSNRHides(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	all := mustRun(t, sock, "scan", "160M..163M")
+	if !strings.Contains(all, "162.400 MHz") {
+		t.Fatalf("want the weak NOAA carrier:\n%s", all)
+	}
+	filtered := mustSay(t, sock, "scan", "160M..163M", "--min-snr", "20")
+	if strings.Contains(filtered, "162.400 MHz") {
+		t.Errorf("--min-snr 20 should have hidden a 12 dB signal:\n%s", filtered)
+	}
+	if !strings.Contains(filtered, "nothing stood above") {
+		t.Errorf("an empty result must say so:\n%s", filtered)
+	}
+}
+
+// A band is named with --band because "2m" is 2 MHz everywhere a frequency is accepted.
+func TestScanBandFlag(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustSay(t, sock, "scan", "--band", "2m")
+	if !strings.Contains(out, "144.000 MHz to 148.000 MHz") {
+		t.Errorf("--band 2m should sweep the whole band:\n%s", out)
+	}
+	if !strings.Contains(out, fakeStrongest) {
+		t.Errorf("want the 2 m carriers:\n%s", out)
+	}
+}
+
+// The daemon's refusal is a sentence with a way forward, not a code.
+func TestScanReportsWhoHasTheRadio(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	listening(t, c)
+	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
+	if err == nil {
+		t.Fatalf("a busy radio must refuse:\n%s", errOut)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "--take-over") {
+		t.Errorf("the refusal must name the way through: %q", msg)
+	}
+	if strings.Contains(msg, "DEVICE_BUSY:") {
+		t.Errorf("the stable code belongs in --json, not in the sentence: %q", msg)
+	}
+	// And --take-over gets through.
+	out := mustRun(t, sock, "scan", "145M..147M", "--take-over")
+	if !strings.Contains(out, fakeStrongest) {
+		t.Errorf("--take-over should have swept:\n%s", out)
+	}
+}
+
+// Strip-to-plain: the styled screen must differ from the plain one in ink alone.
+func TestScanStripsToPlain(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	plain := mustSay(t, sock, "--color", "never", "scan", "145M..147M")
+	inked := mustSay(t, sock, "--color", "always", "scan", "145M..147M")
+	if got := ui.Strip(inked); got != plain {
+		t.Errorf("styled != plain:\n plain  %q\n styled %q", plain, got)
+	}
+}
+
+func firstFreq(table string) string {
+	for _, line := range strings.Split(table, "\n") {
+		if strings.Contains(line, " MHz") && !strings.Contains(line, "FREQUENCY") {
+			return strings.TrimSpace(strings.SplitN(strings.TrimSpace(line), " ", 2)[0])
+		}
+	}
+	return ""
+}

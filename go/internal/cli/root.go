@@ -158,6 +158,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newSpectrumCommand(app),
 		newWaterfallCommand(app),
 		newPhosphorCommand(app),
+		newScanCommand(app),
 		newFFTCommand(app),
 		newListenCommand(app),
 		newPresetsCommand(app),

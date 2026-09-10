@@ -236,6 +236,28 @@ var catalog = []fixture{
 			return []iqfile.Expect{toneExpect("NFM", 100_000, 12_500, 1000, 30), toneExpect("NFM", -300_000, 12_500, 2000, 20)}
 		},
 	},
+	{
+		name: "scan_band", centerHz: 146_000_000,
+		description: "four carriers for the sweep detector: NFM at -800/-400 kHz, AM at +400 kHz and a wide FM at +800 kHz, " +
+			"from -20 to -44 dBFS over a -60 dBFS floor, all outside the sweep's 5% DC guard",
+		metadata: map[string]string{"mode": "NFM", "frequency_hz": hz(145_600_000)},
+		build: func(rate float64) []source {
+			// Placed clear of the DC guard (5% of span either side of centre) and clear of the
+			// 45% analysis edge, so a single-step sweep over this file sees all four. The levels
+			// walk down 8 dB at a time so the weakest is near the detector's sensitivity and the
+			// strongest is loud enough to plant an IQ image on a real radio.
+			return []source{
+				&fmTone{rate: rate, carrierHz: -800_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS},
+				&fmTone{rate: rate, carrierHz: -400_000, toneHz: 1500, devHz: 2500, dbfs: signalDBFS - 8},
+				&amTone{rate: rate, carrierHz: 400_000, toneHz: 1000, depth: 0.8, dbfs: signalDBFS - 16},
+				&fmTone{rate: rate, carrierHz: 800_000, toneHz: 400, devHz: 75_000, dbfs: signalDBFS - 24},
+			}
+		},
+		// No per-channel expectations: this fixture exists for the spectrum, not for a demod, and
+		// the sidecar has no vocabulary for expected detections. The carriers are documented above
+		// and asserted by the detector's own tests.
+		expect: func(float64) []iqfile.Expect { return nil },
+	},
 }
 
 // fits reports whether every expected channel lies inside the usable band

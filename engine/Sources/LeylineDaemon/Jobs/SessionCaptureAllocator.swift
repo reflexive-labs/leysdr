@@ -33,7 +33,15 @@ actor SessionCaptureAllocator: CaptureAllocator {
         // destroying is cleaner than borrowing and restoring, and it disturbs nobody.
         var candidates: [(Leyline_V1_DeviceDescriptor, Leyline_V1_Capture?)] = []
         for d in state.devices where d.state != .disconnected {
-            guard d.tuningRanges.contains(where: { $0.minHz <= range.upperBound && $0.maxHz >= range.lowerBound }) else { continue }
+            // What a capture on this device can hear, not just where it can point: a capture
+            // centred at the edge of the tuning range still covers half a span either side of it,
+            // which is how a file device -- whose range is the single point its recording was made
+            // at -- can serve a sweep at all. The same fractions the plan uses.
+            let edge = SweepPlan.edgeFraction * Double(bestRate(d))
+            let audible = d.tuningRanges.contains { r in
+                Double(r.minHz) - edge <= Double(range.upperBound) && Double(r.maxHz) + edge >= Double(range.lowerBound)
+            }
+            guard audible else { continue }
             candidates.append((d, state.captures.first { $0.deviceID == d.deviceID }))
         }
         guard !candidates.isEmpty else {
@@ -116,10 +124,22 @@ actor SessionCaptureAllocator: CaptureAllocator {
     /// the bin count rather than the span.
     private func bestRate(_ d: Leyline_V1_DeviceDescriptor) -> UInt64 { d.sampleRates.max() ?? 0 }
 
-    private func startCentre(_ range: ClosedRange<UInt64>, device: Leyline_V1_DeviceDescriptor, rate: UInt64) -> UInt64 {
+    /// Where to point the radio when the allocator creates the capture. The sweep retunes from
+    /// here immediately, so this only has to be somewhere the device accepts; aiming at the middle
+    /// of the range and clamping to the nearest tunable point keeps the first hop short.
+    private func startCentre(_ range: ClosedRange<UInt64>, device: Leyline_V1_DeviceDescriptor, rate _: UInt64) -> UInt64 {
         let want = range.lowerBound + (range.upperBound - range.lowerBound) / 2
-        for r in device.tuningRanges where r.minHz <= want && r.maxHz >= want { return want }
-        return device.tuningRanges.first?.minHz ?? want
+        var best: UInt64?
+        var bestDistance = UInt64.max
+        for r in device.tuningRanges {
+            let clamped = Swift.min(Swift.max(want, r.minHz), Swift.max(r.minHz, r.maxHz))
+            let d = clamped > want ? clamped - want : want - clamped
+            if d < bestDistance {
+                bestDistance = d
+                best = clamped
+            }
+        }
+        return best ?? want
     }
 
     private func fmt(_ hz: UInt64) -> String { String(format: "%.3f MHz", Double(hz) / 1e6) }

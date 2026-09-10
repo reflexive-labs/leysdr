@@ -298,7 +298,10 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"spectrum", "146,52"}, "frequency:"},
 		{[]string{"record"}, "record is not implemented yet (Milestone C.12). Today:"},
 		{[]string{"record", "--audio", "--duration", "10"}, "record is not implemented yet (Milestone C.12). Today:"},
-		{[]string{"scan", "146.52"}, "scan is not implemented yet (Milestone D). Today: ley spectrum"},
+		{[]string{"scan", "146.52"}, "is not a range; two frequencies with .. between them"},
+		{[]string{"scan"}, "scan needs a range"},
+		{[]string{"scan", "144M..148M", "--band", "2m"}, "not both"},
+		{[]string{"scan", "144M..148M", "--sort", "sideways"}, "--sort must be freq or snr"},
 		{[]string{"watch"}, "watch is not implemented yet (V0.5)"},
 		// tune's positional and flags are parsed before anything reaches the daemon.
 		{[]string{"tune"}, "tune needs a frequency or preset"},
@@ -471,7 +474,7 @@ func TestRenderOrientationStates(t *testing.T) {
 
 func TestStubsHiddenAndListed(t *testing.T) {
 	root := NewRootCommand(&App{})
-	for _, name := range []string{"record", "scan", "watch"} {
+	for _, name := range []string{"record", "watch"} {
 		cmd, _, err := root.Find([]string{name})
 		if err != nil || cmd.Name() != name || !cmd.Hidden {
 			t.Errorf("stub %s: %v hidden=%v", name, err, cmd != nil && cmd.Hidden)
@@ -480,7 +483,7 @@ func TestStubsHiddenAndListed(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetArgs([]string{"--help"})
-	if err := root.Execute(); err != nil || regexp.MustCompile(`(?m)^\s+(record|scan|watch)\s`).MatchString(out.String()) {
+	if err := root.Execute(); err != nil || regexp.MustCompile(`(?m)^\s+(record|watch)\s`).MatchString(out.String()) {
 		t.Errorf("stubs must be hidden from --help: %v\n%s", err, out.String())
 	}
 }

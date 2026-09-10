@@ -32,6 +32,8 @@ const (
 	CodeCaptureNotFound     = "CAPTURE_NOT_FOUND"
 	CodeChannelNotFound     = "CHANNEL_NOT_FOUND"
 	CodeSinkNotFound        = "SINK_NOT_FOUND"
+	CodeJobNotFound         = "JOB_NOT_FOUND"
+	CodeScanNotFound        = "SCAN_NOT_FOUND"
 	CodeStreamNotFound      = "STREAM_NOT_FOUND"
 	CodeModeUnsupported     = "MODE_UNSUPPORTED"
 	CodeUnimplemented       = "UNIMPLEMENTED"
@@ -174,7 +176,8 @@ func codeForGRPC(c codes.Code) string {
 // GRPCCode maps a stable machine code to the gRPC status code daemons use for it.
 func GRPCCode(code string) codes.Code {
 	switch code {
-	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeGainElementUnknown:
+	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeGainElementUnknown,
+		CodeJobNotFound, CodeScanNotFound:
 		return codes.NotFound
 	case CodeDeviceBusy:
 		return codes.FailedPrecondition

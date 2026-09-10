@@ -193,9 +193,14 @@ func TestErrorMapping(t *testing.T) {
 	if leyline.Code(err) != leyline.CodeOffsetOutOfCapture {
 		t.Errorf("want OFFSET_OUT_OF_CAPTURE, got %v", err)
 	}
-	_, err = c.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{})
+	// Scan jobs are implemented; the durable half of the service is not.
+	_, err = c.Jobs.GetTranscript(ctx, &leylinev1.TranscriptRequest{})
 	if leyline.Code(err) != leyline.CodeUnimplemented {
 		t.Errorf("want UNIMPLEMENTED, got %v", err)
+	}
+	_, err = c.Jobs.GetScan(ctx, &leylinev1.ScanRef{ScanId: "scan_NOPE"})
+	if leyline.Code(err) != leyline.CodeScanNotFound {
+		t.Errorf("want SCAN_NOT_FOUND, got %v", err)
 	}
 	// Fallback: no trailer, only the "CODE: message" convention.
 	fb := leyline.FromStatus(status.Error(codes.NotFound, "SINK_NOT_FOUND: no such sink"))

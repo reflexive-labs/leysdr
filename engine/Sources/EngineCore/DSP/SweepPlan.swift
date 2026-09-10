@@ -26,7 +26,17 @@ public struct SweepPlan: Sendable, Equatable {
     public struct Window: Sendable, Equatable {
         public var lowHz: UInt64
         public var highHz: UInt64
+        public init(lowHz: UInt64, highHz: UInt64) {
+            self.lowHz = lowHz
+            self.highHz = highHz
+        }
+
         public func contains(_ hz: UInt64) -> Bool { hz >= lowHz && hz < highHz }
+
+        /// The part of this window also inside `other`; empty when they do not overlap.
+        public func clamped(to other: Window) -> Window {
+            Window(lowHz: Swift.max(lowHz, other.lowHz), highHz: Swift.min(highHz, other.highHz))
+        }
     }
 
     /// One tuner position, and the two windows of it the detector is allowed to believe.
@@ -80,7 +90,10 @@ public struct SweepPlan: Sendable, Equatable {
         var lowestCenter = UInt64.max
         var highestCenter: UInt64 = 0
         for r in tuningRanges {
-            guard r.maxHz > r.minHz else { continue }
+            // A point range is legitimate: a file device tunes to exactly the frequency its
+            // recording was made at, and a sweep over one is the single-step fixture run the
+            // detector is tested with.
+            guard r.maxHz >= r.minHz, r.maxHz > 0 else { continue }
             lowestCenter = Swift.min(lowestCenter, r.minHz)
             highestCenter = Swift.max(highestCenter, r.maxHz)
         }
@@ -127,6 +140,33 @@ public struct SweepPlan: Sendable, Equatable {
         return SweepPlan(steps: unique, sampleRateHz: sampleRateHz,
                          covered: Window(lowHz: UInt64(coverLow.rounded()), highHz: UInt64(coverHigh.rounded())),
                          clipped: clipped)
+    }
+
+    /// Hertz of `covered` that at least one window actually looks at.
+    ///
+    /// Normally this is all of it -- that is what the geometry is for. It is not, when the whole
+    /// request falls inside one step's DC guard: a radio with a single tuning point (a file
+    /// device) has no neighbouring step to cover its hole, so a request within 5% of that point is
+    /// a range the sweep cannot see. Reporting nothing found there would be a lie.
+    public var analysedHz: UInt64 {
+        var spans: [(UInt64, UInt64)] = []
+        for s in steps {
+            for w in [s.low, s.high] {
+                let c = w.clamped(to: covered)
+                if c.highHz > c.lowHz { spans.append((c.lowHz, c.highHz)) }
+            }
+        }
+        spans.sort { $0.0 < $1.0 }
+        var total: UInt64 = 0
+        var cursor: UInt64 = 0
+        for (lo, hi) in spans {
+            let start = Swift.max(lo, cursor)
+            if hi > start {
+                total += hi - start
+                cursor = hi
+            }
+        }
+        return total
     }
 
     /// How many of the plan's analysis windows contain `hz`. The geometry is supposed to

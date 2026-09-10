@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/pkg/leyline"
@@ -50,6 +51,9 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 		m.Seq = seq
 		return srv.Send(m)
 	}
+	// Detections are pushed by a running scan rather than produced on the tick, so each
+	// subscriber walks the shared log from its own cursor.
+	detectionCursor := 0
 	squelchOpen := map[string]bool{}
 	// What the real daemon accumulates on the DSP thread while the squelch is
 	// open, so the close edge can summarise the transmission that just ended.
@@ -68,6 +72,17 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 			tick++
 			var out []*leylinev1.TelemetryMsg
 			d.mu.Lock()
+			if wants(leylinev1.TelemetryType_DETECTION) && chanFilter == "" {
+				for ; detectionCursor < len(d.detectionLog); detectionCursor++ {
+					det := proto.Clone(d.detectionLog[detectionCursor]).(*leylinev1.Detection)
+					out = append(out, &leylinev1.TelemetryMsg{
+						Time: &leylinev1.SampleTime{CaptureId: det.CaptureId},
+						Body: &leylinev1.TelemetryMsg_Detection{Detection: det},
+					})
+				}
+			} else if chanFilter == "" {
+				detectionCursor = len(d.detectionLog)
+			}
 			for _, ch := range d.channels {
 				if ch.State != leylinev1.ChannelState_CHANNEL_ACTIVE {
 					continue

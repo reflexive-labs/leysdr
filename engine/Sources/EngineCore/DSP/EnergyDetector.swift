@@ -201,6 +201,40 @@ public enum SpectrumDetect {
         return hits.filter { !isImage($0, power: power, count: count) }
     }
 
+    /// The median of the local floor across one window, in dBFS per bin. Reported even when a
+    /// window held nothing: an empty band's floor is the answer to "why did you find nothing",
+    /// and a scan that only reports a floor where it found a signal cannot give it.
+    ///
+    /// `floor` is the buffer `detect` filled, so this must be called after it.
+    public static func windowFloorDBFS(floor: UnsafeMutablePointer<Float>, count: Int,
+                                       centerHz: UInt64, spanHz: UInt64,
+                                       believe: ClosedRange<UInt64>,
+                                       scratch: UnsafeMutablePointer<Float>) -> Double
+    {
+        guard count > 0, spanHz > 0 else { return .nan }
+        let binWidth = Double(spanHz) / Double(count)
+        let lowEdge = Double(centerHz) - Double(spanHz) / 2
+        var first = Int(((Double(believe.lowerBound) - lowEdge) / binWidth).rounded(.down))
+        var last = Int(((Double(believe.upperBound) - lowEdge) / binWidth).rounded(.up))
+        first = Swift.max(0, first)
+        last = Swift.min(count - 1, last)
+        guard last >= first else { return .nan }
+        var n = 0
+        // The scratch buffer is sized for the reference window, which is smaller than a believed
+        // window: take an even sample across it rather than a contiguous slice, so the median
+        // describes the whole window and not one end of it.
+        let capacity = 2 * referenceBins
+        let stride = Swift.max(1, (last - first + 1 + capacity - 1) / capacity)
+        var i = first
+        while i <= last, n < capacity {
+            scratch[n] = floor[i]
+            n += 1
+            i += stride
+        }
+        guard n > 0 else { return .nan }
+        return 10 * log10(Double(Swift.max(median(scratch, count: n), 1e-30)))
+    }
+
     /// True when the hit is the mirror of a much stronger signal reflected about the capture
     /// centre -- the R820T's IQ image, which is stationary, persistent and looks exactly like a
     /// carrier to energy detection.

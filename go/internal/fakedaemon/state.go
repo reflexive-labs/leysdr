@@ -43,6 +43,8 @@ func (d *Daemon) emit(by *leylinev1.ClientInfo, body any) {
 		if ch := d.channels[b.ChannelId]; ch != nil {
 			captureID = ch.CaptureId
 		}
+	case *leylinev1.Job:
+		ev.Body = &leylinev1.Event_Job{Job: proto.Clone(b).(*leylinev1.Job)}
 	case *leylinev1.WriteRejected:
 		ev.Body = &leylinev1.Event_WriteRejected{WriteRejected: proto.Clone(b).(*leylinev1.WriteRejected)}
 	case *leylinev1.CaptureAnchor:

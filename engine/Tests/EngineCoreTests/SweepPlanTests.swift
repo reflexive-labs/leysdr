@@ -88,6 +88,24 @@ final class SweepPlanTests: XCTestCase {
         }
     }
 
+    /// A file device tunes to exactly one frequency -- the one its recording was made at -- and a
+    /// sweep over it is the single-step fixture run the detector is tested with.
+    func testAPointTuningRangeGivesOneStep() throws {
+        let file = [FrequencyRange(minHz: 146_520_000, maxHz: 146_520_000)]
+        let p = try XCTUnwrap(SweepPlan.plan(minHz: 145_400_000, maxHz: 147_600_000,
+                                             sampleRateHz: 2_400_000, tuningRanges: file))
+        XCTAssertEqual(p.steps.count, 1)
+        XCTAssertEqual(p.steps[0].centerHz, 146_520_000)
+        XCTAssertTrue(p.clipped, "the request was wider than the one frequency this radio has")
+        XCTAssertEqual(p.looks(at: 146_220_000), 1, "300 kHz below centre is inside the lower window")
+        XCTAssertEqual(p.looks(at: 147_400_000), 1, "880 kHz above centre is inside the upper window")
+        // With one step the DC hole has no neighbour to cover it, so the guard band -- 5% of the
+        // span, 120 kHz here -- is simply not looked at. A fixture meant for the detector must put
+        // its carriers outside it.
+        XCTAssertEqual(p.looks(at: 146_520_000), 0, "the capture centre is where the DC spike is")
+        XCTAssertEqual(p.looks(at: 146_620_000), 0, "100 kHz off centre is inside the guard band")
+    }
+
     func testImpossibleRequestsReturnNil() {
         XCTAssertNil(SweepPlan.plan(minHz: 148_000_000, maxHz: 144_000_000, sampleRateHz: 2_400_000, tuningRanges: rtl))
         XCTAssertNil(SweepPlan.plan(minHz: 144_000_000, maxHz: 148_000_000, sampleRateHz: 0, tuningRanges: rtl))

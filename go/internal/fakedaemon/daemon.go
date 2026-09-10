@@ -72,7 +72,12 @@ type Daemon struct {
 	streams  map[string]*stream
 	watchers map[*watcher]struct{}
 	presence map[string]*presence // by client id
-	socket   string
+	jobs     map[string]*fakeJob
+	jobOrder []string
+	// detectionLog is append-only and capped; every telemetry subscriber reads it from its own
+	// cursor, so a detection reaches all of them exactly once.
+	detectionLog []*leylinev1.Detection
+	socket       string
 	// history holds the last eventHistoryLimit events, oldest first, for
 	// WatchEvents(since_seq) replay (the Swift daemon keeps the same window).
 	history []retainedEvent
@@ -145,6 +150,7 @@ func New(opts Options) *Daemon {
 		captures:  map[string]*capture{},
 		channels:  map[string]*leylinev1.Channel{},
 		sinks:     map[string]*leylinev1.Sink{},
+		jobs:      map[string]*fakeJob{},
 		streams:   map[string]*stream{},
 		watchers:  map[*watcher]struct{}{},
 		presence:  map[string]*presence{},
