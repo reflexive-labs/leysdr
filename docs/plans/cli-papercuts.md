@@ -74,17 +74,33 @@ assertions in `TestStateTreeContent`.
 `tune`'s banner got the one-fact-per-line treatment and `play`'s did not; it still reads as a
 five-line block of ids. Symmetry only. (from `cli-visuals.md`)
 
-## PC-4 `[ ]` `ley fft` rows carry no noise floor
+## PC-4 `[x]` `ley fft` rows carry no noise floor
 
 `ley spectrum`'s help says "everything here comes from the daemon's FFT stream: `ley fft` prints the
 same rows as numbers for tools", but `spectrum --json` rows carry `floor_db` and `peaks` while `fft`
 rows carry neither. A tool reading `fft` has to compute the floor itself, and will not necessarily
 compute the same one.
 
-Either add `floor_db` to the `fft` row shape or correct the sentence. Adding it is probably right --
-the daemon already has the number, and two clients disagreeing about where the noise floor is, is
-the kind of thing that makes two screens contradict each other. Noticed while writing an offline
-render harness that defaulted the missing field to 0 and drew a chart claiming a 0 dBFS floor.
+Added, and the reasoning above contains a mistake worth keeping. **The daemon does not have the
+number.** There is no floor anywhere in the FFT wire contract -- `FftParams` and `StreamDescriptor`
+carry none, and the only `floor_db` in the proto is `PersistenceParams`, which is explicitly
+client-supplied. The floor is `medianDb` of the row, computed client-side, so this copies a
+presentation statistic into a second command rather than plumbing a measurement.
+
+That does not make it wrong -- the two commands agreeing is the whole point, and
+`TestFFTAndSpectrumAgreeOnTheFloor` is the guard -- but the help now says plainly that `ley`
+measures it rather than the daemon sending it, and that `--format bin` carries none.
+
+`SpectrumRow.FloorDb` had to be deleted rather than left: an outer field of the same name shadows
+the embedded one, and the value would have been assigned twice. Key order is unchanged because
+`encoding/json` serialises embedded fields in declaration order.
+
+One hazard the plan caught: `medianDb` answers NaN for an empty row and `encoding/json` refuses to
+marshal one, so a decode bug would have stopped the stream with an error instead of emitting a row
+that says it measured nothing. `floorOf` guards it.
+
+Still known to disagree: `ley waterfall` floors on the median of column *maxima*, which sits a few
+dB high. That is a different statistic for a different picture, not a bug, but it is not this floor.
 
 ## PC-5 `[x]` A watch chart taller than the terminal strands lines
 

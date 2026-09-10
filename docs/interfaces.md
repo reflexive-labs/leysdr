@@ -64,8 +64,8 @@ adds no capability the protocol lacks.
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
 to stderr, so stdout is parseable. **Three documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
-and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins}` (snake_case, numbers
-as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
+and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, floor_db}` (snake_case,
+numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
 presentation only, never called signals. `ley listen --format json` is the audio member of the same
 exception: `{seq, sample_index, sample_rate, format, pcm}`, `pcm` being the frame's PCM bytes
 base64-encoded and `format` the `AudioSampleFormat` the daemon settled on (`S16` in v0); every row

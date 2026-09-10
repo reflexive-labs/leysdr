@@ -9,7 +9,11 @@ If the device has no capture, --freq is required and a capture is created
 for the run (destroyed on exit).
 
 --format json: one row per line
-               {seq, sample_index, center_hz, span_hz, bins:[dB...]}
+               {seq, sample_index, center_hz, span_hz, bins:[dB...], floor_db}
+               floor_db is the row's median bin, measured by ley rather than
+               sent by the daemon -- there is no floor in the FFT stream --
+               so that this and 'spectrum --json' agree about the noise
+               floor for the same row. --format bin carries no floor.
                Bulk rows have no proto message, so this shape (and the
                matching 'spectrum --json') is the documented exception to
                ley's proto3 JSON rule; see docs/interfaces.md. Rows are

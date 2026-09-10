@@ -18,12 +18,20 @@ import (
 const FFTMagic = "LEYF"
 
 // FFTRow is one JSON row of `ley fft --format json`.
+//
+// FloorDb is the row's median bin, computed here rather than sent by the
+// daemon: no floor exists anywhere in the FFT wire contract. It is carried so
+// that `ley fft` and `ley spectrum --json` report the same number for the same
+// row -- two tools disagreeing about where the noise floor is, is how two
+// screens end up contradicting each other. `--format bin` has no room for it
+// and carries none.
 type FFTRow struct {
 	Seq         uint64    `json:"seq"`
 	SampleIndex uint64    `json:"sample_index"`
 	CenterHz    uint64    `json:"center_hz"`
 	SpanHz      uint64    `json:"span_hz"`
 	Bins        []float64 `json:"bins"`
+	FloorDb     float64   `json:"floor_db"`
 }
 
 func newFFTCommand(app *App) *cobra.Command {
@@ -49,7 +57,11 @@ If the device has no capture, --freq is required and a capture is created
 for the run (destroyed on exit).
 
 --format json: one row per line
-               {seq, sample_index, center_hz, span_hz, bins:[dB...]}
+               {seq, sample_index, center_hz, span_hz, bins:[dB...], floor_db}
+               floor_db is the row's median bin, measured by ley rather than
+               sent by the daemon -- there is no floor in the FFT stream --
+               so that this and 'spectrum --json' agree about the noise
+               floor for the same row. --format bin carries no floor.
                Bulk rows have no proto message, so this shape (and the
                matching 'spectrum --json') is the documented exception to
                ley's proto3 JSON rule; see docs/interfaces.md. Rows are
@@ -166,7 +178,12 @@ func runFFT(ctx context.Context, s *session, o fftOptions) error {
 				return err
 			}
 		} else {
-			row := FFTRow{Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), CenterHz: desc.CenterHz, SpanHz: desc.SpanHz, Bins: decodeBins(fr.Payload, u8)}
+			bins := decodeBins(fr.Payload, u8)
+			row := FFTRow{
+				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
+				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				Bins: bins, FloorDb: floorOf(bins),
+			}
 			b, err := json.Marshal(row)
 			if err != nil {
 				return err
@@ -230,4 +247,16 @@ func decodeBins(p []byte, u8 bool) []float64 {
 		out[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(p[i*4:])))
 	}
 	return out
+}
+
+// floorOf is medianDb with a value JSON can carry. medianDb answers NaN for an
+// empty row and encoding/json refuses to marshal one, which would turn a decode
+// bug into a stream that stops with an error rather than a row saying it
+// measured nothing.
+func floorOf(bins []float64) float64 {
+	f := medianDb(bins)
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return f
 }

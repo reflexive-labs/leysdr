@@ -28,12 +28,11 @@ type Peak struct {
 }
 
 // SpectrumRow is one JSON line of `ley spectrum --json`: the FFT row shape
-// (see FFTRow) plus the noise floor the peaks were judged against and the
-// loudest bins.
+// (see FFTRow, which carries the noise floor the peaks were judged against)
+// plus the loudest bins.
 type SpectrumRow struct {
 	FFTRow
-	FloorDb float64 `json:"floor_db"`
-	Peaks   []Peak  `json:"peaks"`
+	Peaks []Peak `json:"peaks"`
 }
 
 type spectrumOptions struct {
@@ -211,7 +210,11 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			floor := medianDb(bins)
 			peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks, floor+peakAboveFloorDb)
 			if app.JSON {
-				row := SpectrumRow{FFTRow: FFTRow{Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), CenterHz: desc.CenterHz, SpanHz: desc.SpanHz, Bins: bins}, FloorDb: floor, Peaks: peaks}
+				row := SpectrumRow{FFTRow: FFTRow{
+					Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
+					CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+					Bins: bins, FloorDb: floor,
+				}, Peaks: peaks}
 				b, err := json.Marshal(row)
 				if err != nil {
 					return err

@@ -338,7 +338,7 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   `--rate` times a second, `--count` rows or until Ctrl-C, `--format json` or `bin`. `spectrum
   --json` emits one row with a `floor_db` and a `peaks` list (which is as long as the evidence:
   often one entry, sometimes none). These rows are bulk data with no proto message, so their
-  shape (`{seq, sample_index, center_hz, span_hz, bins}`) is the one documented
+  shape (`{seq, sample_index, center_hz, span_hz, bins, floor_db}`) is the one documented
   exception to the proto3 rule. `fft` rows are delivered gap-marked: when the daemon had to
   drop rows, a `{"gap":{"from_sample":A,"to_sample":B}}` line precedes the next row (gap lines
   do not count toward `--count`; `--format bin` carries no gap records). `--format bin` writes
