@@ -219,7 +219,7 @@ a-evolution-4 (`beginGracefulShutdown` first, then jobs, streams, store, registr
 closed, not leaked; or attach before open), q-swift-control-10 (`DeviceEventHub.finishAll` is called
 from `stop()` or deleted).
 
-### SW-6 `[ ]` `FilePlaybackDevice` error and stop paths
+### SW-6 `[x]` `FilePlaybackDevice` error and stop paths
 
 q-swift-control-4 (a mid-file read error is logged and takes the disconnect path), q-swift-control-5
 (the join runs through `BlockingWork` and the pacing sleep wakes on cancel).

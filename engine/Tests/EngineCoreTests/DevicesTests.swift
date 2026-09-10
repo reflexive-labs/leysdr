@@ -228,6 +228,73 @@ final class DevicesFilePlaybackTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(elapsed, 0.155)
         XCTAssertLessThan(elapsed, 0.6)
     }
+
+    func testReadErrorDisconnectsLikeAnUnplug() async throws {
+        let dir = try DeviceFixtures.scratchDir()
+        let rate: UInt64 = 16384 * 10 // one block per 0.1 s
+        let path = try DeviceFixtures.writeRamp(dir: dir, name: "ioerr", samples: Int(rate), rate: rate)
+        // Looping, so reaching the end of the file cannot be what ends this run.
+        let dev = try FilePlaybackDevice(path: path, loop: true, realtime: true)
+        let reader = try IQFileReader(path: path, maxBlock: FilePlaybackDevice.blockSize)
+        let log = DeliveryLog()
+        let states = StateLog()
+        dev.setOnStateChange { states.record($0) }
+        try dev.startStreaming(captureID: CaptureID(), reader: reader) { log.record($0, $1) }
+        try await waitUntil { log.total > 0 }
+        reader.makeUnreadableForTesting()
+        try await waitUntil { states.states.contains(.disconnected) }
+        await dev.stopStreaming()
+        XCTAssertEqual(dev.descriptor.state, .disconnected)
+        XCTAssertGreaterThanOrEqual(log.total, FilePlaybackDevice.blockSize, "the blocks read before the failure still arrive")
+    }
+
+    func testStopDoesNotWaitOutTheBlockPacing() async throws {
+        let dir = try DeviceFixtures.scratchDir()
+        let rate: UInt64 = 16384 // one block per second
+        let path = try DeviceFixtures.writeRamp(dir: dir, name: "slow", samples: Int(rate) * 3, rate: rate)
+        let dev = try FilePlaybackDevice(path: path, loop: false, realtime: true)
+        let log = DeliveryLog()
+        try await dev.startStreaming(captureID: CaptureID()) { log.record($0, $1) }
+        try await waitUntil { log.total > 0 } // now inside the first second of pacing
+        let start = DispatchTime.now().uptimeNanoseconds
+        await dev.stopStreaming()
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9
+        XCTAssertLessThan(elapsed, 0.25, "cancel cuts the pacing wait short")
+        XCTAssertEqual(dev.descriptor.state, .available)
+    }
+
+    func testConcurrentStopsBothReturn() async throws {
+        let dir = try DeviceFixtures.scratchDir()
+        let path = try DeviceFixtures.writeRamp(dir: dir, name: "twostops", samples: 16384 * 3)
+        let dev = try FilePlaybackDevice(path: path, loop: false, realtime: false)
+        // The I/O thread parks inside `deliver`, so both stops are in flight before the join ends.
+        let delivered = CallCount()
+        let gate = DispatchSemaphore(value: 0)
+        try await dev.startStreaming(captureID: CaptureID()) { _, _ in
+            delivered.bump()
+            gate.wait()
+        }
+        try await waitUntil { delivered.value == 1 }
+        let returned = CallCount()
+        Task.detached { await dev.stopStreaming(); returned.bump() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        Task.detached { await dev.stopStreaming(); returned.bump() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(returned.value, 0, "both callers wait for the I/O thread")
+        gate.signal()
+        try await waitUntil { returned.value == 2 }
+        // Both saw a stopped device, so the next stream is accepted.
+        try await dev.startStreaming(captureID: CaptureID()) { _, _ in }
+        await dev.stopStreaming()
+    }
+}
+
+/// Counts completions reported from detached tasks.
+final class CallCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+    func bump() { lock.lock(); n += 1; lock.unlock() }
 }
 
 final class StateLog: @unchecked Sendable {

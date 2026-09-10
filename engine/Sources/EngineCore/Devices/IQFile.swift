@@ -334,6 +334,17 @@ public final class IQFileReader: @unchecked Sendable {
         position = 0
     }
 
+    /// Test seam: leaves the descriptor open but unreadable, standing in for storage that goes away
+    /// mid-file (a removed volume, a dropped mount). Points it at the write end of a pipe rather
+    /// than closing it, so no later `open` can be handed the same number.
+    func makeUnreadableForTesting() {
+        var ends: [Int32] = [-1, -1]
+        guard pipe(&ends) == 0 else { return }
+        _ = dup2(ends[1], fd)
+        close(ends[0])
+        close(ends[1])
+    }
+
     /// Reads up to `into.count` complex samples (capped at the reader's `maxBlock`) as cf32 into `into`.
     /// Returns the number of samples read; 0 at EOF. Hot path: no allocation.
     public func read(into: SampleBuffer) throws -> Int {

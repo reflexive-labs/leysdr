@@ -2,6 +2,7 @@
 // same delivery path as hardware. Paced to real time by default; `realtime: false` runs flat out.
 
 import Foundation
+import Logging
 
 /// Replays `<name>.cf32|.cu8` + sidecar as a `RadioDevice`. See docs/engine-internals.md "Devices".
 public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
@@ -17,7 +18,9 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
     /// Total complex samples in the file.
     public let sampleCount: UInt64
 
-    private let lock = NSLock()
+    private static let logger = Logger(label: "leyline.file")
+    /// Device lock; a condition so the pacing wait wakes the moment `stopStreaming` cancels.
+    private let lock = NSCondition()
     private var _descriptor: DeviceDescriptor
     private var _onStateChange: (@Sendable (DeviceState) -> Void)?
     private var thread: Thread?
@@ -137,6 +140,19 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
             withLock { streaming = false }
             throw error
         }
+        startLoop(reader: reader, captureID: captureID, deliver: deliver)
+    }
+
+    /// Streams from a reader the caller owns. Tests use it to drive the loop with a reader whose
+    /// descriptor fails part way through the file.
+    func startStreaming(captureID: CaptureID, reader: IQFileReader,
+                        deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) throws {
+        try beginStreaming()
+        startLoop(reader: reader, captureID: captureID, deliver: deliver)
+    }
+
+    private func startLoop(reader: IQFileReader, captureID: CaptureID,
+                           deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) {
         let storage = SampleStorage(capacity: FilePlaybackDevice.blockSize, format: .cf32)
         let t = Thread { [self] in
             self.runLoop(reader: reader, storage: storage, captureID: captureID, deliver: deliver)
@@ -147,16 +163,31 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
         t.start()
     }
 
+    /// Cancels playback and returns once the I/O thread is gone. Both waits run on a dedicated
+    /// thread: a cooperative-pool thread parked for the length of a block starves every other actor.
     public func stopStreaming() async {
-        let wasStreaming: Bool = withLock {
-            guard streaming else { return false }
+        enum Next { case idle, join, awaitJoiner }
+        let next: Next = withLock {
+            guard streaming else { return Next.idle }
+            guard !cancelled else { return Next.awaitJoiner }
             cancelled = true
-            return true
+            lock.broadcast() // cuts the pacing wait short, so the join is short too
+            return Next.join
         }
-        guard wasStreaming else { return }
-        // Join: the I/O thread signals `joined` exactly once when it exits.
-        joined.wait()
-        withLock { streaming = false; thread = nil }
+        switch next {
+        case .idle:
+            return
+        case .join:
+            // The I/O thread signals `joined` exactly once when it exits.
+            try? await BlockingWork.run { [joined] in joined.wait() }
+            withLock { streaming = false; thread = nil; lock.broadcast() }
+        case .awaitJoiner:
+            // Another caller owns the single-signal semaphore; wait for it to finish the join.
+            try? await BlockingWork.run { [self] in
+                lock.lock(); defer { lock.unlock() }
+                while streaming { lock.wait() }
+            }
+        }
     }
 
     /// Synchronous critical section; never called with the lock already held.
@@ -188,35 +219,51 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
         let rate = Double(max(reader.sampleRate, 1))
         let start = DispatchTime.now().uptimeNanoseconds
         var delivered: UInt64 = 0 // samples delivered since this start, for pacing
-        var hitEOF = false
+        var ended = false // the file is done with, by EOF or by a failed read
         while !isCancelled() {
             let n: Int
-            do { n = try reader.read(into: storage.view()) } catch { break }
+            do {
+                n = try reader.read(into: storage.view())
+            } catch {
+                // The samples are unreachable (a pulled volume, a dropped mount). Nothing more will
+                // arrive, so say so the way an unplug does rather than stalling the capture.
+                FilePlaybackDevice.logger.error("IQ playback read failed on \(path): \(error)")
+                ended = true
+                break
+            }
             if n == 0 {
                 if loop, reader.sampleCount > 0, (try? reader.rewind()) != nil { continue }
-                hitEOF = true
+                ended = true
                 break
             }
             if realtime {
                 // Block i may be delivered once wall time reaches start + (samples so far) / rate.
                 let due = start + UInt64(Double(delivered) / rate * 1e9)
                 let now = DispatchTime.now().uptimeNanoseconds
-                if due > now {
-                    var ts = timespec(tv_sec: Int((due - now) / 1_000_000_000), tv_nsec: Int((due - now) % 1_000_000_000))
-                    var rem = timespec()
-                    while nanosleep(&ts, &rem) != 0 && errno == EINTR { ts = rem }
-                }
+                if due > now, waitForPacing(seconds: Double(due - now) / 1e9) { break }
                 if isCancelled() { break }
             }
             deliver(storage.view(count: n), SampleTime(captureID: captureID, sampleIndex: runningIndex))
             runningIndex &+= UInt64(n)
             delivered &+= UInt64(n)
         }
-        if hitEOF {
-            // Ran off the end: this device is gone, exactly like an unplug. `streaming` stays set so
-            // the owner's stopStreaming still performs the (already-complete) join.
+        if ended {
+            // Ran off the end or lost the file: this device is gone, exactly like an unplug.
+            // `streaming` stays set so the owner's stopStreaming still performs the
+            // (already-complete) join.
             transition(to: .disconnected)
         }
+    }
+
+    /// Holds the I/O thread for `seconds` of pacing, returning true as soon as `stopStreaming`
+    /// cancels — waiting on the condition rather than sleeping keeps the join short.
+    private func waitForPacing(seconds: Double) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let deadline = Date(timeIntervalSinceNow: seconds)
+        while !cancelled {
+            if !lock.wait(until: deadline) { break }
+        }
+        return cancelled
     }
 }
 
