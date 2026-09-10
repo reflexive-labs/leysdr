@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -430,4 +431,215 @@ func TestGainWriteMustBeFinite(t *testing.T) {
 			t.Fatal("no rejection for the NaN gain")
 		}
 	}
+}
+
+// A gap is a report of samples that were actually lost. This reader subscribes to IQ -- big
+// enough frames that a pause fills the transport's window -- stops reading for long enough that
+// the fake has to displace frames it built, and then reads on: the first frame after the loss
+// carries a Gap whose bounds are the samples between the last frame it got and this one.
+func TestGapMarksWhatWasLost(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Kind:   leylinev1.StreamKind_IQ,
+		Policy: leylinev1.DeliveryPolicy_GAP_MARKED,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The raw stub, not the client library: its pump would read the frames this test is trying
+	// not to read.
+	stream, err := c.Bulk.Stream(ctx, &leylinev1.StreamRef{StreamId: desc.StreamId})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
+	prev := first
+	for time.Now().Before(deadline) {
+		f, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("stream ended: %v", err)
+		}
+		if f.Gap == nil {
+			if f.Seq != prev.Seq+1 {
+				t.Fatalf("frame %d followed %d with no gap", f.Seq, prev.Seq)
+			}
+			prev = f
+			continue
+		}
+		if f.Gap.FromSample >= f.Gap.ToSample || f.Gap.ToSample != f.Time.SampleIndex {
+			t.Fatalf("gap %v does not bound the frame at %d", f.Gap, f.Time.SampleIndex)
+		}
+		if f.Seq <= prev.Seq+1 {
+			t.Fatalf("a gap on frame %d, which followed %d: nothing was lost", f.Seq, prev.Seq)
+		}
+		return
+	}
+	t.Fatal("no gap arrived for a reader that stopped reading")
+}
+
+// Persistence negotiation, which is where the daemon refuses rather than guesses: the level scale
+// is the client's to state, and the answers it does make (bins off the ladder, level count, decay,
+// frame rate) are the ones a reader decodes the payload with.
+func TestPersistenceNegotiation(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A scale nobody stated: refused, because a histogram on the wrong one is not obviously wrong
+	// to look at.
+	_, err = c.SubscribePersistence(ctx, cap.CaptureId, 256, 32, -90, 0, 20, 2)
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("range_db 0: want INVALID_ARGUMENT, got %v", err)
+	}
+	if _, err := c.SubscribePersistence(ctx, cap.CaptureId, 256, 1, -90, 50, 20, 2); leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("1 level: want INVALID_ARGUMENT, got %v", err)
+	}
+	if _, err := c.SubscribePersistence(ctx, cap.CaptureId, 256, 512, -90, 50, 20, 2); leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("512 levels: want INVALID_ARGUMENT, got %v", err)
+	}
+	// Defaults and clamps: 0 bins is 256, 0 levels is 32, an absurd half-life is bounded, and the
+	// bin count comes off the same ladder the FFT uses.
+	sub, err := c.SubscribePersistence(ctx, cap.CaptureId, 300, 0, -90, 50, 1e9, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	p := sub.Descriptor.GetPersistence()
+	if p.GetBins() != 512 || p.GetLevels() != 32 || p.GetHalfLifeSeconds() != 3600 || p.GetRowsPerSecond() != 2 {
+		t.Fatalf("descriptor = %v", p)
+	}
+	if sub.Descriptor.CenterHz != cap.CenterHz || sub.Descriptor.SpanHz != cap.SampleRate {
+		t.Errorf("persistence carries the band it covers: %v", sub.Descriptor)
+	}
+	// The frames are counts, one uint16 per (bin, level), and they grow: the noise floor is seen
+	// again and again, so the bucket it lands in climbs frame over frame.
+	var first, second []uint16
+	timeout := time.After(5 * time.Second)
+	for second == nil {
+		select {
+		case f, ok := <-sub.Frames:
+			if !ok {
+				t.Fatalf("stream ended: %v", sub.Err())
+			}
+			h, ok := leyline.DecodePersistence(f.Payload, int(p.GetBins()), int(p.GetLevels()))
+			if !ok {
+				t.Fatalf("payload of %d bytes does not decode as %dx%d counts", len(f.Payload), p.GetBins(), p.GetLevels())
+			}
+			if first == nil {
+				first = h.Counts
+			} else {
+				second = h.Counts
+			}
+		case <-timeout:
+			t.Fatal("no persistence frames")
+		}
+	}
+	if sumCounts(first) == 0 {
+		t.Fatal("the first frame counted nothing")
+	}
+	if sumCounts(second) <= sumCounts(first) {
+		t.Errorf("counts must accumulate: %d then %d", sumCounts(first), sumCounts(second))
+	}
+	// A channel is not a band: persistence is capture-scoped, as FFT is.
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+		Kind:   leylinev1.StreamKind_PERSISTENCE,
+		Params: &leylinev1.SubscribeRequest_Persistence{Persistence: &leylinev1.PersistenceParams{Bins: 256, Levels: 32, FloorDb: -90, RangeDb: 50}},
+	})
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("channel-scoped persistence: want INVALID_ARGUMENT, got %v", err)
+	}
+}
+
+func sumCounts(h []uint16) int {
+	var n int
+	for _, c := range h {
+		n += int(c)
+	}
+	return n
+}
+
+// Accumulation is answered and applied. A snapshot row is one look; a mean or a max is built from
+// the looks the descriptor states, and a max reads higher than a snapshot of the same band --
+// which is the whole reason a burst-hunting view asks for one.
+func TestFFTAccumulation(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := c.SubscribeFFT(ctx, cap.CaptureId, 256, 10, leylinev1.FftBinFormat_DB_F32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	if p := snapshot.Descriptor.GetFft(); p.GetLooksPerRow() != 1 || p.GetAccumulation() != leylinev1.FftAccumulation_ROW_SNAPSHOT {
+		t.Errorf("snapshot descriptor = %v", p)
+	}
+	maxSub, err := c.SubscribeFFTAccumulated(ctx, cap.CaptureId, 256, 10, leylinev1.FftBinFormat_DB_F32, leylinev1.FftAccumulation_ROW_MAX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer maxSub.Close()
+	if p := maxSub.Descriptor.GetFft(); p.GetLooksPerRow() != 64 || p.GetAccumulation() != leylinev1.FftAccumulation_ROW_MAX {
+		t.Fatalf("max descriptor = %v", p)
+	}
+	if median(t, firstRow(t, maxSub)) <= median(t, firstRow(t, snapshot)) {
+		t.Error("the max of 64 looks should not read below one look of the same floor")
+	}
+	// looks_per_row is the daemon's answer, never a request.
+	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Kind:   leylinev1.StreamKind_FFT,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 256, LooksPerRow: 4}},
+	})
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("looks_per_row as a request: want INVALID_ARGUMENT, got %v", err)
+	}
+}
+
+func firstRow(t *testing.T, sub *leyline.Subscription) []float64 {
+	t.Helper()
+	select {
+	case f, ok := <-sub.Frames:
+		if !ok {
+			t.Fatalf("stream ended: %v", sub.Err())
+		}
+		return leyline.DecodeFFTBins(f.Payload, sub.Descriptor.GetFft().GetBinFormat())
+	case <-time.After(5 * time.Second):
+		t.Fatal("no row")
+		return nil
+	}
+}
+
+func median(t *testing.T, row []float64) float64 {
+	t.Helper()
+	if len(row) == 0 {
+		t.Fatal("empty row")
+	}
+	sorted := append([]float64(nil), row...)
+	sort.Float64s(sorted)
+	return sorted[len(sorted)/2]
 }

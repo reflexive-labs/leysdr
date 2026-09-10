@@ -242,18 +242,35 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	d.finishScan(jobID, found, floors)
 }
 
-// fakeCarriers is the synthetic band the fake daemon reports. Real enough to render, and
-// deliberately not derived from the fake FFT: the CLI test is about the table, not the DSP.
+// fakeCarriers is the synthetic band the fake daemon reports: what a scan finds, and what a
+// channel tuned to one of them hears. Real enough to render, and deliberately not derived from
+// the fake FFT: the CLI test is about the table, not the DSP.
+//
+// tone is the CTCSS tone the transmitter sends, or 0 for a frequency that carries none -- 146.52
+// is the national calling channel, where a PL tone would be wrong.
 var fakeCarriers = []struct {
-	hz  uint64
-	bw  uint32
-	snr float64
+	hz   uint64
+	bw   uint32
+	snr  float64
+	tone float64
 }{
-	{145_230_000, 11_400, 21.4},
-	{146_520_000, 11_900, 34.2},
-	{146_940_000, 12_100, 18.7},
-	{162_400_000, 11_800, 12.0},
-	{101_100_000, 198_000, 41.5},
+	{145_230_000, 11_400, 21.4, 100.0},
+	{146_520_000, 11_900, 34.2, 0},
+	{146_940_000, 12_100, 18.7, 123.0},
+	{162_400_000, 11_800, 12.0, 0},
+	{101_100_000, 198_000, 41.5, 0},
+}
+
+// carrierTone is the tone on the carrier a channel at hz is sitting on, or 0 when there is no
+// carrier there or it is sent in the clear.
+func carrierTone(hz uint64) float64 {
+	for _, sig := range fakeCarriers {
+		half := uint64(sig.bw / 2)
+		if hz+half >= sig.hz && hz <= sig.hz+half {
+			return sig.tone
+		}
+	}
+	return 0
 }
 
 const fakeFloorDbfs = -88.2

@@ -237,9 +237,13 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 		SquelchDb:   math.NaN(),
 		Agc:         leylinev1.GainMode_AUTO,
 		State:       leylinev1.ChannelState_CHANNEL_ACTIVE,
-		Persistent:  req.Persistent,
-		RequiredHz:  req.RequiredHz,
-		Owner:       proto.Clone(ci).(*leylinev1.ClientInfo),
+		// Sub-audible detection is on for NFM, the only mode CTCSS is sent under. The daemon
+		// decides it when the channel is built and a later mode write does not revisit it, so a
+		// channel that started as NFM keeps looking.
+		SubaudibleDetect: mode == leylinev1.DemodMode_NFM,
+		Persistent:       req.Persistent,
+		RequiredHz:       req.RequiredHz,
+		Owner:            proto.Clone(ci).(*leylinev1.ClientInfo),
 	}
 	d.channels[ch.ChannelId] = ch
 	// Creating a channel is somebody tuning the radio, so it stamps the capture's activity and the

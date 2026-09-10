@@ -336,18 +336,18 @@ func TestSetNegativeNumbers(t *testing.T) {
 	}
 }
 
-// TestFFTGapLine: fft subscribes GAP_MARKED, so a drop reaches the consumer as
-// the documented gap line. The fake marks every 50th frame; --count counts rows.
-func TestFFTGapLine(t *testing.T) {
+// TestFFTRowsArriveUngapped: fft subscribes GAP_MARKED, and a gap line means
+// rows were lost. A reader that keeps up loses none, so the run is 55 rows and
+// nothing else -- a gap the daemon fabricated on a schedule would tell every
+// consumer of this stream that time had jumped when it had not.
+func TestFFTRowsArriveUngapped(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "fft", "--format", "json", "--count", "55", "--bins", "256", "--rate", "30", "--freq", "100M")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	var rows int
-	var gaps []string
 	for _, l := range lines {
 		if strings.HasPrefix(l, `{"gap":`) {
-			gaps = append(gaps, l)
-			continue
+			t.Fatalf("a reader that kept up must see no gap:\n%s", l)
 		}
 		var row FFTRow
 		if err := json.Unmarshal([]byte(l), &row); err != nil {
@@ -358,31 +358,6 @@ func TestFFTGapLine(t *testing.T) {
 	if rows != 55 {
 		t.Errorf("want 55 rows, got %d", rows)
 	}
-	if len(gaps) != 1 {
-		t.Fatalf("want exactly one gap line, got %d:\n%s", len(gaps), out)
-	}
-	var gap struct {
-		Gap struct {
-			From uint64 `json:"from_sample"`
-			To   uint64 `json:"to_sample"`
-		} `json:"gap"`
-	}
-	if err := json.Unmarshal([]byte(gaps[0]), &gap); err != nil || gap.Gap.To <= gap.Gap.From {
-		t.Errorf("gap line %q: err %v, from %d to %d", gaps[0], err, gap.Gap.From, gap.Gap.To)
-	}
-	// The gap precedes the 50th row: 49 rows, the gap, then the rest.
-	if !strings.HasPrefix(lines[49], `{"gap":`) {
-		t.Errorf("gap line at index %d, want 49", indexOfPrefix(lines, `{"gap":`))
-	}
-}
-
-func indexOfPrefix(lines []string, prefix string) int {
-	for i, l := range lines {
-		if strings.HasPrefix(l, prefix) {
-			return i
-		}
-	}
-	return -1
 }
 
 // A negative-looking word is a positional only when no flag is waiting for it:

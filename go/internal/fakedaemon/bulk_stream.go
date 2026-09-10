@@ -1,6 +1,7 @@
 package fakedaemon
 
 import (
+	"context"
 	"encoding/binary"
 	"math"
 	"time"
@@ -46,19 +47,54 @@ func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer
 	switch p := s.desc.Params.(type) {
 	case *leylinev1.StreamDescriptor_Fft:
 		interval = time.Duration(float64(time.Second) / p.Fft.RowsPerSecond)
+	case *leylinev1.StreamDescriptor_Persistence:
+		interval = time.Duration(float64(time.Second) / p.Persistence.RowsPerSecond)
 	default:
 		interval = 20 * time.Millisecond
 	}
+	frames := make(chan outFrame, streamBacklog)
+	go d.produce(ctx, s, interval, frames)
+	var lastSeq, lastEnd uint64
+	for of := range frames {
+		// A gap is what was actually lost. The producer numbers every frame it built, so a jump
+		// in that sequence is the drop itself, and the bounds are the samples between the end of
+		// the last frame this reader got and the start of this one.
+		if s.desc.Policy == leylinev1.DeliveryPolicy_GAP_MARKED && lastSeq != 0 && of.frame.Seq != lastSeq+1 {
+			of.frame.Gap = &leylinev1.Gap{FromSample: lastEnd, ToSample: of.frame.Time.SampleIndex}
+		}
+		lastSeq, lastEnd = of.frame.Seq, of.end
+		if err := srv.Send(of.frame); err != nil {
+			return nil
+		}
+	}
+	return nil
+}
+
+// streamBacklog is how many built frames the fake holds for a reader that has stopped taking
+// them, matching the slot count of the daemon's frame rings. A live stream is not a queue: past
+// that the newest frame displaces the oldest, which is what leaves a gap to report.
+const streamBacklog = 8
+
+// outFrame is a built frame plus the sample index just past its payload, which is where the next
+// frame's samples start and so where a gap would begin.
+type outFrame struct {
+	frame *leylinev1.Frame
+	end   uint64
+}
+
+// produce builds frames on the interval and hands them to the sender, dropping the oldest when
+// the reader is behind. It closes frames when the capture has nothing left to serve.
+func (d *Daemon) produce(ctx context.Context, s *stream, interval time.Duration, frames chan outFrame) {
+	defer close(frames)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	var seq uint64
-	var lastSample uint64
+	var seq, prevIdx uint64
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-s.closed:
-			return nil
+			return
 		case now := <-ticker.C:
 			d.mu.Lock()
 			c := d.captures[s.captureID]
@@ -79,16 +115,33 @@ func (b bulkSvc) Stream(ref *leylinev1.StreamRef, srv grpc.ServerStreamingServer
 			}
 			d.mu.Unlock()
 			if c == nil {
-				return nil
+				return
 			}
 			seq++
-			f := &leylinev1.Frame{StreamId: s.id, Seq: seq, Time: &leylinev1.SampleTime{CaptureId: c.CaptureId, SampleIndex: idx}, Payload: payload}
-			if s.desc.Policy == leylinev1.DeliveryPolicy_GAP_MARKED && seq%50 == 0 {
-				f.Gap = &leylinev1.Gap{FromSample: lastSample, ToSample: idx}
+			if seq == 1 {
+				prevIdx = idx
 			}
-			lastSample = idx
-			if err := srv.Send(f); err != nil {
-				return nil
+			of := outFrame{
+				frame: &leylinev1.Frame{
+					StreamId: s.id, Seq: seq,
+					Time:    &leylinev1.SampleTime{CaptureId: c.CaptureId, SampleIndex: prevIdx},
+					Payload: payload,
+				},
+				end: idx,
+			}
+			prevIdx = idx
+			select {
+			case frames <- of:
+			default:
+				// Latest wins: the frame nobody has taken yet is the one to lose.
+				select {
+				case <-frames:
+				default:
+				}
+				select {
+				case frames <- of:
+				default:
+				}
 			}
 		}
 	}
@@ -123,14 +176,75 @@ func (d *Daemon) renderLocked(s *stream, c *capture, now time.Time) []byte {
 		return renderAudio(p.Audio, now)
 	case *leylinev1.StreamDescriptor_Iq:
 		return renderIQ(p.Iq, now)
+	case *leylinev1.StreamDescriptor_Persistence:
+		return d.renderPersistenceLocked(s, c, p.Persistence, now)
 	}
 	return nil
 }
 
-// renderFFTLocked: -100 dB noise floor (±3 dB jitter) with a peak at every
-// channel offset on this capture, scaled to the channel bandwidth.
+// renderFFTLocked encodes one spectrum row in the negotiated bin format, built the way the
+// subscription asked for: one periodogram under ROW_SNAPSHOT, and otherwise the looks the
+// descriptor promised, spread across the row's interval.
 func (d *Daemon) renderFFTLocked(c *capture, p *leylinev1.FftParams, now time.Time) []byte {
 	bins := int(p.Bins)
+	row := d.accumulateRowLocked(c, bins, now, p)
+	if p.BinFormat == leylinev1.FftBinFormat_DB_U8 {
+		out := make([]byte, bins)
+		for i, v := range row {
+			q := math.Round(float64(v+120) * 2)
+			out[i] = byte(math.Max(0, math.Min(255, q)))
+		}
+		return out
+	}
+	out := make([]byte, bins*4)
+	for i, v := range row {
+		binary.LittleEndian.PutUint32(out[i*4:], math.Float32bits(v))
+	}
+	return out
+}
+
+// accumulateRowLocked builds one row from as many looks as the accumulation asks for. A mean
+// averages power, which steadies the floor and dilutes a burst; a max keeps the loudest look,
+// which catches the burst and reads the floor a few dB high, because the maximum of N draws is
+// biased upward.
+func (d *Daemon) accumulateRowLocked(c *capture, bins int, now time.Time, p *leylinev1.FftParams) []float32 {
+	looks := int(p.GetLooksPerRow())
+	if looks <= 1 || p.GetAccumulation() == leylinev1.FftAccumulation_ROW_SNAPSHOT {
+		return d.spectrumRowLocked(c, bins, now)
+	}
+	interval := time.Duration(float64(time.Second) / math.Max(minRowsPerSecond, p.GetRowsPerSecond()))
+	step := interval / time.Duration(looks)
+	row := d.spectrumRowLocked(c, bins, now)
+	if p.GetAccumulation() == leylinev1.FftAccumulation_ROW_MEAN {
+		power := make([]float64, bins)
+		for i, v := range row {
+			power[i] = math.Pow(10, float64(v)/10)
+		}
+		for k := 1; k < looks; k++ {
+			next := d.spectrumRowLocked(c, bins, now.Add(time.Duration(k)*step))
+			for i, v := range next {
+				power[i] += math.Pow(10, float64(v)/10)
+			}
+		}
+		for i := range row {
+			row[i] = float32(10 * math.Log10(power[i]/float64(looks)))
+		}
+		return row
+	}
+	for k := 1; k < looks; k++ {
+		next := d.spectrumRowLocked(c, bins, now.Add(time.Duration(k)*step))
+		for i, v := range next {
+			if v > row[i] {
+				row[i] = v
+			}
+		}
+	}
+	return row
+}
+
+// spectrumRowLocked: -100 dB noise floor (±3 dB jitter) with a peak at every
+// channel offset on this capture, scaled to the channel bandwidth.
+func (d *Daemon) spectrumRowLocked(c *capture, bins int, now time.Time) []float32 {
 	row := make([]float32, bins)
 	jitter := float32(now.UnixNano()%1000) / 1000
 	for i := range row {
@@ -153,19 +267,7 @@ func (d *Daemon) renderFFTLocked(c *capture, p *leylinev1.FftParams, now time.Ti
 			}
 		}
 	}
-	if p.BinFormat == leylinev1.FftBinFormat_DB_U8 {
-		out := make([]byte, bins)
-		for i, v := range row {
-			q := math.Round(float64(v+120) * 2)
-			out[i] = byte(math.Max(0, math.Min(255, q)))
-		}
-		return out
-	}
-	out := make([]byte, bins*4)
-	for i, v := range row {
-		binary.LittleEndian.PutUint32(out[i*4:], math.Float32bits(v))
-	}
-	return out
+	return row
 }
 
 // renderAudio: 20 ms of a 1 kHz sine at the negotiated rate, mono.

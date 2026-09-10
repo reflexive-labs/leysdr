@@ -33,6 +33,9 @@ type stream struct {
 	closeOnce sync.Once
 	closed    chan struct{}
 	reading   bool
+	// The histogram behind a PERSISTENCE stream, built on the first frame and owned by the one
+	// goroutine that produces frames for this subscription.
+	phosphor *persistence
 }
 
 func (s *stream) close() { s.closeOnce.Do(func() { close(s.closed) }) }
@@ -152,18 +155,74 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID, "FFT streams are capture-scoped"))
 		}
 		f := req.GetFft()
-		rows := f.GetRowsPerSecond()
-		if rows <= 0 {
-			rows = defaultFFTRows
-		}
-		if rows > maxFFTRows {
-			rows = maxFFTRows
+		rows := defaultFFTRows
+		if f.GetRowsPerSecond() > 0 {
+			rows = roundRate(f.GetRowsPerSecond())
 		}
 		format := f.GetBinFormat()
 		if format == leylinev1.FftBinFormat_FFT_BIN_FORMAT_UNSPECIFIED {
 			format = leylinev1.FftBinFormat_DB_F32
 		}
-		desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{Bins: nearestLadder(f.GetBins()), BinFormat: format, RowsPerSecond: rows}}
+		// looks_per_row is an answer, never a request: a client asking for a look count would be
+		// asking the daemon to spend CPU it does not own.
+		if f.GetLooksPerRow() != 0 {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId, "looks_per_row is answered by the daemon; leave it 0"))
+		}
+		acc := f.GetAccumulation()
+		switch acc {
+		case leylinev1.FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED, leylinev1.FftAccumulation_ROW_SNAPSHOT:
+			acc = leylinev1.FftAccumulation_ROW_SNAPSHOT
+		case leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
+		default:
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId, fmt.Sprintf("unknown FftAccumulation %d", acc)))
+		}
+		// A snapshot row is one periodogram; an accumulated row is however many the ladder can
+		// take across the interval, up to its cap, which is the number the descriptor states.
+		looks := uint32(snapshotLooksPerRow)
+		if acc != leylinev1.FftAccumulation_ROW_SNAPSHOT {
+			looks = accumulatedLooksPerRow
+		}
+		desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
+			Bins: nearestLadder(f.GetBins()), BinFormat: format, RowsPerSecond: rows,
+			Accumulation: acc, LooksPerRow: looks,
+		}}
+	case leylinev1.StreamKind_PERSISTENCE:
+		if s.channelID != "" {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID, "persistence streams are capture-scoped"))
+		}
+		pp := req.GetPersistence()
+		// The scale is the client's to state. A daemon-chosen one would have to appear in the
+		// descriptor before any row had arrived, and a histogram on the wrong scale is not
+		// obviously wrong to look at, so this is refused rather than defaulted.
+		if !(pp.GetRangeDb() > 0) {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+				"persistence needs range_db > 0 and a floor_db; take an FFT row first to find the floor"))
+		}
+		levels := int(pp.GetLevels())
+		if levels == 0 {
+			levels = defaultPersistLevels
+		}
+		if levels < 2 || levels > maxPersistLevels {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+				fmt.Sprintf("persistence levels must be 2...%d, got %d", maxPersistLevels, levels)))
+		}
+		wantBins := pp.GetBins()
+		if wantBins == 0 {
+			wantBins = defaultPersistBins
+		}
+		bins := nearestLadder(wantBins)
+		emitRows := defaultPersistRows
+		if pp.GetRowsPerSecond() > 0 {
+			emitRows = roundRate(pp.GetRowsPerSecond())
+		}
+		halfLife := defaultHalfLifeSecs
+		if pp.GetHalfLifeSeconds() > 0 {
+			halfLife = math.Min(math.Max(pp.GetHalfLifeSeconds(), minHalfLifeSeconds), maxHalfLifeSeconds)
+		}
+		desc.Params = &leylinev1.StreamDescriptor_Persistence{Persistence: &leylinev1.PersistenceParams{
+			Bins: bins, Levels: uint32(levels), FloorDb: pp.GetFloorDb(), RangeDb: pp.GetRangeDb(),
+			HalfLifeSeconds: halfLife, RowsPerSecond: emitRows,
+		}}
 	case leylinev1.StreamKind_IQ:
 		// v0 IQ contract (engine parity with StreamRegistry.subscribe): raw CF32 at the capture's
 		// native rate only. Anything else is refused rather than silently overridden.
@@ -215,4 +274,31 @@ func (b bulkSvc) Unsubscribe(ctx context.Context, ref *leylinev1.StreamRef) (*le
 	s.close()
 	delete(d.streams, s.id)
 	return &leylinev1.Empty{}, nil
+}
+
+// Rate and half-life bounds the daemon answers within (DefaultSpectrumLadder.roundRate,
+// StreamRegistry's half-life clamp). A rate below the floor would stretch the row interval past
+// anything a reader waits for; a half-life outside the range cannot be converted to a whole
+// number of rows.
+const (
+	minRowsPerSecond       = 0.1
+	defaultPersistRows     = 2.0
+	defaultPersistBins     = 256
+	defaultPersistLevels   = 32
+	maxPersistLevels       = 256
+	defaultHalfLifeSecs    = 20.0
+	minHalfLifeSeconds     = 0.1
+	maxHalfLifeSeconds     = 3600.0
+	ladderRowsPerSecond    = maxFFTRows
+	snapshotLooksPerRow    = 1
+	accumulatedLooksPerRow = 64
+)
+
+// roundRate clamps a requested row rate the way the ladder does. A non-positive or non-finite
+// request means "as fast as allowed".
+func roundRate(rowsPerSecond float64) float64 {
+	if math.IsNaN(rowsPerSecond) || math.IsInf(rowsPerSecond, 0) || rowsPerSecond <= 0 {
+		return maxFFTRows
+	}
+	return math.Min(math.Max(rowsPerSecond, minRowsPerSecond), maxFFTRows)
 }

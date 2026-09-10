@@ -424,3 +424,35 @@ func TestTuneJSONMeasuresSquelch(t *testing.T) {
 		t.Errorf("squelchDb %v, want about -80", ch["squelchDb"])
 	}
 }
+
+// The CTCSS line, end to end: an NFM channel on a carrier that sends a tone gets sub-audible
+// telemetry from the daemon, and tune prints the tone once rather than on every heartbeat.
+func TestTuneShowsTheTone(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	stdout, errOut := liveTune(t, sock, "PL", "tune", "145.23", "--no-audio", "--squelch", "-45")
+	out := stdout + errOut
+	if !strings.Contains(out, "100.0 Hz") {
+		t.Fatalf("expected the classified tone:\n%s", out)
+	}
+	if !strings.Contains(out, "dev ") || !strings.Contains(out, "tone/band ") {
+		t.Errorf("the tone line should carry what was measured:\n%s", out)
+	}
+	if n := strings.Count(out, "PL"); n != 1 {
+		t.Errorf("the tone is news once, not on every heartbeat: %d lines\n%s", n, out)
+	}
+}
+
+// And a frequency that carries no tone says nothing: a channel that never had one must not
+// narrate its absence.
+func TestTuneSaysNothingWithoutATone(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	// The detector still reports, so this waits for its answer rather than for a silence that
+	// would also pass if nothing were looking: what it says is "looked, found nothing".
+	stdout, errOut := liveTune(t, sock, `"subAudible"`, "--json", "tune", "146.52", "--no-audio", "--squelch", "-45")
+	if !strings.Contains(stdout, "SUB_AUDIBLE_NONE") || strings.Contains(stdout, "SUB_AUDIBLE_CTCSS") {
+		t.Fatalf("expected a NONE report on a frequency with no tone:\n%s", stdout)
+	}
+	if strings.Contains(errOut, "PL") {
+		t.Errorf("no tone on this frequency, so no line:\n%s", errOut)
+	}
+}

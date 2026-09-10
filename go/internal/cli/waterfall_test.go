@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"math"
 	"math/rand"
 	"strings"
 	"testing"
 
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/ui"
 )
 
@@ -178,5 +180,23 @@ func TestWaterfallKeySwatchMatchesTheMap(t *testing.T) {
 		if strings.Contains(key, st.Muted(want)) {
 			t.Errorf("swatch %d is dimmed, so it does not match the map: %q", i, key)
 		}
+	}
+}
+
+// Against a daemon: waterfall asks for ROW_MAX because a burst shorter than a row must still be
+// drawn, and it says so once the daemon has answered with the looks it took. The claim is the
+// daemon's, not the CLI's -- printing it without asking would be a promise about DSP the client
+// never made.
+func TestWaterfallSaysHowManyLooksARowIs(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, errOut, err := run(t, context.Background(), sock, "waterfall", "146.52", "--count", "3", "--width", "60", "--rate", "10")
+	if err != nil {
+		t.Fatalf("waterfall: %v\n%s\n%s", err, out, errOut)
+	}
+	if !strings.Contains(errOut, "each row is the loudest of 64 looks across its interval") {
+		t.Errorf("waterfall should state the look count the daemon answered:\n%s", errOut)
+	}
+	if strings.Count(out, "\n") < 3 {
+		t.Errorf("expected rows:\n%s", out)
 	}
 }

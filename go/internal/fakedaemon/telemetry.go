@@ -59,6 +59,10 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 	detectionCursor := len(d.detectionLog)
 	d.mu.Unlock()
 	squelchOpen := map[string]bool{}
+	// The last sub-audible report per channel, and the tick it went out on: the detector is
+	// edge-triggered with a heartbeat, and both halves are per channel.
+	subAudible := map[string]*leylinev1.SubAudible{}
+	subAudibleTick := map[string]int64{}
 	// What the real daemon accumulates on the DSP thread while the squelch is
 	// open, so the close edge can summarise the transmission that just ended.
 	openedAt := map[string]uint64{}
@@ -161,6 +165,20 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 						},
 					}})
 				}
+				// A tone rides on a transmission, so the detector has something to measure only
+				// while the squelch is open. It reports a change at once and repeats itself on a
+				// heartbeat, because the telemetry plane has no GetState and a client that
+				// subscribed mid-transmission has to be told what is already there.
+				if wants(leylinev1.TelemetryType_SUB_AUDIBLE) && ch.SubaudibleDetect {
+					hz := uint64(int64(c.CenterHz) + ch.OffsetHz)
+					sa := subAudibleReport(ch.ChannelId, carrierTone(hz), open)
+					prev := subAudible[ch.ChannelId]
+					changed := prev == nil || prev.Kind != sa.Kind || prev.StandardToneHz != sa.StandardToneHz
+					if changed || tick-subAudibleTick[ch.ChannelId] >= activityEvery {
+						subAudible[ch.ChannelId], subAudibleTick[ch.ChannelId] = sa, tick
+						out = append(out, &leylinev1.TelemetryMsg{Time: st, Body: &leylinev1.TelemetryMsg_SubAudible{SubAudible: sa}})
+					}
+				}
 			}
 			if tick%activityEvery == 0 && wants(leylinev1.TelemetryType_CAPTURE_ACTIVITY) && chanFilter == "" {
 				for _, c := range d.captures {
@@ -194,4 +212,30 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 func syntheticPower(now time.Time) float64 {
 	phase := float64(now.UnixNano()%4_000_000_000) / 4e9
 	return -50 + 20*math.Sin(2*math.Pi*phase)
+}
+
+// subAudibleReport is what the detector concluded about one window. A tone it is unwilling to
+// report leaves every measured field NaN: "not measured" is not the same as zero, and only
+// deviation separates a real 100.0 Hz PL from 50 Hz mains hum, so the fake sends a deviation a
+// transmitter would.
+func subAudibleReport(channelID string, toneHz float64, open bool) *leylinev1.SubAudible {
+	sa := &leylinev1.SubAudible{
+		ChannelId:      channelID,
+		Kind:           leylinev1.SubAudibleKind_SUB_AUDIBLE_NONE,
+		ToneHz:         math.NaN(),
+		DeviationHz:    math.NaN(),
+		ToneSnrDb:      math.NaN(),
+		StandardToneHz: 0,
+	}
+	if !open || toneHz == 0 {
+		return sa
+	}
+	sa.Kind = leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS
+	// Measured, then classified: the measurement is never exactly the standard tone.
+	sa.ToneHz = toneHz + 0.12
+	sa.StandardToneHz = toneHz
+	sa.DeviationHz = 620
+	sa.ToneSnrDb = 17.5
+	sa.Confidence = 0.9
+	return sa
 }

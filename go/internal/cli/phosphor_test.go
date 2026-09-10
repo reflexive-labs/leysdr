@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
@@ -177,5 +178,35 @@ func TestFmtSeconds(t *testing.T) {
 		if got := fmtSeconds(tc.in); got != tc.want {
 			t.Errorf("fmtSeconds(%v) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// The whole verb against a daemon: it finds the floor with an FFT row, subscribes to the
+// histogram accumulated on that scale, and draws frames of it. The band the fake serves is noise
+// at a steady level, so the cells at the floor are the ones that fill: a run that drew an empty
+// chart would mean the counts never reached the display, which is the failure this cannot see
+// from the renderer's own tests.
+func TestPhosphorAgainstDaemon(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "phosphor", "146.52", "--count", "2", "--half-life", "5", "--width", "60")
+	if !strings.Contains(out, "over the last 5 s") {
+		t.Errorf("the header must state the half-life the daemon answered:\n%s", out)
+	}
+	if !strings.Contains(out, "146.520 MHz") || !strings.Contains(out, "columns of") {
+		t.Errorf("phosphor header:\n%s", out)
+	}
+	frames := strings.Count(out, "shade is how often")
+	if frames != 2 {
+		t.Errorf("want 2 frames, got %d:\n%s", frames, out)
+	}
+	// The noise floor is the one level every bin keeps landing in, so it draws as a filled row.
+	var filled bool
+	for _, line := range strings.Split(ui.Strip(out), "\n") {
+		if strings.Count(line, "#") > 40 {
+			filled = true
+		}
+	}
+	if !filled {
+		t.Errorf("the noise floor should accumulate into a bright row:\n%s", out)
 	}
 }
