@@ -229,6 +229,31 @@ final class RegistryProbeTests: XCTestCase {
         XCTAssertFalse(gate(good1))
     }
 
+    /// USB re-enumeration shifts the index of a dongle one of our captures is streaming from: the
+    /// entry follows the new index, so the probe gate still knows the dongle is ours and never
+    /// aims an `rtlsdr_open` at a device we hold.
+    func testOwnCaptureFollowsIndexShift() async throws {
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        var events = reg.events().makeAsyncIterator()
+        let at1 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 1)
+        let at0 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 0)
+
+        _ = await reg.advanceTickAndProbeGate()
+        await reg.applyProbes([at1])
+        guard case .arrived(let d)? = await events.next() else { return XCTFail("expected arrived") }
+        try await reg.markInUse(id: d.id, true)
+        guard case .changed(let ours)? = await events.next() else { return XCTFail("expected changed") }
+        XCTAssertEqual(ours.state, .inUse)
+
+        // The dongle below ours is unplugged, so the same identity now enumerates at index 0.
+        await reg.applyProbes([at0])
+        let gate = await reg.advanceTickAndProbeGate()
+        XCTAssertFalse(gate(at0), "the dongle our capture streams from must not be opened at its new index")
+        let devices = await reg.devices
+        XCTAssertEqual(devices.count, 1)
+        XCTAssertEqual(devices.first?.state, .inUse)
+    }
+
     func testIdentityBaseStripsCollisionSuffix() {
         XCTAssertEqual(DefaultDeviceRegistry.identityBase(of: "s|m|p"), "s|m|p")
         XCTAssertEqual(DefaultDeviceRegistry.identityBase(of: "s|m|p#1"), "s|m|p")

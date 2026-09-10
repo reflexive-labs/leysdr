@@ -170,15 +170,18 @@ final class Daemon: @unchecked Sendable {
         return false
     }
 
-    /// Graceful stop: streams closed, captures stopped and devices closed, then the server drains.
+    /// Graceful stop: the listener stops accepting first, then streams close, captures stop and
+    /// devices close.
     func shutdown() async {
         log.info("shutting down")
+        // First of all: teardown takes seconds (a running sweep can hold a capture for ~3 s), and an
+        // RPC accepted during that window would build state after the store that owns it is gone.
+        server.beginGracefulShutdown()
         // Before the store: a running sweep holds a lease on a capture and must give it back
         // while there is still a store to give it back to.
         await jobs.cancelAll()
         await streams.closeAll()
         await store.shutdown()
         await registry.stop()
-        server.beginGracefulShutdown()
     }
 }

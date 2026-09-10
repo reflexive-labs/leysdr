@@ -1,5 +1,6 @@
 import CRTLSDR
 import Foundation
+import Synchronization
 import XCTest
 @testable import EngineCore
 
@@ -357,6 +358,66 @@ final class DevicesRegistryTests: XCTestCase {
         let path = try DeviceFixtures.writeRamp(dir: dir, name: "term", samples: 10)
         _ = try await reg.attachFileDevice(path: path, loop: false) // must not crash publishing to a dead stream
     }
+
+    /// Attaching a second instance of an already-hosted identity keeps the first and closes the
+    /// newcomer: the caller opened it, so nothing else is left holding its link.
+    func testDuplicateVirtualDeviceIsClosed() async throws {
+        let reg = DefaultDeviceRegistry()
+        let first = ClosableVirtualDevice(serial: "vd-1")
+        let second = ClosableVirtualDevice(serial: "vd-1")
+        let a = try await reg.attachVirtualDevice(first)
+        let b = try await reg.attachVirtualDevice(second)
+        XCTAssertEqual(a.id, b.id)
+        XCTAssertEqual(second.closes, 1, "the discarded instance is closed")
+        XCTAssertEqual(first.closes, 0, "the hosted instance keeps running")
+        let hosted = await reg.device(id: a.id)
+        XCTAssertTrue(hosted === first)
+        // Re-attaching the hosted instance itself is still a no-op.
+        _ = try await reg.attachVirtualDevice(first)
+        XCTAssertEqual(first.closes, 0)
+    }
+
+    /// `stop()` is the registry's shutdown: every `events()` subscription finishes, so a consumer
+    /// may wait for the end of its stream instead of relying on its own task being cancelled.
+    func testStopFinishesEventSubscriptions() async throws {
+        let reg = DefaultDeviceRegistry()
+        var it = reg.events().makeAsyncIterator()
+        let dir = try DeviceFixtures.scratchDir()
+        let path = try DeviceFixtures.writeRamp(dir: dir, name: "fin", samples: 10)
+        _ = try await reg.attachFileDevice(path: path, loop: false)
+        guard case .arrived = try await next(&it) else { return XCTFail("expected arrived") }
+        await reg.stop()
+        let end = await it.next()
+        XCTAssertNil(end, "stop() finishes the subscription")
+    }
+}
+
+/// A hosted virtual device that counts `close()` calls.
+final class ClosableVirtualDevice: VirtualDevice, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: DeviceDescriptor
+    var descriptor: DeviceDescriptor { lock.lock(); defer { lock.unlock() }; return stored }
+    private let closeCount = Atomic<Int>(0)
+    var closes: Int { closeCount.load(ordering: .relaxed) }
+
+    init(serial: String) {
+        stored = DeviceDescriptor(id: DeviceID(), driver: "test-virtual", model: "closable", serial: serial,
+                                  tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
+                                  sampleRates: [2_400_000], nativeFormat: .cf32)
+    }
+
+    func assignID(_ id: DeviceID) { lock.lock(); stored.id = id; lock.unlock() }
+    func setState(_ state: DeviceState) { lock.lock(); stored.state = state; lock.unlock() }
+    func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {}
+
+    var gains: [GainState] { [] }
+    func open() async throws {}
+    func close() async { closeCount.add(1, ordering: .relaxed) }
+    func tune(centerHz: UInt64) async throws {}
+    func setSampleRate(_ hz: UInt64) async throws {}
+    func setGain(element: String, value: GainValue) async throws { throw EngineError.gainElementUnknown(element, target: "") }
+    func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {}
+    func stopStreaming() async {}
 }
 
 final class DevicesRTLSDRTests: XCTestCase {

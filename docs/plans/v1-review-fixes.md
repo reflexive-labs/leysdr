@@ -211,7 +211,7 @@ its `for await`, like the ring branch), q-swift-daemon-6 (the IQ tap reports the
 q-swift-daemon-4 (count dropped detections per sink and carry them as the `gap` of `yieldMerged`),
 q-swift-daemon-3 (`WriteCoalescer.run` leaves its loop when `Task.sleep` throws).
 
-### SW-5 `[ ]` Registry and shutdown ordering
+### SW-5 `[x]` Registry and shutdown ordering
 
 a-evolution-4 (`beginGracefulShutdown` first, then jobs, streams, store, registry), a-evolution-9
 (enumeration through `BlockingWork`, `applyProbes` on the actor), q-swift-control-2 (refresh

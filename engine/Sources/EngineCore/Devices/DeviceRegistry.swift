@@ -193,10 +193,13 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// of the device's own descriptor; the stable id is minted from that. Devices conforming to
     /// `VirtualDevice` get the registry id assigned and the state-change hook installed so their
     /// own `.disconnected` transitions publish `changed` like an unplug.
-    public func attachVirtualDevice(_ device: any RadioDevice) throws -> DeviceDescriptor {
+    public func attachVirtualDevice(_ device: any RadioDevice) async throws -> DeviceDescriptor {
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: provisional.driver, product: provisional.model)
         if let existing = entries.values.first(where: { $0.key == key && $0.rtlIndex == nil }) {
+            // Callers open before attaching, so a second instance of the same identity arrives with a
+            // live socket and a reader thread that nothing else holds a reference to: close it here.
+            if !(existing.device === device) { await device.close() }
             return existing.descriptor
         }
         let id = stableID(for: key)
@@ -257,11 +260,14 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         }
     }
 
-    /// Stops polling; hosted devices stay registered.
+    /// Stops polling and ends every `events()` subscription; hosted devices stay registered.
+    /// Finishing the streams is the shutdown contract: a consumer may wait for its stream to end
+    /// rather than relying on its own task being cancelled.
     public func stop() {
         pollTask?.cancel()
         pollTask = nil
         started = false
+        hub.finishAll()
     }
 
     /// One enumeration pass: diff `RTLSDRDevice.enumerate` against known dongles. The per-device
@@ -269,12 +275,15 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// successfully: known dongles keep their cached probe, so idle dongles are not re-initialised
     /// every second and the poll never contends with a capture's own open. A dongle whose probe
     /// open fails (another program holds it) is reported `.inUse` and re-probed with backoff.
-    public func poll() {
+    public func poll() async {
         let gate = advanceTickAndProbeGate()
         let claimed = Set(entries.values.compactMap { e -> UInt32? in
             e.descriptor.state == .inUse && !e.heldExternally ? e.rtlIndex : nil
         })
-        let probes = RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate)
+        // libusb enumeration plus a probe `rtlsdr_open` blocks for hundreds of milliseconds, and
+        // every caller of the registry queues behind the actor while it runs, so it goes off-actor
+        // and only the diff comes back here.
+        let probes = (try? await BlockingWork.run { RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate) }) ?? []
         applyProbes(probes)
         reconnectDisconnectedRemotes()
     }
@@ -285,7 +294,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// *and* USB index, so two dongles sharing a serial (`#n` collision keys) are gated on their
     /// own state: a held sibling inside its backoff never shadows the other one, and a probe with
     /// no matching entry (a new device) may always open. Split from `poll` so tests can drive it.
-    func advanceTickAndProbeGate() -> (RTLSDRProbe) -> Bool {
+    func advanceTickAndProbeGate() -> @Sendable (RTLSDRProbe) -> Bool {
         pollTick += 1
         var skip = Set<String>()
         for (id, e) in entries {
@@ -444,7 +453,17 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
                 } else {
                     d.features["held_externally"] = nil
                 }
-                if ours { continue }
+                if ours {
+                    // The descriptor is the capture's, so nothing is published, but the index still
+                    // has to follow a re-enumeration: `poll` gates the probe open on it, and a stale
+                    // one aims that open at the dongle we are streaming from.
+                    if probe.index != entry.rtlIndex {
+                        rtl.setIndex(probe.index)
+                        entry.rtlIndex = probe.index
+                        entries[id] = entry
+                    }
+                    continue
+                }
                 if probe.index != entry.rtlIndex || d != entry.descriptor {
                     rtl.setIndex(probe.index)
                     entry.rtlIndex = probe.index
