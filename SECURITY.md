@@ -1,0 +1,33 @@
+# Security
+
+## What the daemon trusts
+
+`leylined` runs as your user, owns the radio hardware, and listens on one Unix domain socket
+(`~/Library/Application Support/Leyline/leyline.sock` on macOS). There is no authentication and no
+authorization on that socket by design: the control plane trusts the user account, and the socket
+is created with your umask in a directory only you can write. Anything that can open the socket can
+do everything `ley` can — tune, take over a sweep, destroy another client's capture, read samples.
+Client identity on the wire (`leyline-client-id` and friends) is attribution for the event log, not
+a credential.
+
+The daemon opens no network listener. Remote control is a later milestone and will arrive with
+authentication designed for it (`docs/design-control-plane.md`, "Auth for TCP remote access").
+
+## What the daemon connects to
+
+`leylined --rtltcp host:port` (or `LEYLINE_RTLTCP`) makes an outbound, cleartext TCP connection to an
+`rtl_tcp` server you name, and streams raw samples from it. Nothing on that link is authenticated or
+encrypted; use it on a network you trust.
+
+## What the daemon reads and writes
+
+- Reads IQ files and JSON sidecars you name with `ley play`; a sidecar is capped at 1 MiB and must be
+  a regular file, and sample rates outside 1 kSPS–100 MSPS are refused.
+- Writes its socket, pidfile and log next to each other (`ley daemon status` prints the paths), and
+  the LaunchAgent plist under `~/Library/LaunchAgents` when you run `ley daemon install`.
+- Does not write recordings yet.
+
+## Reporting a vulnerability
+
+Use GitHub's private vulnerability reporting on the repository (Security → Report a vulnerability)
+rather than a public issue. Include the version from `ley version` and `ley daemon status`.
