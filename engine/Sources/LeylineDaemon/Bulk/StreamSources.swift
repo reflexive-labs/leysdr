@@ -142,8 +142,11 @@ final class IQFrameTap: CaptureTap, @unchecked Sendable {
 
     func write(iq: SampleBuffer, at time: SampleTime) {
         guard iq.format == .cf32 else { return }
+        // A block bigger than a slot is truncated, so the frame spans only the samples that fit:
+        // reporting the block's full count would credit the client samples it never received and
+        // slide its sample-index arithmetic off the timeline with nothing to show for it.
         let bytes = min(iq.byteCount, ring.slotBytes)
-        ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(iq.count)) { dst in
+        ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(bytes / 8)) { dst in
             dst.copyMemory(from: UnsafeRawPointer(iq.base), byteCount: bytes)
             return bytes
         }

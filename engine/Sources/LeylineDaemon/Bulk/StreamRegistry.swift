@@ -74,6 +74,11 @@ actor StreamRegistry {
     private let store: SessionStore
     private let log = Logger(label: "leyline.bulk")
     private var subs: [StreamID: BulkSubscription] = [:]
+    /// Subscribes still negotiating: the object they name is known, the engine hookups are not built
+    /// yet, so there is nothing for `teardown` to close. It marks them in `abandoned` instead.
+    private var pending: [StreamID: (captureID: CaptureID?, channelID: ChannelID?)] = [:]
+    /// Pending subscribes whose capture or channel was destroyed under them.
+    private var abandoned: Set<StreamID> = []
 
     init(store: SessionStore) { self.store = store }
 
@@ -103,6 +108,16 @@ actor StreamRegistry {
         let captureID: CaptureID
         var channelID: ChannelID?
         var channel: (any ChannelEngine)?
+        // Claim the id before the first await. Negotiation is full of suspension points, and a
+        // capture destroyed inside one runs its teardown over a table this subscription is not in
+        // yet; the claim is what teardown marks so the half-built stream is closed rather than left
+        // holding a ladder subscription or an IQ tap on a stopped engine.
+        switch req.source {
+        case .captureID(let s)?: pending[id] = (CaptureID(string: s), nil)
+        case .channelID(let s)?: pending[id] = (nil, ChannelID(string: s))
+        case nil: break
+        }
+        defer { pending[id] = nil; abandoned.remove(id) }
         switch req.source {
         case .captureID(let s)?:
             guard let c = CaptureID(string: s), await store.captureEngine(c) != nil else { throw EngineError.captureNotFound(s) }
@@ -115,6 +130,7 @@ actor StreamRegistry {
         case nil:
             throw EngineError.invalidArgument("source is required")
         }
+        pending[id] = (captureID, channelID)
         guard let capture = await store.captureEngine(captureID) else { throw EngineError.captureNotFound(captureID.string) }
         let snap = await capture.snapshot
         desc.centerHz = snap.centerHz
@@ -243,6 +259,14 @@ actor StreamRegistry {
         }
         let sub = BulkSubscription(id: id, descriptor: desc, captureID: captureID, channelID: channelID, source: source)
         subs[id] = sub
+        if abandoned.contains(id) {
+            // The object went away while this was being built: close what was built and answer as
+            // if the lookup had failed, rather than hand back a stream that can never produce a
+            // frame and can never be reaped once a reader attaches.
+            await close(sub, detach: false)
+            if let ch = channelID { throw EngineError.channelNotFound(ch.string) }
+            throw EngineError.captureNotFound(captureID.string)
+        }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.readerGraceNs)
             await self?.reapIfUnread(id)
@@ -285,6 +309,13 @@ actor StreamRegistry {
 
     /// Ends every stream on a destroyed capture or channel.
     func teardown(_ scope: TeardownScope) async {
+        for (id, p) in pending {
+            switch scope {
+            case .capture(let c) where p.captureID == c: abandoned.insert(id)
+            case .channel(let ch) where p.channelID == ch: abandoned.insert(id)
+            default: break
+            }
+        }
         for sub in subs.values {
             switch scope {
             case .capture(let c) where sub.captureID == c: await close(sub, detach: false)
@@ -356,6 +387,11 @@ actor StreamRegistry {
                     try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples))
                 }
                 if sub.isClosed || sub.isReaderCancelled { return }
+            }
+            // The audio callback runs on another thread: a push that lands as `finish()` is called
+            // has its wakeup dropped, so drain once more for the last samples it left behind.
+            while let p = audio.next(s16: s16) {
+                try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples))
             }
         }
     }

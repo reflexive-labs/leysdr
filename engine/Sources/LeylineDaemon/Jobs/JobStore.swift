@@ -9,6 +9,7 @@ import EngineCore
 import Foundation
 import LeylineProto
 import Logging
+import Synchronization
 
 actor JobStore {
     /// Finished jobs kept so a client can re-read one. Bounded: this is memory, not a store.
@@ -17,6 +18,9 @@ actor JobStore {
     /// waiting on is uncancellable USB work -- `device.open` on the way in, `stopStreaming`'s own
     /// 1 s + 3 s budget on the way out -- so this is a bound on the answer, not on the work.
     static let cancelWaitSeconds = 3.0
+    /// Per-subscriber detection buffer depth before the oldest undelivered reading is discarded
+    /// (and counted).
+    static let detectionCapacity = 64
 
     private struct Entry {
         var proto: Leyline_V1_Job
@@ -32,7 +36,9 @@ actor JobStore {
     private let log = Logger(label: "leyline.jobs")
     private var entries: [JobID: Entry] = [:]
     private var order: [JobID] = []
-    private var detectionSinks: [UUID: (CaptureID?, AsyncStream<(Leyline_V1_Detection, SampleTime)>.Continuation)] = [:]
+    private var detectionSinks: [UUID: (filter: CaptureID?,
+                                        continuation: AsyncStream<(Leyline_V1_Detection, SampleTime)>.Continuation,
+                                        subscription: DetectionSubscription)] = [:]
 
     init(store: SessionStore, allocator: SessionCaptureAllocator) {
         self.store = store
@@ -41,23 +47,25 @@ actor JobStore {
 
     // MARK: Detections on the telemetry plane
 
-    /// Live detections, optionally filtered to one capture. Drop-oldest: a slow subscriber misses
-    /// readings and the telemetry stream's seq gap says so.
-    func detections(captureID: CaptureID?) -> AsyncStream<(Leyline_V1_Detection, SampleTime)> {
-        let (stream, continuation) = AsyncStream<(Leyline_V1_Detection, SampleTime)>.makeStream(bufferingPolicy: .bufferingNewest(64))
+    /// Live detections, optionally filtered to one capture. Drop-oldest: a subscriber that falls
+    /// behind loses the oldest readings, and the count on the returned subscription lets the
+    /// telemetry plane widen its `seq` gap by exactly what was lost.
+    func detections(captureID: CaptureID?) -> DetectionSubscription {
+        let (stream, continuation) = AsyncStream<(Leyline_V1_Detection, SampleTime)>.makeStream(bufferingPolicy: .bufferingNewest(Self.detectionCapacity))
+        let subscription = DetectionSubscription(stream: stream)
         let key = UUID()
-        detectionSinks[key] = (captureID, continuation)
+        detectionSinks[key] = (captureID, continuation, subscription)
         continuation.onTermination = { [weak self] _ in
             Task { await self?.dropDetectionSink(key) }
         }
-        return stream
+        return subscription
     }
 
     private func dropDetectionSink(_ key: UUID) { detectionSinks[key] = nil }
 
     private func publish(_ d: Leyline_V1_Detection, at time: SampleTime, captureID: CaptureID) {
-        for (filter, continuation) in detectionSinks.values where filter == nil || filter == captureID {
-            continuation.yield((d, time))
+        for sink in detectionSinks.values where sink.filter == nil || sink.filter == captureID {
+            if case .dropped = sink.continuation.yield((d, time)) { sink.subscription.countDrop() }
         }
     }
 
@@ -343,4 +351,20 @@ actor JobStore {
             order.removeAll { $0 == drop }
         }
     }
+}
+
+/// One subscriber's view of the detection fan-out: the stream, and the count of readings its own
+/// drop-oldest buffer discarded because it fell behind. A consumer diffs `dropped` between readings
+/// and widens its sequence gap by the delta, so a slow client sees in `seq` exactly what it missed.
+final class DetectionSubscription: Sendable {
+    let stream: AsyncStream<(Leyline_V1_Detection, SampleTime)>
+    private let droppedCount = Atomic<Int>(0)
+
+    init(stream: AsyncStream<(Leyline_V1_Detection, SampleTime)>) {
+        self.stream = stream
+    }
+
+    var dropped: Int { droppedCount.load(ordering: .relaxed) }
+
+    func countDrop() { droppedCount.add(1, ordering: .relaxed) }
 }

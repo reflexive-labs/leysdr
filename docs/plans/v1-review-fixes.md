@@ -203,7 +203,7 @@ allocator closes a freshly created capture on both error paths), c-swift-daemon-
 scan refusal names no milestone), a-evolution-17 (`ScanRunner` becomes an enum of static functions,
 or gains the state that justifies the actor).
 
-### SW-4 `[ ]` Bulk registry and telemetry honesty
+### SW-4 `[x]` Bulk registry and telemetry honesty
 
 a-evolution-3 (register the subscription before the first await, or re-check the capture exists
 before storing and close the half-built source), c-swift-daemon-1 (the audio branch drains after

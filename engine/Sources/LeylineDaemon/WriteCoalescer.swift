@@ -104,7 +104,13 @@ final class WriteCoalescer: @unchecked Sendable {
             }
         }
         while !finished.value {
-            try? await Task.sleep(nanoseconds: Self.tickNs)
+            // A thrown sleep means this task was cancelled. Leaving the loop is the only thing that
+            // paces it: the condition tracks the reader, so a cancelled sleep that is merely
+            // swallowed turns the tick into a busy loop hammering the store actor.
+            guard (try? await Task.sleep(nanoseconds: Self.tickNs)) != nil else {
+                reader.cancel()
+                break
+            }
             await flush()
         }
         _ = await reader.value

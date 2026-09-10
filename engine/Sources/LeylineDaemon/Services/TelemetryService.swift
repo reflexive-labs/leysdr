@@ -136,12 +136,19 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                     // channel to attach them to, so a channel-filtered subscriber sees none.
                     let hub = self.jobs
                     group.addTask {
-                        for await (detection, time) in await hub.detections(captureID: capFilter) {
+                        let subscription = await hub.detections(captureID: capFilter)
+                        var seenDropped = subscription.dropped
+                        for await (detection, time) in subscription.stream {
                             if Task.isCancelled { return }
+                            // Readings this subscriber's fan-out buffer discarded since the previous
+                            // one become a gap on the merged stream.
+                            let nowDropped = subscription.dropped
+                            let gap = UInt64(max(0, nowDropped - seenDropped))
+                            seenDropped = nowDropped
                             var msg = Leyline_V1_TelemetryMsg()
                             msg.time = ProtoMapping.sampleTime(time)
                             msg.detection = detection
-                            yieldMerged(msg, gap: 0)
+                            yieldMerged(msg, gap: gap)
                         }
                     }
                 }
