@@ -7,7 +7,6 @@ package leyline.v1;
 
 option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
-import "leyline/v1/control.proto";
 import "leyline/v1/telemetry.proto";
 
 // ---------- Jobs ----------
@@ -49,6 +48,10 @@ message ScanConfig {
   uint32 step_hz = 2;
   uint32 dwell_ms = 3;
   oneof schedule { bool once = 4; string recurring = 5; } // recurring: cron expression
+  // Sweep a radio somebody else is using. Off by default: a sweep owns the radio for seconds at a
+  // time, so the allocator declines a capture with channels, a live audio sink or a recent
+  // interactive write, and names what is using it. This is the explicit override.
+  bool take_over = 6;
 }
 
 message RecordConfig {
@@ -82,6 +85,10 @@ message Scan {
   repeated NoiseFloorSegment noise_floor = 4;
   int64 started_at_ns = 5;
   int64 completed_at_ns = 6;
+  // The gain the sweep pinned for its whole duration. A sweep must not run under the tuner's AGC
+  // -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
+  // scan that does not say which gain it ran at cannot be compared with another.
+  repeated GainState gains = 7;
 }
 message NoiseFloorSegment { FrequencyRange range = 1; double floor_dbfs = 2; }
 

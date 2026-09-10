@@ -73,6 +73,72 @@ func (DeliveryPolicy) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
+// Demodulators. Here rather than in control.proto because jobs name modes too, and control.proto
+// has to be able to see a Job (Event.body) -- which would be a circular import the other way.
+type DemodMode int32
+
+const (
+	DemodMode_DEMOD_MODE_UNSPECIFIED DemodMode = 0
+	DemodMode_AM                     DemodMode = 1
+	DemodMode_NFM                    DemodMode = 2
+	DemodMode_WFM                    DemodMode = 3
+	DemodMode_USB                    DemodMode = 4
+	DemodMode_LSB                    DemodMode = 5
+	DemodMode_CW                     DemodMode = 6
+	DemodMode_RAW_IQ                 DemodMode = 7
+)
+
+// Enum value maps for DemodMode.
+var (
+	DemodMode_name = map[int32]string{
+		0: "DEMOD_MODE_UNSPECIFIED",
+		1: "AM",
+		2: "NFM",
+		3: "WFM",
+		4: "USB",
+		5: "LSB",
+		6: "CW",
+		7: "RAW_IQ",
+	}
+	DemodMode_value = map[string]int32{
+		"DEMOD_MODE_UNSPECIFIED": 0,
+		"AM":                     1,
+		"NFM":                    2,
+		"WFM":                    3,
+		"USB":                    4,
+		"LSB":                    5,
+		"CW":                     6,
+		"RAW_IQ":                 7,
+	}
+)
+
+func (x DemodMode) Enum() *DemodMode {
+	p := new(DemodMode)
+	*p = x
+	return p
+}
+
+func (x DemodMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DemodMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_common_proto_enumTypes[1].Descriptor()
+}
+
+func (DemodMode) Type() protoreflect.EnumType {
+	return &file_leyline_v1_common_proto_enumTypes[1]
+}
+
+func (x DemodMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DemodMode.Descriptor instead.
+func (DemodMode) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
 // Sample-indexed timebase. Wall clock is derived via CaptureAnchor, never carried per-frame.
 // capture_id scopes the timeline; future non-capture timelines (e.g. tx_ transmissions)
 // reuse this field with their own IDs — do not assume it always names a Capture.
@@ -521,6 +587,68 @@ func (x *ErrorDetail) GetTarget() string {
 	return ""
 }
 
+// Confirmed gain of one element; a capture event carries all of them (full state, never deltas),
+// and a scan carries the ones it pinned for the sweep.
+type GainState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Element       string                 `protobuf:"bytes,1,opt,name=element,proto3" json:"element,omitempty"`
+	Db            float64                `protobuf:"fixed64,2,opt,name=db,proto3" json:"db,omitempty"`
+	Auto          bool                   `protobuf:"varint,3,opt,name=auto,proto3" json:"auto,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GainState) Reset() {
+	*x = GainState{}
+	mi := &file_leyline_v1_common_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GainState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GainState) ProtoMessage() {}
+
+func (x *GainState) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_common_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GainState.ProtoReflect.Descriptor instead.
+func (*GainState) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GainState) GetElement() string {
+	if x != nil {
+		return x.Element
+	}
+	return ""
+}
+
+func (x *GainState) GetDb() float64 {
+	if x != nil {
+		return x.Db
+	}
+	return 0
+}
+
+func (x *GainState) GetAuto() bool {
+	if x != nil {
+		return x.Auto
+	}
+	return false
+}
+
 var File_leyline_v1_common_proto protoreflect.FileDescriptor
 
 const file_leyline_v1_common_proto_rawDesc = "" +
@@ -561,12 +689,26 @@ const file_leyline_v1_common_proto_rawDesc = "" +
 	"\vErrorDetail\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +
-	"\x06target\x18\x03 \x01(\tR\x06target*R\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\"I\n" +
+	"\tGainState\x12\x18\n" +
+	"\aelement\x18\x01 \x01(\tR\aelement\x12\x0e\n" +
+	"\x02db\x18\x02 \x01(\x01R\x02db\x12\x12\n" +
+	"\x04auto\x18\x03 \x01(\bR\x04auto*R\n" +
 	"\x0eDeliveryPolicy\x12\x1f\n" +
 	"\x1bDELIVERY_POLICY_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vLATEST_WINS\x10\x01\x12\x0e\n" +
 	"\n" +
-	"GAP_MARKED\x10\x02B4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"GAP_MARKED\x10\x02*g\n" +
+	"\tDemodMode\x12\x1a\n" +
+	"\x16DEMOD_MODE_UNSPECIFIED\x10\x00\x12\x06\n" +
+	"\x02AM\x10\x01\x12\a\n" +
+	"\x03NFM\x10\x02\x12\a\n" +
+	"\x03WFM\x10\x03\x12\a\n" +
+	"\x03USB\x10\x04\x12\a\n" +
+	"\x03LSB\x10\x05\x12\x06\n" +
+	"\x02CW\x10\x06\x12\n" +
+	"\n" +
+	"\x06RAW_IQ\x10\aB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_common_proto_rawDescOnce sync.Once
@@ -580,20 +722,22 @@ func file_leyline_v1_common_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_common_proto_rawDescData
 }
 
-var file_leyline_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_leyline_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_leyline_v1_common_proto_goTypes = []any{
 	(DeliveryPolicy)(0),    // 0: leyline.v1.DeliveryPolicy
-	(*SampleTime)(nil),     // 1: leyline.v1.SampleTime
-	(*CaptureAnchor)(nil),  // 2: leyline.v1.CaptureAnchor
-	(*FrequencyRange)(nil), // 3: leyline.v1.FrequencyRange
-	(*ClientInfo)(nil),     // 4: leyline.v1.ClientInfo
-	(*Gap)(nil),            // 5: leyline.v1.Gap
-	(*StreamPosition)(nil), // 6: leyline.v1.StreamPosition
-	(*ErrorDetail)(nil),    // 7: leyline.v1.ErrorDetail
+	(DemodMode)(0),         // 1: leyline.v1.DemodMode
+	(*SampleTime)(nil),     // 2: leyline.v1.SampleTime
+	(*CaptureAnchor)(nil),  // 3: leyline.v1.CaptureAnchor
+	(*FrequencyRange)(nil), // 4: leyline.v1.FrequencyRange
+	(*ClientInfo)(nil),     // 5: leyline.v1.ClientInfo
+	(*Gap)(nil),            // 6: leyline.v1.Gap
+	(*StreamPosition)(nil), // 7: leyline.v1.StreamPosition
+	(*ErrorDetail)(nil),    // 8: leyline.v1.ErrorDetail
+	(*GainState)(nil),      // 9: leyline.v1.GainState
 }
 var file_leyline_v1_common_proto_depIdxs = []int32{
-	1, // 0: leyline.v1.StreamPosition.at_sample:type_name -> leyline.v1.SampleTime
+	2, // 0: leyline.v1.StreamPosition.at_sample:type_name -> leyline.v1.SampleTime
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -616,8 +760,8 @@ func file_leyline_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_common_proto_rawDesc), len(file_leyline_v1_common_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   7,
+			NumEnums:      2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

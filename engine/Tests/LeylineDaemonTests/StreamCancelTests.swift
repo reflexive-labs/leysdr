@@ -54,7 +54,7 @@ final class StreamCancelTests: XCTestCase {
         do {
             try await withGRPCClient(transport: try .http2NIOPosix(target: .unixDomainSocket(path: socket), transportSecurity: .plaintext)) { client in
                 let clients = DaemonClients(control: .init(wrapping: client), telemetry: .init(wrapping: client),
-                                            bulk: .init(wrapping: client), jobs: .init(wrapping: client), daemon: daemon, socketPath: socket)
+                                            bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client), daemon: daemon, socketPath: socket)
                 do { try await body(clients) } catch { bodyError = error }
             }
         } catch {

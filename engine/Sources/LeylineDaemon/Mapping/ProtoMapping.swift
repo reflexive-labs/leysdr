@@ -196,7 +196,8 @@ enum ProtoMapping {
     /// gRPC status code for a stable engine code.
     static func statusCode(for code: String) -> RPCError.Code {
         switch code {
-        case "DEVICE_NOT_FOUND", "CAPTURE_NOT_FOUND", "CHANNEL_NOT_FOUND", "SINK_NOT_FOUND", "STREAM_NOT_FOUND":
+        case "DEVICE_NOT_FOUND", "CAPTURE_NOT_FOUND", "CHANNEL_NOT_FOUND", "SINK_NOT_FOUND", "STREAM_NOT_FOUND",
+             "JOB_NOT_FOUND", "SCAN_NOT_FOUND":
             return .notFound
         case "DEVICE_BUSY": return .resourceExhausted
         case "DEVICE_DETACHED": return .failedPrecondition

@@ -5,6 +5,7 @@ package leyline.v1;
 
 option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
+import "leyline/v1/jobs.proto";
 
 // ---------- Capability model ----------
 
@@ -60,8 +61,6 @@ message Capture {
   repeated GainState gains = 9;  // current setting of every GainElement, in descriptor order
 }
 
-// Confirmed gain of one element; the capture event carries all of them (full state, never deltas).
-message GainState { string element = 1; double db = 2; bool auto = 3; }
 
 enum CaptureState { CAPTURE_STATE_UNSPECIFIED = 0; CAPTURE_ACTIVE = 1; CAPTURE_DETACHED = 2; }
 
@@ -91,7 +90,6 @@ message Channel {
   reserved 13;  // subaudible_squelch_hz
 }
 
-enum DemodMode { DEMOD_MODE_UNSPECIFIED = 0; AM = 1; NFM = 2; WFM = 3; USB = 4; LSB = 5; CW = 6; RAW_IQ = 7; }
 enum GainMode { GAIN_MODE_UNSPECIFIED = 0; MANUAL = 1; AUTO = 2; }
 enum ChannelState { CHANNEL_STATE_UNSPECIFIED = 0; CHANNEL_ACTIVE = 1; OUT_OF_CAPTURE = 2; }
 
@@ -157,6 +155,10 @@ message Event {
     Sink sink = 6;
     WriteRejected write_rejected = 7;
     CaptureAnchor anchor = 8;
+    // A job's state changed. Jobs are daemon state like everything else here, so a client renders
+    // them by subscription rather than by polling GetJob; Job is already a whole-object message,
+    // so this stays full-state (never a delta) like every other member.
+    Job job = 9;
   }
 }
 message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
@@ -205,6 +207,7 @@ message GetStateResponse {
   repeated Sink sinks = 4;
   uint64 event_seq = 5; // events after this seq are newer than this snapshot
   DaemonInfo daemon = 6;
+  repeated Job jobs = 7;   // running and recently finished; reconnect renders these like the rest
 }
 message DaemonInfo {
   string version = 1;

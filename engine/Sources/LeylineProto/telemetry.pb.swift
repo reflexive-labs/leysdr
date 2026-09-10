@@ -165,62 +165,68 @@ public nonisolated struct Leyline_V1_TelemetrySubscription: Sendable {
   public init() {}
 }
 
-public nonisolated struct Leyline_V1_TelemetryMsg: Sendable {
+public nonisolated struct Leyline_V1_TelemetryMsg: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var seq: UInt64 = 0
+  public var seq: UInt64 {
+    get {_storage._seq}
+    set {_uniqueStorage()._seq = newValue}
+  }
 
   public var time: Leyline_V1_SampleTime {
-    get {_time ?? Leyline_V1_SampleTime()}
-    set {_time = newValue}
+    get {_storage._time ?? Leyline_V1_SampleTime()}
+    set {_uniqueStorage()._time = newValue}
   }
   /// Returns true if `time` has been explicitly set.
-  public var hasTime: Bool {self._time != nil}
+  public var hasTime: Bool {_storage._time != nil}
   /// Clears the value of `time`. Subsequent reads from it will return its default value.
-  public mutating func clearTime() {self._time = nil}
+  public mutating func clearTime() {_uniqueStorage()._time = nil}
 
-  public var body: Leyline_V1_TelemetryMsg.OneOf_Body? = nil
+  public var body: OneOf_Body? {
+    get {return _storage._body}
+    set {_uniqueStorage()._body = newValue}
+  }
 
   public var meter: Leyline_V1_Meter {
     get {
-      if case .meter(let v)? = body {return v}
+      if case .meter(let v)? = _storage._body {return v}
       return Leyline_V1_Meter()
     }
-    set {body = .meter(newValue)}
+    set {_uniqueStorage()._body = .meter(newValue)}
   }
 
   public var squelch: Leyline_V1_SquelchTransition {
     get {
-      if case .squelch(let v)? = body {return v}
+      if case .squelch(let v)? = _storage._body {return v}
       return Leyline_V1_SquelchTransition()
     }
-    set {body = .squelch(newValue)}
+    set {_uniqueStorage()._body = .squelch(newValue)}
   }
 
   public var detection: Leyline_V1_Detection {
     get {
-      if case .detection(let v)? = body {return v}
+      if case .detection(let v)? = _storage._body {return v}
       return Leyline_V1_Detection()
     }
-    set {body = .detection(newValue)}
+    set {_uniqueStorage()._body = .detection(newValue)}
   }
 
   public var activity: Leyline_V1_CaptureActivityMsg {
     get {
-      if case .activity(let v)? = body {return v}
+      if case .activity(let v)? = _storage._body {return v}
       return Leyline_V1_CaptureActivityMsg()
     }
-    set {body = .activity(newValue)}
+    set {_uniqueStorage()._body = .activity(newValue)}
   }
 
   public var subAudible: Leyline_V1_SubAudible {
     get {
-      if case .subAudible(let v)? = body {return v}
+      if case .subAudible(let v)? = _storage._body {return v}
       return Leyline_V1_SubAudible()
     }
-    set {body = .subAudible(newValue)}
+    set {_uniqueStorage()._body = .subAudible(newValue)}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -236,7 +242,7 @@ public nonisolated struct Leyline_V1_TelemetryMsg: Sendable {
 
   public init() {}
 
-  fileprivate var _time: Leyline_V1_SampleTime? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
@@ -409,6 +415,20 @@ public nonisolated struct Leyline_V1_Detection: Sendable {
   /// 0 when guess is absent
   public var guessConfidence: Double = 0
 
+  /// The evidence, so a client can tell a carrier from a burst instead of the daemon deciding.
+  /// looks = spectrum rows in which this cleared the threshold; looks_possible = rows that covered
+  /// this frequency at all. A repeater reads 8/8, a packet burst 1/8. Persistence is reported, not
+  /// used as a gate: the threshold already spends a whole sweep's false-alarm budget, and demanding
+  /// presence in half a dwell would make exactly the intermittent traffic an operator cares about
+  /// invisible.
+  public var looks: UInt32 = 0
+
+  public var looksPossible: UInt32 = 0
+
+  /// The local noise floor snr_db was measured against, dBFS per bin. Local because the tuner's IF
+  /// response tilts the floor several dB across a span -- one number per row cannot describe it.
+  public var floorDbfs: Double = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -544,125 +564,165 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
   public static let protoMessageName: String = _protobuf_package + ".TelemetryMsg"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{1}time\0\u{1}meter\0\u{1}squelch\0\u{1}detection\0\u{1}activity\0\u{3}sub_audible\0")
 
+  fileprivate class _StorageClass {
+    var _seq: UInt64 = 0
+    var _time: Leyline_V1_SampleTime? = nil
+    var _body: Leyline_V1_TelemetryMsg.OneOf_Body?
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _seq = source._seq
+      _time = source._time
+      _body = source._body
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.seq) }()
-      case 2: try { try decoder.decodeSingularMessageField(value: &self._time) }()
-      case 3: try {
-        var v: Leyline_V1_Meter?
-        var hadOneofValue = false
-        if let current = self.body {
-          hadOneofValue = true
-          if case .meter(let m) = current {v = m}
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularUInt64Field(value: &_storage._seq) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._time) }()
+        case 3: try {
+          var v: Leyline_V1_Meter?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .meter(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .meter(v)
+          }
+        }()
+        case 4: try {
+          var v: Leyline_V1_SquelchTransition?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .squelch(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .squelch(v)
+          }
+        }()
+        case 5: try {
+          var v: Leyline_V1_Detection?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .detection(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .detection(v)
+          }
+        }()
+        case 6: try {
+          var v: Leyline_V1_CaptureActivityMsg?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .activity(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .activity(v)
+          }
+        }()
+        case 7: try {
+          var v: Leyline_V1_SubAudible?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .subAudible(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .subAudible(v)
+          }
+        }()
+        default: break
         }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.body = .meter(v)
-        }
-      }()
-      case 4: try {
-        var v: Leyline_V1_SquelchTransition?
-        var hadOneofValue = false
-        if let current = self.body {
-          hadOneofValue = true
-          if case .squelch(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.body = .squelch(v)
-        }
-      }()
-      case 5: try {
-        var v: Leyline_V1_Detection?
-        var hadOneofValue = false
-        if let current = self.body {
-          hadOneofValue = true
-          if case .detection(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.body = .detection(v)
-        }
-      }()
-      case 6: try {
-        var v: Leyline_V1_CaptureActivityMsg?
-        var hadOneofValue = false
-        if let current = self.body {
-          hadOneofValue = true
-          if case .activity(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.body = .activity(v)
-        }
-      }()
-      case 7: try {
-        var v: Leyline_V1_SubAudible?
-        var hadOneofValue = false
-        if let current = self.body {
-          hadOneofValue = true
-          if case .subAudible(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.body = .subAudible(v)
-        }
-      }()
-      default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if self.seq != 0 {
-      try visitor.visitSingularUInt64Field(value: self.seq, fieldNumber: 1)
-    }
-    try { if let v = self._time {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    } }()
-    switch self.body {
-    case .meter?: try {
-      guard case .meter(let v)? = self.body else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
-    }()
-    case .squelch?: try {
-      guard case .squelch(let v)? = self.body else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
-    }()
-    case .detection?: try {
-      guard case .detection(let v)? = self.body else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
-    }()
-    case .activity?: try {
-      guard case .activity(let v)? = self.body else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-    }()
-    case .subAudible?: try {
-      guard case .subAudible(let v)? = self.body else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
-    }()
-    case nil: break
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if _storage._seq != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._seq, fieldNumber: 1)
+      }
+      try { if let v = _storage._time {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      switch _storage._body {
+      case .meter?: try {
+        guard case .meter(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      }()
+      case .squelch?: try {
+        guard case .squelch(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      }()
+      case .detection?: try {
+        guard case .detection(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      }()
+      case .activity?: try {
+        guard case .activity(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      }()
+      case .subAudible?: try {
+        guard case .subAudible(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      }()
+      case nil: break
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_TelemetryMsg, rhs: Leyline_V1_TelemetryMsg) -> Bool {
-    if lhs.seq != rhs.seq {return false}
-    if lhs._time != rhs._time {return false}
-    if lhs.body != rhs.body {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._seq != rhs_storage._seq {return false}
+        if _storage._time != rhs_storage._time {return false}
+        if _storage._body != rhs_storage._body {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -859,7 +919,7 @@ nonisolated extension Leyline_V1_SquelchTransition: SwiftProtobuf.Message, Swift
 
 nonisolated extension Leyline_V1_Detection: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Detection"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}detection_id\0\u{3}capture_id\0\u{3}center_hz\0\u{3}bandwidth_hz\0\u{3}snr_db\0\u{3}first_seen\0\u{3}last_seen\0\u{3}modulation_guess\0\u{3}guess_confidence\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}detection_id\0\u{3}capture_id\0\u{3}center_hz\0\u{3}bandwidth_hz\0\u{3}snr_db\0\u{3}first_seen\0\u{3}last_seen\0\u{3}modulation_guess\0\u{3}guess_confidence\0\u{1}looks\0\u{3}looks_possible\0\u{3}floor_dbfs\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -876,6 +936,9 @@ nonisolated extension Leyline_V1_Detection: SwiftProtobuf.Message, SwiftProtobuf
       case 7: try { try decoder.decodeSingularMessageField(value: &self._lastSeen) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.modulationGuess) }()
       case 9: try { try decoder.decodeSingularDoubleField(value: &self.guessConfidence) }()
+      case 10: try { try decoder.decodeSingularUInt32Field(value: &self.looks) }()
+      case 11: try { try decoder.decodeSingularUInt32Field(value: &self.looksPossible) }()
+      case 12: try { try decoder.decodeSingularDoubleField(value: &self.floorDbfs) }()
       default: break
       }
     }
@@ -913,6 +976,15 @@ nonisolated extension Leyline_V1_Detection: SwiftProtobuf.Message, SwiftProtobuf
     if self.guessConfidence.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.guessConfidence, fieldNumber: 9)
     }
+    if self.looks != 0 {
+      try visitor.visitSingularUInt32Field(value: self.looks, fieldNumber: 10)
+    }
+    if self.looksPossible != 0 {
+      try visitor.visitSingularUInt32Field(value: self.looksPossible, fieldNumber: 11)
+    }
+    if self.floorDbfs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.floorDbfs, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -926,6 +998,9 @@ nonisolated extension Leyline_V1_Detection: SwiftProtobuf.Message, SwiftProtobuf
     if lhs._lastSeen != rhs._lastSeen {return false}
     if lhs.modulationGuess != rhs.modulationGuess {return false}
     if lhs.guessConfidence != rhs.guessConfidence {return false}
+    if lhs.looks != rhs.looks {return false}
+    if lhs.looksPossible != rhs.looksPossible {return false}
+    if lhs.floorDbfs != rhs.floorDbfs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

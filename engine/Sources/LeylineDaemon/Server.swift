@@ -49,6 +49,7 @@ final class Daemon: @unchecked Sendable {
     let registry: DefaultDeviceRegistry
     let store: SessionStore
     let streams: StreamRegistry
+    let jobs: JobStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
 
@@ -58,6 +59,8 @@ final class Daemon: @unchecked Sendable {
         let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath)
         store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs)
         streams = StreamRegistry(store: store)
+        let allocator = SessionCaptureAllocator(store: store)
+        jobs = JobStore(store: store, allocator: allocator)
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
@@ -69,9 +72,9 @@ final class Daemon: @unchecked Sendable {
             transport: .http2NIOPosix(address: .unixDomainSocket(path: config.socketPath), transportSecurity: .plaintext, config: transport),
             services: [
                 ControlService(store: store),
-                TelemetryService(store: store),
+                TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
-                JobsService(),
+                JobsService(jobs: jobs),
                 ResourcesService(),
             ],
             interceptors: [ClientContextInterceptor()]
@@ -130,6 +133,9 @@ final class Daemon: @unchecked Sendable {
         await attachRemoteDongles()
         await store.startDeviceMirror()
         await streams.install()
+        let table = jobs
+        await store.setJobsProvider { await table.snapshot() }
+        await store.setClientGoneHook { await table.clientGone($0) }
         log.info("leylined \(leylinedVersion) listening on \(config.socketPath)")
         defer {
             try? FileManager.default.removeItem(atPath: config.socketPath)
@@ -167,6 +173,9 @@ final class Daemon: @unchecked Sendable {
     /// Graceful stop: streams closed, captures stopped and devices closed, then the server drains.
     func shutdown() async {
         log.info("shutting down")
+        // Before the store: a running sweep holds a lease on a capture and must give it back
+        // while there is still a store to give it back to.
+        await jobs.cancelAll()
         await streams.closeAll()
         await store.shutdown()
         await registry.stop()

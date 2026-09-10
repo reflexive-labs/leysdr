@@ -12,6 +12,7 @@ import Synchronization
 
 struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
     let store: SessionStore
+    let jobs: JobStore
     static let activityIntervalNs: UInt64 = 1_000_000_000
     /// Merged-stream depth per subscription before the oldest undelivered item is discarded (and counted).
     static let mergedCapacity = 64
@@ -129,6 +130,20 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         track(id, engine)
                     }
                     sink.finish()
+                }
+                if wants(.detection), chanFilter == nil {
+                    // Detections come from a sweep, which owns a whole capture; there is no
+                    // channel to attach them to, so a channel-filtered subscriber sees none.
+                    let hub = self.jobs
+                    group.addTask {
+                        for await (detection, time) in await hub.detections(captureID: capFilter) {
+                            if Task.isCancelled { return }
+                            var msg = Leyline_V1_TelemetryMsg()
+                            msg.time = ProtoMapping.sampleTime(time)
+                            msg.detection = detection
+                            yieldMerged(msg, gap: 0)
+                        }
+                    }
                 }
                 if wants(.captureActivity), chanFilter == nil {
                     group.addTask {

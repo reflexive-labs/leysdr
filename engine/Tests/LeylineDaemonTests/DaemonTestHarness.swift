@@ -28,6 +28,7 @@ struct DaemonClients {
     let telemetry: Leyline_V1_Telemetry.Client<HTTP2ClientTransport.Posix>
     let bulk: Leyline_V1_Bulk.Client<HTTP2ClientTransport.Posix>
     let jobs: Leyline_V1_Jobs.Client<HTTP2ClientTransport.Posix>
+    let resources: Leyline_V1_Resources.Client<HTTP2ClientTransport.Posix>
     let daemon: Daemon
     let socketPath: String
 }
@@ -50,7 +51,7 @@ func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, _ body: @escaping @Send
         ) { client in
             let clients = DaemonClients(
                 control: .init(wrapping: client), telemetry: .init(wrapping: client),
-                bulk: .init(wrapping: client), jobs: .init(wrapping: client), daemon: daemon, socketPath: socket
+                bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client), daemon: daemon, socketPath: socket
             )
             do { try await body(clients) } catch { bodyError = error }
         }

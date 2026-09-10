@@ -1,0 +1,259 @@
+// The job table. A table of watches, not a workflow engine: no retry DAG, no replay.
+//
+// v0 holds jobs and their scans in memory and loses them on restart, because the only job type
+// that exists is an ad-hoc scan and an ad-hoc scan is ephemeral by design -- persistence follows
+// intent (invariant 8), and nobody typing `ley scan` has declared an intent to keep anything.
+// Durable jobs and the resource store arrive together at Milestone D.15.
+
+import EngineCore
+import Foundation
+import LeylineProto
+import Logging
+
+actor JobStore {
+    /// Finished jobs kept so a client can re-read one. Bounded: this is memory, not a store.
+    static let keepFinished = 16
+
+    private struct Entry {
+        var proto: Leyline_V1_Job
+        var scan: Leyline_V1_Scan?
+        var task: Task<Void, Never>?
+        /// The connection that asked for it. When that connection goes, so does the job: a sweep
+        /// nobody is reading is just a radio nobody can use.
+        var ownerClientID: String
+    }
+
+    private let store: SessionStore
+    private let allocator: SessionCaptureAllocator
+    private let log = Logger(label: "leyline.jobs")
+    private var entries: [JobID: Entry] = [:]
+    private var order: [JobID] = []
+    private var detectionSinks: [UUID: (CaptureID?, AsyncStream<(Leyline_V1_Detection, SampleTime)>.Continuation)] = [:]
+
+    init(store: SessionStore, allocator: SessionCaptureAllocator) {
+        self.store = store
+        self.allocator = allocator
+    }
+
+    // MARK: Detections on the telemetry plane
+
+    /// Live detections, optionally filtered to one capture. Drop-oldest: a slow subscriber misses
+    /// readings and the telemetry stream's seq gap says so.
+    func detections(captureID: CaptureID?) -> AsyncStream<(Leyline_V1_Detection, SampleTime)> {
+        let (stream, continuation) = AsyncStream<(Leyline_V1_Detection, SampleTime)>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        let key = UUID()
+        detectionSinks[key] = (captureID, continuation)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.dropDetectionSink(key) }
+        }
+        return stream
+    }
+
+    private func dropDetectionSink(_ key: UUID) { detectionSinks[key] = nil }
+
+    private func publish(_ d: Leyline_V1_Detection, at time: SampleTime, captureID: CaptureID) {
+        for (filter, continuation) in detectionSinks.values where filter == nil || filter == captureID {
+            continuation.yield((d, time))
+        }
+    }
+
+    // MARK: The table
+
+    func snapshot() -> [Leyline_V1_Job] { order.compactMap { entries[$0]?.proto } }
+
+    func job(_ id: JobID) -> Leyline_V1_Job? { entries[id]?.proto }
+
+    func scan(_ id: ScanID) -> Leyline_V1_Scan? {
+        for e in entries.values {
+            if let s = e.scan, s.scanID == id.string { return s }
+        }
+        return nil
+    }
+
+    func cancel(_ id: JobID) async -> Leyline_V1_Job? {
+        guard var e = entries[id] else { return nil }
+        e.task?.cancel()
+        entries[id] = e
+        if e.proto.state == .running {
+            await finish(id, state: .cancelled, detail: "cancelled")
+        }
+        return entries[id]?.proto
+    }
+
+    /// Ends every job a departing client owned. A sweep outliving its reader would hold the radio
+    /// with nobody to hand the answer to.
+    func clientGone(_ clientID: String) async {
+        for (id, e) in entries where e.ownerClientID == clientID && e.proto.state == .running {
+            _ = await cancel(id)
+        }
+    }
+
+    func cancelAll() async {
+        for (id, e) in entries where e.proto.state == .running {
+            e.task?.cancel()
+            _ = await cancel(id)
+        }
+    }
+
+    // MARK: Starting a scan
+
+    func startScan(config: Leyline_V1_ScanConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
+        if case .recurring = config.schedule {
+            throw EngineError.invalidArgument("a recurring scan needs a job store that survives a restart (Milestone D.15); use once",
+                                              target: "")
+        }
+        guard config.hasRange, config.range.maxHz > config.range.minHz else {
+            throw EngineError.invalidArgument("a scan needs a frequency range with max above min", target: "")
+        }
+        let id = JobID()
+        let scanID = ScanID()
+        var job = Leyline_V1_Job()
+        job.jobID = id.string
+        job.state = .running
+        job.createdAtNs = realtimeNs()
+        job.createdBy = client.proto
+        job.config = .scan(config)
+        job.resultUris = ["ley://scans/\(scanID.string)"]
+        job.statusDetail = "starting"
+
+        var scan = Leyline_V1_Scan()
+        scan.scanID = scanID.string
+        scan.config = config
+        scan.startedAtNs = job.createdAtNs
+
+        entries[id] = Entry(proto: job, scan: scan, task: nil, ownerClientID: client.id)
+        order.append(id)
+        trim()
+        await store.publishJob(job)
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.run(id, config: config)
+        }
+        entries[id]?.task = task
+        return job
+    }
+
+    private func run(_ id: JobID, config: Leyline_V1_ScanConfig) async {
+        let range = config.range.minHz ... config.range.maxHz
+        let result = await allocator.allocate(.exclusiveCapture(rangeHz: range, takeOver: config.takeOver), for: id)
+        guard case .capture(let lease) = result else {
+            if case .declined(let code, let reason) = result {
+                await finish(id, state: .failed, detail: reason, code: code)
+            } else {
+                await finish(id, state: .failed, detail: "no radio could be allocated", code: "NO_DEVICE")
+            }
+            return
+        }
+        // Release runs on cancellation too, and cancellation is the normal ending (Ctrl-C). A bare
+        // defer with an await inside a cancelled task would not finish, so it is detached.
+        defer { Task.detached { await lease.release() } }
+
+        let device = await store.deviceDescriptor(for: lease.captureID)
+        guard let plan = SweepPlan.plan(minHz: range.lowerBound, maxHz: range.upperBound,
+                                        sampleRateHz: lease.sampleRateHz,
+                                        tuningRanges: device?.tuningRanges ?? [])
+        else {
+            await finish(id, state: .failed, detail: "this radio cannot tune any of that range", code: "FREQ_OUT_OF_RANGE")
+            return
+        }
+        await setDetail(id, "sweeping \(plan.steps.count) steps")
+        await setStep(id, plan: plan)
+
+        let captureID = lease.captureID
+        do {
+            let dwell = config.dwellMs == 0 ? 250 : config.dwellMs
+            let (hits, floors) = try await ScanRunner.sweep(
+                lease: lease, plan: plan, dwellMs: dwell,
+                onStep: { [weak self] p in
+                    await self?.setDetail(id, "step \(p.step)/\(p.steps), \(p.found) found")
+                },
+                onHit: { [weak self] hit in
+                    await self?.detected(hit, captureID: captureID)
+                })
+            await complete(id, hits: hits, floors: floors, plan: plan,
+                           gains: await lease.pinnedGains, captureID: captureID)
+        } catch is CancellationError {
+            await finish(id, state: .cancelled, detail: "cancelled")
+        } catch {
+            let e = error as? EngineError
+            await finish(id, state: .failed, detail: e?.message ?? "\(error)", code: e?.code ?? "INTERNAL")
+        }
+    }
+
+    private func detected(_ hit: ScanHit, captureID: CaptureID) {
+        publish(proto(hit, captureID: captureID), at: hit.lastSeen, captureID: captureID)
+    }
+
+    private func setStep(_ id: JobID, plan: SweepPlan) {
+        guard var e = entries[id], var scan = e.scan else { return }
+        scan.config.stepHz = UInt32(clamping: plan.steps.count > 1
+            ? plan.steps[1].centerHz &- plan.steps[0].centerHz
+            : UInt64(plan.sampleRateHz))
+        e.scan = scan
+        entries[id] = e
+    }
+
+    private func setDetail(_ id: JobID, _ detail: String) async {
+        guard var e = entries[id], e.proto.state == .running else { return }
+        e.proto.statusDetail = detail
+        entries[id] = e
+        await store.publishJob(e.proto)
+    }
+
+    private func complete(_ id: JobID, hits: [ScanHit], floors: [Leyline_V1_NoiseFloorSegment],
+                          plan: SweepPlan, gains: [GainState], captureID: CaptureID) async
+    {
+        guard var e = entries[id], var scan = e.scan else { return }
+        scan.detections = hits.map { proto($0, captureID: captureID) }
+        scan.noiseFloor = floors
+        scan.completedAtNs = realtimeNs()
+        scan.gains = gains.map(ProtoMapping.gainState)
+        e.scan = scan
+        entries[id] = e
+        let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
+        await finish(id, state: .completed, detail: "\(hits.count) found in \(plan.steps.count) steps\(clipped)")
+    }
+
+    private func finish(_ id: JobID, state: Leyline_V1_JobState, detail: String, code: String? = nil) async {
+        guard var e = entries[id] else { return }
+        guard e.proto.state == .running else { return }
+        e.proto.state = state
+        e.proto.statusDetail = code.map { "\($0): \(detail)" } ?? detail
+        if state != .completed, var scan = e.scan {
+            scan.completedAtNs = realtimeNs()
+            e.scan = scan
+        }
+        entries[id] = e
+        await store.publishJob(e.proto)
+    }
+
+    private func proto(_ h: ScanHit, captureID: CaptureID) -> Leyline_V1_Detection {
+        var d = Leyline_V1_Detection()
+        // Stable within a scan: the frequency is what identifies a detection, and a ULID would
+        // change every time the same carrier was re-reported.
+        d.detectionID = "det_\(h.centerHz)"
+        d.captureID = captureID.string
+        d.centerHz = h.centerHz
+        d.bandwidthHz = h.bandwidthHz
+        d.snrDb = h.snrDB
+        d.floorDbfs = h.floorDBFS
+        d.looks = h.looks
+        d.looksPossible = h.looksPossible
+        d.firstSeen = ProtoMapping.sampleTime(h.firstSeen)
+        d.lastSeen = ProtoMapping.sampleTime(h.lastSeen)
+        // Invariant 12: v0 is energy detection and has no opinion about modulation.
+        d.modulationGuess = ""
+        d.guessConfidence = 0
+        return d
+    }
+
+    private func trim() {
+        var finished = order.filter { entries[$0]?.proto.state != .running }
+        while finished.count > Self.keepFinished {
+            let drop = finished.removeFirst()
+            entries[drop] = nil
+            order.removeAll { $0 == drop }
+        }
+    }
+}

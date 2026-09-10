@@ -1,6 +1,8 @@
-// leyline.v1.Jobs and leyline.v1.Resources — UNIMPLEMENTED in v0 (milestones D/E).
+// leyline.v1.Jobs — scan is implemented (Milestone D.13); watch, record and Resources arrive with
+// the durable job store at D.15.
 
 import EngineCore
+import Foundation
 import GRPCCore
 import LeylineProto
 
@@ -9,16 +11,65 @@ private func unimplemented(_ what: String) -> RPCError {
 }
 
 struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
-    func startJob(request: Leyline_V1_StartJobRequest, context: ServerContext) async throws -> Leyline_V1_Job { throw unimplemented("Jobs.StartJob") }
-    func listJobs(request: Leyline_V1_ListJobsRequest, context: ServerContext) async throws -> Leyline_V1_ListJobsResponse { throw unimplemented("Jobs.ListJobs") }
-    func getJob(request: Leyline_V1_JobRef, context: ServerContext) async throws -> Leyline_V1_Job { throw unimplemented("Jobs.GetJob") }
-    func cancelJob(request: Leyline_V1_JobRef, context: ServerContext) async throws -> Leyline_V1_Job { throw unimplemented("Jobs.CancelJob") }
-    func getTranscript(request: Leyline_V1_TranscriptRequest, context: ServerContext) async throws -> Leyline_V1_Transcript { throw unimplemented("Jobs.GetTranscript") }
-    func getScan(request: Leyline_V1_ScanRef, context: ServerContext) async throws -> Leyline_V1_Scan { throw unimplemented("Jobs.GetScan") }
+    let jobs: JobStore
+
+    func startJob(request: Leyline_V1_StartJobRequest, context _: ServerContext) async throws -> Leyline_V1_Job {
+        let client = ClientContext.current
+        switch request.config {
+        case .scan(let config)?:
+            return try await mapErrors { try await jobs.startScan(config: config, by: client) }
+        case .watch?:
+            throw unimplemented("Jobs.StartJob(watch)")
+        case .record?:
+            throw unimplemented("Jobs.StartJob(record)")
+        case nil:
+            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan is the only one in v0", target: ""))
+        }
+    }
+
+    func listJobs(request: Leyline_V1_ListJobsRequest, context _: ServerContext) async throws -> Leyline_V1_ListJobsResponse {
+        let want = Set(request.states)
+        var out = Leyline_V1_ListJobsResponse()
+        out.jobs = await jobs.snapshot().filter { want.isEmpty || want.contains($0.state) }
+        return out
+    }
+
+    func getJob(request: Leyline_V1_JobRef, context _: ServerContext) async throws -> Leyline_V1_Job {
+        guard let id = JobID(string: request.jobID), let job = await jobs.job(id) else {
+            throw ProtoMapping.rpcError(EngineError.jobNotFound(request.jobID))
+        }
+        return job
+    }
+
+    func cancelJob(request: Leyline_V1_JobRef, context _: ServerContext) async throws -> Leyline_V1_Job {
+        guard let id = JobID(string: request.jobID), let job = await jobs.cancel(id) else {
+            throw ProtoMapping.rpcError(EngineError.jobNotFound(request.jobID))
+        }
+        return job
+    }
+
+    func getTranscript(request _: Leyline_V1_TranscriptRequest, context _: ServerContext) async throws -> Leyline_V1_Transcript {
+        throw unimplemented("Jobs.GetTranscript")
+    }
+
+    func getScan(request: Leyline_V1_ScanRef, context _: ServerContext) async throws -> Leyline_V1_Scan {
+        guard let id = ScanID(string: request.scanID), let scan = await jobs.scan(id) else {
+            throw ProtoMapping.rpcError(EngineError.scanNotFound(request.scanID))
+        }
+        return scan
+    }
 }
 
 struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
-    func listResources(request: Leyline_V1_ListResourcesRequest, context: ServerContext) async throws -> Leyline_V1_ListResourcesResponse { throw unimplemented("Resources.ListResources") }
-    func getResource(request: Leyline_V1_ResourceRef, context: ServerContext) async throws -> Leyline_V1_Resource { throw unimplemented("Resources.GetResource") }
-    func resolveLocalPath(request: Leyline_V1_ResourceRef, context: ServerContext) async throws -> Leyline_V1_LocalPath { throw unimplemented("Resources.ResolveLocalPath") }
+    func listResources(request _: Leyline_V1_ListResourcesRequest, context _: ServerContext) async throws -> Leyline_V1_ListResourcesResponse {
+        throw unimplemented("Resources.ListResources")
+    }
+
+    func getResource(request _: Leyline_V1_ResourceRef, context _: ServerContext) async throws -> Leyline_V1_Resource {
+        throw unimplemented("Resources.GetResource")
+    }
+
+    func resolveLocalPath(request _: Leyline_V1_ResourceRef, context _: ServerContext) async throws -> Leyline_V1_LocalPath {
+        throw unimplemented("Resources.ResolveLocalPath")
+    }
 }

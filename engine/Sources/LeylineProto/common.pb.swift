@@ -65,6 +65,66 @@ public nonisolated enum Leyline_V1_DeliveryPolicy: SwiftProtobuf.Enum, Swift.Cas
 
 }
 
+/// Demodulators. Here rather than in control.proto because jobs name modes too, and control.proto
+/// has to be able to see a Job (Event.body) -- which would be a circular import the other way.
+public nonisolated enum Leyline_V1_DemodMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case am // = 1
+  case nfm // = 2
+  case wfm // = 3
+  case usb // = 4
+  case lsb // = 5
+  case cw // = 6
+  case rawIq // = 7
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .am
+    case 2: self = .nfm
+    case 3: self = .wfm
+    case 4: self = .usb
+    case 5: self = .lsb
+    case 6: self = .cw
+    case 7: self = .rawIq
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .am: return 1
+    case .nfm: return 2
+    case .wfm: return 3
+    case .usb: return 4
+    case .lsb: return 5
+    case .cw: return 6
+    case .rawIq: return 7
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_DemodMode] = [
+    .unspecified,
+    .am,
+    .nfm,
+    .wfm,
+    .usb,
+    .lsb,
+    .cw,
+    .rawIq,
+  ]
+
+}
+
 /// Sample-indexed timebase. Wall clock is derived via CaptureAnchor, never carried per-frame.
 /// capture_id scopes the timeline; future non-capture timelines (e.g. tx_ transmissions)
 /// reuse this field with their own IDs — do not assume it always names a Capture.
@@ -216,12 +276,34 @@ public nonisolated struct Leyline_V1_ErrorDetail: Sendable {
   public init() {}
 }
 
+/// Confirmed gain of one element; a capture event carries all of them (full state, never deltas),
+/// and a scan carries the ones it pinned for the sweep.
+public nonisolated struct Leyline_V1_GainState: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var element: String = String()
+
+  public var db: Double = 0
+
+  public var auto: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_DeliveryPolicy: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DELIVERY_POLICY_UNSPECIFIED\0\u{1}LATEST_WINS\0\u{1}GAP_MARKED\0")
+}
+
+nonisolated extension Leyline_V1_DemodMode: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEMOD_MODE_UNSPECIFIED\0\u{1}AM\0\u{1}NFM\0\u{1}WFM\0\u{1}USB\0\u{1}LSB\0\u{1}CW\0\u{1}RAW_IQ\0")
 }
 
 nonisolated extension Leyline_V1_SampleTime: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -523,6 +605,46 @@ nonisolated extension Leyline_V1_ErrorDetail: SwiftProtobuf.Message, SwiftProtob
     if lhs.code != rhs.code {return false}
     if lhs.message != rhs.message {return false}
     if lhs.target != rhs.target {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_GainState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GainState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}element\0\u{1}db\0\u{1}auto\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.element) }()
+      case 2: try { try decoder.decodeSingularDoubleField(value: &self.db) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.auto) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.element.isEmpty {
+      try visitor.visitSingularStringField(value: self.element, fieldNumber: 1)
+    }
+    if self.db.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.db, fieldNumber: 2)
+    }
+    if self.auto != false {
+      try visitor.visitSingularBoolField(value: self.auto, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_GainState, rhs: Leyline_V1_GainState) -> Bool {
+    if lhs.element != rhs.element {return false}
+    if lhs.db != rhs.db {return false}
+    if lhs.auto != rhs.auto {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

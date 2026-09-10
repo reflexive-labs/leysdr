@@ -178,6 +178,7 @@ public struct CaptureID: PrefixedID { public static let prefix = "cap"; public v
 public struct ChannelID: PrefixedID { public static let prefix = "chan"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
 public struct SinkID: PrefixedID { public static let prefix = "sink"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
 public struct JobID: PrefixedID { public static let prefix = "job"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
+public struct ScanID: PrefixedID { public static let prefix = "scan"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
 public struct StreamID: PrefixedID { public static let prefix = "strm"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
 /// Daemon-assigned per connection; used for attribution on events.
 public struct ClientID: PrefixedID { public static let prefix = "cli"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }

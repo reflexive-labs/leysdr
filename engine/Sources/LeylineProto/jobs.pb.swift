@@ -246,6 +246,11 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
     set {schedule = .recurring(newValue)}
   }
 
+  /// Sweep a radio somebody else is using. Off by default: a sweep owns the radio for seconds at a
+  /// time, so the allocator declines a capture with channels, a live audio sink or a recent
+  /// interactive write, and names what is using it. This is the explicit override.
+  public var takeOver: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Schedule: Equatable, Sendable {
@@ -358,6 +363,11 @@ public nonisolated struct Leyline_V1_Scan: Sendable {
   public var startedAtNs: Int64 = 0
 
   public var completedAtNs: Int64 = 0
+
+  /// The gain the sweep pinned for its whole duration. A sweep must not run under the tuner's AGC
+  /// -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
+  /// scan that does not say which gain it ran at cannot be compared with another.
+  public var gains: [Leyline_V1_GainState] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -750,7 +760,7 @@ nonisolated extension Leyline_V1_WatchConfig: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScanConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}step_hz\0\u{3}dwell_ms\0\u{1}once\0\u{1}recurring\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}step_hz\0\u{3}dwell_ms\0\u{1}once\0\u{1}recurring\0\u{3}take_over\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -777,6 +787,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
           self.schedule = .recurring(v)
         }
       }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
       default: break
       }
     }
@@ -807,6 +818,9 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
     }()
     case nil: break
     }
+    if self.takeOver != false {
+      try visitor.visitSingularBoolField(value: self.takeOver, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -815,6 +829,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
     if lhs.stepHz != rhs.stepHz {return false}
     if lhs.dwellMs != rhs.dwellMs {return false}
     if lhs.schedule != rhs.schedule {return false}
+    if lhs.takeOver != rhs.takeOver {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -961,7 +976,7 @@ nonisolated extension Leyline_V1_Transcript: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Scan"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scan_id\0\u{1}config\0\u{1}detections\0\u{3}noise_floor\0\u{3}started_at_ns\0\u{3}completed_at_ns\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scan_id\0\u{1}config\0\u{1}detections\0\u{3}noise_floor\0\u{3}started_at_ns\0\u{3}completed_at_ns\0\u{1}gains\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -975,6 +990,7 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.noiseFloor) }()
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.startedAtNs) }()
       case 6: try { try decoder.decodeSingularInt64Field(value: &self.completedAtNs) }()
+      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
       default: break
       }
     }
@@ -1003,6 +1019,9 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.completedAtNs != 0 {
       try visitor.visitSingularInt64Field(value: self.completedAtNs, fieldNumber: 6)
     }
+    if !self.gains.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1013,6 +1032,7 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.noiseFloor != rhs.noiseFloor {return false}
     if lhs.startedAtNs != rhs.startedAtNs {return false}
     if lhs.completedAtNs != rhs.completedAtNs {return false}
+    if lhs.gains != rhs.gains {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

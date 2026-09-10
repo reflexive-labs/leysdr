@@ -721,8 +721,19 @@ type Detection struct {
 	// A real classifier slots in here later without schema change.
 	ModulationGuess string  `protobuf:"bytes,8,opt,name=modulation_guess,json=modulationGuess,proto3" json:"modulation_guess,omitempty"`
 	GuessConfidence float64 `protobuf:"fixed64,9,opt,name=guess_confidence,json=guessConfidence,proto3" json:"guess_confidence,omitempty"` // 0 when guess is absent
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The evidence, so a client can tell a carrier from a burst instead of the daemon deciding.
+	// looks = spectrum rows in which this cleared the threshold; looks_possible = rows that covered
+	// this frequency at all. A repeater reads 8/8, a packet burst 1/8. Persistence is reported, not
+	// used as a gate: the threshold already spends a whole sweep's false-alarm budget, and demanding
+	// presence in half a dwell would make exactly the intermittent traffic an operator cares about
+	// invisible.
+	Looks         uint32 `protobuf:"varint,10,opt,name=looks,proto3" json:"looks,omitempty"`
+	LooksPossible uint32 `protobuf:"varint,11,opt,name=looks_possible,json=looksPossible,proto3" json:"looks_possible,omitempty"`
+	// The local noise floor snr_db was measured against, dBFS per bin. Local because the tuner's IF
+	// response tilts the floor several dB across a span -- one number per row cannot describe it.
+	FloorDbfs     float64 `protobuf:"fixed64,12,opt,name=floor_dbfs,json=floorDbfs,proto3" json:"floor_dbfs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Detection) Reset() {
@@ -814,6 +825,27 @@ func (x *Detection) GetModulationGuess() string {
 func (x *Detection) GetGuessConfidence() float64 {
 	if x != nil {
 		return x.GuessConfidence
+	}
+	return 0
+}
+
+func (x *Detection) GetLooks() uint32 {
+	if x != nil {
+		return x.Looks
+	}
+	return 0
+}
+
+func (x *Detection) GetLooksPossible() uint32 {
+	if x != nil {
+		return x.LooksPossible
+	}
+	return 0
+}
+
+func (x *Detection) GetFloorDbfs() float64 {
+	if x != nil {
+		return x.FloorDbfs
 	}
 	return 0
 }
@@ -980,7 +1012,7 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\x04open\x18\x02 \x01(\bR\x04open\x12)\n" +
 	"\x10duration_samples\x18\x03 \x01(\x04R\x0fdurationSamples\x12\x1e\n" +
 	"\vpeak_snr_db\x18\x04 \x01(\x01R\tpeakSnrDb\x12&\n" +
-	"\x0fpeak_audio_dbfs\x18\x05 \x01(\x01R\rpeakAudioDbfsJ\x04\b\x06\x10\a\"\xe6\x02\n" +
+	"\x0fpeak_audio_dbfs\x18\x05 \x01(\x01R\rpeakAudioDbfsJ\x04\b\x06\x10\a\"\xc2\x03\n" +
 	"\tDetection\x12!\n" +
 	"\fdetection_id\x18\x01 \x01(\tR\vdetectionId\x12\x1d\n" +
 	"\n" +
@@ -992,7 +1024,12 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"first_seen\x18\x06 \x01(\v2\x16.leyline.v1.SampleTimeR\tfirstSeen\x123\n" +
 	"\tlast_seen\x18\a \x01(\v2\x16.leyline.v1.SampleTimeR\blastSeen\x12)\n" +
 	"\x10modulation_guess\x18\b \x01(\tR\x0fmodulationGuess\x12)\n" +
-	"\x10guess_confidence\x18\t \x01(\x01R\x0fguessConfidence\"t\n" +
+	"\x10guess_confidence\x18\t \x01(\x01R\x0fguessConfidence\x12\x14\n" +
+	"\x05looks\x18\n" +
+	" \x01(\rR\x05looks\x12%\n" +
+	"\x0elooks_possible\x18\v \x01(\rR\rlooksPossible\x12\x1d\n" +
+	"\n" +
+	"floor_dbfs\x18\f \x01(\x01R\tfloorDbfs\"t\n" +
 	"\x12CaptureActivityMsg\x12\x1d\n" +
 	"\n" +
 	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12?\n" +

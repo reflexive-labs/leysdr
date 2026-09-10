@@ -138,6 +138,9 @@ actor SessionStore {
     private var deviceTask: Task<Void, Never>?
     /// Installed by the bulk plane so streams on destroyed objects end.
     private var teardownHook: (@Sendable (TeardownScope) async -> Void)?
+    /// Installed by the job store; nil until jobs exist.
+    private var jobsProvider: (@Sendable () async -> [Leyline_V1_Job])?
+    private var clientGoneHook: (@Sendable (String) async -> Void)?
 
     init(registry: DefaultDeviceRegistry, info: DaemonInfo, presenceGraceNs: UInt64 = 5_000_000_000) {
         self.registry = registry
@@ -255,8 +258,16 @@ actor SessionStore {
             log.info("reaping channel \(id) of absent client \(clientID)")
             await destroyChannel(id: id, by: .daemon, engineAlreadyClosed: false)
         }
-        if stillAbsent(clientID) { presence[clientID] = nil }
+        if stillAbsent(clientID) {
+            // A sweep nobody is reading is a radio nobody can use. The CLI cancels its own scan on
+            // Ctrl-C; this is the backstop for a hard kill.
+            await clientGoneHook?(clientID)
+            presence[clientID] = nil
+        }
     }
+
+    /// Installed by the job store: ends the jobs a departing client owned.
+    func setClientGoneHook(_ hook: @escaping @Sendable (String) async -> Void) { clientGoneHook = hook }
 
     /// True while `clientID` has no open stream and this reap's grace task was not cancelled by a
     /// reconnect (`streamOpened`) or a newer unary call (`touchUnary` re-arms the grace). `reap`
@@ -443,6 +454,32 @@ actor SessionStore {
         emit(.capture(proto), captureID: id, by: by)
         emit(.anchor(proto.anchor), captureID: id, by: by)
         return proto
+    }
+
+    /// Emits a job's full state on the event stream. Jobs are daemon state like captures and
+    /// channels, so clients render them by subscription rather than by polling GetJob (invariant 7),
+    /// and `Job` is already a whole-object message so nothing here is a delta (invariant 6).
+    /// Daemon-scoped: a job is not tied to one capture's lifetime.
+    func publishJob(_ job: Leyline_V1_Job) {
+        emit(.job(job), captureID: nil, by: .daemon)
+    }
+
+    /// The descriptor of the device a capture is running on.
+    func deviceDescriptor(for id: CaptureID) -> DeviceDescriptor? {
+        guard let entry = captures[id] else { return nil }
+        return devices[entry.deviceID]
+    }
+
+    /// Installed by the job store so `GetState` carries the job table.
+    func setJobsProvider(_ provider: @escaping @Sendable () async -> [Leyline_V1_Job]) {
+        jobsProvider = provider
+    }
+
+    /// Re-emits a capture's full state. The capture allocator's lease uses this after retuning or
+    /// restoring, because it deliberately bypasses `applyWrite` -- the write coalescer keeps
+    /// last-value-per-parameter on a 20 ms tick and would silently eat sweep steps.
+    func publishCapture(_ id: CaptureID) async {
+        await emitCapture(id, by: .daemon)
     }
 
     private func anchorArrived(_ id: CaptureID, _ anchor: CaptureAnchor) {
@@ -831,6 +868,11 @@ actor SessionStore {
             guard let s = sinks[id] else { continue }
             if let c = capFilter, channels[s.channelID]?.captureID != c { continue }
             out.sinks.append(s.proto)
+        }
+        // Daemon-scoped only: a job is not tied to one capture's lifetime, and a capture-filtered
+        // reader asked about that capture.
+        if capFilter == nil, let provider = jobsProvider {
+            out.jobs = await provider()
         }
         out.eventSeq = at
         return out

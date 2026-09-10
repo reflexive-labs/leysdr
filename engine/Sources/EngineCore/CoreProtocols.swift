@@ -420,13 +420,50 @@ public enum JobStatus: Sendable {
 
 /// Allocates captures/channels for jobs under the don't-disturb policy:
 /// prefer idle devices; never retune a capture with recent interactive activity (invariant 9).
+///
+/// Jobs never name a capture. A watch wants one channel inside whatever capture it can get; a
+/// sweep wants a whole radio to itself for several seconds, which no channel can express -- a
+/// channel's offset is bounded by the sample rate, and a sweep walks megahertz. So the allocator
+/// answers a sweep with a *lease*, which is the only handle a job ever has on tuning.
 public protocol CaptureAllocator: Sendable {
-    func allocate(frequencyHz: UInt64, bandwidthHz: UInt32) async throws -> AllocationResult
+    func allocate(_ request: AllocationRequest, for job: JobID) async -> AllocationResult
+}
+
+public enum AllocationRequest: Sendable {
+    /// One demod chain at a frequency, inside any capture that covers it.
+    case channel(frequencyHz: UInt64, bandwidthHz: UInt32)
+    /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the politeness
+    /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
+    /// the exclusivity one: two sweeps do not share a radio.
+    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, takeOver: Bool)
 }
 
 public enum AllocationResult: Sendable {
     case channel(ChannelID)
-    case declined(reason: String)
+    case capture(any CaptureLease)
+    /// `code` is a stable machine string; `reason` names what is using the radio, in prose.
+    case declined(code: String, reason: String)
+}
+
+/// A job's exclusive hold on one capture. Retuning through the lease bypasses the write coalescer
+/// deliberately: that path keeps last-value-per-parameter on a 20 ms tick and would silently eat
+/// sweep steps.
+public protocol CaptureLease: AnyObject, Sendable {
+    var captureID: CaptureID { get }
+    var sampleRateHz: UInt64 { get }
+    var centerHz: UInt64 { get async }
+    /// Samples the driver has queued ahead of the retune -- the settle window (see
+    /// `RadioDevice.inFlightSamples`), plus whatever is already in the capture's own ring.
+    var settleSamples: UInt64 { get async }
+    /// The ladder this capture computes, for a detector to subscribe to.
+    var spectrum: any SpectrumLadder { get }
+    /// The gain the lease pinned for its duration.
+    var pinnedGains: [GainState] { get async }
+
+    func retune(centerHz: UInt64) async throws
+    /// Restores what was borrowed: the original centre and gain, or the capture is destroyed if
+    /// the lease created it. Idempotent, and must run on cancellation as well as on success.
+    func release() async
 }
 
 // MARK: - Store (Milestone C/D)

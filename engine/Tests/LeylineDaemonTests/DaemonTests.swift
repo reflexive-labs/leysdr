@@ -21,14 +21,25 @@ final class DaemonTests: XCTestCase {
             XCTAssertGreaterThan(state.daemon.startedAtNs, 1_600_000_000_000_000_000)
             XCTAssertEqual(state.eventSeq, 0)
 
-            // Jobs/Resources are UNIMPLEMENTED with the leyline trailer.
+            // Scan jobs are implemented (D.13): an idle daemon has none, and that is not an error.
+            let none = try await c.jobs.listJobs(Leyline_V1_ListJobsRequest(), metadata: testMetadata)
+            XCTAssertTrue(none.jobs.isEmpty)
+            XCTAssertTrue(state.jobs.isEmpty)
+
+            // Everything the durable job store owns is still UNIMPLEMENTED, with the leyline trailer.
             do {
-                _ = try await c.jobs.listJobs(Leyline_V1_ListJobsRequest(), metadata: testMetadata)
+                _ = try await c.jobs.getTranscript(Leyline_V1_TranscriptRequest(), metadata: testMetadata)
                 XCTFail("expected UNIMPLEMENTED")
             } catch {
                 let (code, detail) = errorCode(error)
                 XCTAssertEqual(code, "UNIMPLEMENTED")
                 XCTAssertEqual(detail?.code, "UNIMPLEMENTED")
+                XCTAssertEqual((error as? RPCError)?.code, .unimplemented)
+            }
+            do {
+                _ = try await c.resources.listResources(Leyline_V1_ListResourcesRequest(), metadata: testMetadata)
+                XCTFail("expected UNIMPLEMENTED")
+            } catch {
                 XCTAssertEqual((error as? RPCError)?.code, .unimplemented)
             }
         }
@@ -640,7 +651,7 @@ final class DaemonTests: XCTestCase {
             let collector = TelemetryCollector()
             let gate = TestGate()
             let writer = RPCWriter(wrapping: StallingTelemetryWriter(collector: collector, gate: gate))
-            let service = TelemetryService(store: c.daemon.store)
+            let service = TelemetryService(store: c.daemon.store, jobs: c.daemon.jobs)
             let descriptor = MethodDescriptor(fullyQualifiedService: "leyline.v1.Telemetry", method: "Subscribe")
             let cancellation = LockedValue<ServerContext.RPCCancellationHandle?>(nil)
             // Drive the service directly with a writer we can hold, so the stall is deterministic.

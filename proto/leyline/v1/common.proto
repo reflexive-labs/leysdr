@@ -58,3 +58,12 @@ message ErrorDetail {
   string message = 2;
   string target = 3;  // id of the object the error concerns
 }
+
+// Demodulators. Here rather than in control.proto because jobs name modes too, and control.proto
+// has to be able to see a Job (Event.body) -- which would be a circular import the other way.
+enum DemodMode { DEMOD_MODE_UNSPECIFIED = 0; AM = 1; NFM = 2; WFM = 3; USB = 4; LSB = 5; CW = 6; RAW_IQ = 7; }
+
+// Confirmed gain of one element; a capture event carries all of them (full state, never deltas),
+// and a scan carries the ones it pinned for the sweep.
+message GainState { string element = 1; double db = 2; bool auto = 3; }
+

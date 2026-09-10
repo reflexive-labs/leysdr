@@ -126,6 +126,17 @@ message Detection {
   // A real classifier slots in here later without schema change.
   string modulation_guess = 8;
   double guess_confidence = 9; // 0 when guess is absent
+  // The evidence, so a client can tell a carrier from a burst instead of the daemon deciding.
+  // looks = spectrum rows in which this cleared the threshold; looks_possible = rows that covered
+  // this frequency at all. A repeater reads 8/8, a packet burst 1/8. Persistence is reported, not
+  // used as a gate: the threshold already spends a whole sweep's false-alarm budget, and demanding
+  // presence in half a dwell would make exactly the intermittent traffic an operator cares about
+  // invisible.
+  uint32 looks = 10;
+  uint32 looks_possible = 11;
+  // The local noise floor snr_db was measured against, dBFS per bin. Local because the tuner's IF
+  // response tilts the floor several dB across a span -- one number per row cannot describe it.
+  double floor_dbfs = 12;
 }
 
 message CaptureActivityMsg {

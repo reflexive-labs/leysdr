@@ -163,6 +163,8 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
     public static func channelNotFound(_ id: String) -> EngineError { .init(code: "CHANNEL_NOT_FOUND", message: "no such channel", target: id) }
     public static func sinkNotFound(_ id: String) -> EngineError { .init(code: "SINK_NOT_FOUND", message: "no such sink", target: id) }
     public static func modeUnsupported(_ mode: String, target: String = "") -> EngineError { .init(code: "MODE_UNSUPPORTED", message: "demodulator \(mode) is not available", target: target) }
+    public static func jobNotFound(_ id: String) -> EngineError { .init(code: "JOB_NOT_FOUND", message: "no such job", target: id) }
+    public static func scanNotFound(_ id: String) -> EngineError { .init(code: "SCAN_NOT_FOUND", message: "no such scan", target: id) }
     public static func unimplemented(_ what: String) -> EngineError { .init(code: "UNIMPLEMENTED", message: "\(what) is not implemented in v0", target: "") }
     public static func invalidArgument(_ msg: String, target: String = "") -> EngineError { .init(code: "INVALID_ARGUMENT", message: msg, target: target) }
     public static func platformUnsupported(_ what: String) -> EngineError { .init(code: "PLATFORM_UNSUPPORTED", message: "\(what) requires macOS", target: "") }

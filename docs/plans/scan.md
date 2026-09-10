@@ -31,25 +31,25 @@ client, 16–17 the harness and the docs.
 
 ## The wire
 
-- [ ] **SC-6 Additive proto fields.** `Event.job = 9`, `GetStateResponse.jobs = 7`,
+- [x] **SC-6 Additive proto fields.** `Event.job = 9`, `GetStateResponse.jobs = 7`,
       `Detection.looks = 10 / looks_possible = 11 / floor_dbfs = 12`, `Scan.gains = 7`,
       `ScanConfig.take_over = 6`. Regenerate both languages with `make proto`; never hand-edit.
 
 ## Daemon
 
-- [ ] **SC-7 `ScanID`.** A `scan_` prefixed ULID beside `JobID`.
-- [ ] **SC-8 `CaptureAllocator` and `CaptureLease`.** The declared protocol returns a `ChannelID`,
+- [x] **SC-7 `ScanID`.** A `scan_` prefixed ULID beside `JobID`.
+- [x] **SC-8 `CaptureAllocator` and `CaptureLease`.** The declared protocol returns a `ChannelID`,
       which cannot express what a sweep needs. Add `exclusiveCapture` and a lease with `retune` and
       an idempotent `release`. Policy: idle device, else an untouched capture, else decline with a
       reason naming who has it. Restores centre and gain on release.
-- [ ] **SC-9 `JobStore`.** An actor holding the jobs and their scans in memory, last sixteen kept.
+- [x] **SC-9 `JobStore`.** An actor holding the jobs and their scans in memory, last sixteen kept.
       Job state transitions emit full-state `Job` events through the session store's seq.
-- [ ] **SC-10 `ScanRunner`.** The sweep: pin gain, walk the plan, discard the settle window from
+- [x] **SC-10 `ScanRunner`.** The sweep: pin gain, walk the plan, discard the settle window from
       each step by sample index, feed rows to the detector, merge across steps, emit detections on
       telemetry as they are found, accumulate the `Scan`.
-- [ ] **SC-11 `JobsService`.** `StartJob(scan)`, `GetJob`, `ListJobs`, `CancelJob`, `GetScan`.
+- [x] **SC-11 `JobsService`.** `StartJob(scan)`, `GetJob`, `ListJobs`, `CancelJob`, `GetScan`.
       `recurring` rejected with a stable code. Everything else stays UNIMPLEMENTED.
-- [ ] **SC-12 Detection on telemetry.** A detection hub the telemetry service drains, gated on
+- [x] **SC-12 Detection on telemetry.** A detection hub the telemetry service drains, gated on
       `TelemetryType.DETECTION` and the capture filter.
 
 ## Client
@@ -85,3 +85,20 @@ did not have:
 - The tilt test asserts a **relationship, not a number**: the local floor must leave less than half
   the tilt a single median leaves. Absolute residuals move with the synthetic tilt shape; the claim
   that matters does not.
+
+**SC-6 needed a file move.** `Event.body` has to be able to name a `Job`, and `jobs.proto` already
+imported `control.proto` -- a cycle protoc refuses. `DemodMode` and `GainState` moved down into
+`common.proto`, which is free: everything is in package `leyline.v1`, so the fully-qualified names,
+the wire and every generated type name are unchanged, and both languages rebuilt without a source
+edit.
+
+**SC-10's settle window is arithmetic on the sample timeline, not a timer.** The runner keeps the
+newest sample index any row has reported; at each hop that index plus the lease's `settleSamples`
+is the first index the new frequency can have produced. The timeline is monotonic across a retune,
+so this is exact. The wall clock appears only as a backstop deadline in case a device is slower
+than its own arithmetic says.
+
+**The threshold is fixed for a whole step, not recomputed per row.** It spends a sweep-wide
+false-alarm budget, so a budget that moved as rows arrived would make a step's first row stricter
+than its last -- a detector whose sensitivity depends on when in the dwell a signal appeared.
+
