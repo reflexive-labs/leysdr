@@ -67,7 +67,7 @@ the daemon already has the number, and two clients disagreeing about where the n
 the kind of thing that makes two screens contradict each other. Noticed while writing an offline
 render harness that defaulted the missing field to 0 and drew a chart claiming a 0 dBFS floor.
 
-## PC-5 `[ ]` A watch chart taller than the terminal strands lines
+## PC-5 `[x]` A watch chart taller than the terminal strands lines
 
 `ley spectrum --watch` redraws in place with cursor-up. The arithmetic is self-consistent
 (`TestSpectrumWatchDrawsOneStatusLine` pins it), but cursor-up clamps at the top of the screen, so a
@@ -75,9 +75,23 @@ render harness that defaulted the missing field to 0 and drew a chart claiming a
 The reported symptom was two status lines counting different frame numbers, which cleared when the
 terminal did.
 
-The fix needs the terminal's **height**, which `ui.Resolve` does not currently read -- only width.
-With it, fall back to append-mode (as `ley waterfall` already does) when the block does not fit.
-Bigger than the rest of this file; it is here because it is where it will be looked for.
+Done, and the height was closer to hand than expected: `ttyColumns` already asked TIOCGWINSZ for a
+struct containing `rows` and threw it away. It is now `ttySize`, with `App.TermHeight`,
+`ui.Options.StdoutHeight` and `ui.Style.Height` behind it.
+
+`Height` is deliberately not part of layout -- nothing wraps to a height -- and has no flag and no
+clamp, unlike `Width`. It exists for one decision: whether a block is short enough to redraw at all.
+
+The test is the arithmetic that matters: a block needs `lines+1` rows, because after writing N lines
+the cursor sits on the next one and moving back N only lands on the first if all N+1 were on screen.
+When it does not fit the chart is appended instead, the status line stops trying to overwrite
+something that has moved, and the reason is printed once -- a chart that silently started scrolling
+would read as a bug rather than as a window that is too short. An unknown height keeps the old
+behaviour, which is no worse than before.
+
+Tests: `TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen` (no cursor-up is emitted at all,
+the reason is said exactly once, and every frame still arrives) and
+`TestSpectrumWatchRedrawsWhenHeightIsUnknown`.
 
 ## PC-6 `[ ]` Reconcile the style guide on error inking
 

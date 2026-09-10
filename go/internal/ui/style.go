@@ -20,6 +20,11 @@ type Style struct {
 	Unicode bool
 	// Width is the resolved terminal width in columns; 0 means unknown.
 	Width int
+	// Height is the terminal's row count; 0 means unknown. It is not part of
+	// layout -- nothing wraps to a height -- and exists for the one decision
+	// that needs it: whether a block is short enough to redraw in place, since
+	// cursor-up clamps at the top of the screen.
+	Height int
 }
 
 // sgrReset closes any ink Truncate had to cut mid-string.

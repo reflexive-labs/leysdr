@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/ui"
 )
 
 // The watch writer redraws in place with cursor-up, which is only correct while
@@ -115,4 +116,79 @@ func replayANSI(s string) []string {
 	}
 	flush()
 	return screen
+}
+
+// A block taller than the terminal cannot be redrawn in place: cursor-up clamps
+// at the top of the screen, so the first lines are stranded and every later
+// redraw compounds it. The reported symptom was two status lines counting
+// different frame numbers. A short terminal must scroll instead.
+func TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	app := ttyApp(sock)
+	app.TermWidth = func() int { return 100 }
+	app.TermHeight = func() int { return 8 } // the chart is ~19 rows
+	app.LookupEnv = func(name string) (string, bool) {
+		switch name {
+		case "LANG":
+			return "en_US.UTF-8", true
+		case "TERM":
+			return "xterm-256color", true
+		}
+		return "", false
+	}
+	out, errOut, err := runApp(t, app, "spectrum", "146.52", "--watch", "--rate", "4", "--count", "4")
+	if err != nil {
+		t.Fatalf("spectrum: %v\n%s\n%s", err, out, errOut)
+	}
+	// No cursor-up at all: every one would be a lie about where the block is.
+	if strings.Contains(out, "\x1b[") && strings.Contains(out, "A") {
+		for _, seq := range []string{"\x1b[1A", "\x1b[19A", "\x1b[20A"} {
+			if strings.Contains(out, seq) {
+				t.Errorf("a chart that does not fit must not move the cursor up (%q)", seq)
+			}
+		}
+	}
+	// And the reason is said, once, so a scrolling chart does not read as a bug.
+	if !strings.Contains(errOut, "scrolls instead of redrawing") {
+		t.Errorf("want the reason on stderr:\n%s", errOut)
+	}
+	if n := strings.Count(errOut, "scrolls instead of redrawing"); n != 1 {
+		t.Errorf("the reason is said once, not %d times", n)
+	}
+	// Every frame is still delivered, appended.
+	if n := strings.Count(ui.Strip(out), "elapsed"); n < 4 {
+		t.Errorf("want a status line per appended frame, got %d:\n%s", n, ui.Strip(out))
+	}
+}
+
+// A terminal that will not report its height keeps the old behaviour: it is no
+// worse than before, and there is nothing better to do without the number.
+func TestSpectrumWatchRedrawsWhenHeightIsUnknown(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	app := ttyApp(sock)
+	app.TermWidth = func() int { return 100 }
+	app.TermHeight = func() int { return 0 }
+	app.LookupEnv = func(name string) (string, bool) {
+		if name == "TERM" {
+			return "xterm-256color", true
+		}
+		return "", false
+	}
+	out, _, err := runApp(t, app, "spectrum", "146.52", "--watch", "--rate", "4", "--count", "3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "\x1b[") {
+		t.Error("an unknown height should still redraw in place")
+	}
+	screen := replayANSI(out)
+	n := 0
+	for _, l := range screen {
+		if strings.Contains(l, "frame ") && strings.Contains(l, "elapsed") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("want one status line, got %d", n)
+	}
 }

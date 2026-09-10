@@ -42,6 +42,11 @@ type Options struct {
 	// StdoutWidth and StderrWidth are TIOCGWINSZ on the two streams, 0 when
 	// unknown.
 	StdoutWidth, StderrWidth int
+	// StdoutHeight is the terminal's row count, 0 when unknown. Unlike width
+	// it is not clamped and has no flag: nothing lays out to a height, and the
+	// one caller that needs it is deciding whether a block it already sized
+	// can be redrawn in place at all.
+	StdoutHeight int
 	// LookupEnv resolves environment variables; nil means os.LookupEnv.
 	LookupEnv func(string) (string, bool)
 }
@@ -55,6 +60,9 @@ func Resolve(o Options) Style {
 		Profile: resolveProfile(o, color),
 		Unicode: resolveUnicode(o),
 		Width:   resolveWidth(o),
+		// The stderr style shares stdout's height: the only consumer draws to
+		// one screen, and a block that will not fit does not fit either way.
+		Height: o.StdoutHeight,
 	}
 }
 

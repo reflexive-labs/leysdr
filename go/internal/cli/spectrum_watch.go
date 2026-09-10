@@ -43,6 +43,15 @@ type spectrumWriter struct {
 	redraw bool // in-place redraw (a --watch run on a terminal)
 	watch  bool
 	rate   float64
+	// height is the terminal's row count, 0 when unknown. A block taller than
+	// the screen cannot be redrawn in place at all: cursor-up clamps at the
+	// top, so the first lines are stranded and every later redraw compounds it.
+	height int
+	// scrolling is set once a frame has been appended rather than redrawn, so
+	// the status line stops trying to overwrite something that has moved.
+	scrolling bool
+	// toldWhy reports that the reason for scrolling has been said once.
+	toldWhy bool
 
 	start     time.Time
 	last      time.Time // when the last row arrived
@@ -61,6 +70,7 @@ func newSpectrumWriter(app *App, out *bufio.Writer, o spectrumOptions, rate floa
 		redraw: o.watch && !app.JSON && app.IsTTY(),
 		watch:  o.watch,
 		rate:   rate,
+		height: app.Style.Height,
 		start:  time.Now(),
 	}
 }
@@ -85,13 +95,51 @@ func (w *spectrumWriter) frame(text, note string) {
 		w.out.WriteString(ansiHideCursor)
 		w.hidden = true
 	}
-	w.up()
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	// The block is the chart plus its status line, and redrawing it needs one
+	// row of headroom: after writing N lines the cursor sits on the next one,
+	// and moving back N only lands on the first line if all N+1 were on screen.
+	if !w.fits(len(lines) + 1) {
+		w.scroll(lines)
+		return
+	}
+	w.up()
 	for _, l := range lines {
 		w.out.WriteString(l + ansiEraseLine + "\n")
 	}
 	w.out.WriteString(w.status() + ansiEraseLine + "\n")
 	w.lines = len(lines) + 1
+	w.scrolling = false
+}
+
+// fits reports whether a block of n lines can be redrawn in place. An unknown
+// height keeps the old behaviour: it is no worse than before, and on a terminal
+// that will not report its size there is nothing better to do.
+func (w *spectrumWriter) fits(n int) bool {
+	return w.height <= 0 || n <= w.height
+}
+
+// scroll appends a block that is too tall to redraw, and says why once. Left
+// silent, a chart that suddenly started scrolling would look like a bug rather
+// than a window that is too short.
+func (w *spectrumWriter) scroll(lines []string) {
+	if !w.toldWhy {
+		w.toldWhy = true
+		fmt.Fprintf(w.app.Stderr, "%s\n", w.app.ErrStyle.Muted(fmt.Sprintf(
+			"the chart is %d rows and this terminal has %d, so it scrolls instead of redrawing; a taller window redraws in place",
+			len(lines)+1, w.height)))
+	}
+	if w.hidden {
+		w.out.WriteString(ansiShowCursor)
+		w.hidden = false
+	}
+	for _, l := range lines {
+		w.out.WriteString(l + ansiEraseLine + "\n")
+	}
+	w.out.WriteString(w.status() + ansiEraseLine + "\n")
+	// Nothing on screen is ours to overwrite any more.
+	w.lines = 0
+	w.scrolling = true
 }
 
 // row records that the daemon delivered one. --json writes its own line and
@@ -126,6 +174,12 @@ func (w *spectrumWriter) idle() {
 	if !w.hidden {
 		w.out.WriteString(ansiHideCursor)
 		w.hidden = true
+	}
+	// A scrolling run has no anchored status line to refresh; its status is
+	// printed with each block and rewriting it here would append a line a
+	// second for as long as the run lasts.
+	if w.scrolling {
+		return
 	}
 	if w.lines > 0 {
 		fmt.Fprintf(w.out, ansiCursorUpFmt, 1)

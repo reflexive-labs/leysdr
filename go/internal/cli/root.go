@@ -61,6 +61,11 @@ type App struct {
 	// decided per stream, so prose keeps its ink when stdout is a pipe. nil
 	// means "detect from Stderr".
 	IsErrTTY func() bool
+	// TermHeight returns the terminal height in rows, 0 when unknown. nil
+	// means measure Stdout. A redraw-in-place chart needs it: cursor-up
+	// clamps at the top of the screen, so a block taller than the terminal
+	// cannot be addressed and has to scroll instead.
+	TermHeight func() int
 	// ErrTermWidth returns Stderr's column count, 0 when unknown. nil means
 	// "detect from Stderr".
 	ErrTermWidth func() int
@@ -97,6 +102,9 @@ func NewRootCommand(app *App) *cobra.Command {
 	}
 	if app.IsErrTTY == nil {
 		app.IsErrTTY = func() bool { return isTerminal(app.Stderr) }
+	}
+	if app.TermHeight == nil {
+		app.TermHeight = func() int { return terminalHeight(app.Stdout) }
 	}
 	if app.ErrTermWidth == nil {
 		app.ErrTermWidth = func() int { return terminalWidth(app.Stderr) }
@@ -437,15 +445,16 @@ func (a *App) resolveStyles(cmd *cobra.Command, machine bool) error {
 		return usageErrorf("--color must be auto, always or never (got %q)", a.color)
 	}
 	o := ui.Options{
-		Color:       a.color,
-		ASCII:       a.ascii,
-		Width:       widthFlag(cmd),
-		Machine:     machine,
-		StdoutTTY:   a.IsTTY(),
-		StderrTTY:   a.IsErrTTY(),
-		StdoutWidth: a.TermWidth(),
-		StderrWidth: a.ErrTermWidth(),
-		LookupEnv:   a.LookupEnv,
+		Color:        a.color,
+		ASCII:        a.ascii,
+		Width:        widthFlag(cmd),
+		Machine:      machine,
+		StdoutTTY:    a.IsTTY(),
+		StderrTTY:    a.IsErrTTY(),
+		StdoutWidth:  a.TermWidth(),
+		StdoutHeight: a.TermHeight(),
+		StderrWidth:  a.ErrTermWidth(),
+		LookupEnv:    a.LookupEnv,
 	}
 	a.Style = ui.Resolve(o)
 	o.Stderr = true
@@ -570,6 +579,15 @@ func terminalWidth(w io.Writer) int {
 	return ttyColumns(f)
 }
 
+// terminalHeight is the row count of w's terminal, 0 when it is not one.
+func terminalHeight(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	return ttyRows(f)
+}
+
 // indentLines indents every line of s by indent; it keeps the caller's line
 // breaks (help texts are hand-wrapped) and only adds the prefix.
 func indentLines(s, indent string) string {
@@ -582,15 +600,29 @@ func indentLines(s, indent string) string {
 	return strings.Join(lines, "\n")
 }
 
-// ttyColumns asks the terminal for its width with TIOCGWINSZ; 0 when f is not
-// a terminal.
-func ttyColumns(f *os.File) int {
+// ttySize asks the terminal for its size with TIOCGWINSZ; zeroes when f is not
+// a terminal. Rows matter as well as columns: a chart that redraws in place
+// with cursor-up cannot address a block taller than the screen, because the
+// cursor clamps at the top and the first lines are stranded.
+func ttySize(f *os.File) (cols, rows int) {
 	var ws struct{ rows, cols, x, y uint16 }
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
 	if errno != 0 {
-		return 0
+		return 0, 0
 	}
-	return int(ws.cols)
+	return int(ws.cols), int(ws.rows)
+}
+
+// ttyColumns is ttySize's width alone.
+func ttyColumns(f *os.File) int {
+	c, _ := ttySize(f)
+	return c
+}
+
+// ttyRows is ttySize's height alone.
+func ttyRows(f *os.File) int {
+	_, r := ttySize(f)
+	return r
 }
 
 // orientDialTimeout bounds the bare-`ley` daemon probe: orientation must
