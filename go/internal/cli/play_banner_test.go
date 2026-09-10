@@ -18,8 +18,7 @@ func fileDescriptor(rates []uint64, seconds float64, loop bool) *leylinev1.Devic
 }
 
 // play's second banner line answers "what am I listening to", where tune's
-// answers "on what radio". The line it replaced read "Radio
-// FilePlaybackDevice, no gain control", which is a line spent saying nothing.
+// answers "on what radio".
 func TestPlayedSource(t *testing.T) {
 	got := playedSource("/tmp/nfm_tone.cf32", fileDescriptor([]uint64{2_400_000}, 1.024, true))
 	for _, want := range []string{"nfm_tone.cf32", "1.0 s", "2.4 MSPS", "looping"} {

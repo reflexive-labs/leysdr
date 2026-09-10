@@ -11,9 +11,9 @@ import (
 
 // The watch writer redraws in place with cursor-up, which is only correct while
 // its bookkeeping and the screen agree about how many lines the block occupies.
-// A reported symptom of them disagreeing is two status lines on screen counting
-// different numbers of frames, so this replays the ANSI the writer actually
-// emits onto a virtual screen and counts what a person would see.
+// When they disagree, two status lines can appear on screen counting different
+// numbers of frames, so this replays the ANSI the writer actually emits onto a
+// virtual screen and counts what a person would see.
 //
 // It cannot catch the environmental half of that hazard: cursor-up clamps at
 // the top of the screen, so a block taller than the terminal strands its first
@@ -120,8 +120,8 @@ func replayANSI(s string) []string {
 
 // A block taller than the terminal cannot be redrawn in place: cursor-up clamps
 // at the top of the screen, so the first lines are stranded and every later
-// redraw compounds it. The reported symptom was two status lines counting
-// different frame numbers. A short terminal must scroll instead.
+// redraw compounds it, leaving two status lines counting different frame
+// numbers. A short terminal must scroll instead.
 func TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	app := ttyApp(sock)

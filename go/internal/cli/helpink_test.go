@@ -99,7 +99,7 @@ func TestHelpFlagInk(t *testing.T) {
 			t.Errorf("tune --help lacks %q", want)
 		}
 	}
-	// The duplicated default is gone for good (it also changed tune.golden).
+	// A flag's default must not be printed twice.
 	if strings.Contains(ui.Strip(out), "(default: full)") {
 		t.Error("--volume still states its default twice")
 	}

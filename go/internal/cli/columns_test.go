@@ -55,9 +55,9 @@ func devicesFixture() []*leylinev1.DeviceDescriptor {
 	}
 }
 
-// TestScreensSurviveColourOff is the mechanical proof of principle 1 for the
-// three screens of VIS-2: strip the SGR from the coloured rendering and it is
-// the plain rendering, byte for byte.
+// TestScreensSurviveColourOff checks that on the devices, presets and bands
+// screens, stripping the SGR from the coloured rendering leaves the plain
+// rendering, byte for byte.
 func TestScreensSurviveColourOff(t *testing.T) {
 	screens := map[string]func(*App){
 		"devices":      func(a *App) { printDeviceTable(a, devicesFixture(), false) },

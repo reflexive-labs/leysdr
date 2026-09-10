@@ -22,8 +22,8 @@ func TestHumanEventDropsAnchor(t *testing.T) {
 }
 
 // A device that tunes to exactly one frequency -- a file device plays back one
-// centre -- must not read as "146.520 MHz to 146.520 MHz". `ley devices` always
-// collapsed it; `ley state`'s tree did not, and they now share the renderer.
+// centre -- must not read as "146.520 MHz to 146.520 MHz". Both `ley devices`
+// and `ley state`'s tree render this through the same collapsing renderer.
 func TestRangesPhraseCollapses(t *testing.T) {
 	r := func(lo, hi uint64) *leylinev1.FrequencyRange {
 		return &leylinev1.FrequencyRange{MinHz: lo, MaxHz: hi}
@@ -38,7 +38,7 @@ func TestRangesPhraseCollapses(t *testing.T) {
 		{"two ranges", []*leylinev1.FrequencyRange{r(1_000_000, 2_000_000), r(146_520_000, 146_520_000)}, "1.000 MHz to 2.000 MHz, 146.520 MHz"},
 		// The absent form belongs to the caller, so this is empty rather than a glyph.
 		{"none", nil, ""},
-		// A nil element used to panic; skipping it is a latent fix.
+		// A nil element is skipped rather than dereferenced.
 		{"a nil element", []*leylinev1.FrequencyRange{nil, r(146_520_000, 146_520_000)}, "146.520 MHz"},
 	} {
 		if got := rangesPhrase(tc.in); got != tc.want {

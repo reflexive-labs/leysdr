@@ -74,9 +74,9 @@ func startTune(t *testing.T, sock, want string, args ...string) (out, errOut *sy
 	return out, errOut, cancel, res
 }
 
-// #26 / #14: the daemon closing its streams (shutdown) ends a live tune
-// cleanly with one stderr line, not "ley: EOF" and exit 1; the teardown
-// that then fails says so and names the recovery.
+// The daemon closing its streams (shutdown) ends a live tune cleanly with
+// one stderr line, not "ley: EOF" and exit 1; the teardown that then fails
+// says so and names the recovery.
 func TestTuneDaemonClosesStreams(t *testing.T) {
 	sock, _, stop := harnessStop(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	_, errOut, cancel, done := startTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio")
@@ -100,7 +100,7 @@ func TestTuneDaemonClosesStreams(t *testing.T) {
 	}
 }
 
-// #15: a channel another client adds to this run's capture while it is live
+// A channel another client adds to this run's capture while it is live
 // keeps the capture alive at teardown; the run says so.
 func TestTeardownKeepsSharedCapture(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
@@ -130,9 +130,9 @@ func TestTeardownKeepsSharedCapture(t *testing.T) {
 	}
 }
 
-// #4: a squelch below the daemon's floor is a usage error before any RPC,
-// and a squelch the daemon rejects fails the tune and tears down what tune
-// created rather than listening with the wrong squelch.
+// A squelch below the daemon's floor is a usage error before any RPC, and a
+// squelch the daemon rejects fails the tune and tears down what tune created
+// rather than listening with the wrong squelch.
 func TestTuneSquelchRejected(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, errOut, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio", "--squelch", "-1000")

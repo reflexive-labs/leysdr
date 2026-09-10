@@ -334,7 +334,7 @@ func startSleeper(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-// #22: a daemon whose pidfile went missing is still stopped, by the pid it
+// A daemon whose pidfile went missing is still stopped, by the pid it
 // reports itself; "not running" is only for a socket nobody answers on.
 func TestDaemonStopWithoutPidfile(t *testing.T) {
 	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "")
@@ -350,7 +350,7 @@ func TestDaemonStopWithoutPidfile(t *testing.T) {
 	}
 }
 
-// #20: a pidfile naming a pid the system reused must never be signalled.
+// A pidfile naming a pid the system reused must never be signalled.
 func TestDaemonStopPidReused(t *testing.T) {
 	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "")
 	sleeper := startSleeper(t)
@@ -386,7 +386,7 @@ func TestDaemonStopPidReused(t *testing.T) {
 	}
 }
 
-// #21: a daemon that dies during startup is reported as such, promptly, and
+// A daemon that dies during startup is reported as such, promptly, and
 // never recorded in the pidfile.
 func TestDaemonStartChildExits(t *testing.T) {
 	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "#!/bin/sh\necho boom\nexit 3\n")
@@ -406,7 +406,7 @@ func TestDaemonStartChildExits(t *testing.T) {
 	}
 }
 
-// #12: a daemon that came up but cannot be recorded in the pidfile is stopped
+// A daemon that came up but cannot be recorded in the pidfile is stopped
 // again, so nothing runs that stop cannot find.
 func TestDaemonStartPidfileUnwritable(t *testing.T) {
 	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "")

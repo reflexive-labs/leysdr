@@ -6,8 +6,7 @@ import (
 )
 
 // A point on the dial is a frequency or a preset, and both work wherever one
-// does. `ley spectrum noaa2` failing with a bare parse error was the report
-// this came from.
+// does.
 func TestResolveDialTargetAcceptsBoth(t *testing.T) {
 	for _, tc := range []struct {
 		in     string

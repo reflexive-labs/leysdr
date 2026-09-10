@@ -80,8 +80,8 @@ func TestSpectrumFitsWidth(t *testing.T) {
 	}
 }
 
-// `ley spectrum 146.62` used to render byte-identically to a bare
-// `ley spectrum`: the frequency the user typed was invisible.
+// `ley spectrum 146.62` must render differently from a bare `ley spectrum`:
+// the frequency the user typed has to be visible in the output.
 func TestSpectrumMarksTheRequestedFrequency(t *testing.T) {
 	bins := spectrumFixture(1024, 640, -21)
 	st := ui.Style{Unicode: true, Width: 80}
@@ -713,10 +713,10 @@ func blockCells(rows []string) int {
 	return n
 }
 
-// A flat noise floor is a line, not a mass. The chart used to paint every cell
-// under a column, so a band with nothing on it covered two whole rows -- some
-// two hundred cells against a carrier's dozen -- and read as one cold block
-// whatever was on the air. One column of noise may now leave one block.
+// A flat noise floor is a line, not a mass: painting every cell under a
+// column would cover a band with nothing on it in two whole rows -- some two
+// hundred cells against a carrier's dozen -- reading as one cold block
+// whatever was on the air. One column of noise may leave at most one block.
 func TestSpectrumNoiseDrawsALineNotAMass(t *testing.T) {
 	st := ui.Style{Unicode: true, Width: 100}
 	quiet := spectrumFixture(1024, -1, 0)

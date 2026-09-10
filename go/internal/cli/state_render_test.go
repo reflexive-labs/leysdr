@@ -115,8 +115,8 @@ func TestStateTreeSurvivesColourOff(t *testing.T) {
 func TestStateTreeContent(t *testing.T) {
 	st := busyState()
 	out := renderStateTree(ui.Style{Unicode: true, Width: 100}, st)
-	// A file device tunes to exactly one frequency. The tree used to print it
-	// twice where `ley devices` collapsed it; they share the renderer now.
+	// A file device tunes to exactly one frequency, so the tree collapses it
+	// the same way `ley devices` does: they share the renderer.
 	if !strings.Contains(out, "tunes 146.520 MHz") {
 		t.Errorf("want the collapsed one-frequency range:\n%s", out)
 	}

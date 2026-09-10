@@ -45,8 +45,8 @@ func TestBandsLookupResolvesTheSideband(t *testing.T) {
 
 // This is the one verb where a band name beats a frequency, because it is the
 // verb about band names. Answering "160 m amateur" for `ley bands 2m` -- the
-// alias this very screen tells you to type -- would be a worse papercut than
-// the one being fixed.
+// alias this very screen tells you to type -- would send the reader to the
+// wrong band entirely.
 func TestBandsLookupPrefersTheBandName(t *testing.T) {
 	out, errOut := bandsOut(t, "2m")
 	if !strings.Contains(out, "2 m amateur") {

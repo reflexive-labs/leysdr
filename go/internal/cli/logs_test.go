@@ -186,10 +186,9 @@ func TestProcessGone(t *testing.T) {
 	}
 }
 
-// TestProcessGoneSeesAZombie is the bug `ley daemon stop` used to report as
-// "did not exit within 5 s": a daemon started from the same shell that runs
-// ley exits, but nothing has reaped it yet, so kill(pid, 0) keeps saying it
-// is there. A zombie has exited, and stop must say so.
+// TestProcessGoneSeesAZombie covers a daemon whose parent shell has exited
+// but is not yet reaped: kill(pid, 0) still finds it, so processGone must
+// recognize the zombie state as gone.
 func TestProcessGoneSeesAZombie(t *testing.T) {
 	ctx := context.Background()
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")

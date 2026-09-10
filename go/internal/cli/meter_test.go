@@ -97,9 +97,8 @@ func TestMeterBar(t *testing.T) {
 	}
 }
 
-// TestMeterSinkRedrawIsTTYOnly is the fix for a redirected session
-// collapsing into one line: off a terminal the meter writes whole lines,
-// throttled, and never a carriage return.
+// TestMeterSinkRedrawIsTTYOnly checks that off a terminal the meter writes
+// whole lines, throttled, and never a carriage return.
 func TestMeterSinkRedrawIsTTYOnly(t *testing.T) {
 	buf := &bytes.Buffer{}
 	sink := &meterSink{w: buf, style: ui.Style{Width: 80}, tty: false}

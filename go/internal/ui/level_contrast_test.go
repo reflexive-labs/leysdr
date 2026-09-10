@@ -25,9 +25,9 @@ func contrast(a, b float64) float64 {
 // The ramp has to be legible on the terminal the reader actually has, and we
 // are forbidden from asking which one that is (no OSC background query, no
 // HasDarkBackground). So every stop must clear the same bar against a black
-// ground and a white one. The cold end used to be a saturated {0, 0, 160},
-// which is 1.2:1 against a dark terminal: since most of a spectrum is noise
-// floor and the noise floor is the cold end, most of the chart was invisible.
+// ground and a white one. The cold end needs this most: since most of a
+// spectrum is noise floor and the noise floor is the cold end, a cold end
+// that fails the bar makes most of the chart invisible.
 func TestLevelRampIsLegibleOnBothGrounds(t *testing.T) {
 	const min = 3.0 // WCAG AA for graphical objects
 	black := relLuminance(0, 0, 0)

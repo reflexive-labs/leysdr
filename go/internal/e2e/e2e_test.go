@@ -279,10 +279,8 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 	if err := stopTune(); err != nil {
 		t.Fatalf("tune exit: %v\n%s\n%s", err, tuneOut.out.String(), tuneOut.errOut.String())
 	}
-	// A live session's prose is all on stderr: the meter always was, and the
-	// banner joined it, so stdout carries ids and nothing else. The old form of
-	// this check looked at stdout and called what it found "the meter line",
-	// but that was the banner's squelch sentence.
+	// A live session's prose is all on stderr, so stdout carries ids and
+	// nothing else.
 	if said := tuneOut.errOut.String(); !strings.Contains(said, "signal ") || !strings.Contains(said, "dBFS") {
 		t.Fatalf("tune printed no meter line on stderr:\n%s", said)
 	}

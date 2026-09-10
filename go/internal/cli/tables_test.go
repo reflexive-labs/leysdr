@@ -43,7 +43,7 @@ func TestPresetsAndBands(t *testing.T) {
 			t.Fatalf("preset table is missing the %q group heading:\n%s", head, out)
 		}
 	}
-	// The description no longer restates the frequency printed beside it.
+	// The description must not restate the frequency printed beside it.
 	if strings.Contains(out, "(162.550 MHz)") {
 		t.Fatalf("description still restates the frequency column:\n%s", out)
 	}

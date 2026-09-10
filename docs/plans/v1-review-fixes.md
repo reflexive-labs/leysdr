@@ -75,7 +75,7 @@ comment, the code is GO-2's). Files: `go/internal/cli/*.go` except `*_test.go`.
 c-go-lib-1 … c-go-lib-6, c-go-lib-8, and q-go-lib-1 (the same misattached doc comment). Files: the
 non-test `.go` files under those directories.
 
-### CB-3 `[ ]` Go tests
+### CB-3 `[x]` Go tests
 
 c-go-tests-1 … c-go-tests-22, c-go-tests-24 … c-go-tests-26. Files: every `*_test.go` under `go/`.
 Test names stay; only comments and message strings change.

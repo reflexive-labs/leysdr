@@ -8,7 +8,7 @@ import (
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 )
 
-// TestStoredWritesWhileOutOfCapture mirrors the daemon's FU-2 rule: bandwidth,
+// TestStoredWritesWhileOutOfCapture mirrors the daemon's rule: bandwidth,
 // mode and squelch writes on an OUT_OF_CAPTURE channel are stored, not
 // rejected, and take effect when the capture retunes back over the channel.
 // Only the offset-independent bound (0 < bandwidth <= capture rate) is checked.

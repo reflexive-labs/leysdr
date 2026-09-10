@@ -31,7 +31,8 @@ func TestTunePersistent(t *testing.T) {
 	if st.Captures[0].CenterHz != 146_520_000 || st.Channels[0].OffsetHz != 0 || leyline.ModeName(st.Channels[0].Mode) != "nfm" {
 		t.Fatalf("channel: %v", st.Channels[0])
 	}
-	// Persistent runs leave squelch off (scripts get the old behaviour).
+	// Persistent/script runs skip the auto-squelch default that interactive
+	// tune infers, so they leave squelch off.
 	if !math.IsNaN(st.Channels[0].SquelchDb) {
 		t.Fatalf("persistent tune should not set squelch: %v", st.Channels[0].SquelchDb)
 	}

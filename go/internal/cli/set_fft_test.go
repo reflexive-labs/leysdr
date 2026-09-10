@@ -17,7 +17,7 @@ import (
 func TestSetParams(t *testing.T) {
 	// WriteAwaitsWatcher: the fake holds each write until this session's
 	// WatchEvents stream is registered, so the WriteRejected asserted below
-	// cannot be emitted before the CLI is listening (CLI-4 #15 removes the race).
+	// cannot be emitted before the CLI is listening.
 	sock, c := harness(t, fakedaemon.Options{WriteAwaitsWatcher: true})
 	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40"); err == nil || !strings.Contains(err.Error(), "nothing is playing; start with: ley tune 146.52") {
 		t.Fatalf("expected no-channel error, got %v", err)
