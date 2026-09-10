@@ -123,6 +123,27 @@ package dependency, then `make proto` and commit the regenerated code.
   (`make check GOBIN=/tmp/ley-bin`) to keep the Linux `ley`/`leyfix` out of `go/bin`; `.tools/` and
   SwiftPM's build products are already per host.
 
+### What a Linux build cannot check
+
+The container has no Accelerate, so **everything under `#if canImport(Accelerate)` is never
+compiled there**: `AccelerateKernels` in `DSP/Kernels.swift`, the vDSP half of `DSP/FFT.swift`, and
+`KernelParityTests` itself. A green Linux build says nothing about any of it.
+
+This has already cost one broken macOS build: a `dbToPower` kernel used `vvexp10f`, which does not
+exist — it was assumed by analogy with `vvlog10f`, which does. So:
+
+- **Adding a kernel means adding it to `KernelParityTests`.** That test is the only thing that
+  compiles the Accelerate path, and behaviour parity is the second half of what it buys.
+- **Prefer an Accelerate symbol already used in the tree** (`grep -o 'vDSP_[a-zA-Z_]*'`). vForce is
+  the risky family: only `vvatan2f` and `vvsincosf` are proven here.
+- **A scalar loop is a legitimate answer** when a kernel is off the hot path. `dbToPower` delegates
+  to `PortableKernels` on both platforms and says why in a comment.
+- Two more things a Linux build gets wrong: the Glibc overlay has `Float` overloads of the math
+  functions and Darwin's does not (use the `f`-suffixed forms — `powf`, `log10f`, `sinf`), and the
+  package builds `swiftLanguageModes: [.v5]`, so an actor-isolation mistake is a warning here and
+  an error under Swift 6. Read the warnings that say *"this is an error in the Swift 6 language
+  mode"* rather than filtering them out.
+
 ## Spikes (docs/build-order.md)
 
 - **S1 latency chain** — not run (needs Metal waterfall + hardware; Milestone V1a).

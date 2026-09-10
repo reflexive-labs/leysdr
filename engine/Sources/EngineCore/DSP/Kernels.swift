@@ -398,12 +398,12 @@ public enum AccelerateKernels {
     /// several dB low on a row with any structure in it.
     @inline(__always)
     public static func dbToPower(_ src: UnsafePointer<Float>, to dst: UnsafeMutablePointer<Float>, count: Int) {
-        // Scale into dst, then raise in place: no scratch, so this stays callable
-        // from the DSP thread.
-        var tenth: Float = 0.1
-        var n = Int32(count)
-        vDSP_vsmul(src, 1, &tenth, dst, 1, vDSP_Length(count))
-        vvexp10f(dst, dst, &n)
+        // Deliberately the scalar loop, not vForce. There is no vDSP inverse of vDSP_vdbcon, and
+        // this is the only caller of any exp/pow in the file, so vectorising it would mean adding
+        // the first unproven Accelerate symbol here to save work on a path nothing takes by
+        // default: dbToPower runs for ROW_MEAN alone, at most 64 looks a row, and ROW_MEAN is not
+        // the default for any command. A 1024-bin row is ~65k powf a second at the worst rate.
+        PortableKernels.dbToPower(src, to: dst, count: count)
     }
 
     /// Largest absolute value; 0 for an empty vector.

@@ -112,6 +112,24 @@ final class KernelParityTests: XCTestCase {
         PortableKernels.hannWindow(&pRe, count: n); AccelerateKernels.hannWindow(&aRe, count: n)
         assertClose(pRe, aRe, 1e-4, "hann")
         XCTAssertEqual(PortableKernels.mean(re, count: n), AccelerateKernels.mean(re, count: n), accuracy: 1e-4)
+        XCTAssertEqual(PortableKernels.meanSquare(re, count: n), AccelerateKernels.meanSquare(re, count: n), accuracy: 1e-4)
+        XCTAssertEqual(PortableKernels.maxMagnitude(re, count: n), AccelerateKernels.maxMagnitude(re, count: n), accuracy: 1e-4)
+        // dbToPower and maxInPlace were added without being in this test, and a symbol that does
+        // not exist on Darwin got through as a result: the container this is written in cannot
+        // compile Accelerate at all, so parity coverage is the only thing standing between a new
+        // kernel and a broken macOS build.
+        let db = re.map { $0 * 10 - 40 }
+        PortableKernels.dbToPower(db, to: &pRe, count: n)
+        AccelerateKernels.dbToPower(db, to: &aRe, count: n)
+        assertClose(pRe, aRe, 1e-3, "dbToPower")
+        // powerToDB is its inverse; the round trip pins the scaling rather than just the agreement.
+        PortableKernels.powerToDB(pRe, to: &pIm, count: n)
+        assertClose(Array(pIm[0 ..< n]), Array(db[0 ..< n]), 1e-2, "dbToPower round trip")
+        var pMax = re, aMax = re
+        let other = re.map { -$0 }
+        PortableKernels.maxInPlace(&pMax, other, count: n)
+        AccelerateKernels.maxInPlace(&aMax, other, count: n)
+        assertClose(pMax, aMax, 1e-4, "maxInPlace")
         XCTAssertEqual(PortableKernels.max(re, count: n), AccelerateKernels.max(re, count: n), accuracy: 1e-6)
         PortableKernels.scaleAdd(re, scale: 2.5, offset: -0.25, to: &pRe, count: n); AccelerateKernels.scaleAdd(re, scale: 2.5, offset: -0.25, to: &aRe, count: n)
         assertClose(pRe, aRe, 1e-4, "scaleAdd")
