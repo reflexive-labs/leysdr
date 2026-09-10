@@ -1,9 +1,22 @@
 // A RadioDevice that plays a precomputed tone+noise cf32 loop at a fixed rate on its own thread.
-// Used only by the S2 throughput spike; the pacing loop mirrors FilePlaybackDevice.
+// Used only by the S2 throughput spike; like FilePlaybackDevice it paces against an absolute
+// start time, so sleep jitter never accumulates.
 
 import EngineCore
 import Foundation
 import Synchronization
+
+/// Sleeps for `ns`, resuming after a signal. The seconds are split out because `nanosleep` refuses
+/// a `tv_nsec` of a second or more with EINVAL and sleeps not at all, which at a low `--rate` would
+/// turn the pacing into a busy spin and charge the harness's own spinning to the CPU number the
+/// spike exists to measure.
+func sleepNanoseconds(_ ns: UInt64) {
+    var request = timespec(tv_sec: Int(ns / 1_000_000_000), tv_nsec: Int(ns % 1_000_000_000))
+    var remaining = timespec()
+    while nanosleep(&request, &remaining) == -1, errno == EINTR {
+        request = remaining
+    }
+}
 
 /// Synthetic 20 MSPS-class source: a −20 dBFS NFM carrier plus white noise, cycled from a
 /// pre-rendered buffer so generation cost does not pollute the measurement.
@@ -71,10 +84,7 @@ final class SyntheticDevice: RadioDevice, @unchecked Sendable {
                 block = (block + 1) % blocks
                 let due = start + delivered * 1_000_000_000 / rate
                 let now = DispatchTime.now().uptimeNanoseconds
-                if due > now {
-                    var ts = timespec(tv_sec: 0, tv_nsec: Int(due - now))
-                    nanosleep(&ts, nil)
-                }
+                if due > now { sleepNanoseconds(due - now) }
             }
             joined.signal()
         }

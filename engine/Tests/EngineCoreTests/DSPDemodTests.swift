@@ -34,6 +34,19 @@ final class DSPDemodTests: XCTestCase {
     private var seconds: Double { 0.25 }
     private var count: Int { Int(fs * seconds) }
 
+    /// The advertised maximum and the bandwidth `plan` actually accepts come off one ladder, so a
+    /// client is never told a channel it cannot have (or refused one it was promised).
+    func testAdvertisedMaxBandwidthIsExactlyWhatPlanAccepts() throws {
+        for rate: UInt64 in [250_000, 1_024_000, 1_800_000, 2_048_000, 2_400_000, 3_200_000, 20_000_000] {
+            let max = ChannelPlan.maxNarrowBandwidthHz(captureRate: rate)
+            let plan = try ChannelPlan.plan(captureRate: rate, mode: .nfm, bandwidthHz: UInt32(max.rounded(.down)))
+            XCTAssertEqual(max, 0.9 * plan.r2, accuracy: 1e-9, "at \(rate) S/s")
+            XCTAssertThrowsError(try ChannelPlan.plan(captureRate: rate, mode: .nfm,
+                                                      bandwidthHz: UInt32(max.rounded(.down)) + 1),
+                                 "a bandwidth over the advertised maximum must be refused at \(rate) S/s")
+        }
+    }
+
     func testChannelPlanAt2400k() throws {
         let p = try ChannelPlan.plan(captureRate: 2_400_000, mode: .nfm, bandwidthHz: 12_500)
         XCTAssertEqual(p.d1, 10); XCTAssertEqual(p.r1, 240_000)

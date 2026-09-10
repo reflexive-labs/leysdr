@@ -52,7 +52,12 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         return try? withLock {
             let d = try requireDev()
             let tenths = rtlsdr_get_tuner_gain(d)
-            guard tenths != 0 else { throw EngineError.deviceIO("rtlsdr_get_tuner_gain returned 0", target: _descriptor.id.string) }
+            // librtlsdr answers 0 both for a genuine 0 dB setting -- the bottom entry of the
+            // R820T/R828D and FC2580 tables, exactly where a strong signal parks the AGC -- and for
+            // a read it could not make. It is only a failure on a tuner whose table has no 0 dB.
+            if tenths == 0, !Self.knownGainTableDB(tuner: probe.tuner).contains(0) {
+                throw EngineError.deviceIO("rtlsdr_get_tuner_gain returned 0", target: _descriptor.id.string)
+            }
             return Double(tenths) / 10
         }
     }

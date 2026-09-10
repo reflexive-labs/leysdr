@@ -25,11 +25,20 @@ public struct ChannelPlan: Hashable, Sendable {
     /// Rate the channelizer emits: `r2` for narrow modes, `r1` for WFM.
     public var outputRate: Double { usesStage2 ? r2 : r1 }
 
+    /// The decimation ladder for a capture rate: stage 1 down to at least 240 kHz, stage 2 to about
+    /// 48 kHz. The one copy of this arithmetic, so the bandwidth the accessor advertises and the
+    /// bandwidth `plan` accepts cannot drift apart.
+    static func rates(captureRate: UInt64) -> (d1: Int, r1: Double, d2: Int, r2: Double) {
+        let fs = Double(captureRate)
+        let d1 = max(1, Int(fs / 240_000))
+        let r1 = fs / Double(d1)
+        let d2 = max(1, Int((r1 / 48_000).rounded()))
+        return (d1, r1, d2, r1 / Double(d2))
+    }
+
     /// Largest bandwidth a narrow (stage-2) mode can carry at `r2`: `0.9·r2` (≈ 43 kHz at 2.4 MSPS).
     public static func maxNarrowBandwidthHz(captureRate: UInt64) -> Double {
-        let fs = Double(captureRate)
-        let r1 = fs / Double(max(1, Int(fs / 240_000)))
-        return 0.9 * r1 / Double(max(1, Int((r1 / 48_000).rounded())))
+        0.9 * rates(captureRate: captureRate).r2
     }
 
     /// Highest capture rate a plan is computed for (100 MSPS). Above it the decimator ratios stop
@@ -43,16 +52,13 @@ public struct ChannelPlan: Hashable, Sendable {
         guard captureRate <= maxCaptureRate else {
             throw EngineError.invalidArgument("capture rate \(captureRate) S/s exceeds \(maxCaptureRate) S/s")
         }
-        let fs = Double(captureRate)
-        let d1 = max(1, Int(fs / 240_000))
-        let r1 = fs / Double(d1)
-        let d2 = max(1, Int((r1 / 48_000).rounded()))
-        let r2 = r1 / Double(d2)
+        let (d1, r1, d2, r2) = rates(captureRate: captureRate)
         let bw = Double(bandwidthHz)
         let wfm = mode == .wfm
-        if !wfm, bw > 0.9 * r2 {
+        let maxBW = maxNarrowBandwidthHz(captureRate: captureRate)
+        if !wfm, bw > maxBW {
             throw EngineError.invalidArgument(
-                "bandwidth \(bandwidthHz) Hz exceeds \(Int(0.9 * r2)) Hz, the most a \(mode.rawValue) channel can carry at \(captureRate) S/s (narrow modes run at r2 ≈ 48 kHz); use wfm for wide channels")
+                "bandwidth \(bandwidthHz) Hz exceeds \(Int(maxBW)) Hz, the most a \(mode.rawValue) channel can carry at \(captureRate) S/s (narrow modes run at r2 ≈ 48 kHz); use wfm for wide channels")
         }
         let c1 = wfm ? bw / 2 : min(bw / 2 + 5_000, 0.4 * r1)
         return ChannelPlan(d1: d1, r1: r1, d2: d2, r2: r2, stage1CutoffHz: min(c1, 0.45 * r1),

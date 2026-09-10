@@ -311,11 +311,22 @@ public final class ChannelDSPCore: @unchecked Sendable {
         blocksProcessed.wrappingAdd(1, ordering: .relaxed)
     }
 
-    /// Reset filter, demodulator and meter state (e.g. after a stream restart).
+    /// Start the channel over on a discontinuous stream: filter history, NCO phase, demodulator and
+    /// noise floor go, and so does the transmission in progress -- its sample count and peaks
+    /// describe the stream before the gap, and a duration that spans dead air is a lie about the
+    /// air. Call it only while no block is in flight (the device is stopped and the DSP thread
+    /// drained); the state it touches belongs to the DSP thread.
     public func reset() {
         channelizer.reset()
         demodulator.reset()
         meter.reset()
         samplesSinceMeter = 0
+        squelch = Squelch(thresholdDB: squelch.thresholdDB)
+        openSamples = 0
+        peakPowerDBFS = .nan
+        peakSNRDB = .nan
+        audioSumSquares = 0
+        audioSamples = 0
+        audioPeak = 0
     }
 }

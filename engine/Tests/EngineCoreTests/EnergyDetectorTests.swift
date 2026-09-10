@@ -227,6 +227,18 @@ final class EnergyDetectorTests: XCTestCase {
         XCTAssertTrue(believe.contains(hits[0].centerHz))
     }
 
+    /// A believed window that rounds to a single bin still has one bin to search, and the floor
+    /// accessor reports on it, so the search must too.
+    func testASingleBinWindowIsSearched() {
+        let p = SpectrumDetect.sweepPFalse(expected: 0.1, bins: bins, rowsPerStep: 4, steps: 7)
+        // 300 kHz is exactly 128 bins from the centre, so both edges land on the same bin.
+        let edge = center + 300_000
+        let hits = detect(row(looks: 16, signals: [(300_000, 30, 2_000)], seed: 43),
+                          looks: 16, pFalse: p, believe: edge ... edge)
+        XCTAssertEqual(hits.count, 1, "the one searchable bin holds a 30 dB carrier: \(hits.map { $0.centerHz })")
+        XCTAssertEqual(Double(hits[0].centerHz), Double(edge), accuracy: binWidth)
+    }
+
     func testSelectFindsTheMedian() {
         var v: [Float] = [5, 1, 9, 3, 7, 2, 8]
         let m = v.withUnsafeMutableBufferPointer { SpectrumDetect.median($0.baseAddress!, count: 7) }

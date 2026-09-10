@@ -116,6 +116,18 @@ final class CaptureTests: XCTestCase {
         XCTAssertEqual(block.count, 16384)
         core.finish()
     }
+
+    func testAudioBufferIsRefusedRatherThanCountedAsAnOverrun() {
+        let core = CaptureDSPCore(captureID: CaptureID(), sampleRate: 48_000, centerHz: 0)
+        let storage = SampleStorage(capacity: 1024, format: .f32)
+        core.deliver(storage.view(), at: SampleTime(captureID: core.captureID, sampleIndex: 0))
+        XCTAssertEqual(core.stats.unsupportedBlocks, 1)
+        XCTAssertEqual(core.stats.overruns, 0, "a misrouted device must not read as a full ring")
+        XCTAssertEqual(core.stats.blocksReceived, 0)
+        XCTAssertEqual(core.ring.available, 0, "the refused block took no ring slot")
+        XCTAssertEqual(core.deliveredEnd, 0, "the capture timeline did not move")
+        core.finish()
+    }
 }
 
 /// A device whose `startStreaming` / `setSampleRate` throw `DEVICE_IO` while the matching flag is

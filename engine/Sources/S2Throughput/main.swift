@@ -19,11 +19,18 @@ func parse() -> Options {
         case "--rate": o.rate = UInt64(args.next() ?? "") ?? o.rate
         case "--channels": o.channels = Int(args.next() ?? "") ?? o.channels
         default:
-            print("usage: s2-throughput [--seconds N] [--rate HZ] [--channels N]")
-            exit(2)
+            usage()
         }
     }
+    // A run of no time, no samples or a negative channel count has no measurement in it, and the
+    // values go on to build durations and buffer sizes that would trap on the way.
+    guard o.seconds > 0, o.rate > 0, o.channels >= 0 else { usage() }
     return o
+}
+
+func usage() -> Never {
+    print("usage: s2-throughput [--seconds N] [--rate HZ] [--channels N]")
+    exit(2)
 }
 
 func cpuSeconds() -> (user: Double, system: Double) {

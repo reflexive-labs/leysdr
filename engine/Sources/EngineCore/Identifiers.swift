@@ -121,9 +121,32 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
 
     public var description: String { string }
 
-    public static func == (lhs: ULID, rhs: ULID) -> Bool { lhs.byteArray == rhs.byteArray }
-    public static func < (lhs: ULID, rhs: ULID) -> Bool { lhs.byteArray.lexicographicallyPrecedes(rhs.byteArray) }
-    public func hash(into hasher: inout Hasher) { hasher.combine(byteArray) }
+    /// The 128 bits as two big-endian halves. Comparison, ordering and hashing go through these
+    /// rather than `byteArray`: these ids key the control plane's dictionaries, and a 16-element
+    /// Array per probe is a heap allocation on the path every event and poll takes.
+    @inline(__always)
+    var halves: (hi: UInt64, lo: UInt64) {
+        let b = bytes
+        let hi = UInt64(b.0) << 56 | UInt64(b.1) << 48 | UInt64(b.2) << 40 | UInt64(b.3) << 32
+            | UInt64(b.4) << 24 | UInt64(b.5) << 16 | UInt64(b.6) << 8 | UInt64(b.7)
+        let lo = UInt64(b.8) << 56 | UInt64(b.9) << 48 | UInt64(b.10) << 40 | UInt64(b.11) << 32
+            | UInt64(b.12) << 24 | UInt64(b.13) << 16 | UInt64(b.14) << 8 | UInt64(b.15)
+        return (hi, lo)
+    }
+
+    public static func == (lhs: ULID, rhs: ULID) -> Bool { lhs.halves == rhs.halves }
+
+    /// Big-endian halves order exactly as the bytes do, which is the string order too.
+    public static func < (lhs: ULID, rhs: ULID) -> Bool {
+        let l = lhs.halves, r = rhs.halves
+        return l.hi == r.hi ? l.lo < r.lo : l.hi < r.hi
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        let h = halves
+        hasher.combine(h.hi)
+        hasher.combine(h.lo)
+    }
 
     public init(from decoder: Decoder) throws {
         let s = try decoder.singleValueContainer().decode(String.self)

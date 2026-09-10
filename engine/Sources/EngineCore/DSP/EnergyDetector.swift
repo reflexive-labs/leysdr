@@ -161,7 +161,10 @@ public enum SpectrumDetect {
         var last = Int(((Double(believe.upperBound) - lowEdge) / binWidth).rounded(.up))
         first = Swift.max(0, first)
         last = Swift.min(count - 1, last)
-        guard last > first else { return [] }
+        // `>=`, the same bound `windowFloorDBFS` uses: a window that rounds to a single bin still
+        // has one bin to search, and reporting a floor for it while never testing it would be the
+        // quiet wrong answer.
+        guard last >= first else { return [] }
 
         var hits: [Hit] = []
         var i = first

@@ -57,8 +57,9 @@ public final class PersistenceAccumulator: @unchecked Sendable {
         defer { lock.unlock() }
         let scale = Double(levels) / rangeDB
         for b in 0 ..< bins {
-            // Nearest source bin. Equal sizes make this the identity.
-            let s = row.count == bins ? b : b * row.count / bins
+            // Nearest source bin: the half-bin term rounds instead of flooring, which would bias
+            // every cell toward its lower-frequency neighbour. Equal sizes make this the identity.
+            let s = row.count == bins ? b : min(row.count - 1, (b * row.count + bins / 2) / bins)
             let db = Double(src[s])
             guard db.isFinite else { continue }
             var l = Int((db - floorDB) * scale)

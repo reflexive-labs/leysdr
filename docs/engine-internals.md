@@ -54,7 +54,10 @@ There are exactly three kinds of execution context in the engine. Every function
    with a borrowed native-format `SampleBuffer` (`.cu8` for RTL-SDR, `.cf32` for files) and the
    `SampleTime` of the first sample. `deliver` must return quickly: it converts into the next free
    slot of the capture's block ring and signals the DSP thread. A full ring drops the block, counts
-   an overrun, and emits a signpost — it never blocks the device.
+   an overrun, and emits a signpost — it never blocks the device. A capture ring carries complex
+   baseband only: a real-valued (`.f32`) buffer is refused before it can take a slot or move the
+   timeline, and counted as `CaptureStats.unsupportedBlocks` so a misrouted device never reads as a
+   throughput problem.
 2. **DSP thread** — one per capture (`Thread`, `.userInteractive` QoS, named `leyline.dsp.<cap_id>`).
    Loop: wait for a block; snapshot the channel table; for each channel run
    channelizer → demodulator → squelch/meter → `AudioSink.write`; run the spectrum ladder; feed
@@ -119,6 +122,14 @@ agree. Before installing a new rate `setSampleRate` waits for the DSP thread to 
 (`drainPending`) so no old-rate block is processed under the new plan, and the spectrum ladder
 clamps each subscriber's `nextDue` to at most one interval past the current index so a shrunken
 interval (or a rewound timeline from a misbehaving device) can never stall rows.
+
+**Channels start over across a restart.** Alongside `expectNewAnchor()`, `DefaultCaptureEngine`
+calls `captureStreamRestarted()` on every channel before the stream starts, which resets that
+channel's `ChannelDSPCore`: filter history, NCO phase, demodulator, the meter's noise floor and the
+transmission in progress all go. The samples either side of the gap are not continuous, so filtering
+the first blocks against pre-gap history, judging them against a floor measured on the old stream,
+or reporting an open duration that spans the dead air would all describe air that was never heard.
+Nothing is in flight at that point: the device is stopped and the DSP thread drained.
 
 ### Channelizer plan
 

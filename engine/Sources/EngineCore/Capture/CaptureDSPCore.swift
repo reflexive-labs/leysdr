@@ -18,6 +18,8 @@ public struct CaptureStats: Hashable, Sendable {
     public var samplesProcessed: UInt64
     /// Blocks dropped because the ring was full.
     public var overruns: Int
+    /// Blocks refused because the device handed the capture a format a capture cannot carry.
+    public var unsupportedBlocks: UInt64
 }
 
 /// CLOCK_REALTIME in nanoseconds.
@@ -56,6 +58,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
     private let threadStarts = Atomic<Int>(0)
     private let lastOverrunLogNs = Atomic<Int64>(0)
     private let lastLoggedOverruns = Atomic<Int>(0)
+    private let unsupportedBlocks = Atomic<UInt64>(0)
     private var thread: Thread?
     private let joined = DispatchSemaphore(value: 0)
     private let anchorContinuation: AsyncStream<CaptureAnchor>.Continuation
@@ -94,7 +97,8 @@ public final class CaptureDSPCore: @unchecked Sendable {
         CaptureStats(blocksReceived: blocksReceived.load(ordering: .relaxed),
                      blocksProcessed: blocksProcessed.load(ordering: .relaxed),
                      samplesProcessed: samplesProcessed.load(ordering: .relaxed),
-                     overruns: ring.overruns)
+                     overruns: ring.overruns,
+                     unsupportedBlocks: unsupportedBlocks.load(ordering: .relaxed))
     }
 
     /// Ask for a fresh anchor on the next delivered block (stream restart, rebound). That block
@@ -141,6 +145,13 @@ public final class CaptureDSPCore: @unchecked Sendable {
     public func deliver(_ buffer: SampleBuffer, at time: SampleTime) {
         let sp = Signpost.begin(.blockIngest)
         defer { Signpost.end(.blockIngest, sp) }
+        guard buffer.format != .f32 else {
+            // A device handing a capture demodulated audio is a wiring mistake, not a throughput
+            // problem: refuse the block before it can take a ring slot or move the timeline, and
+            // count it on its own so it never reads as "the ring is full".
+            unsupportedBlocks.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
         blocksReceived.wrappingAdd(1, ordering: .relaxed)
         let total = buffer.count
         let newEpoch = needsAnchor.exchange(false, ordering: .relaxed)
@@ -169,8 +180,9 @@ public final class CaptureDSPCore: @unchecked Sendable {
             case .cs16:
                 Kernels.convertCS16(buffer.base.assumingMemoryBound(to: Int16.self) + offset * 2, to: dst, count: floats)
             case .f32:
+                // Refused before the loop; releasing the slot keeps the ring consistent should that
+                // guard ever be weakened.
                 ring.commit(index: index, count: 0, time: time)
-                ring.noteOverrun()
                 return
             }
             ring.commit(index: index, count: n, time: SampleTime(captureID: time.captureID, sampleIndex: first &+ UInt64(offset)))

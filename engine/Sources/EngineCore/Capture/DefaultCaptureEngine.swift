@@ -93,6 +93,9 @@ public actor DefaultCaptureEngine: CaptureEngine {
     private func beginStreaming() async throws {
         let core = self.core
         core.expectNewAnchor()
+        for id in channelOrder {
+            await channelTable[id]?.captureStreamRestarted()
+        }
         try await device.startStreaming(captureID: id) { buffer, time in core.deliver(buffer, at: time) }
         streaming = true
     }

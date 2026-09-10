@@ -521,6 +521,48 @@ final class ChannelTests: XCTestCase {
         XCTAssertEqual(state, .active)
     }
 
+    /// A stream restart starts the channel over: the transmission in progress belonged to the
+    /// samples before the gap, so the squelch re-arms and the signal after it opens a new one whose
+    /// duration counts only post-restart samples.
+    func testResetDropsTheTransmissionInProgress() throws {
+        let rate: UInt64 = 240_000
+        let queue = ChannelTelemetryQueue()
+        let core = try ChannelDSPCore(captureRate: rate,
+                                      config: ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40),
+                                      telemetry: queue)
+        let block = 4096
+        let loud = DSPTest.storage(DSPTest.fmTone(carrierHz: 0, audioHz: 1000, deviationHz: 2500, rate: Double(rate), count: block))
+        let quiet = DSPTest.storage([Float](repeating: 0, count: block * 2))
+        let cap = CaptureID()
+        var index: UInt64 = 0
+        func feed(_ storage: SampleStorage, blocks: Int) {
+            for _ in 0 ..< blocks {
+                core.process(block: storage.view(count: block), at: SampleTime(captureID: cap, sampleIndex: index))
+                index &+= UInt64(block)
+            }
+        }
+        func edges() -> [ChannelTelemetryRecord] {
+            var out: [ChannelTelemetryRecord] = []
+            while let r = queue.pop() { if r.kind == .squelch { out.append(r) } }
+            return out
+        }
+
+        feed(loud, blocks: 8)
+        XCTAssertEqual(edges().map(\.squelchOpen), [true], "the tone opens the squelch once")
+        core.reset()
+        feed(loud, blocks: 4)
+        let afterReset = edges()
+        XCTAssertEqual(afterReset.map(\.squelchOpen), [true], "a reset squelch opens again on the same tone")
+        feed(quiet, blocks: 4)
+        let closes = edges().filter { !$0.squelchOpen }
+        let close = try XCTUnwrap(closes.first, "silence must close the squelch")
+        // Four loud blocks plus the silence it takes to close; the eight blocks before the restart
+        // are not in there, and would double it if they were.
+        XCTAssertLessThanOrEqual(close.openSamples, UInt64(8 * block),
+                                 "the reported duration must not span the samples before the restart")
+        XCTAssertGreaterThan(close.openSamples, 0)
+    }
+
     func testStopLeavesNoEngineThreads() async throws {
         let path = try nfmTonePath()
         let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)

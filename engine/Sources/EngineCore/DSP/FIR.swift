@@ -62,7 +62,10 @@ public final class FIRDecimator {
     private var pending = 0
 
     public init(taps: [Float], decimation: Int, maxBlock: Int) {
-        precondition(!taps.isEmpty && decimation >= 1 && maxBlock >= 1)
+        // A decimation step wider than the filter would consume more samples than `process`
+        // holds, walking `pending` negative and writing before the work buffer; every design
+        // path yields taps ≥ 4·decimation, so this only pins the contract.
+        precondition(!taps.isEmpty && decimation >= 1 && decimation <= taps.count && maxBlock >= 1)
         self.taps = taps
         self.decimation = decimation
         self.maxBlock = maxBlock
@@ -129,7 +132,10 @@ public final class RealFIRDecimator {
     private var pending = 0
 
     public init(taps: [Float], decimation: Int, maxBlock: Int) {
-        precondition(!taps.isEmpty && decimation >= 1 && maxBlock >= 1)
+        // A decimation step wider than the filter would consume more samples than `process`
+        // holds, walking `pending` negative and writing before the work buffer; every design
+        // path yields taps ≥ 4·decimation, so this only pins the contract.
+        precondition(!taps.isEmpty && decimation >= 1 && decimation <= taps.count && maxBlock >= 1)
         self.taps = taps
         self.decimation = decimation
         self.maxBlock = maxBlock

@@ -98,6 +98,19 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(a.rows, 1)
     }
 
+    /// Nearest, not floor: a mapping that truncated would draw every bin from its lower-frequency
+    /// neighbour, sliding a narrow carrier down the display by up to a source bin.
+    func testMismatchedRowFoldsToTheNearestBin() {
+        let a = acc(bins: 3, levels: 16)
+        // Four source bins into three: bin 2 sits at 2.67 source bins, so the carrier in the last
+        // source bin is its nearest, and source bin 2 (quiet) is the truncated answer.
+        feed(a, [-90, -90, -90, -30])
+        let h = read(a)
+        XCTAssertEqual(h[2][11], 1, "bin 2 must take the carrier from source bin 3: \(h[2])")
+        XCTAssertEqual(h[0][1], 1)
+        XCTAssertEqual(h[1][1], 1)
+    }
+
     func testPeakTracksTheLargestCount() {
         let a = acc(bins: 2, levels: 4)
         feed(a, [-30, -90], times: 5)
