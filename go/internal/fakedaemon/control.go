@@ -160,8 +160,12 @@ func (d *Daemon) DestroyCapture(ctx context.Context, req *leylinev1.DestroyCaptu
 		}
 	}
 	delete(d.captures, c.CaptureId)
-	c.State = leylinev1.CaptureState_CAPTURE_DETACHED
-	d.emit(ci, c.Capture)
+	// Terminal event: state unset says "gone" (see Capture.state in
+	// control.proto). CAPTURE_DETACHED is reserved for an unplugged radio,
+	// which stays in state and rebinds.
+	gone := proto.Clone(c.Capture).(*leylinev1.Capture)
+	gone.State = leylinev1.CaptureState_CAPTURE_STATE_UNSPECIFIED
+	d.emit(ci, gone)
 	if dev := d.devices[c.DeviceId]; dev != nil && dev.State == leylinev1.DeviceState_IN_USE {
 		dev.State = leylinev1.DeviceState_AVAILABLE
 		d.emit(ci, dev)

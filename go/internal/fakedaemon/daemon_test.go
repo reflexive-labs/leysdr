@@ -426,3 +426,54 @@ func TestWatchEventsSinceSeqScoped(t *testing.T) {
 	}
 	t.Fatal("scoped replay did not carry the capture")
 }
+
+// The destroy tombstone: a destroyed capture is emitted one last time with its
+// state unset, the way Channel and Sink are, so that a client can tell it from
+// an unplugged radio (CAPTURE_DETACHED, which stays in state and rebinds).
+func TestDestroyCaptureEmitsTheTombstone(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st, _ := c.State(ctx)
+	devID := st.Devices[0].DeviceId
+
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events, errs, err := c.Events(evCtx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond) // let the watcher register
+
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil {
+		t.Fatal(err)
+	}
+
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			cp := ev.GetCapture()
+			if cp == nil || cp.CaptureId != cap.CaptureId {
+				continue
+			}
+			switch cp.State {
+			case leylinev1.CaptureState_CAPTURE_ACTIVE:
+				continue
+			case leylinev1.CaptureState_CAPTURE_DETACHED:
+				t.Fatal("a destroy must not look like device loss")
+			}
+			if cp.CenterHz != cap.CenterHz {
+				t.Errorf("the tombstone still carries the whole object: %v", cp)
+			}
+			return
+		case err := <-errs:
+			t.Fatalf("event stream ended: %v", err)
+		case <-timeout:
+			t.Fatal("no terminal capture event")
+		}
+	}
+}

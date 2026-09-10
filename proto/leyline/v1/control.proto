@@ -54,6 +54,11 @@ message Capture {
   string device_id = 2;          // exactly one device per capture (composite devices absorb multi-SDR)
   uint64 center_hz = 3;
   uint64 sample_rate = 4;
+  // The tombstone convention, which Channel and Sink follow too: a destroyed
+  // object is emitted one last time with its state field unset, and that is the
+  // only signal it is gone -- drop it from your mirror. CAPTURE_DETACHED means
+  // something else: the radio is unplugged and the capture rebinds if it comes
+  // back, so a destroy and a yanked dongle must not look alike on the wire.
   CaptureState state = 5;
   CaptureAnchor anchor = 6;
   CaptureActivity activity = 7;  // the don't-disturb signal
@@ -77,7 +82,7 @@ message Channel {
   DemodMode mode = 5;
   double squelch_db = 6;         // dBFS threshold; NaN = squelch off
   GainMode agc = 7;
-  ChannelState state = 8;
+  ChannelState state = 8;  // unset on an event is the tombstone; see Capture.state
   bool persistent = 9;           // survives owner disconnect; jobs set this
   uint64 required_hz = 10;       // set by jobs: rebind target when OUT_OF_CAPTURE
   ClientInfo owner = 11;
@@ -101,8 +106,8 @@ message Sink {
     StreamSink stream = 4;             // client pulls over bulk plane
     FileSink file = 5;                 // daemon records; lossless lives here, never on the network
   }
-  // A detached sink is emitted one last time with state unset -- the same
-  // tombstone Channel uses. Without it an attach and a detach are the same
+  // A detached sink is emitted one last time with state unset -- the tombstone
+  // Capture.state describes. Without it an attach and a detach are the same
   // bytes on the wire, and a client watching its own audio cannot tell that
   // somebody else just stopped it.
   SinkState state = 6;

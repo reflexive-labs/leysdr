@@ -332,7 +332,14 @@ func (s *session) apply(ev *leylinev1.Event) bool {
 func (s *session) fold(ev *leylinev1.Event) {
 	switch b := ev.Body.(type) {
 	case *leylinev1.Event_Capture:
-		replaceCapture(s.state, b.Capture)
+		// State unset is the destroy tombstone; CAPTURE_DETACHED is a capture
+		// whose radio is unplugged and which rebinds when it returns, so only
+		// the former leaves the mirror.
+		if b.Capture.State == leylinev1.CaptureState_CAPTURE_STATE_UNSPECIFIED {
+			s.state.Captures = withoutCapture(s.state.Captures, b.Capture.CaptureId)
+		} else {
+			replaceCapture(s.state, b.Capture)
+		}
 		if s.capture != nil && s.capture.CaptureId == b.Capture.CaptureId {
 			s.capture = b.Capture
 		}
@@ -396,7 +403,18 @@ func replaceSink(st *leylinev1.GetStateResponse, k *leylinev1.Sink) {
 	st.Sinks = append(st.Sinks, k)
 }
 
-// withoutChannel and withoutSink drop a destroyed object from the mirror.
+// withoutCapture, withoutChannel and withoutSink drop a destroyed object from
+// the mirror.
+func withoutCapture(in []*leylinev1.Capture, id string) []*leylinev1.Capture {
+	out := in[:0]
+	for _, c := range in {
+		if c.CaptureId != id {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func withoutChannel(in []*leylinev1.Channel, id string) []*leylinev1.Channel {
 	out := in[:0]
 	for _, c := range in {

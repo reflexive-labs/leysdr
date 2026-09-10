@@ -427,6 +427,11 @@ public nonisolated struct Leyline_V1_Capture: Sendable {
 
   public var sampleRate: UInt64 = 0
 
+  /// The tombstone convention, which Channel and Sink follow too: a destroyed
+  /// object is emitted one last time with its state field unset, and that is the
+  /// only signal it is gone -- drop it from your mirror. CAPTURE_DETACHED means
+  /// something else: the radio is unplugged and the capture rebinds if it comes
+  /// back, so a destroy and a yanked dongle must not look alike on the wire.
   public var state: Leyline_V1_CaptureState = .unspecified
 
   public var anchor: Leyline_V1_CaptureAnchor {
@@ -505,6 +510,7 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
 
   public var agc: Leyline_V1_GainMode = .unspecified
 
+  /// unset on an event is the tombstone; see Capture.state
   public var state: Leyline_V1_ChannelState = .unspecified
 
   /// survives owner disconnect; jobs set this
@@ -574,8 +580,8 @@ public nonisolated struct Leyline_V1_Sink: Sendable {
     set {kind = .file(newValue)}
   }
 
-  /// A detached sink is emitted one last time with state unset -- the same
-  /// tombstone Channel uses. Without it an attach and a detach are the same
+  /// A detached sink is emitted one last time with state unset -- the tombstone
+  /// Capture.state describes. Without it an attach and a detach are the same
   /// bytes on the wire, and a client watching its own audio cannot tell that
   /// somebody else just stopped it.
   public var state: Leyline_V1_SinkState = .unspecified

@@ -529,7 +529,10 @@ actor SessionStore {
         let snap = await entry.engine.snapshot
         captures[id] = nil
         var proto = ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
-        proto.state = .captureDetached
+        // Terminal event: state unset is the tombstone Channel and Sink use, and it is the only
+        // thing that separates a destroy from an unplugged dongle, which stays CAPTURE_DETACHED and
+        // rebinds. A client that cannot tell them apart keeps a dead radio in its mirror.
+        proto.state = .unspecified
         emit(.capture(proto), captureID: id, by: by)
         try? await registry.markInUse(id: entry.deviceID, false)
         if var d = devices[entry.deviceID] {

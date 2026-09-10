@@ -171,6 +171,18 @@ final class DaemonTests: XCTestCase {
             var dcap = Leyline_V1_DestroyCaptureRequest()
             dcap.captureID = capture.captureID
             _ = try await c.control.destroyCapture(dcap, metadata: testMetadata)
+            // State unset, not CAPTURE_DETACHED: a client has to be able to tell a destroyed
+            // capture from one whose dongle was unplugged and will rebind.
+            let capGone = await events.waitFor { ev in
+                if case .capture(let cap)? = ev.body { return cap.captureID == capture.captureID && cap.state == .unspecified }
+                return false
+            }
+            XCTAssertNotNil(capGone, "terminal capture event")
+            let lookedLikeLoss = await events.events.contains { ev in
+                if case .capture(let cap)? = ev.body { return cap.captureID == capture.captureID && cap.state == .captureDetached }
+                return false
+            }
+            XCTAssertFalse(lookedLikeLoss, "destroy never looks like device loss")
             state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertTrue(state.captures.isEmpty)
             XCTAssertEqual(testDevices(state.devices).first?.state, .available)

@@ -253,7 +253,7 @@ diagnose, fix, prove with ten full runs).
 
 ## Code work items — cross-language (Opus, sequential, after both lanes)
 
-### X-1 `[ ]` Capture tombstone
+### X-1 `[x]` Capture tombstone
 
 a-invariants-3 and a-layering-7 per the decision: daemon, proto comments (Capture, Channel, Sink),
 fake, `session.fold` (`withoutCapture`), tests on all three.

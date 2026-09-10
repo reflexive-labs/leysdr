@@ -708,16 +708,21 @@ func (*FeatureValue_Number) isFeatureValue_Value() {}
 func (*FeatureValue_Text) isFeatureValue_Value() {}
 
 type Capture struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CaptureId     string                 `protobuf:"bytes,1,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
-	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // exactly one device per capture (composite devices absorb multi-SDR)
-	CenterHz      uint64                 `protobuf:"varint,3,opt,name=center_hz,json=centerHz,proto3" json:"center_hz,omitempty"`
-	SampleRate    uint64                 `protobuf:"varint,4,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`
-	State         CaptureState           `protobuf:"varint,5,opt,name=state,proto3,enum=leyline.v1.CaptureState" json:"state,omitempty"`
-	Anchor        *CaptureAnchor         `protobuf:"bytes,6,opt,name=anchor,proto3" json:"anchor,omitempty"`
-	Activity      *CaptureActivity       `protobuf:"bytes,7,opt,name=activity,proto3" json:"activity,omitempty"` // the don't-disturb signal
-	CreatedBy     *ClientInfo            `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	Gains         []*GainState           `protobuf:"bytes,9,rep,name=gains,proto3" json:"gains,omitempty"` // current setting of every GainElement, in descriptor order
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CaptureId  string                 `protobuf:"bytes,1,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	DeviceId   string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // exactly one device per capture (composite devices absorb multi-SDR)
+	CenterHz   uint64                 `protobuf:"varint,3,opt,name=center_hz,json=centerHz,proto3" json:"center_hz,omitempty"`
+	SampleRate uint64                 `protobuf:"varint,4,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`
+	// The tombstone convention, which Channel and Sink follow too: a destroyed
+	// object is emitted one last time with its state field unset, and that is the
+	// only signal it is gone -- drop it from your mirror. CAPTURE_DETACHED means
+	// something else: the radio is unplugged and the capture rebinds if it comes
+	// back, so a destroy and a yanked dongle must not look alike on the wire.
+	State         CaptureState     `protobuf:"varint,5,opt,name=state,proto3,enum=leyline.v1.CaptureState" json:"state,omitempty"`
+	Anchor        *CaptureAnchor   `protobuf:"bytes,6,opt,name=anchor,proto3" json:"anchor,omitempty"`
+	Activity      *CaptureActivity `protobuf:"bytes,7,opt,name=activity,proto3" json:"activity,omitempty"` // the don't-disturb signal
+	CreatedBy     *ClientInfo      `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	Gains         []*GainState     `protobuf:"bytes,9,rep,name=gains,proto3" json:"gains,omitempty"` // current setting of every GainElement, in descriptor order
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -876,7 +881,7 @@ type Channel struct {
 	Mode        DemodMode              `protobuf:"varint,5,opt,name=mode,proto3,enum=leyline.v1.DemodMode" json:"mode,omitempty"`
 	SquelchDb   float64                `protobuf:"fixed64,6,opt,name=squelch_db,json=squelchDb,proto3" json:"squelch_db,omitempty"` // dBFS threshold; NaN = squelch off
 	Agc         GainMode               `protobuf:"varint,7,opt,name=agc,proto3,enum=leyline.v1.GainMode" json:"agc,omitempty"`
-	State       ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"`
+	State       ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"` // unset on an event is the tombstone; see Capture.state
 	Persistent  bool                   `protobuf:"varint,9,opt,name=persistent,proto3" json:"persistent,omitempty"`                    // survives owner disconnect; jobs set this
 	RequiredHz  uint64                 `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"` // set by jobs: rebind target when OUT_OF_CAPTURE
 	Owner       *ClientInfo            `protobuf:"bytes,11,opt,name=owner,proto3" json:"owner,omitempty"`
@@ -1014,8 +1019,8 @@ type Sink struct {
 	//	*Sink_Stream
 	//	*Sink_File
 	Kind isSink_Kind `protobuf_oneof:"kind"`
-	// A detached sink is emitted one last time with state unset -- the same
-	// tombstone Channel uses. Without it an attach and a detach are the same
+	// A detached sink is emitted one last time with state unset -- the tombstone
+	// Capture.state describes. Without it an attach and a detach are the same
 	// bytes on the wire, and a client watching its own audio cannot tell that
 	// somebody else just stopped it.
 	State         SinkState `protobuf:"varint,6,opt,name=state,proto3,enum=leyline.v1.SinkState" json:"state,omitempty"`

@@ -296,3 +296,29 @@ func TestNoSentenceCarriesAnID(t *testing.T) {
 		}
 	}
 }
+
+// A destroyed capture and an unplugged one are different events: only the
+// tombstone (state unset) leaves the mirror, and it is not a state to print.
+func TestACaptureTombstoneLeavesTheMirror(t *testing.T) {
+	s := liveSession()
+	lost := clone(s.capture)
+	lost.State = leylinev1.CaptureState_CAPTURE_DETACHED
+	if line, _ := say(t, s, lost); line != "another terminal left the radio detached" {
+		t.Errorf("detached: got %q", line)
+	}
+	if len(s.state.Captures) != 1 {
+		t.Fatalf("a detached capture rebinds and stays in the mirror: %v", s.state.Captures)
+	}
+	gone := clone(lost)
+	gone.State = leylinev1.CaptureState_CAPTURE_STATE_UNSPECIFIED
+	line, _ := say(t, s, gone)
+	if line != "another terminal stopped this radio" {
+		t.Errorf("destroyed: got %q", line)
+	}
+	if strings.Contains(line, "unspecified") {
+		t.Errorf("the enum name is not a sentence: %q", line)
+	}
+	if len(s.state.Captures) != 0 {
+		t.Errorf("a destroyed capture must leave the mirror: %v", s.state.Captures)
+	}
+}

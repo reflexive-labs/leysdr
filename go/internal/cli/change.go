@@ -167,7 +167,13 @@ func captureChanges(was, now, ours *leylinev1.Capture, st ui.Style) []change {
 		out = append(out, change{"set", g})
 	}
 	if was.State != now.State {
-		out = append(out, change{"left", "the radio " + inkState(st, stateWord(now.State.String()))})
+		// State unset is the destroy tombstone, not a state the radio is in;
+		// printing the enum word there says "state unspecified" for "gone".
+		if now.State == leylinev1.CaptureState_CAPTURE_STATE_UNSPECIFIED {
+			out = append(out, change{"stopped", "this radio"})
+		} else {
+			out = append(out, change{"left", "the radio " + inkState(st, stateWord(now.State.String()))})
+		}
 	}
 	return out
 }
