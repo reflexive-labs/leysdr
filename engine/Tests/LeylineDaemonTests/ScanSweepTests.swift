@@ -241,6 +241,62 @@ final class ScanSweepTests: XCTestCase {
         }
     }
 
+    /// A sweep declines a radio somebody is listening on, and --take-over borrows it and gives it
+    /// back where it was.
+    func testTakeOverBorrowsAndRestores() async throws {
+        try await withDaemon { c in
+            let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)])
+            let desc = try await c.daemon.registry.attachVirtualDevice(device)
+            try await Task.sleep(nanoseconds: 200_000_000)
+
+            // Somebody is listening on 146.9 MHz.
+            let cap = try await c.control.createCapture(.with {
+                $0.deviceID = desc.id.string
+                $0.centerHz = 146_900_000
+                $0.sampleRate = SyntheticBandDevice.rate
+            }, metadata: testMetadata)
+            _ = try await c.control.createChannel(.with {
+                $0.captureID = cap.captureID
+                $0.offsetHz = 0
+                $0.mode = .nfm
+            }, metadata: testMetadata)
+
+            func sweep(takeOver: Bool) async throws -> Leyline_V1_Job {
+                var config = Leyline_V1_ScanConfig()
+                config.range.minHz = 145_000_000
+                config.range.maxHz = 146_000_000
+                config.dwellMs = 120
+                config.once = true
+                config.takeOver = takeOver
+                let job = try await c.jobs.startJob(.with { $0.config = .scan(config) }, metadata: testMetadata)
+                var final = job
+                let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+                while final.state == .running, ContinuousClock.now < deadline {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                    final = try await c.jobs.getJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
+                }
+                return final
+            }
+
+            let refused = try await sweep(takeOver: false)
+            XCTAssertEqual(refused.state, .failed)
+            XCTAssertTrue(refused.statusDetail.contains("listening"), refused.statusDetail)
+            XCTAssertTrue(refused.statusDetail.contains("146.900"), refused.statusDetail)
+            // The refusal must not have moved anything.
+            var state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.captures.first?.centerHz, 146_900_000)
+
+            let took = try await sweep(takeOver: true)
+            XCTAssertEqual(took.state, .completed, took.statusDetail)
+
+            // The radio is back where its owner left it, and the channel is still theirs.
+            state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.captures.first?.centerHz, 146_900_000, "a borrowed capture must be given back")
+            XCTAssertEqual(state.channels.count, 1, "the listener's channel must survive")
+            XCTAssertEqual(state.channels.first?.state, .channelActive)
+        }
+    }
+
     // MARK: harness
 
     /// Runs one sweep over a synthetic radio and hands the finished Scan to `check`.

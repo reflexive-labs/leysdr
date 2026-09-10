@@ -85,8 +85,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
     private func inUse(_ cap: Leyline_V1_Capture, state: Leyline_V1_GetStateResponse) -> String? {
         let channels = state.channels.filter { $0.captureID == cap.captureID }
         if let ch = channels.first {
-            let who = ch.owner.label.isEmpty ? ch.owner.kind : ch.owner.label
-            return "\(who) is listening on \(fmt(absolute(ch, cap)))"
+            return "\(who(ch.owner)) is listening on \(fmt(absolute(ch, cap)))"
         }
         if cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
         let now = UInt64(realtimeNs())
@@ -95,6 +94,18 @@ actor SessionCaptureAllocator: CaptureAllocator {
             return "somebody was tuning this radio \(Int((now - last) / 1_000_000_000)) s ago"
         }
         return nil
+    }
+
+    /// Names a client by what it is rather than by the label it chose: "ley is listening" reads as
+    /// nonsense to somebody who typed `ley`.
+    private func who(_ ci: Leyline_V1_ClientInfo) -> String {
+        switch ci.kind {
+        case "cli": return "a terminal"
+        case "app": return "the app"
+        case "mcp": return "an agent"
+        case "job": return "another job"
+        default: return ci.label.isEmpty ? "another client" : ci.label
+        }
     }
 
     private func absolute(_ ch: Leyline_V1_Channel, _ cap: Leyline_V1_Capture) -> UInt64 {
