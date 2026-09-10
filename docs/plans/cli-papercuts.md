@@ -169,12 +169,37 @@ The new prose names all five, says the list is closed, and names the real render
 `TestErrorLinePlainAndStyled` and `TestErrorLineInkTargets` already pin every span and the
 strip-identity, so the guide now describes tests that exist rather than a rule nothing enforced.
 
-## PC-7 `[ ]` The live session writes its two halves to different streams
+## PC-7 `[x]` The live session writes its two halves to different streams
 
-The live meter moved to stderr so the stderr-TTY gate is coherent, but the banner still goes to
-stdout in human mode, so a scraped live session sees its two halves on different streams. Worth
-deciding deliberately rather than leaving as an artefact of the order the two changes landed. (from
-`cli-visuals.md`)
+The live meter moved to stderr so the stderr-TTY gate is coherent, but the banner still went to
+stdout in human mode. (from `cli-visuals.md`)
+
+Settled by the guide once the question was put properly: **the banner carries no ids at all** --
+frequency, mode, model, gain, the squelch sentence and two hint lines. Ids live in `printCreated`,
+already on stdout. So principle 1.3 decides it, and prose went to stderr. `tune` and `play` set
+`proseToStderr` the way `listen` already did.
+
+Set in each `RunE` rather than in `runTune`, which the analysis caught: `play` says its first line
+*before* `runTune` is reached, so a flag set inside it would have left play half-converted.
+
+Two consequences worth naming:
+
+- **`ley play --persistent` would have lost the device id.** The detach line is prose containing an
+  id, and `printCreated` never named the device -- so moving it to stderr would have stripped the id
+  from a scrape. `device <id>` now goes to stdout beside the capture and channel, and the sentence
+  about it to stderr.
+- The other-client event line in `live` moved too. It is prose, and it was printed after
+  `meter.clear()`, which only clears stderr -- on stdout it corrupted the redraw whenever the two
+  streams pointed at different places.
+
+**Still non-conforming, deliberately:** `ley set`'s `say` calls remain on stdout. `docs/cli-guide.md`
+already claims all person-facing prose is on stderr, so `set` was non-conforming before this and
+still is; it is a separate change with its own test fallout, not a drive-by.
+
+Tests: six assertions moved from stdout to what a person actually sees, via a new `mustSay` helper.
+The e2e one is worth naming -- it asserted `"dBFS"` on tune's stdout and called it "the meter line",
+but the meter was already on stderr and what it was really catching was the banner's squelch
+sentence. It now checks the meter on stderr and asserts a level never reaches stdout.
 
 ## PC-8 `[x]` Presets work wherever a frequency does
 

@@ -65,7 +65,7 @@ func TestTunePersistent(t *testing.T) {
 		t.Fatalf("refusal must not touch the capture: %v", st.Captures[0])
 	}
 	// --retune moves it anyway and says so.
-	out = mustRun(t, sock, "tune", "150", "--no-audio", "--persistent", "--retune")
+	out = mustSay(t, sock, "tune", "150", "--no-audio", "--persistent", "--retune")
 	if !strings.Contains(out, "retuning capture") {
 		t.Fatalf("expected retune notice:\n%s", out)
 	}
@@ -83,7 +83,7 @@ func TestTuneRetunesIdleCapture(t *testing.T) {
 	if _, err := c.Control.CreateCapture(context.Background(), &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 101_100_000}); err != nil {
 		t.Fatal(err)
 	}
-	out := mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
+	out := mustSay(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	if !strings.Contains(out, "retuning capture") || !strings.Contains(out, "101.100 MHz to 146.520 MHz") {
 		t.Fatalf("expected retune notice:\n%s", out)
 	}
@@ -228,8 +228,10 @@ func TestTuneAutoSquelch(t *testing.T) {
 	done := make(chan error, 1)
 	var out string
 	go func() {
-		o, _, err := run(t, ctx, sock, "tune", "146.52", "--no-audio")
-		out = o
+		// The banner is prose and lives on stderr; the assertion below is about
+		// what a person saw, so it reads both streams.
+		o, e, err := run(t, ctx, sock, "tune", "146.52", "--no-audio")
+		out = o + e
 		done <- err
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -272,7 +274,7 @@ func TestTuneModePrecedence(t *testing.T) {
 		{[]string{"tune", "guard"}, "am", "using AM: preset guard: aviation emergency guard frequency (121.500 MHz)"},
 	}
 	for _, tc := range cases {
-		out := mustRun(t, sock, append(tc.args, "--no-audio", "--persistent", "--retune")...)
+		out := mustSay(t, sock, append(tc.args, "--no-audio", "--persistent", "--retune")...)
 		st, _ := c.State(context.Background())
 		ch := st.Channels[len(st.Channels)-1]
 		if leyline.ModeName(ch.Mode) != tc.mode {

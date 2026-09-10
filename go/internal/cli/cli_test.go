@@ -62,6 +62,17 @@ func run(t *testing.T, ctx context.Context, sock string, args ...string) (string
 	return out.String(), errb.String(), err
 }
 
+// mustSay is mustRun for an assertion about prose. A live verb's prose is on
+// stderr and its ids are on stdout, so "what a person saw" is both streams.
+func mustSay(t *testing.T, sock string, args ...string) string {
+	t.Helper()
+	out, errOut, err := run(t, context.Background(), sock, args...)
+	if err != nil {
+		t.Fatalf("ley %v: %v\nstdout: %s\nstderr: %s", args, err, out, errOut)
+	}
+	return out + errOut
+}
+
 func mustRun(t *testing.T, sock string, args ...string) string {
 	t.Helper()
 	out, errOut, err := run(t, context.Background(), sock, args...)

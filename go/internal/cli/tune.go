@@ -167,6 +167,12 @@ moves it anyway.`,
 			if err != nil {
 				return err
 			}
+			// A live session's prose belongs to the person, not to a script
+			// reading stdout: the meter is already on stderr, and leaving the
+			// banner on stdout split one screen across two streams. Set here
+			// rather than in runTune, because play says its first line before
+			// runTune is reached. Ids stay on stdout in printCreated.
+			s.proseToStderr = true
 			defer s.close()
 			if s.device, err = pickDevice(s.state, o.device); err != nil {
 				return err
@@ -421,7 +427,10 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			}
 			if !s.mine(ev) && humanEvent(ev) {
 				clear()
-				fmt.Fprintln(s.app.Stdout, eventLine(ev, s.state))
+				// Prose, and printed after meter.clear(), which only clears
+				// stderr: on stdout it would corrupt the redraw whenever the
+				// two streams point at different places.
+				fmt.Fprintln(s.app.Stderr, eventLine(ev, s.state))
 			}
 		}
 	}

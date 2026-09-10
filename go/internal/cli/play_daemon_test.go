@@ -97,8 +97,9 @@ func TestPlayWithSidecar(t *testing.T) {
 	}
 	// Mode precedence for play: the sidecar beats the band table and says so;
 	// squelch stays off for a recording unless asked.
-	if !strings.Contains(out, "using AM: the recording's sidecar says AM") || !strings.Contains(out, "Squelch off.") {
-		t.Fatalf("play banner: %s", out)
+	// The banner is prose and lives on stderr now.
+	if !strings.Contains(errOut, "using AM: the recording's sidecar says AM") || !strings.Contains(errOut, "Squelch off.") {
+		t.Fatalf("play banner: %s", errOut)
 	}
 }
 
@@ -263,9 +264,9 @@ func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent")
+	out, errOut, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent")
 	if err != nil {
-		t.Fatalf("play --persistent: %v\n%s", err, out)
+		t.Fatalf("play --persistent: %v\n%s\n%s", err, out, errOut)
 	}
 	st, err := c.State(context.Background())
 	if err != nil {
@@ -280,8 +281,13 @@ func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {
 			fileDev = d.DeviceId
 		}
 	}
-	if fileDev == "" || !strings.Contains(out, "ley devices detach "+fileDev) {
-		t.Fatalf("expected detach hint for %q in output:\n%s", fileDev, out)
+	// The id is machine output on stdout; the sentence about it is prose on
+	// stderr. A --persistent scrape needs the first and a person needs both.
+	if fileDev == "" || !strings.Contains(out, "device "+fileDev) {
+		t.Fatalf("expected the device id on stdout for %q:\n%s", fileDev, out)
+	}
+	if !strings.Contains(errOut, "ley devices detach "+fileDev) {
+		t.Fatalf("expected the detach hint on stderr for %q:\n%s", fileDev, errOut)
 	}
 	if out, _, err := run(t, context.Background(), sock, "devices", "detach", fileDev); err != nil {
 		t.Fatalf("devices detach: %v\n%s", err, out)

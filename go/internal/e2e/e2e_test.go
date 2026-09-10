@@ -278,8 +278,15 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 	if err := stopTune(); err != nil {
 		t.Fatalf("tune exit: %v\n%s\n%s", err, tuneOut.out.String(), tuneOut.errOut.String())
 	}
-	if !strings.Contains(tuneOut.out.String(), "dBFS") {
-		t.Fatalf("tune printed no meter line:\n%s", tuneOut.out.String())
+	// A live session's prose is all on stderr: the meter always was, and the
+	// banner joined it, so stdout carries ids and nothing else. The old form of
+	// this check looked at stdout and called what it found "the meter line",
+	// but that was the banner's squelch sentence.
+	if said := tuneOut.errOut.String(); !strings.Contains(said, "signal ") || !strings.Contains(said, "dBFS") {
+		t.Fatalf("tune printed no meter line on stderr:\n%s", said)
+	}
+	if strings.Contains(tuneOut.out.String(), "dBFS") {
+		t.Fatalf("a level belongs to the person, not to stdout:\n%s", tuneOut.out.String())
 	}
 	st = e.waitChannels(1)
 	if got := list(st, "channels")[0].(map[string]any)["channelId"]; got != playChanID {

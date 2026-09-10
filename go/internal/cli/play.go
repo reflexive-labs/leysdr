@@ -111,6 +111,12 @@ needed.`,
 			if err != nil {
 				return err
 			}
+			// A live session's prose belongs to the person, not to a script
+			// reading stdout: the meter is already on stderr, and leaving the
+			// banner on stdout split one screen across two streams. Set here
+			// rather than in runTune, because play says its first line before
+			// runTune is reached. Ids stay on stdout in printCreated.
+			s.proseToStderr = true
 			defer s.close()
 			dev, err := s.client.Control.AttachFileDevice(cmd.Context(), &leylinev1.AttachFileDeviceRequest{Path: path, Loop: loop})
 			if err != nil {
@@ -157,7 +163,13 @@ needed.`,
 			}
 			if f.persistent {
 				keep = true
-				s.say("file device %s stays attached; detach with: ley devices detach %s\n", dev.DeviceId, dev.DeviceId)
+				// The id is machine output and goes to stdout beside the
+				// capture and channel printCreated already printed; the
+				// sentence about it is prose and goes to the person. Without
+				// the first line a --persistent scrape would lose the device
+				// entirely, since printCreated does not name it.
+				fmt.Fprintf(app.Stdout, "device %s\n", dev.DeviceId)
+				s.say("the file device stays attached; detach with: ley devices detach %s\n", dev.DeviceId)
 			}
 			return nil
 		},
