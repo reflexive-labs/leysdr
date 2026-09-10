@@ -65,6 +65,14 @@ func TestCheckReducedGeneration(t *testing.T) {
 	if err := runGenerate([]string{"--out", dir, "--rate", "240000", "--duration", "0.25"}, &out); err != nil {
 		t.Fatal(err)
 	}
+	// scan_band declares no expectations, so only its carriers can refuse it:
+	// ±800 kHz has no room in a 240 kHz span.
+	if !strings.Contains(out.String(), "skip scan_band") {
+		t.Fatalf("scan_band should be skipped at 240 kHz:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scan_band.cf32")); !os.IsNotExist(err) {
+		t.Fatalf("scan_band.cf32 written at 240 kHz: %v", err)
+	}
 	out.Reset()
 	if err := runCheck([]string{dir}, &out); err != nil {
 		t.Fatalf("check failed: %v\n%s", err, out.String())
@@ -129,8 +137,9 @@ func TestMorseTiming(t *testing.T) {
 	}
 }
 
-// The three fixtures that do not fit at 240 kHz (see TestCheckReducedGeneration)
-// each round-trip generate+check on their own at a rate that holds them.
+// The fixtures with expectations that do not fit at 240 kHz (see
+// TestCheckReducedGeneration) each round-trip generate+check on their own at a
+// rate that holds them.
 func TestCheckEachWideFixture(t *testing.T) {
 	cases := []struct {
 		name string
@@ -159,5 +168,30 @@ func TestCheckEachWideFixture(t *testing.T) {
 				t.Fatalf("two_nfm should check both channels:\n%s", got)
 			}
 		})
+	}
+}
+
+// scan_band is the fixture whose placement is the whole point, and it has no
+// expectations to be judged by, so the rate check has to read its carriers.
+func TestScanBandRateBound(t *testing.T) {
+	f := findFixture("scan_band")
+	if f == nil {
+		t.Fatal("scan_band missing from the catalog")
+	}
+	for _, rate := range []float64{240_000, 1_024_000, 1_800_000} {
+		if f.fits(rate) {
+			t.Fatalf("scan_band should not fit at %.0f Hz", rate)
+		}
+	}
+	if !f.fits(2_400_000) {
+		t.Fatal("scan_band should fit at 2.4 MSPS")
+	}
+	dir := t.TempDir()
+	var out bytes.Buffer
+	if err := runGenerate([]string{"--out", dir, "--rate", "2400000", "--duration", "0.02", "--only", "scan_band"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scan_band.cf32")); err != nil {
+		t.Fatalf("scan_band.cf32 not written at 2.4 MSPS: %v", err)
 	}
 }

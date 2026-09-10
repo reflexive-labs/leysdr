@@ -260,11 +260,21 @@ var catalog = []fixture{
 	},
 }
 
-// fits reports whether every expected channel lies inside the usable band
-// (|offset| + bw/2 < 0.45·rate) at rate.
+// fits reports whether the fixture lies inside the usable band
+// (|offset| + bw/2 < 0.45·rate) at rate. Both the expected channels and the
+// generated signals are measured: a fixture that declares no expectations —
+// one that exists for the spectrum rather than for a demod — is still refused
+// at a rate its carriers would alias in.
 func (f *fixture) fits(rate float64) bool {
+	edge := 0.45 * rate
 	for _, e := range f.expect(rate) {
-		if math.Abs(e.OffsetHz)+e.BandwidthHz/2 >= 0.45*rate {
+		if math.Abs(e.OffsetHz)+e.BandwidthHz/2 >= edge {
+			return false
+		}
+	}
+	for _, s := range f.build(rate) {
+		offset, bw := s.span()
+		if math.Abs(offset)+bw/2 >= edge {
 			return false
 		}
 	}

@@ -104,3 +104,7 @@ func (s *cwKeyed) describe() map[string]any {
 		"wpm": s.wpm, "text": s.text, "edge_ms": s.edgeS * 1000,
 	}
 }
+
+// span is the keying bandwidth: a raised-cosine edge of edgeS seconds spreads
+// the carrier by roughly 1/edgeS either side.
+func (s *cwKeyed) span() (float64, float64) { return s.carrierHz, 2 / s.edgeS }

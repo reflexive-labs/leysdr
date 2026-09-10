@@ -12,6 +12,11 @@ type source interface {
 	fill(dst []complex128, n0 int64)
 	// describe returns the JSON description recorded in the sidecar generator block.
 	describe() map[string]any
+	// span reports the band the source occupies as a centre offset from DC and
+	// a bandwidth, so a fixture can be refused at a sample rate that would
+	// alias it. Bandwidths are the generous engineering estimate for the
+	// modulation, not the -3 dB width.
+	span() (offsetHz, bwHz float64)
 }
 
 func ampFromDBFS(dbfs float64) float64 { return math.Pow(10, dbfs/20) }
@@ -66,6 +71,12 @@ func (s *fmTone) describe() map[string]any {
 	return d
 }
 
+// span is Carson's rule over the sum of both deviations: the sub-audible tone
+// rides the same carrier, so its deviation adds to the audio tone's.
+func (s *fmTone) span() (float64, float64) {
+	return s.carrierHz, 2 * (s.devHz + s.subDevHz + math.Max(s.toneHz, s.subToneHz))
+}
+
 // amTone is carrier·(1 + depth·sin(2π·tone·t)); dbfs is the carrier level.
 type amTone struct {
 	rate, carrierHz, toneHz, depth, dbfs float64
@@ -89,6 +100,9 @@ func (s *amTone) describe() map[string]any {
 		"depth": s.depth, "dbfs": s.dbfs,
 	}
 }
+
+// span is the two AM sidebands either side of the carrier.
+func (s *amTone) span() (float64, float64) { return s.carrierHz, 2 * s.toneHz }
 
 // ssbTone is an analytic tone at carrier ± tone (carrier suppressed): a
 // single complex exponential, the upper sideband when upper is true.
@@ -118,6 +132,10 @@ func (s *ssbTone) describe() map[string]any {
 	return map[string]any{"type": kind, "carrier_hz": s.carrierHz, "tone_hz": s.toneHz, "dbfs": s.dbfs}
 }
 
+// span covers the carrier and either sideband position, so a fixture is judged
+// on the room the tone needs whichever sideband it lands in.
+func (s *ssbTone) span() (float64, float64) { return s.carrierHz, 2 * math.Abs(s.toneHz) }
+
 // gaussNoise is complex white Gaussian noise with mean power dbfs.
 type gaussNoise struct {
 	dbfs float64
@@ -134,3 +152,7 @@ func (s *gaussNoise) fill(dst []complex128, _ int64) {
 func (s *gaussNoise) describe() map[string]any {
 	return map[string]any{"type": "noise", "dbfs": s.dbfs}
 }
+
+// span reports no band: white noise fills whatever rate it is generated at and
+// so never decides whether a fixture fits.
+func (s *gaussNoise) span() (float64, float64) { return 0, 0 }

@@ -145,7 +145,7 @@ persistence and audio equivalents — exported from `go/pkg/leyline`, the CLI si
 descriptor's bin format, and an e2e case checks a DB_U8 row against a DB_F32 row of the same
 fixture within the quantisation step).
 
-### GO-5 `[ ]` `leyfix` rate check
+### GO-5 `[x]` `leyfix` rate check
 
 q-go-lib-3: `fits()` considers the built sources, so `scan_band` is refused at a rate its carriers
 alias in; `TestCheckReducedGeneration` adjusts accordingly.
