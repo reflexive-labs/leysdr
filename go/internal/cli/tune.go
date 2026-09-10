@@ -317,11 +317,36 @@ func (s *session) banner(o *tuneOptions) string {
 	// leading word carries Label ink instead.
 	return strings.Join([]string{
 		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", leyline.FormatFrequency(o.freq), where)),
-		leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, gainString(s.capture))),
+		s.bannerSource(st),
 		leadWord(st, squelch),
 		st.Muted("Ctrl-C stops."),
-		st.Muted("From another terminal:") + " " + st.Cmd("ley set squelch -50") + st.Muted(" · ") + st.Cmd("ley set gain 30") + st.Muted(" · ") + st.Cmd("ley spectrum"),
+		st.Muted("From another terminal:") + " " + st.Cmd("ley set squelch -50") + st.Muted(" · ") + st.Cmd(s.bannerSecondHint()) + st.Muted(" · ") + st.Cmd("ley spectrum"),
 	}, "\n") + "\n"
+}
+
+// bannerSource is the banner's second line: the radio, or what is being played
+// through it. A recording has no gain and no tuning range, so "Radio
+// FilePlaybackDevice, no gain control" spends a line saying nothing.
+func (s *session) bannerSource(st ui.Style) string {
+	if s.sourceLine == "" {
+		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, gainString(s.capture)))
+	}
+	// An unknown width is not a narrow one: piped, the line must arrive whole.
+	line := s.sourceLine
+	if st.Width > 0 {
+		line = st.Truncate(line, max(20, st.Width-8))
+	}
+	return leadLabel(st, "Playing", line)
+}
+
+// bannerSecondHint keeps the "from another terminal" line offering something
+// that works. A file device refuses every gain write, so offering `ley set gain`
+// there is an invitation to an error.
+func (s *session) bannerSecondHint() string {
+	if len(s.capture.GetGains()) == 0 {
+		return "ley set mode am"
+	}
+	return "ley set gain 30"
 }
 
 // leadLabel writes one banner row: the topic in Label ink, then the value.

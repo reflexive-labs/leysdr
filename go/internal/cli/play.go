@@ -157,7 +157,10 @@ needed.`,
 				// A recording is played as it is: squelch stays off unless asked for.
 				o.squelchAuto = false
 			}
-			s.say("playing %s as device %s\n", filepath.Base(path), dev.DeviceId)
+			// What is being played belongs in the banner's second line, where
+			// tune names the radio: one fact per line, and the line it replaces
+			// would have read "Radio FilePlaybackDevice, no gain control".
+			s.sourceLine = playedSource(path, dev)
 			if err := runTune(cmd.Context(), s, o); err != nil {
 				return err
 			}
@@ -178,4 +181,24 @@ needed.`,
 	cmd.Flags().BoolVar(&loop, "loop", false, "start over when the file ends, until Ctrl-C (default: stop at the end)")
 	cmd.Flags().StringVar(&freq, "freq", "", "frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)")
 	return cmd
+}
+
+// playedSource describes a recording for the banner, from the daemon's own
+// descriptor rather than from the file we handed it -- the daemon is what
+// actually opened it, and its numbers are the ones in force.
+func playedSource(path string, dev *leylinev1.DeviceDescriptor) string {
+	out := filepath.Base(path)
+	if d := dev.GetFeatures()["duration_s"].GetNumber(); d > 0 {
+		out += fmt.Sprintf(", %s", fmtDuration(d))
+	}
+	// A descriptor with no rates is not something the banner should crash on.
+	// The unit is MSPS, not MHz: this is how fast the file is read, not where
+	// on the dial it sits, and the line already carries a frequency above it.
+	if rates := dev.GetSampleRates(); len(rates) > 0 {
+		out += fmt.Sprintf(" at %.3g MSPS", float64(rates[0])/1e6)
+	}
+	if dev.GetFeatures()["loop"].GetFlag() {
+		out += ", looping"
+	}
+	return out
 }

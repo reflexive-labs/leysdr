@@ -90,10 +90,48 @@ The shared version also skips a nil range element, which the old one would have 
 Tests: `TestRangesPhraseCollapses` (including that no dash appears as a separator) and two
 assertions in `TestStateTreeContent`.
 
-## PC-3 `[ ]` `ley play`'s banner
+## PC-3 `[x]` `ley play`'s banner
 
 `tune`'s banner got the one-fact-per-line treatment and `play`'s did not; it still reads as a
 five-line block of ids. Symmetry only. (from `cli-visuals.md`)
+
+**The premise was wrong: there is only one banner.** `play` calls `runTune`, so it has printed
+`session.banner` all along -- one fact per line, five lines, the same code. What made it read as a
+block of ids was the line above it, `playing nfm_tone.cf32 as device dev_01M1S9W2Y0CESFVYYGNM805N9P`,
+which is unstyled prose carrying a 26-character id nobody reads.
+
+So the fix is not symmetry, it is what the shared banner should say when the radio is a file:
+
+- The id line is gone. `--persistent` already prints `device <id>` to stdout (PC-7), which is where
+  a script was getting it from; the non-persistent run had no use for it.
+- **The second line said nothing.** `Radio FilePlaybackDevice, no gain control` names a model that
+  is not a model and a capability the thing does not have. It is now `Playing nfm_tone.cf32, 1.0 s
+  at 2.4 MSPS, looping` -- play's second line answers "what am I listening to" where tune's answers
+  "on what radio", which is the one place the two verbs genuinely differ.
+- The description comes from the daemon's `DeviceDescriptor`, not from the path we handed it: the
+  daemon is what opened the file, and its rate and duration are the ones in force. `looping` is the
+  descriptor's flag, so a one-shot cannot claim to loop.
+- **The hint line was offering an error.** `ley set gain 30` is refused by every file device.
+  `bannerSecondHint` offers `ley set mode am` when the capture has no gains, so both branches
+  suggest something that works.
+
+The unit is MSPS, not MHz, and the test says so: it is how fast the file is read, not where on the
+dial it sits, and the line above already carries a frequency. A descriptor with no `SampleRates` is
+guarded -- a thin descriptor is not something a banner should crash on.
+
+One bug found by the test rather than by the eye: `st.Truncate(line, max(20, st.Width-8))` treats an
+unknown width as a narrow one, and `ui` resolves width to 0 for a stream nothing reports on. Piped,
+the source line would have been cut to 20 columns. Truncation now happens only when a width is
+actually known, which is also what makes strip-to-plain hold: the two styles must differ in ink
+alone, and at width 0 they were differing in whether the line survived.
+
+Tests: `TestPlayedSource`, `TestPlayedSourceSurvivesAThinDescriptor`,
+`TestBannerSecondHintFollowsTheDevice`, `TestPlayBannerStripsToPlain` (five lines, no `Radio`, and
+the strip-identity across both alphabets at widths 0/40/100 -- the ASCII ellipsis is `...` and the
+Unicode one is a single glyph, so a mismatched alphabet is not what that assertion is for).
+
+`docs/cli-guide.md` section 6's transcript was the old block verbatim; it is now the verified output
+of `ley play fixtures/nfm_tone.cf32` against the daemon.
 
 ## PC-4 `[x]` `ley fft` rows carry no noise floor
 

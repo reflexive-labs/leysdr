@@ -50,7 +50,12 @@ type tuneOptions struct {
 type session struct {
 	// subAudible remembers the last tone reported, so a heartbeat that repeats
 	// it does not repeat the line.
-	subAudible     subAudibleTracker
+	subAudible subAudibleTracker
+	// sourceLine, when set, names what is being played instead of the radio it
+	// arrives through: play's second banner line answers "what am I listening
+	// to", where tune's answers "on what radio". A file device has no gain and
+	// no tuning range, so naming the hardware there says nothing.
+	sourceLine     string
 	app            *App
 	client         *leyline.Client
 	state          *leylinev1.GetStateResponse

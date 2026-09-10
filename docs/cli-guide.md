@@ -305,13 +305,12 @@ hardware is needed; the `fixtures/` directory has generated signals with known c
 
 ```console
 $ ley play fixtures/nfm_tone.cf32
-playing nfm_tone.cf32 as device dev_01M1S9W2Y0CESFVYYGNM805N9P
 using NFM: the recording's sidecar says NFM
 Listening to 146.620 MHz (NFM, 2 m amateur)
-Radio FilePlaybackDevice, gain unknown
+Playing nfm_tone.cf32, 1.0 s at 2.4 MSPS
 Squelch off.
 Ctrl-C stops.
-From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum
+From another terminal: ley set squelch -50 · ley set mode am · ley spectrum
 ████░░░░░░░░░░░░  146.620 MHz NFM  signal -63 dBFS  audio
 ```
 
