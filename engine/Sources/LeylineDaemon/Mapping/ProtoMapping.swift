@@ -1,5 +1,7 @@
-// Engine <-> leyline.v1 mapping. EngineCore never imports the protos; this is the one place the two
-// vocabularies meet (docs/engine-internals.md "Daemon").
+// Renders engine values to leyline.v1 proto messages (and back for a handful of enums).
+// EngineCore never imports the protos; the session and job stores hold proto messages directly
+// as their own record type rather than going through this mapping (docs/engine-internals.md
+// "Daemon").
 
 import EngineCore
 import Foundation
@@ -193,20 +195,28 @@ enum ProtoMapping {
         return out
     }
 
-    /// gRPC status code for a stable engine code.
+    /// gRPC status for a stable engine code, entry for entry with the table in
+    /// `docs/engine-internals.md`. Anything that reads the status rather than the trailer -- a retry
+    /// interceptor, a mesh policy, a client in a fourth language -- must see the same answer from
+    /// every daemon, so the table is the contract and this switch follows it.
     static func statusCode(for code: String) -> RPCError.Code {
         switch code {
-        case "DEVICE_NOT_FOUND", "CAPTURE_NOT_FOUND", "CHANNEL_NOT_FOUND", "SINK_NOT_FOUND", "STREAM_NOT_FOUND",
-             "JOB_NOT_FOUND", "SCAN_NOT_FOUND":
+        case EngineError.Code.deviceNotFound, EngineError.Code.captureNotFound, EngineError.Code.channelNotFound,
+             EngineError.Code.sinkNotFound, EngineError.Code.streamNotFound, EngineError.Code.jobNotFound,
+             EngineError.Code.scanNotFound:
             return .notFound
-        case "DEVICE_BUSY", "DEVICE_SWEEPING": return .resourceExhausted
-        case "DEVICE_DETACHED": return .failedPrecondition
-        case "DEVICE_IO": return .unavailable
-        case "FREQ_OUT_OF_RANGE", "RATE_UNSUPPORTED", "OFFSET_OUT_OF_CAPTURE", "GAIN_ELEMENT_UNKNOWN",
-             "MODE_UNSUPPORTED", "INVALID_ARGUMENT":
+        case EngineError.Code.deviceBusy, EngineError.Code.deviceSweeping, EngineError.Code.noDevice,
+             EngineError.Code.failedPrecondition:
+            return .failedPrecondition
+        case EngineError.Code.deviceDetached, EngineError.Code.deviceIO:
+            return .unavailable
+        case EngineError.Code.freqOutOfRange, EngineError.Code.rateUnsupported, EngineError.Code.offsetOutOfCapture,
+             EngineError.Code.blindSpot, EngineError.Code.gainElementUnknown, EngineError.Code.invalidArgument:
             return .invalidArgument
-        case "UNIMPLEMENTED", "PLATFORM_UNSUPPORTED": return .unimplemented
-        default: return .internalError
+        case EngineError.Code.modeUnsupported, EngineError.Code.unimplemented, EngineError.Code.platformUnsupported:
+            return .unimplemented
+        default:
+            return .internalError
         }
     }
 
@@ -225,7 +235,7 @@ enum ProtoMapping {
     static func rpcError(_ error: any Error) -> RPCError {
         if let e = error as? EngineError { return rpcError(e) }
         if let r = error as? RPCError { return r }
-        return rpcError(EngineError(code: "INTERNAL", message: String(describing: error)))
+        return rpcError(EngineError.internalError(String(describing: error)))
     }
 }
 

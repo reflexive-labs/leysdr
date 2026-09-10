@@ -174,7 +174,7 @@ actor JobStore {
         let range = config.range.minHz ... config.range.maxHz
         let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
         if !config.deviceID.isEmpty, deviceID == nil {
-            await finish(id, state: .failed, detail: "no device with id \(config.deviceID)", code: "DEVICE_NOT_FOUND")
+            await finish(id, state: .failed, detail: "no device with id \(config.deviceID)", code: EngineError.Code.deviceNotFound)
             return
         }
         let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, deviceID: deviceID, takeOver: config.takeOver), for: id)
@@ -182,7 +182,7 @@ actor JobStore {
             if case .declined(let code, let reason) = allocation {
                 await finish(id, state: .failed, detail: reason, code: code)
             } else {
-                await finish(id, state: .failed, detail: "no radio could be allocated", code: "NO_DEVICE")
+                await finish(id, state: .failed, detail: "no radio could be allocated", code: EngineError.Code.noDevice)
             }
             return
         }
@@ -199,7 +199,7 @@ actor JobStore {
                                         tuningRanges: device?.tuningRanges ?? [])
         else {
             await lease.release()
-            await finish(id, state: .failed, detail: "this radio cannot tune any of that range", code: "FREQ_OUT_OF_RANGE")
+            await finish(id, state: .failed, detail: "this radio cannot tune any of that range", code: EngineError.Code.freqOutOfRange)
             return
         }
         guard plan.analysedHz > 0 else {
@@ -207,7 +207,7 @@ actor JobStore {
             let centre = plan.steps.first?.centerHz ?? range.lowerBound
             await finish(id, state: .failed,
                          detail: "all of that range sits within \(fmtMHz(UInt64(SweepPlan.guardFraction * Double(lease.sampleRateHz)))) of \(fmtMHz(centre)), where this radio's own DC spike is; a scan does not look there",
-                         code: "BLIND_SPOT")
+                         code: EngineError.Code.blindSpot)
             return
         }
         await setDetail(id, plan.steps.count == 1 ? "sweeping 1 step" : "sweeping \(plan.steps.count) steps")

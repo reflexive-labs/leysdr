@@ -90,7 +90,7 @@ final class Daemon: @unchecked Sendable {
             return
         }
         if socketIsLive(path: path) {
-            throw EngineError(code: "SOCKET_IN_USE", message: "another leylined is listening on \(path)", target: path)
+            throw EngineError(code: EngineError.Code.socketInUse, message: "another leylined is listening on \(path)", target: path)
         }
         try FileManager.default.removeItem(atPath: path)
     }

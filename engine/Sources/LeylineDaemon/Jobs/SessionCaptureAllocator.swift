@@ -21,7 +21,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         switch request {
         case .channel:
             // Watch jobs land here (Milestone D.15). A sweep is the only caller today.
-            return .declined(code: "UNIMPLEMENTED", reason: "channel allocation arrives with watch jobs")
+            return .declined(code: EngineError.Code.unimplemented, reason: "channel allocation arrives with watch jobs")
         case .exclusiveCapture(let range, let deviceID, let takeOver):
             return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, job: job)
         }
@@ -47,9 +47,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
         guard !candidates.isEmpty else {
             if let want = wanted {
-                return .declined(code: "NO_DEVICE", reason: "\(want.string) cannot tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound)), or is not here")
+                return .declined(code: EngineError.Code.noDevice, reason: "\(want.string) cannot tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound)), or is not here")
             }
-            return .declined(code: "NO_DEVICE", reason: "no radio here can tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound))")
+            return .declined(code: EngineError.Code.noDevice, reason: "no radio here can tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound))")
         }
         candidates.sort { ($0.1 == nil ? 0 : 1) < ($1.1 == nil ? 0 : 1) }
 
@@ -100,7 +100,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 log.debug("scan could not open \(device.deviceID): \(lastReason)")
             }
         }
-        return .declined(code: "DEVICE_BUSY", reason: lastReason)
+        return .declined(code: EngineError.Code.deviceBusy, reason: lastReason)
     }
 
     /// The don't-disturb test. Returns a reason when the capture is somebody's, nil when it is free.

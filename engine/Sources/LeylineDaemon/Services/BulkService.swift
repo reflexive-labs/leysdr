@@ -17,7 +17,7 @@ struct BulkService: Leyline_V1_Bulk.SimpleServiceProtocol {
         let c = ClientContext.current
         let sub = try await mapErrors { () throws -> BulkSubscription in
             guard let id = StreamID(string: request.streamID) else {
-                throw EngineError(code: "STREAM_NOT_FOUND", message: "no such stream", target: request.streamID)
+                throw EngineError.streamNotFound(request.streamID)
             }
             return try await registry.beginReading(id)
         }
@@ -47,7 +47,7 @@ struct BulkService: Leyline_V1_Bulk.SimpleServiceProtocol {
         await store.touchUnary(ClientContext.current)
         return try await mapErrors {
             guard let id = StreamID(string: request.streamID) else {
-                throw EngineError(code: "STREAM_NOT_FOUND", message: "no such stream", target: request.streamID)
+                throw EngineError.streamNotFound(request.streamID)
             }
             try await registry.unsubscribe(id)
             return Leyline_V1_Empty()

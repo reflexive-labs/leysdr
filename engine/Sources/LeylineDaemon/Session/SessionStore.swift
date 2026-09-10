@@ -415,7 +415,7 @@ actor SessionStore {
         if desc.state == .disconnected { throw EngineError.deviceDetached(deviceID.string) }
         if let existing = captures.first(where: { $0.value.deviceID == deviceID })?.key, swept.contains(existing) {
             // Say what has it. "The radio is busy" sends somebody looking for another client.
-            throw EngineError(code: "DEVICE_SWEEPING", message: "a scan is sweeping this radio; it is free again when the scan ends", target: deviceID.string)
+            throw EngineError.deviceSweeping(deviceID.string)
         }
         if captures.values.contains(where: { $0.deviceID == deviceID }) || startingDevices.contains(deviceID) {
             throw EngineError.deviceBusy(deviceID.string)
@@ -497,7 +497,7 @@ actor SessionStore {
 
     private func refuseIfSwept(_ id: CaptureID) throws {
         if swept.contains(id) {
-            throw EngineError(code: "DEVICE_SWEEPING", message: "a scan is sweeping this radio; it is free again when the scan ends", target: id.string)
+            throw EngineError.deviceSweeping(id.string)
         }
     }
 
@@ -840,7 +840,7 @@ actor SessionStore {
                         throw EngineError.invalidArgument("bandwidth \(bw) Hz must be in 1...\(rate)", target: w.targetID)
                     }
                     guard outOfCapture || Self.fits(offsetHz: config.offsetHz, bandwidthHz: bw, sampleRate: rate) else {
-                        throw EngineError(code: "OFFSET_OUT_OF_CAPTURE", message: "bandwidth \(bw) Hz does not fit the capture", target: w.targetID)
+                        throw EngineError(code: EngineError.Code.offsetOutOfCapture, message: "bandwidth \(bw) Hz does not fit the capture", target: w.targetID)
                     }
                     config.bandwidthHz = bw
                 case .mode(let m)?:
@@ -861,7 +861,7 @@ actor SessionStore {
                 await emitChannel(chanID, by: by)
             case .sinkVolume(let v)?:
                 guard let sinkID = SinkID(string: w.targetID), var entry = sinks[sinkID], entry.isSystemAudio else {
-                    throw EngineError(code: "SINK_NOT_FOUND", message: "no such system-audio sink", target: w.targetID)
+                    throw EngineError(code: EngineError.Code.sinkNotFound, message: "no such system-audio sink", target: w.targetID)
                 }
                 guard v >= 0, v <= 1 else { throw EngineError.invalidArgument("volume must be within 0..1", target: w.targetID) }
                 #if canImport(AVFoundation)
@@ -877,7 +877,7 @@ actor SessionStore {
         } catch let e as EngineError {
             return e
         } catch {
-            return EngineError(code: "INTERNAL", message: String(describing: error), target: w.targetID)
+            return EngineError.internalError(String(describing: error), target: w.targetID)
         }
     }
 

@@ -278,10 +278,10 @@ actor StreamRegistry {
     /// `FAILED_PRECONDITION` when another Stream RPC is already draining it (one ring, one reader).
     func beginReading(_ id: StreamID) throws -> BulkSubscription {
         guard let sub = subs[id], !sub.isClosed else {
-            throw EngineError(code: "STREAM_NOT_FOUND", message: "no such stream", target: id.string)
+            throw EngineError.streamNotFound(id.string)
         }
         guard sub.claimReader() else {
-            throw EngineError(code: "FAILED_PRECONDITION", message: "stream already has a reader", target: id.string)
+            throw EngineError.failedPrecondition("stream already has a reader", target: id.string)
         }
         return sub
     }
@@ -303,7 +303,7 @@ actor StreamRegistry {
     }
 
     func unsubscribe(_ id: StreamID) async throws {
-        guard let sub = subs[id] else { throw EngineError(code: "STREAM_NOT_FOUND", message: "no such stream", target: id.string) }
+        guard let sub = subs[id] else { throw EngineError.streamNotFound(id.string) }
         await close(sub)
     }
 

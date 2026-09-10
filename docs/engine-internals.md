@@ -340,6 +340,46 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
 - Errors: `RPCError(code:message:)` with the `EngineError.code` string in the message and the
   proto `ErrorDetail` serialised into trailing metadata key `leyline-error-bin`.
 
+### Error codes
+
+Every stable code a daemon puts in `ErrorDetail.code`, and the gRPC status it is served with. This
+table is the contract: `ProtoMapping.statusCode(for:)` and `leyline.GRPCCode` each follow it, a test
+on each side holds its switch against these rows, and the same tests assert that the two registries —
+`EngineError.Code.all` and `leyline.DaemonCodes` — are the same set. A consumer that reads the status
+rather than the trailer (a retry interceptor, a mesh policy, a client in a fourth language) then gets
+the same answer from `leylined` and from the fake daemon. `FAILED_PRECONDITION` is deliberate where
+`RESOURCE_EXHAUSTED` would read as natural: the latter is retriable under default gRPC retry policies,
+and a radio someone else is using must not be retried blind.
+
+| Code | gRPC status | Raised when |
+| --- | --- | --- |
+| `DEVICE_NOT_FOUND` | `NOT_FOUND` | no device with that id |
+| `DEVICE_BUSY` | `FAILED_PRECONDITION` | the device already has a capture, or another program holds it |
+| `DEVICE_SWEEPING` | `FAILED_PRECONDITION` | a scan job holds the device; it is free when the scan ends |
+| `DEVICE_DETACHED` | `UNAVAILABLE` | the dongle went away and may come back |
+| `DEVICE_IO` | `UNAVAILABLE` | the driver failed a read or a control transfer |
+| `NO_DEVICE` | `FAILED_PRECONDITION` | no radio here can serve the request (job allocation) |
+| `FREQ_OUT_OF_RANGE` | `INVALID_ARGUMENT` | the frequency is outside every tuning range |
+| `RATE_UNSUPPORTED` | `INVALID_ARGUMENT` | the sample rate is not one the device offers |
+| `OFFSET_OUT_OF_CAPTURE` | `INVALID_ARGUMENT` | the channel does not fit inside the capture bandwidth |
+| `BLIND_SPOT` | `INVALID_ARGUMENT` | the span lies inside the device's own DC guard (job allocation) |
+| `GAIN_ELEMENT_UNKNOWN` | `INVALID_ARGUMENT` | no gain element by that name on this device |
+| `CAPTURE_NOT_FOUND` | `NOT_FOUND` | no capture with that id |
+| `CHANNEL_NOT_FOUND` | `NOT_FOUND` | no channel with that id |
+| `SINK_NOT_FOUND` | `NOT_FOUND` | no sink with that id |
+| `STREAM_NOT_FOUND` | `NOT_FOUND` | no bulk stream with that id |
+| `JOB_NOT_FOUND` | `NOT_FOUND` | no job with that id |
+| `SCAN_NOT_FOUND` | `NOT_FOUND` | no scan result with that id (sixteen are kept) |
+| `MODE_UNSUPPORTED` | `UNIMPLEMENTED` | the demodulator is not built into this daemon |
+| `UNIMPLEMENTED` | `UNIMPLEMENTED` | the RPC or option arrives in a later milestone |
+| `PLATFORM_UNSUPPORTED` | `UNIMPLEMENTED` | the feature needs macOS frameworks |
+| `FAILED_PRECONDITION` | `FAILED_PRECONDITION` | a precondition the caller can see and fix, where no code above fits |
+| `INVALID_ARGUMENT` | `INVALID_ARGUMENT` | an argument the caller can fix, where no code above fits |
+| `INTERNAL` | `INTERNAL` | a fault the caller did not cause and cannot act on |
+
+`SOCKET_IN_USE` is daemon-local: `leylined` refuses to start when another one is listening, so no
+client ever receives it and it is not in the registries.
+
 ### Telemetry service
 
 `Subscribe` merges the per-channel drains and capture activity into one stream with a monotonic

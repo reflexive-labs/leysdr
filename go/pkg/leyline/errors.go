@@ -18,37 +18,53 @@ import (
 // a leyline.v1.ErrorDetail. gRPC transports "-bin" keys as base64 automatically.
 const ErrorTrailerKey = "leyline-error-bin"
 
-// Stable machine error codes carried in ErrorDetail.code. The list mirrors the
-// engine's EngineError constructors.
+// Stable machine error codes carried in ErrorDetail.code. The registry lives in
+// docs/engine-internals.md next to the gRPC status each code is served with;
+// DaemonCodes below is this side of it, and the engine's EngineError.Code is the
+// other.
 const (
 	CodeDeviceNotFound      = "DEVICE_NOT_FOUND"
 	CodeDeviceBusy          = "DEVICE_BUSY"
 	CodeDeviceSweeping      = "DEVICE_SWEEPING"
 	CodeDeviceDetached      = "DEVICE_DETACHED"
 	CodeDeviceIO            = "DEVICE_IO"
+	CodeNoDevice            = "NO_DEVICE"
 	CodeFreqOutOfRange      = "FREQ_OUT_OF_RANGE"
 	CodeRateUnsupported     = "RATE_UNSUPPORTED"
 	CodeOffsetOutOfCapture  = "OFFSET_OUT_OF_CAPTURE"
+	CodeBlindSpot           = "BLIND_SPOT"
 	CodeGainElementUnknown  = "GAIN_ELEMENT_UNKNOWN"
 	CodeCaptureNotFound     = "CAPTURE_NOT_FOUND"
 	CodeChannelNotFound     = "CHANNEL_NOT_FOUND"
 	CodeSinkNotFound        = "SINK_NOT_FOUND"
+	CodeStreamNotFound      = "STREAM_NOT_FOUND"
 	CodeJobNotFound         = "JOB_NOT_FOUND"
 	CodeScanNotFound        = "SCAN_NOT_FOUND"
-	CodeStreamNotFound      = "STREAM_NOT_FOUND"
 	CodeModeUnsupported     = "MODE_UNSUPPORTED"
 	CodeUnimplemented       = "UNIMPLEMENTED"
-	CodeInvalidArgument     = "INVALID_ARGUMENT"
 	CodePlatformUnsupported = "PLATFORM_UNSUPPORTED"
-	CodeUnavailable         = "UNAVAILABLE"
-	CodeUnknown             = "UNKNOWN"
+	CodeFailedPrecondition  = "FAILED_PRECONDITION"
+	CodeInvalidArgument     = "INVALID_ARGUMENT"
+	CodeInternal            = "INTERNAL"
 
 	// Transport-level codes: no daemon mints these, but a call that never reached
 	// the daemon still has to name what happened.
 	CodeNotFound         = "NOT_FOUND"
+	CodeUnavailable      = "UNAVAILABLE"
 	CodeCanceled         = "CANCELED"
 	CodeDeadlineExceeded = "DEADLINE_EXCEEDED"
+	CodeUnknown          = "UNKNOWN"
 )
+
+// DaemonCodes is every code a daemon mints, in the order the table documents
+// them. A client switching on Code(err) can be held against this list.
+var DaemonCodes = []string{
+	CodeDeviceNotFound, CodeDeviceBusy, CodeDeviceSweeping, CodeDeviceDetached, CodeDeviceIO, CodeNoDevice,
+	CodeFreqOutOfRange, CodeRateUnsupported, CodeOffsetOutOfCapture, CodeBlindSpot, CodeGainElementUnknown,
+	CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeJobNotFound,
+	CodeScanNotFound, CodeModeUnsupported, CodeUnimplemented, CodePlatformUnsupported,
+	CodeFailedPrecondition, CodeInvalidArgument, CodeInternal,
+}
 
 // Error is a daemon error with a stable machine code. It is what every client
 // method returns when the daemon rejects a call; errors.As works on it.
@@ -180,29 +196,32 @@ func codeForGRPC(c codes.Code) string {
 	}
 }
 
-// GRPCCode maps a stable machine code to the gRPC status code daemons use for it.
-// Every code codeForGRPC can produce round-trips back to the code it came from,
-// so an Error parsed off the wire and re-served — as the fake daemon does — keeps
-// the status code any retry logic keys on.
+// GRPCCode maps a stable machine code to the gRPC status it is served with,
+// entry for entry with the table in docs/engine-internals.md — the fake daemon
+// serves through here and leylined through its own switch, so both answer a
+// retry interceptor the same way. Every code codeForGRPC can produce round-trips
+// back to the code it came from, so an Error parsed off the wire and re-served
+// keeps its status.
 func GRPCCode(code string) codes.Code {
 	switch code {
-	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeGainElementUnknown,
+	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound,
 		CodeJobNotFound, CodeScanNotFound, CodeNotFound:
 		return codes.NotFound
-	case CodeUnavailable:
+	case CodeDeviceBusy, CodeDeviceSweeping, CodeNoDevice, CodeFailedPrecondition:
+		return codes.FailedPrecondition
+	case CodeDeviceDetached, CodeDeviceIO, CodeUnavailable:
 		return codes.Unavailable
+	case CodeFreqOutOfRange, CodeRateUnsupported, CodeOffsetOutOfCapture, CodeBlindSpot, CodeGainElementUnknown,
+		CodeInvalidArgument:
+		return codes.InvalidArgument
+	case CodeModeUnsupported, CodeUnimplemented, CodePlatformUnsupported:
+		return codes.Unimplemented
+	case CodeInternal:
+		return codes.Internal
 	case CodeCanceled:
 		return codes.Canceled
 	case CodeDeadlineExceeded:
 		return codes.DeadlineExceeded
-	case CodeDeviceBusy, CodeDeviceSweeping:
-		return codes.FailedPrecondition
-	case CodeDeviceDetached, CodeDeviceIO:
-		return codes.Unavailable
-	case CodeUnimplemented, CodePlatformUnsupported, CodeModeUnsupported:
-		return codes.Unimplemented
-	case CodeFreqOutOfRange, CodeRateUnsupported, CodeOffsetOutOfCapture, CodeInvalidArgument:
-		return codes.InvalidArgument
 	default:
 		return codes.Unknown
 	}

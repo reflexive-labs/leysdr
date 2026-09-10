@@ -258,7 +258,7 @@ diagnose, fix, prove with ten full runs).
 a-invariants-3 and a-layering-7 per the decision: daemon, proto comments (Capture, Channel, Sink),
 fake, `session.fold` (`withoutCapture`), tests on all three.
 
-### X-2 `[ ]` One error registry
+### X-2 `[x]` One error registry
 
 a-layering-3 (`EngineError.deviceSweeping`, `.streamNotFound`, `.internalError`; the six literal
 throw sites use them), a-layering-2 (the status table per the decision, written into

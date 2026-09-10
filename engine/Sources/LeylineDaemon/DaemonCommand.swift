@@ -60,7 +60,7 @@ struct DaemonCommand: AsyncParsableCommand {
                 stopRequested: { await signals.wait() },
                 teardown: { await daemon.shutdown() }
             )
-        } catch let e as EngineError where e.code == "SOCKET_IN_USE" {
+        } catch let e as EngineError where e.code == EngineError.Code.socketInUse {
             FileHandle.standardError.write(Data("leylined: \(e.message)\n".utf8))
             throw ExitCode(2)
         }

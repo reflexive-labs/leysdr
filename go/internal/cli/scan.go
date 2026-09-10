@@ -275,11 +275,11 @@ func scanFailure(job *leylinev1.Job, st ui.Style) string {
 	detail := job.StatusDetail
 	if code, rest, ok := strings.Cut(detail, ": "); ok && code == strings.ToUpper(code) && code != "" {
 		switch code {
-		case "DEVICE_BUSY":
+		case leyline.CodeDeviceBusy:
 			return rest + ". " + st.Cmd("ley scan --take-over") + " sweeps anyway, and hands the radio back afterwards"
-		case "BLIND_SPOT":
+		case leyline.CodeBlindSpot:
 			return rest + ". " + st.Cmd("ley spectrum") + " draws that span instead, DC spike and all"
-		case "NO_DEVICE", "FREQ_OUT_OF_RANGE":
+		case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
 			return rest + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune"
 		}
 		// interfaces.md: an error line keeps the daemon's stable code unless ley has a plainer
