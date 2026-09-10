@@ -34,3 +34,6 @@ fixtures/*.json
 
 # Local RF recordings made while testing (WAV dumps)
 rf-captures/
+
+# Scratch: pasted screenshots and other working files, not repo content.
+tmp/
