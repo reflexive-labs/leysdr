@@ -103,7 +103,13 @@ message Sink {
     StreamSink stream = 4;             // client pulls over bulk plane
     FileSink file = 5;                 // daemon records; lossless lives here, never on the network
   }
+  // A detached sink is emitted one last time with state unset -- the same
+  // tombstone Channel uses. Without it an attach and a detach are the same
+  // bytes on the wire, and a client watching its own audio cannot tell that
+  // somebody else just stopped it.
+  SinkState state = 6;
 }
+enum SinkState { SINK_STATE_UNSPECIFIED = 0; SINK_ACTIVE = 1; }
 
 message SystemAudioSink {
   string audio_device_uid = 1;

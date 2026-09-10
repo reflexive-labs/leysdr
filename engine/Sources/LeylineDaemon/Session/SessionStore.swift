@@ -593,6 +593,7 @@ actor SessionStore {
         }
         try await entry.engine.attach(sink)
         proto.sinkID = sink.id.string
+        proto.state = .sinkActive
         sinks[sink.id] = SinkEntry(proto: proto, channelID: channelID, sink: sink, isSystemAudio: isSystemAudio)
         if isSystemAudio, var cap = captures[entry.captureID] {
             cap.meta.liveAudioSinks += 1
@@ -618,7 +619,11 @@ actor SessionStore {
             captures[capID] = cap
             await emitCapture(capID, by: by)
         }
-        emit(.sink(entry.proto), captureID: captureID, by: by)
+        // Terminal event: state unset says "gone", the same tombstone destroyChannel
+        // uses. Without it a detach is byte-identical to the attach that preceded it.
+        var terminal = entry.proto
+        terminal.state = .unspecified
+        emit(.sink(terminal), captureID: captureID, by: by)
     }
 
     /// A channel's decimation chain was re-planned at a new audio rate: system-audio sinks are

@@ -229,7 +229,7 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 	}
 	err := s.live(ctx, o)
 	s.teardown()
-	if err == nil && ctx.Err() != nil {
+	if err == nil && (ctx.Err() != nil || s.channelGone) {
 		s.sayClosed()
 	}
 	return err
@@ -243,11 +243,18 @@ func (s *session) sayClosed() {
 		return
 	}
 	st := s.app.ErrStyle
+	// "channel removed" is this session's own doing; when somebody else
+	// removed it the line above already said so, and claiming it twice would
+	// read as two channels having gone.
+	did := "stopped; channel removed, "
+	if s.channelGone {
+		did = "stopped; "
+	}
 	if s.freedRadio {
-		fmt.Fprintf(s.app.Stderr, "stopped; channel removed, %s\n", st.Ok("radio free"))
+		fmt.Fprintf(s.app.Stderr, "%s%s\n", did, st.Ok("radio free"))
 		return
 	}
-	fmt.Fprintf(s.app.Stderr, "stopped; channel removed, the radio stays tuned (%s lists what is on it)\n", st.Cmd("ley state"))
+	fmt.Fprintf(s.app.Stderr, "%sthe radio stays tuned (%s lists what is on it)\n", did, st.Cmd("ley state"))
 }
 
 // bandWarning catches the classic slip of typing a kHz figure as MHz: when
@@ -437,25 +444,35 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			if !ok {
 				return ended("event", <-s.eventErrs)
 			}
+			// The mirror's copy of the object, before the event replaces it:
+			// what a person needs is which field moved, and the diff is the
+			// only place that answer exists (invariant 6 sends whole objects).
+			before := s.beforeEvent(ev)
 			if !s.apply(ev) {
 				continue
 			}
-			if ch, gone := ev.Body.(*leylinev1.Event_Channel); gone && ch.Channel.ChannelId == s.channel.ChannelId && ch.Channel.State == leylinev1.ChannelState_OUT_OF_CAPTURE && !s.mine(ev) {
-				clear()
-				fmt.Fprintln(s.app.Stderr, "another client retuned the radio away from this channel; ley state shows who, ley tune again to follow")
+			line, ended := "", false
+			if !s.mine(ev) {
+				line, ended = s.changeLine(before, ev)
 			}
-			if s.app.JSON {
+			switch {
+			case s.app.JSON:
 				if err := s.app.printJSON(ev); err != nil {
 					return err
 				}
-				continue
-			}
-			if !s.mine(ev) && humanEvent(ev) {
+			case line != "":
 				clear()
 				// Prose, and printed after meter.clear(), which only clears
 				// stderr: on stdout it would corrupt the redraw whenever the
 				// two streams point at different places.
-				fmt.Fprintln(s.app.Stderr, eventLine(ev, s.state))
+				fmt.Fprintln(s.app.Stderr, line)
+			}
+			if ended {
+				// The channel this session was listening to is gone. Carrying
+				// on would draw a meter for something that no longer exists.
+				clear()
+				s.channelGone = true
+				return nil
 			}
 		}
 	}

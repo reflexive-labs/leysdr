@@ -249,7 +249,7 @@ func (d *Daemon) AttachSink(ctx context.Context, req *leylinev1.AttachSinkReques
 		if *sa.Volume < 0 || *sa.Volume > 1 {
 			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.ChannelId, "volume must be within 0..1"))
 		}
-		s := &leylinev1.Sink{SinkId: newID("sink_"), ChannelId: ch.ChannelId, Kind: &leylinev1.Sink_SystemAudio{SystemAudio: sa}}
+		s := &leylinev1.Sink{SinkId: newID("sink_"), ChannelId: ch.ChannelId, Kind: &leylinev1.Sink_SystemAudio{SystemAudio: sa}, State: leylinev1.SinkState_SINK_ACTIVE}
 		d.sinks[s.SinkId] = s
 		if c := d.captures[ch.CaptureId]; c != nil {
 			c.Activity.LiveAudioSinks++

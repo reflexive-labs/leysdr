@@ -340,6 +340,58 @@ stops meaning 2 MHz, or a band alias is ever added to the frequency path, a test
 a user finding out. Plus `TestBandFlag*` end to end: the conflict, the unknown name, a band that
 fits, one that does not, and an explicit `--span` winning.
 
+## PC-10 `[x]` A live session dumped somebody else's state at you
+
+Reported from a real `ley tune 146.620`: every `ley set ...` typed in another terminal put two
+lines of ids into the middle of the listening session, and `ley stop` put a third that read
+
+```
+channel chan_01M24W4CN1NGWQ7H1WFX8TGMTW STATE_UNSPECIFIED 146.620 MHz nfm bw 12500 squelch off by cli:ley (cli_01M24W6S2KCC1CKTW55ZYQN7QS)
+```
+
+Four separate things were wrong, and only the first is the one that was reported.
+
+- **The renderer was a state dump.** `eventLine` prints the whole object because that is what an
+  event carries -- invariant 6, never deltas -- and `ley devices --watch` wants exactly that. A
+  person listening wants the field that moved. The mirror already holds the previous copy, so the
+  client can diff: `changeLine` in `change.go` renders one sentence, `another terminal set the mode
+  to AM`, and prints nothing when nothing a listener could act on changed. The wire is untouched;
+  rendering a diff is presentation.
+- **Why there were always two lines.** Not a duplicate: a channel-scoped write really does change
+  the capture, because `SessionStore.touchActivity` stamps `CaptureActivity.last_interactive_write_ns`,
+  the don't-disturb signal. The capture event was honest and the reader could do nothing with it.
+  Diffing only the fields a listener acts on -- centre, rate, gain, state -- drops it silently.
+- **`STATE_UNSPECIFIED` is the daemon's tombstone**, emitted deliberately by `destroyChannel` and
+  documented there; `enumName` strips `CHANNEL_` and leaves a nonsense word where "gone" was meant.
+  Worse, the session then carried on drawing a meter for a channel that no longer existed. It now
+  says `another terminal stopped this channel` and exits 0.
+- **A detached sink was byte-identical to the attach that preceded it.** `detachSink` re-emitted the
+  sink unchanged, so a client could not tell that somebody had just taken its audio away. `Sink`
+  gained `SinkState state = 6` (additive; the same tombstone convention `Channel` already uses) and
+  the live session says `another terminal stopped the audio`.
+
+Two more found while reading, both fixed here:
+
+- The OUT_OF_CAPTURE branch printed prose and then **fell through** to print the raw dump of the
+  same event. One event, two lines, one of them ids.
+- `fold` never removed anything: a tombstoned channel stayed in the mirror for the rest of the run,
+  so every later question about "what else is on this capture" counted a channel that was gone. It
+  now drops them, and folds sinks into `state.Sinks`, which it had never done at all.
+
+The sentences name the client the way a person would -- `cli` is "another terminal", `mcp` is "an
+agent", `job` is "a job" -- and carry no ids: ids are on stdout, where a script reads them. Several
+knobs in one write read as one sentence, which is why a change is stored split at its verb:
+`set the mode to AM, the filter to 25.000 kHz and the squelch to -20 dBFS`.
+
+Verified against the daemon with two clients; the whole session for four `ley set`s and a `ley stop`
+is now five sentences and no ids.
+
+Tests: `TestAnActivityStampSaysNothing` (the papercut itself), `TestCaptureChangesThatMatter`,
+`TestChannelChangesReadAsSentences`, `TestSeveralChangesReadAsOneSentence`,
+`TestATombstoneEndsTheSession`, `TestOutOfCaptureAndBack`,
+`TestOtherChannelsOnlyReportComingAndGoing`, `TestTheSinkTombstoneIsTheOnlyWayToTellAudioStopped`,
+`TestTheRadioLeavingIsNews`, `TestWhoChangedNamesTheKind`, `TestNoSentenceCarriesAnID`.
+
 ## Not papercuts
 
 Recorded here so they are not mistaken for one:

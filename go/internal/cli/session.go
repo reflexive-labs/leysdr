@@ -55,7 +55,11 @@ type session struct {
 	// arrives through: play's second banner line answers "what am I listening
 	// to", where tune's answers "on what radio". A file device has no gain and
 	// no tuning range, so naming the hardware there says nothing.
-	sourceLine     string
+	sourceLine string
+	// channelGone records that another client destroyed the channel this
+	// session was listening to, so the closing line does not also claim to
+	// have removed it.
+	channelGone    bool
 	app            *App
 	client         *leyline.Client
 	state          *leylinev1.GetStateResponse
@@ -320,11 +324,24 @@ func (s *session) fold(ev *leylinev1.Event) {
 			s.capture = b.Capture
 		}
 	case *leylinev1.Event_Channel:
-		replaceChannel(s.state, b.Channel)
+		// A destroyed channel is emitted one last time with its state unset,
+		// and folding that as a replace leaves a dead channel in the mirror
+		// for the rest of the run -- which is how a verb ends up counting a
+		// channel that is gone.
+		if b.Channel.State == leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED {
+			s.state.Channels = withoutChannel(s.state.Channels, b.Channel.ChannelId)
+		} else {
+			replaceChannel(s.state, b.Channel)
+		}
 		if s.channel != nil && s.channel.ChannelId == b.Channel.ChannelId {
 			s.channel = b.Channel
 		}
 	case *leylinev1.Event_Sink:
+		if b.Sink.State == leylinev1.SinkState_SINK_STATE_UNSPECIFIED {
+			s.state.Sinks = withoutSink(s.state.Sinks, b.Sink.SinkId)
+		} else {
+			replaceSink(s.state, b.Sink)
+		}
 		if s.sink != nil && s.sink.SinkId == b.Sink.SinkId {
 			s.sink = b.Sink
 		}
@@ -354,6 +371,37 @@ func replaceChannel(st *leylinev1.GetStateResponse, c *leylinev1.Channel) {
 		}
 	}
 	st.Channels = append(st.Channels, c)
+}
+
+func replaceSink(st *leylinev1.GetStateResponse, k *leylinev1.Sink) {
+	for i, x := range st.Sinks {
+		if x.SinkId == k.SinkId {
+			st.Sinks[i] = k
+			return
+		}
+	}
+	st.Sinks = append(st.Sinks, k)
+}
+
+// withoutChannel and withoutSink drop a destroyed object from the mirror.
+func withoutChannel(in []*leylinev1.Channel, id string) []*leylinev1.Channel {
+	out := in[:0]
+	for _, c := range in {
+		if c.ChannelId != id {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func withoutSink(in []*leylinev1.Sink, id string) []*leylinev1.Sink {
+	out := in[:0]
+	for _, k := range in {
+		if k.SinkId != id {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // ensureCapture reuses the device's capture when it covers freq±bw/2, retunes

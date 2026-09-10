@@ -279,6 +279,40 @@ public nonisolated enum Leyline_V1_ChannelState: SwiftProtobuf.Enum, Swift.CaseI
 
 }
 
+public nonisolated enum Leyline_V1_SinkState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case sinkActive // = 1
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .sinkActive
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .sinkActive: return 1
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_SinkState] = [
+    .unspecified,
+    .sinkActive,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_FileSinkKind: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -614,6 +648,12 @@ public nonisolated struct Leyline_V1_Sink: Sendable {
     }
     set {kind = .file(newValue)}
   }
+
+  /// A detached sink is emitted one last time with state unset -- the same
+  /// tombstone Channel uses. Without it an attach and a detach are the same
+  /// bytes on the wire, and a client watching its own audio cannot tell that
+  /// somebody else just stopped it.
+  public var state: Leyline_V1_SinkState = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1255,6 +1295,10 @@ nonisolated extension Leyline_V1_ChannelState: SwiftProtobuf._ProtoNameProviding
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CHANNEL_STATE_UNSPECIFIED\0\u{1}CHANNEL_ACTIVE\0\u{1}OUT_OF_CAPTURE\0")
 }
 
+nonisolated extension Leyline_V1_SinkState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SINK_STATE_UNSPECIFIED\0\u{1}SINK_ACTIVE\0")
+}
+
 nonisolated extension Leyline_V1_FileSinkKind: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FILE_SINK_KIND_UNSPECIFIED\0\u{1}RECORD_IQ\0\u{1}RECORD_AUDIO\0")
 }
@@ -1720,7 +1764,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Leyline_V1_Sink: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Sink"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sink_id\0\u{3}channel_id\0\u{3}system_audio\0\u{1}stream\0\u{1}file\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sink_id\0\u{3}channel_id\0\u{3}system_audio\0\u{1}stream\0\u{1}file\0\u{1}state\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1769,6 +1813,7 @@ nonisolated extension Leyline_V1_Sink: SwiftProtobuf.Message, SwiftProtobuf._Mes
           self.kind = .file(v)
         }
       }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.state) }()
       default: break
       }
     }
@@ -1800,6 +1845,9 @@ nonisolated extension Leyline_V1_Sink: SwiftProtobuf.Message, SwiftProtobuf._Mes
     }()
     case nil: break
     }
+    if self.state != .unspecified {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1807,6 +1855,7 @@ nonisolated extension Leyline_V1_Sink: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.sinkID != rhs.sinkID {return false}
     if lhs.channelID != rhs.channelID {return false}
     if lhs.kind != rhs.kind {return false}
+    if lhs.state != rhs.state {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

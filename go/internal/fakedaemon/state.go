@@ -247,5 +247,9 @@ func (d *Daemon) detachSinkLocked(id string, by *leylinev1.ClientInfo) {
 			}
 		}
 	}
-	d.emit(by, s)
+	// Terminal event: state unset says "gone" (control.proto's SinkState), the
+	// same tombstone a destroyed channel gets.
+	gone := proto.Clone(s).(*leylinev1.Sink)
+	gone.State = leylinev1.SinkState_SINK_STATE_UNSPECIFIED
+	d.emit(by, gone)
 }
