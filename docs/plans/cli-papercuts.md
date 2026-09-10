@@ -93,6 +93,66 @@ stdout in human mode, so a scraped live session sees its two halves on different
 deciding deliberately rather than leaving as an artefact of the order the two changes landed. (from
 `cli-visuals.md`)
 
+## PC-8 `[ ]` Presets work wherever a frequency does
+
+`ley spectrum noaa2` fails with a bare parse error that does not even mention presets:
+
+```
+ley: frequency: cannot read "noaa2"; try 146.52 (MHz), 7040k or 146520000
+```
+
+`ley tune` accepts a preset there; nothing else does. The logic exists as `resolveTuneTarget` in
+`tune.go` and is private to that file, so `spectrum`, `waterfall`, `phosphor`, `fft --freq`,
+`play --freq` and `set frequency` all call `leyline.ParseUserFrequency` directly and lose both the
+preset lookup and its "did you mean" hint.
+
+- Lift `resolveTuneTarget`'s frequency-or-preset half into a shared helper and use it for every
+  positional or flag that takes a *point* on the dial.
+- Not `--span`, which is a width: a preset there would be meaningless.
+- The band views need only the Hz; `tune` additionally uses the preset's mode as a default, so the
+  helper should return the preset and let each caller take what it needs.
+- The error message is most of the value. `ley spectrum noaa2` should fail the way `ley tune noaa2`
+  does, naming presets and suggesting near matches.
+
+## PC-9 `[?]` A band as an argument: `--band`, not a positional
+
+Asked whether `ley spectrum $BAND` makes sense. It does, and the obvious spelling does not work.
+
+**A positional band name is out.** The metre names already parse as frequencies, and the frequency
+reading is tried first:
+
+```
+2m   -> 2000000        160m -> 160000000
+20m  -> 20000000       70cm -> (does not parse)
+```
+
+So `ley spectrum 20m` today means 20 MHz, not the 20 m band at 14.0-14.35 MHz. Adding band aliases
+to the positional would make that silently mean something else for seven of the fourteen bands,
+which is the exact class of quiet wrong answer the honesty invariants exist to prevent. `noaa`
+collides too, in the other direction: it is already an alias of the `noaa1` preset (a point at
+162.550), where as a band it would be the 162.400-162.550 range.
+
+A `--band` flag has neither problem, and reads fine: `ley spectrum --band "2 m amateur"`. It needs
+short aliases on `Band` (which has none today: `Name`, `MinHz`, `MaxHz`, `Mode`, `BandwidthHz`,
+`Note`) so it is not quoted prose on the command line.
+
+**Most bands fit a single capture, so this is mostly exact.** Nine of fourteen are under 2.4 MHz:
+
+```
+FITS      160m 0.200  40m 0.300  20m 0.350  CB 0.440  80m 0.500
+          NOAA 0.150  AM bcast 1.170  15m 0.450  10m 1.700
+DOES NOT  2 m 4.000   marine 6.025   airband 19.000   FM bcast 20.500   70 cm 30.000
+```
+
+For one that fits: centre on the band's midpoint, set the span to the nearest supported rate at or
+above its width. For one that does not: centre and show what fits, and say so -- the same shape as
+the message `spectrum` already prints when it reuses an off-centre capture ("showing the capture at
+X, which covers Y"). Refusing would be honest and useless; sweeping is a `scan` feature, not this.
+An explicit `--span` wins over the band's width, and should say so when it is narrower.
+
+Marked `[?]` rather than `[ ]`: PC-8 is unambiguous and should just be done, while this one wants a
+call on whether the convenience earns a flag plus a new alias table on `Band`.
+
 ## Not papercuts
 
 Recorded here so they are not mistaken for one:
