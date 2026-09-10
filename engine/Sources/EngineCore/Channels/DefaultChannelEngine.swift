@@ -84,12 +84,13 @@ public actor DefaultChannelEngine: ChannelEngine {
         let fullScale = core.subAudibleFullScale
         let id = captureID
         let detector = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
-        return Task.detached(priority: .utility) {
+        return Task.detached(priority: .utility) { [core] in
             var window = [Float](repeating: 0, count: detector.windowSize)
             var filled = 0
             var hop = [Float](repeating: 0, count: detector.hop)
             var lastReported: SubAudibleResult?
             var heartbeat = 0
+            var closes = core.squelchCloseCount
             while !Task.isCancelled {
                 let want = filled < window.count ? window.count - filled : detector.hop
                 if ring.available < want {
@@ -109,6 +110,14 @@ public actor DefaultChannelEngine: ChannelEngine {
                     guard got == detector.hop else { continue }
                     window.removeFirst(detector.hop)
                     window.append(contentsOf: hop)
+                }
+                // A transmission ended while these samples were arriving, so whatever comes next is
+                // a different signal: measuring its first hop against the old one's phase would
+                // fabricate a stable estimate out of two unrelated tones.
+                let closesNow = core.squelchCloseCount
+                if closesNow != closes {
+                    closes = closesNow
+                    detector.reset()
                 }
                 let result = detector.analyse(window, fullScaleDeviationHz: fullScale)
                 // Edge-triggered on identity, plus a heartbeat: the telemetry plane has no GetState,
@@ -212,6 +221,10 @@ public actor DefaultChannelEngine: ChannelEngine {
             try rebuild(offsetHz: offset)
         } catch {
             slot.store(nil)
+            // The detector task holds the discarded core and its ring; without this it polls a core
+            // nothing else can reach for as long as the channel stays parked.
+            subAudibleTask?.cancel()
+            subAudibleTask = nil
             currentState = .outOfCapture
         }
     }

@@ -28,6 +28,20 @@ public enum CTCSS {
         return gap.isFinite ? gap : 10
     }
 
+    /// The widest a measurement may sit from `tones[i]` and still be unambiguously that one: a
+    /// fraction of the way to its nearest neighbour, tightened to 1% of the tone itself so a wide
+    /// gap at the top of the ladder does not buy a sloppy reading.
+    static func tolerance(_ i: Int) -> Double {
+        Swift.min(0.01 * tones[i], 0.4 * neighbourGap(i))
+    }
+
+    /// The same tolerance for a tone named by value, for callers that hold a standard tone rather
+    /// than its index. An unknown value keeps the 1% term alone.
+    static func tolerance(forStandard t: Double) -> Double {
+        guard let i = tones.firstIndex(of: t) else { return 0.01 * t }
+        return tolerance(i)
+    }
+
     /// A transmitter sends CTCSS at roughly 10-25% of full deviation. Energy far under this band is
     /// hum -- 50 Hz mains lands on exactly 100.0 Hz, which is also one of the commonest PL tones --
     /// and energy far over it is not a sub-audible tone at all.
@@ -138,8 +152,9 @@ public final class SubAudibleDetector {
 
         // Frequency from the phase advance between this window and the last, which is not limited
         // by bin width. Unambiguous over +-rate/(2*hop).
+        let havePhaseReference = havePrev[best]
         var measured = CTCSS.tones[best]
-        if havePrev[best] {
+        if havePhaseReference {
             let expected = 2 * Double.pi * CTCSS.tones[best] * Double(hop) / rate
             var d = phase[best] - prevPhase[best] - expected
             while d > Double.pi { d -= 2 * Double.pi }
@@ -149,6 +164,13 @@ public final class SubAudibleDetector {
         for i in prevPhase.indices {
             prevPhase[i] = phase[i]
             havePrev[i] = i == best ? true : havePrev[i]
+        }
+        guard havePhaseReference else {
+            // The bin only narrows the field: on a 2.3 Hz ladder its nominal centre is a label, not
+            // a reading. With no previous window to measure phase advance against there is no
+            // frequency yet, and nothing the stability test should remember.
+            out.reason = "no phase reference yet"
+            return out
         }
         out.toneHz = measured
         recent.append(measured)
@@ -197,7 +219,7 @@ public final class SubAudibleDetector {
     public static func classify(_ measured: Double) -> Double {
         var candidates: [Int] = []
         for (i, t) in CTCSS.tones.enumerated() {
-            let tol = Swift.min(0.01 * t, 0.4 * CTCSS.neighbourGap(i))
+            let tol = CTCSS.tolerance(i)
             if abs(measured - t) <= tol { candidates.append(i) }
         }
         return candidates.count == 1 ? CTCSS.tones[candidates[0]] : 0
@@ -210,7 +232,7 @@ public final class SubAudibleDetector {
     public static func confidence(snrDB: Double, measured: Double, standard: Double, hops: Int) -> Double {
         guard standard > 0 else { return 0 }
         let snr = clamp01((snrDB - minSNRDB) / 14)
-        let tol = Swift.max(1e-9, Swift.min(0.01 * standard, 0.4 * 2.3))
+        let tol = Swift.max(1e-9, CTCSS.tolerance(forStandard: standard))
         let near = clamp01(1 - abs(measured - standard) / tol)
         let settled = Swift.min(Double(hops), 3) / 3
         return snr * near * settled

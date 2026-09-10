@@ -563,6 +563,36 @@ final class ChannelTests: XCTestCase {
         XCTAssertGreaterThan(close.openSamples, 0)
     }
 
+    /// Every transmission that ends bumps the close count. The sub-audible detector reads it to
+    /// know the signal it has been measuring is over: a count rather than a flag, because that task
+    /// polls at 20 Hz and a whole transmission can start and finish between two of its looks.
+    func testSquelchCloseCountCountsTransmissions() throws {
+        let rate: UInt64 = 240_000
+        let queue = ChannelTelemetryQueue()
+        let core = try ChannelDSPCore(captureRate: rate,
+                                      config: ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40),
+                                      telemetry: queue)
+        let block = 4096
+        let loud = DSPTest.storage(DSPTest.fmTone(carrierHz: 0, audioHz: 1000, deviationHz: 2500, rate: Double(rate), count: block))
+        let quiet = DSPTest.storage([Float](repeating: 0, count: block * 2))
+        let cap = CaptureID()
+        var index: UInt64 = 0
+        func feed(_ storage: SampleStorage, blocks: Int) {
+            for _ in 0 ..< blocks {
+                core.process(block: storage.view(count: block), at: SampleTime(captureID: cap, sampleIndex: index))
+                index &+= UInt64(block)
+            }
+        }
+        feed(loud, blocks: 8)
+        XCTAssertEqual(core.squelchCloseCount, 0, "an open squelch has ended nothing")
+        feed(quiet, blocks: 8)
+        XCTAssertEqual(core.squelchCloseCount, 1, "silence ends the transmission")
+        feed(loud, blocks: 8)
+        XCTAssertEqual(core.squelchCloseCount, 1, "opening again ends nothing")
+        feed(quiet, blocks: 8)
+        XCTAssertEqual(core.squelchCloseCount, 2)
+    }
+
     func testStopLeavesNoEngineThreads() async throws {
         let path = try nfmTonePath()
         let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)

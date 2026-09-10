@@ -129,6 +129,24 @@ final class SubAudibleTests: XCTestCase {
         XCTAssertEqual(r.standardToneHz, 123.0)
     }
 
+    /// The first window of a run has nothing to measure phase advance against, and the winning
+    /// bin's nominal ladder value is a label rather than a reading. Reporting it would name a tone
+    /// on evidence the detector's whole design says is not enough.
+    func testFirstWindowHasNothingToMeasure() {
+        let d = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
+        let s = discriminatorSamples(count: 512, rate: rate, fullScale: fullScale,
+                                     toneHz: 100, toneDevHz: 700, voice: true, noise: 0.01, seed: 5)
+        let first = d.analyse(s, fullScaleDeviationHz: fullScale)
+        XCTAssertFalse(first.detected, "the first window reported \(first.standardToneHz) Hz")
+        XCTAssertTrue(first.toneHz.isNaN, "nothing was measured, so toneHz must say so: \(first.toneHz)")
+        XCTAssertEqual(first.standardToneHz, 0)
+        XCTAssertEqual(first.confidence, 0)
+        XCTAssertTrue(first.reason.contains("phase"), "the reason should name the missing phase reference: \(first.reason)")
+        // The measurements the bank did make are still reported.
+        XCTAssertFalse(first.deviationHz.isNaN)
+        XCTAssertFalse(first.toneSNRDB.isNaN)
+    }
+
     /// Closing the squelch forgets the phase history: the next transmission is a different one, and
     /// carrying phase across the gap would fabricate a stable estimate out of two unrelated ones.
     func testResetForgetsHistory() {
@@ -136,12 +154,33 @@ final class SubAudibleTests: XCTestCase {
         let s = discriminatorSamples(count: 512, rate: rate, fullScale: fullScale,
                                      toneHz: 100, toneDevHz: 700, voice: true, noise: 0.01, seed: 5)
         _ = d.analyse(s, fullScaleDeviationHz: fullScale)
-        d.reset()
-        let after = d.analyse(s, fullScaleDeviationHz: fullScale)
-        // With no previous window the estimate falls back to the bin centre, which is still the
-        // right tone: what must not happen is a stale phase producing a confident wrong answer.
-        XCTAssertFalse(after.toneHz.isNaN)
+        // Without the reset the second window measures against the first and reports a tone.
+        let carried = d.analyse(s, fullScaleDeviationHz: fullScale)
+        XCTAssertTrue(carried.detected, "a phase reference should produce a measurement: \(carried.reason)")
+        XCTAssertFalse(carried.toneHz.isNaN)
+
+        let d2 = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
+        _ = d2.analyse(s, fullScaleDeviationHz: fullScale)
+        d2.reset()
+        let after = d2.analyse(s, fullScaleDeviationHz: fullScale)
+        XCTAssertFalse(after.detected, "a forgotten phase reference still produced \(after.standardToneHz) Hz")
+        XCTAssertTrue(after.toneHz.isNaN, "measured \(after.toneHz) with no phase reference")
     }
+
+    /// The tolerance a classification is granted is the one confidence scores against. When they
+    /// disagree, a measurement `classify` accepts can still score near zero for being far from the
+    /// tone -- which reads as doubt the detector does not actually have.
+    func testConfidenceUsesTheTonesOwnTolerance() {
+        // 203.5 sits 6.7 Hz from its neighbours, so its tolerance is the 1% term: 2.035 Hz.
+        let standard = 203.5
+        let measured = standard + 1.0
+        XCTAssertEqual(SubAudibleDetector.classify(measured), standard, "the measurement must be classifiable")
+        let c = SubAudibleDetector.confidence(snrDB: 30, measured: measured, standard: standard, hops: 5)
+        // The old 0.4 * 2.3 Hz literal would put this measurement outside tolerance and score 0.
+        XCTAssertGreaterThan(c, 0.4, "confidence \(c) understates a cleanly resolved tone")
+        XCTAssertLessThan(c, SubAudibleDetector.confidence(snrDB: 30, measured: standard, standard: standard, hops: 5))
+    }
+
 }
 
 /// The tap is taken from the discriminator, before the 300 Hz high-pass that makes CTCSS

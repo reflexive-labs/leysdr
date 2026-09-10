@@ -140,6 +140,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private let meterInterval: Int
     private var samplesSinceMeter = 0
     private let blocksProcessed = Atomic<UInt64>(0)
+    private let squelchCloses = Atomic<UInt64>(0)
 
     /// - Throws: `INVALID_ARGUMENT`, `OFFSET_OUT_OF_CAPTURE`, `MODE_UNSUPPORTED` (from the demodulator).
     public init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384) throws {
@@ -196,6 +197,12 @@ public final class ChannelDSPCore: @unchecked Sendable {
 
     /// Blocks processed so far.
     public var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
+
+    /// How many transmissions have ended: one per squelch close edge. The sub-audible task watches
+    /// this to know the signal it has been measuring is over, so the phase history it carries is no
+    /// longer a history of anything. A count rather than a flag because a whole transmission can
+    /// come and go between two of that task's 50 ms polls.
+    public var squelchCloseCount: UInt64 { squelchCloses.load(ordering: .relaxed) }
 
     /// Adjust the squelch threshold (dBFS, NaN = off) without rebuilding. Takes effect next block.
     public func setSquelch(thresholdDB: Double) {
@@ -254,6 +261,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
                 openSamples = 0
                 peakPowerDBFS = .nan
                 peakSNRDB = .nan
+                squelchCloses.wrappingAdd(1, ordering: .relaxed)
             }
             telemetry.push(rec)
         }
