@@ -9,7 +9,7 @@ a future app — is a peer of the CLI, never a second path into the hardware.
 or an IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
 squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
 views in the terminal; a band scan with an honest energy detector; two channels on one radio; a
-second terminal adjusting what the first is hearing; `--json` on every verb.
+second terminal adjusting what the first is hearing; `--json` for scripts and agents.
 
 **Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app, the
 MCP adapter for agents. `docs/build-order.md` is the order they arrive in and
@@ -131,7 +131,7 @@ Against [`docs/build-order.md`](docs/build-order.md):
 
 Every verb's `--json` is the standard proto3 JSON mapping of the contract, and everything a person
 reads goes to stderr, so stdout is always parseable (`ley help scripting`). If you write your own
-client, read "Client requirements" at the top of [`docs/interfaces.md`](docs/interfaces.md) first:
+client, read the "Client requirements" section of [`docs/interfaces.md`](docs/interfaces.md) first:
 the daemon's HTTP/2 stack drops connections that ping on every data frame, which grpc-go and
 grpc-python do by default, and the fix is one dial option.
 
