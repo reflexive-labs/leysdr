@@ -251,6 +251,12 @@ for a tone rather than an invented number. When it lands below one bin the CLI p
 `under 2.344 kHz` rather than a figure, because a width smaller than the resolution is not a
 measurement.
 
+One edge case the centroid inherits: a signal that straddles the boundary of the requested range is
+reported at the centroid of **the part inside it**, because that is all the detector was allowed to
+look at. A 150 kHz-wide carrier half outside `--band`'s edge reads tens of kHz low. Widening the
+range fixes it, and the honest alternative -- reporting a centre from bins outside what was asked
+for -- would be worse.
+
 **SNR** is the peak bin's excess over the local floor, in dB, and it is a *spectral* SNR. The
 `Meter.snr_db` a listening channel reports is a *temporal* one — block power minus a five-second
 running minimum — and the two will not agree for the same signal. Both are on the wire; neither is

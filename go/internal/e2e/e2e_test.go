@@ -341,3 +341,80 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 		t.Fatalf("socket still present after shutdown: %v", err)
 	}
 }
+
+// TestScanAgainstRealDaemon sweeps a known band through the real daemon, which is the only place
+// the whole chain runs: the Swift detector, the sweep's own capture lease, Detection over
+// telemetry, and the Go client rendering it. Everything else about scan is tested against the fake.
+func TestScanAgainstRealDaemon(t *testing.T) {
+	e, _ := setup(t)
+	band, err := filepath.Abs("../../../fixtures/scan_band.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(band); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	// Attach the recording as a radio and leave it idle: a sweep needs the device, not a channel.
+	e.mustRun("play", band, "--no-audio", "--loop", "--persistent", "--json")
+	e.mustRun("stop", "--all")
+
+	// Wider than the carriers themselves: a signal straddling the edge of the requested range is
+	// reported at the centroid of the part inside it, which for the 150 kHz-wide FM carrier at
+	// 146.8 MHz would be tens of kHz low.
+	out := e.mustRun("--json", "scan", "145.0M..147.0M", "--dwell", "500")
+	scan := parseJSON(t, out)
+	if scan["scanId"] == nil || !strings.HasPrefix(scan["scanId"].(string), "scan_") {
+		t.Fatalf("no scan id: %v", scan)
+	}
+	// scan_band.cf32 puts carriers 800 and 400 kHz either side of 146 MHz.
+	want := []uint64{145_200_000, 145_600_000, 146_400_000, 146_800_000}
+	dets := list(scan, "detections")
+	var found []uint64
+	for _, d := range dets {
+		m := d.(map[string]any)
+		hz, err := strconv.ParseUint(m["centerHz"].(string), 10, 64)
+		if err != nil {
+			t.Fatalf("centerHz %v: %v", m["centerHz"], err)
+		}
+		found = append(found, hz)
+		// Every detection carries the evidence it was judged on.
+		for _, k := range []string{"snrDb", "floorDbfs", "looks", "looksPossible", "firstSeen"} {
+			if m[k] == nil {
+				t.Errorf("detection at %d lacks %q: %v", hz, k, m)
+			}
+		}
+		if m["modulationGuess"] != nil && m["modulationGuess"] != "" {
+			t.Errorf("v0 has no opinion about modulation (invariant 12): %v", m["modulationGuess"])
+		}
+	}
+	for _, w := range want {
+		near := false
+		for _, f := range found {
+			if f+30_000 > w && f < w+30_000 {
+				near = true
+			}
+		}
+		if !near {
+			t.Errorf("no detection near %d Hz in %v", w, found)
+		}
+	}
+	// The noise floor is reported per step whether or not anything was found there.
+	if len(list(scan, "noiseFloor")) == 0 {
+		t.Errorf("no noise floor segments: %v", scan)
+	}
+	// The sweep pinned the gain, and said which.
+	if gains := list(scan, "gains"); len(gains) == 0 {
+		t.Logf("no gains pinned (a file device has none), which is honest for this radio")
+	}
+
+	// The radio is free again: the sweep gave back what it borrowed.
+	st := e.state()
+	if caps := list(st, "captures"); len(caps) != 0 {
+		t.Errorf("the sweep left a capture behind: %v", caps)
+	}
+	if jobs := list(st, "jobs"); len(jobs) == 0 {
+		t.Errorf("the finished job should still be in state: %v", st)
+	} else if j := jobs[0].(map[string]any); j["state"] != "COMPLETED" {
+		t.Errorf("job did not complete: %v", j)
+	}
+}
