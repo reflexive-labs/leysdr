@@ -65,6 +65,11 @@ actor StreamRegistry {
     static let iqSlots = 8
     static let readerGraceNs: UInt64 = 10_000_000_000
     static let defaultFFTRows: Double = 10
+    /// Range a persistence half-life is clamped to. The floor keeps the decay visible over at least
+    /// a few ladder rows; the ceiling (an hour) keeps `halfLife * rows` inside `Int` for any value
+    /// that arrives on the wire, including infinity.
+    static let minHalfLifeSeconds: Double = 0.1
+    static let maxHalfLifeSeconds: Double = 3600
 
     private let store: SessionStore
     private let log = Logger(label: "leyline.bulk")
@@ -163,16 +168,22 @@ actor StreamRegistry {
                 throw EngineError.invalidArgument("persistence levels must be 2...256, got \(levels)")
             }
             let pbins = DefaultSpectrumLadder.roundBins(want.bins == 0 ? 256 : Int(want.bins))
-            let emitRows = want.rowsPerSecond > 0 ? want.rowsPerSecond : 2
+            // Both rates arrive as proto3 doubles, so they are clamped to ranges the arithmetic
+            // below can represent -- a denormal rate or an infinite half-life would otherwise
+            // overflow the integer conversions. The descriptor answers with what was used.
+            let emitRows = DefaultSpectrumLadder.roundRate(want.rowsPerSecond > 0 ? want.rowsPerSecond : 2)
             // Accumulate as fast as the ladder will go and display slowly: the histogram wants
             // every row it can get, and a person reads a couple of frames a second.
             let ladderRows = DefaultSpectrumLadder.maxRowsPerSecond
-            let halfLife = want.halfLifeSeconds > 0 ? want.halfLifeSeconds : 20
+            let halfLife = want.halfLifeSeconds > 0
+                ? Swift.min(Swift.max(want.halfLifeSeconds, Self.minHalfLifeSeconds), Self.maxHalfLifeSeconds)
+                : 20
             let acc = PersistenceAccumulator(bins: pbins, levels: levels,
                                              floorDB: want.floorDb, rangeDB: want.rangeDb,
                                              halfLifeRows: Swift.max(1, Int(halfLife * ladderRows)))
             let ring = FrameRing(slots: Self.fftSlots, slotBytes: pbins * levels * 2)
-            let emitInterval = UInt64(Swift.max(1.0, Double(snap.sampleRate) / emitRows))
+            let rowSamples = Swift.max(1.0, Double(snap.sampleRate) / emitRows)
+            let emitInterval = UInt64(Swift.min(rowSamples, Double(UInt64.max / 2)))
             let sink = PersistenceFrameSink(ring: ring, accumulator: acc, emitInterval: emitInterval)
             let sub = await capture.spectrum.subscribe(bins: pbins, rowsPerSecond: ladderRows,
                                                        accumulation: .snapshot, policy: enginePolicy, sink: sink)

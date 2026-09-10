@@ -146,4 +146,40 @@ final class MalformedInputDaemonTests: XCTestCase {
             XCTAssertTrue(testDevices(listed.devices).isEmpty, "nothing was attached")
         }
     }
+
+    func testHostilePersistenceRatesAreClampedWithoutCrash() async throws {
+        guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
+        try await withDaemon { c in
+            let capture = try await self.attachFixtureCapture(c)
+            // rows_per_second and half_life_seconds are wire doubles: a denormal, an infinity or a
+            // NaN must come back as a served rate, not as an integer conversion that aborts.
+            let cases: [(String, Double, Double, Double, Double)] = [
+                ("denormal", 1e-300, 1e300, DefaultSpectrumLadder.minRowsPerSecond, StreamRegistry.maxHalfLifeSeconds),
+                ("infinite", .infinity, .infinity, DefaultSpectrumLadder.maxRowsPerSecond, StreamRegistry.maxHalfLifeSeconds),
+                ("nan", .nan, .nan, 2, 20),
+            ]
+            for (name, rows, halfLife, wantRows, wantHalfLife) in cases {
+                var req = Leyline_V1_SubscribeRequest()
+                req.captureID = capture.captureID
+                req.kind = .persistence
+                req.policy = .latestWins
+                req.transport = .grpc
+                req.persistence.bins = 256
+                req.persistence.levels = 32
+                req.persistence.floorDb = -100
+                req.persistence.rangeDb = 80
+                req.persistence.rowsPerSecond = rows
+                req.persistence.halfLifeSeconds = halfLife
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                XCTAssertEqual(desc.persistence.rowsPerSecond, wantRows, "\(name) rows_per_second")
+                XCTAssertEqual(desc.persistence.halfLifeSeconds, wantHalfLife, "\(name) half_life_seconds")
+                var ref = Leyline_V1_StreamRef()
+                ref.streamID = desc.streamID
+                _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+            }
+            // The daemon is still serving.
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.captures.count, 1)
+        }
+    }
 }

@@ -175,7 +175,7 @@ claims made true.
 
 ## Code work items — Swift lane (Opus, sequential)
 
-### SW-1 `[ ]` Two RPCs that kill the daemon
+### SW-1 `[x]` Two RPCs that kill the daemon
 
 q-swift-daemon-1 and -2: validate `persistence.rows_per_second` and `half_life_seconds` as finite
 and within stated ranges (reject with `INVALID_ARGUMENT` naming the range, or clamp the way the FFT
