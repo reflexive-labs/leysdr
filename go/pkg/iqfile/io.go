@@ -110,8 +110,13 @@ func Open(path, format string) (*Reader, error) {
 }
 
 // Read fills dst with the next samples and returns how many were decoded.
-// It returns io.EOF (with n == 0) when the file is exhausted.
+// It returns io.EOF (with n == 0) when the file is exhausted, and an error for
+// an empty dst: the documented drain loop breaks on io.EOF, so answering "zero
+// samples, no error" would spin forever.
 func (r *Reader) Read(dst []complex64) (int, error) {
+	if len(dst) == 0 {
+		return 0, fmt.Errorf("iqfile: Read into an empty buffer")
+	}
 	need := len(dst) * r.bps
 	if cap(r.raw) < need {
 		r.raw = make([]byte, need)

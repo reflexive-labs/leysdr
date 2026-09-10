@@ -163,7 +163,7 @@ func runFFT(ctx context.Context, s *session, o fftOptions) error {
 	defer stopDrain()
 	desc := sub.Descriptor
 	nbins := desc.GetFft().GetBins()
-	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
+	binFormat := desc.GetFft().GetBinFormat()
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
 	n := 0
@@ -181,7 +181,7 @@ func runFFT(ctx context.Context, s *session, o fftOptions) error {
 				return err
 			}
 		} else {
-			bins := decodeBins(fr.Payload, u8)
+			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
 			row := FFTRow{
 				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
 				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
@@ -234,22 +234,6 @@ func ParseFFTRecord(hdr []byte) (bins uint32, seq uint64, err error) {
 		return 0, 0, fmt.Errorf("bad FFT record header")
 	}
 	return binary.LittleEndian.Uint32(hdr[4:8]), binary.LittleEndian.Uint64(hdr[8:16]), nil
-}
-
-// decodeBins converts a payload to dB values (f32 LE or u8-encoded).
-func decodeBins(p []byte, u8 bool) []float64 {
-	if u8 {
-		out := make([]float64, len(p))
-		for i, b := range p {
-			out[i] = float64(b)/2 - 120
-		}
-		return out
-	}
-	out := make([]float64, len(p)/4)
-	for i := range out {
-		out[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(p[i*4:])))
-	}
-	return out
 }
 
 // floorOf is medianDb with a value JSON can carry. medianDb answers NaN for an

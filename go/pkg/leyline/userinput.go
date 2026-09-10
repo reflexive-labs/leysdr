@@ -188,3 +188,49 @@ func ResolveMode(name string, hz uint64) (mode leylinev1.DemodMode, reason strin
 	}
 	return m, "", nil
 }
+
+// SnapGain returns the dB value the daemon will hold for this element, applying
+// the quantisation control.proto describes: a non-empty valid_db table snaps to
+// its nearest entry, otherwise the value is clamped to [min_db, max_db] and, when
+// step_db is positive, rounded onto the step grid from min_db. It is the Go side
+// of EngineCore's GainElement.snapped; a client that predicts a different value
+// than the daemon confirms is a client that reports a write as failed.
+// A nil element passes db through.
+func SnapGain(el *leylinev1.GainElement, db float64) float64 {
+	if el == nil {
+		return db
+	}
+	if valid := el.GetValidDb(); len(valid) > 0 {
+		best := valid[0]
+		for _, v := range valid {
+			if math.Abs(v-db) < math.Abs(best-db) {
+				best = v
+			}
+		}
+		return best
+	}
+	clamped := math.Min(math.Max(db, el.GetMinDb()), el.GetMaxDb())
+	if el.GetStepDb() <= 0 {
+		return clamped
+	}
+	return el.GetMinDb() + math.Round((clamped-el.GetMinDb())/el.GetStepDb())*el.GetStepDb()
+}
+
+// GainTolerance is how far a confirmed gain may sit from what SnapGain predicted
+// before a client should call the write unconfirmed. A discrete element lands on
+// a table entry or a step, so the slack is the quantisation itself plus room for
+// the float trip through the wire; an element with neither quantises somewhere
+// the client cannot see, so it gets a dB of rope.
+func GainTolerance(el *leylinev1.GainElement) float64 {
+	const eps = 0.05
+	switch {
+	case el == nil:
+		return 1.0
+	case len(el.GetValidDb()) > 0:
+		return eps
+	case el.GetStepDb() > 0:
+		return el.GetStepDb()/2 + eps
+	default:
+		return 1.0
+	}
+}

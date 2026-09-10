@@ -132,7 +132,7 @@ device says it is configured on the daemon's command line and how to remove it);
 PC-11 (auto squelch in `--persistent` and `--json` modes per the decision; tick PC-11 in
 `docs/plans/cli-papercuts.md`).
 
-### GO-4 `[ ]` The client library carries what every client needs
+### GO-4 `[x]` The client library carries what every client needs
 
 q-go-lib-2 (`Subscription.Err` memoises), -4 (clone the request), -5 (`Reader.Read` with an empty
 `dst`), -6 (marine band bound and its comment), -7 (`FormatFrequency` at the GHz boundary), -8

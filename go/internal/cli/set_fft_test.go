@@ -184,24 +184,6 @@ func TestFFTJSONAndBin(t *testing.T) {
 	}
 }
 
-func TestSnapGain(t *testing.T) {
-	table := &leylinev1.GainElement{ValidDb: []float64{0, 3.7, 7.7, 44.5, 48.0}}
-	for _, tc := range []struct{ in, want float64 }{{6, 7.7}, {46, 44.5}, {-3, 0}, {99, 48.0}, {3.7, 3.7}} {
-		if got, tol := snapGain(table, tc.in); got != tc.want || tol != 0.05 {
-			t.Errorf("table snap %v: got %v tol %v, want %v", tc.in, got, tol, tc.want)
-		}
-	}
-	grid := &leylinev1.GainElement{MinDb: -10, MaxDb: 20, StepDb: 0.5}
-	for _, tc := range []struct{ in, want float64 }{{6.2, 6}, {6.3, 6.5}, {-30, -10}, {25, 20}} {
-		if got, tol := snapGain(grid, tc.in); got != tc.want || tol != 0.3 {
-			t.Errorf("grid snap %v: got %v tol %v, want %v", tc.in, got, tol, tc.want)
-		}
-	}
-	if got, tol := snapGain(&leylinev1.GainElement{}, 6.2); got != 6.2 || tol != 1.0 {
-		t.Errorf("passthrough: got %v tol %v", got, tol)
-	}
-}
-
 func TestSetNoArgsAndTargetRule(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	// Nothing playing: the same next-step error as a write.

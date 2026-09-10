@@ -46,6 +46,13 @@ func TestFormatFrequency(t *testing.T) {
 		7_040:         "7.040 kHz",
 		1_200_000_000: "1.200 GHz",
 		500:           "500 Hz",
+		// The unit is chosen after rounding, so a 1 GHz tuning limit a few hundred
+		// Hz short of the decade does not read as "1000.000 MHz".
+		999_999_999: "1.000 GHz",
+		999_999_500: "1.000 GHz",
+		999_999_499: "999.999 MHz",
+		999_999:     "999.999 kHz",
+		999:         "999 Hz",
 	}
 	for hz, want := range cases {
 		if got := FormatFrequency(hz); got != want {

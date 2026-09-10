@@ -46,7 +46,10 @@ func TestBandFor(t *testing.T) {
 			t.Errorf("BandwidthFor(%d, %v) = %d, want %d", c.hz, mode, bw, c.bw)
 		}
 	}
-	for _, hz := range []uint64{0, 100_000, 50_000_000, 115_000_000, 300_000_000, 1_000_000_000} {
+	// The table is not a complete allocation chart, and the gap between the top
+	// marine channel and the NOAA weather block is where a reader is most likely
+	// to expect otherwise.
+	for _, hz := range []uint64{0, 100_000, 50_000_000, 115_000_000, 162_030_000, 300_000_000, 1_000_000_000} {
 		if b := BandFor(hz); b != nil {
 			t.Errorf("BandFor(%d) = %q, want no band", hz, b.Name)
 		}

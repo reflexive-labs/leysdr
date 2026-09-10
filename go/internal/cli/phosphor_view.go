@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"strings"
@@ -20,39 +19,7 @@ const (
 )
 
 // phosphorHistogram is one decoded frame: counts[bin][level].
-type phosphorHistogram struct {
-	bins, levels int
-	counts       []uint16 // bin-major
-}
-
-// decodePersistence reads the wire payload: bins*levels little-endian uint16,
-// bin-major.
-func decodePersistence(payload []byte, bins, levels int) (phosphorHistogram, bool) {
-	if bins <= 0 || levels <= 0 || len(payload) < bins*levels*2 {
-		return phosphorHistogram{}, false
-	}
-	h := phosphorHistogram{bins: bins, levels: levels, counts: make([]uint16, bins*levels)}
-	for i := range h.counts {
-		h.counts[i] = binary.LittleEndian.Uint16(payload[2*i:])
-	}
-	return h, true
-}
-
-func (h phosphorHistogram) at(bin, level int) uint16 { return h.counts[bin*h.levels+level] }
-
-// peak is the largest count anywhere, which is what the shading normalises
-// against. Normalising per frame rather than per column is deliberate: a column
-// that is pure noise must look fainter than one carrying a carrier, and a
-// per-column normaliser would make them identical.
-func (h phosphorHistogram) peak() uint16 {
-	var m uint16
-	for _, v := range h.counts {
-		if v > m {
-			m = v
-		}
-	}
-	return m
-}
+type phosphorHistogram = leyline.PersistenceHistogram
 
 // phosphorView draws persistence frames. The scale is fixed for the run by
 // construction: it is the scale the daemon was asked to accumulate on, so it
@@ -137,8 +104,11 @@ func fmtSeconds(s float64) string {
 // render draws one frame: one cell per (column, row), shaded by how often that
 // frequency has been at that level.
 func (v *phosphorView) render(h phosphorHistogram) string {
-	cols := v.cols(h.bins)
-	peak := h.peak()
+	cols := v.cols(h.Bins)
+	// Shading normalises against the frame's peak rather than each column's own: a
+	// column of pure noise must look fainter than one carrying a carrier, and a
+	// per-column normaliser would make them identical.
+	peak := h.Peak()
 	var b strings.Builder
 	for _, l := range v.header(cols) {
 		b.WriteString(l + "\n")
@@ -164,17 +134,17 @@ func (v *phosphorView) render(h phosphorHistogram) string {
 			// taking the largest count in the cell: a carrier one bin wide must
 			// not be averaged away by the noise beside it.
 			var best uint16
-			b0, b1 := c*h.bins/cols, (c+1)*h.bins/cols
-			l0, l1 := (r-1)*h.levels/phosphorHeight, r*h.levels/phosphorHeight
+			b0, b1 := c*h.Bins/cols, (c+1)*h.Bins/cols
+			l0, l1 := (r-1)*h.Levels/phosphorHeight, r*h.Levels/phosphorHeight
 			if b1 <= b0 {
 				b1 = b0 + 1
 			}
 			if l1 <= l0 {
 				l1 = l0 + 1
 			}
-			for bi := b0; bi < b1 && bi < h.bins; bi++ {
-				for li := l0; li < l1 && li < h.levels; li++ {
-					if got := h.at(bi, li); got > best {
+			for bi := b0; bi < b1 && bi < h.Bins; bi++ {
+				for li := l0; li < l1 && li < h.Levels; li++ {
+					if got := h.At(bi, li); got > best {
 						best = got
 					}
 				}

@@ -55,12 +55,14 @@ func ParseFrequency(s string) (uint64, error) {
 // "146.520 MHz", "7.040 kHz", "1.200 GHz", "500 Hz".
 func FormatFrequency(hz uint64) string {
 	f := float64(hz)
+	// The thresholds are the values that already round up to 1000 in the smaller
+	// unit, so a 1 GHz tuning limit reads "1.000 GHz" and never "1000.000 MHz".
 	switch {
-	case hz >= 1_000_000_000:
+	case f >= 999_999_500:
 		return fmt.Sprintf("%.3f GHz", f/1e9)
-	case hz >= 1_000_000:
+	case f >= 999_999.5:
 		return fmt.Sprintf("%.3f MHz", f/1e6)
-	case hz >= 1_000:
+	case f >= 999.9995:
 		return fmt.Sprintf("%.3f kHz", f/1e3)
 	default:
 		return fmt.Sprintf("%d Hz", hz)

@@ -42,6 +42,12 @@ const (
 	CodePlatformUnsupported = "PLATFORM_UNSUPPORTED"
 	CodeUnavailable         = "UNAVAILABLE"
 	CodeUnknown             = "UNKNOWN"
+
+	// Transport-level codes: no daemon mints these, but a call that never reached
+	// the daemon still has to name what happened.
+	CodeNotFound         = "NOT_FOUND"
+	CodeCanceled         = "CANCELED"
+	CodeDeadlineExceeded = "DEADLINE_EXCEEDED"
 )
 
 // Error is a daemon error with a stable machine code. It is what every client
@@ -162,24 +168,33 @@ func codeForGRPC(c codes.Code) string {
 	case codes.InvalidArgument:
 		return CodeInvalidArgument
 	case codes.NotFound:
-		return "NOT_FOUND"
+		return CodeNotFound
 	case codes.Unavailable:
 		return CodeUnavailable
 	case codes.Canceled:
-		return "CANCELED"
+		return CodeCanceled
 	case codes.DeadlineExceeded:
-		return "DEADLINE_EXCEEDED"
+		return CodeDeadlineExceeded
 	default:
 		return strings.ToUpper(strings.ReplaceAll(c.String(), " ", "_"))
 	}
 }
 
 // GRPCCode maps a stable machine code to the gRPC status code daemons use for it.
+// Every code codeForGRPC can produce round-trips back to the code it came from,
+// so an Error parsed off the wire and re-served — as the fake daemon does — keeps
+// the status code any retry logic keys on.
 func GRPCCode(code string) codes.Code {
 	switch code {
 	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeGainElementUnknown,
-		CodeJobNotFound, CodeScanNotFound:
+		CodeJobNotFound, CodeScanNotFound, CodeNotFound:
 		return codes.NotFound
+	case CodeUnavailable:
+		return codes.Unavailable
+	case CodeCanceled:
+		return codes.Canceled
+	case CodeDeadlineExceeded:
+		return codes.DeadlineExceeded
 	case CodeDeviceBusy, CodeDeviceSweeping:
 		return codes.FailedPrecondition
 	case CodeDeviceDetached, CodeDeviceIO:

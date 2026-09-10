@@ -395,7 +395,7 @@ func buildWrites(ctx context.Context, s *session, param, value, element string, 
 					if err := leyline.CheckGain(db, el); err != nil {
 						return nil, nil, 0, paramErr(param, err)
 					}
-					db, tol = snapGain(el, db)
+					db, tol = leyline.SnapGain(el, db), leyline.GainTolerance(el)
 				}
 			}
 		}
@@ -734,26 +734,4 @@ func consumesNext(fs *pflag.FlagSet, word string) bool {
 		f = fs.ShorthandLookup(word[len(word)-1:])
 	}
 	return f != nil && f.NoOptDefVal == ""
-}
-
-// snapGain mirrors the daemon's gain quantisation (control.proto GainElement):
-// a non-empty valid_db table snaps to the nearest entry, else step_db > 0
-// snaps to the grid clamped to [min_db, max_db], else the value passes through.
-// The returned tolerance is what the confirmation predicate should accept.
-func snapGain(el *leylinev1.GainElement, db float64) (float64, float64) {
-	const eps = 0.05
-	if len(el.ValidDb) > 0 {
-		best := el.ValidDb[0]
-		for _, v := range el.ValidDb {
-			if math.Abs(v-db) < math.Abs(best-db) {
-				best = v
-			}
-		}
-		return best, eps
-	}
-	if el.StepDb > 0 {
-		db = math.Min(math.Max(db, el.MinDb), el.MaxDb)
-		return el.MinDb + math.Round((db-el.MinDb)/el.StepDb)*el.StepDb, el.StepDb/2 + eps
-	}
-	return db, 1.0
 }

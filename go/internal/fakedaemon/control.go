@@ -128,7 +128,7 @@ func (d *Daemon) CreateCapture(ctx context.Context, req *leylinev1.CreateCapture
 	c.Anchor = &leylinev1.CaptureAnchor{CaptureId: c.CaptureId, HostTimeNs: now.UnixNano(), SampleRate: rate}
 	c.file = d.files[dev.DeviceId]
 	for _, el := range dev.GainElements {
-		c.Gains = append(c.Gains, &leylinev1.GainState{Element: el.Name, Auto: el.SupportsAuto, Db: snapGain(el, el.MaxDb/2)})
+		c.Gains = append(c.Gains, &leylinev1.GainState{Element: el.Name, Auto: el.SupportsAuto, Db: leyline.SnapGain(el, el.MaxDb/2)})
 	}
 	d.captures[c.CaptureId] = c
 	dev.State = leylinev1.DeviceState_IN_USE

@@ -228,3 +228,45 @@ func TestResolveMode(t *testing.T) {
 		t.Errorf("ResolveMode(dsb) = %v, want error mentioning aliases", err)
 	}
 }
+
+// The cases mirror EngineCore's GainElement.snapped: the R820T's discrete table,
+// a stepped element, and an element that quantises nowhere the client can see.
+func TestSnapGain(t *testing.T) {
+	table := &leylinev1.GainElement{Name: "TUNER", ValidDb: []float64{0, 3.7, 7.7, 44.5, 48.0}}
+	for _, c := range []struct{ in, want float64 }{
+		{6, 7.7}, {46, 44.5}, {-3, 0}, {99, 48.0}, {3.7, 3.7},
+	} {
+		if got := SnapGain(table, c.in); got != c.want {
+			t.Errorf("SnapGain(table, %v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+	if got := GainTolerance(table); got != 0.05 {
+		t.Errorf("GainTolerance(table) = %v", got)
+	}
+
+	grid := &leylinev1.GainElement{Name: "IF", MinDb: -10, MaxDb: 20, StepDb: 0.5}
+	for _, c := range []struct{ in, want float64 }{
+		{6.2, 6}, {6.3, 6.5}, {-30, -10}, {25, 20}, {0, 0},
+	} {
+		if got := SnapGain(grid, c.in); got != c.want {
+			t.Errorf("SnapGain(grid, %v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+	if got := GainTolerance(grid); got != 0.3 {
+		t.Errorf("GainTolerance(grid) = %v", got)
+	}
+
+	// Neither table nor step: the value survives, but the range still bounds it.
+	free := &leylinev1.GainElement{Name: "LNA", MinDb: 0, MaxDb: 49.6}
+	for _, c := range []struct{ in, want float64 }{{6.2, 6.2}, {-1, 0}, {60, 49.6}} {
+		if got := SnapGain(free, c.in); got != c.want {
+			t.Errorf("SnapGain(free, %v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+	if got := GainTolerance(free); got != 1.0 {
+		t.Errorf("GainTolerance(free) = %v", got)
+	}
+	if got := SnapGain(nil, 6.2); got != 6.2 {
+		t.Errorf("SnapGain(nil) = %v", got)
+	}
+}

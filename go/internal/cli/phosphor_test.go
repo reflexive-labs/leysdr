@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // histogram builds a wire payload: counts[bin][level], bin-major.
@@ -79,7 +80,7 @@ func TestPhosphorRareSignalStaysVisible(t *testing.T) {
 // carried anything stays blank.
 func TestPhosphorDrawsRareAndSteadyAlike(t *testing.T) {
 	const bins, levels = 64, 32
-	h, ok := decodePersistence(bandHistogram(bins, levels), bins, levels)
+	h, ok := leyline.DecodePersistence(bandHistogram(bins, levels), bins, levels)
 	if !ok {
 		t.Fatal("decode failed")
 	}
@@ -107,7 +108,7 @@ func TestPhosphorDrawsRareAndSteadyAlike(t *testing.T) {
 // The style guide's first principle.
 func TestPhosphorStripsToPlain(t *testing.T) {
 	const bins, levels = 64, 32
-	h, _ := decodePersistence(bandHistogram(bins, levels), bins, levels)
+	h, _ := leyline.DecodePersistence(bandHistogram(bins, levels), bins, levels)
 	for _, width := range []int{40, 80, 160} {
 		for _, uni := range []bool{false, true} {
 			plain := testPhosphor(ui.Style{Unicode: uni, Width: width}, width, fixtureCenterHz).render(h)
@@ -137,11 +138,11 @@ func TestPhosphorRejectsAShortPayload(t *testing.T) {
 		{"zero bins", make([]byte, 64), 0, 4},
 		{"zero levels", make([]byte, 64), 8, 0},
 	} {
-		if _, ok := decodePersistence(tc.payload, tc.bins, tc.levels); ok {
+		if _, ok := leyline.DecodePersistence(tc.payload, tc.bins, tc.levels); ok {
 			t.Errorf("%s: should have been rejected", tc.name)
 		}
 	}
-	if _, ok := decodePersistence(make([]byte, 8*4*2), 8, 4); !ok {
+	if _, ok := leyline.DecodePersistence(make([]byte, 8*4*2), 8, 4); !ok {
 		t.Error("an exact payload must decode")
 	}
 }

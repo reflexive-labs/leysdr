@@ -257,7 +257,7 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 				gs.Auto = v.Auto
 			case *leylinev1.GainWrite_Db:
 				gs.Auto = false
-				gs.Db = snapGain(el, v.Db)
+				gs.Db = leyline.SnapGain(el, v.Db)
 			}
 			return true
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // spectrumPeaks is the most peaks the chart's peak block and the JSON peaks
@@ -131,7 +132,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	stopDrain := s.drainEvents()
 	defer stopDrain()
 	desc := sub.Descriptor
-	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
+	binFormat := desc.GetFft().GetBinFormat()
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
 	// The frame is a terminal's: piped output stays plain lines a script can
@@ -162,7 +163,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			if len(fr.Payload) == 0 {
 				continue
 			}
-			bins := decodeBins(fr.Payload, u8)
+			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
 			floor := medianDb(bins)
 			peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks, floor+peakAboveFloorDb)
 			if app.JSON {

@@ -557,7 +557,7 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 		if err := leyline.CheckGain(db, el); err != nil {
 			return fmt.Errorf("--gain: %w", err)
 		}
-		db, tol = snapGain(el, db)
+		db, tol = leyline.SnapGain(el, db), leyline.GainTolerance(el)
 	}
 	g := &leylinev1.GainWrite{Element: el.Name}
 	if auto {
@@ -692,8 +692,7 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 	case <-sctx.Done():
 		return 0, 0, fmt.Errorf("no spectrum row arrived within %s", squelchProbeTimeout)
 	}
-	u8 := sub.Descriptor.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
-	vals := decodeBins(fr.Payload, u8)
+	vals := leyline.DecodeFFTBins(fr.Payload, sub.Descriptor.GetFft().GetBinFormat())
 	if len(vals) == 0 {
 		return 0, 0, fmt.Errorf("spectrum row in an unexpected format")
 	}

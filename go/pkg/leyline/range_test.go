@@ -1,6 +1,9 @@
 package leyline
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseUserRange(t *testing.T) {
 	for _, tc := range []struct {
@@ -40,7 +43,7 @@ func TestParseUserRangeErrorsTeach(t *testing.T) {
 			t.Errorf("%q: wanted an error", tc.in)
 			continue
 		}
-		if !contains(err.Error(), tc.want) {
+		if !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%q: %q does not mention %q", tc.in, err, tc.want)
 		}
 	}

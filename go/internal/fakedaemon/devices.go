@@ -203,30 +203,3 @@ func rateOK(dev *leylinev1.DeviceDescriptor, rate uint64) bool {
 	}
 	return false
 }
-
-// snapGain snaps db to the nearest valid_db entry (or clamps to min/max).
-func snapGain(el *leylinev1.GainElement, db float64) float64 {
-	if len(el.ValidDb) == 0 {
-		if db < el.MinDb {
-			return el.MinDb
-		}
-		if db > el.MaxDb {
-			return el.MaxDb
-		}
-		return db
-	}
-	best := el.ValidDb[0]
-	for _, v := range el.ValidDb {
-		if abs(v-db) < abs(best-db) {
-			best = v
-		}
-	}
-	return best
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}

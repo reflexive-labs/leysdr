@@ -298,3 +298,46 @@ func TestFileDevice(t *testing.T) {
 		t.Errorf("state after detach = %v", st)
 	}
 }
+
+// Subscribe fills in the transport and start position a v0 client needs, and the
+// caller keeps the request it built — to retry with, or to log what it asked
+// for. Err is repeatable, because one goroutine may drain frames while another
+// asks why the stream ended.
+func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	cap, _ := setupCaptureChannel(t, c)
+	req := &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Kind:   leylinev1.StreamKind_FFT,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 1024, RowsPerSecond: 30}},
+	}
+	sub, err := c.Subscribe(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Transport != leylinev1.Transport_TRANSPORT_UNSPECIFIED || req.Start != nil {
+		t.Errorf("Subscribe rewrote the caller's request: %v", req)
+	}
+	if !sub.Descriptor.GetGrpc() {
+		t.Errorf("descriptor = %v, want a gRPC transport", sub.Descriptor)
+	}
+
+	// Ending the stream from this side gives Err something to hold.
+	sub.Close()
+	deadline := time.After(3 * time.Second)
+	for open := true; open; {
+		select {
+		case _, open = <-sub.Frames:
+		case <-deadline:
+			t.Fatal("frames never closed after Close")
+		}
+	}
+	first := sub.Err()
+	if first == nil {
+		t.Fatal("a cancelled stream must report why it ended")
+	}
+	if got := sub.Err(); got != first {
+		t.Errorf("Err() = %v then %v; it must be repeatable", first, got)
+	}
+}

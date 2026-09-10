@@ -44,9 +44,10 @@ const (
 	mSSB = leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED // sideband chosen by frequency
 )
 
-// bands is ordered by frequency; ranges do not overlap. NOAA weather sits
-// inside the marine VHF allocation, so it is listed first and marine VHF is
-// split around it.
+// bands is ordered by frequency; ranges are inclusive of both bounds and do not
+// overlap. The table is not a complete allocation chart: spectrum between two
+// entries — above the top marine VHF channel at 162.025 MHz and below the NOAA
+// weather block at 162.400, say — belongs to no band, and BandFor answers nil.
 var bands = []Band{
 	{"AM broadcast", []string{"am", "mw", "ambcast"}, 530_000, 1_700_000, mAM, 10_000, "medium-wave broadcast stations"},
 	{"160 m amateur", []string{"160m"}, 1_800_000, 2_000_000, mSSB, 2_800, "amateur radio, LSB voice"},
@@ -59,7 +60,7 @@ var bands = []Band{
 	{"FM broadcast", []string{"fm", "fmbcast", "broadcast"}, 87_500_000, 108_000_000, mWFM, 200_000, "wideband FM radio stations"},
 	{"airband", []string{"air", "aviation"}, 118_000_000, 137_000_000, mAM, 10_000, "aircraft and towers, AM voice"},
 	{"2 m amateur", []string{"2m"}, 144_000_000, 148_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters"},
-	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_024_999, mNFM, 12_500, "ship and coast stations; channel 16 is 156.800"},
+	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_025_000, mNFM, 12_500, "ship and coast stations; channel 16 is 156.800"},
 	{"NOAA weather", []string{"noaa", "weather", "wx"}, 162_400_000, 162_550_000, mNFM, 12_500, "continuous weather broadcasts, WX1 to WX7"},
 	{"70 cm amateur", []string{"70cm"}, 420_000_000, 450_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters"},
 }

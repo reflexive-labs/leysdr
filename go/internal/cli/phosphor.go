@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // phosphorRangeDb is how far above the floor the level axis reaches. The same
@@ -136,7 +137,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 			if !ok {
 				return spectrumEnd(ctx, "persistence", sub.Err(), n)
 			}
-			h, ok := decodePersistence(fr.Payload, int(p.GetBins()), int(p.GetLevels()))
+			h, ok := leyline.DecodePersistence(fr.Payload, int(p.GetBins()), int(p.GetLevels()))
 			if !ok {
 				continue
 			}
@@ -162,7 +163,7 @@ func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error
 		return 0, err
 	}
 	defer sub.Close()
-	u8 := sub.Descriptor.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
+	binFormat := sub.Descriptor.GetFft().GetBinFormat()
 	deadline := time.NewTimer(spectrumFirstRow)
 	defer deadline.Stop()
 	for {
@@ -178,7 +179,7 @@ func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error
 			if len(fr.Payload) == 0 {
 				continue
 			}
-			return medianDb(decodeBins(fr.Payload, u8)), nil
+			return medianDb(leyline.DecodeFFTBins(fr.Payload, binFormat)), nil
 		}
 	}
 }

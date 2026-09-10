@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 type waterfallOptions struct {
@@ -99,7 +100,7 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 	defer stopDrain()
 
 	desc := sub.Descriptor
-	u8 := desc.GetFft().GetBinFormat() == leylinev1.FftBinFormat_DB_U8
+	binFormat := desc.GetFft().GetBinFormat()
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
 
@@ -120,7 +121,7 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 			if len(fr.Payload) == 0 {
 				continue
 			}
-			bins := decodeBins(fr.Payload, u8)
+			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
 			// The header waits for the scale, so it can state the floor the
 			// shades are measured from rather than a number chosen later.
 			if n == 0 {

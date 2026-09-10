@@ -90,7 +90,9 @@ type Client struct {
 
 // Dial connects to the daemon's UDS at socketPath (DefaultSocketPath() if empty).
 // The connection is lazy; the first RPC fails with an UNAVAILABLE Error if no
-// daemon is listening.
+// daemon is listening. ctx is not consulted — there is no connect-time work to
+// bound — but stays in the signature so an eager-connect option can honour it
+// without breaking callers.
 func Dial(ctx context.Context, socketPath string, opts ...Option) (*Client, error) {
 	if socketPath == "" {
 		socketPath = DefaultSocketPath()
@@ -124,7 +126,6 @@ func Dial(ctx context.Context, socketPath string, opts ...Option) (*Client, erro
 	c.Bulk = leylinev1.NewBulkClient(conn)
 	c.Jobs = leylinev1.NewJobsClient(conn)
 	c.Resources = leylinev1.NewResourcesClient(conn)
-	_ = ctx
 	return c, nil
 }
 
@@ -366,12 +367,27 @@ type Subscription struct {
 	errs       <-chan error
 	cancel     context.CancelFunc
 	client     *Client
+
+	// The pump sends its terminal error exactly once, so the first read has to keep
+	// it: callers ask Err repeatedly, and separate goroutines may drain Frames and
+	// check Err.
+	mu      sync.Mutex
+	errRead bool
+	err     error
 }
 
-// Err returns the stream's terminal error once Frames is closed.
+// Err returns the stream's terminal error once Frames is closed. It is
+// repeatable: every call after the first returns the same error.
 func (s *Subscription) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.errRead {
+		return s.err
+	}
 	select {
 	case err := <-s.errs:
+		s.errRead = true
+		s.err = err
 		return err
 	default:
 		return nil
@@ -391,6 +407,9 @@ func (s *Subscription) Close() error {
 // request's transport is forced to GRPC (the shm ring reader is a later
 // milestone) and start defaults to live.
 func (c *Client) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest) (*Subscription, error) {
+	// The caller keeps its request — to retry with, or to log what it asked for — so
+	// the transport and start defaults go on a copy.
+	req = proto.Clone(req).(*leylinev1.SubscribeRequest)
 	req.Transport = leylinev1.Transport_GRPC
 	if req.Start == nil {
 		req.Start = &leylinev1.StreamPosition{Position: &leylinev1.StreamPosition_Live{Live: true}}

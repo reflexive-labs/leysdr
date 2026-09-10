@@ -1,6 +1,9 @@
 package leyline
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveBandByAliasAndName(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
@@ -32,7 +35,7 @@ func TestResolveBandErrorsTeach(t *testing.T) {
 	if err == nil {
 		t.Fatal("2mm is not a band")
 	}
-	if got := err.Error(); !contains(got, "2m") || !contains(got, "did you mean") {
+	if got := err.Error(); !strings.Contains(got, "2m") || !strings.Contains(got, "did you mean") {
 		t.Errorf("a near miss should suggest: %q", got)
 	}
 	_, err = ResolveBand("nonsense")
@@ -41,7 +44,7 @@ func TestResolveBandErrorsTeach(t *testing.T) {
 	}
 	// Nothing close: list what there is rather than leave them guessing.
 	for _, want := range []string{"2m", "fm", "noaa", "ley bands"} {
-		if !contains(err.Error(), want) {
+		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the fallback error should list %q: %q", want, err.Error())
 		}
 	}
@@ -111,17 +114,4 @@ func TestBandWidthAndCentre(t *testing.T) {
 			t.Errorf("%q: centre %d outside %d..%d", b.Name, c, b.MinHz, b.MaxHz)
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }

@@ -29,3 +29,21 @@ func TestErrorUnwrap(t *testing.T) {
 		t.Errorf("hand-built Error: Unwrap=%v, FromStatus identity=%v", hand.Unwrap(), FromStatus(hand) == hand)
 	}
 }
+
+// Every code the client mints from a transport status must map back to the gRPC
+// code it came from: the fake daemon re-serves parsed Errors with ToStatus, and a
+// client that retries on UNAVAILABLE must still see UNAVAILABLE on the far side.
+func TestGRPCCodeRoundTripsTransportCodes(t *testing.T) {
+	for _, c := range []codes.Code{
+		codes.Unimplemented, codes.InvalidArgument, codes.NotFound,
+		codes.Unavailable, codes.Canceled, codes.DeadlineExceeded, codes.Unknown,
+	} {
+		if got := GRPCCode(codeForGRPC(c)); got != c {
+			t.Errorf("GRPCCode(codeForGRPC(%v)) = %v", c, got)
+		}
+	}
+	e := &Error{Code: CodeUnavailable, Message: "no daemon"}
+	if got := e.ToStatus().Code(); got != codes.Unavailable {
+		t.Errorf("ToStatus of UNAVAILABLE = %v", got)
+	}
+}

@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 type env struct {
@@ -130,6 +132,17 @@ func testDevices(devs []any) []map[string]any {
 		}
 	}
 	return out
+}
+
+// peakBin is the strongest bin of a decoded FFT row and its level.
+func peakBin(bins []any) (int, float64) {
+	peak, peakDB := 0, math.Inf(-1)
+	for b, v := range bins {
+		if f, ok := v.(float64); ok && f > peakDB {
+			peak, peakDB = b, f
+		}
+	}
+	return peak, peakDB
 }
 
 func list(m map[string]any, key string) []any {
@@ -248,15 +261,37 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 		}
 		lastIndex = idx
 		// The +100 kHz tone should be the peak: bin 512 + 100e3/2.4e6*1024 ≈ 555.
-		peak, peakDB := 0, -1e9
-		for b, v := range bins {
-			if f := v.(float64); f > peakDB {
-				peak, peakDB = b, f
-			}
-		}
+		peak, peakDB := peakBin(bins)
 		if peak < 551 || peak > 559 {
 			t.Fatalf("fft row %d: peak bin %d (%.1f dB), want ≈555", i, peak, peakDB)
 		}
+	}
+
+	// The same spectrum asked for as DB_U8. Bulk frames carry no proto message, so
+	// their payload encoding is hand-written on both sides of the wire; this is the
+	// one test where the daemon's quantisation and the Go decode meet. Every level
+	// must land on the grid the encoding defines, and the tone must still be the
+	// peak, at the same bin and the same height.
+	f32Bins := list(parseJSON(t, fft[len(fft)-1]), "bins")
+	f32Peak, f32PeakDB := peakBin(f32Bins)
+	u8Bins := list(parseJSON(t, strings.TrimSpace(e.mustRun("fft", "--count", "1", "--json", "--u8", "--device", devID))), "bins")
+	if len(u8Bins) != len(f32Bins) {
+		t.Fatalf("u8 row: %d bins, want %d", len(u8Bins), len(f32Bins))
+	}
+	for b, v := range u8Bins {
+		db, _ := v.(float64)
+		if db < -120 || db > 7.5 || math.Abs(db/leyline.DBU8Step-math.Round(db/leyline.DBU8Step)) > 1e-9 {
+			t.Fatalf("u8 bin %d = %v: not a %g dB step within -120..7.5", b, db, leyline.DBU8Step)
+		}
+	}
+	u8Peak, u8PeakDB := peakBin(u8Bins)
+	// Half a step for the quantisation itself, and a dB for the two rows covering
+	// different samples of the fixture.
+	if diff := u8Peak - f32Peak; diff < -1 || diff > 1 {
+		t.Fatalf("u8 peak bin %d (%.1f dB), f32 peak bin %d (%.1f dB)", u8Peak, u8PeakDB, f32Peak, f32PeakDB)
+	}
+	if math.Abs(u8PeakDB-f32PeakDB) > leyline.DBU8Step/2+1 {
+		t.Fatalf("u8 peak %.2f dB, f32 peak %.2f dB: further apart than the quantisation", u8PeakDB, f32PeakDB)
 	}
 
 	// set squelch -50: confirmed by the daemon's channel event, then visible in state.

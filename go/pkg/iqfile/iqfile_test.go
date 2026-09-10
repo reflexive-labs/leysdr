@@ -116,3 +116,32 @@ func TestReadCU8(t *testing.T) {
 		t.Fatalf("%v", all[1])
 	}
 }
+
+// A zero-length buffer is a caller mistake — a size computed from a config value
+// or a sidecar field — and the documented drain loop breaks only on io.EOF, so
+// answering "no samples, no error" would spin instead of failing.
+func TestReadRefusesAnEmptyBuffer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.cf32")
+	w, err := NewWriter(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Write(make([]complex64, 16)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(p, FormatCF32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	n, err := r.Read(nil)
+	if n != 0 || err == nil || err == io.EOF {
+		t.Fatalf("Read(nil) = %d, %v; want an error that is not io.EOF", n, err)
+	}
+	if n, err := r.Read(make([]complex64, 16)); n != 16 || err != nil {
+		t.Fatalf("the reader must still be usable: %d, %v", n, err)
+	}
+}
