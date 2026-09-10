@@ -343,6 +343,11 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     public func close() async {
         await stopStreaming()
+        // Snapshotted outside the critical section: `lock` is not recursive, so nothing inside a
+        // `withLock` body may reach for an accessor that takes it (`descriptor`, `gains`,
+        // `streamError`) -- a self-deadlock here wedges the capture actor awaiting `close()` and
+        // every later caller behind it. Read `_descriptor` and the other stored properties directly.
+        let idString = descriptor.id.string
         withLock {
             // `stopStreaming` gives up after 3 s and leaves the USB thread detached rather than
             // wedging the capture actor behind a stuck libusb loop. When that has happened, `thread`
@@ -355,7 +360,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
             // exits; a freed one still in use costs the machine its USB bus.
             if thread != nil {
                 RTLSDRDevice.logger.error(
-                    "\(descriptor.id.string): USB thread still detached at close; leaking the librtlsdr handle rather than freeing it underneath libusb. The dongle will not be usable again until this process exits.")
+                    "\(idString): USB thread still detached at close; leaking the librtlsdr handle rather than freeing it underneath libusb. The dongle will not be usable again until this process exits.")
                 dev = nil
                 deliver = nil
                 return
@@ -457,7 +462,9 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
             self.captureID = captureID
             streaming = true
             cancelRequested = false
-            streamError = nil
+            setStreamError(nil)
+            // Each stream starts the device's own index at 0; the capture timeline rebases onto it.
+            runningIndex = 0
             return d
         }
         let t = Thread { [self] in
@@ -486,7 +493,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
             guard !cancelRequested else { return false }
             streaming = false
             deliver = nil
-            streamError = EngineError.deviceIO("rtlsdr_read_async returned unexpectedly (rc \(rc)): device lost", target: _descriptor.id.string)
+            setStreamError(EngineError.deviceIO("rtlsdr_read_async returned unexpectedly (rc \(rc)): device lost", target: _descriptor.id.string))
             RTLSDRDevice.logger.error("rtlsdr_read_async on \(_descriptor.id.string) returned \(rc) without a requested cancel; stream stopped")
             return true
         }
@@ -495,11 +502,13 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     }
 
     /// The error that ended the last stream unexpectedly, if any (cleared by `startStreaming`).
-    public var streamError: EngineError? {
-        get { withLock { _streamError } }
-        set { _streamError = newValue }   // only called with `lock` held
-    }
+    public var streamError: EngineError? { withLock { _streamError } }
     private var _streamError: EngineError?
+
+    /// Writes `_streamError` from inside an existing critical section. Callers must already hold
+    /// `lock`, which is not recursive, so this cannot take it itself; keeping the setter private
+    /// keeps that requirement inside this file.
+    private func setStreamError(_ error: EngineError?) { _streamError = error }
 
     public func stopStreaming() async {
         let (d, wasStreaming): (OpaquePointer?, Bool) = withLock {

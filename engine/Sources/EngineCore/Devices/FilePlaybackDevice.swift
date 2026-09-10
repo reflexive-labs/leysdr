@@ -171,6 +171,8 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
             if _descriptor.state == .disconnected { throw EngineError.deviceDetached(_descriptor.id.string) }
             streaming = true
             cancelled = false
+            // Each stream starts the device's own index at 0; the capture timeline rebases onto it.
+            runningIndex = 0
         }
     }
 

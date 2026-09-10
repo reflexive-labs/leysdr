@@ -182,7 +182,7 @@ and within stated ranges (reject with `INVALID_ARGUMENT` naming the range, or cl
 path does), saturate before converting, and add both hostile values to `MalformedInputTests` for
 kind `PERSISTENCE`.
 
-### SW-2 `[ ]` `RTLSDRDevice` locking and the device index contract
+### SW-2 `[x]` `RTLSDRDevice` locking and the device index contract
 
 q-swift-control-1 (snapshot the id before the lock; a test that walks the leaked-thread path with a
 fake handle if one can be arranged, else a comment on the critical section listing what it must not

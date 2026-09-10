@@ -200,13 +200,12 @@ final class DevicesFilePlaybackTests: XCTestCase {
             XCTAssertEqual(log.indices[i], log.indices[i - 1] + UInt64(log.counts[i - 1]), "indices continue across the loop point")
         }
         XCTAssertEqual(log.firstI.prefix(4), [0, 16384, 0, 16384])
-        // Restart continues the running index rather than resetting it.
-        let total = log.total
+        // Every start restarts the device's own index at 0, the contract `CaptureDSPCore` rebases on.
         let log2 = DeliveryLog()
         try await dev.startStreaming(captureID: CaptureID()) { log2.record($0, $1) }
         try await waitUntil { log2.total > 0 }
         await dev.stopStreaming()
-        XCTAssertEqual(log2.indices.first, UInt64(total))
+        XCTAssertEqual(log2.indices.first, 0)
     }
 
     func testRealtimePacingMatchesWallClock() async throws {
