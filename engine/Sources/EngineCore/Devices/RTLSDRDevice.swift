@@ -322,6 +322,22 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     public func close() async {
         await stopStreaming()
         withLock {
+            // `stopStreaming` gives up after 3 s and leaves the USB thread detached rather than
+            // wedging the capture actor behind a stuck libusb loop. When that has happened, `thread`
+            // is still recorded and that thread is still inside `rtlsdr_read_async` holding this
+            // handle. Closing it here would free the handle underneath a running thread: a
+            // use-after-free in libusb, which is not a crash confined to this process -- on macOS it
+            // can take the USB controller down and every device on it with it.
+            //
+            // So leak the handle instead. A leaked handle costs this process a few bytes until it
+            // exits; a freed one still in use costs the machine its USB bus.
+            if thread != nil {
+                RTLSDRDevice.logger.error(
+                    "\(descriptor.id.string): USB thread still detached at close; leaking the librtlsdr handle rather than freeing it underneath libusb. The dongle will not be usable again until this process exits.")
+                dev = nil
+                deliver = nil
+                return
+            }
             if let d = dev { rtlsdr_close(d) }
             dev = nil
         }
