@@ -80,15 +80,11 @@ actor SessionCaptureAllocator: CaptureAllocator {
             // both call createCapture and the loser gets DEVICE_BUSY from the store, which is the
             // right answer and is caught below.
             do {
-                let cap = try await store.createCapture(deviceID: deviceID, centerHz: startCentre(range, device: device, rate: rate),
-                                                        sampleRate: rate, by: .daemon)
+                let id = try await store.createCapture(deviceID: deviceID, centerHz: startCentre(range, device: device, rate: rate),
+                                                       sampleRate: rate, by: .daemon).id
                 // Every path out of here from now on either returns the lease or destroys what was
                 // just created: a capture this scan opened and then walked away from would hold the
                 // device open with no job to cancel and nobody to close it.
-                guard let id = CaptureID(string: cap.captureID) else {
-                    await store.destroyCapture(idString: cap.captureID, by: .daemon)
-                    continue
-                }
                 guard leased.insert(id).inserted else {
                     await store.destroyCapture(id: id, by: .daemon)
                     continue

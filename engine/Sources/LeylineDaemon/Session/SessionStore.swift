@@ -400,7 +400,10 @@ actor SessionStore {
 
     func captureEngine(_ id: CaptureID) -> DefaultCaptureEngine? { captures[id]?.engine }
 
-    func createCapture(deviceID: DeviceID, centerHz: UInt64, sampleRate: UInt64, by: ClientContext) async throws -> Leyline_V1_Capture {
+    /// Returns the id beside the proto: a caller that has to undo the create can act on the id the
+    /// store minted instead of parsing one back out of the message.
+    func createCapture(deviceID: DeviceID, centerHz: UInt64, sampleRate: UInt64,
+                       by: ClientContext) async throws -> (id: CaptureID, proto: Leyline_V1_Capture) {
         guard let desc = devices[deviceID], let device = await registry.device(id: deviceID) else {
             throw EngineError.deviceNotFound(deviceID.string)
         }
@@ -465,7 +468,7 @@ actor SessionStore {
         let proto = await captureProto(id)!
         emit(.capture(proto), captureID: id, by: by)
         emit(.anchor(proto.anchor), captureID: id, by: by)
-        return proto
+        return (id, proto)
     }
 
     /// Emits a job's full state on the event stream. Jobs are daemon state like captures and
@@ -533,14 +536,6 @@ actor SessionStore {
                 devices[entry.deviceID] = nil
             }
         }
-    }
-
-    /// Destroys the capture a `createCapture` returned, named by the id string from its message.
-    /// A caller holding only the proto can undo a create it decided against even if that string is
-    /// one this daemon cannot parse back into an id.
-    func destroyCapture(idString: String, by: ClientContext) async {
-        guard let id = CaptureID(string: idString) ?? captures.keys.first(where: { $0.string == idString }) else { return }
-        await destroyCapture(id: id, by: by)
     }
 
     func destroyCaptureChecked(id: CaptureID, by: ClientContext) async throws {

@@ -53,7 +53,7 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         await store.touchUnary(client)
         return try await mapErrors {
             guard let id = DeviceID(string: request.deviceID) else { throw EngineError.deviceNotFound(request.deviceID) }
-            return try await store.createCapture(deviceID: id, centerHz: request.centerHz, sampleRate: request.sampleRate, by: client)
+            return try await store.createCapture(deviceID: id, centerHz: request.centerHz, sampleRate: request.sampleRate, by: client).proto
         }
     }
 
