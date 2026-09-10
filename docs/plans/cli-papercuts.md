@@ -392,6 +392,19 @@ Tests: `TestAnActivityStampSaysNothing` (the papercut itself), `TestCaptureChang
 `TestOtherChannelsOnlyReportComingAndGoing`, `TestTheSinkTombstoneIsTheOnlyWayToTellAudioStopped`,
 `TestTheRadioLeavingIsNews`, `TestWhoChangedNamesTheKind`, `TestNoSentenceCarriesAnID`.
 
+## PC-11 `[ ]` `tune --persistent` skips auto squelch and does not say so
+
+`ley tune` help promises that the squelch "is measured from the band's noise floor unless you set
+one", and the live verb does exactly that. With `--persistent` (or `--json`) the measurement is
+skipped (`go/internal/cli/tune.go:101`) and the channel is left with squelch off, silently: a
+persistent NFM channel created for a script plays noise until somebody runs `ley set squelch`.
+Recorded from a real run: `ley tune 146.52 --persistent` then `ley set squelch -45` printed
+`squelch off (audio always on) → -45 dBFS`, where the live session printed `-80 dBFS → -45 dBFS`.
+
+Either measure in persistent mode too (the measurement is one FFT row and finishes before the verb
+exits; print the "Squelch auto → …" decision line as the live verb does) or say in the ids block that
+squelch is off and how to set it. Measuring is the honest option: the help text already promises it.
+
 ## Not papercuts
 
 Recorded here so they are not mistaken for one:

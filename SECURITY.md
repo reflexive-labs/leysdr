@@ -23,8 +23,8 @@ encrypted; use it on a network you trust.
 
 - Reads IQ files and JSON sidecars you name with `ley play`; a sidecar is capped at 1 MiB and must be
   a regular file, and sample rates outside 1 kSPS–100 MSPS are refused.
-- Writes its socket, pidfile and log next to each other (`ley daemon status` prints the paths), and
-  the LaunchAgent plist under `~/Library/LaunchAgents` when you run `ley daemon install`.
+- Writes its socket (`ley daemon status` prints the path), a pidfile and a log beside it, and the
+  LaunchAgent plist under `~/Library/LaunchAgents` when you run `ley daemon install`.
 - Does not write recordings yet.
 
 ## Reporting a vulnerability

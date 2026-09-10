@@ -1,83 +1,144 @@
 # Leyline
 
-A native macOS SDR engine with peer clients. A launchd daemon (`leylined`, Swift) owns the radio
-hardware and does all the DSP; the `ley` CLI/TUI (Go), the Mac app (SwiftUI) and the MCP adapter (Go)
-are peers speaking one gRPC contract, `leyline.v1`, over a Unix socket.
+A native macOS SDR engine with peer clients. A background daemon (`leylined`, Swift) owns the radio
+and does all the signal processing; the `ley` command-line tool (Go) drives it over a Unix socket
+using one gRPC contract, `leyline.v1`. Anything else that speaks the contract — a script, an agent,
+a future app — is a peer of the CLI, never a second path into the hardware.
 
-Status: **v0 in progress** — daemon + CLI. Works today against an RTL-SDR (e.g. a Nooelec NESDR)
-and against IQ files. Building it is in [`docs/dev-setup.md`](docs/dev-setup.md); using it is in
-[`docs/cli-guide.md`](docs/cli-guide.md).
+**What works today:** an RTL-SDR plugged into the Mac (or served from another machine by `rtl_tcp`),
+or an IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
+squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
+views in the terminal; a band scan with an honest energy detector; two channels on one radio; a
+second terminal adjusting what the first is hearing; `--json` on every verb.
+
+**Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app, the
+MCP adapter for agents. `docs/build-order.md` is the order they arrive in and
+`docs/plans/v1-release.md` is the gap analysis for the first shared release.
+
+## Requirements
+
+- macOS 26 with Xcode 26 (the Swift 6.2 toolchain). The floor is set by Homebrew's `librtlsdr`,
+  which is built for the host OS.
+- Homebrew, Go 1.25 or later.
+- An RTL-SDR (any RTL2832U dongle: R820T, R828D, E4000, FC0012/13 tuners are known to the driver).
+  No radio? See "Without a radio" below.
+
+## Install (from source)
+
+```sh
+brew install librtlsdr go
+git clone https://github.com/dpup/leysdr.git && cd leysdr
+make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
+export PATH=$PWD/go/bin:$PATH
+ley daemon start --bin $PWD/engine/.build/release/leylined
+```
+
+`scripts/bootstrap-mac.sh` runs the same steps. `ley daemon install --bin …` instead of `start`
+writes a LaunchAgent so the daemon starts at login; after that `ley daemon start|stop|status|logs`
+go through launchd. Developer details, the remote-dongle setup and troubleshooting are in
+[`docs/dev-setup.md`](docs/dev-setup.md).
 
 ## Quickstart
 
-You need an RTL-SDR plugged in and the two binaries built (`brew install librtlsdr go && make go
-swift-release`; see dev-setup). `ley daemon start` looks for `leylined` via `--bin`,
-`$LEYLINE_DAEMON_BIN`, next to `ley`, then `PATH`; from a fresh checkout pass
-`--bin engine/.build/release/leylined` once (or `ley daemon install --bin ...` to start it at
-login). Five commands take you from nothing to a station playing. The output below is what
-`ley` prints (recorded against the contract fake daemon, so your ids, model and levels will
-differ).
+Five commands take you from nothing to a station playing. The output below was recorded against the
+contract's fake daemon (`go/internal/fakedaemon`), so your ids, model and levels will differ.
 
 ```console
-$ ley daemon start                      # 1. start the background process that owns the radio
-started leylined (pid 4242); check with: ley daemon status
+$ ley devices                           # 1. is my radio visible?
+MODEL                     STATE      RANGE                    RATES                GAIN
+Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
 
-$ ley devices                           # 2. is my radio visible?
-ID                              DRIVER  MODEL                     SERIAL    STATE      RANGE                 RATES                GAIN
-dev_01M1S9TR56S46QTCK0SZS2YPJA  rtlsdr  Generic RTL2832U (R820T)  00000001  AVAILABLE  24.000 MHz-1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
-
-$ ley tune 146.52                       # 3. listen: a bare number is MHz, mode and squelch are chosen for you
+$ ley tune 146.52                       # 2. listen: a bare number is MHz; mode and squelch are chosen for you
 using NFM: 2 m amateur band default
-Listening to 146.520 MHz (NFM, 2 m amateur) on Generic RTL2832U (R820T), gain auto. Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS). Ctrl-C stops.
+Listening to 146.520 MHz (NFM, 2 m amateur)
+Radio Generic RTL2832U (R820T), gain auto
+Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS).
+Ctrl-C stops.
 From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum
 146.520 MHz NFM  signal -39 dBFS  audio
+transmission  0.3 s  peak snr 51 dB  peak -39 dBFS
+146.520 MHz NFM  signal -69 dBFS  muted, waiting for a signal
 ```
 
 Leave that running and open a second terminal:
 
 ```console
-$ ley set squelch -45                   # 4. adjust it while it plays
-squelch → -45 dBFS on 146.520 MHz NFM (channel 1, chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
+$ ley set squelch -45                   # 3. adjust it while it plays
+squelch -80 dBFS → -45 dBFS on 146.520 MHz NFM (channel 1)
+
+$ ley set gain 30                       # 4. the radio's gain snaps to what the tuner can do
+gain auto → 29.7 dB on the radio (TUNER)
 
 $ ley spectrum                          # 5. see the band the radio is tuned to
-146.520 MHz, span 2.400 MHz (145.320 MHz to 147.720 MHz), 1024 bins of 2.344 kHz, floor -100 dB
- -41 |                                   #
- ...
- -99 |#################################################################
-     +-----------------------------------------------------------------
-      145.320 MHz                146.520 MHz                147.720 MHz
-loudest bins: 146.622 MHz -41 dB
+146.520 MHz  span 2.400 MHz  floor -100 dBFS  145.320 MHz to 147.720 MHz
+1024 bins of 2.344 kHz
+ -35 dBFS|                                   :
+         |                                  .|
+         |                                  ||
+         |                                  ||
+ -97     |..................................--..................................
+         |
+-105     ------|-------------|--------------|--------------|-------------|------
+          145.500 MHz   146.000 MHz    146.500 MHz    147.000 MHz   147.500 MHz
+peak    146.521 MHz  -40 dBFS  60 dB above the floor
+tune with: ley tune 146.521
 ```
 
-No radio? `ley play fixtures/nfm_tone.cf32` runs the same pipeline from a recording. Bare `ley`
-tells you where things stand and what to type next; `ley help glossary` explains the words
-(capture, channel, dBFS, FFT, squelch); `ley help presets` lists names like `noaa` and `calling`
-that `tune` accepts in place of a frequency. The task-by-task walkthrough, including `--json` and
-exit codes for scripts and what to do when something fails, is
+Back in the first terminal the session says what the other one did (`another terminal set the
+squelch to -45 dBFS`) and keeps playing. `ley scan 144M..148M` sweeps a band and lists what it
+found with frequency, width, SNR and how often it was seen; `ley waterfall` and `ley phosphor` show
+what comes and goes; `ley bands 146.52` says what a frequency is and what `tune` will do with it.
+Bare `ley` tells you where things stand and what to type next; `ley help glossary` explains the
+words (capture, channel, dBFS, FFT, squelch); `ley help presets` lists names like `noaa` and
+`calling` that `tune` accepts in place of a frequency. The task-by-task walkthrough, including
+`--json` and exit codes for scripts and what to do when something fails, is
 [`docs/cli-guide.md`](docs/cli-guide.md).
+
+### Without a radio
+
+`make fixtures` generates IQ recordings of known signals (an NFM tone, AM, SSB, CW, a calibrated
+noise floor, a band with four carriers); `ley play fixtures/nfm_tone.cf32 --loop` plays one through
+the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test suite runs this way.
 
 ## Layout
 
 | path | what |
 |---|---|
-| `proto/leyline/v1` | the contract: control, telemetry, bulk planes; jobs and resources |
-| `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks), `LeylineDaemon` (`leylined`), generated `LeylineProto` |
-| `go/` | Go module: `pkg/leyline` client library, `cmd/ley` CLI, `cmd/leyfix` fixture generator, `internal/fakedaemon` contract fake |
-| `fixtures/` | generated IQ signals with expected demod outputs (`make fixtures`) |
-| `docs/` | design docs (read `design-*.md` before structural changes), `engine-internals.md`, `build-order.md`, `interfaces.md` |
+| `proto/leyline/v1` | the contract: control, telemetry and bulk planes; jobs and resources |
+| `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks), `LeylineDaemon` (`leylined`: services, session store, jobs), generated `LeylineProto`, the `s2-throughput` spike harness |
+| `go/` | Go module: `pkg/leyline` client library, `cmd/ley`, `cmd/leyfix` (fixture generator and analyser), `internal/fakedaemon` (an in-memory implementation of the contract the CLI tests run against), `internal/e2e` (`ley` driving a real `leylined`) |
+| `fixtures/` | generated IQ signals with expected demod outputs (`make fixtures`; gitignored) |
+| `docs/` | design docs (`design-*.md`, read before structural changes), `engine-internals.md` (the implementation contract), `interfaces.md` (the CLI and MCP surface), `build-order.md`, `plans/` |
 
-## Where things stand (docs/build-order.md)
+## Where things stand
 
-- Milestone A (scaffold, daemon lifecycle, fixtures + file playback): done.
-- Milestone B (device registry + RTL-SDR, capture engine, FFT stream, NFM → CoreAudio): implemented;
-  hardware-in-the-loop verification is a host-side step (`docs/dev-setup.md`).
-- Milestone C: `ley set` live adjust and second-client concurrency are in; AM/WFM/SSB/CW demods ship
-  alongside NFM (fixture-gated); recording/resources are not started.
-- Milestones D (detector, TUI, jobs, MCP) not started.
-- Spikes: S3 decided (`docs/decisions/`), S2 harness ready (`swift run s2-throughput`), S1 pending the app.
-- **Verified on real RF** (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
-  audio confirmed by ear), and from Linux over `rtl_tcp` — FFT peaks on known broadcasters, WFM audio
+Against [`docs/build-order.md`](docs/build-order.md):
+
+- Milestone A (scaffold, daemon lifecycle, fixtures and file playback): done.
+- Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.
+- Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done except
+  C.12, recording and resources, which is not started.
+- Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.14 (terminal
+  dashboard), D.15 (durable jobs, watch, transcripts) and D.16 (MCP adapter) not started.
+- Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
+  measurement on target hardware yet; S1 (latency chain) waits for the app.
+- Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
+  audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
   with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered
-  from a handheld on 147.555 MHz, live `ley set` from a second terminal.
+  from a handheld, live `ley set` from a second terminal.
 
-CLAUDE.md is the review checklist; `docs/engine-internals.md` says how the engine keeps its invariants.
+## Writing a client
+
+Every verb's `--json` is the standard proto3 JSON mapping of the contract, and everything a person
+reads goes to stderr, so stdout is always parseable (`ley help scripting`). If you write your own
+client, read "Client requirements" at the top of [`docs/interfaces.md`](docs/interfaces.md) first:
+the daemon's HTTP/2 stack drops connections that ping on every data frame, which grpc-go and
+grpc-python do by default, and the fix is one dial option.
+
+## Contributing, security, licence
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the gate and the rules; `CLAUDE.md` is the invariant list
+that doubles as the review checklist. [`SECURITY.md`](SECURITY.md) describes what the daemon trusts
+(a local socket, your user, no authentication) and how to report a problem. Licence: not yet chosen
+for the first release — the engine links GPL-2.0 `librtlsdr`, so it will be GPL-compatible; see
+`docs/plans/v1-release.md` D2. Problems and questions: open an issue on the repository.
