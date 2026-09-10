@@ -17,21 +17,29 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   ├── Model.swift           DeviceDescriptor, GainElement, ChannelConfig helpers, EngineError codes
 │   ├── Rings.swift           lock-free SPSC rings (audio floats, sample blocks)
 │   ├── Signposts.swift       os_signpost wrappers (no-op off macOS)
+│   ├── BlockingWork.swift    runs non-cancellable blocking calls (device open/close) off the cooperative pool
 │   ├── Devices/              DefaultDeviceRegistry, RTLSDRDevice, RTLTCPDevice, FilePlaybackDevice, IQFile (sidecar format)
 │   ├── Capture/              DefaultCaptureEngine (actor façade) + CaptureDSPCore (hot path, DSP thread)
 │   ├── Channels/             DefaultChannelEngine (actor façade) + ChannelDSPCore (hot path)
-│   ├── DSP/                  Kernels (Accelerate + portable), FIR, NCO, Channelizer, Demodulators, FFT, SpectrumLadder
+│   ├── DSP/                  Kernels (Accelerate + portable), FIR, NCO, Channelizer, Demodulators, FFT, SpectrumLadder,
+│   │                         SweepPlan (scan job sweep math), EnergyDetector (carrier detection), SubAudible (CTCSS),
+│   │                         Persistence (phosphor histogram)
 │   └── Sinks/                CoreAudioSink (AVFoundation), NullSink, CallbackSink
 ├── Sources/LeylineDaemon     `leylined`: gRPC over UDS; maps EngineCore <-> leyline.v1
 │   ├── DaemonCommand.swift   ArgumentParser entry (--socket, --log-level, --pidfile)
 │   ├── Server.swift          GRPCServer + UDS lifecycle + signals
 │   ├── ClientContext.swift   per-RPC client identity (interceptor -> task-local)
 │   ├── Session/              SessionStore actor (devices/captures/channels/sinks tables, events, attribution)
-│   ├── Services/             Control, Telemetry, Bulk (Jobs/Resources return UNIMPLEMENTED in v0)
+│   ├── Jobs/                 JobStore (durable job table), ScanRunner (sweep execution), SessionCaptureAllocator
+│   │                         (don't-disturb capture leasing for jobs)
+│   ├── Services/             Control, Telemetry, Bulk, Jobs (scan implemented; watch/record UNIMPLEMENTED),
+│   │                         Resources (UNIMPLEMENTED in v0)
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
 │   └── Mapping/              engine <-> proto conversions
-└── Tests/EngineCoreTests     unit tests; fixture round-trips (macOS only, need Accelerate)
+└── Tests/EngineCoreTests     unit tests; fixture round-trips. Most of the target builds and runs on Linux;
+                              `KernelParityTests` and anything under `#if canImport(Accelerate)` or
+                              `#if canImport(AVFoundation)` need macOS and do not compile elsewhere.
 ```
 
 Go clients live in `go/` (`docs/interfaces.md` for the verb tree). `go/internal/fakedaemon` is an in-memory
@@ -213,8 +221,10 @@ up; capped to 16384), `actualRate` is `min(requested, 30)`.
   `streamError`, and reports `.disconnected` through the state-change hook so the capture detaches
   like a physical unplug. The callback context is an
   `Unmanaged` pointer to the device; the callback must not touch Swift concurrency.
-- Retune and gain changes are applied directly while streaming (librtlsdr supports this). Sample
-  rate change stops streaming, sets the rate, restarts.
+- Retune and gain changes are applied directly while streaming (librtlsdr supports this).
+  `setSampleRate` refuses with `DEVICE_BUSY` while a stream is live (or while a detached USB thread
+  is still recorded): the caller stops the stream, sets the rate and starts again, and that restart
+  is what re-anchors the capture timeline.
 - Hot-plug: the registry polls enumeration every 1 s while idle (cheap USB descriptor reads) and
   publishes `arrived`/`removed`. IOKit arrival notifications are a later refinement.
 
@@ -346,6 +356,45 @@ new audio rate rebuilds its system-audio sinks under their existing ids and ends
 streams (re-subscribe for a fresh descriptor). IQ: capture rate only, `CF32` only (no resampling in v0). `Stream` writes frames until the client
 cancels; `Unsubscribe` tears the subscription down; a subscription with no `Stream` reader for 10 s
 is reaped.
+
+### Jobs service and lease lifecycle
+
+`StartJob(ScanConfig{once})` is implemented (Milestone D.13); `watch` and `record` configs, and the
+whole Resources service, still return `UNIMPLEMENTED`. A scan job never touches a capture directly
+(invariant 9): it asks `SessionCaptureAllocator` for a range, and the allocator either hands back a
+`CaptureLease` or a declined result with a reason. Allocation prefers a device with no capture at all
+over borrowing one that has one — creating and destroying disturbs nobody. Borrowing an existing
+capture is refused by the don't-disturb check (`inUse`: an owning channel, a live audio sink, or an
+interactive write in the last 60 s) unless the caller passed `take_over`; a leased capture is marked
+*swept* in `SessionStore`, and `refuseIfSwept` rejects interactive `WriteParams`/`CreateChannel` calls
+on it for as long as the lease holds. `SweepPlan.edgeFraction` widens a device's tuning range slightly
+when deciding whether it can hear a request, which is how a `FilePlaybackDevice` — whose "range" is
+the single frequency its fixture was recorded at — can still serve a sweep. Releasing a lease that
+created its capture destroys it; releasing one that borrowed an existing capture retunes and re-gains
+it back to what it found and clears swept.
+
+### Detections on the telemetry plane
+
+A scan's carrier detections (`SpectrumDetect.detect` in `DSP/EnergyDetector.swift`, driven off the
+FFT ladder rows the sweep already collects) and a channel's CTCSS measurements (`SubAudibleDetector`
+in `DSP/SubAudible.swift`, run over the demod chain's sub-audible tap) both reach clients as
+telemetry, not as job results: `JobStore` fans live `Detection` messages out to subscribers
+(drop-oldest, 64 deep, optionally filtered to one capture) the moment each is found, and
+`TelemetryService` merges that stream into `Subscribe` alongside `SubAudible` and the rest. The
+aggregate a finished scan returns from `Jobs.GetScan` is the same detections folded into one summary,
+not a second source of truth.
+
+### Persistence stream
+
+`Bulk.Subscribe(persistence)` is the phosphor view: a per-bin amplitude histogram
+(`DSP/Persistence.swift`'s `PersistenceAccumulator`) that decays by half over a caller-chosen
+half-life instead of showing one row. The caller states the scale — `floor_db` and `range_db` (a
+first FFT row supplies both; `range_db` must be positive or the daemon refuses the request rather
+than guess one) — because a persistence frame on the wrong scale does not look obviously wrong.
+`levels` clamps to 2...256 (default 32); `bins` rounds the way FFT bins do (default 256); accumulation
+always runs at the ladder's fastest rate regardless of the requested `rows_per_second`, because the
+histogram wants every row and a viewer only needs a couple of redraws a second. The daemon echoes the
+resolved values in `PersistenceParams` on the stream descriptor.
 
 ### Daemon lifecycle
 

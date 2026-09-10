@@ -395,7 +395,9 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         // starts again — that restart is what re-anchors the capture timeline (docs "Timebase").
         // Changing the rate under a live stream would move the timebase with nobody to rebase it.
         try withLock {
-            guard !streaming else { throw EngineError.deviceBusy(_descriptor.id.string) }
+            // A detached USB thread may still be invoking `deliver` after `streaming` cleared, so
+            // this matches `startStreaming` and refuses until that thread is joined.
+            if streaming || thread != nil { throw EngineError.deviceBusy(_descriptor.id.string) }
             let d = try requireDev()
             try check(rtlsdr_set_sample_rate(d, UInt32(hz)), "rtlsdr_set_sample_rate")
             sampleRate = hz
