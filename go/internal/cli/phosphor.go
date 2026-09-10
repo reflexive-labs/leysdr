@@ -173,7 +173,7 @@ func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error
 			return 0, fmt.Errorf("no spectrum row arrived in %.0f s, so there is no noise floor to measure against. Check the radio is still capturing with: ley state", spectrumFirstRow.Seconds())
 		case fr, ok := <-sub.Frames:
 			if !ok {
-				return 0, spectrumEnd(ctx, "persistence", sub.Err(), 0)
+				return 0, spectrumEnd(ctx, "spectrum", sub.Err(), 0)
 			}
 			if len(fr.Payload) == 0 {
 				continue
