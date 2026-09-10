@@ -216,11 +216,19 @@ actor JobStore {
             await finish(id, state: .failed,
                          detail: "\(e.message) after \(result.stepsDone) of \(result.steps) steps, \(result.hits.count) found",
                          code: e.code)
-        } else if Task.isCancelled || !result.complete {
+        } else if Task.isCancelled {
             // The step it was in, not the ones it finished: "0 of 1" reads as having done
             // nothing, when a partial step can have found everything there was.
             await finish(id, state: .cancelled,
                          detail: "stopped in step \(Swift.min(result.stepsDone + 1, result.steps)) of \(result.steps), \(result.hits.count) found")
+        } else if !result.complete {
+            // Not stopped: some step ran out of time before it had the rows it planned on, and
+            // `stepsDone` counts the ones that succeeded rather than a prefix of them. The scan
+            // ran to the end, so it completed; `covered` says which parts of the range it really
+            // looked at, and the detail says how many steps came up short.
+            let short = result.steps - result.stepsDone
+            await finish(id, state: .completed,
+                         detail: "\(result.hits.count) found; \(short) of \(result.steps) steps saw too few rows to trust and were left out")
         } else {
             let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
             let steps = result.steps == 1 ? "1 step" : "\(result.steps) steps"

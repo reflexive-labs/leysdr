@@ -185,3 +185,20 @@ the two most valuable were things no test had reached.
 Two more, smaller: the `localFloor` fallback for a row narrower than the guard band wrote past the
 scratch buffer its own contract specifies (unreachable from the sweep, but it is a public function),
 and `reap` did not re-guard `stillAbsent` across the new client-gone hook's await.
+
+Two of the fixes above were themselves wrong, and the verifying half of the review caught both by
+reading the code rather than the intent:
+
+- **The bound on `CancelJob` did not bound anything.** A task group implicitly awaits its remaining
+  child on the way out, and that child was parked in `Task.value`, which is not cancellation-aware.
+  The verifier compiled the helper against six seconds of uncancellable work and measured
+  `withTimeout(1.0)` returning after six. It polls the job's own state now, which is bounded by
+  construction.
+- **The evidence denominator was still credited only forward.** Backfilling `looks_possible` as the
+  sweep went could only credit signals already in the merged list, so a carrier first seen in step 5
+  got no denominator from the four earlier steps that had looked for it. The denominator is now
+  computed at the end, over every step whose window covered the frequency.
+
+And a starved step is no longer reported as a cancellation: `stepsDone` counts steps that succeeded
+rather than a prefix of them, so a sweep where one middle step ran short completes, says how many
+steps it left out, and lets `covered` say which parts of the range it really looked at.

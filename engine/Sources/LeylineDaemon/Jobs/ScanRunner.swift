@@ -180,6 +180,11 @@ actor ScanRunner {
 
         var stepsDone = 0
         var analysed: [SweepPlan.Window] = []
+        // What each step actually looked at, and how many rows it got. The denominator of the
+        // evidence ratio is computed from this at the end rather than accrued as the sweep goes:
+        // a signal first seen in step 5 was still looked for by steps 1 to 4, and crediting only
+        // the steps that ran after it appeared is how a half-missed carrier reads 8/8.
+        var looked: [(windows: [SweepPlan.Window], rows: Int)] = []
         var failure: EngineError?
         for (index, step) in plan.steps.enumerated() {
             if Task.isCancelled { break }
@@ -260,20 +265,13 @@ actor ScanRunner {
             if believedRows == 0 {
                 Self.log.warning("scan step \(index + 1)/\(plan.steps.count) at \(step.centerHz) Hz saw no rows it could believe")
             }
-            if believedRows > 0 { analysed.append(contentsOf: stepWindows) }
-            // Every hit in this step had as many chances as the step actually got rows.
-            for i in stepHits.indices { stepHits[i].looksPossible = UInt32(Swift.max(1, believedRows)) }
+            if believedRows > 0 {
+                analysed.append(contentsOf: stepWindows)
+                looked.append((stepWindows, believedRows))
+            }
             for h in stepHits {
                 await onHit(h)
                 merge(h, into: &merged)
-            }
-            // A step that looked at a frequency and found nothing there is evidence too, and the
-            // denominator is a lie without it: a carrier one of two steps missed reads 8/8 rather
-            // than 8/16 if only the finding steps are counted.
-            for i in merged.indices where !stepHits.contains(where: { near($0.centerHz, merged[i].centerHz, merged[i].bandwidthHz) }) {
-                if stepWindows.contains(where: { $0.contains(merged[i].centerHz) }) {
-                    merged[i].looksPossible += UInt32(Swift.max(1, believedRows))
-                }
             }
             if !stepFloors.isEmpty {
                 let median = stepFloors.sorted()[stepFloors.count / 2]
@@ -281,6 +279,15 @@ actor ScanRunner {
             }
             if believedRows >= rowsPerStep { stepsDone += 1 }
             await onStep(Progress(step: index + 1, steps: plan.steps.count, found: merged.count))
+        }
+        // Every row of every step whose window covered this frequency is a chance the signal had
+        // to appear, whether or not that step found it.
+        for i in merged.indices {
+            var chances = 0
+            for step in looked where step.windows.contains(where: { $0.contains(merged[i].centerHz) }) {
+                chances += step.rows
+            }
+            merged[i].looksPossible = UInt32(Swift.max(Int(merged[i].looks), chances))
         }
         return Result(hits: merged, floors: floors, stepsDone: stepsDone, steps: plan.steps.count,
                       covered: union(analysed), failure: failure)
@@ -317,7 +324,6 @@ actor ScanRunner {
     private static func merge(_ h: ScanHit, into list: inout [ScanHit]) {
         if let i = list.firstIndex(where: { near($0.centerHz, h.centerHz, Swift.min($0.bandwidthHz, h.bandwidthHz)) }) {
             list[i].looks += h.looks
-            list[i].looksPossible += h.looksPossible
             if h.firstSeen.sampleIndex < list[i].firstSeen.sampleIndex { list[i].firstSeen = h.firstSeen }
             if h.lastSeen.sampleIndex > list[i].lastSeen.sampleIndex { list[i].lastSeen = h.lastSeen }
             if h.snrDB > list[i].snrDB {
