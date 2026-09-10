@@ -156,8 +156,8 @@ screen is the placeholder the V0.5 TUI dashboard replaces on a TTY (`docs/sdr-us
 its renderer (`renderOrientation` in `go/internal/cli`) is the one function the dashboard reuses
 for its no-daemon and no-device states, so the words stay the same.
 
-**Auto squelch and the daemon-side follow-up.** `tune --squelch auto` (the interactive default
-for NFM and AM) and `set squelch auto` subscribe one FFT row of the capture, take the median bin
+**Auto squelch and the daemon-side follow-up.** `tune --squelch auto` (the default for NFM and
+AM, whatever the run prints; `--squelch off` opts out) and `set squelch auto` subscribe one FFT row of the capture, take the median bin
 as the floor, scale it to the channel bandwidth (`+10·log10(bw / bin width)`) and write
 `floor + 10 dB` with `WriteParams`. The measurement is the daemon's own spectrum and a median is
 presentation, so no DSP moves client-side (CLAUDE.md invariant 2); but the threshold is a
@@ -165,9 +165,11 @@ snapshot, and every client would have to repeat it. The recorded follow-up is an
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 
-**Roadmap stubs.** `record` (Milestone C.12) and `watch` (the V0.5 dashboard) exist as hidden verbs
-so a newcomer who types them learns what is coming and what to use today (`ley play`, bare `ley`);
-they exit 2 and never reach the daemon. `scan` was one of them until Milestone D.13.
+**Roadmap stubs.** `record` (Milestone C.12) and `watch` (Milestone D.15) exist as hidden verbs
+so a newcomer who types them learns what is coming and what to use today (`ley play`, `ley tune`);
+they exit 2 and never reach the daemon. `watch` is the CLI mirror of the watch job — watch a
+frequency and log what is heard — not the dashboard, which is bare `ley` on a TTY. `scan` was one
+of them until Milestone D.13.
 
 Deliberate omissions at v0: no remote flags (UDS-only), no TX verbs, no decode verbs (arrive with digital modes).
 

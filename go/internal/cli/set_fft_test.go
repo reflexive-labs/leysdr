@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"strings"
 	"testing"
@@ -30,8 +31,10 @@ func TestSetParams(t *testing.T) {
 		}
 		return st
 	}
+	// The persistent tune measured its own squelch, so the confirmation reads
+	// as a move from that threshold rather than from off.
 	out := mustRun(t, sock, "set", "squelch", "-40")
-	if !strings.Contains(out, "squelch off (audio always on) → -40 dBFS on 146.520 MHz NFM (channel 1)") || strings.Contains(out, "cli:") {
+	if !strings.Contains(out, "squelch -80 dBFS → -40 dBFS on 146.520 MHz NFM (channel 1)") || strings.Contains(out, "cli:") {
 		t.Fatalf("squelch confirmation: %s", out)
 	}
 	if st := state(); st.Channels[0].SquelchDb != -40 {
@@ -396,4 +399,38 @@ func indexOfPrefix(lines []string, prefix string) int {
 		}
 	}
 	return -1
+}
+
+// A negative-looking word is a positional only when no flag is waiting for it:
+// "--channel -40" is that flag's value, and swapping it for the placeholder
+// would leave the flag holding the placeholder and shift the positionals.
+func TestParseNegativeSafe(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     []string
+		want    []string
+		channel string
+	}{
+		{"value and positional", []string{"--channel", "-40", "squelch", "-50"}, []string{"squelch", "-50"}, "-40"},
+		{"flags around the positionals", []string{"squelch", "-40", "--channel", "2"}, []string{"squelch", "-40"}, "2"},
+		{"joined value", []string{"--channel=-40", "squelch", "-50"}, []string{"squelch", "-50"}, "-40"},
+		{"boolean flag before a positional", []string{"--json", "squelch", "-40"}, []string{"squelch", "-40"}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &App{Stdout: io.Discard, Stderr: io.Discard}
+			cmd := newSetCommand(app)
+			cmd.Flags().Bool("json", false, "")
+			args, err := parseNegativeSafe(cmd, tc.raw)
+			if err != nil {
+				t.Fatalf("parse %v: %v", tc.raw, err)
+			}
+			if strings.Join(args, " ") != strings.Join(tc.want, " ") {
+				t.Errorf("args %q, want %q", args, tc.want)
+			}
+			if got := cmd.Flags().Lookup("channel").Value.String(); got != tc.channel {
+				t.Errorf("--channel %q, want %q", got, tc.channel)
+			}
+		})
+	}
 }

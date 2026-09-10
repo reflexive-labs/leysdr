@@ -3,8 +3,8 @@ same line as below.
 
   record   Record a channel or the raw capture to a file (Milestone C.12)
            today: ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build
-  watch    Live dashboard: devices, channels and spectrum in one terminal (V0.5)
-           today: bare ley shows where things stand; ley state --json is the full snapshot
+  watch    Watch a frequency and log what is heard (Milestone D.15)
+           today: ley tune <freq> listens live; keeping a log of what is heard is a daemon job and is not in this build
 
 The daemon-side relative squelch (mute at 'noise floor + N dB' measured by
 the daemon rather than by ley) is the recorded follow-up to auto squelch.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -157,14 +158,14 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	if final.State == leylinev1.JobState_FAILED {
 		return &ExitError{Code: 1, Message: scanFailure(final, st)}
 	}
-	id := scanIDOf(final)
-	if id == "" {
-		// A daemon that named no scan has nothing to show. Under --json that is a failure, not an
+	id, idErr := scanIDOf(final)
+	if idErr != nil {
+		// A job that named no scan has nothing to show. Under --json that is a failure, not an
 		// empty success: a consumer reading nothing on stdout and exit 0 concludes an empty band.
 		if s.app.JSON {
-			return &ExitError{Code: 1, Message: "the daemon started no scan: " + final.StatusDetail}
+			return &ExitError{Code: 1, Message: idErr.Error() + ": " + final.StatusDetail}
 		}
-		s.say("%s\n", final.StatusDetail)
+		s.say("%s (%s)\n", final.StatusDetail, idErr)
 		return nil
 	}
 	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
@@ -253,14 +254,19 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 	}
 }
 
-// scanIDOf reads the scan's id out of the job's result URI.
-func scanIDOf(job *leylinev1.Job) string {
+// scanIDOf reads the scan's id out of the job's result URI. A job that named no
+// ley://scans/ resource has nothing to fetch, and saying which URIs it did name
+// is what tells a prefix slip apart from a sweep that produced no scan.
+func scanIDOf(job *leylinev1.Job) (string, error) {
 	for _, u := range job.ResultUris {
-		if id, ok := strings.CutPrefix(u, "ley://scans/"); ok {
-			return id
+		if id, ok := strings.CutPrefix(u, "ley://scans/"); ok && id != "" {
+			return id, nil
 		}
 	}
-	return ""
+	if len(job.ResultUris) > 0 {
+		return "", fmt.Errorf("the daemon named no scan, only %s", strings.Join(job.ResultUris, ", "))
+	}
+	return "", errors.New("the daemon named no scan")
 }
 
 // scanFailure turns a failed job into the sentence the user reads. The daemon puts the stable

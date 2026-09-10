@@ -69,6 +69,12 @@ its id, an unambiguous id prefix, or its row number in 'ley devices'.`,
 			if err != nil {
 				return fmt.Errorf("%w. Run: ley devices", err)
 			}
+			if d.Driver == "rtltcp" {
+				// A remote dongle is daemon configuration, not session state: it
+				// enters the registry from --rtltcp (or LEYLINE_RTLTCP) at
+				// startup, so the way out is the same place it came in.
+				return fmt.Errorf("%s (%s) is a remote radio configured on leylined's command line (--rtltcp); drop the flag there and restart the daemon: ley daemon stop && ley daemon start", d.DeviceId, d.Model)
+			}
 			if d.Driver != "file" {
 				return fmt.Errorf("%s is a real radio (%s), not a playback file; free it with: ley stop --all", d.DeviceId, d.Model)
 			}

@@ -392,7 +392,7 @@ Tests: `TestAnActivityStampSaysNothing` (the papercut itself), `TestCaptureChang
 `TestOtherChannelsOnlyReportComingAndGoing`, `TestTheSinkTombstoneIsTheOnlyWayToTellAudioStopped`,
 `TestTheRadioLeavingIsNews`, `TestWhoChangedNamesTheKind`, `TestNoSentenceCarriesAnID`.
 
-## PC-11 `[ ]` `tune --persistent` skips auto squelch and does not say so
+## PC-11 `[x]` `tune --persistent` skips auto squelch and does not say so
 
 `ley tune` help promises that the squelch "is measured from the band's noise floor unless you set
 one", and the live verb does exactly that. With `--persistent` (or `--json`) the measurement is

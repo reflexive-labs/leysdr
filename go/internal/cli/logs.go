@@ -234,10 +234,23 @@ func repeatsLabel(src, label string) bool {
 }
 
 // sameIdentity reports whether two labels name the same thing once case and
-// punctuation are set aside ("LeylineDaemon" and "leyline.daemon").
+// punctuation are set aside ("LeylineDaemon" and "leyline.daemon"). One may
+// extend the other at either end, but only when the shorter half is a word in
+// its own right: a short tag like [IO] says something the label does not, and
+// a relay that drops it loses information.
 func sameIdentity(a, b string) bool {
 	x, y := identityKey(a), identityKey(b)
-	return x != "" && y != "" && (strings.Contains(x, y) || strings.Contains(y, x))
+	if x == "" || y == "" {
+		return false
+	}
+	if x == y {
+		return true
+	}
+	const shortest = 4
+	if len(x) > len(y) {
+		x, y = y, x
+	}
+	return len(x) >= shortest && (strings.HasPrefix(y, x) || strings.HasSuffix(y, x))
 }
 
 // identityKey lowercases a label and drops everything but letters and digits.

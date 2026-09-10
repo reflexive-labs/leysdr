@@ -98,7 +98,10 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 			return nil, usageError(fmt.Errorf("--squelch: %w (examples: -40, -40dB, off, auto)", err))
 		}
 		o.squelch, o.squelchAuto = db, auto
-	} else if !app.JSON && !f.persistent && (o.mode == leylinev1.DemodMode_NFM || o.mode == leylinev1.DemodMode_AM) {
+	} else if o.mode == leylinev1.DemodMode_NFM || o.mode == leylinev1.DemodMode_AM {
+		// Voice modes squelch by default whatever the output looks like: a
+		// channel left open plays band noise, and a script that wants that
+		// asks for it with --squelch off.
 		o.squelchAuto = true
 	}
 	v, err := leyline.ParseVolume(f.volume)
@@ -225,6 +228,12 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 		}
 	}
 	if o.persistent {
+		if s.squelchNote != "" {
+			// A persistent tune has no banner to carry the measurement, and the
+			// threshold it chose is a decision like every other: stderr, so the
+			// ids on stdout stay a script's.
+			fmt.Fprintln(s.app.Stderr, s.squelchNote)
+		}
 		return s.printCreated()
 	}
 	err := s.live(ctx, o)

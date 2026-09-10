@@ -302,7 +302,7 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"scan"}, "scan needs a range"},
 		{[]string{"scan", "144M..148M", "--band", "2m"}, "not both"},
 		{[]string{"scan", "144M..148M", "--sort", "sideways"}, "--sort must be freq or snr"},
-		{[]string{"watch"}, "watch is not implemented yet (V0.5)"},
+		{[]string{"watch"}, "watch is not implemented yet (Milestone D.15)"},
 		// tune's positional and flags are parsed before anything reaches the daemon.
 		{[]string{"tune"}, "tune needs a frequency or preset"},
 		{[]string{"tune", "146,52"}, "frequency"},
@@ -510,5 +510,32 @@ func TestPickDeviceSkipsExternallyHeld(t *testing.T) {
 	got, err = pickDevice(&leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{held, remote}}, "1")
 	if err != nil || got.DeviceId != "dev_held" {
 		t.Fatalf("an explicit --device must still win, got %v (err %v)", got.GetDeviceId(), err)
+	}
+}
+
+// A remote dongle over rtl_tcp is daemon start-up configuration: it enters the
+// registry from leylined's command line and no RPC removes it, so detach says
+// where it came from rather than offering a command that frees captures.
+func TestDetachRemoteRadio(t *testing.T) {
+	remote := &leylinev1.DeviceDescriptor{
+		DeviceId:     "dev_remote",
+		Driver:       "rtltcp",
+		Model:        "rtl_tcp pi.local:1234 (R820T)",
+		State:        leylinev1.DeviceState_AVAILABLE,
+		TuningRanges: []*leylinev1.FrequencyRange{{MinHz: 24_000_000, MaxHz: 1_766_000_000}},
+		SampleRates:  fakedaemon.RTLSDRRates,
+	}
+	sock, _ := harness(t, fakedaemon.Options{NoDevice: true, ExtraDevices: []*leylinev1.DeviceDescriptor{remote}})
+	_, _, err := run(t, context.Background(), sock, "devices", "detach", "dev_remote")
+	if exitCode(err) != 1 || err == nil {
+		t.Fatalf("detach a remote radio: exit %d (%v)", exitCode(err), err)
+	}
+	for _, want := range []string{"--rtltcp", "restart the daemon"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "ley stop --all") {
+		t.Errorf("stop --all frees captures and leaves the remote attached: %v", err)
 	}
 }

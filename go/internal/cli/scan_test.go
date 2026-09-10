@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/ui"
 )
@@ -206,13 +208,31 @@ func TestScanContractParityWithTheDaemon(t *testing.T) {
 			t.Fatalf("state: %v", serr)
 		}
 		// A long sweep, then try to join the radio while it is walking.
+		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			_, _, _ = run(t, t.Context(), sock, "scan", "145M..147M", "--dwell", "150")
+			_, _, _ = run(t, ctx, sock, "scan", "145M..147M", "--dwell", "150")
 		}()
-		time.Sleep(120 * time.Millisecond)
+		// Wait for the job to say it has the radio: a fixed pause races the
+		// sweep's start on a loaded machine and its finish on a quick one.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			js, jerr := c.State(t.Context())
+			if jerr == nil && len(js.Jobs) > 0 && js.Jobs[0].State == leylinev1.JobState_RUNNING {
+				break
+			}
+			if time.Now().After(deadline) {
+				cancel()
+				<-done
+				t.Fatal("the scan never reported RUNNING")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		_, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--persistent")
+		// The sweep has served its purpose: stop it before asserting, so a
+		// failure leaves no runner calling into t.
+		cancel()
 		<-done
 		if err == nil {
 			t.Fatal("tune must not join a capture a scan is sweeping")
@@ -255,4 +275,35 @@ func TestScanContractParityWithTheDaemon(t *testing.T) {
 			t.Error("no stepHz")
 		}
 	})
+}
+
+func TestScanIDOf(t *testing.T) {
+	tests := []struct {
+		name    string
+		uris    []string
+		want    string
+		wantErr string
+	}{
+		{"scan uri", []string{"ley://scans/scan_01"}, "scan_01", ""},
+		{"among others", []string{"ley://recordings/rec_01", "ley://scans/scan_02"}, "scan_02", ""},
+		{"no uris", nil, "", "the daemon named no scan"},
+		// A singular prefix is a daemon that named something this build cannot
+		// fetch; reporting it beats showing a band with no detections in it.
+		{"wrong kind", []string{"ley://scan/scan_03"}, "", "only ley://scan/scan_03"},
+		{"no id", []string{"ley://scans/"}, "", "only ley://scans/"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			id, err := scanIDOf(&leylinev1.Job{ResultUris: tc.uris})
+			if id != tc.want {
+				t.Errorf("id %q, want %q", id, tc.want)
+			}
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("unexpected error: %v", err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Errorf("error %v, want one saying %q", err, tc.wantErr)
+			}
+		})
+	}
 }

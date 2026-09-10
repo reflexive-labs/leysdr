@@ -18,9 +18,8 @@ import (
 // fileSidecar is the subset of the .json sidecar that play consults
 // (docs/fixtures.md): centre frequency and the first expected channel.
 type fileSidecar struct {
-	SampleRate uint64 `json:"sample_rate"`
-	CenterHz   uint64 `json:"center_hz"`
-	Expect     []struct {
+	CenterHz uint64 `json:"center_hz"`
+	Expect   []struct {
 		Mode        string `json:"mode"`
 		OffsetHz    int64  `json:"offset_hz"`
 		BandwidthHz uint32 `json:"bandwidth_hz"`

@@ -441,9 +441,10 @@ Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12
   presets) or their family (for bands), so a family of near-identical rows reads as one block;
   `--json` gives the flat arrays with every field, including the description a table trims. No
   RPC is made. `ley help presets` is the same data in prose.
-- **Defaults meant for people are off for scripts.** Under `--json` or `--persistent` squelch
-  defaults to `off` (pass `--squelch auto` or a level); pass `--mode` explicitly rather than
-  relying on band defaults; give frequencies with a unit (`146.52M`).
+- **Be explicit about the rest.** A voice channel squelches whatever the output looks like:
+  `tune --json` and `tune --persistent` measure the floor too and print the threshold on stderr
+  with the run's other decisions (`--squelch off` keeps the channel open). Pass `--mode`
+  explicitly rather than relying on band defaults, and give frequencies with a unit (`146.52M`).
 - **Exit codes:** 0 ok (including Ctrl-C during a live phase); 1 the daemon refused or failed,
   and the message keeps the daemon's stable code in brackets (`ley: <message> [DEVICE_BUSY]`)
   unless `ley` has a plainer sentence for it; 2 usage error — a bad flag or argument, an unknown
@@ -484,7 +485,7 @@ meets first:
 | `1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k` (a warning, tune continues) | a bare number is MHz, and 1010 MHz is nothing in particular | `ley tune 1010k` if you meant AM broadcast |
 | `ley: the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits [DEVICE_BUSY]` | another client holds the radio on a band that does not cover your frequency | `ley state` shows who; tune inside its band, or stop it |
 | `ley: no command or topic named "tunee".` with `Did you mean this?` and `tune` (exit 2) | a typo in the verb | take the suggestion; with no near match the topic list and `ley --help` follow instead |
-| full-scale static as soon as `tune` starts | squelch is off (scripts, `--persistent`, non-voice modes, or no spectrum row arrived) | `ley set squelch auto` |
+| full-scale static as soon as `tune` starts | squelch is off (`--squelch off`, non-voice modes, or no spectrum row arrived) | `ley set squelch auto` |
 | `record`, `watch` exit 2 with "not implemented yet" | planned verbs | `ley help roadmap` says what to use today |
 | `ley: somebody was tuning this radio 12 s ago. ley scan --take-over sweeps anyway, and hands the radio back afterwards` | a sweep owns the radio for seconds, so it declines a radio in use rather than interrupting | wait, stop the channel, or `--take-over` |
 | `ley: all of that range sits within 120.000 kHz of 146.000 MHz, where this radio's own DC spike is; a scan does not look there` | scan never reports the tuner's own centre; on a radio with one tuning point (a recording) that blind spot cannot be covered from elsewhere | `ley spectrum` draws that span instead, DC spike and all |

@@ -17,9 +17,17 @@ import (
 
 func TestTunePersistent(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	out := mustRun(t, sock, "tune", "146.52M", "--no-audio", "--persistent")
+	out, errOut, err := run(t, context.Background(), sock, "tune", "146.52M", "--no-audio", "--persistent")
+	if err != nil {
+		t.Fatalf("persistent tune: %v", err)
+	}
 	if !strings.Contains(out, "capture cap_") || !strings.Contains(out, "channel chan_") || strings.Contains(out, "sink") {
 		t.Fatalf("persistent output:\n%s", out)
+	}
+	// The measured threshold is a decision, so it goes to stderr and leaves
+	// stdout the ids a script reads.
+	if !strings.Contains(errOut, "Squelch auto → -80 dBFS") {
+		t.Fatalf("persistent tune should say what squelch it measured:\n%s", errOut)
 	}
 	st, err := c.State(context.Background())
 	if err != nil {
@@ -31,10 +39,11 @@ func TestTunePersistent(t *testing.T) {
 	if st.Captures[0].CenterHz != 146_520_000 || st.Channels[0].OffsetHz != 0 || leyline.ModeName(st.Channels[0].Mode) != "nfm" {
 		t.Fatalf("channel: %v", st.Channels[0])
 	}
-	// Persistent/script runs skip the auto-squelch default that interactive
-	// tune infers, so they leave squelch off.
-	if !math.IsNaN(st.Channels[0].SquelchDb) {
-		t.Fatalf("persistent tune should not set squelch: %v", st.Channels[0].SquelchDb)
+	// A voice channel squelches by default however the run is spelled: a
+	// persistent NFM channel left open would play band noise until somebody
+	// noticed.
+	if got := st.Channels[0].SquelchDb; math.IsNaN(got) || math.Abs(got-(-80)) > 1.5 {
+		t.Fatalf("persistent tune should measure squelch: %v", got)
 	}
 	// A second persistent tune inside the span reuses the capture with an offset.
 	out = mustRun(t, sock, "--json", "tune", "146.6M", "--no-audio", "--persistent", "--mode", "am", "--squelch", "-50")
@@ -387,5 +396,31 @@ func TestMeterLine(t *testing.T) {
 	m.SquelchOpen = true
 	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m); got != "146.620 MHz NFM  signal -42 dBFS  audio" {
 		t.Errorf("open: %q", got)
+	}
+}
+
+// Output format is not a DSP decision: a voice channel squelches whether the
+// run prints prose or NDJSON, and the threshold it measured is announced on
+// stderr like every other decision.
+func TestTuneJSONMeasuresSquelch(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, errOut, err := run(t, context.Background(), sock, "--json", "tune", "146.52M", "--no-audio", "--persistent")
+	if err != nil {
+		t.Fatalf("json tune: %v (stderr: %s)", err, errOut)
+	}
+	if !strings.Contains(errOut, "Squelch auto → -80 dBFS") {
+		t.Errorf("the measurement belongs on stderr:\n%s", errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("json lines: %s", out)
+	}
+	var ch map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &ch); err != nil {
+		t.Fatalf("json channel: %v %s", err, lines[1])
+	}
+	db, ok := ch["squelchDb"].(float64)
+	if !ok || math.Abs(db-(-80)) > 1.5 {
+		t.Errorf("squelchDb %v, want about -80", ch["squelchDb"])
 	}
 }

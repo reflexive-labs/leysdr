@@ -120,7 +120,7 @@ q-go-render-1 (meter block that shrinks), -2 (orphan order in `ley state`), -3 (
 spectrum's JSON row), -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15, -16, -18. Each is small;
 the meter one gets a test that shrinks the block and asserts the residue is erased.
 
-### GO-3 `[ ]` Verb defects and the `watch` stub
+### GO-3 `[x]` Verb defects and the `watch` stub
 
 q-go-verbs-3 (`parseNegativeSafe` must not hand a marker to a flag: only substitute for positionals,
 or restore the flag's value), -5, -6, -7 (`fileSidecar.SampleRate`: delete it, R-6 will bring its

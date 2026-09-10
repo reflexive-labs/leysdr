@@ -23,9 +23,9 @@ var Stubs = []stub{
 	},
 	{
 		use:       "watch",
-		short:     "Live dashboard: devices, channels and spectrum in one terminal",
-		milestone: "V0.5",
-		today:     "bare ley shows where things stand; ley state --json is the full snapshot",
+		short:     "Watch a frequency and log what is heard",
+		milestone: "Milestone D.15",
+		today:     "ley tune <freq> listens live; keeping a log of what is heard is a daemon job and is not in this build",
 	},
 }
 

@@ -38,8 +38,10 @@ removes every channel on the radio and the capture holding them, so the
 radio is free. 'ley devices detach' removes a playback device together
 with its channels.
 
-Defaults meant for people are off for scripts: under --json or
---persistent, squelch defaults to off (pass --squelch auto or a level).
+A voice channel squelches by default however the run prints: 'ley tune'
+measures the floor under --json and --persistent too and says on stderr
+what it chose; '--squelch off' keeps the channel open. 'ley listen' and
+'ley play' leave squelch off unless --squelch asks for one.
 Pass --mode explicitly rather than relying on band defaults, and give
 frequencies with a unit (146.52M) so a bare-number rule change cannot
 change the meaning. Ids, prefixes, row numbers and frequencies are all

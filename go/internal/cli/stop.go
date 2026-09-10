@@ -92,15 +92,13 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 			others++
 		}
 	}
+	fmt.Fprintf(s.app.Stdout, "stopped %s\n", desc)
 	if others == 0 && cap != nil {
 		// The outcome reads alone; the caveat -- the channel is gone but the
 		// hardware is still held -- is a footnote on its own line rather
 		// than the middle clause of a 118-character sentence.
-		fmt.Fprintf(s.app.Stdout, "stopped %s\n", desc)
 		fmt.Fprintf(s.app.Stdout, "%s %s\n", st.Muted("the radio stays tuned, free it with:"), st.Cmd("ley stop --all"))
-		return nil
 	}
-	fmt.Fprintf(s.app.Stdout, "stopped %s\n", desc)
 	return nil
 }
 
@@ -159,10 +157,15 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 			if ch.CaptureId != cap.CaptureId {
 				continue
 			}
-			if _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil && leyline.Code(err) != leyline.CodeChannelNotFound {
+			// A channel another client removed a moment ago is not one this
+			// command stopped, and the count is the only feedback the verb
+			// gives, so it counts confirmed removals alone.
+			switch _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); {
+			case err == nil:
+				stopped++
+			case leyline.Code(err) != leyline.CodeChannelNotFound:
 				return err
 			}
-			stopped++
 		}
 		if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
 			return err

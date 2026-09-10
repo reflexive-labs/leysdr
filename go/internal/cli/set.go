@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/ui"
@@ -683,10 +684,18 @@ func setScope(sty ui.Style, st *leylinev1.GetStateResponse, param, element strin
 // returns nil args after printing help for -h/--help.
 func parseNegativeSafe(cmd *cobra.Command, raw []string) ([]string, error) {
 	const marker = "\x00neg"
+	_ = cmd.InheritedFlags() // merges persistent flags into cmd.Flags()
 	var negatives []string
 	flagArgs := make([]string, 0, len(raw))
-	for _, a := range raw {
+	for i, a := range raw {
 		if len(a) > 1 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
+			// A word the flag before it consumes is that flag's value, not a
+			// positional: swapping it would hand the flag the marker itself and
+			// shift every later negative onto the wrong positional.
+			if i > 0 && consumesNext(cmd.Flags(), raw[i-1]) {
+				flagArgs = append(flagArgs, a)
+				continue
+			}
 			negatives = append(negatives, a)
 			flagArgs = append(flagArgs, marker)
 			continue
@@ -696,7 +705,6 @@ func parseNegativeSafe(cmd *cobra.Command, raw []string) ([]string, error) {
 		}
 		flagArgs = append(flagArgs, a)
 	}
-	_ = cmd.InheritedFlags() // merges persistent flags into cmd.Flags()
 	if err := cmd.Flags().Parse(flagArgs); err != nil {
 		return nil, err
 	}
@@ -707,6 +715,25 @@ func parseNegativeSafe(cmd *cobra.Command, raw []string) ([]string, error) {
 		}
 	}
 	return args, nil
+}
+
+// consumesNext reports whether a word is a flag of this command that takes the
+// following word as its value ("--channel 3"). A "--flag=value" carries its own
+// value and a boolean flag takes none, so neither claims the word after it.
+func consumesNext(fs *pflag.FlagSet, word string) bool {
+	if len(word) < 2 || word[0] != '-' || strings.Contains(word, "=") {
+		return false
+	}
+	var f *pflag.Flag
+	if name, ok := strings.CutPrefix(word, "--"); ok {
+		f = fs.Lookup(name)
+	} else {
+		// In a shorthand run ("-jc name") only the last letter can take the
+		// next word; the ones before it are boolean or the run would have
+		// swallowed the rest as a value.
+		f = fs.ShorthandLookup(word[len(word)-1:])
+	}
+	return f != nil && f.NoOptDefVal == ""
 }
 
 // snapGain mirrors the daemon's gain quantisation (control.proto GainElement):
