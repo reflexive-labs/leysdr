@@ -182,7 +182,7 @@ func channelFits(c *capture, offset int64, bw uint32) bool {
 // filters those at the second-stage rate r2 (~48 kHz at 2.4 MSPS), and a channel asking for more
 // would be filtered narrower than it reports.
 func maxNarrowBandwidth(rate uint64) float64 {
-	return 0.9 * float64(audioRate(rate))
+	return 0.9 * audioRateHz(rate)
 }
 
 // checkBandwidth is ChannelPlan.plan's refusal, which the daemon applies when a channel is created

@@ -81,8 +81,8 @@ func TestDetectionsFollowTheSubscriptionScope(t *testing.T) {
 	}
 }
 
-// Options.MeterInterval has no upper bound, and a cadence slower than a second used to divide the
-// activity tick to zero. Any tick at all proves the handler survived.
+// Options.MeterInterval has no upper bound, and a cadence slower than a second still has to land on
+// a tick. Any tick at all proves the handler survived.
 func TestSlowMeterIntervalStillTicks(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{MeterInterval: 1200 * time.Millisecond})
 	ctx, cancel := context.WithCancel(context.Background())

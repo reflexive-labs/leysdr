@@ -43,6 +43,13 @@ func (s *stream) close() { s.closeOnce.Do(func() { close(s.closed) }) }
 // Every mode (WFM included, whose audio is decimated from r1 to r2) produces
 // r2; exactly 48 000 at 2.4 MSPS.
 func audioRate(fs uint64) uint32 {
+	return uint32(math.Round(audioRateHz(fs)))
+}
+
+// audioRateHz is r2 before it is rounded to a whole Hz. Boundaries the engine derives from r2 --
+// the widest narrow-mode bandwidth, say -- have to be computed from the exact rate, or a capture
+// rate whose r2 is fractional puts the daemon and the fake a fraction of a hertz apart.
+func audioRateHz(fs uint64) float64 {
 	if fs == 0 {
 		return 48_000
 	}
@@ -55,7 +62,7 @@ func audioRate(fs uint64) uint32 {
 	if d2 < 1 {
 		d2 = 1
 	}
-	return uint32(math.Round(r1 / d2))
+	return r1 / d2
 }
 
 // nearestLadder rounds a request up to the next ladder size (capped at the
