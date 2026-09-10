@@ -63,7 +63,7 @@ Rationale for a separate plane rather than folding into control events: control 
 
 - FFT ladder — **decided:** fixed power-of-two set for v0; revisit if subscriber-population data shows waste. The §6 spike measures the fixed ladder.
 - Opus for remote audio — deferred; now tied to the remote-access milestone (see control plane doc: v0 is UDS-only).
-- Detections as resources — **decided:** job-initiated scans persist as addressable resources (`sdr://scans/<id>`); ad-hoc CLI/UI scans are stream-only and ephemeral. Details in the §4 semantic-tier doc.
+- Detections as resources — **decided:** job-initiated scans persist as addressable resources (`ley://scans/<id>`); ad-hoc CLI/UI scans are stream-only and ephemeral. Details in the §4 semantic-tier doc.
 
 ## Phase exit
 

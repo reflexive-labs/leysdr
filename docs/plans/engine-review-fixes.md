@@ -1,7 +1,8 @@
 # Engine review fixes (v0-bootstrap)
 
-Source: the engine-focused code review of branch `v0-bootstrap` at `7df91ae6` (report archived in the review run
-directory; findings keep their review numbers `#N` below). Scope: every P1-P3 primary finding. Each work item
+Source: the engine-focused code review of branch `v0-bootstrap` at `7df91ae6`. The review's report lived in an
+ephemeral run directory that no longer exists; findings below keep their review numbers `#N` only because the
+commit messages that closed them cite those numbers. Scope: every P1-P3 primary finding. Each work item
 lands as one commit with its own tests. Go/CLI changes are limited to what a proto change forces.
 
 Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reason.

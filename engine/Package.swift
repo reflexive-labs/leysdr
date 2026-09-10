@@ -5,7 +5,9 @@
 //   LeylineProto   generated leyline.v1 messages + grpc-swift 2 stubs (never hand-edit; `make proto`)
 //   CRTLSDR        system-library shim over librtlsdr (brew install librtlsdr)
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
-//   LeylineDaemon  the `leylined` executable: gRPC over UDS, maps EngineCore <-> leyline.v1
+//   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
+//                  to proto, and the session and job stores hold proto messages as their own
+//                  record type
 //
 // The product is Mac-only. Platform-specific code (Accelerate, AVFoundation, IOKit, os_signpost) is
 // guarded with `#if canImport(...)` so the package also builds on Linux for CI/dev checks. The only

@@ -1,19 +1,19 @@
 # Mac SDR — User Stories by Milestone
 
-Persona baseline: a licensed ham / developer with an RTL-SDR or HackRF plugged into a Mac. Stories are acceptance-level, not exhaustive.
+Persona baseline: a licensed ham / developer with an RTL-SDR (USB or rtl_tcp) plugged into a Mac, or IQ files. Stories are acceptance-level, not exhaustive.
 
 Positioning note (post ham-radio-apps.com review): Leyline serves the *spectrum explorer* — generic SDR hardware, wideband RX, monitoring, agents — not the commercial-transceiver operator, who is well served by the Roskosch per-brand apps (SDR-Control et al.). Zero device overlap with that catalog. Their UX standard ("just works, no drivers, no cables") is table stakes for us, not a differentiator. Transceiver-operation features (logbook, FT8 QSO workflow, TX operation) are their turf; entering it is a deliberate future decision, not scope drift.
 
 ## V0 — Engine + CLI only
 Proves the daemon, device layer, and control/data planes with no UI investment.
 
-- As an operator, I can run `sdr devices` and see every connected SDR with its capabilities (freq range, sample rates, gain stages).
+- As an operator, I can run `ley devices` and see every connected SDR with its capabilities (freq range, sample rates, gain stages).
 - As an operator, I can start the daemon, and a second terminal can talk to the same device — no "device busy" errors between my own tools.
-- As an operator, I can `sdr tune 146.52M --mode nfm` and hear audio out of my Mac's speakers/AirPods.
+- As an operator, I can `ley tune 146.52M --mode nfm` and hear audio out of my Mac's speakers/AirPods.
 - As an operator, I can adjust gain, squelch, and filter width live from the CLI while listening.
-- As an operator, I can `sdr record --iq` and `--audio` to files with sensible metadata (freq, rate, mode, timestamp), and play IQ files back through the same demod path.
-- As an operator, I can `sdr fft --rate 10` and get a stream of spectrum rows (JSON or binary) suitable for piping into other tools.
-- As an operator, I can `sdr scan 144M..148M` and get a list of detected carriers with frequency, bandwidth, and SNR.
+- As an operator, I can `ley record --iq` and `--audio` to files with sensible metadata (freq, rate, mode, timestamp), and play IQ files back through the same demod path.
+- As an operator, I can `ley fft --rate 10` and get a stream of spectrum rows (JSON or binary) suitable for piping into other tools.
+- As an operator, I can `ley scan 144M..148M` and get a list of detected carriers with frequency, bandwidth, and SNR.
 - As a developer, I can run two demod sessions on one wideband device (e.g., two NFM channels inside a 2.4 MHz capture).
 - As a developer, every CLI verb has a `--json` output mode so scripts and agents get the same contract I do.
 

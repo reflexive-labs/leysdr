@@ -115,13 +115,17 @@ package dependency, then `make proto` and commit the regenerated code.
   code is compiled out; the portable DSP kernels run the DSP tests and the daemon's control plane
   end to end (`go/internal/e2e` drives a Linux-built `leylined` with `ley`). System audio is
   `PLATFORM_UNSUPPORTED` there by design.
-- In the moat container the Swift toolchain lives in `/home/moatuser/swift-toolchain` with wrapper
-  scripts on `PATH` (`/home/moatuser/bin/swift`) and a stub `librtlsdr` at `/home/moatuser/rtlsdr-stub`.
-  The stub is not on the loader path, so running `leylined` there (and therefore `make e2e` / `make check`)
-  needs `LD_LIBRARY_PATH=/home/moatuser/rtlsdr-stub/lib`; `protoc` 25.1 is already installed. The
-  container shares the checkout with the Mac, so run the gate with a scratch install directory
-  (`make check GOBIN=/tmp/ley-bin`) to keep the Linux `ley`/`leyfix` out of `go/bin`; `.tools/` and
-  SwiftPM's build products are already per host.
+- A container needs a Swift 6.2 toolchain on `PATH`, `librtlsdr` headers (a real install, or a stub
+  `.so` that reports zero devices — enough to link `leylined` since the container has no hardware),
+  and `protoc`. Running `leylined` against the stub (and therefore `make e2e` / `make check`) needs
+  `LD_LIBRARY_PATH` pointed at the stub's lib directory. A checkout shared with a Mac should run the
+  gate with a scratch install directory (`make check GOBIN=/tmp/ley-bin`) to keep the Linux
+  `ley`/`leyfix` out of `go/bin`; `.tools/` and SwiftPM's build products are already per host.
+- A bare `swift test` silently skips the fixture round-trips (`FixtureTests`, `ChannelTests`) when
+  `fixtures/*.cf32` is missing, and a bare `go test ./...` silently skips the `go/internal/e2e`
+  package when `LEYLINED_BIN`/`LEY_BIN` are unset — both report the skip only under `-v`. `make
+  swift-test` (depends on `fixtures`) and `make e2e` (builds both binaries and sets the env) are the
+  gate; a green bare `test` run proves nothing about either suite.
 
 ### What a Linux build cannot check
 

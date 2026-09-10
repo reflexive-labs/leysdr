@@ -1,10 +1,10 @@
 # CLI review fixes (v0)
 
-Source: the CLI-focused code review of `main` at `7e75220` (report and per-finding detail: `/tmp/compound-engineering-5000/ce-code-review/20260908-235603-17d4ed3b/report.md`,
-machine-readable: `/tmp/compound-engineering-5000/ce-code-review/20260908-235603-17d4ed3b/actionable-findings.json`; finding numbers `#N` below are the report's). Scope: every P1-P3
-primary finding plus the agent-native gaps. Same loop as the engine fixes: one commit per work item, verified
-independently, `make check` green on both hosts. Each work item lists its findings; the report carries the
-why and the suggested fix for each, so read those detail lines before editing.
+Source: the CLI-focused code review of `main` at `7e75220`. The review's report and machine-readable findings
+lived under an ephemeral `/tmp` run directory that no longer exists; finding numbers `#N` below are kept only
+because the commit messages that closed them cite those numbers. Scope: every P1-P3 primary finding plus the
+agent-native gaps. Same loop as the engine fixes: one commit per work item, verified independently, `make
+check` green on both hosts. Each work item lists its findings and the why/suggested fix for each.
 
 Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 

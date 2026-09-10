@@ -224,7 +224,7 @@ from `stop()` or deleted).
 q-swift-control-4 (a mid-file read error is logged and takes the disconnect path), q-swift-control-5
 (the join runs through `BlockingWork` and the pacing sleep wakes on cancel).
 
-### SW-7 `[ ]` DSP correctness and dead paths
+### SW-7 `[x]` DSP correctness and dead paths
 
 q-swift-dsp-1 (`precondition(decimation <= taps.count)` in both initialisers, or the explicit skip
 carry), -3 (`ChannelDSPCore.reset()`: call it on stream restart, or delete it and say why stale

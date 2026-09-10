@@ -4,7 +4,8 @@ Native macOS SDR engine + app. Read `docs/design-*.md` before structural changes
 
 ## What this is
 
-A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` CLI/TUI, and MCP adapter as peer clients over one gRPC contract (`proto/leyline.v1`). Mac-only on purpose — use platform frameworks (vDSP, CoreAudio, Metal, IOUSBHost, os_signpost) without apology. Languages: **Swift** for the engine and Mac app; **Go** for terminal clients — `ley` is one Go binary (CLI verbs + Bubble Tea TUI) and the MCP adapter shares its Go client library. The Go clients are the living proof of the cross-language contract; never let a feature ship that only works from Swift.
+A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` CLI/TUI, and MCP adapter as peer clients over one gRPC contract (`proto/leyline.v1`). Mac-only on purpose — use platform frameworks (vDSP, CoreAudio, Metal, IOUSBHost, os_signpost) without apology. Languages: **Swift** for the engine and Mac app; **Go** for terminal clients — `ley` is one Go binary (CLI verbs + terminal live views today: `spectrum --watch`, `waterfall`,
+`phosphor`; the dashboard is Milestone D.14) and the MCP adapter shares its Go client library. The Go clients are the living proof of the cross-language contract; never let a feature ship that only works from Swift.
 
 ## Invariants — do not violate without a design-doc change
 

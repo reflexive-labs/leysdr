@@ -73,12 +73,12 @@ A job is a daemon-owned persistent intent: watch, scheduled record, scan-and-log
 
 ## Resources
 
-Recordings, spectrum snapshots, and job results are addressable: `sdr://recordings/<id>`, with metadata queries over the control plane and content retrieval over the bulk plane (or direct file paths locally — the daemon's store is a plain directory the Finder can see). MCP resource URIs map onto these one-to-one.
+Recordings, spectrum snapshots, and job results are addressable: `ley://recordings/<id>`, with metadata queries over the control plane and content retrieval over the bulk plane (or direct file paths locally — the daemon's store is a plain directory the Finder can see). MCP resource URIs map onto these one-to-one.
 
 ## Open questions
 
 - Multi-device captures — **decided:** a capture references exactly one device. Coherent multi-SDR rigs, if ever supported, are absorbed by the device abstraction (a composite device presenting N synchronized SDRs as one descriptor). The session model never changes.
-- Auth for TCP remote access — **decided for v0:** UDS-only; no TCP listener ships. Local UDS trusts the user account. Remote access becomes its own milestone with auth designed properly (and Bonjour discovery alongside it). Proto reserves the auth fields now so the addition is non-breaking.
+- Auth for TCP remote access — **decided for v0:** UDS-only; no TCP listener ships. Local UDS trusts the user account. Remote access becomes its own milestone with auth designed properly (and Bonjour discovery alongside it). This decision is deferred; the protos reserve nothing for it yet, so field numbers for auth are not guaranteed to be free when that milestone lands.
 - TX forward-compatibility — **direction set (implementation later):** TX is inevitable and arrives as a sibling concept, never a retrofit. A `Transmission` (device + modulator + audio/IQ source + emission constraints) sits alongside `Capture`; channels and sinks stay RX-only. Transmissions own their own timeline (`SampleTime` scopes by ID string, so `tx_` IDs fit without schema change). Devices advertise `tx_capable` and `full_duplex` in the feature map; half-duplex devices (HackRF) suspend capture to emit, and that arbitration is device-level. Emitting requires an emission lease — a real lease, unlike tuning, because RF emission carries regulatory weight (license, band limits, power). All additive; nothing in v1 protos changes shape.
 
 ## Phase exit

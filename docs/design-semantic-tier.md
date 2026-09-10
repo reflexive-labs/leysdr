@@ -12,19 +12,19 @@ The layer that turns samples into things an agent — or a script, or a future U
 
 **The engine computes signal truth; adapters render presentation.** Detections, segments, and measurements come from the daemon so every client sees the same answer. Images, prose summaries, and format conversions happen in the adapter that needs them — the daemon never links an image library.
 
-**One contract, three consumers.** MCP tool schemas and CLI verbs are generated from the same protos as the app's client library. An agent, a shell script, and the UI can each do anything the others can.
+**One contract, three consumers.** MCP tool schemas and CLI verbs are mapped one-to-one from the same protos as the app's client library. An agent, a shell script, and the UI can each do anything the others can.
 
 ## Derived products
 
 **Detection** — the atom of the tier: center frequency, bandwidth, SNR, first/last seen (sample timebase), optional modulation guess. Streamed on telemetry; aggregated into scans and watch results.
 
-**Scan** — a sweep's aggregated detections plus sweep metadata (range, resolution, dwell, noise floor per segment). Job scans persist as `sdr://scans/<id>`; ad-hoc scans return the same shape inline and are gone when the client is.
+**Scan** — a sweep's aggregated detections plus sweep metadata (range, resolution, dwell, noise floor per segment). Job scans persist as `ley://scans/<id>`; ad-hoc scans return the same shape inline and are gone when the client is.
 
 **Activity segment** — a contiguous interval where a watched channel's squelch was open: start/end timestamps, peak/mean signal, and optionally a recorded audio clip. The building block of transcripts.
 
-**Transcript** — a watch job's rolling log: ordered activity segments with clip references. `sdr://watches/<id>/transcript`. "Watch 146.52 and log anything heard" produces exactly this. Speech-to-text is explicitly not the engine's job — a transcript is what the radio observed, not what was said. (Apple's Speech framework in the adapter or app is a candidate later; flagged in open questions.)
+**Transcript** — a watch job's rolling log: ordered activity segments with clip references. `ley://watches/<id>/transcript`. "Watch 146.52 and log anything heard" produces exactly this. Speech-to-text is explicitly not the engine's job — a transcript is what the radio observed, not what was said. (Apple's Speech framework in the adapter or app is a candidate later; flagged in open questions.)
 
-**Snapshot** — a spectrum capture at a moment: binned FFT data plus capture context. The daemon produces the data; the MCP adapter renders PNG when an agent wants to look at it. Persisted only on request: `sdr://snapshots/<id>`.
+**Snapshot** — a spectrum capture at a moment: binned FFT data plus capture context. The daemon produces the data; the MCP adapter renders PNG when an agent wants to look at it. Persisted only on request: `ley://snapshots/<id>`.
 
 **Recording** — already defined as a sink; here it gains queryable metadata (frequency, mode, timebase anchor, duration, originating job if any) so agents can find and fetch by description rather than filename.
 
@@ -54,13 +54,13 @@ Tools (generated from protos, names indicative):
 - `start_job`, `list_jobs`, `get_job`, `cancel_job` — the durable layer
 - `get_transcript`, `find_recordings` — resource retrieval
 
-Resources map one-to-one onto `sdr://` URIs. The adapter's value-adds beyond proto transcription: PNG rendering for snapshots, waterfall thumbnails for transcripts, and compact text summaries of scans (band-plan labels applied to detections) so agents spend context on reasoning rather than JSON.
+Resources map one-to-one onto `ley://` URIs. The adapter's value-adds beyond proto transcription: PNG rendering for snapshots, waterfall thumbnails for transcripts, and compact text summaries of scans (band-plan labels applied to detections) so agents spend context on reasoning rather than JSON.
 
 The don't-disturb default from the control-plane doc is enforced adapter-side as refusal-with-reason, and daemon-side as policy — belt and suspenders, since not every MCP client will be polite.
 
 ## CLI mirror
 
-Every tool above has a verb: `sdr devices`, `sdr tune`, `sdr scan`, `sdr watch`, `sdr jobs`, `sdr recordings`. `--json` output is the proto's JSON mapping, so a shell script and an agent parse identical shapes. The CLI adds nothing the protocol doesn't have — it is the reference client and the compatibility test.
+Every tool above has a verb: `ley devices`, `ley tune`, `ley scan`, `ley watch`, `ley jobs`, `ley recordings`. `--json` output is the proto's JSON mapping, so a shell script and an agent parse identical shapes. The CLI adds nothing the protocol doesn't have — it is the reference client and the compatibility test.
 
 ## Open questions
 

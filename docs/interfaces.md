@@ -2,7 +2,24 @@
 
 Both are renderings of the leyline.v1 protos. The CLI is the reference client; `--json` output is the standard proto3 JSON mapping. The MCP adapter adds presentation only (PNG rendering, band-plan labels, compact summaries) — never capability.
 
+## Client requirements
+
+The daemon's UDS socket has no authentication — any local process that can open it has full control
+of the radio (see SECURITY.md). This section covers the other landmine every third-party client
+hits.
+
+The daemon's HTTP/2 stack (swift-nio-http2) drops a connection with `GOAWAY ENHANCE_YOUR_CALM` when
+a client sends more than 200 control frames (PING, SETTINGS, PRIORITY) in 30 s, and the gRPC
+transport does not expose that limit. Clients that ping for bandwidth estimation on every data frame
+(grpc-go's default dynamic windows, grpc-python's BDP probing) therefore lose every busy bulk stream
+after about a second. Use fixed flow-control windows instead: the Go client library dials with 1 MiB
+initial stream and connection windows, which disables grpc-go's estimator. Other clients must do
+the equivalent (grpc-go: `WithInitialWindowSize`/`WithInitialConnWindowSize` above 64 KiB;
+grpc-core: `grpc.http2.bdp_probe=0`).
+
 ## MCP tools
+
+This table is the design for Milestone D.16; nothing in it is implemented yet.
 
 | Tool | Maps to | Notes |
 |---|---|---|
@@ -30,7 +47,11 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── stop [channel|all] [--all] [--device SEL]
 │                                    # DestroyChannel for one channel (set's target rule); all/--all destroys every channel and the capture, freeing the radio
 ├── spectrum [freq] [--span N] [--bins N] [--watch] [--rate N] [--count N] [--device SEL] [--width N] [--retune]
-│                                    # one FFT row drawn as a bar chart + the loudest bins (>= floor + 6 dB, else "nothing above the floor"); the human view of fft
+│                                    # one FFT row drawn as a bar chart + the loudest bins (>= floor + 15 dB, else "nothing above the floor"); the human view of fft
+├── waterfall [frequency] [--span N] [--band NAME] [--bins N] [--rate N] [--count N] [--device SEL] [--retune] [--width N]
+│                                    # scrolling history of FFT rows as a terminal heatmap; a band plan covers the whole band, not one frequency
+├── phosphor [frequency] [--span N] [--band NAME] [--bins N] [--levels N] [--half-life S] [--rate N] [--count N] [--device SEL] [--retune] [--width N]
+│                                    # per-bin amplitude histogram decayed over time, the "which bins are ever busy" view
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
@@ -176,14 +197,3 @@ frequency and log what is heard — not the dashboard, which is bare `ley` on a 
 of them until Milestone D.13.
 
 Deliberate omissions at v0: no remote flags (UDS-only), no TX verbs, no decode verbs (arrive with digital modes).
-
-## Client requirements
-
-The daemon's HTTP/2 stack (swift-nio-http2) drops a connection with `GOAWAY ENHANCE_YOUR_CALM` when
-a client sends more than 200 control frames (PING, SETTINGS, PRIORITY) in 30 s, and the gRPC
-transport does not expose that limit. Clients that ping for bandwidth estimation on every data frame
-(grpc-go's default dynamic windows, grpc-python's BDP probing) therefore lose every busy bulk stream
-after about a second. Use fixed flow-control windows instead: the Go client library dials with 1 MiB
-initial stream and connection windows, which disables grpc-go's estimator. Other clients must do
-the equivalent (grpc-go: `WithInitialWindowSize`/`WithInitialConnWindowSize` above 64 KiB;
-grpc-core: `grpc.http2.bdp_probe=0`).
