@@ -18,20 +18,18 @@ const (
 )
 
 // How the chart carries level as colour. Every column takes the ramp ink its
-// own dB lands on, so the noise floor reads cold and a carrier hot; the
-// three-band Muted/plain/Ok inking this replaced collapsed to plain across most
-// of a live band. The steps quantise the ramp so a row of eighty columns emits
-// a handful of escape sequences rather than one per column: neighbouring
-// columns that land on the same step share one run of ink.
+// own dB lands on, so the noise floor reads cold and a carrier hot. The steps
+// quantise the ramp so a row of eighty columns emits a handful of escape
+// sequences rather than one per column: neighbouring columns that land on the
+// same step share one run of ink.
 const spectrumLevelSteps = 24
 
 // spectrumQuietRampCap is how much of the ramp a band with no detection may
 // use. A quiet band's loudest column is only a few dB over its median, so
 // keying the ramp to that span unmodified would paint noise texture red and
 // dress an empty band up as a busy one. Forcing every column to the single
-// coldest ink instead, which is what this replaced, was honest but unreadable:
-// the chart became one flat field of blue with no shape in it, which is what
-// the reader was actually complaining about. Capping the ramp keeps both --
+// coldest ink instead would be honest but unreadable: the chart would become
+// one flat field of blue with no shape in it. Capping the ramp keeps both --
 // the texture is visible as blue through cyan, and nothing is ever warm.
 const spectrumQuietRampCap = 0.34
 
@@ -40,15 +38,13 @@ const spectrumQuietRampCap = 0.34
 // a cramped screen cannot spare.
 const spectrumFrameMinWidth = 60
 
-// How the scale is chosen, and how the max-hold trace behaves. The top used to
-// reserve 30 dB above the noise line whatever the data did, which crushed a
-// quiet band into the bottom third of the chart and left 70% of the rows
-// blank; it now tracks the loudest column with a little headroom, and only a
-// dead-flat band falls back to the minimum span. The hold used to be a running
-// maximum that never decayed, so tens of frames of noise built a solid ceiling
-// above the live trace: it now falls back toward the live column every frame
-// and is drawn only where it stands clear of it, which is what a transient
-// looks like.
+// How the scale is chosen, and how the max-hold trace behaves. The top tracks
+// the loudest column with a little headroom, and only a dead-flat band falls
+// back to the minimum span, so a quiet band still fills the chart instead of
+// sitting crushed in the bottom third. The hold falls back toward the live
+// column every frame and is drawn only where it stands clear of it, so what's
+// left on screen reads as a transient rather than a ceiling that noise alone
+// could build.
 const (
 	spectrumHeadroomDb   = 3   // dB of air above the loudest column, before the scale rounds to 5
 	spectrumMinSpanDb    = 50  // the least the whole scale may span, top to bottom
@@ -236,11 +232,10 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 	// The scale spans at least spectrumMinSpanDb whatever the data does, which
 	// fixes the row at 5 dB or coarser. That is the whole trick: a receiver's
 	// noise floor spreads about 7 dB across the columns, so at 5 dB a row it
-	// collapses into one or two and reads as a line, while at the 1.5 dB a row
-	// an empty band used to get -- the top tracked the loudest noise column,
-	// which is only a few dB over the median -- the same floor smeared over
-	// five rows and read as confetti. Holding the span also makes two bands
-	// comparable: a column of the same height means the same dB on both.
+	// collapses into one or two and reads as a line, while at a finer step the
+	// same floor would smear over several rows and read as confetti. Holding
+	// the span also makes two bands comparable: a column of the same height
+	// means the same dB on both.
 	top := math.Max(math.Ceil((peak+spectrumHeadroomDb)/5)*5, bottom+spectrumMinSpanDb)
 	if !v.scaled {
 		v.bottom, v.top, v.peak, v.scaled = bottom, top, peak, true

@@ -162,8 +162,8 @@ func waterfallBand(frac float64) int {
 	return int(frac * float64(spectrumLevelSteps-1))
 }
 
-// gutter is the elapsed time, printed on every waterfallAxisEvery-th row so
-// the column stays readable without repeating a number that barely changes.
+// gutter is the elapsed time, printed on every fourth row so the column stays
+// readable without repeating a number that barely changes.
 func (v *waterfallView) gutter(elapsed float64) string {
 	label := ""
 	if v.rows%4 == 0 {

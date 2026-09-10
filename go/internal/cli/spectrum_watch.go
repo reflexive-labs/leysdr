@@ -14,8 +14,7 @@ const (
 	// row has arrived.
 	spectrumTickInterval = 250 * time.Millisecond
 	// spectrumWaitNote is how long stdout may stay empty before the person is
-	// told, on stderr, that nothing has arrived yet. A stalled FFT stream used
-	// to produce no output at all.
+	// told, on stderr, that nothing has arrived yet.
 	spectrumWaitNote = time.Second
 	// spectrumNoteFor is how long a scale change stays on the status line.
 	spectrumNoteFor = 3 * time.Second

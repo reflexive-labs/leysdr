@@ -44,7 +44,6 @@ func bandModeName(m leylinev1.DemodMode) string {
 	return leyline.ModeName(m)
 }
 
-// printArray writes a client-local table as one JSON array line.
 // printArray marshals a client-local JSON shape -- an array of table rows, or
 // the single object a band lookup answers with. It is deliberately not
 // printJSON, which takes a proto message: none of this data has one, which is

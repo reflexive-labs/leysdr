@@ -65,12 +65,12 @@ Each batch fixes every listed finding in its files and nothing else; a finding t
 wrong is left alone and reported. House style: say why, in the present tense, with no project
 history — no plan ids, review numbers, dates, "used to", "no longer", "the fix".
 
-### CB-1 `[ ]` `go/internal/cli` sources
+### CB-1 `[x]` `go/internal/cli` sources
 
 c-go-cli-a-2, c-go-cli-a-3, c-go-cli-b-1 … c-go-cli-b-9 (b-9 names the wrong constant: fix the
 comment, the code is GO-2's). Files: `go/internal/cli/*.go` except `*_test.go`.
 
-### CB-2 `[ ]` `go/pkg`, `go/cmd`, `go/internal/{ui,fakedaemon}` sources
+### CB-2 `[x]` `go/pkg`, `go/cmd`, `go/internal/{ui,fakedaemon}` sources
 
 c-go-lib-1 … c-go-lib-6, c-go-lib-8, and q-go-lib-1 (the same misattached doc comment). Files: the
 non-test `.go` files under those directories.

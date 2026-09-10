@@ -547,10 +547,10 @@ func (a *App) stopPid(ctx context.Context, pid int) error {
 
 // processGone reports whether pid has stopped running. A process nothing has
 // reaped yet is a zombie: it has exited and its socket is already gone, but
-// kill(pid, 0) still succeeds -- which is why stop used to report "did not
-// exit within 5 s" for a daemon started from the same shell that ran ley.
-// The zombie check costs a `ps`, so callers ask for it a few times a second
-// rather than on every poll.
+// kill(pid, 0) still succeeds, so stop must also check for a zombie state or
+// it would wait the full timeout and report a false failure for a daemon
+// started from the same shell that ran ley. The zombie check costs a `ps`,
+// so callers ask for it a few times a second rather than on every poll.
 func processGone(ctx context.Context, pid int, checkZombie bool) bool {
 	if syscall.Kill(pid, 0) != nil {
 		return true

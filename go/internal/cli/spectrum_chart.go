@@ -265,9 +265,9 @@ func (v *spectrumView) traceRow(db, step float64) int {
 // levelBand is where a level sits on the ramp, as a step of spectrumLevelSteps.
 // The cold end is the noise line and the hot end the loudest column the run has
 // seen, so hue says what a reader actually wants to know: how far over the
-// floor this is. Keying it to the bottom of the axis instead, as this used to,
-// meant the row of air reserved under the floor counted as levels to ink, so
-// every noise column drew a little warm and the whole ramp was offset.
+// floor this is. Keying it to the bottom of the axis instead would count the
+// row of air reserved under the floor as levels to ink, so every noise column
+// would draw a little warm and the whole ramp would be offset.
 func (v *spectrumView) levelBand(db float64) int {
 	span := v.peak - v.noise
 	if span <= 0 || math.IsNaN(db) || math.IsInf(db, 0) {

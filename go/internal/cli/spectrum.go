@@ -241,8 +241,8 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 }
 
 // spectrumEnd turns the end of the FFT stream into an exit. A stream that
-// closed before producing anything is a failure the user must be told about:
-// it used to hang, then exit 0, with no output at all.
+// closed before producing anything is a failure the user must be told about,
+// not a silent success.
 func spectrumEnd(ctx context.Context, err error, rows int) error {
 	if ctx.Err() != nil {
 		return nil

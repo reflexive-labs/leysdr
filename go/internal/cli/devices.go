@@ -139,9 +139,9 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 
 // printDeviceTable renders the devices table. The reader is asking "is my
 // radio usable right now, and if not why not", so MODEL leads and STATE is
-// the next thing the eye reaches; the ids and serials that used to occupy
-// the two most-scanned columns move behind --wide, where the full id stays
-// verbatim for `ley devices detach`.
+// the next thing the eye reaches; ids and serials are the columns scanned
+// least, so they move behind --wide, where the full id stays verbatim for
+// `ley devices detach`.
 func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool) {
 	s := tableStyle(app)
 	cols := []column{
