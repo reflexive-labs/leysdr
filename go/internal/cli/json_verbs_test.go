@@ -135,7 +135,7 @@ func prepPlaybackDevice(t *testing.T, sock string, c *leyline.Client) []string {
 
 // Every verb answers --json or refuses it. A verb that draws a picture under
 // --json and exits 0 hands a script unparseable text with no way to tell that
-// anything went wrong, which is how `ley waterfall --json | jq` used to fail.
+// anything went wrong.
 func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 	for _, c := range jsonVerbs {
 		t.Run(c.path, func(t *testing.T) {
