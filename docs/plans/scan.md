@@ -130,3 +130,19 @@ answer on the last line; a consumer wants the answer.
 **Verified against the daemon**, sweeping `fixtures/scan_band.cf32`: four of four carriers found at
 the right frequencies, widths within a bin of the truth, SNRs matching the synthesis, and one 4 dB
 false positive marked `1/4` in three runs out of four.
+
+**The synthetic-device test found the bug it was built for, immediately.** Its radio changes what it
+emits six blocks *after* `tune` returns, the way real hardware keeps USB buffers queued. The first
+run put phantom carriers at 146.363 and 146.603 MHz -- a real signal at 145.400 MHz, seen in blocks
+captured at one centre and labelled with the next one. Two things were wrong with the settle
+arithmetic:
+
+- The hop position came from the newest row seen, and rows arrive at the row rate, so it could be a
+  whole row interval behind the radio. The lease now reports the capture's own sample position and
+  the hop is taken from whichever is later.
+- A row is stamped with the block that completed it and reaches back a whole interval, so a row
+  whose stamp clears the settle window can still contain samples from inside it. The window is one
+  row interval longer than the queue depth for that reason.
+
+That is precisely the class of error the whole design exists to prevent -- energy attributed to a
+frequency the radio was not listening to -- and no unit test would have produced it.
