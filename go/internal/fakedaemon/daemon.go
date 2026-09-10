@@ -42,8 +42,8 @@ type Options struct {
 	// WriteRejected emitted for it can never precede the watcher. A sequencing
 	// aid for tests of clients that open a session (GetState + WatchEvents)
 	// and write straight away: the real daemon may register the stream after
-	// the write lands (CLI-4 #15 makes the session resume from the snapshot's
-	// seq instead).
+	// the write lands, and a session resumes from the snapshot's seq rather
+	// than from zero.
 	WriteAwaitsWatcher bool
 	// WatcherWait bounds WriteAwaitsWatcher. Default 2 s.
 	WatcherWait time.Duration

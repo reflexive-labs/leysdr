@@ -200,12 +200,12 @@ func FormatRanges(ranges []*leylinev1.FrequencyRange) string {
 
 // FrequencyHint returns a one-line hint for a frequency the device rejected as
 // out of range, or "" when there is nothing useful to say. input is what the
-// user typed and hz what ParseUserFrequency made of it. The rule from the CLI
-// plan: when re-reading a bare number as kHz lands inside a device range or a
-// known band, suggest that spelling ("did you mean 1.010 MHz (AM broadcast)?
-// write 1010k"); otherwise give the honest reason ("this device cannot tune
-// below 24.000 MHz; HF needs an upconverter"). Callers print the device's
-// tuning range themselves; this hint never repeats it.
+// user typed and hz what ParseUserFrequency made of it. When re-reading a bare
+// number as kHz lands inside a device range or a known band, suggest that
+// spelling ("did you mean 1.010 MHz (AM broadcast)? write 1010k"); otherwise
+// give the honest reason ("this device cannot tune below 24.000 MHz; HF needs
+// an upconverter"). Callers print the device's tuning range themselves; this
+// hint never repeats it.
 func FrequencyHint(input string, hz uint64, ranges []*leylinev1.FrequencyRange) string {
 	if v, ok := bareNumber(strings.TrimSpace(input)); ok && v > 0 {
 		khz := uint64(math.Round(v * 1e3))

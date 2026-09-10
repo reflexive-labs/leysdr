@@ -94,11 +94,10 @@ func (s Style) ink(st lipgloss.Style, text string) string {
 // sweeps monotonically from cold to hot, but the luminance deliberately does
 // not: every stop is held between 0.18 and 0.26 relative luminance, which is
 // the only band that clears 3.2:1 contrast against a black terminal AND a
-// white one. The ramp used to run from a saturated {0,0,160} at the cold end, which
-// is 1.2:1 against a dark ground -- a reader on a dark terminal could not see
-// the noise floor at all, and since most of a chart is noise floor, most of
-// the chart was invisible. Level is carried by height as well as by hue, so
-// spending luminance on legibility costs nothing and buys both grounds.
+// white one. A saturated blue like {0,0,160} would be only 1.2:1 against a
+// dark ground -- unreadable, since most of a chart is noise floor sitting at
+// the cold end. Level is carried by height as well as by hue, so spending
+// luminance on legibility costs nothing and buys both grounds.
 var levelStops = [5][3]float64{
 	{78, 130, 235}, // blue
 	{16, 152, 173}, // cyan
