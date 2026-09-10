@@ -78,6 +78,10 @@ jobs:
         run: brew install librtlsdr
       - name: build + test (Accelerate kernels, parity tests, fixture round-trips; generates fixtures/)
         run: make swift swift-test
+      # The Go clients and the UDS contract were proven only on Linux before this step; macOS is
+      # the platform the product ships on, so `ley` and the cross-language e2e run here too.
+      - name: Go clients, lint, and ley driving the macOS-built leylined
+        run: make go-test lint e2e
       # Swift generation drift. The Go job proves go/gen is current; nothing else regenerates
       # LeylineProto, so a proto change that only regenerated Go would otherwise pass. The script
       # builds the Swift plugins from engine/Package.resolved and the Go ones from go/go.mod.

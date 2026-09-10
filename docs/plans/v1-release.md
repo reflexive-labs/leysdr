@@ -342,7 +342,7 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 - `docs/dev-setup.md` gets a "Cutting a release" paragraph: bump `VERSION`, `make version`, commit,
   tag `v<VERSION>`.
 
-### R-3 `[ ]` CI proves the product on the product's platform (S, Sonnet)
+### R-3 `[x]` CI proves the product on the product's platform (S, Sonnet)
 
 `.github/workflows/ci.yml` `swift-macos` job also runs `make go-test lint e2e` (the e2e target
 builds both binaries and the fixtures it needs). Note in the job why: the Go clients and the UDS
