@@ -108,7 +108,7 @@ a-invariants-4 asks for and the two design-doc corrections (a-evolution-14, a-ev
 
 ## Code work items — Go lane (Opus, sequential)
 
-### GO-1 `[ ]` `ley listen`: the race and the last row
+### GO-1 `[x]` `ley listen`: the race and the last row
 
 q-go-verbs-1 (compute the note before the drain starts; add `go test -race ./internal/cli/` to
 `make go-test` or a separate `make race` target run by CI), q-go-verbs-2 (flush on every return
