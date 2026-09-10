@@ -151,3 +151,45 @@ final class IQFrameTap: CaptureTap, @unchecked Sendable {
 
     func closeTap() async { ring.finish() }
 }
+
+/// Persistence path: every ladder row is folded into a `PersistenceAccumulator`, and a snapshot of
+/// the whole histogram is emitted at the subscriber's own rate. Accumulate fast, display slow --
+/// the two rates are independent, which is the point: the histogram sees every row the ladder
+/// produces while a person reads a couple of frames a second.
+///
+/// Every frame is the entire state, so LATEST_WINS costs a subscriber nothing but freshness.
+final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
+    let ring: FrameRing
+    let accumulator: PersistenceAccumulator
+    /// Capture samples between emitted frames.
+    let emitInterval: UInt64
+    private var nextEmit: UInt64 = 0
+    private var started = false
+
+    init(ring: FrameRing, accumulator: PersistenceAccumulator, emitInterval: UInt64) {
+        self.ring = ring
+        self.accumulator = accumulator
+        self.emitInterval = max(1, emitInterval)
+    }
+
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz _: UInt64, spanHz _: UInt64) {
+        accumulator.add(row: row)
+        let now = time.sampleIndex
+        if !started {
+            started = true
+            // The first frame waits an interval: emitting on the first row would send a histogram
+            // with a single row in it, which reads as a spectrum rather than as a persistence.
+            nextEmit = now &+ emitInterval
+            return
+        }
+        // A rewound or jumped timeline must not stall the stream.
+        if nextEmit > now &+ emitInterval { nextEmit = now &+ emitInterval }
+        guard now >= nextEmit else { return }
+        let scheduled = nextEmit &+ emitInterval
+        nextEmit = scheduled > now ? scheduled : now &+ emitInterval
+        let bytes = accumulator.bins * accumulator.levels * 2
+        ring.write(sampleStart: now, sampleCount: accumulator.rows) { dst in
+            accumulator.snapshot(into: UnsafeMutableRawBufferPointer(start: dst, count: bytes))
+        }
+    }
+}

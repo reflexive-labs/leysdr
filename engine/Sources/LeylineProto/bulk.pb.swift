@@ -37,6 +37,7 @@ public nonisolated enum Leyline_V1_StreamKind: SwiftProtobuf.Enum, Swift.CaseIte
   case fft // = 2
   case audio // = 3
   case decoded // = 4
+  case persistence // = 5
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -50,6 +51,7 @@ public nonisolated enum Leyline_V1_StreamKind: SwiftProtobuf.Enum, Swift.CaseIte
     case 2: self = .fft
     case 3: self = .audio
     case 4: self = .decoded
+    case 5: self = .persistence
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -61,6 +63,7 @@ public nonisolated enum Leyline_V1_StreamKind: SwiftProtobuf.Enum, Swift.CaseIte
     case .fft: return 2
     case .audio: return 3
     case .decoded: return 4
+    case .persistence: return 5
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -72,6 +75,7 @@ public nonisolated enum Leyline_V1_StreamKind: SwiftProtobuf.Enum, Swift.CaseIte
     .fft,
     .audio,
     .decoded,
+    .persistence,
   ]
 
 }
@@ -309,6 +313,14 @@ public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
     set {params = .audio(newValue)}
   }
 
+  public var persistence: Leyline_V1_PersistenceParams {
+    get {
+      if case .persistence(let v)? = params {return v}
+      return Leyline_V1_PersistenceParams()
+    }
+    set {params = .persistence(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Source: Equatable, Sendable {
@@ -324,6 +336,7 @@ public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
     case iq(Leyline_V1_IqParams)
     case fft(Leyline_V1_FftParams)
     case audio(Leyline_V1_AudioParams)
+    case persistence(Leyline_V1_PersistenceParams)
 
   }
 
@@ -394,6 +407,52 @@ public nonisolated struct Leyline_V1_AudioParams: Sendable {
   public init() {}
 }
 
+/// A persistence (phosphor) frame: for each frequency bin, how often each level
+/// has been seen lately. Bright means usual, faint means rare-but-real. It
+/// answers a different question from FFT -- "what is usually here" rather than
+/// "what is here now" -- and it is the one band view that works without fine
+/// time resolution, because it accumulates over time instead of resolving it.
+///
+/// Payload is `bins * levels` little-endian uint16 counts, bin-major: all of
+/// bin 0's level buckets, then bin 1's. Level bucket i covers
+/// [floor_db + i*range_db/levels, floor_db + (i+1)*range_db/levels).
+///
+/// The client supplies floor_db and range_db and the daemon does not guess: a
+/// daemon-chosen scale would have to appear in the descriptor before any row
+/// had arrived. A request that leaves them 0 is refused rather than defaulted,
+/// because a persistence frame on the wrong scale is not obviously wrong to
+/// look at.
+///
+/// Counts halve every half_life_seconds, which bounds them and makes "usual"
+/// mean "usual lately". They saturate at uint16 max rather than wrapping.
+public nonisolated struct Leyline_V1_PersistenceParams: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// served from the FFT ladder's power-of-two sizes
+  public var bins: UInt32 = 0
+
+  /// level buckets per bin
+  public var levels: UInt32 = 0
+
+  /// dBFS at the bottom of the level axis
+  public var floorDb: Double = 0
+
+  /// dB the level axis spans
+  public var rangeDb: Double = 0
+
+  /// how fast a count decays; 0 = daemon default
+  public var halfLifeSeconds: Double = 0
+
+  /// frames delivered, not rows accumulated
+  public var rowsPerSecond: Double = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 /// The authoritative answer. Clients interpret frames from this alone.
 public nonisolated struct Leyline_V1_StreamDescriptor: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
@@ -432,7 +491,15 @@ public nonisolated struct Leyline_V1_StreamDescriptor: Sendable {
     set {params = .audio(newValue)}
   }
 
-  /// FFT/IQ context
+  public var persistence: Leyline_V1_PersistenceParams {
+    get {
+      if case .persistence(let v)? = params {return v}
+      return Leyline_V1_PersistenceParams()
+    }
+    set {params = .persistence(newValue)}
+  }
+
+  /// FFT/IQ/persistence context
   public var centerHz: UInt64 = 0
 
   public var spanHz: UInt64 = 0
@@ -462,6 +529,7 @@ public nonisolated struct Leyline_V1_StreamDescriptor: Sendable {
     case iq(Leyline_V1_IqParams)
     case fft(Leyline_V1_FftParams)
     case audio(Leyline_V1_AudioParams)
+    case persistence(Leyline_V1_PersistenceParams)
 
   }
 
@@ -553,7 +621,7 @@ public nonisolated struct Leyline_V1_StreamRef: Sendable {
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_StreamKind: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0STREAM_KIND_UNSPECIFIED\0\u{1}IQ\0\u{1}FFT\0\u{1}AUDIO\0\u{1}DECODED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0STREAM_KIND_UNSPECIFIED\0\u{1}IQ\0\u{1}FFT\0\u{1}AUDIO\0\u{1}DECODED\0\u{1}PERSISTENCE\0")
 }
 
 nonisolated extension Leyline_V1_Transport: SwiftProtobuf._ProtoNameProviding {
@@ -574,7 +642,7 @@ nonisolated extension Leyline_V1_AudioSampleFormat: SwiftProtobuf._ProtoNameProv
 
 nonisolated extension Leyline_V1_SubscribeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SubscribeRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}channel_id\0\u{1}kind\0\u{1}policy\0\u{1}start\0\u{1}transport\0\u{1}iq\0\u{1}fft\0\u{1}audio\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}channel_id\0\u{1}kind\0\u{1}policy\0\u{1}start\0\u{1}transport\0\u{1}iq\0\u{1}fft\0\u{1}audio\0\u{1}persistence\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -641,6 +709,19 @@ nonisolated extension Leyline_V1_SubscribeRequest: SwiftProtobuf.Message, SwiftP
           self.params = .audio(v)
         }
       }()
+      case 10: try {
+        var v: Leyline_V1_PersistenceParams?
+        var hadOneofValue = false
+        if let current = self.params {
+          hadOneofValue = true
+          if case .persistence(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.params = .persistence(v)
+        }
+      }()
       default: break
       }
     }
@@ -686,6 +767,10 @@ nonisolated extension Leyline_V1_SubscribeRequest: SwiftProtobuf.Message, SwiftP
     case .audio?: try {
       guard case .audio(let v)? = self.params else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    }()
+    case .persistence?: try {
+      guard case .persistence(let v)? = self.params else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
     }()
     case nil: break
     }
@@ -824,9 +909,64 @@ nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtob
   }
 }
 
+nonisolated extension Leyline_V1_PersistenceParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PersistenceParams"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}bins\0\u{1}levels\0\u{3}floor_db\0\u{3}range_db\0\u{3}half_life_seconds\0\u{3}rows_per_second\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.bins) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.levels) }()
+      case 3: try { try decoder.decodeSingularDoubleField(value: &self.floorDb) }()
+      case 4: try { try decoder.decodeSingularDoubleField(value: &self.rangeDb) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.halfLifeSeconds) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.rowsPerSecond) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.bins != 0 {
+      try visitor.visitSingularUInt32Field(value: self.bins, fieldNumber: 1)
+    }
+    if self.levels != 0 {
+      try visitor.visitSingularUInt32Field(value: self.levels, fieldNumber: 2)
+    }
+    if self.floorDb.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.floorDb, fieldNumber: 3)
+    }
+    if self.rangeDb.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.rangeDb, fieldNumber: 4)
+    }
+    if self.halfLifeSeconds.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.halfLifeSeconds, fieldNumber: 5)
+    }
+    if self.rowsPerSecond.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.rowsPerSecond, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_PersistenceParams, rhs: Leyline_V1_PersistenceParams) -> Bool {
+    if lhs.bins != rhs.bins {return false}
+    if lhs.levels != rhs.levels {return false}
+    if lhs.floorDb != rhs.floorDb {return false}
+    if lhs.rangeDb != rhs.rangeDb {return false}
+    if lhs.halfLifeSeconds != rhs.halfLifeSeconds {return false}
+    if lhs.rowsPerSecond != rhs.rowsPerSecond {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StreamDescriptor"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}kind\0\u{1}policy\0\u{1}iq\0\u{1}fft\0\u{1}audio\0\u{3}center_hz\0\u{3}span_hz\0\u{1}grpc\0\u{1}shm\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}kind\0\u{1}policy\0\u{1}iq\0\u{1}fft\0\u{1}audio\0\u{3}center_hz\0\u{3}span_hz\0\u{1}grpc\0\u{1}shm\0\u{1}persistence\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -899,6 +1039,19 @@ nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftP
           self.transport = .shm(v)
         }
       }()
+      case 11: try {
+        var v: Leyline_V1_PersistenceParams?
+        var hadOneofValue = false
+        if let current = self.params {
+          hadOneofValue = true
+          if case .persistence(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.params = .persistence(v)
+        }
+      }()
       default: break
       }
     }
@@ -931,7 +1084,7 @@ nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftP
       guard case .audio(let v)? = self.params else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
     }()
-    case nil: break
+    default: break
     }
     if self.centerHz != 0 {
       try visitor.visitSingularUInt64Field(value: self.centerHz, fieldNumber: 7)
@@ -950,6 +1103,9 @@ nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftP
     }()
     case nil: break
     }
+    try { if case .persistence(let v)? = self.params {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 

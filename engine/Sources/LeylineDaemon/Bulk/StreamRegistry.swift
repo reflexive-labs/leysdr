@@ -13,6 +13,7 @@ final class BulkSubscription: @unchecked Sendable {
         case fft(FrameRing, SpectrumSubscription, any SpectrumLadder, FFTFrameSink)
         case audio(AudioFrameSource, any ChannelEngine)
         case iq(FrameRing, IQFrameTap, any CaptureEngine)
+        case persistence(FrameRing, SpectrumSubscription, any SpectrumLadder, PersistenceFrameSink)
     }
 
     let id: StreamID
@@ -42,7 +43,7 @@ final class BulkSubscription: @unchecked Sendable {
     func cancelReader() {
         readerCancelled.store(true, ordering: .releasing)
         switch source {
-        case .fft(let ring, _, _, _), .iq(let ring, _, _): ring.wake()
+        case .fft(let ring, _, _, _), .iq(let ring, _, _), .persistence(let ring, _, _, _): ring.wake()
         case .audio(let audio, _): audio.wake()
         }
     }
@@ -148,6 +149,42 @@ actor StreamRegistry {
             p.looksPerRow = UInt32(sub.looksPerRow)
             desc.fft = p
             source = .fft(ring, sub, capture.spectrum, sink)
+        case .persistence:
+            guard channelID == nil else { throw EngineError.invalidArgument("persistence streams are capture-scoped", target: channelID!.string) }
+            let want = req.persistence
+            // The scale is the client's to state. A daemon-chosen one would have to appear in the
+            // descriptor before any row had arrived, and a persistence frame on the wrong scale is
+            // not obviously wrong to look at -- so this is refused rather than defaulted.
+            guard want.rangeDb > 0 else {
+                throw EngineError.invalidArgument("persistence needs range_db > 0 and a floor_db; take an FFT row first to find the floor")
+            }
+            let levels = want.levels == 0 ? 32 : Int(want.levels)
+            guard levels > 1, levels <= 256 else {
+                throw EngineError.invalidArgument("persistence levels must be 2...256, got \(levels)")
+            }
+            let pbins = DefaultSpectrumLadder.roundBins(want.bins == 0 ? 256 : Int(want.bins))
+            let emitRows = want.rowsPerSecond > 0 ? want.rowsPerSecond : 2
+            // Accumulate as fast as the ladder will go and display slowly: the histogram wants
+            // every row it can get, and a person reads a couple of frames a second.
+            let ladderRows = DefaultSpectrumLadder.maxRowsPerSecond
+            let halfLife = want.halfLifeSeconds > 0 ? want.halfLifeSeconds : 20
+            let acc = PersistenceAccumulator(bins: pbins, levels: levels,
+                                             floorDB: want.floorDb, rangeDB: want.rangeDb,
+                                             halfLifeRows: Swift.max(1, Int(halfLife * ladderRows)))
+            let ring = FrameRing(slots: Self.fftSlots, slotBytes: pbins * levels * 2)
+            let emitInterval = UInt64(Swift.max(1.0, Double(snap.sampleRate) / emitRows))
+            let sink = PersistenceFrameSink(ring: ring, accumulator: acc, emitInterval: emitInterval)
+            let sub = await capture.spectrum.subscribe(bins: pbins, rowsPerSecond: ladderRows,
+                                                       accumulation: .snapshot, policy: enginePolicy, sink: sink)
+            var p = Leyline_V1_PersistenceParams()
+            p.bins = UInt32(sub.actualBins)
+            p.levels = UInt32(levels)
+            p.floorDb = want.floorDb
+            p.rangeDb = want.rangeDb
+            p.halfLifeSeconds = halfLife
+            p.rowsPerSecond = emitRows
+            desc.persistence = p
+            source = .persistence(ring, sub, capture.spectrum, sink)
         case .audio:
             guard let ch = channel, let chID = channelID else { throw EngineError.invalidArgument("audio streams are channel-scoped", target: captureID.string) }
             let format: Leyline_V1_AudioSampleFormat = req.audio.format == .unspecified ? .s16 : req.audio.format
@@ -253,7 +290,8 @@ actor StreamRegistry {
         guard subs.removeValue(forKey: sub.id) != nil else { return }
         sub.markClosed()
         switch sub.source {
-        case .fft(let ring, let spectrumSub, let ladder, _):
+        case .fft(let ring, let spectrumSub, let ladder, _),
+             .persistence(let ring, let spectrumSub, let ladder, _):
             if detach { await ladder.cancel(spectrumSub) }
             ring.finish()
         case .audio(let audio, let channel):
@@ -290,7 +328,7 @@ actor StreamRegistry {
             return f
         }
         switch sub.source {
-        case .fft(let ring, _, _, _), .iq(let ring, _, _):
+        case .fft(let ring, _, _, _), .iq(let ring, _, _), .persistence(let ring, _, _, _):
             for await _ in ring.poke {
                 while let p = ring.pop() {
                     try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples, seq: p.seq))

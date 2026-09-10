@@ -25,10 +25,11 @@ message SubscribeRequest {
     IqParams iq = 7;
     FftParams fft = 8;
     AudioParams audio = 9;
+    PersistenceParams persistence = 10;
   }
 }
 
-enum StreamKind { STREAM_KIND_UNSPECIFIED = 0; IQ = 1; FFT = 2; AUDIO = 3; DECODED = 4; }
+enum StreamKind { STREAM_KIND_UNSPECIFIED = 0; IQ = 1; FFT = 2; AUDIO = 3; DECODED = 4; PERSISTENCE = 5; }
 enum Transport { TRANSPORT_UNSPECIFIED = 0; GRPC = 1; SHM_RING = 2; }
 
 // v0 IQ contract: the daemon serves raw IQ as CF32 at the capture's native sample rate only.
@@ -65,13 +66,45 @@ enum FftBinFormat { FFT_BIN_FORMAT_UNSPECIFIED = 0; DB_U8 = 1; DB_F32 = 2; }
 message AudioParams { uint32 sample_rate = 1; AudioSampleFormat format = 2; }
 enum AudioSampleFormat { AUDIO_SAMPLE_FORMAT_UNSPECIFIED = 0; S16 = 1; F32 = 2; }
 
+// A persistence (phosphor) frame: for each frequency bin, how often each level
+// has been seen lately. Bright means usual, faint means rare-but-real. It
+// answers a different question from FFT -- "what is usually here" rather than
+// "what is here now" -- and it is the one band view that works without fine
+// time resolution, because it accumulates over time instead of resolving it.
+//
+// Payload is `bins * levels` little-endian uint16 counts, bin-major: all of
+// bin 0's level buckets, then bin 1's. Level bucket i covers
+// [floor_db + i*range_db/levels, floor_db + (i+1)*range_db/levels).
+//
+// The client supplies floor_db and range_db and the daemon does not guess: a
+// daemon-chosen scale would have to appear in the descriptor before any row
+// had arrived. A request that leaves them 0 is refused rather than defaulted,
+// because a persistence frame on the wrong scale is not obviously wrong to
+// look at.
+//
+// Counts halve every half_life_seconds, which bounds them and makes "usual"
+// mean "usual lately". They saturate at uint16 max rather than wrapping.
+message PersistenceParams {
+  uint32 bins = 1;               // served from the FFT ladder's power-of-two sizes
+  uint32 levels = 2;             // level buckets per bin
+  double floor_db = 3;           // dBFS at the bottom of the level axis
+  double range_db = 4;           // dB the level axis spans
+  double half_life_seconds = 5;  // how fast a count decays; 0 = daemon default
+  double rows_per_second = 6;    // frames delivered, not rows accumulated
+}
+
 // The authoritative answer. Clients interpret frames from this alone.
 message StreamDescriptor {
   string stream_id = 1;
   StreamKind kind = 2;
   DeliveryPolicy policy = 3;
-  oneof params { IqParams iq = 4; FftParams fft = 5; AudioParams audio = 6; }
-  uint64 center_hz = 7;          // FFT/IQ context
+  oneof params {
+    IqParams iq = 4;
+    FftParams fft = 5;
+    AudioParams audio = 6;
+    PersistenceParams persistence = 11;
+  }
+  uint64 center_hz = 7;          // FFT/IQ/persistence context
   uint64 span_hz = 8;
   oneof transport {
     bool grpc = 9;               // pull via Stream(stream_id)

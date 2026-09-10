@@ -34,6 +34,7 @@ const (
 	StreamKind_FFT                     StreamKind = 2
 	StreamKind_AUDIO                   StreamKind = 3
 	StreamKind_DECODED                 StreamKind = 4
+	StreamKind_PERSISTENCE             StreamKind = 5
 )
 
 // Enum value maps for StreamKind.
@@ -44,6 +45,7 @@ var (
 		2: "FFT",
 		3: "AUDIO",
 		4: "DECODED",
+		5: "PERSISTENCE",
 	}
 	StreamKind_value = map[string]int32{
 		"STREAM_KIND_UNSPECIFIED": 0,
@@ -51,6 +53,7 @@ var (
 		"FFT":                     2,
 		"AUDIO":                   3,
 		"DECODED":                 4,
+		"PERSISTENCE":             5,
 	}
 )
 
@@ -300,6 +303,7 @@ type SubscribeRequest struct {
 	//	*SubscribeRequest_Iq
 	//	*SubscribeRequest_Fft
 	//	*SubscribeRequest_Audio
+	//	*SubscribeRequest_Persistence
 	Params        isSubscribeRequest_Params `protobuf_oneof:"params"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -422,6 +426,15 @@ func (x *SubscribeRequest) GetAudio() *AudioParams {
 	return nil
 }
 
+func (x *SubscribeRequest) GetPersistence() *PersistenceParams {
+	if x != nil {
+		if x, ok := x.Params.(*SubscribeRequest_Persistence); ok {
+			return x.Persistence
+		}
+	}
+	return nil
+}
+
 type isSubscribeRequest_Source interface {
 	isSubscribeRequest_Source()
 }
@@ -454,11 +467,17 @@ type SubscribeRequest_Audio struct {
 	Audio *AudioParams `protobuf:"bytes,9,opt,name=audio,proto3,oneof"`
 }
 
+type SubscribeRequest_Persistence struct {
+	Persistence *PersistenceParams `protobuf:"bytes,10,opt,name=persistence,proto3,oneof"`
+}
+
 func (*SubscribeRequest_Iq) isSubscribeRequest_Params() {}
 
 func (*SubscribeRequest_Fft) isSubscribeRequest_Params() {}
 
 func (*SubscribeRequest_Audio) isSubscribeRequest_Params() {}
+
+func (*SubscribeRequest_Persistence) isSubscribeRequest_Params() {}
 
 // v0 IQ contract: the daemon serves raw IQ as CF32 at the capture's native sample rate only.
 // A request must leave `format` UNSPECIFIED or CF32 and `sample_rate` 0 or the capture rate;
@@ -653,6 +672,108 @@ func (x *AudioParams) GetFormat() AudioSampleFormat {
 	return AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED
 }
 
+// A persistence (phosphor) frame: for each frequency bin, how often each level
+// has been seen lately. Bright means usual, faint means rare-but-real. It
+// answers a different question from FFT -- "what is usually here" rather than
+// "what is here now" -- and it is the one band view that works without fine
+// time resolution, because it accumulates over time instead of resolving it.
+//
+// Payload is `bins * levels` little-endian uint16 counts, bin-major: all of
+// bin 0's level buckets, then bin 1's. Level bucket i covers
+// [floor_db + i*range_db/levels, floor_db + (i+1)*range_db/levels).
+//
+// The client supplies floor_db and range_db and the daemon does not guess: a
+// daemon-chosen scale would have to appear in the descriptor before any row
+// had arrived. A request that leaves them 0 is refused rather than defaulted,
+// because a persistence frame on the wrong scale is not obviously wrong to
+// look at.
+//
+// Counts halve every half_life_seconds, which bounds them and makes "usual"
+// mean "usual lately". They saturate at uint16 max rather than wrapping.
+type PersistenceParams struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Bins            uint32                 `protobuf:"varint,1,opt,name=bins,proto3" json:"bins,omitempty"`                                                 // served from the FFT ladder's power-of-two sizes
+	Levels          uint32                 `protobuf:"varint,2,opt,name=levels,proto3" json:"levels,omitempty"`                                             // level buckets per bin
+	FloorDb         float64                `protobuf:"fixed64,3,opt,name=floor_db,json=floorDb,proto3" json:"floor_db,omitempty"`                           // dBFS at the bottom of the level axis
+	RangeDb         float64                `protobuf:"fixed64,4,opt,name=range_db,json=rangeDb,proto3" json:"range_db,omitempty"`                           // dB the level axis spans
+	HalfLifeSeconds float64                `protobuf:"fixed64,5,opt,name=half_life_seconds,json=halfLifeSeconds,proto3" json:"half_life_seconds,omitempty"` // how fast a count decays; 0 = daemon default
+	RowsPerSecond   float64                `protobuf:"fixed64,6,opt,name=rows_per_second,json=rowsPerSecond,proto3" json:"rows_per_second,omitempty"`       // frames delivered, not rows accumulated
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PersistenceParams) Reset() {
+	*x = PersistenceParams{}
+	mi := &file_leyline_v1_bulk_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PersistenceParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PersistenceParams) ProtoMessage() {}
+
+func (x *PersistenceParams) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_bulk_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PersistenceParams.ProtoReflect.Descriptor instead.
+func (*PersistenceParams) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PersistenceParams) GetBins() uint32 {
+	if x != nil {
+		return x.Bins
+	}
+	return 0
+}
+
+func (x *PersistenceParams) GetLevels() uint32 {
+	if x != nil {
+		return x.Levels
+	}
+	return 0
+}
+
+func (x *PersistenceParams) GetFloorDb() float64 {
+	if x != nil {
+		return x.FloorDb
+	}
+	return 0
+}
+
+func (x *PersistenceParams) GetRangeDb() float64 {
+	if x != nil {
+		return x.RangeDb
+	}
+	return 0
+}
+
+func (x *PersistenceParams) GetHalfLifeSeconds() float64 {
+	if x != nil {
+		return x.HalfLifeSeconds
+	}
+	return 0
+}
+
+func (x *PersistenceParams) GetRowsPerSecond() float64 {
+	if x != nil {
+		return x.RowsPerSecond
+	}
+	return 0
+}
+
 // The authoritative answer. Clients interpret frames from this alone.
 type StreamDescriptor struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
@@ -664,8 +785,9 @@ type StreamDescriptor struct {
 	//	*StreamDescriptor_Iq
 	//	*StreamDescriptor_Fft
 	//	*StreamDescriptor_Audio
+	//	*StreamDescriptor_Persistence
 	Params   isStreamDescriptor_Params `protobuf_oneof:"params"`
-	CenterHz uint64                    `protobuf:"varint,7,opt,name=center_hz,json=centerHz,proto3" json:"center_hz,omitempty"` // FFT/IQ context
+	CenterHz uint64                    `protobuf:"varint,7,opt,name=center_hz,json=centerHz,proto3" json:"center_hz,omitempty"` // FFT/IQ/persistence context
 	SpanHz   uint64                    `protobuf:"varint,8,opt,name=span_hz,json=spanHz,proto3" json:"span_hz,omitempty"`
 	// Types that are valid to be assigned to Transport:
 	//
@@ -678,7 +800,7 @@ type StreamDescriptor struct {
 
 func (x *StreamDescriptor) Reset() {
 	*x = StreamDescriptor{}
-	mi := &file_leyline_v1_bulk_proto_msgTypes[4]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -690,7 +812,7 @@ func (x *StreamDescriptor) String() string {
 func (*StreamDescriptor) ProtoMessage() {}
 
 func (x *StreamDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_bulk_proto_msgTypes[4]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -703,7 +825,7 @@ func (x *StreamDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamDescriptor.ProtoReflect.Descriptor instead.
 func (*StreamDescriptor) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StreamDescriptor) GetStreamId() string {
@@ -756,6 +878,15 @@ func (x *StreamDescriptor) GetAudio() *AudioParams {
 	if x != nil {
 		if x, ok := x.Params.(*StreamDescriptor_Audio); ok {
 			return x.Audio
+		}
+	}
+	return nil
+}
+
+func (x *StreamDescriptor) GetPersistence() *PersistenceParams {
+	if x != nil {
+		if x, ok := x.Params.(*StreamDescriptor_Persistence); ok {
+			return x.Persistence
 		}
 	}
 	return nil
@@ -816,11 +947,17 @@ type StreamDescriptor_Audio struct {
 	Audio *AudioParams `protobuf:"bytes,6,opt,name=audio,proto3,oneof"`
 }
 
+type StreamDescriptor_Persistence struct {
+	Persistence *PersistenceParams `protobuf:"bytes,11,opt,name=persistence,proto3,oneof"`
+}
+
 func (*StreamDescriptor_Iq) isStreamDescriptor_Params() {}
 
 func (*StreamDescriptor_Fft) isStreamDescriptor_Params() {}
 
 func (*StreamDescriptor_Audio) isStreamDescriptor_Params() {}
+
+func (*StreamDescriptor_Persistence) isStreamDescriptor_Params() {}
 
 type isStreamDescriptor_Transport interface {
 	isStreamDescriptor_Transport()
@@ -856,7 +993,7 @@ type ShmRing struct {
 
 func (x *ShmRing) Reset() {
 	*x = ShmRing{}
-	mi := &file_leyline_v1_bulk_proto_msgTypes[5]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -868,7 +1005,7 @@ func (x *ShmRing) String() string {
 func (*ShmRing) ProtoMessage() {}
 
 func (x *ShmRing) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_bulk_proto_msgTypes[5]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -881,7 +1018,7 @@ func (x *ShmRing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShmRing.ProtoReflect.Descriptor instead.
 func (*ShmRing) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ShmRing) GetPath() string {
@@ -918,7 +1055,7 @@ type Frame struct {
 
 func (x *Frame) Reset() {
 	*x = Frame{}
-	mi := &file_leyline_v1_bulk_proto_msgTypes[6]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1067,7 @@ func (x *Frame) String() string {
 func (*Frame) ProtoMessage() {}
 
 func (x *Frame) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_bulk_proto_msgTypes[6]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1080,7 @@ func (x *Frame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Frame.ProtoReflect.Descriptor instead.
 func (*Frame) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Frame) GetStreamId() string {
@@ -990,7 +1127,7 @@ type StreamRef struct {
 
 func (x *StreamRef) Reset() {
 	*x = StreamRef{}
-	mi := &file_leyline_v1_bulk_proto_msgTypes[7]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1139,7 @@ func (x *StreamRef) String() string {
 func (*StreamRef) ProtoMessage() {}
 
 func (x *StreamRef) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_bulk_proto_msgTypes[7]
+	mi := &file_leyline_v1_bulk_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1152,7 @@ func (x *StreamRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamRef.ProtoReflect.Descriptor instead.
 func (*StreamRef) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_bulk_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StreamRef) GetStreamId() string {
@@ -1030,7 +1167,7 @@ var File_leyline_v1_bulk_proto protoreflect.FileDescriptor
 const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\n" +
 	"\x15leyline/v1/bulk.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x18leyline/v1/control.proto\"\xb3\x03\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x18leyline/v1/control.proto\"\xf6\x03\n" +
 	"\x10SubscribeRequest\x12\x1f\n" +
 	"\n" +
 	"capture_id\x18\x01 \x01(\tH\x00R\tcaptureId\x12\x1f\n" +
@@ -1042,7 +1179,9 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\ttransport\x18\x06 \x01(\x0e2\x15.leyline.v1.TransportR\ttransport\x12&\n" +
 	"\x02iq\x18\a \x01(\v2\x14.leyline.v1.IqParamsH\x01R\x02iq\x12)\n" +
 	"\x03fft\x18\b \x01(\v2\x15.leyline.v1.FftParamsH\x01R\x03fft\x12/\n" +
-	"\x05audio\x18\t \x01(\v2\x17.leyline.v1.AudioParamsH\x01R\x05audioB\b\n" +
+	"\x05audio\x18\t \x01(\v2\x17.leyline.v1.AudioParamsH\x01R\x05audio\x12A\n" +
+	"\vpersistence\x18\n" +
+	" \x01(\v2\x1d.leyline.v1.PersistenceParamsH\x01R\vpersistenceB\b\n" +
 	"\x06sourceB\b\n" +
 	"\x06params\"]\n" +
 	"\bIqParams\x12\x1f\n" +
@@ -1059,14 +1198,22 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\vAudioParams\x12\x1f\n" +
 	"\vsample_rate\x18\x01 \x01(\rR\n" +
 	"sampleRate\x125\n" +
-	"\x06format\x18\x02 \x01(\x0e2\x1d.leyline.v1.AudioSampleFormatR\x06format\"\x9f\x03\n" +
+	"\x06format\x18\x02 \x01(\x0e2\x1d.leyline.v1.AudioSampleFormatR\x06format\"\xc9\x01\n" +
+	"\x11PersistenceParams\x12\x12\n" +
+	"\x04bins\x18\x01 \x01(\rR\x04bins\x12\x16\n" +
+	"\x06levels\x18\x02 \x01(\rR\x06levels\x12\x19\n" +
+	"\bfloor_db\x18\x03 \x01(\x01R\afloorDb\x12\x19\n" +
+	"\brange_db\x18\x04 \x01(\x01R\arangeDb\x12*\n" +
+	"\x11half_life_seconds\x18\x05 \x01(\x01R\x0fhalfLifeSeconds\x12&\n" +
+	"\x0frows_per_second\x18\x06 \x01(\x01R\rrowsPerSecond\"\xe2\x03\n" +
 	"\x10StreamDescriptor\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.leyline.v1.StreamKindR\x04kind\x122\n" +
 	"\x06policy\x18\x03 \x01(\x0e2\x1a.leyline.v1.DeliveryPolicyR\x06policy\x12&\n" +
 	"\x02iq\x18\x04 \x01(\v2\x14.leyline.v1.IqParamsH\x00R\x02iq\x12)\n" +
 	"\x03fft\x18\x05 \x01(\v2\x15.leyline.v1.FftParamsH\x00R\x03fft\x12/\n" +
-	"\x05audio\x18\x06 \x01(\v2\x17.leyline.v1.AudioParamsH\x00R\x05audio\x12\x1b\n" +
+	"\x05audio\x18\x06 \x01(\v2\x17.leyline.v1.AudioParamsH\x00R\x05audio\x12A\n" +
+	"\vpersistence\x18\v \x01(\v2\x1d.leyline.v1.PersistenceParamsH\x00R\vpersistence\x12\x1b\n" +
 	"\tcenter_hz\x18\a \x01(\x04R\bcenterHz\x12\x17\n" +
 	"\aspan_hz\x18\b \x01(\x04R\x06spanHz\x12\x14\n" +
 	"\x04grpc\x18\t \x01(\bH\x01R\x04grpc\x12'\n" +
@@ -1086,14 +1233,15 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\x03gap\x18\x04 \x01(\v2\x0f.leyline.v1.GapR\x03gap\x12\x18\n" +
 	"\apayload\x18\x05 \x01(\fR\apayload\"(\n" +
 	"\tStreamRef\x12\x1b\n" +
-	"\tstream_id\x18\x01 \x01(\tR\bstreamId*R\n" +
+	"\tstream_id\x18\x01 \x01(\tR\bstreamId*c\n" +
 	"\n" +
 	"StreamKind\x12\x1b\n" +
 	"\x17STREAM_KIND_UNSPECIFIED\x10\x00\x12\x06\n" +
 	"\x02IQ\x10\x01\x12\a\n" +
 	"\x03FFT\x10\x02\x12\t\n" +
 	"\x05AUDIO\x10\x03\x12\v\n" +
-	"\aDECODED\x10\x04*>\n" +
+	"\aDECODED\x10\x04\x12\x0f\n" +
+	"\vPERSISTENCE\x10\x05*>\n" +
 	"\tTransport\x12\x19\n" +
 	"\x15TRANSPORT_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04GRPC\x10\x01\x12\f\n" +
@@ -1130,59 +1278,62 @@ func file_leyline_v1_bulk_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_bulk_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_leyline_v1_bulk_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_leyline_v1_bulk_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_leyline_v1_bulk_proto_goTypes = []any{
-	(StreamKind)(0),          // 0: leyline.v1.StreamKind
-	(Transport)(0),           // 1: leyline.v1.Transport
-	(FftAccumulation)(0),     // 2: leyline.v1.FftAccumulation
-	(FftBinFormat)(0),        // 3: leyline.v1.FftBinFormat
-	(AudioSampleFormat)(0),   // 4: leyline.v1.AudioSampleFormat
-	(*SubscribeRequest)(nil), // 5: leyline.v1.SubscribeRequest
-	(*IqParams)(nil),         // 6: leyline.v1.IqParams
-	(*FftParams)(nil),        // 7: leyline.v1.FftParams
-	(*AudioParams)(nil),      // 8: leyline.v1.AudioParams
-	(*StreamDescriptor)(nil), // 9: leyline.v1.StreamDescriptor
-	(*ShmRing)(nil),          // 10: leyline.v1.ShmRing
-	(*Frame)(nil),            // 11: leyline.v1.Frame
-	(*StreamRef)(nil),        // 12: leyline.v1.StreamRef
-	(DeliveryPolicy)(0),      // 13: leyline.v1.DeliveryPolicy
-	(*StreamPosition)(nil),   // 14: leyline.v1.StreamPosition
-	(SampleFormat)(0),        // 15: leyline.v1.SampleFormat
-	(*SampleTime)(nil),       // 16: leyline.v1.SampleTime
-	(*Gap)(nil),              // 17: leyline.v1.Gap
-	(*Empty)(nil),            // 18: leyline.v1.Empty
+	(StreamKind)(0),           // 0: leyline.v1.StreamKind
+	(Transport)(0),            // 1: leyline.v1.Transport
+	(FftAccumulation)(0),      // 2: leyline.v1.FftAccumulation
+	(FftBinFormat)(0),         // 3: leyline.v1.FftBinFormat
+	(AudioSampleFormat)(0),    // 4: leyline.v1.AudioSampleFormat
+	(*SubscribeRequest)(nil),  // 5: leyline.v1.SubscribeRequest
+	(*IqParams)(nil),          // 6: leyline.v1.IqParams
+	(*FftParams)(nil),         // 7: leyline.v1.FftParams
+	(*AudioParams)(nil),       // 8: leyline.v1.AudioParams
+	(*PersistenceParams)(nil), // 9: leyline.v1.PersistenceParams
+	(*StreamDescriptor)(nil),  // 10: leyline.v1.StreamDescriptor
+	(*ShmRing)(nil),           // 11: leyline.v1.ShmRing
+	(*Frame)(nil),             // 12: leyline.v1.Frame
+	(*StreamRef)(nil),         // 13: leyline.v1.StreamRef
+	(DeliveryPolicy)(0),       // 14: leyline.v1.DeliveryPolicy
+	(*StreamPosition)(nil),    // 15: leyline.v1.StreamPosition
+	(SampleFormat)(0),         // 16: leyline.v1.SampleFormat
+	(*SampleTime)(nil),        // 17: leyline.v1.SampleTime
+	(*Gap)(nil),               // 18: leyline.v1.Gap
+	(*Empty)(nil),             // 19: leyline.v1.Empty
 }
 var file_leyline_v1_bulk_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.SubscribeRequest.kind:type_name -> leyline.v1.StreamKind
-	13, // 1: leyline.v1.SubscribeRequest.policy:type_name -> leyline.v1.DeliveryPolicy
-	14, // 2: leyline.v1.SubscribeRequest.start:type_name -> leyline.v1.StreamPosition
+	14, // 1: leyline.v1.SubscribeRequest.policy:type_name -> leyline.v1.DeliveryPolicy
+	15, // 2: leyline.v1.SubscribeRequest.start:type_name -> leyline.v1.StreamPosition
 	1,  // 3: leyline.v1.SubscribeRequest.transport:type_name -> leyline.v1.Transport
 	6,  // 4: leyline.v1.SubscribeRequest.iq:type_name -> leyline.v1.IqParams
 	7,  // 5: leyline.v1.SubscribeRequest.fft:type_name -> leyline.v1.FftParams
 	8,  // 6: leyline.v1.SubscribeRequest.audio:type_name -> leyline.v1.AudioParams
-	15, // 7: leyline.v1.IqParams.format:type_name -> leyline.v1.SampleFormat
-	3,  // 8: leyline.v1.FftParams.bin_format:type_name -> leyline.v1.FftBinFormat
-	2,  // 9: leyline.v1.FftParams.accumulation:type_name -> leyline.v1.FftAccumulation
-	4,  // 10: leyline.v1.AudioParams.format:type_name -> leyline.v1.AudioSampleFormat
-	0,  // 11: leyline.v1.StreamDescriptor.kind:type_name -> leyline.v1.StreamKind
-	13, // 12: leyline.v1.StreamDescriptor.policy:type_name -> leyline.v1.DeliveryPolicy
-	6,  // 13: leyline.v1.StreamDescriptor.iq:type_name -> leyline.v1.IqParams
-	7,  // 14: leyline.v1.StreamDescriptor.fft:type_name -> leyline.v1.FftParams
-	8,  // 15: leyline.v1.StreamDescriptor.audio:type_name -> leyline.v1.AudioParams
-	10, // 16: leyline.v1.StreamDescriptor.shm:type_name -> leyline.v1.ShmRing
-	16, // 17: leyline.v1.Frame.time:type_name -> leyline.v1.SampleTime
-	17, // 18: leyline.v1.Frame.gap:type_name -> leyline.v1.Gap
-	5,  // 19: leyline.v1.Bulk.Subscribe:input_type -> leyline.v1.SubscribeRequest
-	12, // 20: leyline.v1.Bulk.Stream:input_type -> leyline.v1.StreamRef
-	12, // 21: leyline.v1.Bulk.Unsubscribe:input_type -> leyline.v1.StreamRef
-	9,  // 22: leyline.v1.Bulk.Subscribe:output_type -> leyline.v1.StreamDescriptor
-	11, // 23: leyline.v1.Bulk.Stream:output_type -> leyline.v1.Frame
-	18, // 24: leyline.v1.Bulk.Unsubscribe:output_type -> leyline.v1.Empty
-	22, // [22:25] is the sub-list for method output_type
-	19, // [19:22] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	9,  // 7: leyline.v1.SubscribeRequest.persistence:type_name -> leyline.v1.PersistenceParams
+	16, // 8: leyline.v1.IqParams.format:type_name -> leyline.v1.SampleFormat
+	3,  // 9: leyline.v1.FftParams.bin_format:type_name -> leyline.v1.FftBinFormat
+	2,  // 10: leyline.v1.FftParams.accumulation:type_name -> leyline.v1.FftAccumulation
+	4,  // 11: leyline.v1.AudioParams.format:type_name -> leyline.v1.AudioSampleFormat
+	0,  // 12: leyline.v1.StreamDescriptor.kind:type_name -> leyline.v1.StreamKind
+	14, // 13: leyline.v1.StreamDescriptor.policy:type_name -> leyline.v1.DeliveryPolicy
+	6,  // 14: leyline.v1.StreamDescriptor.iq:type_name -> leyline.v1.IqParams
+	7,  // 15: leyline.v1.StreamDescriptor.fft:type_name -> leyline.v1.FftParams
+	8,  // 16: leyline.v1.StreamDescriptor.audio:type_name -> leyline.v1.AudioParams
+	9,  // 17: leyline.v1.StreamDescriptor.persistence:type_name -> leyline.v1.PersistenceParams
+	11, // 18: leyline.v1.StreamDescriptor.shm:type_name -> leyline.v1.ShmRing
+	17, // 19: leyline.v1.Frame.time:type_name -> leyline.v1.SampleTime
+	18, // 20: leyline.v1.Frame.gap:type_name -> leyline.v1.Gap
+	5,  // 21: leyline.v1.Bulk.Subscribe:input_type -> leyline.v1.SubscribeRequest
+	13, // 22: leyline.v1.Bulk.Stream:input_type -> leyline.v1.StreamRef
+	13, // 23: leyline.v1.Bulk.Unsubscribe:input_type -> leyline.v1.StreamRef
+	10, // 24: leyline.v1.Bulk.Subscribe:output_type -> leyline.v1.StreamDescriptor
+	12, // 25: leyline.v1.Bulk.Stream:output_type -> leyline.v1.Frame
+	19, // 26: leyline.v1.Bulk.Unsubscribe:output_type -> leyline.v1.Empty
+	24, // [24:27] is the sub-list for method output_type
+	21, // [21:24] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_bulk_proto_init() }
@@ -1198,11 +1349,13 @@ func file_leyline_v1_bulk_proto_init() {
 		(*SubscribeRequest_Iq)(nil),
 		(*SubscribeRequest_Fft)(nil),
 		(*SubscribeRequest_Audio)(nil),
+		(*SubscribeRequest_Persistence)(nil),
 	}
-	file_leyline_v1_bulk_proto_msgTypes[4].OneofWrappers = []any{
+	file_leyline_v1_bulk_proto_msgTypes[5].OneofWrappers = []any{
 		(*StreamDescriptor_Iq)(nil),
 		(*StreamDescriptor_Fft)(nil),
 		(*StreamDescriptor_Audio)(nil),
+		(*StreamDescriptor_Persistence)(nil),
 		(*StreamDescriptor_Grpc)(nil),
 		(*StreamDescriptor_Shm)(nil),
 	}
@@ -1212,7 +1365,7 @@ func file_leyline_v1_bulk_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_bulk_proto_rawDesc), len(file_leyline_v1_bulk_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

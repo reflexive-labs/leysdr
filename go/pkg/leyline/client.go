@@ -435,6 +435,26 @@ func (c *Client) SubscribeFFTAccumulated(ctx context.Context, captureID string, 
 	})
 }
 
+// SubscribePersistence subscribes to a capture's persistence (phosphor)
+// histogram: for each frequency bin, how often each level has been seen lately.
+//
+// floorDb and rangeDb are required and the daemon does not guess them: a
+// histogram on the wrong scale is not obviously wrong to look at. Take one FFT
+// row first to find the floor.
+func (c *Client) SubscribePersistence(ctx context.Context, captureID string, bins, levels uint32,
+	floorDb, rangeDb, halfLifeSeconds, rowsPerSecond float64,
+) (*Subscription, error) {
+	return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: captureID},
+		Kind:   leylinev1.StreamKind_PERSISTENCE,
+		Policy: leylinev1.DeliveryPolicy_LATEST_WINS,
+		Params: &leylinev1.SubscribeRequest_Persistence{Persistence: &leylinev1.PersistenceParams{
+			Bins: bins, Levels: levels, FloorDb: floorDb, RangeDb: rangeDb,
+			HalfLifeSeconds: halfLifeSeconds, RowsPerSecond: rowsPerSecond,
+		}},
+	})
+}
+
 // SubscribeAudio subscribes to a channel's demodulated audio. sampleRate 0 asks
 // for the channel's native audio rate.
 func (c *Client) SubscribeAudio(ctx context.Context, channelID string, sampleRate uint32, format leylinev1.AudioSampleFormat) (*Subscription, error) {
