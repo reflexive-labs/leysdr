@@ -141,6 +141,10 @@ actor SessionStore {
     /// Installed by the job store; nil until jobs exist.
     private var jobsProvider: (@Sendable () async -> [Leyline_V1_Job])?
     private var clientGoneHook: (@Sendable (String) async -> Void)?
+    /// Captures a sweep currently holds. Invariant 9 puts jobs behind the allocator; this is the
+    /// other half of it -- without it a client can join a capture that is walking a band, and its
+    /// channel is dragged across megahertz with no explanation.
+    private var swept: Set<CaptureID> = []
 
     init(registry: DefaultDeviceRegistry, info: DaemonInfo, presenceGraceNs: UInt64 = 5_000_000_000) {
         self.registry = registry
@@ -262,6 +266,10 @@ actor SessionStore {
             // A sweep nobody is reading is a radio nobody can use. The CLI cancels its own scan on
             // Ctrl-C; this is the backstop for a hard kill.
             await clientGoneHook?(clientID)
+            // Re-guarded like every other await in this function: the hook waits on a sweep's
+            // teardown, and a client that reconnected while it ran is present again and keeps
+            // its presence entry.
+            guard stillAbsent(clientID) else { return }
             presence[clientID] = nil
         }
     }
@@ -470,6 +478,17 @@ actor SessionStore {
         return devices[entry.deviceID]
     }
 
+    /// Marks a capture as held by a sweep. Set and cleared by the capture lease.
+    func setSwept(_ id: CaptureID, _ on: Bool) {
+        if on { swept.insert(id) } else { swept.remove(id) }
+    }
+
+    private func refuseIfSwept(_ id: CaptureID) throws {
+        if swept.contains(id) {
+            throw EngineError(code: "DEVICE_BUSY", message: "a scan is sweeping this radio; it is free again when the scan ends", target: id.string)
+        }
+    }
+
     /// Installed by the job store so `GetState` carries the job table.
     func setJobsProvider(_ provider: @escaping @Sendable () async -> [Leyline_V1_Job]) {
         jobsProvider = provider
@@ -551,6 +570,7 @@ actor SessionStore {
     func createChannel(captureID: CaptureID, offsetHz: Int64, bandwidthHz: UInt32, mode: Leyline_V1_DemodMode,
                        persistent: Bool, requiredHz: UInt64, by: ClientContext) async throws -> Leyline_V1_Channel {
         guard let cap = captures[captureID] else { throw EngineError.captureNotFound(captureID.string) }
+        try refuseIfSwept(captureID)
         // DEMOD_MODE_UNSPECIFIED defaults to NFM (contract parity with the Go reference daemon).
         guard let m = ProtoMapping.demodMode(mode == .unspecified ? .nfm : mode) else {
             throw EngineError.modeUnsupported(String(describing: mode), target: captureID.string)
@@ -708,6 +728,9 @@ actor SessionStore {
             switch w.param {
             case .centerHz(let hz)?:
                 let (id, entry) = try captureTarget(w.targetID)
+                // A sweep is stepping this capture; a client write here would fight it and both
+                // would lose. The lease is the only tuning path while it is held.
+                try refuseIfSwept(id)
                 guard let d = devices[entry.deviceID], d.canTune(hz) else { throw EngineError.freqOutOfRange(hz, target: w.targetID) }
                 // A retune can bring a channel back into capture after a rate change: its chain is
                 // re-planned at the current rate only then, so audio rates are reconciled here too.
@@ -718,6 +741,7 @@ actor SessionStore {
                 await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
             case .captureSampleRate(let hz)?:
                 let (id, entry) = try captureTarget(w.targetID)
+                try refuseIfSwept(id)
                 guard let d = devices[entry.deviceID], d.sampleRates.isEmpty || d.sampleRates.contains(hz) else {
                     throw EngineError.rateUnsupported(hz, target: w.targetID)
                 }

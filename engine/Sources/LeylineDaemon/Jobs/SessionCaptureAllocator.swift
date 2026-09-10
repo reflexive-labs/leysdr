@@ -54,22 +54,35 @@ actor SessionCaptureAllocator: CaptureAllocator {
             guard let deviceID = DeviceID(string: device.deviceID) else { continue }
             if let cap = existing {
                 guard let id = CaptureID(string: cap.captureID) else { continue }
-                if leased.contains(id) {
-                    lastReason = "another scan already has \(device.model)"
-                    continue
-                }
                 if !takeOver, let why = inUse(cap, state: state) {
                     lastReason = why
                     continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job) else { continue }
+                // Claim before any await. `borrow` suspends three times, and an actor is
+                // re-entrant at a suspension: checking here and inserting in there let two
+                // simultaneous scans both pass the check and both walk the same tuner.
+                guard leased.insert(id).inserted else {
+                    lastReason = "another scan already has \(device.model)"
+                    continue
+                }
+                guard let lease = await borrow(id, deviceID: deviceID, job: job) else {
+                    leased.remove(id)
+                    continue
+                }
                 return .capture(lease)
             }
             let rate = bestRate(device)
+            // The device has no capture, so nothing to claim yet -- but two scans racing here would
+            // both call createCapture and the loser gets DEVICE_BUSY from the store, which is the
+            // right answer and is caught below.
             do {
                 let cap = try await store.createCapture(deviceID: deviceID, centerHz: startCentre(range, device: device, rate: rate),
                                                         sampleRate: rate, by: .daemon)
-                guard let id = CaptureID(string: cap.captureID), let lease = await borrow(id, deviceID: deviceID, job: job, created: true) else {
+                guard let id = CaptureID(string: cap.captureID) else { continue }
+                guard leased.insert(id).inserted else { continue }
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, created: true) else {
+                    leased.remove(id)
+                    await store.destroyCapture(id: id, by: .daemon)
                     continue
                 }
                 return .capture(lease)
@@ -117,7 +130,6 @@ actor SessionCaptureAllocator: CaptureAllocator {
         guard let engine = await store.captureEngine(id) else { return nil }
         let device = await store.registry.device(id: deviceID)
         let snap = await engine.snapshot
-        leased.insert(id)
         let lease = SessionCaptureLease(captureID: id, engine: engine, store: store,
                                         sampleRateHz: snap.sampleRate, entryCenterHz: snap.centerHz,
                                         gainElements: device?.descriptor.gainElements ?? [],
@@ -125,6 +137,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                                         createdByLease: created, job: job) { [weak self] in
             await self?.releaseLease(id)
         }
+        await store.setSwept(id, true)
         await lease.pinGain()
         return lease
     }
@@ -240,6 +253,7 @@ actor SessionCaptureLease: CaptureLease {
     func release() async {
         guard !released else { return }
         released = true
+        await store.setSwept(captureID, false)
         if createdByLease {
             await store.destroyCapture(id: captureID, by: .daemon)
         } else {

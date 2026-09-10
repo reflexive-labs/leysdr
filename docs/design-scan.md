@@ -224,7 +224,10 @@ Contiguous runs of bins over threshold, joined across gaps of up to two bins, so
 middle of a wide signal does not split it into two carriers.
 
 **Centre** is the power-weighted centroid of the floor-subtracted excess power, computed in linear
-power — the rows arrive in dB and a centroid over decibels is a different, floor-biased statistic.
+power, and bin *b* is the frequency `lowEdge + b·binWidth` -- a point sample of the spectrum, not
+the interval `[b, b+1)`. Treating it as an interval put every reported frequency half a bin high,
+which the fixture run showed as carriers at 145.201 MHz where the generator had put 145.200. With
+that corrected, all four fixture carriers report at exactly their generated frequencies — the rows arrive in dB and a centroid over decibels is a different, floor-biased statistic.
 Measured accurate to 0.1 kHz against a 2.34 kHz bin.
 
 **Bandwidth** is the harder honesty question. The obvious answer, the width of the run above the

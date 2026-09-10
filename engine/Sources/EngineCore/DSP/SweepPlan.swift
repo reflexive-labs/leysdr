@@ -103,7 +103,7 @@ public struct SweepPlan: Sendable, Equatable {
         let audibleLow = Double(lowestCenter) - edgeHz
         let audibleHigh = Double(highestCenter) + edgeHz
         let wantLow = Double(minHz), wantHigh = Double(maxHz)
-        let coverLow = Swift.max(wantLow, audibleLow)
+        let coverLow = Swift.max(0, Swift.max(wantLow, audibleLow))
         let coverHigh = Swift.min(wantHigh, audibleHigh)
         guard coverHigh > coverLow else { return nil }
         let clipped = coverLow > wantLow + 1 || coverHigh < wantHigh - 1
@@ -114,7 +114,7 @@ public struct SweepPlan: Sendable, Equatable {
         // in a span. They are also the whole plan when the range fits inside a single window --
         // the range is then taken twice at two tuner positions, which is the strongest artefact
         // cross-check the geometry can buy.
-        var centers: [Double] = [coverLow - guardHz, coverHigh + guardHz]
+        var centers: [Double] = [Swift.max(0, coverLow - guardHz), coverHigh + guardHz]
         if coverHigh - coverLow > advance {
             // Between them, march by half a window so each step's lower quarter lands on the
             // previous step's DC hole.
@@ -128,11 +128,16 @@ public struct SweepPlan: Sendable, Equatable {
         centers.sort()
         // Do not tune outside the device's range; a clamped centre still analyses honestly,
         // it just overlaps its neighbour more.
+        // A centre can be lower than half a span -- an HF recording at 1 MHz played at 2.4 MSPS --
+        // and the window below it would then be a negative frequency. UInt64(negative Double) is a
+        // trap in Swift, not a saturating conversion, so this clamps at DC rather than crashing the
+        // daemon on somebody's `ley scan`.
+        func hzAt(_ v: Double) -> UInt64 { v <= 0 ? 0 : UInt64(v.rounded()) }
         let steps = centers.map { raw -> Step in
             let hz = UInt64(Swift.max(Double(lowestCenter), Swift.min(Double(highestCenter), raw)).rounded())
             return Step(centerHz: hz,
-                        low: Window(lowHz: UInt64((Double(hz) - edgeHz).rounded()), highHz: UInt64((Double(hz) - guardHz).rounded())),
-                        high: Window(lowHz: UInt64((Double(hz) + guardHz).rounded()), highHz: UInt64((Double(hz) + edgeHz).rounded())))
+                        low: Window(lowHz: hzAt(Double(hz) - edgeHz), highHz: hzAt(Double(hz) - guardHz)),
+                        high: Window(lowHz: hzAt(Double(hz) + guardHz), highHz: hzAt(Double(hz) + edgeHz)))
         }
         // A clamped run can repeat a centre; sweeping the same point twice is wasted dwell.
         var seen = Set<UInt64>()

@@ -26,25 +26,46 @@ struct ScanHit: Sendable {
 /// the analysis -- a local median per bin over 192 reference bins, grouping, moments -- happens on
 /// the sweep's own task, which is where it belongs.
 final class RowCollector: SpectrumSink, @unchecked Sendable {
+    /// One collected row. The dB samples live in raw storage rather than a Swift Array because an
+    /// Array is copy-on-write: handing a slot's Array to the draining task makes the storage
+    /// shared, and the DSP thread's next write to that slot then allocates a fresh copy -- on the
+    /// hot path, which invariant 4 forbids. Raw buffers cannot be shared by accident.
     struct Row {
-        var db: [Float]
+        var db: UnsafeMutablePointer<Float>
+        var bins: Int
         var time: SampleTime
         var centerHz: UInt64
         var spanHz: UInt64
         var looks: Int
+
+        var values: UnsafeBufferPointer<Float> { UnsafeBufferPointer(start: db, count: bins) }
     }
 
     private let lock = NSLock()
+    private let bins: Int
+    private let depth: Int
+    private let storage: UnsafeMutablePointer<Float>
     private var slots: [Row]
     private var write = 0
     private var read = 0
     private var count = 0
 
     init(bins: Int, depth: Int = 8) {
-        slots = (0 ..< depth).map { _ in
-            Row(db: [Float](repeating: 0, count: bins), time: SampleTime(captureID: CaptureID(), sampleIndex: 0),
+        self.bins = bins
+        self.depth = depth
+        let base = UnsafeMutablePointer<Float>.allocate(capacity: bins * depth)
+        base.initialize(repeating: 0, count: bins * depth)
+        storage = base
+        slots = (0 ..< depth).map { i in
+            Row(db: base.advanced(by: i * bins), bins: bins,
+                time: SampleTime(captureID: CaptureID(), sampleIndex: 0),
                 centerHz: 0, spanHz: 0, looks: 0)
         }
+    }
+
+    deinit {
+        storage.deinitialize(count: bins * depth)
+        storage.deallocate()
     }
 
     func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks: Int) {
@@ -52,23 +73,25 @@ final class RowCollector: SpectrumSink, @unchecked Sendable {
         defer { lock.unlock() }
         // Drop-oldest: a sweep that fell behind wants the newest rows, and the step boundary is
         // decided by sample index, not by row order.
-        if count == slots.count {
-            read = (read + 1) % slots.count
+        if count == depth {
+            read = (read + 1) % depth
             count -= 1
         }
-        let n = Swift.min(row.count, slots[write].db.count)
-        slots[write].db.withUnsafeMutableBufferPointer { dst in
-            for i in 0 ..< n { dst[i] = row[i] }
+        let n = Swift.min(row.count, bins)
+        if let src = row.baseAddress {
+            slots[write].db.update(from: src, count: n)
         }
         slots[write].time = time
         slots[write].centerHz = centerHz
         slots[write].spanHz = spanHz
         slots[write].looks = looks
-        write = (write + 1) % slots.count
+        write = (write + 1) % depth
         count += 1
     }
 
-    /// Takes everything collected so far.
+    /// Takes everything collected so far. The returned rows point into the collector's own
+    /// storage, which the producer may overwrite once `depth` more rows have arrived -- consume
+    /// them before the next drain, which is what the sweep does.
     func drain() -> [Row] {
         lock.lock()
         defer { lock.unlock() }
@@ -76,7 +99,7 @@ final class RowCollector: SpectrumSink, @unchecked Sendable {
         out.reserveCapacity(count)
         while count > 0 {
             out.append(slots[read])
-            read = (read + 1) % slots.count
+            read = (read + 1) % depth
             count -= 1
         }
         return out
@@ -113,7 +136,9 @@ actor ScanRunner {
         /// Steps that ran to the end of their dwell.
         var stepsDone: Int
         var steps: Int
-        var complete: Bool { stepsDone >= steps }
+        /// Why the sweep stopped early, when it was not cancellation. Empty on a clean run.
+        var failure: EngineError?
+        var complete: Bool { stepsDone >= steps && failure == nil }
     }
 
     /// Sweeps and returns what it found, calling `onStep` after each one and `onHit` as they are
@@ -121,7 +146,7 @@ actor ScanRunner {
     /// away: somebody who interrupts a long sweep still wants what it had.
     static func sweep(lease: any CaptureLease, plan: SweepPlan, dwellMs: UInt32,
                       onStep: @Sendable (Progress) async -> Void,
-                      onHit: @Sendable (ScanHit) async -> Void) async throws -> Result
+                      onHit: @Sendable (ScanHit) async -> Void) async -> Result
     {
         let collector = RowCollector(bins: bins)
         let ladder = lease.spectrum
@@ -151,11 +176,20 @@ actor ScanRunner {
         var newestIndex: UInt64 = 0
 
         var stepsDone = 0
+        var failure: EngineError?
         for (index, step) in plan.steps.enumerated() {
             if Task.isCancelled { break }
             for row in collector.drain() { newestIndex = Swift.max(newestIndex, row.time.sampleIndex) }
             let hopAt = Swift.max(newestIndex, await lease.sampleIndex)
-            try await lease.retune(centerHz: step.centerHz)
+            do {
+                try await lease.retune(centerHz: step.centerHz)
+            } catch {
+                // The radio went away mid-sweep. Everything found before that is still true, and
+                // has already been published on telemetry; throwing it away here would leave a
+                // subscriber holding detections the Scan denies.
+                failure = (error as? EngineError) ?? EngineError.deviceIO("\(error)", target: "")
+                break
+            }
             let settle = await lease.settleSamples
             // Everything up to the hop was captured at the previous frequency, and so is
             // everything the driver and the ring already held. One more row interval on top,
@@ -180,7 +214,7 @@ actor ScanRunner {
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 for row in collector.drain() {
                     newestIndex = Swift.max(newestIndex, row.time.sampleIndex)
-                    guard row.centerHz == step.centerHz, row.looks > 0,
+                    guard row.centerHz == step.centerHz, row.looks > 0, row.bins > 0,
                           row.time.sampleIndex >= believeFrom else { continue }
                     believedRows += 1
                     for raw in [step.low, step.high] {
@@ -190,23 +224,21 @@ actor ScanRunner {
                         // nobody put.
                         let window = raw.clamped(to: plan.covered)
                         guard window.highHz > window.lowHz else { continue }
-                        let hits = row.db.withUnsafeBufferPointer { r in
-                            power.withUnsafeMutableBufferPointer { p in
-                                floorBuf.withUnsafeMutableBufferPointer { f in
-                                    scratch.withUnsafeMutableBufferPointer { sc in
-                                        SpectrumDetect.detect(rowDB: r.baseAddress!, count: row.db.count,
+                        let hits = power.withUnsafeMutableBufferPointer { p in
+                            floorBuf.withUnsafeMutableBufferPointer { f in
+                                scratch.withUnsafeMutableBufferPointer { sc in
+                                    SpectrumDetect.detect(rowDB: row.db, count: row.bins,
                                                               centerHz: row.centerHz, spanHz: row.spanHz,
                                                               looks: row.looks, pFalse: pFalse,
-                                                              believe: window.lowHz ... (window.highHz - 1),
-                                                              power: p.baseAddress!, floor: f.baseAddress!,
-                                                              scratch: sc.baseAddress!)
-                                    }
+                                                          believe: window.lowHz ... (window.highHz - 1),
+                                                          power: p.baseAddress!, floor: f.baseAddress!,
+                                                          scratch: sc.baseAddress!)
                                 }
                             }
                         }
                         let windowFloor = floorBuf.withUnsafeMutableBufferPointer { f in
                             scratch.withUnsafeMutableBufferPointer { sc in
-                                SpectrumDetect.windowFloorDBFS(floor: f.baseAddress!, count: row.db.count,
+                                SpectrumDetect.windowFloorDBFS(floor: f.baseAddress!, count: row.bins,
                                                                centerHz: row.centerHz, spanHz: row.spanHz,
                                                                believe: window.lowHz ... (window.highHz - 1),
                                                                scratch: sc.baseAddress!)
@@ -235,7 +267,7 @@ actor ScanRunner {
             if believedRows >= rowsPerStep { stepsDone += 1 }
             await onStep(Progress(step: index + 1, steps: plan.steps.count, found: merged.count))
         }
-        return Result(hits: merged, floors: floors, stepsDone: stepsDone, steps: plan.steps.count)
+        return Result(hits: merged, floors: floors, stepsDone: stepsDone, steps: plan.steps.count, failure: failure)
     }
 
     /// The settle window in nanoseconds, for the dwell deadline.

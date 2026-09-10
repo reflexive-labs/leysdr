@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -369,7 +370,7 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 	// scan_band.cf32 puts carriers 800 and 400 kHz either side of 146 MHz.
 	want := []uint64{145_200_000, 145_600_000, 146_400_000, 146_800_000}
 	dets := list(scan, "detections")
-	var found []uint64
+	var found, widths []uint64
 	for _, d := range dets {
 		m := d.(map[string]any)
 		hz, err := strconv.ParseUint(m["centerHz"].(string), 10, 64)
@@ -377,6 +378,8 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 			t.Fatalf("centerHz %v: %v", m["centerHz"], err)
 		}
 		found = append(found, hz)
+		width, _ := m["bandwidthHz"].(float64)
+		widths = append(widths, uint64(width))
 		// Every detection carries the evidence it was judged on.
 		for _, k := range []string{"snrDb", "floorDbfs", "looks", "looksPossible", "firstSeen"} {
 			if m[k] == nil {
@@ -388,14 +391,26 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 		}
 	}
 	for _, w := range want {
-		near := false
-		for _, f := range found {
-			if f+30_000 > w && f < w+30_000 {
-				near = true
+		// Within a bin (2.344 kHz at 2.4 MSPS over 1024 bins) for a narrow carrier: the centroid
+		// really is that good, and a looser bound would let a half-bin offset back in unnoticed.
+		// A wide FM carrier's centroid wanders with its own modulation, so it gets a twentieth of
+		// its width instead.
+		best, bestDiff, bestWidth := uint64(0), uint64(math.MaxUint64), uint64(0)
+		for i, f := range found {
+			d := w - f
+			if f > w {
+				d = f - w
+			}
+			if d < bestDiff {
+				best, bestDiff, bestWidth = f, d, widths[i]
 			}
 		}
-		if !near {
-			t.Errorf("no detection near %d Hz in %v", w, found)
+		tol := uint64(2_500)
+		if bestWidth/20 > tol {
+			tol = bestWidth / 20
+		}
+		if bestDiff > tol {
+			t.Errorf("nearest detection to %d Hz is %d (%d Hz off, tolerance %d) in %v", w, best, bestDiff, tol, found)
 		}
 	}
 	// The noise floor is reported per step whether or not anything was found there.

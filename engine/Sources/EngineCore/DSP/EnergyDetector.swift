@@ -108,10 +108,18 @@ public enum SpectrumDetect {
                 for j in hiStart ..< (hiStart + wantHi) { scratch[n] = power[j]; n += 1 }
             }
             if n == 0 {
-                // A row narrower than the guard band: fall back to the whole row rather than
-                // returning a floor of zero, which would make every bin infinitely loud.
-                for j in 0 ..< count { scratch[j] = power[j] }
-                n = count
+                // A row narrower than the guard band on both sides: fall back to the whole row
+                // rather than returning a floor of zero, which would make every bin infinitely
+                // loud. Bounded by the scratch the caller was told to provide, taking an even
+                // sample rather than the first slice so the median still describes the whole row.
+                let capacity = 2 * referenceBins
+                let stride = Swift.max(1, (count + capacity - 1) / capacity)
+                var j = 0
+                while j < count, n < capacity {
+                    scratch[n] = power[j]
+                    n += 1
+                    j += stride
+                }
             }
             floor[i] = median(scratch, count: n)
         }
@@ -141,7 +149,12 @@ public enum SpectrumDetect {
         let ratio = Float(thresholdRatio(looks: looks, pFalse: pFalse))
         let binWidth = Double(spanHz) / Double(count)
         let lowEdge = Double(centerHz) - Double(spanHz) / 2
-        func hz(_ bin: Double) -> Double { lowEdge + (bin + 0.5) * binWidth }
+        // Bin b IS the frequency lowEdge + b*binWidth, not the interval [b, b+1): the ladder's
+        // rows are point samples of the spectrum (FFT.swift: index 0 is centre - Fs/2, index
+        // size/2 is DC). Treating them as intervals put every reported frequency half a bin high --
+        // 1.17 kHz at 2.4 MSPS over 1024 bins, visible in the fixture run as carriers at
+        // 145.201 MHz where the generator put 145.200.
+        func hz(_ bin: Double) -> Double { lowEdge + bin * binWidth }
 
         // Believe only the part of the span the sweep asked about, and never the analysis edges.
         var first = Int(((Double(believe.lowerBound) - lowEdge) / binWidth).rounded(.down))

@@ -13,6 +13,8 @@ import Logging
 actor JobStore {
     /// Finished jobs kept so a client can re-read one. Bounded: this is memory, not a store.
     static let keepFinished = 16
+    /// How long CancelJob waits for a sweep to settle before answering anyway.
+    static let cancelWaitSeconds = 3.0
 
     private struct Entry {
         var proto: Leyline_V1_Job
@@ -77,7 +79,13 @@ actor JobStore {
         // reads the Scan while the sweep is still writing it, and an interrupted scan looks empty
         // rather than partial. Awaiting here is safe: an actor is re-entrant at an await, so the
         // task's own calls back into this store still run.
-        if let t = e.task { await t.value }
+        //
+        // Bounded, because the teardown path is not: a task inside `device.open()` or
+        // `stopStreaming()` cannot be cancelled and can take seconds of USB work. Past the bound
+        // the job is answered as cancelled and the task finishes on its own -- a stale answer to
+        // CancelJob is better than an RPC that never returns, and worse than neither is a daemon
+        // shutdown that hangs on it.
+        if let t = e.task { await withTimeout(seconds: Self.cancelWaitSeconds) { await t.value } }
         if entries[id]?.proto.state == .running {
             await finish(id, state: .cancelled, detail: "cancelled")
         }
@@ -142,9 +150,9 @@ actor JobStore {
 
     private func run(_ id: JobID, config: Leyline_V1_ScanConfig) async {
         let range = config.range.minHz ... config.range.maxHz
-        let result = await allocator.allocate(.exclusiveCapture(rangeHz: range, takeOver: config.takeOver), for: id)
-        guard case .capture(let lease) = result else {
-            if case .declined(let code, let reason) = result {
+        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, takeOver: config.takeOver), for: id)
+        guard case .capture(let lease) = allocation else {
+            if case .declined(let code, let reason) = allocation {
                 await finish(id, state: .failed, detail: reason, code: code)
             } else {
                 await finish(id, state: .failed, detail: "no radio could be allocated", code: "NO_DEVICE")
@@ -172,41 +180,36 @@ actor JobStore {
         await setStep(id, plan: plan)
 
         let captureID = lease.captureID
-        do {
-            let dwell = config.dwellMs == 0 ? 250 : config.dwellMs
-            let result = try await ScanRunner.sweep(
-                lease: lease, plan: plan, dwellMs: dwell,
-                onStep: { [weak self] p in
-                    await self?.setDetail(id, "step \(p.step)/\(p.steps), \(p.found) found")
-                },
-                onHit: { [weak self] hit in
-                    await self?.detected(hit, captureID: captureID)
-                })
-            let gains = await lease.pinnedGains
-            // The radio goes back before the job reaches a terminal state. A detached release
-            // would let the next scan see a capture that is still leased and be declined, and the
-            // await is safe in a cancelled task because release checks no cancellation of its own.
-            await lease.release()
-            // A stopped sweep still keeps what it found: somebody who interrupts one wants the
-            // part that ran, and a Scan that says how far it got is honest about the rest.
-            await store(id, result: result, plan: plan, gains: gains, captureID: captureID)
-            if Task.isCancelled || !result.complete {
-                // The step it was in, not the ones it finished: "0 of 1" reads as having done
-                // nothing, when a partial step can have found everything there was.
-                await finish(id, state: .cancelled,
-                             detail: "stopped in step \(Swift.min(result.stepsDone + 1, result.steps)) of \(result.steps), \(result.hits.count) found")
-            } else {
-                let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
-                let steps = result.steps == 1 ? "1 step" : "\(result.steps) steps"
-                await finish(id, state: .completed, detail: "\(result.hits.count) found in \(steps)\(clipped)")
-            }
-        } catch is CancellationError {
-            await lease.release()
-            await finish(id, state: .cancelled, detail: "cancelled before the first step")
-        } catch {
-            await lease.release()
-            let e = error as? EngineError
-            await finish(id, state: .failed, detail: e?.message ?? "\(error)", code: e?.code ?? "INTERNAL")
+        let dwell = config.dwellMs == 0 ? 250 : config.dwellMs
+        let result = await ScanRunner.sweep(
+            lease: lease, plan: plan, dwellMs: dwell,
+            onStep: { [weak self] p in
+                await self?.setDetail(id, "step \(p.step)/\(p.steps), \(p.found) found")
+            },
+            onHit: { [weak self] hit in
+                await self?.detected(hit, captureID: captureID)
+            })
+        let gains = await lease.pinnedGains
+        // The radio goes back before the job reaches a terminal state. A detached release
+        // would let the next scan see a capture that is still leased and be declined, and the
+        // await is safe in a cancelled task because release checks no cancellation of its own.
+        await lease.release()
+        // A stopped sweep still keeps what it found: somebody who interrupts one wants the
+        // part that ran, and a Scan that says how far it got is honest about the rest.
+        await store(id, result: result, plan: plan, gains: gains, captureID: captureID)
+        if let e = result.failure {
+            await finish(id, state: .failed,
+                         detail: "\(e.message) after \(result.stepsDone) of \(result.steps) steps, \(result.hits.count) found",
+                         code: e.code)
+        } else if Task.isCancelled || !result.complete {
+            // The step it was in, not the ones it finished: "0 of 1" reads as having done
+            // nothing, when a partial step can have found everything there was.
+            await finish(id, state: .cancelled,
+                         detail: "stopped in step \(Swift.min(result.stepsDone + 1, result.steps)) of \(result.steps), \(result.hits.count) found")
+        } else {
+            let clipped = plan.clipped ? ", clipped to what the radio can tune" : ""
+            let steps = result.steps == 1 ? "1 step" : "\(result.steps) steps"
+            await finish(id, state: .completed, detail: "\(result.hits.count) found in \(steps)\(clipped)")
         }
     }
 
@@ -302,5 +305,16 @@ actor JobStore {
             entries[drop] = nil
             order.removeAll { $0 == drop }
         }
+    }
+}
+
+/// Runs `body`, giving up after `seconds`. The work is not cancelled -- it is already cancelled or
+/// uncancellable; this only bounds how long somebody waits to hear about it.
+func withTimeout(seconds: Double, _ body: @escaping @Sendable () async -> Void) async {
+    await withTaskGroup(of: Void.self) { group in
+        group.addTask { await body() }
+        group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
+        await group.next()
+        group.cancelAll()
     }
 }

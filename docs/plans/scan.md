@@ -146,3 +146,42 @@ arithmetic:
 
 That is precisely the class of error the whole design exists to prevent -- energy attributed to a
 frequency the radio was not listening to -- and no unit test would have produced it.
+
+## Review findings, and what came of them
+
+An adversarial review over six dimensions found nine defects. Seven were real and are fixed here;
+the two most valuable were things no test had reached.
+
+- **A daemon crash.** `SweepPlan` built its low window as `UInt64(Double(hz) - edgeHz)`, and
+  `UInt64(_: Double)` traps on a negative value in Swift rather than saturating. An HF recording at
+  1 MHz played at 2.4 MSPS has a half-span of 1.08 MHz, so `ley scan 0.5M..1.9M` over
+  `fixtures/am_tone.cf32` killed the daemon. Frequencies clamp at DC now, and the same scan finds
+  the carrier at 750 kHz with the daemon still up.
+- **Every reported frequency was half a bin high.** The bin-to-Hz mapping added 0.5 of a bin,
+  treating a bin as an interval when the ladder's rows are point samples. It was visible in the
+  fixture run all along -- carriers at 145.201 where the generator put 145.200 -- and read as
+  centroid noise. All four now land exactly, and the e2e test asserts to within one bin so it
+  cannot creep back.
+- **Two scans could lease the same capture.** The allocator checked `leased` before three
+  suspension points and inserted after them; an actor is re-entrant at a suspension, so both
+  callers passed the check. The claim happens before any await now.
+- **`CancelJob` could wait forever.** Waiting on the sweep task is what makes an interrupted scan
+  return its partial answer, but the teardown path is uncancellable USB work -- `device.open`,
+  `stopStreaming` -- so a Ctrl-C in the first second could block the RPC and a daemon shutdown
+  behind it. Bounded to three seconds; past that the job is answered as cancelled and finishes on
+  its own.
+- **A sweep that failed mid-way discarded what it had found**, including detections already
+  published on telemetry -- a subscriber would have held readings the Scan denied. The runner no
+  longer throws: it returns the partial result with the failure attached.
+- **The lease was invisible to the control plane.** Invariant 9 puts jobs behind the allocator;
+  nothing stopped a *client* joining a capture a sweep was walking, and its channel would have been
+  dragged across megahertz with no explanation. `CreateChannel` and centre/rate writes on a swept
+  capture now refuse with a reason.
+- **A copy-on-write allocation on the DSP thread.** `RowCollector.drain` handed out the slot's
+  Swift Array, making its storage shared, so the next write to that slot allocated a fresh copy --
+  on the hot path, which invariant 4 forbids. The slots are raw buffers now, which cannot be shared
+  by accident.
+
+Two more, smaller: the `localFloor` fallback for a row narrower than the guard band wrote past the
+scratch buffer its own contract specifies (unreachable from the sweep, but it is a public function),
+and `reap` did not re-guard `stillAbsent` across the new client-gone hook's await.
