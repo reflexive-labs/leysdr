@@ -115,8 +115,7 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 		return err
 	}
 	for ev := range events {
-		p, ok := ev.Body.(*leylinev1.Event_Device)
-		if !ok {
+		if _, ok := ev.Body.(*leylinev1.Event_Device); !ok {
 			continue
 		}
 		if app.JSON {
@@ -129,7 +128,6 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 			continue
 		}
 		fmt.Fprintln(app.Stdout, eventLine(ev, nil))
-		_ = p
 	}
 	if err := <-errs; err != nil && ctx.Err() == nil {
 		return err

@@ -18,6 +18,10 @@ const (
 	// rows scroll away, so an axis printed once at the top is gone by the time
 	// a reader wants it.
 	waterfallAxisEvery = 20
+	// waterfallTimeEvery is how often the elapsed time is stamped in the
+	// gutter: often enough to read a transmission's length off the column,
+	// rarely enough that the number does not blur into the shading.
+	waterfallTimeEvery = 4
 )
 
 // waterfallRangeDb is how far above the floor the shade ramp reaches. A signal
@@ -101,6 +105,7 @@ func (v *waterfallView) key() []string {
 		segs = append(segs, headerSeg{
 			name:  v.st.Level(frac, string(g[i])),
 			value: fmt.Sprintf(" +%d", step),
+			inked: true,
 			// The glyph is one cell however many bytes of ink it carries.
 			width: 1 + len(fmt.Sprintf(" +%d", step)),
 		})
@@ -162,11 +167,11 @@ func waterfallBand(frac float64) int {
 	return int(frac * float64(spectrumLevelSteps-1))
 }
 
-// gutter is the elapsed time, printed on every fourth row so the column stays
-// readable without repeating a number that barely changes.
+// gutter is the elapsed time, printed on every waterfallTimeEvery-th row so
+// the column stays readable without repeating a number that barely changes.
 func (v *waterfallView) gutter(elapsed float64) string {
 	label := ""
-	if v.rows%4 == 0 {
+	if v.rows%waterfallTimeEvery == 0 {
 		m := int(elapsed) / 60
 		s := int(elapsed) % 60
 		label = fmt.Sprintf("%02d:%02d", m, s)

@@ -181,8 +181,6 @@ type meterSink struct {
 	w     io.Writer
 	style ui.Style
 	tty   bool
-	// lastLen is the visible width of the first line on screen (terminal only).
-	lastLen int
 	// lastRows and lastLens describe the block currently on screen, so the next
 	// write can step back over it and pad each row to what it is replacing.
 	lastRows int
@@ -240,12 +238,21 @@ func (m *meterSink) write(block string) {
 		}
 		fmt.Fprintf(m.w, "\r%s%s%s", line, strings.Repeat(" ", pad), nl)
 	}
+	// A block that shrank -- the daemon stopped measuring audio, so the detail
+	// rows went away -- leaves rows on screen that this write did not touch.
+	// Blank them and come back up, or the old bars sit there frozen for the
+	// rest of the session.
+	if extra := m.lastRows - len(lines); extra > 0 {
+		for i := len(lines); i < m.lastRows; i++ {
+			fmt.Fprintf(m.w, "\n\r%s", strings.Repeat(" ", m.lastLens[i]))
+		}
+		fmt.Fprintf(m.w, "\x1b[%dA\r", extra)
+	}
 	m.lastLens = m.lastLens[:0]
 	for _, line := range lines {
 		m.lastLens = append(m.lastLens, ui.Visible(line))
 	}
 	m.lastRows = len(lines)
-	m.lastLen = m.lastLens[0]
 }
 
 // clear removes the drawn meter so another line can take the terminal's
@@ -270,7 +277,6 @@ func (m *meterSink) clear() {
 	}
 	fmt.Fprint(m.w, "\r")
 	m.lastRows = 0
-	m.lastLen = 0
 	m.lastLens = m.lastLens[:0]
 }
 

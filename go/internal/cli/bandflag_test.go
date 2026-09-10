@@ -96,3 +96,22 @@ func TestBandFlagExplicitSpanWins(t *testing.T) {
 	}
 	_ = out
 }
+
+// The four band views share one --rate rule, so a nonsense rate is a usage
+// error before the daemon is asked for a stream that would never tick.
+func TestBandFlagRefusesANonPositiveRate(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	for _, verb := range []string{"spectrum", "waterfall", "phosphor", "fft"} {
+		_, _, err := runApp(t, &App{Socket: sock}, verb, "--rate", "0")
+		if err == nil {
+			t.Errorf("%s --rate 0 should be refused", verb)
+			continue
+		}
+		if got := err.Error(); !strings.Contains(got, "--rate must be greater than 0") {
+			t.Errorf("%s: %q", verb, got)
+		}
+		if exitCode(err) != ExitUsage {
+			t.Errorf("%s: want exit %d, got %d", verb, ExitUsage, exitCode(err))
+		}
+	}
+}

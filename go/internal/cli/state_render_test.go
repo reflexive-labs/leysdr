@@ -225,3 +225,27 @@ func TestStateHeaderAndTables(t *testing.T) {
 		t.Fatalf("Strip(styled tables) != plain\n--- got\n%s\n--- want\n%s", got, flat)
 	}
 }
+
+// The rows whose parent is missing come out in the order the daemon sent them.
+// Ranging over the maps they are collected in would print a different screen on
+// every run against an unchanged daemon, which reads as the state moving.
+func TestStateTreeOrphansKeepWireOrder(t *testing.T) {
+	st := &leylinev1.GetStateResponse{
+		Channels: []*leylinev1.Channel{
+			{ChannelId: "chan_A", CaptureId: "cap_gone_1", Mode: leylinev1.DemodMode_NFM, SquelchDb: math.NaN()},
+			{ChannelId: "chan_B", CaptureId: "cap_gone_2", Mode: leylinev1.DemodMode_AM, SquelchDb: math.NaN()},
+			{ChannelId: "chan_C", CaptureId: "cap_gone_3", Mode: leylinev1.DemodMode_WFM, SquelchDb: math.NaN()},
+			{ChannelId: "chan_D", CaptureId: "cap_gone_4", Mode: leylinev1.DemodMode_USB, SquelchDb: math.NaN()},
+		},
+	}
+	want := renderStateTree(ui.Style{Width: 100}, st)
+	for i := 0; i < 20; i++ {
+		if got := renderStateTree(ui.Style{Width: 100}, st); got != want {
+			t.Fatalf("two renders of one snapshot differ\n--- got\n%s\n--- want\n%s", got, want)
+		}
+	}
+	at := func(id string) int { return strings.Index(want, id) }
+	if at("chan_A") >= at("chan_B") || at("chan_B") >= at("chan_C") || at("chan_C") >= at("chan_D") {
+		t.Errorf("orphans are not in wire order:\n%s", want)
+	}
+}

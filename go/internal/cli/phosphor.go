@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // phosphorRangeDb is how far above the floor the level axis reaches. The same
@@ -19,22 +17,14 @@ import (
 const phosphorRangeDb = 50
 
 type phosphorOptions struct {
-	bandName     string
-	band         *leyline.Band
-	freq, span   uint64
-	freqInput    string
-	bins         uint32
-	levels       uint32
-	halfLife     float64
-	rate         float64
-	count, width int
-	retune       bool
-	device       string
+	bandFlags
+	levels   uint32
+	halfLife float64
 }
 
 func newPhosphorCommand(app *App) *cobra.Command {
 	var o phosphorOptions
-	var freq, span string
+	var span string
 	cmd := &cobra.Command{
 		Use:     "phosphor [frequency]",
 		Short:   "Show what is usually on a band, not just what is on it now",
@@ -61,60 +51,28 @@ paging bands, telemetry, anything bursty. For reading levels right now use
   ley phosphor 144.39 --span 250k       # narrow in on one channel`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var err error
-			if len(args) == 1 {
-				freq, o.freqInput = args[0], args[0]
-			}
-			if freq != "" {
-				t, terr := resolveDialTarget(freq, "phosphor", "ley phosphor 910, ley phosphor noaa", "910 (MHz) or 910M")
-				if terr != nil {
-					return terr
-				}
-				o.freq = t.Hz
-			}
-			if o.bandName != "" {
-				// A band is a range and a positional is a point; asking for both
-				// says two different things about where to put the radio.
-				if freq != "" {
-					return usageErrorf("give a frequency or --band, not both: phosphor %s --band %s", freq, o.bandName)
-				}
-				b, berr := leyline.ResolveBand(o.bandName)
-				if berr != nil {
-					return usageError(berr)
-				}
-				o.band = &b
-			}
-			if span != "" {
-				if o.span, err = leyline.ParseUserFrequency(span); err != nil {
-					return usageErrorf("--span: %v. Example: --span 2.4M or --span 250k", err)
-				}
-			}
-			if o.count < 0 {
-				return usageErrorf("--count must be 0 or more")
-			}
-			if o.rate <= 0 {
-				return usageErrorf("--rate must be greater than 0")
+			if err := o.parse(app, args, span, bandUsage{
+				verb:     "phosphor",
+				examples: "ley phosphor 910, ley phosphor noaa",
+				freqHint: "910 (MHz) or 910M",
+				spanHint: "--span 2.4M or --span 250k",
+			}); err != nil {
+				return err
 			}
 			if o.halfLife <= 0 {
 				return usageErrorf("--half-life must be greater than 0")
-			}
-			o.width = app.Style.Width
-			if o.width <= 0 {
-				o.width = ui.DefaultWidth
 			}
 			return runPhosphor(cmd.Context(), app, o)
 		},
 	}
 	cmd.Flags().StringVar(&span, "span", "", "width of the band to show, e.g. 2.4M or 250k (default: the device's own, or the width it is already capturing)")
-	cmd.Flags().StringVar(&o.bandName, "band", "", "show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise")
 	cmd.Flags().Uint32Var(&o.bins, "bins", 256, "frequency bins across the band (the daemon may round it)")
 	cmd.Flags().Uint32Var(&o.levels, "levels", 32, "level buckets the histogram keeps per bin")
 	cmd.Flags().Float64Var(&o.halfLife, "half-life", 20, "seconds for a count to fade by half; longer remembers rarer traffic")
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "redraws per second")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after N frames (0 = until Ctrl-C)")
-	cmd.Flags().StringVar(&o.device, "device", "", "device: an id, id prefix, list index or frequency (default: the first real radio)")
-	cmd.Flags().BoolVar(&o.retune, "retune", false, "move the radio to the frequency even when other channels are listening on it (they fall silent)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "chart width in columns (default: the terminal's, or 80 when piped)")
+	o.bindCommon(cmd)
 	return cmd
 }
 
@@ -163,7 +121,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	view.halfLife = p.GetHalfLifeSeconds()
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
-	w := newSpectrumWriter(app, out, spectrumOptions{watch: true, rate: o.rate, width: o.width}, o.rate)
+	w := newSpectrumWriter(app, out, spectrumOptions{bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: true}, o.rate)
 	defer w.finish()
 	tick := time.NewTicker(spectrumTickInterval)
 	defer tick.Stop()
@@ -176,7 +134,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 			w.idle()
 		case fr, ok := <-sub.Frames:
 			if !ok {
-				return spectrumEnd(ctx, sub.Err(), n)
+				return spectrumEnd(ctx, "persistence", sub.Err(), n)
 			}
 			h, ok := decodePersistence(fr.Payload, int(p.GetBins()), int(p.GetLevels()))
 			if !ok {
@@ -215,7 +173,7 @@ func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error
 			return 0, fmt.Errorf("no spectrum row arrived in %.0f s, so there is no noise floor to measure against. Check the radio is still capturing with: ley state", spectrumFirstRow.Seconds())
 		case fr, ok := <-sub.Frames:
 			if !ok {
-				return 0, spectrumEnd(ctx, sub.Err(), 0)
+				return 0, spectrumEnd(ctx, "persistence", sub.Err(), 0)
 			}
 			if len(fr.Payload) == 0 {
 				continue

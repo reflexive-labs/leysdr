@@ -61,7 +61,6 @@ func topicList() string {
 func newTopicCommands(app *App, taken map[string]bool) []*cobra.Command {
 	var cmds []*cobra.Command
 	for _, t := range topics {
-		t := t
 		if taken[t.name] {
 			continue
 		}
@@ -350,9 +349,9 @@ keys, 64-bit integers as strings, one object per line for streams (NDJSON).
 Anything meant for a person (banners, "using NFM: ...") goes to stderr, so
 stdout is always parseable. Documented exceptions to the proto3 rule: bulk
 rows have no proto message, so 'ley fft' and 'ley spectrum --json' print
-{seq, sample_index, center_hz, span_hz, bins} (plus peaks for spectrum) and
-'ley listen' prints {seq, sample_index, sample_rate, format, pcm} with pcm
-base64-encoded; fft rows are gap-marked, so a
+{seq, sample_index, center_hz, span_hz, bins, floor_db} (plus peaks for
+spectrum) and 'ley listen' prints {seq, sample_index, sample_rate, format,
+pcm} with pcm base64-encoded; fft rows are gap-marked, so a
 {"gap":{"from_sample","to_sample"}} line precedes the first row after the
 daemon dropped some. 'ley presets --json' and 'ley bands --json' print
 arrays of the client-local tables, and 'ley version --json' a client-local

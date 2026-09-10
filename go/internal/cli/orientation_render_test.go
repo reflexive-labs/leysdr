@@ -66,7 +66,7 @@ func TestOrientationWordingIsUnchanged(t *testing.T) {
 	out := renderOrientation(ui.Style{}, st, nil)
 	for _, want := range []string{
 		"Daemon    daemon 0.1.0-dev pid 4711 up 46s socket /tmp/leyline.sock\n",
-		"Devices   Generic RTL2832U (R820T) (rtlsdr, serial 00000001) in use, tunes 24.000 MHz-1.766 GHz\n",
+		"Devices   Generic RTL2832U (R820T) (rtlsdr, serial 00000001) in use, tunes 24.000 MHz to 1.766 GHz\n",
 		"Playing   146.520 MHz NFM, squelch -40.0 dB, active (chan_01M224S60EG37HPKYSEH0CQZZA)\n",
 		"\nNext:\n  ley set squelch -40          mute the audio below a level (or: auto)\n",
 	} {

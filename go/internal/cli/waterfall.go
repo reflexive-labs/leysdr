@@ -9,25 +9,15 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 type waterfallOptions struct {
-	bandName     string
-	band         *leyline.Band
-	freq, span   uint64
-	freqInput    string
-	bins         uint32
-	rate         float64
-	count, width int
-	retune       bool
-	device       string
+	bandFlags
 }
 
 func newWaterfallCommand(app *App) *cobra.Command {
 	var o waterfallOptions
-	var freq, span string
+	var span string
 	cmd := &cobra.Command{
 		Use:     "waterfall [frequency]",
 		Short:   "Watch a band over time, so you can see what comes and goes",
@@ -57,55 +47,23 @@ with --span to see shape, or use 'ley spectrum' for levels.`,
   ley waterfall 101.1 --count 40    # forty rows, then stop`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var err error
-			if len(args) == 1 {
-				freq, o.freqInput = args[0], args[0]
-			}
-			if freq != "" {
-				t, terr := resolveDialTarget(freq, "waterfall", "ley waterfall 146.52, ley waterfall noaa", "146.52 (MHz) or 146520k")
-				if terr != nil {
-					return terr
-				}
-				o.freq = t.Hz
-			}
-			if o.bandName != "" {
-				// A band is a range and a positional is a point; asking for both
-				// says two different things about where to put the radio.
-				if freq != "" {
-					return usageErrorf("give a frequency or --band, not both: waterfall %s --band %s", freq, o.bandName)
-				}
-				b, berr := leyline.ResolveBand(o.bandName)
-				if berr != nil {
-					return usageError(berr)
-				}
-				o.band = &b
-			}
-			if span != "" {
-				if o.span, err = leyline.ParseUserFrequency(span); err != nil {
-					return usageErrorf("--span: %v. Example: --span 2.4M or --span 250k", err)
-				}
-			}
-			if o.count < 0 {
-				return usageErrorf("--count must be 0 or more")
-			}
-			if o.rate <= 0 {
-				return usageErrorf("--rate must be greater than 0")
-			}
-			o.width = app.Style.Width
-			if o.width <= 0 {
-				o.width = ui.DefaultWidth
+			if err := o.parse(app, args, span, bandUsage{
+				verb:     "waterfall",
+				examples: "ley waterfall 146.52, ley waterfall noaa",
+				freqHint: "146.52 (MHz) or 146520k",
+				spanHint: "--span 2.4M or --span 250k",
+			}); err != nil {
+				return err
 			}
 			return runWaterfall(cmd.Context(), app, o)
 		},
 	}
 	cmd.Flags().StringVar(&span, "span", "", "width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate (default: the device's own, or the width it is already capturing)")
-	cmd.Flags().StringVar(&o.bandName, "band", "", "show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise")
 	cmd.Flags().Uint32Var(&o.bins, "bins", 1024, "number of bins across the band before they are folded into columns (the daemon may round it)")
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "rows per second")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after N rows (0 = until Ctrl-C)")
-	cmd.Flags().StringVar(&o.device, "device", "", "device: an id, id prefix, list index or frequency (default: the first real radio)")
-	cmd.Flags().BoolVar(&o.retune, "retune", false, "move the radio to the frequency even when other channels are listening on it (they fall silent)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "map width in columns (default: the terminal's, or 80 when piped)")
+	o.bindCommon(cmd)
 	return cmd
 }
 
@@ -157,7 +115,7 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 			return nil
 		case fr, ok := <-sub.Frames:
 			if !ok {
-				return spectrumEnd(ctx, sub.Err(), n)
+				return spectrumEnd(ctx, "waterfall", sub.Err(), n)
 			}
 			if len(fr.Payload) == 0 {
 				continue

@@ -23,7 +23,7 @@ log` says what a screenshot would; `ley --help` is the command list and `--json`
 ```console
 $ ley
 Daemon    daemon fake-0.1 pid 4242 up 46s socket /tmp/leyline/d.sock
-Devices   Generic RTL2832U (R820T) (rtlsdr, serial 00000001) in use, tunes 24.000 MHz-1.766 GHz
+Devices   Generic RTL2832U (R820T) (rtlsdr, serial 00000001) in use, tunes 24.000 MHz to 1.766 GHz
 Playing   146.620 MHz NFM, squelch -80.0 dB, active (chan_01M1S9VA2F5E5G6KK85YNJQ7MS)
 
 Next:

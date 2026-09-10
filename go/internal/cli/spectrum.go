@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -13,8 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // spectrumPeaks is the most peaks the chart's peak block and the JSON peaks
@@ -36,21 +33,13 @@ type SpectrumRow struct {
 }
 
 type spectrumOptions struct {
-	bandName     string
-	band         *leyline.Band
-	freq, span   uint64
-	freqInput    string
-	bins         uint32
-	rate         float64
-	count, width int
-	watch        bool
-	retune       bool
-	device       string
+	bandFlags
+	watch bool
 }
 
 func newSpectrumCommand(app *App) *cobra.Command {
 	var o spectrumOptions
-	var freq, span string
+	var span string
 	cmd := &cobra.Command{
 		Use:   "spectrum [frequency]",
 		Short: "Show what is on the air around a frequency",
@@ -88,57 +77,24 @@ numbers for tools.`,
 		GroupID: GroupLooking,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 {
-				freq = args[0]
-				o.freqInput = args[0]
-			}
-			var err error
-			if freq != "" {
-				t, terr := resolveDialTarget(freq, "spectrum", "ley spectrum 101.1, ley spectrum noaa", "101.1 (MHz) or 1010k")
-				if terr != nil {
-					return terr
-				}
-				o.freq = t.Hz
-			}
-			if o.bandName != "" {
-				// A band is a range and a positional is a point; asking for both
-				// says two different things about where to put the radio.
-				if freq != "" {
-					return usageErrorf("give a frequency or --band, not both: spectrum %s --band %s", freq, o.bandName)
-				}
-				b, berr := leyline.ResolveBand(o.bandName)
-				if berr != nil {
-					return usageError(berr)
-				}
-				o.band = &b
-			}
-			if span != "" {
-				if o.span, err = leyline.ParseUserFrequency(span); err != nil {
-					return usageErrorf("--span: %v. Example: --span 2.4M or --span 200k", err)
-				}
-			}
-			if o.count < 0 {
-				return usageErrorf("--count must be 0 or more")
-			}
-			// Width comes from the resolved style, which has already applied
-			// --width, COLUMNS, the terminal's own size and the [40, 160]
-			// clamp (docs/cli-style.md section 2).
-			o.width = app.Style.Width
-			if o.width <= 0 {
-				o.width = ui.DefaultWidth
+			if err := o.parse(app, args, span, bandUsage{
+				verb:     "spectrum",
+				examples: "ley spectrum 101.1, ley spectrum noaa",
+				freqHint: "101.1 (MHz) or 1010k",
+				spanHint: "--span 2.4M or --span 200k",
+			}); err != nil {
+				return err
 			}
 			return runSpectrum(cmd.Context(), app, o)
 		},
 	}
 	cmd.Flags().StringVar(&span, "span", "", "width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate, snapped to the nearest rate the radio supports (default: the device's default rate, or the width it is already capturing)")
-	cmd.Flags().StringVar(&o.bandName, "band", "", "show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise")
 	cmd.Flags().Uint32Var(&o.bins, "bins", 1024, "number of bins across the band (the daemon may round it)")
 	cmd.Flags().BoolVarP(&o.watch, "watch", "w", false, "keep redrawing until Ctrl-C")
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "redraws per second with --watch")
 	cmd.Flags().IntVar(&o.count, "count", 0, "with --watch: stop after N rows (0 = until Ctrl-C)")
-	cmd.Flags().StringVar(&o.device, "device", "", "device: an id, id prefix, list index or frequency (default: the first real radio)")
-	cmd.Flags().BoolVar(&o.retune, "retune", false, "move the radio to the frequency even when other channels are listening on it (they fall silent)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "chart width in columns (default: the terminal's, or 80 when piped)")
+	o.bindCommon(cmd)
 	return cmd
 }
 
@@ -201,7 +157,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			}
 		case fr, ok := <-sub.Frames:
 			if !ok {
-				return spectrumEnd(ctx, sub.Err(), n)
+				return spectrumEnd(ctx, "spectrum", sub.Err(), n)
 			}
 			if len(fr.Payload) == 0 {
 				continue
@@ -213,7 +169,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 				row := SpectrumRow{FFTRow: FFTRow{
 					Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
 					CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
-					Bins: bins, FloorDb: floor,
+					Bins: bins, FloorDb: floorOf(bins),
 				}, Peaks: peaks}
 				b, err := json.Marshal(row)
 				if err != nil {
@@ -242,8 +198,9 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 
 // spectrumEnd turns the end of the FFT stream into an exit. A stream that
 // closed before producing anything is a failure the user must be told about,
-// not a silent success.
-func spectrumEnd(ctx context.Context, err error, rows int) error {
+// not a silent success. The view names itself, so a reader is sent back to the
+// verb they actually ran.
+func spectrumEnd(ctx context.Context, view string, err error, rows int) error {
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -251,7 +208,7 @@ func spectrumEnd(ctx context.Context, err error, rows int) error {
 		return err
 	}
 	if rows == 0 {
-		return errors.New("the spectrum stream ended before it sent a row. Check the radio is still capturing with: ley state")
+		return fmt.Errorf("the %s stream ended before it sent a row. Check the radio is still capturing with: ley state", view)
 	}
 	return nil
 }

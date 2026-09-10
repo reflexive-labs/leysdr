@@ -90,6 +90,9 @@ for the run (destroyed on exit).
 			if format == "bin" && app.IsTTY() {
 				return usageErrorf("--format bin writes binary records, not text; redirect it: ley fft --format bin > rows.bin")
 			}
+			if rate <= 0 {
+				return usageErrorf("--rate must be greater than 0")
+			}
 			var hz uint64
 			if freq != "" {
 				t, terr := resolveDial(freq, "101.1 (MHz)")

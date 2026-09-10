@@ -114,7 +114,7 @@ q-go-verbs-1 (compute the note before the drain starts; add `go test -race ./int
 `make go-test` or a separate `make race` target run by CI), q-go-verbs-2 (flush on every return
 path with the error checked).
 
-### GO-2 `[ ]` Rendering defects
+### GO-2 `[x]` Rendering defects
 
 q-go-render-1 (meter block that shrinks), -2 (orphan order in `ley state`), -3 (`floorOf` in
 spectrum's JSON row), -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15, -16, -18. Each is small;

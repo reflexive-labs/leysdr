@@ -750,7 +750,7 @@ func deviceSummary(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 		about += ", serial " + d.Serial
 	}
 	return fmt.Sprintf("%s %s %s, %s", name, s.Muted(about+")"), inkState(s, stateWord(d.State.String())),
-		s.Muted("tunes "+rangesString(d.TuningRanges)))
+		s.Muted("tunes "+absentIfEmpty(s, rangesPhrase(d.TuningRanges))))
 }
 
 // orientChannelLine is one line per channel: frequency, mode, squelch, owner.

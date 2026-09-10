@@ -160,3 +160,23 @@ func TestWaterfallHeaderStatesColumnBandwidth(t *testing.T) {
 		t.Error("a column covers some bandwidth")
 	}
 }
+
+// The legend is there so a reader can match a cell's shade to a dB step, so a
+// swatch has to be inked exactly the way the map inks the cell it stands for.
+// Dimming it shows a shade the map never draws.
+func TestWaterfallKeySwatchMatchesTheMap(t *testing.T) {
+	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
+	v := newTestWaterfall(st, 80, 146_620_000)
+	key := strings.Join(v.key(), "\n")
+	g := []rune(st.Glyphs().Shade)
+	for i := 1; i < len(g); i++ {
+		frac := float64(i) / float64(len(g)-1)
+		want := st.Level(frac, string(g[i]))
+		if !strings.Contains(key, want) {
+			t.Errorf("swatch %d is not the map's ink\n key  %q\n want %q", i, key, want)
+		}
+		if strings.Contains(key, st.Muted(want)) {
+			t.Errorf("swatch %d is dimmed, so it does not match the map: %q", i, key)
+		}
+	}
+}

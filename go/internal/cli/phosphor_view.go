@@ -144,13 +144,15 @@ func (v *phosphorView) render(h phosphorHistogram) string {
 		b.WriteString(l + "\n")
 	}
 	step := v.rangeDb / float64(phosphorHeight)
+	// Every label names its row's top edge, so a cell lines up against the
+	// number beside it rather than the one a row below.
 	for r := phosphorHeight; r >= 1; r-- {
 		label, unit := "", false
 		switch r {
 		case phosphorHeight:
 			label, unit = fmtDb(v.floorDb+v.rangeDb), true
 		case phosphorHeight / 2:
-			label = fmtDb(v.floorDb + float64(r-1)*step)
+			label = fmtDb(v.floorDb + float64(r)*step)
 		}
 		line := &inkedLine{st: v.st}
 		line.add(v.gutter(label, unit), inkPlain)

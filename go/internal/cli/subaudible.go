@@ -32,8 +32,9 @@ func (t *subAudibleTracker) line(sa *leylinev1.SubAudible, st ui.Style) (string,
 	}
 	t.haveLast, t.lastOn, t.last = true, on, std
 	if !on {
-		// Only say "gone" if something was there: a channel that never had a
-		// tone should not narrate its absence.
+		// Tone loss is deliberately silent. A channel that never had a tone
+		// must not narrate its absence, and one whose tone stops has said
+		// everything it had to say in the line that named the tone.
 		return "", false
 	}
 	var b strings.Builder

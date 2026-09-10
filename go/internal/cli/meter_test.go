@@ -244,3 +244,35 @@ func TestMeterSilentAudioReadsQuiet(t *testing.T) {
 		t.Errorf("-inf must never be printed:\n%s", got)
 	}
 }
+
+// A meter that stops measuring audio drops from three rows to one, and the two
+// bars that are no longer being updated must not stay frozen on screen.
+func TestMeterSinkTerminalBlockShrinks(t *testing.T) {
+	buf := &bytes.Buffer{}
+	sink := &meterSink{w: buf, style: ui.Style{Width: 100}, tty: true}
+	tall := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterWithAudio(-38, -12, -4, true), -46)
+	if strings.Count(tall, "\n") != 2 {
+		t.Fatalf("want a three-row block to shrink from, got %q", tall)
+	}
+	sink.write(tall)
+	rows := strings.Split(tall, "\n")
+	buf.Reset()
+
+	short := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-38, true), math.NaN())
+	if strings.Contains(short, "\n") {
+		t.Fatalf("want a one-row block to shrink to, got %q", short)
+	}
+	sink.write(short)
+	got := buf.String()
+	for _, r := range rows[1:] {
+		if !strings.Contains(got, "\r"+strings.Repeat(" ", ui.Visible(r))) {
+			t.Errorf("a dropped row must be blanked to its old width (%d): %q", ui.Visible(r), got)
+		}
+	}
+	if !strings.HasSuffix(got, "\x1b[2A\r") {
+		t.Errorf("the cursor must come back to the surviving row: %q", got)
+	}
+	if sink.lastRows != 1 || len(sink.lastLens) != 1 {
+		t.Errorf("the block on screen is one row now: rows=%d lens=%v", sink.lastRows, sink.lastLens)
+	}
+}

@@ -155,18 +155,22 @@ func stateNodes(s ui.Style, st *leylinev1.GetStateResponse) (roots, orphans []tr
 		delete(captures, d.DeviceId)
 		roots = append(roots, n)
 	}
-	for _, cs := range captures {
-		for _, c := range cs {
+	// What is left in the maps is orphaned, but the maps are walked in wire
+	// order rather than iterated: two runs against an unchanged daemon must
+	// print the same screen. A parent that was drawn took its whole entry with
+	// it, so a key still present means every row under it is an orphan.
+	for _, c := range st.GetCaptures() {
+		if _, ok := captures[c.DeviceId]; ok {
 			orphans = append(orphans, buildCapture(c))
 		}
 	}
-	for _, chs := range channels {
-		for _, ch := range chs {
+	for _, ch := range st.GetChannels() {
+		if _, ok := channels[ch.CaptureId]; ok {
 			orphans = append(orphans, buildChannel(ch))
 		}
 	}
-	for _, sks := range sinks {
-		for _, sk := range sks {
+	for _, sk := range st.GetSinks() {
+		if _, ok := sinks[sk.ChannelId]; ok {
 			orphans = append(orphans, sinkNode(s, sk))
 		}
 	}

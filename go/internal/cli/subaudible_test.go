@@ -46,6 +46,23 @@ func TestSubAudibleSilenceIsNotNarrated(t *testing.T) {
 	}
 }
 
+// A tone that stops is silent too: the line that named it is the record, and a
+// transmission that keys down mid-listen would otherwise print a departure
+// notice on every channel it touches.
+func TestSubAudibleToneLossIsSilent(t *testing.T) {
+	var tr subAudibleTracker
+	if _, ok := tr.line(ctcss(100, 100.1, 700, 20), ui.Style{}); !ok {
+		t.Fatal("the first tone must be reported")
+	}
+	none := &leylinev1.SubAudible{Kind: leylinev1.SubAudibleKind_SUB_AUDIBLE_NONE}
+	if line, ok := tr.line(none, ui.Style{}); ok {
+		t.Errorf("a tone going away prints nothing, got %q", line)
+	}
+	if _, ok := tr.line(ctcss(100, 100.1, 700, 20), ui.Style{}); !ok {
+		t.Error("the tone coming back is news again")
+	}
+}
+
 // A measurement two standard tones could both explain is reported as a
 // measurement and said to be unclassifiable. Naming one of them would be a
 // guess wearing a reading's clothes.

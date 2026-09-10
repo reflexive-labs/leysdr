@@ -62,18 +62,6 @@ func enumName(s string) string {
 	return s
 }
 
-// rangesString renders tuning ranges as "24 MHz-1.766 GHz".
-func rangesString(rs []*leylinev1.FrequencyRange) string {
-	parts := make([]string, 0, len(rs))
-	for _, r := range rs {
-		parts = append(parts, leyline.FormatFrequency(r.MinHz)+"-"+leyline.FormatFrequency(r.MaxHz))
-	}
-	if len(parts) == 0 {
-		return "-"
-	}
-	return strings.Join(parts, ",")
-}
-
 // ratesString renders sample rates as "0.25..3.2 MSPS (n)".
 func ratesString(rates []uint64) string {
 	if len(rates) == 0 {

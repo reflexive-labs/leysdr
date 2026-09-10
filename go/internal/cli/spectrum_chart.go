@@ -73,6 +73,10 @@ func fmtDb(db float64) string {
 type headerSeg struct {
 	name, value string
 	dim         bool
+	// inked marks a name that carries its own colour -- a legend swatch is the
+	// ramp's own glyph -- so it is written verbatim: muting it would show the
+	// reader a shade the map never draws.
+	inked bool
 	// width overrides the measured width for a segment whose name is already
 	// inked, where counting bytes would count escape sequences as columns.
 	width int
@@ -88,6 +92,9 @@ func (s headerSeg) visible() int {
 func (s headerSeg) render(st ui.Style) string {
 	if s.dim {
 		return st.Muted(s.name + s.value)
+	}
+	if s.inked {
+		return s.name + s.value
 	}
 	return st.Muted(s.name) + s.value
 }
@@ -184,9 +191,7 @@ func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64)
 		case floorRow:
 			// The one interior label worth its four columns is the floor
 			// itself: with the rule drawn across the chart at this level, a
-			// column's height above it reads directly as signal margin. It is
-			// skipped when the floor sits on the first row, where the axis
-			// label right beneath it already says the same number.
+			// column's height above it reads directly as signal margin.
 			label = fmtDb(v.noise)
 		}
 		cells := make([]string, len(colDb))
