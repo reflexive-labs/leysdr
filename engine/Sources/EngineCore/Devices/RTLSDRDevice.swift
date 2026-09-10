@@ -390,18 +390,16 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         guard RTLSDRDevice.sampleRates.contains(hz) else {
             throw EngineError.rateUnsupported(hz, target: descriptor.id.string)
         }
-        // Rate changes need a stream restart: the index continues monotonically (docs "Timebase").
-        let resume: (CaptureID, @Sendable (SampleBuffer, SampleTime) -> Void)? = withLock {
-            guard streaming, let cb = deliver else { return nil }
-            return (captureID, cb)
-        }
-        if resume != nil { await stopStreaming() }
+        // The dongle needs its buffers reset around a rate change, and the next `startStreaming`
+        // restarts the device index at 0, so the caller stops the stream, changes the rate and
+        // starts again — that restart is what re-anchors the capture timeline (docs "Timebase").
+        // Changing the rate under a live stream would move the timebase with nobody to rebase it.
         try withLock {
+            guard !streaming else { throw EngineError.deviceBusy(_descriptor.id.string) }
             let d = try requireDev()
             try check(rtlsdr_set_sample_rate(d, UInt32(hz)), "rtlsdr_set_sample_rate")
             sampleRate = hz
         }
-        if let (cap, cb) = resume { try await startStreaming(captureID: cap, deliver: cb) }
     }
 
     public func setGain(element: String, value: GainValue) async throws {
