@@ -76,9 +76,14 @@ next row — never silently; gap lines do not count toward `--count`. The second
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
 that order (pinned by a golden test). The third is the client-local tables: `ley presets --json`
 prints one array of `{name, aliases, hz, mode, description}` and `ley bands --json` one array of
-`{name, min_hz, max_hz, mode, bandwidth_hz, note}` (`mode` is `usb/lsb` where the sideband follows
-the frequency). Neither verb dials the daemon; `ley help presets` is the same data in prose, and
-`ley presets` (the verb) owns the bare name.
+`{name, aliases, min_hz, max_hz, mode, bandwidth_hz, note}` (`mode` is `usb/lsb` where the sideband
+follows the frequency; `aliases` are what `--band` accepts). `ley bands <frequency|preset|band>
+--json` is the one place a client-local table answers with a **single object** instead:
+`{hz, band, mode, bandwidth_hz, reason}`, where `band` is one of those entries or `null` and `mode`
+is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`
+does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script asking "what would
+tune do here" came for, and they are always present. Neither verb dials the daemon; `ley help
+presets` is the same data in prose, and `ley presets` (the verb) owns the bare name.
 
 Destructive verbs echo nothing stale: `ley stop`, `ley stop --all` and `ley devices detach` print
 the daemon's `Empty` answer (`{}`) under `--json` — one line for the whole action — and the exit

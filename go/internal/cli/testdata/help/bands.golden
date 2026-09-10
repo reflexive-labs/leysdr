@@ -17,13 +17,14 @@ usb/lsb means the sideband follows the amateur convention: USB at and above
 client-local data with no proto message, so it is not the proto3 JSON mapping.
 
 Usage:
-  ley bands [flags]
+  ley bands [frequency|preset|band] [flags]
 
 Examples:
   ley bands                      # the table
+  ley bands 146.52               # what is this, and what will tune do here?
+  ley bands 2m                   # the same answer, asked by name
   ley bands --json | jq -r '.[] | .aliases[0]'
-  ley spectrum --band noaa        # the whole NOAA weather band
-  ley tune 146.52                # 2 m amateur: NFM, 12.5 kHz
+  ley spectrum --band noaa       # the whole NOAA weather band
 
 Flags:
   -h, --help   help for bands

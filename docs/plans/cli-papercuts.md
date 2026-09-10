@@ -7,7 +7,7 @@ The point of this file is that papercuts otherwise get recorded in the Closing s
 plan happened to be open when they were noticed, and then never found again. Items collected from
 `cli-visuals.md` say so, so the original context is still reachable.
 
-## PC-1 `[ ]` `ley bands <frequency>`
+## PC-1 `[x]` `ley bands <frequency>`
 
 The question a reader actually has is "what is 146.52, and what will `ley tune` do with it?"
 `bands` can only answer it by making them scan fifteen rows and do the range comparison themselves.
@@ -32,12 +32,33 @@ radio and tune it.
 - `--json` returns the single band object rather than the array, or `null` when unrecognised.
 - Then delete the hand-written comment from the help and point the example at the new form.
 
-Related, and worth doing in the same pass since it is the same command:
+Done, and **the sharpest problem was not in the description**. `ley bands 2m` would have gone
+through `resolveDialTarget`, read `2m` as 2 MHz, and answered "160 m amateur" -- for the very alias
+the same screen tells you to type. So this is the one verb where a band name is tried *first*: it is
+the verb about band names. When an argument reads both ways it says which it took
+(`reading "2m" as the band; for the frequency say 2.000 MHz`), because picking silently is the same
+quiet wrong answer that kept bands off every other verb's positional.
 
-- **The NOTE column truncates** to about 15 columns at 80 wide, because NAME, RANGE, MODE and
-  BANDWIDTH already spend 63. Dropping BANDWIDTH from the table would give NOTE room; the frequency
-  lookup above is a better place to report bandwidth anyway, since that is where someone is asking
-  about one band rather than scanning all of them. (from `cli-visuals.md`)
+Two more corrections to the description:
+
+- **NOTE is not truncated at 80 columns, it is dropped entirely.** `nextToDrop` takes the *highest*
+  rank first, so NOTE (`drop: 2`) goes before BANDWIDTH (`drop: 1`) -- the opposite of what the
+  code comment and PC-9's closing note both assumed. Flipping the ranks was measured and is worse:
+  BANDWIDTH would vanish at the commonest width and NOTE would survive at exactly its `min: 14`,
+  giving `"FM voice and..."`. A verb losing the bandwidth it advertises in its own Short, in
+  exchange for a stub, is not an improvement. **Left as it is**, and PC-9's note corrected.
+- `--json` for a lookup returns a single object, not `null` when no band matches: `null` would throw
+  away the mode and bandwidth a script came for. `{hz, band, mode, bandwidth_hz, reason}` with
+  `band: null` keeps the answer. Documented in `interfaces.md` as its own sentence, since that file
+  froze `bands --json` as an array.
+
+The `reason` field is the preset's rationale when the argument was a preset, and the band default
+otherwise -- in `ley tune`'s exact words for the no-band case, so the two verbs cannot diverge.
+
+Tests: `TestBandsLookupByFrequency`, `TestBandsLookupResolvesTheSideband` (3.7 MHz answers `lsb`,
+not `usb/lsb`), `TestBandsLookupPrefersTheBandName` (including the ambiguity note, and that an
+unambiguous alias is quiet), `TestBandsLookupAcceptsAPreset`, `TestBandsLookupNoMatch`,
+`TestBandsLookupJSON`, `TestBandsWithNoArgumentStillPrintsTheTable`, `TestBandsLookupRejectsNonsense`.
 
 Open question this does **not** settle, and should not try to: there are three overlapping
 presentations of the same data -- `ley bands` (ranges), `ley presets` (points, grouped by band) and
@@ -229,8 +250,8 @@ An explicit `--span` wins over the band's width, and should say so when it is na
 Built as `--band`. `Band` gained `Aliases`, `WidthHz()` and `CenterHz()`; `ResolveBand` looks up by
 alias or full name with near-match suggestions, and `ley bands` grew an ALIAS column, without which
 `--band` would be undiscoverable. That column is never dropped on a narrow terminal -- it is the
-only one you can type -- and BANDWIDTH is still first to go, which incidentally gives NOTE the room
-PC-1 wanted.
+only one you can type. (The claim here that BANDWIDTH is "first to go" was wrong, and PC-1 corrects
+it: `nextToDrop` takes the highest rank first, so NOTE goes before BANDWIDTH.)
 
 The band is resolved to a centre and span inside `openBand`, after the device is picked, because how
 much of a band fits depends on the rates that radio supports. A positional frequency together with
