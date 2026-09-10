@@ -17,11 +17,28 @@ import (
 // (the engine's DefaultSpectrumLadder sizes).
 var FFTLadder = []uint32{256, 512, 1024, 2048, 4096, 8192, 16384}
 
-// Stream-plane limits.
+// Stream-plane limits: what the ladder will serve, and the answers a persistence subscription
+// gets where it named nothing. A row rate below the floor would stretch the interval past
+// anything a reader waits for, and a half-life outside its range cannot be turned into a whole
+// number of rows.
 const (
 	maxFFTRows     = 30.0
 	defaultFFTRows = 10.0
 	readerReapWait = 10 * time.Second
+
+	minRowsPerSecond = 0.1
+	// The rate the histogram accumulates at, which is as fast as the ladder goes: it wants every
+	// row it can get, where a person reads a couple of frames a second.
+	ladderRowsPerSecond    = maxFFTRows
+	defaultPersistRows     = 2.0
+	defaultPersistBins     = 256
+	defaultPersistLevels   = 32
+	maxPersistLevels       = 256
+	defaultHalfLifeSecs    = 20.0
+	minHalfLifeSeconds     = 0.1
+	maxHalfLifeSeconds     = 3600.0
+	snapshotLooksPerRow    = 1
+	accumulatedLooksPerRow = 64
 )
 
 type stream struct {
@@ -66,6 +83,15 @@ func audioRateHz(fs uint64) float64 {
 		d2 = 1
 	}
 	return r1 / d2
+}
+
+// roundRate clamps a requested row rate the way the ladder does. A non-positive or non-finite
+// request means "as fast as allowed".
+func roundRate(rowsPerSecond float64) float64 {
+	if math.IsNaN(rowsPerSecond) || math.IsInf(rowsPerSecond, 0) || rowsPerSecond <= 0 {
+		return maxFFTRows
+	}
+	return math.Min(math.Max(rowsPerSecond, minRowsPerSecond), maxFFTRows)
 }
 
 // nearestLadder rounds a request up to the next ladder size (capped at the
@@ -274,31 +300,4 @@ func (b bulkSvc) Unsubscribe(ctx context.Context, ref *leylinev1.StreamRef) (*le
 	s.close()
 	delete(d.streams, s.id)
 	return &leylinev1.Empty{}, nil
-}
-
-// Rate and half-life bounds the daemon answers within (DefaultSpectrumLadder.roundRate,
-// StreamRegistry's half-life clamp). A rate below the floor would stretch the row interval past
-// anything a reader waits for; a half-life outside the range cannot be converted to a whole
-// number of rows.
-const (
-	minRowsPerSecond       = 0.1
-	defaultPersistRows     = 2.0
-	defaultPersistBins     = 256
-	defaultPersistLevels   = 32
-	maxPersistLevels       = 256
-	defaultHalfLifeSecs    = 20.0
-	minHalfLifeSeconds     = 0.1
-	maxHalfLifeSeconds     = 3600.0
-	ladderRowsPerSecond    = maxFFTRows
-	snapshotLooksPerRow    = 1
-	accumulatedLooksPerRow = 64
-)
-
-// roundRate clamps a requested row rate the way the ladder does. A non-positive or non-finite
-// request means "as fast as allowed".
-func roundRate(rowsPerSecond float64) float64 {
-	if math.IsNaN(rowsPerSecond) || math.IsInf(rowsPerSecond, 0) || rowsPerSecond <= 0 {
-		return maxFFTRows
-	}
-	return math.Min(math.Max(rowsPerSecond, minRowsPerSecond), maxFFTRows)
 }
