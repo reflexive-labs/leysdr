@@ -457,7 +457,7 @@ last 60 s; the real driver's feature keys — check `RTLSDRDevice.swift` for wha
 `docs/engine-internals.md` if the doc disagrees; `BLIND_SPOT` from the fake when the request falls in
 the DC guard). Split into two commits if it helps: bulk/telemetry parity, then jobs parity.
 
-### R-15 `[ ]` Contract hygiene (S, Opus)
+### R-15 `[x]` Contract hygiene (S, Opus)
 
 - `go/pkg/leyline/errors.go` gains constants for every code the daemon emits (`BLIND_SPOT`,
   `NO_DEVICE`, `FAILED_PRECONDITION`, `INTERNAL`); `scan.go:274` uses them; a test asserts the Go list

@@ -150,9 +150,13 @@ type Job struct {
 	//	*Job_Watch
 	//	*Job_Scan
 	//	*Job_Record
-	Config       isJob_Config `protobuf_oneof:"config"`
-	ResultUris   []string     `protobuf:"bytes,8,rep,name=result_uris,json=resultUris,proto3" json:"result_uris,omitempty"`       // ley:// resources produced so far
-	StatusDetail string       `protobuf:"bytes,9,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"` // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
+	Config isJob_Config `protobuf_oneof:"config"`
+	// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
+	// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
+	// implemented), and it does not outlive the daemon's memory of its last sixteen finished jobs
+	// or a restart. Persisted, resolvable resources arrive with the durable job store.
+	ResultUris   []string `protobuf:"bytes,8,rep,name=result_uris,json=resultUris,proto3" json:"result_uris,omitempty"`
+	StatusDetail string   `protobuf:"bytes,9,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"` // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
 	// Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
 	// daemon's own sentence about it. Set only on FAILED; `status_detail` is prose and never carries
 	// the code, so a client that wants to tell "the radio cannot tune that" from "somebody is using

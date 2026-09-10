@@ -100,7 +100,7 @@ proto-free). Files: `engine/Sources/LeylineDaemon/**/*.swift`, `engine/Package.s
 c-swift-tests-1 … c-swift-tests-9 (c-swift-tests-9 and q-swift-dsp-8 are the same escaped
 interpolations: fix the strings). Files: `engine/Tests/**/*.swift`.
 
-### CB-7 `[ ]` The documents (R-1 of the release plan)
+### CB-7 `[x]` The documents (R-1 of the release plan)
 
 `docs/plans/v1-release.md` section R-1, in full, including the three engine-internals sections
 a-invariants-4 asks for and the two design-doc corrections (a-evolution-14, a-evolution-15). Files:

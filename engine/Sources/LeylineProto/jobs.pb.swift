@@ -181,7 +181,10 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
     set {_uniqueStorage()._config = .record(newValue)}
   }
 
-  /// ley:// resources produced so far
+  /// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
+  /// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
+  /// implemented), and it does not outlive the daemon's memory of its last sixteen finished jobs
+  /// or a restart. Persisted, resolvable resources arrive with the durable job store.
   public var resultUris: [String] {
     get {_storage._resultUris}
     set {_uniqueStorage()._resultUris = newValue}
