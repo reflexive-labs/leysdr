@@ -52,7 +52,7 @@ final class RestartingDevice: RadioDevice, @unchecked Sendable {
 final class LockedSpectrumSink: SpectrumSink, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [(index: UInt64, spanHz: UInt64)] = []
-    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64) {
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
         lock.lock(); stored.append((time.sampleIndex, spanHz)); lock.unlock()
     }
     var rows: [(index: UInt64, spanHz: UInt64)] { lock.lock(); defer { lock.unlock() }; return stored }

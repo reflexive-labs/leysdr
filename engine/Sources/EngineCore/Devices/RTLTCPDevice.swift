@@ -16,6 +16,13 @@ import Darwin
 #endif
 
 public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
+    /// The rtl_tcp server runs librtlsdr with the same async queue this side would, so a retune
+    /// has at least that much already-captured air behind it, plus whatever the socket and the
+    /// network hold -- which is not knowable from here. A bound, and an optimistic one.
+    public var inFlightSamples: UInt64 {
+        UInt64(RTLSDRDevice.usbBuffers) * UInt64(RTLSDRDevice.usbBufferBytes) / 2
+    }
+
     /// Samples per delivered block (docs/engine-internals.md "Block size"); 32768 bytes of cu8.
     public static let blockSize = 16384
     /// Same list as `RTLSDRDevice` — the remote end is librtlsdr.

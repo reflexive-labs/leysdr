@@ -39,6 +39,16 @@ public struct RTLSDRProbe: Hashable, Sendable {
 
 /// One RTL2832U dongle. Control methods run on the control plane; `deliver` runs on the USB thread.
 public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
+    /// librtlsdr's async queue, passed to `rtlsdr_read_async`. Two bytes per complex sample in
+    /// cu8, so this is 524288 samples -- 218 ms at 2.4 MSPS -- of air already captured and not yet
+    /// delivered at any moment. `tune` does not flush it; see `inFlightSamples`.
+    static let usbBuffers: UInt32 = 32
+    static let usbBufferBytes: UInt32 = 32768
+
+    public var inFlightSamples: UInt64 {
+        UInt64(Self.usbBuffers) * UInt64(Self.usbBufferBytes) / 2
+    }
+
     /// Sample rates librtlsdr accepts without warnings (docs/engine-internals.md).
     public static let sampleRates: [UInt64] = [
         250_000, 1_024_000, 1_536_000, 1_800_000, 1_920_000, 2_048_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000,
@@ -441,7 +451,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         let t = Thread { [self] in
             self.started.signal()
             // Blocks until rtlsdr_cancel_async; each USB transfer invokes the callback once.
-            let rc = rtlsdr_read_async(d, RTLSDRDevice.readCallback, Unmanaged.passUnretained(self).toOpaque(), 32, 32768)
+            let rc = rtlsdr_read_async(d, RTLSDRDevice.readCallback, Unmanaged.passUnretained(self).toOpaque(), RTLSDRDevice.usbBuffers, RTLSDRDevice.usbBufferBytes)
             self.readAsyncReturned(rc)
             self.joined.signal()
         }

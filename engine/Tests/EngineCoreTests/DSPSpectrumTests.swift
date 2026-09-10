@@ -4,7 +4,7 @@ import XCTest
 /// Collects rows on the DSP thread; test-only sink.
 final class CollectingSpectrumSink: SpectrumSink, @unchecked Sendable {
     var rows: [(bins: Int, index: UInt64, peakBin: Int, peakDB: Float)] = []
-    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64) {
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
         var best = 0
         for i in 1 ..< row.count where row[i] > row[best] { best = i }
         rows.append((row.count, time.sampleIndex, best, row[best]))
@@ -118,7 +118,7 @@ final class DSPSpectrumTests: XCTestCase {
     func testLadderSameSizeRowsSurviveInterleavedSizes() async {
         final class FullRowSink: SpectrumSink, @unchecked Sendable {
             var rows: [[Float]] = []
-            func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64) {
+            func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
                 rows.append(Array(row))
             }
         }

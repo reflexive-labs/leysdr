@@ -9,23 +9,23 @@ client, 16–17 the harness and the docs.
 
 ## Engine foundations
 
-- [ ] **SC-1 `SweepPlan`.** Step geometry as a pure function: quarter-band windows 5%–45% either
+- [x] **SC-1 `SweepPlan`.** Step geometry as a pure function: quarter-band windows 5%–45% either
       side of centre, advance by half a window so step *k+1* covers step *k*'s DC hole, two extra
       steps outside the range so its first and last hertz sit inside a window. Clamp to the device's
       tuning range and report when the request was wider.
-- [ ] **SC-2 `SpectrumSink.write` carries the look count.** The ladder knows M and throws it away;
+- [x] **SC-2 `SpectrumSink.write` carries the look count.** The ladder knows M and throws it away;
       the detector's threshold is wrong by up to 4 dB without it. Touches `CoreProtocols.swift`,
       `SpectrumLadder`, `FFTFrameSink`, `PersistenceFrameSink`.
-- [ ] **SC-3 `RadioDevice.inFlightSamples`.** How many samples the driver has already asked the
+- [x] **SC-3 `RadioDevice.inFlightSamples`.** How many samples the driver has already asked the
       hardware for and not yet delivered. RTL-SDR answers 32 × 16384 from its `rtlsdr_read_async`
       geometry; a file device answers 0. This is the settle window, and it is arithmetic rather than
       a guess about wall-clock timing.
-- [ ] **SC-4 `EnergyDetector`.** CFAR local floor (96 guard, 96 reference), Wilson–Hilferty
+- [x] **SC-4 `EnergyDetector`.** CFAR local floor (96 guard, 96 reference), Wilson–Hilferty
       threshold from the row's actual M and the whole-sweep false-alarm budget, grouping with a
       two-bin join, linear-power centroid, equivalent rectangular width, mirror rejection at 20 dB.
       Conforms to the `Detector` protocol that has been declared and unimplemented since the protos
       were written.
-- [ ] **SC-5 Detector tests.** Synthetic rows: the false-alarm rate against pure noise, sensitivity
+- [x] **SC-5 Detector tests.** Synthetic rows: the false-alarm rate against pure noise, sensitivity
       at the design point, floor tracking across a tilt, width independent of SNR, a tone reported
       as under the resolution, an image rejected and its source kept.
 
@@ -70,4 +70,18 @@ client, 16–17 the harness and the docs.
 
 ## Notes
 
-Recorded as the work lands.
+**SC-1 through SC-5 landed together**, and three things came out of building them that the design
+did not have:
+
+- The **row-edge reference window**. A CFAR estimator near the end of a row has reference bins on
+  one side only. Shrinking the sample there would raise the false-alarm rate exactly where the
+  roll-off already makes the floor hardest to read, so the shortfall is taken from the other side
+  and the count stays fixed. The estimate is still biased toward the row's middle in the outermost
+  ~190 bins -- and that is covered by the sweep geometry rather than by the estimator, because one
+  step's window edge is the next step's interior.
+- **Wilson-Hilferty errs in both directions**, not always high. It is within 0.45 dB of the exact
+  exponential answer across the tail, above it in the deep tail (the safe direction) and about
+  0.05 dB below it at p = 1e-2. The test pins the magnitude, not a direction.
+- The tilt test asserts a **relationship, not a number**: the local floor must leave less than half
+  the tilt a single median leaves. Absolute residuals move with the synthetic tilt shape; the claim
+  that matters does not.

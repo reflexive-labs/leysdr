@@ -26,7 +26,7 @@ final class FFTFrameSink: SpectrumSink, @unchecked Sendable {
         self.u8 = u8
     }
 
-    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64) {
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
         let n = min(row.count, bins)
         guard let src = row.baseAddress else { return }
         ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(n)) { dst in
@@ -172,7 +172,7 @@ final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
         self.emitInterval = max(1, emitInterval)
     }
 
-    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz _: UInt64, spanHz _: UInt64) {
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz _: UInt64, spanHz _: UInt64, looks _: Int) {
         accumulator.add(row: row)
         let now = time.sampleIndex
         if !started {

@@ -76,6 +76,25 @@ public protocol RadioDevice: AnyObject, Sendable {
     /// returning and must not block. `SampleTime.sampleIndex` counts samples since this call.
     func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws
     func stopStreaming() async
+
+    /// Samples the driver has already asked the hardware for and not yet delivered.
+    ///
+    /// This is the settle window after a retune, and it is much larger than anything to do with
+    /// the tuner: a PLL relocks in under a millisecond, while librtlsdr keeps 32 USB buffers of
+    /// 16384 complex samples queued, which is 218 ms at 2.4 MSPS of already-captured air arriving
+    /// after the new centre is set. `tune` does not flush them, and the spectrum ladder stamps
+    /// every row with the centre in force when the row was computed -- so a sweep that does not
+    /// discard this much after a hop attributes energy to a frequency the radio was not on.
+    ///
+    /// Zero for a device with no queue ahead of it. A bound, not a measurement: it is derived from
+    /// the driver's own buffer geometry.
+    var inFlightSamples: UInt64 { get }
+}
+
+public extension RadioDevice {
+    /// Devices with no driver queue -- file playback, synthetic sources -- deliver what they are
+    /// asked for when they are asked for it.
+    var inFlightSamples: UInt64 { 0 }
 }
 
 /// Discovers devices, tracks hot-plug, maps serials to stable DeviceIDs across replug.
@@ -328,7 +347,13 @@ public struct SpectrumSubscription: Hashable, Sendable {
 /// Receives FFT rows. Hot path (DSP thread): copy-or-consume, never block.
 public protocol SpectrumSink: AnyObject, Sendable {
     /// `row` is `bins` dBFS values, DC-centered (fft-shifted), lowest frequency first.
-    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64)
+    ///
+    /// `looks` is how many periodograms were averaged into this row: 1 under `.snapshot`, and
+    /// under `.mean` however many blocks actually arrived during the row interval, which is not
+    /// the subscription's `looksPerRow` (that is a cap). Anything doing statistics on a row needs
+    /// it -- an averaged bin is Gamma-distributed with that shape, so a detector that assumes 16
+    /// looks and gets 2 sets its threshold about 4 dB too low and calls noise a carrier.
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks: Int)
 }
 
 public enum DeliveryPolicy: Hashable, Sendable {

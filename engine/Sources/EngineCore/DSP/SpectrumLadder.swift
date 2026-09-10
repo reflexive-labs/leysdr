@@ -180,8 +180,9 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
                 finish(acc, kind: e.subscription.accumulation, looks: e.looks)
                 let scheduled = e.nextDue &+ interval
                 e.nextDue = scheduled > now ? scheduled : now &+ interval
-                e.sink.write(row: UnsafeBufferPointer(acc), at: time, centerHz: centerHz, spanHz: spanHz)
+                let looks = e.looks
                 e.looks = 0
+                e.sink.write(row: UnsafeBufferPointer(acc), at: time, centerHz: centerHz, spanHz: spanHz, looks: looks)
                 continue
             }
 
@@ -196,7 +197,7 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
             // fall more than one interval behind (LATEST_WINS semantics for skipped ticks).
             let scheduled = e.nextDue &+ interval
             e.nextDue = scheduled > now ? scheduled : now &+ interval
-            e.sink.write(row: UnsafeBufferPointer(row), at: time, centerHz: centerHz, spanHz: spanHz)
+            e.sink.write(row: UnsafeBufferPointer(row), at: time, centerHz: centerHz, spanHz: spanHz, looks: 1)
         }
     }
 
