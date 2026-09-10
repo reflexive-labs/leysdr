@@ -279,3 +279,52 @@ the prefix for older daemons is not needed: nothing is released). R-15's remaini
 
 R-15's last bullet: client wrappers for `ListJobs` and `DetachSink`, and `ley jobs [cancel <id>]`
 with `--json`, against the fake and in the e2e.
+
+## Second look (Opus, sequential, after the lanes)
+
+### SW-10 `[ ]` What the audit of the engine lanes found
+
+An independent read of commits `6044fcb..HEAD` on the engine side, made after the per-item
+verifiers, which each saw one item in isolation. Line numbers are as of `c25b12d`.
+
+1. `ChannelDSPCore.reset()` (`Channels/ChannelDSPCore.swift:~332`) swaps in a fresh, closed
+   squelch without an edge. If the squelch was open, push a `.squelch(open: false)` telemetry
+   record for the last processed block's time and bump `squelchCloses`, so
+   `DefaultChannelEngine`'s sub-audible reset fires across the discontinuity; also clear
+   `subAudibleTap`'s ring. Test: an open channel, `captureStreamRestarted()`, one close record and
+   `squelchCloses` incremented.
+2. `DefaultCaptureEngine.beginStreaming` (`Capture/DefaultCaptureEngine.swift:~97`) discards
+   `drainPending()`'s result. When the DSP thread is running and the drain timed out, skip the
+   channel resets and log a warning that says why (a block is still in flight and `reset()` must
+   not race it); when no thread is running there is nothing in flight and the resets proceed.
+3. `beginStreaming` now has two suspension points before `streaming = true`. After each `await`,
+   re-check that the engine is still started and not already streaming (a `stop()` or
+   `setSampleRate` can interleave) and return without touching the device otherwise. A test that
+   interleaves `stop()` during the drain if a seam allows it; otherwise the guard and a comment.
+4. `DefaultDeviceRegistry.poll()` (`Devices/DeviceRegistry.swift:~283`): the table can change
+   while enumeration runs off the actor. Keep a mutation generation counter on the registry,
+   snapshot it before the suspension, and discard the pass when it moved (the next poll is a
+   second away). `BlockingWork.run`'s doc comment says it is for open/close-class calls only; the
+   poll now uses it once a second — say so and why a thread per call is acceptable, or reuse one.
+5. `CoreProtocols.swift` `RadioDevice.setSampleRate` doc: a device may refuse the call while
+   streaming with `DEVICE_BUSY` (`RTLSDRDevice` does); the capture engine always stops streaming
+   first; `RTLTCPDevice` and `FilePlaybackDevice` accept a live change.
+6. `FilePlaybackDevice.stopStreaming` (`Devices/FilePlaybackDevice.swift:~184`): the second
+   caller's `while streaming { lock.wait() }` has no deadline; bound it (3 s, like
+   `RTLSDRDevice`'s join) and log when it expires.
+7. `DaemonTestHarness.swift:~65` `withPromptShutdown`: the watchdog awaits the shutdown child, so
+   it cannot fire before the hang it exists for. Run the shutdown as an unstructured `Task`, race
+   its value against a sleeper, `XCTFail` on the timeout, and make the comment at `:~37` true.
+8. `Server.swift:~161`: a duplicate `--rtltcp` endpoint logs "attached" twice for one device;
+   have `attachVirtualDevice` report whether the device was already hosted and log "already
+   attached" instead.
+9. `SessionStore.swift:325, 444, 448` compare `e.code` against the string literals
+   `"DEVICE_BUSY"` and `"DEVICE_IO"`; use the `EngineError.Code` constants (a-layering-3's last
+   three sites).
+10. Comments that overclaim: `CaptureDSPCore.swift:~183` (the `.f32` refusal commits a zero-count
+    block; say what happens), `RTLSDRDevice.swift:~352` (the `idString` line uses the locking
+    accessor outside the lock on purpose; say so), `DefaultCaptureEngine.swift:~95` (the wait is
+    bounded and can fail), `DaemonTestHarness.swift:~37` (true once item 7 lands),
+    `Persistence.swift:~13` (state the fact; drop the hypothetical future subscriber).
+
+The suite stays green; run it twice at the end.
