@@ -80,7 +80,7 @@ non-test `.go` files under those directories.
 c-go-tests-1 … c-go-tests-22, c-go-tests-24 … c-go-tests-26. Files: every `*_test.go` under `go/`.
 Test names stay; only comments and message strings change.
 
-### CB-4 `[ ]` `EngineCore` sources
+### CB-4 `[x]` `EngineCore` sources
 
 c-swift-core-1, c-swift-core-2, c-swift-core-6, c-swift-core-7, c-swift-core-5 (write the
 exemption: the accumulator's only caller adds and snapshots on the DSP thread, so the lock never
@@ -88,14 +88,14 @@ contends — say that on the class), q-swift-dsp-10 (`neighbourGap` returns the 
 a-invariants-5 (say on `JobRunner`/`JobContext`/`ResourceStore` that they are the Milestone D.15
 contract with no implementation yet). Files: `engine/Sources/EngineCore/**/*.swift`.
 
-### CB-5 `[ ]` `LeylineDaemon` sources
+### CB-5 `[x]` `LeylineDaemon` sources
 
 c-swift-daemon-6, and a-layering-5 (rewrite the `ProtoMapping.swift` header and the matching
 sentence in `engine/Package.swift` to say what is true: `ProtoMapping` renders engine values to
 proto; the session and job stores hold proto messages as their record type; `EngineCore` stays
 proto-free). Files: `engine/Sources/LeylineDaemon/**/*.swift`, `engine/Package.swift`.
 
-### CB-6 `[ ]` Engine tests
+### CB-6 `[x]` Engine tests
 
 c-swift-tests-1 … c-swift-tests-9 (c-swift-tests-9 and q-swift-dsp-8 are the same escaped
 interpolations: fix the strings). Files: `engine/Tests/**/*.swift`.

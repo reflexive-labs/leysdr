@@ -189,7 +189,7 @@ final class SubAudibleTapTests: XCTestCase {
             let n = demod.process(iq: cv, audioOut: &view)
             audioAll.append(contentsOf: UnsafeBufferPointer(start: view.base.assumingMemoryBound(to: Float.self), count: n))
         }
-        XCTAssertGreaterThan(ring.available, 512, "the tap produced \\(ring.available) samples")
+        XCTAssertGreaterThan(ring.available, 512, "the tap produced \(ring.available) samples")
 
         // Drain the tap and detect. The tone must be there.
         var tapped = [Float](repeating: 0, count: ring.available)
@@ -202,15 +202,15 @@ final class SubAudibleTapTests: XCTestCase {
             result = det.analyse(Array(tapped[off ..< off + 512]), fullScaleDeviationHz: demod.fullScaleDeviationHz)
             off += 128
         }
-        XCTAssertTrue(result.detected, "the tap should carry the tone: \\(result.reason)")
-        XCTAssertEqual(result.standardToneHz, 100.0, "classified \\(result.standardToneHz)")
+        XCTAssertTrue(result.detected, "the tap should carry the tone: \(result.reason)")
+        XCTAssertEqual(result.standardToneHz, 100.0, "classified \(result.standardToneHz)")
 
         // And the audio must not: the 300 Hz high-pass is what makes CTCSS sub-audible, and this
         // is the measurement that says the tap was necessary rather than convenient.
         let toneEnergy = energyAt(audioAll, rate: Double(rate), hz: 100)
         let voiceEnergy = energyAt(audioAll, rate: Double(rate), hz: 1000)
         XCTAssertLessThan(toneEnergy, voiceEnergy * 0.05,
-                          "the audio still carries the sub-audible tone (\\(toneEnergy) vs \\(voiceEnergy))")
+                          "the audio still carries the sub-audible tone (\(toneEnergy) vs \(voiceEnergy))")
     }
 
     /// With no tap set, the demodulator does no sub-audible work at all.

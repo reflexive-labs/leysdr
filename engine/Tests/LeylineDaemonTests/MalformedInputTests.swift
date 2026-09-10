@@ -1,4 +1,4 @@
-// Malformed-input hardening across the gRPC surface (engine-review WI-4): extreme offsets, denormal
+// Malformed-input hardening across the gRPC surface: extreme offsets, denormal
 // spectrum rates, non-finite gains and non-regular files must be rejected cleanly, never crash or hang.
 
 import EngineCore

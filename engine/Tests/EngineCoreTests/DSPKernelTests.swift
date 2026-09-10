@@ -114,10 +114,9 @@ final class KernelParityTests: XCTestCase {
         XCTAssertEqual(PortableKernels.mean(re, count: n), AccelerateKernels.mean(re, count: n), accuracy: 1e-4)
         XCTAssertEqual(PortableKernels.meanSquare(re, count: n), AccelerateKernels.meanSquare(re, count: n), accuracy: 1e-4)
         XCTAssertEqual(PortableKernels.maxMagnitude(re, count: n), AccelerateKernels.maxMagnitude(re, count: n), accuracy: 1e-4)
-        // dbToPower and maxInPlace were added without being in this test, and a symbol that does
-        // not exist on Darwin got through as a result: the container this is written in cannot
-        // compile Accelerate at all, so parity coverage is the only thing standing between a new
-        // kernel and a broken macOS build.
+        // A new kernel added here but not exercised above can reference a symbol that doesn't
+        // exist on Darwin without anyone noticing, since this container never compiles Accelerate;
+        // parity coverage is the only check for that.
         let db = re.map { $0 * 10 - 40 }
         PortableKernels.dbToPower(db, to: &pRe, count: n)
         AccelerateKernels.dbToPower(db, to: &aRe, count: n)

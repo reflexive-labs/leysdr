@@ -93,7 +93,8 @@ final class EnergyDetectorTests: XCTestCase {
         XCTAssertEqual(10 * log10(SpectrumDetect.thresholdRatio(looks: 4, pFalse: p)), 7.44, accuracy: 0.15)
     }
 
-    /// The bug that was nearly shipped: assuming a look count instead of measuring it.
+    /// Fewer looks must measure a higher threshold; using an assumed look count instead of the
+    /// actual one would get this backwards.
     func testFewerLooksMeansAHigherThreshold() {
         let p = SpectrumDetect.sweepPFalse(expected: 0.1, bins: 1024, rowsPerStep: 4, steps: 7)
         let two = 10 * log10(SpectrumDetect.thresholdRatio(looks: 2, pFalse: p))

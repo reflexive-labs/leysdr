@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import EngineCore
 
-/// `BlockingWork.run` (engine-review WI-9): blocking driver calls leave the cooperative pool.
+/// `BlockingWork.run`: blocking driver calls leave the cooperative pool.
 final class BlockingWorkTests: XCTestCase {
     struct Boom: Error, Equatable {}
 

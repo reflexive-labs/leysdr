@@ -17,7 +17,7 @@ let testMetadata: Metadata = [
     "leyline-client-label": .string("xctest"),
 ]
 
-/// Path to a generated fixture (`leyfix generate` if absent — see the task notes).
+/// Path to a generated fixture (`leyfix generate` if absent).
 func fixturePath(_ name: String) -> String {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     return root.appendingPathComponent("fixtures/\(name)").path

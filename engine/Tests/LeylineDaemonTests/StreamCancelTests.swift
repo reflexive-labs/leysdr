@@ -5,7 +5,7 @@ import GRPCNIOTransportHTTP2
 import LeylineProto
 import XCTest
 
-/// FU-3: a streaming RPC the client cancels ends its daemon-side handler even when no traffic is
+/// A streaming RPC the client cancels ends its daemon-side handler even when no traffic is
 /// flowing (RPC cancellation is not task cancellation in grpc-swift). Observable two ways: the client's
 /// presence drops (its ephemeral channel is reaped after the 300 ms grace) and shutdown stays prompt.
 final class StreamCancelTests: XCTestCase {

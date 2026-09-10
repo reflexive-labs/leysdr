@@ -404,7 +404,7 @@ final class DevicesRTLSDRTests: XCTestCase {
         XCTAssertNotNil(other.streamError)
     }
 
-    /// `open()` runs through `BlockingWork` (WI-9); with the stub librtlsdr (zero devices) the
+    /// `open()` runs through `BlockingWork`; with the stub librtlsdr (zero devices) the
     /// rtlsdr_open failure must still surface as DEVICE_IO with the device id as target.
     func testOpenWithoutHardwareThrowsDeviceIO() async throws {
         try skipIfDongleAttached()
@@ -444,7 +444,7 @@ final class DevicesRTLSDRTests: XCTestCase {
     }
 }
 
-/// Malformed-input hardening for the file pair (engine-review WI-4: #10, #24).
+/// Malformed-input hardening for the file pair.
 final class DevicesMalformedInputTests: XCTestCase {
     private func writeSidecarJSON(dir: String, name: String, sampleRate: String) throws {
         let json = #"{"format":"cf32","sample_rate":"# + sampleRate + #","center_hz":100000000}"#
