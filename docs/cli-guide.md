@@ -261,6 +261,20 @@ tenth of a false signal. `docs/design-scan.md` has the measurements.
 everywhere else in `ley`. `--dwell 1000` looks longer at each stop and finds weaker signals.
 `--sort snr` puts the loudest first. `--json` prints one `Scan` object and nothing before it.
 
+A sweep belongs to the terminal that started it, so Ctrl-C there stops it and hands the radio back.
+From anywhere else, **`ley jobs`** lists what the daemon is working on -- today that means sweeps --
+and `ley jobs cancel 1` stops the job on that row (an id works too, which is what a script that
+started a scan with `--json` has). The daemon keeps the last sixteen finished jobs, so `ley jobs` is
+also where to see how the last scan ended.
+
+```console
+$ ley jobs
+WHAT  RANGE                       STATE    AGE  DETAIL
+scan  144.000 MHz to 148.000 MHz  running  3 s  step 4/7, 2 found
+$ ley jobs cancel 1
+job_01JB2M3K4P5Q6R7S8T9V0WXYZA cancelled
+```
+
 ## 6. Watch a band over time
 
 `spectrum` and `scan` both answer "what is here right now". Two more views trade that snapshot for

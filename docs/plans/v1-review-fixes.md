@@ -275,7 +275,7 @@ the prefix for older daemons is not needed: nothing is released). R-15's remaini
 (`step_hz`, `required_hz`, `SHM_RING`, `AttachFileDeviceRequest.path`, `Sink.stream`, the
 `SubAudible` DCS fields) land in the same proto edit.
 
-### X-4 `[ ]` `ley jobs`
+### X-4 `[x]` `ley jobs`
 
 R-15's last bullet: client wrappers for `ListJobs` and `DetachSink`, and `ley jobs [cancel <id>]`
 with `--json`, against the fake and in the e2e.

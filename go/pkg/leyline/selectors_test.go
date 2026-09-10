@@ -157,3 +157,22 @@ func TestNewIDIsMonotonic(t *testing.T) {
 		prev = id
 	}
 }
+
+func TestResolveJob(t *testing.T) {
+	jobs := []*leylinev1.Job{{JobId: "job_01A"}, {JobId: "job_02B"}}
+	for _, sel := range []string{"job_02B", "job_02", "2"} {
+		j, err := ResolveJob(jobs, sel)
+		if err != nil || j.GetJobId() != "job_02B" {
+			t.Errorf("%q resolved to %v (%v)", sel, j.GetJobId(), err)
+		}
+	}
+	// A prefix both jobs share names neither.
+	if _, err := ResolveJob(jobs, "job_0"); err == nil {
+		t.Error("an ambiguous prefix should not resolve")
+	} else if se := (*SelectorError)(nil); !errors.As(err, &se) || !se.Ambiguous {
+		t.Errorf("want an ambiguous SelectorError, got %v", err)
+	}
+	if _, err := ResolveJob(nil, "1"); err == nil {
+		t.Error("no jobs, no row 1")
+	}
+}

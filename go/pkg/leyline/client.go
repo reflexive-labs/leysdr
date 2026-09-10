@@ -355,6 +355,26 @@ func (c *Client) WriteParams(ctx context.Context, writes ...*leylinev1.ParamWrit
 	return stream.CloseAndRecv()
 }
 
+// ListJobs returns the daemon's jobs, narrowed to the states named (none = every job it still
+// remembers). The order is by id, which for ULIDs is creation order, so the row numbers a client
+// prints stay put whatever order a daemon enumerates its own table in.
+func (c *Client) ListJobs(ctx context.Context, states ...leylinev1.JobState) ([]*leylinev1.Job, error) {
+	resp, err := c.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{States: states})
+	if err != nil {
+		return nil, err
+	}
+	jobs := resp.GetJobs()
+	sort.SliceStable(jobs, func(i, j int) bool { return jobs[i].GetJobId() < jobs[j].GetJobId() })
+	return jobs, nil
+}
+
+// DetachSink removes a sink from its channel: the audio it was carrying stops, the channel and
+// the capture under it stay.
+func (c *Client) DetachSink(ctx context.Context, sinkID string) error {
+	_, err := c.Control.DetachSink(ctx, &leylinev1.DetachSinkRequest{SinkId: sinkID})
+	return err
+}
+
 // Frame is one bulk-plane frame.
 type Frame = leylinev1.Frame
 

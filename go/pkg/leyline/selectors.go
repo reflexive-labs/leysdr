@@ -45,9 +45,18 @@ func (e *SelectorError) Error() string {
 		return fmt.Sprintf("no %ss; %s %q matches nothing", e.Kind, e.Kind, e.Selector)
 	}
 	if len(e.Rows) > 0 {
-		return fmt.Sprintf("no %s matches %q (a full id, id prefix, row number or frequency); pick one:%s", e.Kind, e.Selector, list)
+		return fmt.Sprintf("no %s matches %q (%s); pick one:%s", e.Kind, e.Selector, e.forms(), list)
 	}
-	return fmt.Sprintf("no %s matches %q; known: %s (a full id, id prefix, row number or frequency)", e.Kind, e.Selector, list)
+	return fmt.Sprintf("no %s matches %q; known: %s (%s)", e.Kind, e.Selector, list, e.forms())
+}
+
+// forms names what this kind of selector accepts. A job covers a range rather than sitting at a
+// frequency, so offering one would send the reader looking for a form that cannot work.
+func (e *SelectorError) forms() string {
+	if e.Kind == "job" {
+		return "a full id, id prefix or row number"
+	}
+	return "a full id, id prefix, row number or frequency"
 }
 
 // resolveIndex applies the selector rules to ids. covers reports whether the
@@ -219,4 +228,20 @@ func ChannelRow(state *leylinev1.GetStateResponse, row int, ch *leylinev1.Channe
 		freq = FormatFrequency(hz)
 	}
 	return fmt.Sprintf("%d  %s  %s %s", row, ch.GetChannelId(), freq, strings.ToUpper(ModeName(ch.GetMode())))
+}
+
+// ResolveJob finds a job by id, id prefix, or its row number in the list it was given, which is
+// the list ListJobs returned and `ley jobs` printed. A job has no frequency of its own -- a scan
+// covers a range, and naming one edge of it would pick a job the reader did not point at -- so a
+// frequency selector is not accepted here.
+func ResolveJob(jobs []*leylinev1.Job, sel string) (*leylinev1.Job, error) {
+	ids := make([]string, len(jobs))
+	for i, j := range jobs {
+		ids[i] = j.GetJobId()
+	}
+	i, err := resolveIndex("job", sel, ids, nil)
+	if err != nil {
+		return nil, err
+	}
+	return jobs[i], nil
 }

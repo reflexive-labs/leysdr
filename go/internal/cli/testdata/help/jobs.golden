@@ -1,0 +1,36 @@
+jobs lists the daemon's background work -- today that is sweeps started by
+'ley scan' -- with what each one is doing and how far it has got. The
+daemon keeps the last sixteen finished jobs and forgets them on restart.
+
+A sweep belongs to the terminal that started it, so a Ctrl-C there stops
+it. 'ley jobs cancel' is how to stop one from somewhere else: another
+terminal, or a script that started a scan with --json and moved on. A job
+can be named by its id, an unambiguous id prefix, or its row number here.
+
+--json prints a ListJobsResponse; 'ley jobs cancel --json' prints the Job
+in the state the daemon left it.
+
+Usage:
+  ley jobs [flags]
+  ley jobs [command]
+
+Examples:
+  ley jobs                 # what is the daemon working on?
+  ley jobs --wide          # the same, with the job ids
+  ley jobs cancel 1        # stop the first job listed
+  ley jobs cancel job_01J...   # stop that one, by id
+
+Available Commands:
+  cancel      Stop a running job
+
+Flags:
+  -h, --help   help for jobs
+      --wide   add the job id column
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Use "ley jobs [command] --help" for more information about a command.

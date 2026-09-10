@@ -121,6 +121,10 @@ is deliberately not yet a Resource, because an ad-hoc scan is ephemeral and ther
 daemon keeps the last sixteen finished jobs in memory and loses them on restart. `Jobs.StartJob` with
 a watch or record config, `Jobs.GetTranscript` and the whole `Resources` service remain UNIMPLEMENTED
 until Milestone D.15.
+`ley jobs --json` prints a `ListJobsResponse` with the jobs in id order, which for ULIDs is the
+order they were started, so the row numbers the table prints are the same from one call to the
+next. `ley jobs cancel <job> --json` prints the `Job` the daemon answers with: cancelling a job
+that has already finished is not an error, and the state in that `Job` is the one it ended in.
 
 Destructive verbs echo nothing stale: `ley stop`, `ley stop --all` and `ley devices detach` print
 the daemon's `Empty` answer (`{}`) under `--json` — one line for the whole action — and the exit

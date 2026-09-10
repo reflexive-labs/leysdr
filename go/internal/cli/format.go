@@ -20,11 +20,11 @@ func stateWord(s string) string {
 // the meaning on its own; the colour only helps the eye find it.
 func inkState(st ui.Style, word string) string {
 	switch word {
-	case "active", "available":
+	case "active", "available", "running":
 		return st.Ok(word)
-	case "in use", "out of capture":
+	case "in use", "out of capture", "degraded":
 		return st.Warn(word)
-	case "detached", "disconnected", "capture detached":
+	case "detached", "disconnected", "capture detached", "failed":
 		return st.Err(word)
 	default:
 		return word

@@ -1,0 +1,19 @@
+cancel stops a job the daemon is running and hands the radio back. The job
+can be given as its id, an unambiguous id prefix, or its row number in
+'ley jobs'. A job that has already finished is left as it is.
+
+Usage:
+  ley jobs cancel <job> [flags]
+
+Examples:
+  ley jobs cancel 1               # the first row of ley jobs
+  ley jobs cancel job_01J...      # by id
+
+Flags:
+  -h, --help   help for cancel
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

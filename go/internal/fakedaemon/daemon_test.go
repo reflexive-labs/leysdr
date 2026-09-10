@@ -142,7 +142,7 @@ func TestLifecycleAndEvents(t *testing.T) {
 		t.Error("no full-state channel event")
 	}
 
-	if _, err := c.Control.DetachSink(ctx, &leylinev1.DetachSinkRequest{SinkId: sink.SinkId}); err != nil {
+	if err := c.DetachSink(ctx, sink.SinkId); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil {

@@ -466,3 +466,81 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 		t.Errorf("job did not complete: %v", j)
 	}
 }
+
+// `ley jobs` is the other terminal's view of the same work: the scan above ran in a daemon that
+// outlives it, so a second client must be able to list what it did and stop it if it is still
+// going. Only the real daemon can say whether its ListJobs and CancelJob agree with the fake's.
+func TestJobsAgainstRealDaemon(t *testing.T) {
+	e, _ := setup(t)
+	band, err := filepath.Abs("../../../fixtures/scan_band.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(band); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e.mustRun("play", band, "--no-audio", "--loop", "--persistent", "--json")
+	e.mustRun("stop", "--all")
+
+	// Nothing has run yet: an empty list, not an error.
+	if empty := parseJSON(t, e.mustRun("--json", "jobs")); len(list(empty, "jobs")) != 0 {
+		t.Fatalf("a daemon that has done nothing should list no jobs: %v", empty)
+	}
+
+	scan := parseJSON(t, e.mustRun("--json", "scan", "145.0M..147.0M", "--dwell", "100"))
+	jobs := list(parseJSON(t, e.mustRun("--json", "jobs")), "jobs")
+	if len(jobs) != 1 {
+		t.Fatalf("want the finished sweep: %v", jobs)
+	}
+	j := jobs[0].(map[string]any)
+	if j["state"] != "COMPLETED" {
+		t.Errorf("job did not complete: %v", j)
+	}
+	if uris := list(j, "resultUris"); len(uris) == 0 || uris[0] != "ley://scans/"+scan["scanId"].(string) {
+		t.Errorf("the job should name the scan it produced: %v", j)
+	}
+	// The table names the same job, and the row number is a handle on it.
+	if table := e.mustRun("jobs"); !strings.Contains(table, "scan") || !strings.Contains(table, "completed") {
+		t.Errorf("jobs table does not describe the sweep:\n%s", table)
+	}
+	// Cancelling what has already finished leaves it alone rather than failing.
+	done := parseJSON(t, e.mustRun("--json", "jobs", "cancel", "1"))
+	if done["jobId"] != j["jobId"] || done["state"] != "COMPLETED" {
+		t.Errorf("cancel changed a finished job: %v", done)
+	}
+
+	// The verb's reason to exist: a sweep somebody else started, stopped from here. The dwell is
+	// long enough that the sweep is certain to still be running when the second terminal looks.
+	stop, live := e.startLive("scan", "145.0M..147.0M", "--dwell", "2000")
+	running := e.waitJob("RUNNING")
+	cancelled := parseJSON(t, e.mustRun("--json", "jobs", "cancel", running["jobId"].(string)))
+	if cancelled["state"] != "CANCELLED" {
+		t.Errorf("the sweep did not stop: %v", cancelled)
+	}
+	// The terminal that started it is told, by the same event stream every client reads, and ends.
+	if err := stop(); err != nil {
+		t.Errorf("ley scan did not end cleanly after the job was cancelled: %v\nstderr: %s", err, live.errOut.String())
+	}
+	// And the radio is free: a cancelled sweep hands back what it borrowed.
+	if caps := list(e.state(), "captures"); len(caps) != 0 {
+		t.Errorf("the cancelled sweep left a capture behind: %v", caps)
+	}
+}
+
+// waitJob polls `ley jobs --json` for a job in the named state and returns it.
+func (e *env) waitJob(state string) map[string]any {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		jobs := list(parseJSON(e.t, e.mustRun("--json", "jobs")), "jobs")
+		for _, x := range jobs {
+			if j := x.(map[string]any); j["state"] == state {
+				return j
+			}
+		}
+		if time.Now().After(deadline) {
+			e.t.Fatalf("no job reached %s: %v", state, jobs)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
