@@ -101,9 +101,11 @@ needed.`,
 			// --freq is a usage error before anything reaches the daemon.
 			var freqHz uint64
 			if freq != "" {
-				if freqHz, err = leyline.ParseUserFrequency(freq); err != nil {
-					return usageErrorf("--freq: %v", err)
+				t, terr := resolveDial(freq, "146.52 (MHz)")
+				if terr != nil {
+					return usageErrorf("--freq: %v", terr)
 				}
+				freqHz = t.Hz
 			}
 			s, err := openSession(cmd.Context(), app)
 			if err != nil {

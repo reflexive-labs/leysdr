@@ -25,6 +25,7 @@ Examples:
   ley phosphor 144.39 --span 250k       # narrow in on one channel
 
 Flags:
+      --band string       show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise
       --bins uint32       frequency bins across the band (the daemon may round it) (default 256)
       --count int         stop after N frames (0 = until Ctrl-C)
       --device string     device: an id, id prefix, list index or frequency (default: the first real radio)

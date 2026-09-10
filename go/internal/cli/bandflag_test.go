@@ -1,0 +1,98 @@
+package cli
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dpup/leysdr/go/internal/fakedaemon"
+)
+
+// A band is a range and a positional is a point. Asking for both says two
+// different things about where to put the radio, so it is a usage error rather
+// than a silent precedence rule.
+func TestBandFlagRefusesAPositionalToo(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	for _, verb := range []string{"spectrum", "waterfall", "phosphor"} {
+		_, _, err := runApp(t, &App{Socket: sock}, verb, "101.1", "--band", "2m")
+		if err == nil {
+			t.Errorf("%s: a frequency and --band together should be refused", verb)
+			continue
+		}
+		if got := err.Error(); !strings.Contains(got, "not both") {
+			t.Errorf("%s: %q", verb, got)
+		}
+		if exitCode(err) != ExitUsage {
+			t.Errorf("%s: want exit %d, got %d", verb, ExitUsage, exitCode(err))
+		}
+	}
+}
+
+func TestBandFlagUnknownName(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	_, _, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2mm")
+	if err == nil {
+		t.Fatal("2mm is not a band")
+	}
+	if got := err.Error(); !strings.Contains(got, "did you mean") || !strings.Contains(got, "2m") {
+		t.Errorf("want a suggestion: %q", got)
+	}
+	if exitCode(err) != ExitUsage {
+		t.Errorf("want exit %d, got %d", ExitUsage, exitCode(err))
+	}
+}
+
+// A band narrower than the radio's rates is shown whole: the capture centres on
+// the band and takes the smallest rate that covers it.
+func TestBandFlagFittingBandSetsTheCapture(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "noaa", "--width", "80")
+	if err != nil {
+		t.Fatalf("spectrum --band noaa: %v\n%s\n%s", err, out, errOut)
+	}
+	// NOAA is 162.400-162.550, so the capture centres on 162.475 and covers it.
+	if !strings.Contains(out, "162.475 MHz") {
+		t.Errorf("want the band's centre in the header:\n%s", out)
+	}
+	// A band that fits should not be reported as truncated.
+	if strings.Contains(errOut, "captures at most") {
+		t.Errorf("NOAA fits; nothing should be said about truncation:\n%s", errOut)
+	}
+	_ = c
+}
+
+// A band wider than any rate the radio has is centred and the reader is told
+// how much of it they are actually looking at. Silence would be the wrong
+// answer: the picture would be of a quarter of the band with nothing saying so.
+func TestBandFlagWideBandSaysWhatItShows(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2m", "--width", "80")
+	if err != nil {
+		t.Fatalf("spectrum --band 2m: %v\n%s\n%s", err, out, errOut)
+	}
+	for _, want := range []string{"2 m amateur", "4.000 MHz", "captures at most", "146.000 MHz"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("the truncation note should mention %q:\n%s", want, errOut)
+		}
+	}
+	if !strings.Contains(out, "146.000 MHz") {
+		t.Errorf("the chart should be centred on the band:\n%s", out)
+	}
+}
+
+// An explicit --span wins over the band's width: someone who said how wide
+// meant it. They are told when it shows less than the whole band.
+func TestBandFlagExplicitSpanWins(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2m", "--span", "250k", "--width", "80")
+	if err != nil {
+		t.Fatalf("spectrum --band 2m --span 250k: %v\n%s\n%s", err, out, errOut)
+	}
+	if !strings.Contains(errOut, "--span shows") {
+		t.Errorf("a narrower --span should say so:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "captures at most") {
+		t.Errorf("--span was explicit, so the radio's limit is not the story:\n%s", errOut)
+	}
+	_ = out
+}

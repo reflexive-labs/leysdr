@@ -25,12 +25,14 @@ type presetJSON struct {
 }
 
 type bandJSON struct {
-	Name        string `json:"name"`
-	MinHz       uint64 `json:"min_hz"`
-	MaxHz       uint64 `json:"max_hz"`
-	Mode        string `json:"mode"`
-	BandwidthHz uint32 `json:"bandwidth_hz"`
-	Note        string `json:"note"`
+	Name string `json:"name"`
+	// Aliases are what --band accepts; the first is the canonical short form.
+	Aliases     []string `json:"aliases"`
+	MinHz       uint64   `json:"min_hz"`
+	MaxHz       uint64   `json:"max_hz"`
+	Mode        string   `json:"mode"`
+	BandwidthHz uint32   `json:"bandwidth_hz"`
+	Note        string   `json:"note"`
 }
 
 // bandModeName renders a band's mode: "usb/lsb" where the sideband follows
@@ -97,13 +99,20 @@ every band tune falls back to NFM and says so. Like presets, the table lives
 in ley and never reaches the daemon; 'ley help presets' prints it in prose
 alongside the presets.
 
+The ALIAS column is what 'ley spectrum --band', 'ley waterfall --band' and
+'ley phosphor --band' accept, so you can look at a whole band without working
+out its centre and width. Aliases are not accepted where a frequency is: 2m,
+20m and 160m already mean 2, 20 and 160 MHz there, and a band name in that
+position would quietly redefine them.
+
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
 --json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, note}:
 client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 		Example: `  ley bands                      # the table
-  ley bands --json | jq -r '.[] | .name'
+  ley bands --json | jq -r '.[] | .aliases[0]'
+  ley spectrum --band noaa        # the whole NOAA weather band
   ley tune 146.52                # 2 m amateur: NFM, 12.5 kHz`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
@@ -112,7 +121,7 @@ client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 			if app.JSON {
 				out := make([]bandJSON, 0, len(bs))
 				for _, b := range bs {
-					out = append(out, bandJSON{Name: b.Name, MinHz: b.MinHz, MaxHz: b.MaxHz, Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, Note: b.Note})
+					out = append(out, bandJSON{Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz, Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, Note: b.Note})
 				}
 				return app.printArray(out)
 			}
@@ -166,8 +175,11 @@ func printBandTable(app *App, bs []leyline.Band) error {
 		keys[i] = bandFamily(b)
 	}
 	order, heads := groupRows(keys)
+	// ALIAS is never dropped: it is the only column you can type, and without
+	// it --band is undiscoverable. BANDWIDTH goes first when width runs out.
 	cols := []column{
 		{head: "NAME"},
+		{head: "ALIAS"},
 		{head: "RANGE"},
 		{head: "MODE"},
 		{head: "BANDWIDTH", drop: 1},
@@ -176,7 +188,11 @@ func printBandTable(app *App, bs []leyline.Band) error {
 	for _, i := range order {
 		b := bs[i]
 		rng := leyline.FormatFrequency(b.MinHz) + " to " + leyline.FormatFrequency(b.MaxHz)
-		add(cols, b.Name, rng, bandModeName(b.Mode), formatBandwidth(b.BandwidthHz),
+		alias := ""
+		if len(b.Aliases) > 0 {
+			alias = b.Aliases[0]
+		}
+		add(cols, b.Name, alias, rng, bandModeName(b.Mode), formatBandwidth(b.BandwidthHz),
 			strings.TrimPrefix(b.Note, bandFamily(b)+", "))
 	}
 	_, err := printColumns(app.Stdout, s, cols, heads)

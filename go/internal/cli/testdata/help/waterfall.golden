@@ -28,6 +28,7 @@ Examples:
   ley waterfall 101.1 --count 40    # forty rows, then stop
 
 Flags:
+      --band string     show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise
       --bins uint32     number of bins across the band before they are folded into columns (the daemon may round it) (default 1024)
       --count int       stop after N rows (0 = until Ctrl-C)
       --device string   device: an id, id prefix, list index or frequency (default: the first real radio)

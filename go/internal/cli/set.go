@@ -322,10 +322,11 @@ func buildWrites(ctx context.Context, s *session, param, value, element string, 
 	}
 	switch param {
 	case "freq":
-		hz, err = leyline.ParseUserFrequency(value)
-		if err != nil {
-			return nil, nil, 0, paramErr(param, err)
+		t, terr := resolveDial(value, "146.52 (MHz)")
+		if terr != nil {
+			return nil, nil, 0, paramErr(param, terr)
 		}
+		hz = t.Hz
 		if err := needCapture(); err != nil {
 			return nil, nil, 0, err
 		}

@@ -112,18 +112,14 @@ func (f *tuneFlags) parse(app *App, input string, freq uint64, def modeDefault) 
 // resolveTuneTarget reads tune's positional: a frequency (bare numbers are MHz)
 // first, then a preset name; anything else lists the nearest presets.
 func resolveTuneTarget(arg string) (hz uint64, def modeDefault, err error) {
-	if arg == "" {
-		return 0, def, usageErrorf("tune needs a frequency or preset: ley tune 146.52, ley tune noaa (ley help presets lists them)")
-	}
-	if r := rune(arg[0]); unicode.IsDigit(r) || r == '.' || r == '-' || r == '+' {
-		hz, err = leyline.ParseUserFrequency(arg)
-		return hz, def, usageError(err)
-	}
-	p, err := leyline.ResolvePreset(arg)
+	t, err := resolveDialTarget(arg, "tune", "ley tune 146.52, ley tune noaa", "146.52 (MHz)")
 	if err != nil {
-		return 0, def, usageError(fmt.Errorf("%w; or give a frequency such as 146.52 (MHz)", err))
+		return 0, def, err
 	}
-	return p.Hz, modeDefault{mode: p.Mode, reason: "preset " + p.Name + ": " + p.Description}, nil
+	if t.Preset != nil {
+		def = modeDefault{mode: t.Preset.Mode, reason: "preset " + t.Preset.Name + ": " + t.Preset.Description}
+	}
+	return t.Hz, def, nil
 }
 
 func newTuneCommand(app *App) *cobra.Command {

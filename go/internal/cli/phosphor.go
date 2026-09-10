@@ -19,6 +19,8 @@ import (
 const phosphorRangeDb = 50
 
 type phosphorOptions struct {
+	bandName     string
+	band         *leyline.Band
 	freq, span   uint64
 	freqInput    string
 	bins         uint32
@@ -64,9 +66,23 @@ paging bands, telemetry, anything bursty. For reading levels right now use
 				freq, o.freqInput = args[0], args[0]
 			}
 			if freq != "" {
-				if o.freq, err = leyline.ParseUserFrequency(freq); err != nil {
-					return usageErrorf("%v. Example: ley phosphor 910 (MHz) or ley phosphor 910M", err)
+				t, terr := resolveDialTarget(freq, "phosphor", "ley phosphor 910, ley phosphor noaa", "910 (MHz) or 910M")
+				if terr != nil {
+					return terr
 				}
+				o.freq = t.Hz
+			}
+			if o.bandName != "" {
+				// A band is a range and a positional is a point; asking for both
+				// says two different things about where to put the radio.
+				if freq != "" {
+					return usageErrorf("give a frequency or --band, not both: phosphor %s --band %s", freq, o.bandName)
+				}
+				b, berr := leyline.ResolveBand(o.bandName)
+				if berr != nil {
+					return usageError(berr)
+				}
+				o.band = &b
 			}
 			if span != "" {
 				if o.span, err = leyline.ParseUserFrequency(span); err != nil {
@@ -90,6 +106,7 @@ paging bands, telemetry, anything bursty. For reading levels right now use
 		},
 	}
 	cmd.Flags().StringVar(&span, "span", "", "width of the band to show, e.g. 2.4M or 250k (default: the device's own, or the width it is already capturing)")
+	cmd.Flags().StringVar(&o.bandName, "band", "", "show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise")
 	cmd.Flags().Uint32Var(&o.bins, "bins", 256, "frequency bins across the band (the daemon may round it)")
 	cmd.Flags().Uint32Var(&o.levels, "levels", 32, "level buckets the histogram keeps per bin")
 	cmd.Flags().Float64Var(&o.halfLife, "half-life", 20, "seconds for a count to fade by half; longer remembers rarer traffic")
@@ -111,7 +128,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	defer s.close()
 	if err := s.openBand(ctx, app, bandOptions{
 		freq: o.freq, span: o.span, freqInput: o.freqInput,
-		retune: o.retune, device: o.device, verb: "phosphor",
+		band: o.band, retune: o.retune, device: o.device, verb: "phosphor",
 	}); err != nil {
 		return err
 	}

@@ -36,6 +36,7 @@ Examples:
   ley spectrum 101.1 --json   # one row: {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}
 
 Flags:
+      --band string     show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise
       --bins uint32     number of bins across the band (the daemon may round it) (default 1024)
       --count int       with --watch: stop after N rows (0 = until Ctrl-C)
       --device string   device: an id, id prefix, list index or frequency (default: the first real radio)

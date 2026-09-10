@@ -80,11 +80,11 @@ for the run (destroyed on exit).
 			}
 			var hz uint64
 			if freq != "" {
-				v, err := leyline.ParseUserFrequency(freq)
-				if err != nil {
-					return usageErrorf("--freq: %v", err)
+				t, terr := resolveDial(freq, "101.1 (MHz)")
+				if terr != nil {
+					return usageErrorf("--freq: %v", terr)
 				}
-				hz = v
+				hz = t.Hz
 			}
 			s, err := openSession(cmd.Context(), app)
 			if err != nil {

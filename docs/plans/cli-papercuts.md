@@ -93,7 +93,7 @@ stdout in human mode, so a scraped live session sees its two halves on different
 deciding deliberately rather than leaving as an artefact of the order the two changes landed. (from
 `cli-visuals.md`)
 
-## PC-8 `[ ]` Presets work wherever a frequency does
+## PC-8 `[x]` Presets work wherever a frequency does
 
 `ley spectrum noaa2` fails with a bare parse error that does not even mention presets:
 
@@ -114,7 +114,21 @@ preset lookup and its "did you mean" hint.
 - The error message is most of the value. `ley spectrum noaa2` should fail the way `ley tune noaa2`
   does, naming presets and suggesting near matches.
 
-## PC-9 `[?]` A band as an argument: `--band`, not a positional
+Done. `resolveDialTarget` in `target.go` is the positional form and `resolveDial` the bare one, and
+the split is not cosmetic: `--freq` prefixes its errors with the flag name and `ley set` appends the
+values the parameter accepts, so a single function would have stapled two frames together. The same
+hazard bit inside the resolver on the first cut -- a preset typo came out carrying the frequency
+example twice, once from "or give a frequency such as X" and once from ". Example: X". A parse
+failure gets the example; a name failure gets the near matches and the alternative, never both.
+
+The two example strings are also deliberately separate: `usage` is whole commands, for someone who
+gave no argument and needs the shape, and `example` is a readable frequency, for someone whose
+argument did not parse.
+
+Tests: `TestResolveDialTargetAcceptsBoth`, `TestResolveDialTargetErrorShapes` (which asserts the
+example appears exactly once), `TestResolveDialTargetDoesNotAcceptBands`.
+
+## PC-9 `[x]` A band as an argument: `--band`, not a positional
 
 Asked whether `ley spectrum $BAND` makes sense. It does, and the obvious spelling does not work.
 
@@ -150,8 +164,35 @@ the message `spectrum` already prints when it reuses an off-centre capture ("sho
 X, which covers Y"). Refusing would be honest and useless; sweeping is a `scan` feature, not this.
 An explicit `--span` wins over the band's width, and should say so when it is narrower.
 
-Marked `[?]` rather than `[ ]`: PC-8 is unambiguous and should just be done, while this one wants a
-call on whether the convenience earns a flag plus a new alias table on `Band`.
+Built as `--band`. `Band` gained `Aliases`, `WidthHz()` and `CenterHz()`; `ResolveBand` looks up by
+alias or full name with near-match suggestions, and `ley bands` grew an ALIAS column, without which
+`--band` would be undiscoverable. That column is never dropped on a narrow terminal -- it is the
+only one you can type -- and BANDWIDTH is still first to go, which incidentally gives NOTE the room
+PC-1 wanted.
+
+The band is resolved to a centre and span inside `openBand`, after the device is picked, because how
+much of a band fits depends on the rates that radio supports. A positional frequency together with
+`--band` is a usage error rather than a precedence rule: a range and a point say two different
+things about where to put the radio.
+
+Verified against the radio:
+
+```
+$ ley spectrum --band noaa
+162.475 MHz  span 250.000 kHz  floor -48 dBFS  162.350 MHz to 162.600 MHz
+
+$ ley spectrum --band 2m
+2 m amateur is 4.000 MHz wide and this radio captures at most 3.200 MHz;
+showing that much, centred on 146.000 MHz
+146.000 MHz  span 3.200 MHz  floor -57 dBFS  144.400 MHz to 147.600 MHz
+```
+
+Tests: `TestResolveBandByAliasAndName`, `TestResolveBandErrorsTeach`,
+`TestBandAliasesAreCompleteAndUnique` (every band reachable, no alias on two bands),
+`TestMetreAliasesAlreadyParseAsFrequencies` -- which pins the collision itself, so that if `2m` ever
+stops meaning 2 MHz, or a band alias is ever added to the frequency path, a test says so rather than
+a user finding out. Plus `TestBandFlag*` end to end: the conflict, the unknown name, a band that
+fits, one that does not, and an explicit `--span` winning.
 
 ## Not papercuts
 

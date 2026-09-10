@@ -4,6 +4,12 @@ every band tune falls back to NFM and says so. Like presets, the table lives
 in ley and never reaches the daemon; 'ley help presets' prints it in prose
 alongside the presets.
 
+The ALIAS column is what 'ley spectrum --band', 'ley waterfall --band' and
+'ley phosphor --band' accept, so you can look at a whole band without working
+out its centre and width. Aliases are not accepted where a frequency is: 2m,
+20m and 160m already mean 2, 20 and 160 MHz there, and a band name in that
+position would quietly redefine them.
+
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
@@ -15,7 +21,8 @@ Usage:
 
 Examples:
   ley bands                      # the table
-  ley bands --json | jq -r '.[] | .name'
+  ley bands --json | jq -r '.[] | .aliases[0]'
+  ley spectrum --band noaa        # the whole NOAA weather band
   ley tune 146.52                # 2 m amateur: NFM, 12.5 kHz
 
 Flags:
