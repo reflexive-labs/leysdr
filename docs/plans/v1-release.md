@@ -292,7 +292,7 @@ mechanical items go to the smaller model, the scoped code changes to the larger 
 measurements and decisions to the person with the hardware. The review findings from the same pass
 get their own list, `docs/plans/v1-review-fixes.md`, written when the review returns; they land first.
 
-### R-1 `[ ]` The documents tell the truth (S, Sonnet)
+### R-1 `[x]` The documents tell the truth (S, Sonnet)
 
 Every item in "Documentation drift" above except README.md, which R-8 rewrites whole. Plus:
 
@@ -348,7 +348,7 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 builds both binaries and the fixtures it needs). Note in the job why: the Go clients and the UDS
 contract were previously proven only on Linux.
 
-### R-4 `[ ]` The engine test gate is deterministic (M, Opus)
+### R-4 `[x]` The engine test gate is deterministic (M, Opus)
 
 `RTLTCPDeviceTests.testLinkLossReleasesSocketAndReopenReconnects`
 (`engine/Tests/EngineCoreTests/RTLTCPTests.swift:365-392`) fails intermittently in a full `swift test`

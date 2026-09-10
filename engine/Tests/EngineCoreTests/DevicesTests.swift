@@ -323,18 +323,37 @@ func assertCode(_ code: String, file: StaticString = #filePath, line: UInt = #li
     }
 }
 
-final class DevicesRegistryTests: XCTestCase {
-    /// Reads the next event with a timeout so a missing event fails instead of hanging.
-    func next(_ it: inout AsyncStream<DeviceEvent>.AsyncIterator) async throws -> DeviceEvent {
-        let task = Task { () -> DeviceEvent? in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            return nil
-        }
-        defer { task.cancel() }
-        guard let e = await it.next() else { throw EngineError(code: "TEST_TIMEOUT", message: "stream ended") }
-        return e
-    }
+/// Holds an event iterator so the read can run in a child task; only one child ever touches it.
+private final class EventCursor: @unchecked Sendable {
+    var iterator: AsyncStream<DeviceEvent>.AsyncIterator
+    init(_ it: AsyncStream<DeviceEvent>.AsyncIterator) { iterator = it }
+    func next() async -> DeviceEvent? { await iterator.next() }
+}
 
+/// Reads the next event, racing the stream against a deadline, so a registry that stops publishing
+/// fails the test at the waiting assertion instead of hanging the whole suite.
+func next(_ it: inout AsyncStream<DeviceEvent>.AsyncIterator, timeoutS: Double = 5) async throws -> DeviceEvent {
+    enum Outcome { case event(DeviceEvent), ended, timedOut }
+    let cursor = EventCursor(it)
+    defer { it = cursor.iterator }
+    let outcome = await withTaskGroup(of: Outcome.self) { group in
+        group.addTask { await cursor.next().map(Outcome.event) ?? .ended }
+        group.addTask {
+            try? await Task.sleep(nanoseconds: UInt64(timeoutS * 1e9))
+            return .timedOut
+        }
+        let first = await group.next() ?? .timedOut
+        group.cancelAll()
+        return first
+    }
+    switch outcome {
+    case .event(let e): return e
+    case .ended: throw EngineError(code: "TEST_TIMEOUT", message: "stream ended")
+    case .timedOut: throw EngineError(code: "TEST_TIMEOUT", message: "no event within \(timeoutS) s")
+    }
+}
+
+final class DevicesRegistryTests: XCTestCase {
     func testAttachDetachEventsToTwoSubscribers() async throws {
         let dir = try DeviceFixtures.scratchDir()
         let path = try DeviceFixtures.writeRamp(dir: dir, name: "reg", samples: 100)

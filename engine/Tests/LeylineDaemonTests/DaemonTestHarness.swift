@@ -34,7 +34,10 @@ struct DaemonClients {
 }
 
 /// Boots a daemon on a temp socket, runs `body` with connected clients, then shuts down.
-func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
+/// `shutdownDeadlineNs` puts a watchdog on the teardown: tests about handlers ending on cancellation
+/// need shutdown to be prompt, and a hung handler shows up here rather than as a stalled suite.
+func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, shutdownDeadlineNs: UInt64? = nil,
+                _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
     let dir = NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -58,8 +61,21 @@ func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, _ body: @escaping @Send
     } catch {
         if bodyError == nil { bodyError = error }
     }
-    await daemon.shutdown()
-    _ = try? await serverTask.value
+    let teardownStart = DispatchTime.now().uptimeNanoseconds
+    if let deadline = shutdownDeadlineNs {
+        let stopped = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { await daemon.shutdown(); _ = try? await serverTask.value; return true }
+            group.addTask { try? await Task.sleep(nanoseconds: deadline); return false }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+        XCTAssertTrue(stopped, "daemon.shutdown() did not finish within \(Double(deadline) / 1e9) s (a handler is still alive)")
+        XCTAssertLessThan(DispatchTime.now().uptimeNanoseconds - teardownStart, deadline)
+    } else {
+        await daemon.shutdown()
+        _ = try? await serverTask.value
+    }
     XCTAssertFalse(FileManager.default.fileExists(atPath: socket), "socket not unlinked on shutdown")
     if let e = bodyError { throw e }
 }
@@ -68,32 +84,31 @@ func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, _ body: @escaping @Send
 actor EventCollector {
     private(set) var events: [Leyline_V1_Event] = []
     private var task: Task<Void, Never>?
-    private var ready = false
 
     func append(_ e: Leyline_V1_Event) { events.append(e) }
-    func markReady() { ready = true }
     func setTask(_ t: Task<Void, Never>) { task = t }
 
     func stop() { task?.cancel() }
 
-    /// Starts watching; waits until the daemon registered the subscription.
+    /// Starts watching and returns once the daemon holds the subscription, so anything a test changes
+    /// afterwards is guaranteed to reach this collector. Response headers only say the client reached
+    /// the service, which is a weaker promise than the store having the subscriber.
     static func start(_ control: Leyline_V1_Control.Client<HTTP2ClientTransport.Posix>, daemon: Daemon) async -> EventCollector {
+        let before = await daemon.store.subscriberCount
         let c = EventCollector()
         let t = Task {
             var scope = Leyline_V1_EventScope()
             scope.daemon = true
             try? await control.watchEvents(scope, metadata: testMetadata) { response in
-                await c.markReady()
                 for try await ev in response.messages { await c.append(ev) }
             }
         }
         await c.setTask(t)
-        // Wait until the daemon has the subscriber registered (store fan-out is async).
-        for _ in 0..<200 {
-            if await c.ready { break }
-            try? await Task.sleep(nanoseconds: 10_000_000)
+        for _ in 0..<1000 {
+            if await daemon.store.subscriberCount > before { return c }
+            try? await Task.sleep(nanoseconds: 5_000_000)
         }
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTFail("watch subscription never registered with the store")
         return c
     }
 

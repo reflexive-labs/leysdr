@@ -242,7 +242,7 @@ every close edge), -5 (no `detected` and no `recent.append` before a phase refer
 (`confidence` uses the tone's own neighbour gap), -9 (`testResetForgetsHistory` fails when `reset()`
 does nothing), q-swift-control-8 (the task stops polling a core that is gone).
 
-### SW-9 `[ ]` Engine tests that cannot hang or pass by accident
+### SW-9 `[x]` Engine tests that cannot hang or pass by accident
 
 q-swift-control-7 (`next` races the iterator against the sleep and throws on timeout; used in
 `RegistryProbeTests` too), q-swift-dsp-14 (the producer gives up when the consumer does), -16

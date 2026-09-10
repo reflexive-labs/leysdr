@@ -407,7 +407,7 @@ final class ChannelTests: XCTestCase {
         try await channel.attach(collector.sink)
         let events = Task<[ChannelTelemetry], Never> {
             var out: [ChannelTelemetry] = []
-            for await t in channel.telemetry() { out.append(t) }
+            for await t in channel.telemetrySubscription().stream { out.append(t) }
             return out
         }
         try await capture.start()
@@ -449,7 +449,7 @@ final class ChannelTests: XCTestCase {
         try await channel.attach(collector.sink)
         let events = Task<[ChannelTelemetry], Never> {
             var out: [ChannelTelemetry] = []
-            for await t in channel.telemetry() { out.append(t) }
+            for await t in channel.telemetrySubscription().stream { out.append(t) }
             return out
         }
         try await capture.start()
@@ -497,7 +497,7 @@ final class ChannelTests: XCTestCase {
         try await channel.attach(collector.sink)
         let events = Task<[ChannelTelemetry], Never> {
             var out: [ChannelTelemetry] = []
-            for await t in channel.telemetry() { out.append(t) }
+            for await t in channel.telemetrySubscription().stream { out.append(t) }
             return out
         }
         try await capture.start()

@@ -40,37 +40,10 @@ final class StreamCancelTests: XCTestCase {
         return false
     }
 
-    /// `withDaemon` with a watchdog on the teardown: shutdown + serve exit must finish within 2 s.
+    /// The daemon harness with a short presence grace (so a dropped client is reaped inside the test)
+    /// and a watchdog on the teardown: shutdown plus serve exit must finish within 2 s.
     private func withPromptShutdown(_ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
-        let dir = NSTemporaryDirectory() + "leyline-cancel-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
-        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(atPath: dir) }
-        let socket = dir + "/d.sock"
-        let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000, presenceGraceNs: 300_000_000))
-        let serverTask = Task { try await daemon.run() }
-        let listening = await daemon.waitUntilListening()
-        XCTAssertTrue(listening, "daemon did not start listening")
-        var bodyError: (any Error)?
-        do {
-            try await withGRPCClient(transport: try .http2NIOPosix(target: .unixDomainSocket(path: socket), transportSecurity: .plaintext)) { client in
-                let clients = DaemonClients(control: .init(wrapping: client), telemetry: .init(wrapping: client),
-                                            bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client), daemon: daemon, socketPath: socket)
-                do { try await body(clients) } catch { bodyError = error }
-            }
-        } catch {
-            if bodyError == nil { bodyError = error }
-        }
-        let started = DispatchTime.now()
-        let stopped = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { await daemon.shutdown(); _ = try? await serverTask.value; return true }
-            group.addTask { try? await Task.sleep(nanoseconds: 2_000_000_000); return false }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
-        }
-        XCTAssertTrue(stopped, "daemon.shutdown() did not complete within 2 s (handler still alive after client cancel)")
-        XCTAssertLessThan(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds, 2_000_000_000)
-        if let e = bodyError { throw e }
+        try await withDaemon(presenceGraceNs: 300_000_000, shutdownDeadlineNs: 2_000_000_000, body)
     }
 
     func testWatchEventsEndsOnClientCancel() async throws {

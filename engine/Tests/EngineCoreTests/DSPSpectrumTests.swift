@@ -153,7 +153,6 @@ final class DSPSpectrumTests: XCTestCase {
     func testPowerMeterAndSquelch() {
         var meter = PowerMeter(rate: 48_000)
         let tone = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 4800))
-        let cap = CaptureID()
         let quiet = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 4800, amplitude: 0.001))
         XCTAssertEqual(meter.measure(tone.view()), 0, accuracy: 0.01)
         XCTAssertTrue(meter.snrDB.isNaN) // < 1 s of data

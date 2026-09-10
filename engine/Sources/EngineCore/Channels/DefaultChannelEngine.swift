@@ -242,12 +242,8 @@ public actor DefaultChannelEngine: ChannelEngine {
         await captureMoved(newCenterHz: centerHz)
     }
 
-    /// Fan-out stream of meter/squelch telemetry. Ends when the channel is removed.
-    public nonisolated func telemetry() -> AsyncStream<ChannelTelemetry> {
-        hub.subscribe().stream
-    }
-
-    /// Fan-out stream plus this subscriber's fan-out drop counter (see `ChannelTelemetrySubscription`).
+    /// Fan-out stream of meter/squelch telemetry, plus this subscriber's fan-out drop counter (see
+    /// `ChannelTelemetrySubscription`). Ends when the channel is removed.
     public nonisolated func telemetrySubscription() -> ChannelTelemetrySubscription {
         hub.subscribe()
     }

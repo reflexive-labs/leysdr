@@ -190,6 +190,11 @@ actor SessionStore {
 
     private func removeSubscriber(key: UUID) { subscribers[key] = nil }
 
+    /// How many `events(...)` subscriptions are registered right now. Nothing in the daemon reads it;
+    /// it is the observable side of the subscription so a caller can wait for its watch to be live
+    /// before making the change it expects an event for.
+    var subscriberCount: Int { subscribers.count }
+
     /// Emits one event; `captureID` scopes it for capture-filtered watchers (nil = daemon-wide).
     @discardableResult
     private func emit(_ body: Leyline_V1_Event.OneOf_Body, captureID: CaptureID?, by: ClientContext) -> UInt64 {

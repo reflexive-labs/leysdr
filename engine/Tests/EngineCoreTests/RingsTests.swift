@@ -73,9 +73,18 @@ final class RingsTests: XCTestCase {
         consumer.start()
         var chunk = [Float](repeating: 0, count: 64)
         var sent = 0
+        let deadline = Date().addingTimeInterval(20)
         while sent < total {
             let n = min(64, total - sent)
-            if ring.free < n { continue } // producer's back-pressure; the ring itself never blocks
+            // Back-pressure: the ring never blocks, so the producer spins until the consumer drains.
+            // A consumer that has stopped draining must fail the test rather than hang it.
+            if ring.free < n {
+                if Date() > deadline {
+                    XCTFail("consumer stopped draining: \(sent) of \(total) samples pushed")
+                    return
+                }
+                continue
+            }
             for i in 0 ..< n { chunk[i] = Float(sent + i) }
             let pushed = chunk.withUnsafeBufferPointer { ring.push(UnsafeBufferPointer(rebasing: $0[0 ..< n])) }
             sent += pushed

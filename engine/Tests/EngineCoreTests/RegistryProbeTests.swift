@@ -25,7 +25,7 @@ final class RegistryProbeTests: XCTestCase {
         // Tick 1: first sight, open fails.
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([busy])
-        guard case .arrived(let first)? = await events.next() else { return XCTFail("expected arrived") }
+        guard case .arrived(let first) = try await next(&events) else { return XCTFail("expected arrived") }
         XCTAssertEqual(first.state, .inUse)
         XCTAssertEqual(first.features["held_externally"], .flag(true))
         XCTAssertEqual(first.features["tuner"], .text("unknown"))
@@ -50,7 +50,7 @@ final class RegistryProbeTests: XCTestCase {
 
         // The other program quits: a real probe flips it back to available with the gain table.
         await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
-        guard case .changed(let freed)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let freed) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(freed.id, first.id)
         XCTAssertEqual(freed.state, .available)
         XCTAssertNil(freed.features["held_externally"])
@@ -68,10 +68,10 @@ final class RegistryProbeTests: XCTestCase {
         var events = reg.events().makeAsyncIterator()
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([probe(tuner: "unknown", gains: [], openError: -6)])
-        guard case .arrived(let first)? = await events.next() else { return XCTFail("expected arrived") }
+        guard case .arrived(let first) = try await next(&events) else { return XCTFail("expected arrived") }
 
         try await reg.markInUse(id: first.id, true)
-        guard case .changed(let ours)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let ours) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(ours.state, .inUse)
         XCTAssertNil(ours.features["held_externally"])
         // Ours now: the poll treats it as claimed and never probes it.
@@ -79,7 +79,7 @@ final class RegistryProbeTests: XCTestCase {
         XCTAssertFalse(gate(probe(tuner: "unknown", gains: [])))
 
         try await reg.markInUse(id: first.id, false)
-        guard case .changed(let released)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let released) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(released.state, .available)
         XCTAssertNil(released.features["held_externally"])
     }
@@ -91,11 +91,11 @@ final class RegistryProbeTests: XCTestCase {
         var events = reg.events().makeAsyncIterator()
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
-        guard case .arrived(let first)? = await events.next() else { return XCTFail("expected arrived") }
+        guard case .arrived(let first) = try await next(&events) else { return XCTFail("expected arrived") }
         XCTAssertEqual(first.state, .available)
 
         await reg.markHeldExternally(id: first.id)
-        guard case .changed(let held)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let held) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(held.state, .inUse)
         XCTAssertEqual(held.features["held_externally"], .flag(true))
         XCTAssertEqual(held.gainElements.first?.validDB, [0, 0.9, 49.6], "the probed gain table is kept")
@@ -109,12 +109,12 @@ final class RegistryProbeTests: XCTestCase {
         let still = await reg.devices
         XCTAssertEqual(still.first?.state, .inUse)
         await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
-        guard case .changed(let freed)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let freed) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(freed.state, .available)
         XCTAssertNil(freed.features["held_externally"])
         // Ours or virtual: no-op.
         try await reg.markInUse(id: first.id, true)
-        guard case .changed? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed = try await next(&events) else { return XCTFail("expected changed") }
         await reg.markHeldExternally(id: first.id)
         let ours = await reg.devices
         XCTAssertNil(ours.first?.features["held_externally"])
@@ -130,12 +130,12 @@ final class RegistryProbeTests: XCTestCase {
         let busy = probe(tuner: "unknown", gains: [], openError: -3)
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([busy])
-        guard case .arrived(let first)? = await events.next() else { return XCTFail("expected arrived") }
+        guard case .arrived(let first) = try await next(&events) else { return XCTFail("expected arrived") }
         await reg.applyProbes([])
-        guard case .removed(let gone)? = await events.next() else { return XCTFail("expected removed") }
+        guard case .removed(let gone) = try await next(&events) else { return XCTFail("expected removed") }
         XCTAssertEqual(gone, first.id)
         await reg.applyProbes([busy])
-        guard case .arrived(let again)? = await events.next() else { return XCTFail("expected arrived again") }
+        guard case .arrived(let again) = try await next(&events) else { return XCTFail("expected arrived again") }
         XCTAssertEqual(again.id, first.id, "stable id survives the unplug")
         XCTAssertEqual(again.state, .inUse)
         // Fresh schedule: the first backoff is 2 s again (tick 3 may retry), not a stale doubled value.
@@ -150,13 +150,13 @@ final class RegistryProbeTests: XCTestCase {
         var events = reg.events().makeAsyncIterator()
 
         await reg.applyProbes([probe(tuner: "unknown", gains: [])])
-        guard case .arrived(let first)? = await events.next() else { return XCTFail("expected arrived") }
+        guard case .arrived(let first) = try await next(&events) else { return XCTFail("expected arrived") }
         XCTAssertEqual(first.features["tuner"], .text("unknown"))
         XCTAssertEqual(first.gainElements.first?.validDB, [])
 
         // A successful probe on a later pass rebuilds the descriptor and publishes `changed`.
         await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
-        guard case .changed(let refreshed)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let refreshed) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(refreshed.id, first.id)
         XCTAssertEqual(refreshed.features["tuner"], .text("R820T"))
         XCTAssertEqual(refreshed.gainElements.first?.validDB, [0, 0.9, 49.6])
@@ -187,7 +187,7 @@ final class RegistryProbeTests: XCTestCase {
         await reg.applyProbes([good0, busy1])
         var arrived: [DeviceDescriptor] = []
         for _ in 0..<2 {
-            guard case .arrived(let d)? = await events.next() else { return XCTFail("expected arrived") }
+            guard case .arrived(let d) = try await next(&events) else { return XCTFail("expected arrived") }
             arrived.append(d)
         }
         let first = try XCTUnwrap(arrived.first { $0.state == .available })
@@ -198,7 +198,7 @@ final class RegistryProbeTests: XCTestCase {
 
         // Index 0 becomes ours.
         try await reg.markInUse(id: first.id, true)
-        guard case .changed(let ours)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let ours) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(ours.state, .inUse)
         XCTAssertNil(ours.features["held_externally"])
 
@@ -214,7 +214,7 @@ final class RegistryProbeTests: XCTestCase {
 
         // The other program quits: index 1 is freed, index 0 stays ours.
         await reg.applyProbes([good0, good1])
-        guard case .changed(let freed)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let freed) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(freed.id, held.id)
         XCTAssertEqual(freed.state, .available)
         XCTAssertNil(freed.features["held_externally"])
@@ -240,9 +240,9 @@ final class RegistryProbeTests: XCTestCase {
 
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([at1])
-        guard case .arrived(let d)? = await events.next() else { return XCTFail("expected arrived") }
+        guard case .arrived(let d) = try await next(&events) else { return XCTFail("expected arrived") }
         try await reg.markInUse(id: d.id, true)
-        guard case .changed(let ours)? = await events.next() else { return XCTFail("expected changed") }
+        guard case .changed(let ours) = try await next(&events) else { return XCTFail("expected changed") }
         XCTAssertEqual(ours.state, .inUse)
 
         // The dongle below ours is unplugged, so the same identity now enumerates at index 0.
