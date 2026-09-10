@@ -149,6 +149,11 @@ func TestFileDeviceEOFDetaches(t *testing.T) {
 			t.Fatalf("EOF events not seen: device %v capture %v", sawDev, sawCap)
 		}
 	}
+	// Nothing flows from a detached capture, so a fresh subscription is refused rather than served
+	// synthetic frames on a stopped timebase: the daemon has no source left to read.
+	if _, err := c.SubscribeFFT(ctx, cap.CaptureId, 256, 50, leylinev1.FftBinFormat_DB_U8); leyline.Code(err) != leyline.CodeDeviceDetached {
+		t.Errorf("subscribing to a detached capture: want DEVICE_DETACHED, got %v", err)
+	}
 	if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId}); err != nil {
 		t.Fatal(err)
 	}

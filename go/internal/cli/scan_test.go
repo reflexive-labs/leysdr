@@ -236,21 +236,7 @@ func TestScanContractParityWithTheDaemon(t *testing.T) {
 			defer close(done)
 			_, _, _ = run(t, ctx, sock, "scan", "145M..147M", "--dwell", "150")
 		}()
-		// Wait for the job to say it has the radio: a fixed pause races the
-		// sweep's start on a loaded machine and its finish on a quick one.
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			js, jerr := c.State(t.Context())
-			if jerr == nil && len(js.Jobs) > 0 && js.Jobs[0].State == leylinev1.JobState_RUNNING {
-				break
-			}
-			if time.Now().After(deadline) {
-				cancel()
-				<-done
-				t.Fatal("the scan never reported RUNNING")
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
+		waitForSweep(t, c, cancel, done)
 		_, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--persistent")
 		// The sweep has served its purpose: stop it before asserting, so a
 		// failure leaves no runner calling into t.
@@ -261,6 +247,92 @@ func TestScanContractParityWithTheDaemon(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "scan is sweeping") {
 			t.Errorf("want the sweeping reason, got %q", err)
+		}
+	})
+
+	t.Run("a write to a swept capture is refused", func(t *testing.T) {
+		sock, c := harness(t, fakedaemon.Options{})
+		listening(t, c)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _, _ = run(t, ctx, sock, "scan", "145M..147M", "--dwell", "150", "--take-over")
+		}()
+		waitForSweep(t, c, cancel, done)
+		// A retune of the capture the sweep is walking, not a new one: the daemon refuses the
+		// write itself, so this is the path that prints the sweeping reason for a write.
+		_, _, err := run(t, t.Context(), sock, "set", "freq", "145.0")
+		cancel()
+		<-done
+		if err == nil {
+			t.Fatal("a capture retune must not land while a scan owns the radio")
+		}
+		if !strings.Contains(err.Error(), "scan is sweeping") {
+			t.Errorf("want the sweeping reason, got %q", err)
+		}
+	})
+
+	t.Run("a stopped sweep answers with the part that ran", func(t *testing.T) {
+		sock, c := harness(t, fakedaemon.Options{})
+		ctx, cancel := context.WithCancel(t.Context())
+		type result struct {
+			out, errOut string
+			err         error
+		}
+		res := make(chan result, 1)
+		go func() {
+			out, errOut, err := run(t, ctx, sock, "scan", "145M..147M", "--dwell", "150")
+			res <- result{out, errOut, err}
+		}()
+		// Stop it once it has something to keep: the point is that Ctrl-C answers with the
+		// detections the sweep had already made, not an empty scan.
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			st, err := c.State(t.Context())
+			if err == nil && len(st.Jobs) > 0 && strings.Contains(st.Jobs[0].StatusDetail, "found") &&
+				!strings.Contains(st.Jobs[0].StatusDetail, "0 found") {
+				break
+			}
+			if time.Now().After(deadline) {
+				cancel()
+				<-res
+				t.Fatal("the sweep never reported a detection")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		cancel()
+		got := <-res
+		if got.err != nil {
+			t.Fatalf("an interrupted scan still prints what it found: %v\n%s\n%s", got.err, got.out, got.errOut)
+		}
+		if !strings.Contains(got.errOut, "stopped early: stopped in step ") {
+			t.Errorf("the summary must say how far it got:\n%s", got.errOut)
+		}
+		if !strings.Contains(got.out, " MHz") {
+			t.Errorf("the partial scan must carry its detections:\n%s", got.out)
+		}
+	})
+
+	t.Run("a radio somebody just tuned is not free", func(t *testing.T) {
+		sock, c := harness(t, fakedaemon.Options{})
+		ctx := t.Context()
+		listening(t, c)
+		st, err := c.State(ctx)
+		if err != nil || len(st.Channels) != 1 {
+			t.Fatalf("state: %v %v", err, st)
+		}
+		// The channel goes, so nobody is listening; the capture keeps the moment it was made,
+		// which is the don't-disturb window the allocator applies.
+		if _, err := c.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: st.Channels[0].ChannelId}); err != nil {
+			t.Fatal(err)
+		}
+		_, errOut, err := run(t, ctx, sock, "scan", "145M..147M")
+		if err == nil {
+			t.Fatalf("a radio touched seconds ago must be left alone:\n%s", errOut)
+		}
+		if !strings.Contains(err.Error(), "was tuning this radio") {
+			t.Errorf("want the recent-write reason, got %q", err)
 		}
 	})
 
@@ -327,5 +399,24 @@ func TestScanIDOf(t *testing.T) {
 				t.Errorf("error %v, want one saying %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// waitForSweep blocks until a scan reports RUNNING, so a test that needs the radio busy does not
+// race the sweep's start on a loaded machine or its finish on a quick one.
+func waitForSweep(t *testing.T, c *leyline.Client, cancel context.CancelFunc, done chan struct{}) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := c.State(t.Context())
+		if err == nil && len(st.Jobs) > 0 && st.Jobs[0].State == leylinev1.JobState_RUNNING {
+			return
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-done
+			t.Fatal("the scan never reported RUNNING")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

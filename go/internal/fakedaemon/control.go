@@ -94,7 +94,7 @@ func (d *Daemon) CreateCapture(ctx context.Context, req *leylinev1.CreateCapture
 	if dev.State == leylinev1.DeviceState_DISCONNECTED {
 		return nil, fail(ctx, errorf(leyline.CodeDeviceDetached, req.DeviceId, "device is disconnected"))
 	}
-	if err := d.refuseIfSweeping(ctx, req.DeviceId); err != nil {
+	if err := d.refuseIfSweeping(ctx, req.DeviceId, req.DeviceId); err != nil {
 		return nil, err
 	}
 	for _, c := range d.captures {
@@ -178,6 +178,28 @@ func channelFits(c *capture, offset int64, bw uint32) bool {
 	return math.Abs(float64(offset))+float64(bw)/2 <= float64(c.SampleRate)/2
 }
 
+// maxNarrowBandwidth is the widest channel any mode but WFM can carry: the engine's ChannelPlan
+// filters those at the second-stage rate r2 (~48 kHz at 2.4 MSPS), and a channel asking for more
+// would be filtered narrower than it reports.
+func maxNarrowBandwidth(rate uint64) float64 {
+	return 0.9 * float64(audioRate(rate))
+}
+
+// checkBandwidth is ChannelPlan.plan's refusal, which the daemon applies when a channel is created
+// and again on every write that changes its bandwidth or its mode.
+func checkBandwidth(c *capture, mode leylinev1.DemodMode, bw uint32, target string) *leyline.Error {
+	if c == nil || mode == leylinev1.DemodMode_WFM {
+		return nil
+	}
+	maxBW := maxNarrowBandwidth(c.SampleRate)
+	if float64(bw) <= maxBW {
+		return nil
+	}
+	return errorf(leyline.CodeInvalidArgument, target, fmt.Sprintf(
+		"bandwidth %d Hz exceeds %d Hz, the most a %s channel can carry at %d sps (narrow modes run at r2 ~ 48 kHz); use wfm for wide channels",
+		bw, int(maxBW), leyline.ModeName(mode), c.SampleRate))
+}
+
 // CreateChannel implements Control. bandwidth 0 picks the mode default; the
 // channel must fit inside the capture; owner is the calling client.
 func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannelRequest) (*leylinev1.Channel, error) {
@@ -189,7 +211,7 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 	if c == nil {
 		return nil, fail(ctx, errorf(leyline.CodeCaptureNotFound, req.CaptureId, "no such capture"))
 	}
-	if err := d.refuseIfSweeping(ctx, c.DeviceId); err != nil {
+	if err := d.refuseIfSweeping(ctx, c.DeviceId, c.CaptureId); err != nil {
 		return nil, err
 	}
 	mode := req.Mode
@@ -202,6 +224,9 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 	}
 	if !channelFits(c, req.OffsetHz, bw) {
 		return nil, fail(ctx, errorf(leyline.CodeOffsetOutOfCapture, req.CaptureId, fmt.Sprintf("offset %d Hz falls outside the capture bandwidth", req.OffsetHz)))
+	}
+	if e := checkBandwidth(c, mode, bw, req.CaptureId); e != nil {
+		return nil, fail(ctx, e)
 	}
 	ch := &leylinev1.Channel{
 		ChannelId:   newID("chan_"),
@@ -217,6 +242,12 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 		Owner:       proto.Clone(ci).(*leylinev1.ClientInfo),
 	}
 	d.channels[ch.ChannelId] = ch
+	// Creating a channel is somebody tuning the radio, so it stamps the capture's activity and the
+	// capture's own event goes first, the way a param write does.
+	if ci.GetKind() != "job" {
+		c.Activity.LastInteractiveWriteNs = time.Now().UnixNano()
+	}
+	d.emit(ci, c.Capture)
 	d.emit(ci, ch)
 	return proto.Clone(ch).(*leylinev1.Channel), nil
 }
@@ -341,10 +372,17 @@ func (d *Daemon) DetachFileDevice(ctx context.Context, req *leylinev1.DetachFile
 
 // refuseIfSweeping mirrors SessionStore.refuseIfSwept: while a scan owns a radio it is the only
 // thing tuning it, and a channel created on a capture that is walking a band would be dragged
-// across megahertz with no explanation. Caller holds the lock.
-func (d *Daemon) refuseIfSweeping(ctx context.Context, deviceID string) error {
+// across megahertz with no explanation. The target is the object the caller named -- the device
+// for a capture, the capture for a channel or a write -- so a client that resolves it names the
+// object it asked about. Caller holds the lock.
+func (d *Daemon) refuseIfSweeping(ctx context.Context, deviceID, target string) error {
 	if d.sweeping == "" || d.sweeping != deviceID {
 		return nil
 	}
-	return fail(ctx, errorf(leyline.CodeDeviceSweeping, deviceID, "a scan is sweeping this radio; it is free again when the scan ends"))
+	return fail(ctx, sweptError(target))
+}
+
+// sweptError is the refusal every path shares while a scan owns the radio.
+func sweptError(target string) *leyline.Error {
+	return errorf(leyline.CodeDeviceSweeping, target, "a scan is sweeping this radio; it is free again when the scan ends")
 }

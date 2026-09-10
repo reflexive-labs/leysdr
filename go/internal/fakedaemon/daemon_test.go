@@ -76,11 +76,12 @@ func TestLifecycleAndEvents(t *testing.T) {
 
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	events, errs, err := c.Events(evCtx, nil)
+	// Resuming from the snapshot's seq rather than sleeping: the handler registers the watcher
+	// asynchronously, and anything emitted before it does is replayed instead of lost.
+	events, errs, err := c.Events(evCtx, leyline.ScopeSince(nil, st.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(20 * time.Millisecond) // let the watcher register
 
 	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
 	if err != nil {
@@ -390,7 +391,9 @@ func TestWatchEventsSinceSeq(t *testing.T) {
 	t.Fatal("live events did not follow the replay")
 }
 
-// TestWatchEventsSinceSeqScoped: replay honours a capture scope and seq 0 replays nothing.
+// TestWatchEventsSinceSeqScoped: replay honours a capture scope, an absent since_seq replays
+// nothing, and an explicit since_seq of 0 replays the whole retained window (proto3 presence: the
+// two are different requests).
 func TestWatchEventsSinceSeqScoped(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
@@ -407,8 +410,20 @@ func TestWatchEventsSinceSeqScoped(t *testing.T) {
 	}
 	select {
 	case ev := <-live:
-		t.Fatalf("since_seq 0 must not replay: %v", ev)
+		t.Fatalf("an absent since_seq must not replay: %v", ev)
 	case <-time.After(100 * time.Millisecond):
+	}
+	fromZero, _, err := c.Events(evCtx, leyline.ScopeSince(nil, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-fromZero:
+		if ev.Seq != 1 {
+			t.Fatalf("since_seq 0 replays the window from the first retained event, got seq %d", ev.Seq)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("since_seq 0 replayed nothing")
 	}
 	scoped, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), st.EventSeq))
 	if err != nil {

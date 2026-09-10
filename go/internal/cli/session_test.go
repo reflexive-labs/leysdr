@@ -165,3 +165,20 @@ func TestTuneSquelchRejected(t *testing.T) {
 		}
 	}
 }
+
+// A subscriber that arrives while the squelch is closed is not told a transmission just ended:
+// the daemon forwards the edges the engine crossed, and there is no summary to give for an
+// interval nobody watched.
+func TestTuneReportsNoTransmissionItDidNotHear(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	// A squelch above anything the band does, so the channel is closed for the whole run.
+	_, errOut, cancel, done := startTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio", "--squelch", "-20")
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("tune: %v\n%s", err, errOut.String())
+	}
+	if strings.Contains(errOut.String(), "transmission") {
+		t.Errorf("a closed squelch has no transmission to report:\n%s", errOut.String())
+	}
+}

@@ -2,6 +2,7 @@ package fakedaemon_test
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,11 +34,13 @@ func TestWriteParams(t *testing.T) {
 	cap, ch := setupCaptureChannel(t, c)
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	events, _, err := c.Events(evCtx, leyline.CaptureScope(cap.CaptureId))
+	start := mustState(t, c)
+	// From the snapshot's seq, so a write applied before the watcher registers is replayed rather
+	// than missed.
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), start.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	before := time.Now().UnixNano()
 	sum, err := c.WriteParams(ctx,
 		&leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: -60}},
@@ -339,5 +342,92 @@ func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
 	}
 	if got := sub.Err(); got != first {
 		t.Errorf("Err() = %v then %v; it must be repeatable", first, got)
+	}
+}
+
+// One reader per subscription, as the daemon's stream registry claims it: two Stream calls on one
+// id would hand out two frame sequences that both start at seq 1. The claim is released when the
+// reader goes, so a client whose Stream RPC dropped can come back to the same subscription.
+func TestStreamHasOneReaderAtATime(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	cap, _ := setupCaptureChannel(t, c)
+	desc, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Kind:   leylinev1.StreamKind_FFT,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 256, RowsPerSecond: 50}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := &leylinev1.StreamRef{StreamId: desc.StreamId}
+	read := func(c2 context.Context) error {
+		st, err := c.Bulk.Stream(c2, ref)
+		if err != nil {
+			return err
+		}
+		_, err = st.Recv()
+		return err
+	}
+	readerCtx, dropReader := context.WithCancel(ctx)
+	if err := read(readerCtx); err != nil {
+		t.Fatalf("first reader: %v", err)
+	}
+	if err := read(ctx); leyline.Code(err) != leyline.CodeFailedPrecondition {
+		t.Errorf("a second reader must be refused with FAILED_PRECONDITION, got %v", err)
+	}
+	// The reader's RPC drops (a client that went away, not an Unsubscribe): the subscription is
+	// claimable again, and the fresh grace is what eventually reaps it if nobody comes back.
+	dropReader()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		err := read(ctx)
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the subscription never became claimable again: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A malformed gain level is refused before the element's table is searched: every comparison in
+// the snap is false for a NaN, so the write would otherwise be reported applied at the first entry
+// in the table -- 0 dB on this radio, which is deaf.
+func TestGainWriteMustBeFinite(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	cap, _ := setupCaptureChannel(t, c)
+	before := mustState(t, c).Captures[0].Gains[0].Db
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	start := mustState(t, c)
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), start.EventSeq))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nan := &leylinev1.ParamWrite{Tag: 9, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{
+		Gain: &leylinev1.GainWrite{Element: "TUNER", Value: &leylinev1.GainWrite_Db{Db: math.NaN()}},
+	}}
+	if _, err := c.WriteParams(ctx, nan); err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			if r := ev.GetWriteRejected(); r != nil && r.Tag == 9 {
+				if r.Error.GetCode() != leyline.CodeInvalidArgument {
+					t.Errorf("a NaN gain is INVALID_ARGUMENT, got %v", r.Error)
+				}
+				if got := mustState(t, c).Captures[0].Gains[0].Db; got != before {
+					t.Errorf("a refused gain write must not move the radio: %v -> %v", before, got)
+				}
+				return
+			}
+		case <-timeout:
+			t.Fatal("no rejection for the NaN gain")
+		}
 	}
 }

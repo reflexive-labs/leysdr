@@ -243,7 +243,9 @@ func TestSetSquelchAuto(t *testing.T) {
 	if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
 		t.Fatalf("auto squelch value: %v", got)
 	}
-	// A wider channel sits higher above the per-bin floor: 200 kHz → about -68.
+	// A wider channel sits higher above the per-bin floor: 200 kHz → about -68. Only a wide-FM
+	// channel can be that wide: every other mode is filtered at ~48 kHz.
+	mustRun(t, sock, "set", "mode", "wfm")
 	mustRun(t, sock, "set", "bw", "200k")
 	mustRun(t, sock, "set", "squelch", "auto")
 	if st, _ = c.State(context.Background()); math.Abs(st.Channels[0].SquelchDb-(-68)) > 1.5 {
@@ -414,5 +416,34 @@ func TestParseNegativeSafe(t *testing.T) {
 				t.Errorf("--channel %q, want %q", got, tc.channel)
 			}
 		})
+	}
+}
+
+// Every mode but wide FM is filtered at the channelizer's second stage (~48 kHz), so the daemon
+// refuses a wider one rather than filtering it narrower than it reports. The way through is the
+// mode, and the refusal says so.
+func TestSetBandwidthBeyondTheNarrowLimit(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
+	_, _, err := run(t, context.Background(), sock, "set", "bw", "100k")
+	if err == nil {
+		t.Fatal("a 100 kHz NFM channel must be refused: the daemon cannot build it")
+	}
+	if !strings.Contains(err.Error(), "43200 Hz") || !strings.Contains(err.Error(), "use wfm") {
+		t.Errorf("the refusal must name the limit and the way through: %v", err)
+	}
+	st, _ := c.State(context.Background())
+	if st.Channels[0].BandwidthHz != leyline.DefaultBandwidth(leylinev1.DemodMode_NFM) {
+		t.Errorf("a refused write must not move the channel: %v", st.Channels[0])
+	}
+	// Wide FM has no such limit: it is demodulated before the second stage.
+	mustRun(t, sock, "set", "mode", "wfm")
+	mustRun(t, sock, "set", "bw", "100k")
+	if st, _ = c.State(context.Background()); st.Channels[0].BandwidthHz != 100_000 {
+		t.Errorf("wfm should carry 100 kHz: %v", st.Channels[0])
+	}
+	// And a mode the width no longer fits is refused too, rather than quietly filtered.
+	if _, _, err := run(t, context.Background(), sock, "set", "mode", "nfm"); err == nil || !strings.Contains(err.Error(), "43200 Hz") {
+		t.Errorf("nfm cannot carry the 100 kHz this channel has: %v", err)
 	}
 }

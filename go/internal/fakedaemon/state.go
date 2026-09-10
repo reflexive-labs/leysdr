@@ -24,6 +24,12 @@ type (
 	}
 )
 
+// byDaemon attributes an event to the daemon itself, as SessionStore.publishJob does: a sweep
+// makes its own progress, with no client behind it, and every job event says so.
+func byDaemon() *leylinev1.ClientInfo {
+	return &leylinev1.ClientInfo{ClientId: "daemon", Kind: "daemon", Label: "leylined"}
+}
+
 // emit publishes an event carrying the full state of the changed object. Call
 // with d.mu held; the body is cloned so later mutation cannot leak.
 func (d *Daemon) emit(by *leylinev1.ClientInfo, body any) {
@@ -217,12 +223,12 @@ func (d *Daemon) reap(clientID string) {
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "daemon", Label: "presence"}
 	// A sweep nobody is reading is a radio nobody can use; the daemon's clientGone hook does the
 	// same. A hard-killed `ley scan` must not leave the fake sweeping for ever either.
-	for id, j := range d.jobs {
+	for _, j := range d.jobs {
 		if j.owner == clientID && j.proto.State == leylinev1.JobState_RUNNING {
+			j.cancelled = true
 			j.proto.State = leylinev1.JobState_CANCELLED
 			j.proto.StatusDetail = fmt.Sprintf("stopped, %d found", len(j.scan.GetDetections()))
-			d.emit(by, j.proto)
-			_ = id
+			d.emit(byDaemon(), j.proto)
 		}
 	}
 	for id, ch := range d.channels {

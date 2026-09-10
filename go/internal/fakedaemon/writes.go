@@ -159,6 +159,12 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeCaptureNotFound, w.TargetId, "no such capture"))
 		}
 		dev := d.devices[c.DeviceId]
+		// A sweep is the only thing tuning the radio it owns: a retune, a rate change or a gain
+		// write aimed at its capture waits for it, as the daemon's refuseIfSwept does. (Gain
+		// because the lease pins it, so every dB the scan reports is one sensitivity.)
+		if d.sweeping != "" && d.sweeping == c.DeviceId {
+			return d.rejectLocked(ci, w.Tag, sweptError(c.CaptureId))
+		}
 		switch p := p.(type) {
 		case *leylinev1.ParamWrite_CenterHz:
 			if dev == nil || !inRange(dev, p.CenterHz) {
@@ -172,8 +178,8 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			c.SampleRate = p.CaptureSampleRate
 			c.Anchor.SampleRate = p.CaptureSampleRate
 		case *leylinev1.ParamWrite_Gain:
-			if !d.applyGainLocked(c, dev, p.Gain) {
-				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeGainElementUnknown, w.TargetId, "no gain element named "+p.Gain.GetElement()))
+			if e := d.applyGainLocked(c, dev, p.Gain, w.TargetId); e != nil {
+				return d.rejectLocked(ci, w.Tag, e)
 			}
 		}
 		touch(c)
@@ -202,10 +208,18 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			if c != nil && uint64(p.BandwidthHz) > c.SampleRate {
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, fmt.Sprintf("bandwidth %d Hz is wider than the %d sps capture", p.BandwidthHz, c.SampleRate)))
 			}
+			if e := checkBandwidth(c, ch.Mode, p.BandwidthHz, w.TargetId); e != nil {
+				return d.rejectLocked(ci, w.Tag, e)
+			}
 			ch.BandwidthHz = p.BandwidthHz
 		case *leylinev1.ParamWrite_Mode:
 			if p.Mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED || leylinev1.DemodMode_name[int32(p.Mode)] == "" {
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeModeUnsupported, w.TargetId, fmt.Sprintf("demodulator %v is not available", p.Mode)))
+			}
+			// A channel is re-planned on every write, so a mode that cannot carry the bandwidth
+			// it already has is refused rather than quietly filtered narrower.
+			if e := checkBandwidth(c, p.Mode, ch.BandwidthHz, w.TargetId); e != nil {
+				return d.rejectLocked(ci, w.Tag, e)
 			}
 			ch.Mode = p.Mode
 		case *leylinev1.ParamWrite_SquelchDb:
@@ -237,9 +251,15 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 	}
 }
 
-func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g *leylinev1.GainWrite) bool {
+func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g *leylinev1.GainWrite, target string) *leyline.Error {
+	unknown := errorf(leyline.CodeGainElementUnknown, target, "no gain element named "+g.GetElement())
 	if g == nil || dev == nil {
-		return false
+		return unknown
+	}
+	// Checked before the element is looked up, because every comparison in the snap is false for a
+	// NaN and it would come back as the first entry in the table.
+	if db, ok := g.Value.(*leylinev1.GainWrite_Db); ok && (math.IsNaN(db.Db) || math.IsInf(db.Db, 0)) {
+		return errorf(leyline.CodeInvalidArgument, target, "gain db must be finite")
 	}
 	for _, el := range dev.GainElements {
 		if el.Name != g.Element {
@@ -251,18 +271,20 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 			}
 			switch v := g.Value.(type) {
 			case *leylinev1.GainWrite_Auto:
-				if !el.SupportsAuto {
-					return false
+				// Only asking for automatic gain needs the element to offer it; turning it off is
+				// what a manual dB write does anyway.
+				if v.Auto && !el.SupportsAuto {
+					return unknown
 				}
 				gs.Auto = v.Auto
 			case *leylinev1.GainWrite_Db:
 				gs.Auto = false
 				gs.Db = leyline.SnapGain(el, v.Db)
 			}
-			return true
+			return nil
 		}
 	}
-	return false
+	return unknown
 }
 
 // recheckChannelsLocked flips channels between ACTIVE and OUT_OF_CAPTURE after
