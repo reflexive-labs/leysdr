@@ -390,7 +390,7 @@ sentence. Docs: `docs/interfaces.md` tree and the `--json` paragraph; `docs/cli-
 the way and `--rtltcp` is for foreground runs; README's "What works today" mentions it. Tests
 fake-backed, including the exit codes.
 
-### X-6 `[ ]` Remote radios end to end
+### X-6 `[x]` Remote radios end to end
 
 After SW-11 and GO-10: `go/internal/e2e` gains a minimal `rtl_tcp` server in Go (the 12-byte
 `RTL0` header with tuner 5 and 29 gains, then a stream of zero samples, commands read and ignored),
