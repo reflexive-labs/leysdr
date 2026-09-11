@@ -257,13 +257,15 @@ Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall.
   echoes the tap in the descriptor. `MalformedInputTests` gets the unknown-value case.
 - Tests: `EngineCoreTests` on `fixtures/nfm_pl.cf32` (NFM, 1 kHz audio, 100 Hz PL at 700 Hz
   deviation): the demod tap carries the 100 Hz tone (Goertzel at 100 Hz at least 20 dB above 80 Hz
-  and 120 Hz) and the audio tap has it at least 30 dB lower than the demod tap; on the AM fixture
+  and 120 Hz) and the audio tap has it at least 12 dB lower than the demod tap -- the two cascaded
+  300 Hz poles put 100 Hz about 20 dB down and the de-emphasis make-up gain hands about 6 dB of that
+  back, and this item routes the tap rather than touching the audio chain; on the AM fixture
   the demod tap's mean is the carrier level and the audio tap's mean is near zero; with the squelch
   closed the audio tap is zeros and the demod tap is not. `LeylineDaemonTests`: a `TAP_DEMOD`
   subscription on a file-device channel delivers frames whose descriptor echoes the tap; `rawIQ`
   refused. `docs/engine-internals.md` gets the paragraph under the channel pipeline.
 
-### SV-8c `[ ]` `ley scope` (Go lane, against the fake)
+### SV-8c `[x]` `ley scope` (Go lane, against the fake)
 
 - `go/internal/cli/scope.go` and `scope_view.go`: `ley scope [frequency|preset|channel]` with the
   tune flags `listen` takes (a channel id or a frequency taps an existing channel exactly as

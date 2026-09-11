@@ -72,6 +72,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "presets", args: []string{"presets"}},
 	{path: "record", args: []string{"record"}, refuse: "not implemented yet"},
 	{path: "scan", args: []string{"scan", "145M..147M"}},
+	{path: "scope", args: []string{"scope", "146.52", "--count", "2"}},
 	{path: "set", args: []string{"set"}, prep: prepChannel},
 	{path: "spectrum", args: []string{"spectrum", "146.52"}},
 	{path: "state", args: []string{"state"}},

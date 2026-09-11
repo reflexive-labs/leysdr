@@ -220,10 +220,15 @@ lists the bands with their modes) and NFM when the frequency is in no
 known band; it prints one line saying what it chose and why. Scripts should
 pass --mode so a change to the band table cannot surprise them.
 
+To see what a mode does rather than hear it, 'ley scope' draws the waveform
+the demodulator made: FM voice through the AM detector is a flat line with
+ripple, a carrier in CW is a sine, NFM voice is a voice.
+
   ley tune 101.1 --mode fm     WFM: 101.100 MHz is on the broadcast band
   ley tune 7.040 --mode ssb    LSB: below 10 MHz
   ley tune 121.5               AM without asking: airband
-  ley set mode am              switch the playing channel to AM`
+  ley set mode am              switch the playing channel to AM
+  ley scope 146.52             draw what the demodulator is making`
 }
 
 func topicGain() string {

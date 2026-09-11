@@ -24,13 +24,14 @@ type AudioRow struct {
 	PCM         []byte `json:"pcm"`
 }
 
-// listenChannelPrefix is the id prefix that marks the positional argument as
+// tapChannelPrefix is the id prefix that marks the positional argument as
 // an existing channel rather than a frequency or preset.
-const listenChannelPrefix = "chan_"
+const tapChannelPrefix = "chan_"
 
-// listenTuneFlags are the tune flags listen accepts; they are meaningless
-// when it attaches to a channel someone else already made.
-var listenTuneFlags = []string{"mode", "bw", "squelch", "gain", "device", "rate", "retune"}
+// tapTuneFlags are the tune flags listen accepts; they are meaningless when a
+// verb attaches to a channel someone else already made, which is why every
+// tapping verb hands its own list to tapTarget.
+var tapTuneFlags = []string{"mode", "bw", "squelch", "gain", "device", "rate", "retune"}
 
 type listenOptions struct {
 	// channel, when non-empty, is an existing channel id (or id prefix) to
@@ -93,32 +94,11 @@ here; with --format bin it is a usage error.`,
 				arg = args[0]
 			}
 			lo := listenOptions{bin: format == "bin", count: count}
-			var o *tuneOptions
-			switch {
-			case arg == "":
-				return usageErrorf("listen needs a frequency, preset or channel id: ley listen 146.52, ley listen noaa, ley listen chan_01J... (ley help presets lists the presets)")
-			case strings.HasPrefix(arg, listenChannelPrefix):
-				for _, name := range listenTuneFlags {
-					if cmd.Flags().Changed(name) {
-						return usageErrorf("--%s cannot be used with a channel id: %s already has its settings; change them with: ley set --channel %s", name, arg, arg)
-					}
-				}
-				lo.channel = arg
-			default:
-				hz, def, err := resolveTuneTarget(arg)
-				if err != nil {
-					return err
-				}
-				f.noAudio, f.volume = true, "1"
-				if o, err = f.parse(arg, hz, def); err != nil {
-					return err
-				}
-				// A machine verb takes no interactive default: without an
-				// explicit --squelch the channel passes everything through.
-				if f.squelch == "" {
-					o.squelchAuto = false
-				}
+			channel, o, err := tapTarget(cmd, &f, "listen", arg, tapTuneFlags)
+			if err != nil {
+				return err
 			}
+			lo.channel = channel
 			s, err := openSession(cmd.Context(), app)
 			if err != nil {
 				return err
@@ -141,37 +121,82 @@ here; with --format bin it is a usage error.`,
 	return cmd
 }
 
+// tapTarget resolves the argument a verb that taps a channel was given: a
+// channel id to attach to, or a frequency or preset to make a channel for. A
+// channel someone else made carries its owner's choices, so the tune flags are
+// refused alongside one.
+func tapTarget(cmd *cobra.Command, f *tuneFlags, verb, arg string, tuneFlagNames []string) (channelID string, o *tuneOptions, err error) {
+	switch {
+	case arg == "":
+		return "", nil, usageErrorf("%s needs a frequency, preset or channel id: ley %s 146.52, ley %s noaa, ley %s chan_01J... (ley help presets lists the presets)", verb, verb, verb, verb)
+	case strings.HasPrefix(arg, tapChannelPrefix):
+		for _, name := range tuneFlagNames {
+			if cmd.Flags().Changed(name) {
+				return "", nil, usageErrorf("--%s cannot be used with a channel id: %s already has its settings; change them with: ley set --channel %s", name, arg, arg)
+			}
+		}
+		return arg, nil, nil
+	}
+	hz, def, err := resolveTuneTarget(arg)
+	if err != nil {
+		return "", nil, err
+	}
+	// A verb that taps a channel opens no speakers, and without an explicit
+	// --squelch the channel passes everything through: the samples the caller
+	// asked for are the whole point, and a muted stage hands back zeros.
+	f.noAudio, f.volume = true, "1"
+	if o, err = f.parse(arg, hz, def); err != nil {
+		return "", nil, err
+	}
+	if f.squelch == "" {
+		o.squelchAuto = false
+	}
+	return "", o, nil
+}
+
+// openChannel points a listening verb at the channel it was given: an existing
+// one when the argument named it, or a fresh capture and channel made the way
+// tune makes them, minus the speakers. The returned stop removes whatever was
+// created and leaves a channel someone else owns alone.
+func (s *session) openChannel(ctx context.Context, o *tuneOptions, channelID string) (func(), error) {
+	if channelID != "" {
+		ch, err := leyline.ResolveChannel(s.state, channelID)
+		if err != nil {
+			return nil, fmt.Errorf("%w. Run: ley state", err)
+		}
+		s.channel, s.capture = ch, captureByID(s.state, ch.CaptureId)
+		return func() {}, nil
+	}
+	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
+		if err := s.checkRange(o.input, o.freq); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.ensureCapture(ctx, o); err != nil {
+		return nil, err
+	}
+	if err := s.applyGain(ctx, o); err != nil {
+		if s.createdCapture {
+			s.teardown()
+		}
+		return nil, err
+	}
+	if err := s.createChannel(ctx, o); err != nil {
+		s.teardown()
+		return nil, err
+	}
+	return s.teardown, nil
+}
+
 // runListen taps an existing channel or makes one like tune (minus the
 // speakers), then writes audio frames until --count, Ctrl-C or the end of the
 // stream, tearing down whatever it created.
 func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions) (err error) {
-	if lo.channel != "" {
-		ch, err := leyline.ResolveChannel(s.state, lo.channel)
-		if err != nil {
-			return fmt.Errorf("%w. Run: ley state", err)
-		}
-		s.channel, s.capture = ch, captureByID(s.state, ch.CaptureId)
-	} else {
-		if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
-			if err := s.checkRange(o.input, o.freq); err != nil {
-				return err
-			}
-		}
-		if err := s.ensureCapture(ctx, o); err != nil {
-			return err
-		}
-		if err := s.applyGain(ctx, o); err != nil {
-			if s.createdCapture {
-				s.teardown()
-			}
-			return err
-		}
-		if err := s.createChannel(ctx, o); err != nil {
-			s.teardown()
-			return err
-		}
-		defer s.teardown()
+	stop, err := s.openChannel(ctx, o, lo.channel)
+	if err != nil {
+		return err
 	}
+	defer stop()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// Rate 0 accepts the channel's own audio rate (v0 serves no other) and

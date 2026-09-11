@@ -180,6 +180,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newSpectrumCommand(app),
 		newWaterfallCommand(app),
 		newPhosphorCommand(app),
+		newScopeCommand(app),
 		newScanCommand(app),
 		newJobsCommand(app),
 		newFFTCommand(app),

@@ -340,7 +340,54 @@ Both share `spectrum`'s device and framing flags (`--span`, `--band`, `--bins`, 
 runs until Ctrl-C). Neither calls out carriers by name the way `scan` does — they are pictures to
 read, not a list to act on.
 
-## 7. Two channels on one radio
+## 7. See the waveform
+
+`ley scope` draws what the demodulator made: one window of samples a frame, full scale top to
+bottom, redrawn where it stands. It answers two questions the level meter and the spectrum cannot,
+because both of those are measured before demodulation. The first is *what does this mode actually
+do* — FM voice through the AM detector is a flat line with ripple, a carrier in CW is a sine, NFM
+voice is a voice, and `ley set mode am` from another terminal changes the picture while you watch.
+The second needs the other tap.
+
+`--tap audio` (the default) is what the speakers get, after the high-pass, de-emphasis and gain
+control. `--tap demod` is the detector's own output before any of that, and on an NFM channel that
+is where the CTCSS (PL) tone lives: the audio chain high-passes at 300 Hz precisely to remove it,
+so a picture of what you hear cannot show it. The demod tap also keeps drawing while the squelch is
+closed — *what is the transmitter sending between words* is what it is for — and its DC offset is
+the tuning error, which the header reads out in hertz (full scale is ±5 kHz on NFM, ±75 kHz on WFM).
+
+```console
+$ ley scope 145.23 --tap demod --window 10
+145.230 MHz NFM  tap demod  window 10 ms  peak -4 dBFS  rms -9 dBFS
+tuning +100 Hz  PL 100.0 Hz (measured 100.12 Hz, 18 dB, confidence 0.9)
+
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⡠⡀⠀⠀⠀⠀⠀⠀⡤⣄⠀⠀⠀⠀⠀⠀⡤⡄⠀⠀⠀⠀⠀⠀⣀⡀
+⢀⠖⢦⠀⠀⠀⠀⠀⢀⠖⢦⠀⠀⠀⠀⠀⢠⠊⢣⠀⠀⠀⠀⠀⣰⠁⠱⡀⠀⠀⠀⠀⡸⠁⠘⡄⠀⠀⠀⠀⡜⠀⠘⡄⠀⠀⠀⠀⡜⠀⠘⡄⠀⠀⠀⠀⡸⠁⠹⡀⠀⠀⠀⠀⢰⠋⢳⠀⠀⠀⠀⠀⢠⠖⢦
+⡎⠀⠈⡆⠀⠀⠀⠀⡎⠀⠈⢇⠀⠀⠀⢀⠇⠀⠀⢧⠀⠀⠀⢠⠃⠀⠀⢣⠀⠀⠀⢰⠁⠀⠀⢱⠀⠀⠀⢰⠁⠀⠀⠸⡀⠀⠀⢰⠁⠀⠀⢱⠀⠀⠀⢰⠃⠀⠀⢱⠀⠀⠀⢠⠃⠀⠀⢣⠀⠀⠀⢀⠏⠀⠀⢇
+⠀⠀⠀⠸⡀⠀⠀⡸⠀⠀⠀⠘⡄⠀⠀⡜⠀⠀⠀⠈⡆⠀⠀⡎⠀⠀⠀⠈⢇⠀⢀⠎⠀⠀⠀⠀⢧⠀⢀⠇⠀⠀⠀⠀⢣⠀⢀⠇⠀⠀⠀⠀⢇⠀⢀⠇⠀⠀⠀⠈⢆⠀⠀⡎⠀⠀⠀⠈⡄⠀⠀⡜⠀⠀⠀⠘⡄⠀⠀⡸
+⠀⠀⠀⠀⢱⡀⢠⠃⠀⠀⠀⠀⠱⡀⡰⠁⠀⠀⠀⠀⠸⣄⡼⠀⠀⠀⠀⠀⠘⠦⠞⠀⠀⠀⠀⠀⠈⠳⠊⠀⠀⠀⠀⠀⠈⠓⠋⠀⠀⠀⠀⠀⠈⠢⠎⠀⠀⠀⠀⠀⠘⢆⡜⠀⠀⠀⠀⠀⠸⡄⡰⠁⠀⠀⠀⠀⢱⡀⣠⠃
+⠀⠀⠀⠀⠀⠉⠁⠀⠀⠀⠀⠀⠀⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠉⠁
+```
+
+The header is the daemon's claim: the tone comes from the same sub-audible detector `ley tune`
+prints, and `scope` never estimates one itself, so the picture and the number can disagree — which
+is the reason both are on screen. `--window` (5 to 500 ms, default 40) is the timebase: 40 ms is a
+syllable of voice, four cycles of a 100 Hz tone, and a narrower window spreads a 1 kHz note out
+into a wave. `--trigger auto` starts each frame at a rising zero crossing when the window repeats
+steadily, which holds a tone still; `--trigger free` lets the trace run. On a terminal without
+UTF-8, or with `--ascii`, the same trace is drawn with three levels per character.
+
+`scope` takes a frequency, a preset or a channel id the way `listen` does, opens no speakers, and
+removes whatever it created on exit; `--rate` (frames a second, at most 20), `--count`, `--width`
+and the tune flags behave as they do elsewhere. A raw-IQ channel has no detector, so the daemon
+refuses `--tap demod` on one and says why.
+
+`--json` prints the frame statistics and no samples: one object per frame,
+`{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc, tone_hz}`, with
+`tone_hz` absent until the daemon has reported a tone. The samples themselves are
+`ley listen --format json`.
+
+## 8. Two channels on one radio
 
 A capture is a wide slice of the band (2.4 MHz on an RTL-SDR), so one radio can feed several
 channels at once. `--persistent` leaves a channel running after the command exits and prints
@@ -418,7 +465,7 @@ a state too large to read as a tree or a line you want to `awk`; `--ascii` swaps
 drawing for `+-` and `\-`. `ley state --json` is still the machine snapshot, and it is unchanged
 by any of this.
 
-## 8. Play a recording
+## 9. Play a recording
 
 `play` attaches an IQ recording (a `.cf32` file: the raw samples a radio produced) as a pretend
 radio and tunes on it exactly as `tune` would, so `set` and `spectrum` work on it unchanged. No
@@ -444,7 +491,7 @@ channels.
 Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12;
 `ley help roadmap`).
 
-## 9. For scripts and agents
+## 10. For scripts and agents
 
 `ley help scripting` is the authoritative short version; the contract is `docs/interfaces.md`.
 
@@ -499,7 +546,7 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
-## 10. When things go wrong
+## 11. When things go wrong
 
 Every error is one line that says what happened and what to run next. The ones a newcomer
 meets first:

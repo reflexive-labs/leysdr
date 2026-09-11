@@ -70,6 +70,13 @@ type Glyphs struct {
 	// does not -- stacked in a grid, `▁▂▃` reads as scan lines rather than as
 	// density.
 	Shade string
+	// Trace draws a waveform one column at a time. The Unicode set leaves it
+	// empty, which means braille: a braille cell is 2 x 4 dots, so a trace
+	// drawn with it carries eight times the detail of the character grid and
+	// no single glyph can stand in for one. ASCII has no such cell, so it
+	// names three levels -- low, middle, high -- and a renderer that finds
+	// them here draws the coarser picture instead.
+	Trace string
 	// Rule draws a horizontal separator or the noise floor.
 	Rule rune
 	// RuleHeavy is the same line drawn with weight, for a separator that
@@ -88,6 +95,7 @@ var (
 	unicodeGlyphs = Glyphs{
 		Ramp:       " ▁▂▃▄▅▆▇█",
 		Shade:      " ░▒▓█",
+		Trace:      "",
 		BarFull:    '█',
 		BarEmpty:   '░',
 		Marker:     '▲',
@@ -102,6 +110,7 @@ var (
 	asciiGlyphs = Glyphs{
 		Ramp:       " .:-=+*#%",
 		Shade:      " .:+#",
+		Trace:      `_-"`,
 		BarFull:    '#',
 		BarEmpty:   '.',
 		Marker:     '^',
