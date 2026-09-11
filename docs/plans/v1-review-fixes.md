@@ -328,3 +328,80 @@ verifiers, which each saw one item in isolation. Line numbers are as of `c25b12d
     `Persistence.swift:~13` (state the fact; drop the hypothetical future subscriber).
 
 The suite stays green; run it twice at the end.
+
+## Closing out (the release-plan items that were decided)
+
+### X-5 `[ ]` Remote radios as daemon state: the contract, the fake, the client wrappers
+
+R-20 of the release plan, first third. Additive proto in `control.proto`:
+
+```
+message FileSource   { string path = 1; bool loop = 2; }
+message RtlTcpSource { string host = 1; uint32 port = 2; }
+message DeviceSource { oneof source { FileSource file = 1; RtlTcpSource rtl_tcp = 2; } }
+message AttachDeviceRequest { DeviceSource source = 1; }
+message DetachDeviceRequest { string device_id = 1; }
+rpc AttachDevice(AttachDeviceRequest) returns (DeviceDescriptor);
+rpc DetachDevice(DetachDeviceRequest) returns (Empty);
+```
+
+Comments state the contract: a file source is ephemeral (as `AttachFileDevice`, which stays and is
+documented as sugar over `AttachDevice{file}`); an `rtl_tcp` source is remembered by the daemon
+across restarts until detached; attach connects once and fails with `DEVICE_IO` naming `host:port`
+when the server cannot be reached, remembering nothing; a second attach of the same `host:port`
+returns the existing descriptor; `DetachDevice` accepts any device a client attached (file or
+rtl_tcp), closes it, forgets it, and refuses a USB radio with `INVALID_ARGUMENT` ("unplug it").
+`make proto`. The fake (`go/internal/fakedaemon`) implements both: an `rtl_tcp` source becomes a
+descriptor with driver `rtltcp`, model `rtl_tcp <host>:<port> (R820T)`, serial `<host>:<port>`,
+feature `remote`, the R820T gain table; a host ending in `.invalid` is refused with `DEVICE_IO`; a
+duplicate returns the existing device; detach removes it and its capture, emitting the device
+event. `go/pkg/leyline` gains `AttachDevice`/`DetachDevice` wrappers beside the existing ones.
+Tests in the fake's own suite.
+
+### SW-11 `[ ]` Remote radios as daemon state: the daemon
+
+R-20, second third. `ControlService` implements `AttachDevice` and `DetachDevice` over the
+`SessionStore` and `DefaultDeviceRegistry`. Attach `rtl_tcp`: dedupe on `host:port` against the
+hosted devices before constructing anything (returns the existing descriptor); construct an
+`RTLTCPDevice`, `open()` with the existing 5 s timeout, on failure throw `DEVICE_IO` naming the
+endpoint and host nothing; on success `attachVirtualDevice`, then remember the endpoint. Attach
+`file`: the existing `attachFileDevice` path. Detach: any hosted virtual device (the registry's
+`isDetachableFileDevice` guard widens to "hosted by a client or the remembered list"; USB dongles
+refused with `INVALID_ARGUMENT`); an rtl_tcp detach also forgets the endpoint. The remembered list
+lives in `devices.json` beside the socket (`{"rtl_tcp":[{"host":"…","port":1234}]}`), written on
+every change, read at startup and attached after the `--rtltcp` flags with the same dedupe; an
+unreachable remembered endpoint is logged and kept (the reconnect-on-poll path brings it back),
+exactly like an unreachable flag today. `--rtltcp` stays for foreground runs and is documented
+as such. Tests in `LeylineDaemonTests` with the engine tests' `FakeRTLTCPServer`: attach, duplicate,
+unreachable (`.invalid` host or a closed port), detach, and the round trip through `devices.json`
+(attach, tear the daemon down, bring a new one up on the same directory, the device is present).
+`docs/engine-internals.md` gets the paragraph.
+
+### GO-10 `[ ]` Remote radios as daemon state: `ley devices attach`
+
+R-20, last third, against the fake. `ley devices attach rtltcp <host:port>` (the kind is a literal
+so later sources slot in) calls `AttachDevice`, prints one line in the `ley play` style ("attached
+rtl_tcp pi.local:1234 (R820T) as dev_…; the daemon remembers it. Forget it with: ley devices detach
+<n>") on stderr with the id on stdout, `--json` prints the `DeviceDescriptor`; an unreachable host
+exits 1 with the daemon's sentence; a duplicate says so and exits 0. `ley devices detach` uses
+`DetachDevice` for any driver, so an rtl_tcp device detaches, and the USB refusal keeps its current
+sentence. Docs: `docs/interfaces.md` tree and the `--json` paragraph; `docs/cli-guide.md` section 1
+("a radio on another machine"); `docs/dev-setup.md`'s rtl_tcp section says `ley devices attach` is
+the way and `--rtltcp` is for foreground runs; README's "What works today" mentions it. Tests
+fake-backed, including the exit codes.
+
+### X-6 `[ ]` Remote radios end to end
+
+After SW-11 and GO-10: `go/internal/e2e` gains a minimal `rtl_tcp` server in Go (the 12-byte
+`RTL0` header with tuner 5 and 29 gains, then a stream of zero samples, commands read and ignored),
+and a test that attaches it through `ley devices attach rtltcp 127.0.0.1:<port>` against the real
+daemon, sees it in `ley devices --json`, tunes it with `--no-audio`, detaches it, and confirms
+`devices.json` in the daemon's directory went from one entry to none.
+
+### SW-12 `[ ]` Signposts on the sample-path code added since Milestone B
+
+R-19 of the release plan. Add names to `Signposts.swift` and intervals around `AudioSink.write`
+(`CoreAudioSink`, `CallbackSink`), the daemon's `FrameRing` writes, `PersistenceAccumulator.add`,
+and the sweep's row collection in `ScanRunner`, so the S1/S2 Instruments runs see the whole path.
+The wrappers are allocation-free and compile to nothing off macOS; keep it that way (no string
+formatting on the hot path). A test that each new name is distinct and stable is enough.
