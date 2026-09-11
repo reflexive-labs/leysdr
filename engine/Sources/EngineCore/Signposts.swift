@@ -16,7 +16,7 @@ import os
 /// The interval names are the ones the S1/S2 spike measurements key on; keep them stable.
 public enum Signpost {
     /// Interval/event names used on the sample path.
-    public enum Name {
+    public enum Name: CaseIterable {
         /// One device block converted and pushed into the block ring.
         case blockIngest
         /// One channel's NCO → FIR → demod → sinks pass for one block.
@@ -29,6 +29,14 @@ public enum Signpost {
         case demodulate
         /// One FFT of a given size.
         case fft
+        /// One `AudioSink.write`: the handoff from the DSP thread to an output device or a client.
+        case audioWrite
+        /// One frame pushed into a bulk stream's `FrameRing`.
+        case frameRingWrite
+        /// One spectrum row folded into a persistence histogram.
+        case persistenceAdd
+        /// One sweep row handed to the scan collector.
+        case sweepRow
 
         @inline(__always) var staticName: StaticString {
             switch self {
@@ -38,6 +46,10 @@ public enum Signpost {
             case .ringOverrun: return "ringOverrun"
             case .demodulate: return "demodulate"
             case .fft: return "fft"
+            case .audioWrite: return "audioWrite"
+            case .frameRingWrite: return "frameRingWrite"
+            case .persistenceAdd: return "persistenceAdd"
+            case .sweepRow: return "sweepRow"
             }
         }
     }

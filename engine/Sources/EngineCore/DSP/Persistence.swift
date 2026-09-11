@@ -53,6 +53,8 @@ public final class PersistenceAccumulator: @unchecked Sendable {
     /// by nearest bin so the ladder's size and the histogram's need not match.
     public func add(row: UnsafeBufferPointer<Float>) {
         guard let src = row.baseAddress, row.count > 0 else { return }
+        let sp = Signpost.begin(.persistenceAdd)
+        defer { Signpost.end(.persistenceAdd, sp) }
         lock.lock()
         defer { lock.unlock() }
         let scale = Double(levels) / rangeDB

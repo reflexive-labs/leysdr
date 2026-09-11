@@ -23,6 +23,8 @@ public final class CallbackSink: AudioSink, @unchecked Sendable {
     /// Hot path: one relaxed load and the closure call.
     public func write(_ audio: SampleBuffer, at time: SampleTime) {
         if closed.load(ordering: .relaxed) { return }
+        let sp = Signpost.begin(.audioWrite)
+        defer { Signpost.end(.audioWrite, sp) }
         handler(audio, time)
     }
 

@@ -99,6 +99,8 @@ public final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
     /// channel that slipped past the attach guard) are ignored rather than trapping the DSP thread.
     public func write(_ audio: SampleBuffer, at time: SampleTime) {
         guard audio.format == .f32 else { return }
+        let sp = Signpost.begin(.audioWrite)
+        defer { Signpost.end(.audioWrite, sp) }
         let src = UnsafeBufferPointer(start: audio.base.assumingMemoryBound(to: Float.self), count: audio.count)
         _ = ring.push(src)
     }

@@ -61,6 +61,8 @@ final class FrameRing: @unchecked Sendable {
     /// Writer side. `fill` receives the slot memory and returns the bytes it wrote (≤ slotBytes).
     /// `sampleStart`/`sampleCount` are in capture samples for gap accounting.
     func write(sampleStart: UInt64, sampleCount: UInt64, _ fill: (UnsafeMutableRawPointer) -> Int) {
+        let sp = Signpost.begin(.frameRingWrite)
+        defer { Signpost.end(.frameRingWrite, sp) }
         let t = tail.load(ordering: .relaxed)
         var h = head.load(ordering: .acquiring)
         while t - h >= slots {

@@ -69,6 +69,8 @@ final class RowCollector: SpectrumSink, @unchecked Sendable {
     }
 
     func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks: Int) {
+        let sp = Signpost.begin(.sweepRow)
+        defer { Signpost.end(.sweepRow, sp) }
         lock.lock()
         defer { lock.unlock() }
         // Drop-oldest: a sweep that fell behind wants the newest rows, and the step boundary is
