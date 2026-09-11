@@ -553,3 +553,42 @@ sit together; its waveform transcript is recorded with `--squelch -50` against t
 carrier power swings through that threshold, because a steady tone at full duty draws a solid block
 and the picture is about when something came through. The `--json` shapes are described in prose
 there rather than shown, the way `scope`'s are: a nine-band row is one 470-character line.
+
+### SV-10f `[ ]` What the second look at the audio spectrum found (cross-language)
+
+An independent read of `fe26cd3..54ca99f`, after the per-item verifiers. Line numbers as of
+`54ca99f`. Engine, fake, client and docs together.
+
+1. **Cap channel-sourced `bins` at 4096**, the design's number, in the engine
+   (`AudioSpectrum.swift:23` rounds up the whole ladder to 16384, a 32768-point transform inline
+   on the DSP thread) and in the fake (`fakedaemon/bulk.go:102-110`); a larger request rounds down
+   to 4096 and the descriptor says so; the proto comment on `FftParams` states the cap for a
+   channel source and that each subscription runs its own transform (so N subscribers on one tap
+   cost N transforms, bounded by the cap). `MalformedInputTests.swift:225` asserts the cap.
+2. **One default row rate.** An unset, non-positive or non-finite `rows_per_second` on a
+   channel-sourced FFT means 10 in both implementations, like the capture-sourced FFT
+   (`StreamRegistry.swift:167`); the engine's `AudioSpectrum.swift:26-29` and
+   `MalformedInputTests.swift:226-227` change from 20 to 10, the fake at `bulk.go:192-194` already
+   reads 10. The maximum stays 20.
+3. **Validate `accumulation` on the channel path** in both: a known value is answered
+   `ROW_SNAPSHOT` (a row is one transform of the window), `UNRECOGNIZED` is `INVALID_ARGUMENT`,
+   exactly as the capture path does two lines below (`StreamRegistry.swift:172-179`,
+   `fakedaemon/bulk.go:227-236`).
+4. `AudioSpectrumSink.write` (`AudioSpectrum.swift:95`) brackets itself with the `.audioWrite`
+   signpost like `CallbackSink` and `CoreAudioSink` do; `emit` keeps `.fft`.
+5. `AudioSpectrum.swift:63`: the `precondition(audioRate > 0)` on a client-reachable path becomes
+   a thrown `INVALID_ARGUMENT` at subscribe.
+6. Say the two facts the audit measured: bin 0 carries DC at 6 dB above a tone of the same
+   amplitude (no mirror image), which matters only on the demod tap and sits below the 63 Hz band
+   anyway; and a row emitted across a retune straddles it, which is accepted. Both in
+   `docs/engine-internals.md`'s audio-spectrum paragraph, the first also in the proto comment.
+7. Small truths: `AudioSpectrumStreamTests.swift:84` claims a −200 dB floor an empty row would
+   read; it reads about −248 at 512 bins, so say "the floor an empty row reads" without the
+   number; `:73-80` bounds its `for try await` with the harness's deadline pattern;
+   `AudioSpectrumTests.swift:97-98` reports a timeout as a failure, not a failure and a skip;
+   `go/pkg/leyline/client.go:~505` says a raw-IQ channel refuses either tap;
+   `go/internal/fakedaemon/streams_test.go:~561` stops saying FFT is capture-scoped;
+   `docs/design-audio-meters.md:24` reads "256 … 4096, the design's cap for this path" and stays
+   true after item 1; wrap `docs/engine-internals.md:228` and `docs/plans/signal-views.md:474`.
+
+Both suites green, `make proto` clean, the e2e green at the end.
