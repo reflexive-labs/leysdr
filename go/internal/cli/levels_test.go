@@ -337,8 +337,20 @@ func TestLevelsBandSumsInPower(t *testing.T) {
 	// in, because a blank bar would read as silence rather than as a row too
 	// coarse to split.
 	narrow := levelsBands([]float64{63}, levelsThirdEdge)
-	if got := levelsBandDb(row, 40, narrow[0]); math.Abs(got+90) > 0.01 {
-		t.Errorf("a band narrower than a bin reads %.2f dB, want the bin's -90", got)
+	if got := levelsBandDb(row, 40, narrow[0]); math.Abs(got+91.76) > 0.01 {
+		t.Errorf("a band narrower than a bin reads %.2f dB, want the corrected bin's -91.76", got)
+	}
+	// And it is corrected like every other band, so a run of bands too narrow
+	// to split does not step against the wider ones beside them on one floor.
+	// 63 and 100 each hold one bin of the 23 Hz row; 80 falls between the two
+	// and borrows the nearer one.
+	third := levelsBands([]float64{63, 80, 100}, levelsThirdEdge)
+	for i := 1; i < len(third); i++ {
+		a, b := levelsBandDb(flat, 23, third[i-1]), levelsBandDb(flat, 23, third[i])
+		if math.Abs(a-b) > 0.01 {
+			t.Errorf("on a flat floor the %s and %s bands read %.2f and %.2f dB, want no step between them",
+				levelsBandLabel(third[i-1].centerHz), levelsBandLabel(third[i].centerHz), a, b)
+		}
 	}
 	// Digital silence has no level, and a row carrying negative infinity is
 	// not JSON.
@@ -443,6 +455,27 @@ func TestLevelsWatchKeepsDrawing(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "20 rows a second. Ctrl-C stops") {
 		t.Errorf("the prose on stderr does not say the meter is live:\n%s", errOut)
+	}
+}
+
+// The meter waits on its own rows and nothing else: a daemon whose meter
+// telemetry is minutes apart still draws bands at the row rate, with the
+// squelch line blank until the first meter says what it is doing.
+func TestLevelsWatchDrawsBeforeTheFirstMeter(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: time.Minute})
+	start := time.Now()
+	out, _, err := run(t, context.Background(), sock, "levels", "145.23", "--watch", "--count", "3")
+	if err != nil {
+		t.Fatalf("ley levels --watch: %v\nstdout: %s", err, out)
+	}
+	if n := strings.Count(out, "tap audio"); n != 3 {
+		t.Errorf("--count 3 drew %d frames without a meter to wait on:\n%s", n, out)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("three frames took %v, so the meter is waiting on telemetry rather than on rows", d)
+	}
+	if strings.Contains(out, "squelch open") || strings.Contains(out, "squelch closed") {
+		t.Errorf("the header claims a squelch state no meter has reported:\n%s", out)
 	}
 }
 

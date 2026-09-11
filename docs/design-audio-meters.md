@@ -38,8 +38,10 @@ Hann) and back to dB; that is aggregation over the daemon's row, the same kind o
 `spectrum`'s peak list, and the client does it. The correction is what makes a band level a level:
 a Hann-windowed tone leaks a quarter of its power into each neighbouring bin, so the bins of a band
 add up to about one and a half times what is really in it, and broadband power is spread by the
-same factor. Both `levels` and the later `sonogram` (a waterfall over the same rows) read this one
-stream.
+same factor. A band too narrow to hold a bin centre -- the low third-octaves against a coarse row --
+reads the bin its centre falls in, corrected the same way, so it is a bar rather than a gap and the
+bars beside it do not step 1.76 dB where the signal is flat. Both `levels` and the later `sonogram`
+(a waterfall over the same rows) read this one stream.
 
 ## `ley levels`
 

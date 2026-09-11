@@ -81,18 +81,19 @@ func levelsBandDb(bins []float64, binHz float64, b levelsBand) float64 {
 		sum += math.Pow(10, bins[i]/10)
 		n++
 	}
-	if n > 0 {
-		sum /= levelsWindowEnbw
-	} else {
-		// The band the row cannot split is its centre bin as it stands: the
-		// correction hands a tone back the power it leaked into neighbours,
-		// and where only one bin is counted that peak is already the level.
+	if n == 0 {
+		// The band the row cannot split reads its centre bin.
 		i := int(math.Round(b.centerHz / binHz))
 		if i < 0 || i >= len(bins) {
 			return scopeMinDbfs
 		}
 		sum = math.Pow(10, bins[i]/10)
 	}
+	// Every band is corrected the same way, whether it summed bins or borrowed
+	// one, so neighbouring bars on the same broadband noise read the same
+	// level: a band that took the correction next to one that did not would
+	// step 1.76 dB where nothing in the signal does.
+	sum /= levelsWindowEnbw
 	db := 10 * math.Log10(sum)
 	if math.IsNaN(db) || db < scopeMinDbfs {
 		return scopeMinDbfs

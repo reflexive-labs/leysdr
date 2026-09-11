@@ -322,12 +322,15 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			if !ok {
 				return levelsEnd(ctx, sub.Err(), rows)
 			}
-			// A row is complete once the daemon has also said whether the
+			// A still is complete once the daemon has also said whether the
 			// squelch is passing anything: a band level means one thing behind
-			// an open squelch and nothing at all behind a shut one, and the
-			// first frame has to say which. Later rows draw whatever arrives,
-			// so a telemetry stream that ends does not stop the meter.
-			if rows == 0 && !frame.squelchKnown {
+			// an open squelch and nothing at all behind a shut one, and the one
+			// frame a snapshot prints has to say which. The meter waits on
+			// nothing but its own rows -- it has later frames to say it in, and
+			// a slow or absent meter must not hold the bands off the screen.
+			// A telemetry stream that has ended is never going to say it, so
+			// the still goes out with the squelch unstated rather than never.
+			if !o.watch && rows == 0 && !frame.squelchKnown && msgs != nil {
 				continue
 			}
 			bins := leyline.DecodeFFTBins(fr.Payload, fp.GetBinFormat())
