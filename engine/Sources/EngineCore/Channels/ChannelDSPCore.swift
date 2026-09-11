@@ -242,8 +242,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
     }
 
     /// Hot path. `block` is interleaved cf32 at the capture rate (count ≤ maxBlock); `time` is its
-    /// start. Channelizes, demodulates, applies squelch (zeros when closed), writes to every sink
-    /// and pushes meter/squelch telemetry. No allocation, no lock held across calls.
+    /// start. Channelizes, demodulates, zeros the conditioned block while the squelch is closed and
+    /// writes it to the `.audio` sinks, hands the demodulator's raw block to the `.demod` sinks
+    /// unzeroed, and pushes meter/squelch telemetry. No allocation, no lock held across calls.
     public func process(block: SampleBuffer, at time: SampleTime) {
         let sp = Signpost.begin(.channelProcess)
         defer { Signpost.end(.channelProcess, sp) }
