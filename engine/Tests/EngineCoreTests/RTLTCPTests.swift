@@ -393,6 +393,26 @@ final class RTLTCPDeviceTests: XCTestCase {
         XCTAssertTrue(empty.isEmpty)
         await assertCode("DEVICE_NOT_FOUND") { try await registry.detachVirtualDevice(id: d.id) }
     }
+
+    /// An endpoint hosted before anybody reached it has no tuner to name, so its model reads
+    /// `(unknown)`; the same endpoint once the socket opens names the real tuner. Both are the one
+    /// radio at the one address, and the registry has to say so or the operator ends up with two.
+    func testRegistryHostsOneDevicePerEndpointAcrossFirstOpen() async throws {
+        let server = try FakeRTLTCPServer()
+        defer { server.stop() }
+        let registry = DefaultDeviceRegistry()
+        let unreached = RTLTCPDevice(host: "127.0.0.1", port: server.port)
+        let waiting = try await registry.attachVirtualDevice(unreached, origin: .operatorFlag).descriptor
+        XCTAssertTrue(waiting.model.hasSuffix("(unknown)"), waiting.model)
+        let opened = RTLTCPDevice(host: "127.0.0.1", port: server.port)
+        try await opened.open()
+        let second = try await registry.attachVirtualDevice(opened)
+        XCTAssertTrue(second.alreadyHosted)
+        XCTAssertEqual(second.descriptor.id, waiting.id)
+        let devices = await registry.devices
+        XCTAssertEqual(devices.count, 1, "one endpoint is one radio")
+        await unreached.close()
+    }
 }
 
 /// Tiny lock-guarded flags for the in-flight deliver test.

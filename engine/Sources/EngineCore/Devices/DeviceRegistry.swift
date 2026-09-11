@@ -120,6 +120,13 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         "\(serial)|\(manufacturer)|\(product)"
     }
 
+    /// Identity of a hosted virtual device: its driver and the address it names, with the model left
+    /// out. An rtl_tcp endpoint the daemon has not reached yet reports a placeholder tuner in its
+    /// model and the real one once the socket opens, and both are the one radio at the one address.
+    static func virtualIdentityKey(serial: String, driver: String) -> String {
+        "\(serial)|\(driver)"
+    }
+
     /// Returns the stable id for a key, minting and persisting one on first sight.
     private func stableID(for key: String) -> DeviceID {
         if let id = idMap.ids[key] { return id }
@@ -207,15 +214,16 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     // MARK: Virtual devices
 
-    /// Hosts any non-USB `RadioDevice` (e.g. `RTLTCPDevice`). Identity is `(serial, driver, model)`
-    /// of the device's own descriptor; the stable id is minted from that. Devices conforming to
+    /// Hosts any non-USB `RadioDevice` (e.g. `RTLTCPDevice`). Identity is the driver and the address
+    /// in the device's own descriptor, so an endpoint hosted before it could be reached and the same
+    /// endpoint once it answers are one device; the stable id is minted from that. Devices conforming to
     /// `VirtualDevice` get the registry id assigned and the state-change hook installed so their
     /// own `.disconnected` transitions publish `changed` like an unplug. `origin` records who asked
     /// for it; a client attaching an endpoint the operator's flag already hosts takes ownership of
     /// it, so the radio stays when the flag goes.
     public func attachVirtualDevice(_ device: any RadioDevice, origin: VirtualDeviceOrigin = .client) async throws -> VirtualAttachment {
         let provisional = device.descriptor
-        let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: provisional.driver, product: provisional.model)
+        let key = DefaultDeviceRegistry.virtualIdentityKey(serial: provisional.serial, driver: provisional.driver)
         if let (id, existing) = entries.first(where: { $0.value.key == key && $0.value.rtlIndex == nil }) {
             // Callers open before attaching, so a second instance of the same identity arrives with a
             // live socket and a reader thread that nothing else holds a reference to: close it here.

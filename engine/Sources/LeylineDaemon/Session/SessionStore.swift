@@ -386,7 +386,11 @@ actor SessionStore {
         let endpoint = "\(host):\(port)"
         if let existing = devices.values.first(where: { $0.driver == RTLTCPDevice.driverName && $0.serial == endpoint }) {
             await registry.claimVirtualDevice(id: existing.id)
-            await remembered?.remember(.init(host: host, port: port))
+            let saved = RememberedDevices.Endpoint(host: host, port: port)
+            await remembered?.remember(saved)
+            // A detach that landed while this was suspended wins the endpoint: take the line out
+            // again so the next daemon does not bring back a radio somebody let go.
+            if devices[existing.id] == nil { await remembered?.forget(saved) }
             return existing
         }
         if let inFlight = attachingRemotes[endpoint] { return try await inFlight.value }
@@ -454,16 +458,16 @@ actor SessionStore {
             await destroyCapture(id: capID, by: by)
         }
         // Everything above suspends, so a second detach can have finished meanwhile: say the device
-        // is gone rather than take apart what is already gone.
-        guard devices[id] != nil else { throw EngineError.deviceNotFound(id.string) }
+        // is gone rather than take apart what is already gone. Dropping it from the table here,
+        // before anything else suspends, is also what an attach racing this detach looks for: it
+        // re-checks the table after its own awaits and takes its `devices.json` line back out.
+        guard var gone = devices.removeValue(forKey: id) else { throw EngineError.deviceNotFound(id.string) }
         try await registry.detachVirtualDevice(id: id)
         if d.driver == RTLTCPDevice.driverName, let endpoint = RememberedDevices.Endpoint(serial: d.serial) {
             await remembered?.forget(endpoint)
         }
-        if var d = devices.removeValue(forKey: id) {
-            d.state = .disconnected
-            emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: by)
-        }
+        gone.state = .disconnected
+        emit(.device(ProtoMapping.descriptor(gone)), captureID: nil, by: by)
     }
 
     // MARK: Captures

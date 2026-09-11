@@ -259,8 +259,10 @@ as the consumer drains. At EOF: loop if configured, else stop delivering and mar
 A dongle served by osmocom's `rtl_tcp` on another machine, presented as a virtual device. Clients
 attach one with `Control.AttachDevice{rtl_tcp{host, port}}` (see "Remembered devices"); a foreground
 run can also name endpoints with `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`,
-comma-separated). Both paths go through `DeviceRegistry.attachVirtualDevice`; a server that cannot be
-reached at startup is hosted `DISCONNECTED` for the reconnect poll to pick up, never fatal.
+comma-separated). Both paths go through `DeviceRegistry.attachVirtualDevice`, which identifies a hosted
+virtual device by driver and address alone — an endpoint hosted before it answers cannot name its
+tuner, and the model it would carry must not make it a second radio. A server that cannot be reached
+at startup is hosted `DISCONNECTED` for the reconnect poll to pick up, never fatal.
 
 - Transport: BSD sockets (no Network framework, so it builds and tests on Linux). `open()` connects
   with a 5 s timeout, reads the 12-byte header (`"RTL0"`, u32be tuner type, u32be gain count), sends
@@ -365,6 +367,9 @@ dedupes the same way before constructing anything: a second attach of a hosted e
 existing descriptor, and a second attach of an endpoint whose connect is still in flight waits on
 that one rather than opening a second socket. A server that cannot be reached by an attach is
 `DEVICE_IO` naming the endpoint with nothing remembered — a radio never reached is usually a typo.
+Detach and attach can overlap, so the order is fixed: detach drops the device from the session table
+before it forgets the endpoint, and both attach paths re-check the table after their awaits and take
+the line back out if it has gone. Whichever runs last, a radio somebody let go stays gone.
 
 The registry records how each hosted virtual device arrived. A radio named by `--rtltcp` is operator
 configuration: `DetachDevice` refuses it with `INVALID_ARGUMENT` naming the flag, because a detach
