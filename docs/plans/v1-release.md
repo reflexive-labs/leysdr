@@ -365,6 +365,17 @@ the listener is closed and joined, or whether the device's reconnect path has a 
 harness or the device accordingly, and prove it with ten consecutive full runs. If the fix is in
 `RTLTCPDevice`, add the regression test.
 
+### R-4a `[ ]` Two intermittent failures to catch with their names on (owner, Mac)
+
+Seen on the Linux box after R-4 and never reproduced: one Swift test failed once in a full
+`swift test` run that overlapped a `make race` (six later runs, four of them under the same load,
+were green; the failure line was filtered out of the log, so the test is unnamed), and
+`TestCLIAgainstRealDaemon` failed twice in under half a second, each time seconds after a lint and
+a rebuild had loaded the machine (four later runs of the same pair were green; the message was
+lost the same way). Both look like start-up races under load rather than product bugs. The gate
+now keeps failure lines; the next occurrence will name itself. If either shows on the Mac, keep
+the whole log and file it against this item.
+
 ### R-5 `[x]` Every verb answers `--json` or refuses it (M, Opus)
 
 - `ley waterfall --json` prints one NDJSON object per rendered row in the existing bulk-row shape
