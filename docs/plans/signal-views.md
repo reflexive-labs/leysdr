@@ -210,7 +210,8 @@ two-tone paging ever needs it.
 
 ## SV-8 `[ ]` The scope: `ley scope`
 
-Implements `docs/design-scope.md`. Additive `AudioParams.tap` (`AUDIO`, `DEMOD`); the demodulators
+Implements `docs/design-scope.md`, in four work items the loop runs by section name. Read the
+design doc first for every one of them; it states the contract each item serves. Additive `AudioParams.tap` (`AUDIO`, `DEMOD`); the demodulators
 produce the raw stage into preallocated scratch; the channel core routes it to `DEMOD` subscribers
 and keeps it flowing while the squelch is closed; `rawIQ` refuses the tap. Fixture test: the NFM
 `demod` tap on `nfm_pl.cf32` carries the PL tone the sidecar names, and the `audio` tap does not.
@@ -221,4 +222,81 @@ the fake. Docs: `interfaces.md` tree and JSON paragraph, `cli-guide.md` section.
 ## SV-9 `[ ]` The audio spectrogram: `ley sonogram`
 
 Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall. After SV-8.
+
+### SV-8a `[ ]` The tap on the wire, the fake, the client (cross-language, first)
+
+- `proto/leyline/v1/bulk.proto`: `AudioParams` gains `AudioTap tap = 3;` with
+  `enum AudioTap { TAP_AUDIO = 0; TAP_DEMOD = 1; }` (enum value names are package-scoped, so they
+  cannot collide with `StreamKind.AUDIO`). Comments state the contract from the design: `TAP_AUDIO`
+  is what a speaker gets and the default, so every existing subscription is unchanged; `TAP_DEMOD`
+  is the detector's output before conditioning, per mode as the design lists, keeps flowing while
+  the squelch is closed, and is refused with `INVALID_ARGUMENT` on a `RAW_IQ` channel. The daemon
+  echoes the tap in the answered `StreamDescriptor`. `make proto`.
+- `go/pkg/leyline`: `SubscribeAudio` keeps its signature (tap audio); add `SubscribeAudioTap(ctx,
+  channelID, sampleRate, format, tap)` beside it.
+- Fake: `Bulk.Subscribe(AUDIO, tap=TAP_DEMOD)` refuses `RAW_IQ` channels; otherwise the frame payload
+  is the channel's synthetic audio plus the same `carrierTone(hz)` sub-audible tone the fake's
+  `SUB_AUDIBLE` telemetry reports (at about a tenth of full scale) plus a small constant DC offset,
+  and unlike the audio tap it does not go to zeros while the squelch is closed. Descriptor echoes
+  the tap. Tests in the fake's suite: both taps negotiate, the demod payload differs from the audio
+  payload, rawIQ refused, unknown tap value refused.
+
+### SV-8b `[ ]` The tap in the engine and the daemon (Swift lane)
+
+- `CoreProtocols.swift` (hand-written; changing it is allowed): `Demodulator.process` gains a raw
+  output beside `audioOut`, written into scratch sized at `configure` (invariant 4: no allocation on
+  the hot path). Each demodulator writes its raw stage as the design lists: NFM the discriminator
+  before the 300 Hz high-pass (the same samples that feed `tapSubAudible`), AM the envelope before
+  the DC block and AGC, USB/LSB and CW the product detector before AGC, WFM the discriminator after
+  decimation to the audio rate but before de-emphasis and the 15 kHz low-pass, `rawIQ` none.
+- `ChannelDSPCore`: audio sinks carry a tap; the core writes the raw block to `TAP_DEMOD` sinks and
+  the conditioned block to the rest; the squelch-closed zeroing applies to `TAP_AUDIO` sinks only;
+  meter and squelch are unchanged. A channel with no demod subscriber pays one branch.
+- Daemon: `StreamRegistry.subscribe(AUDIO)` reads `params.tap`, refuses `TAP_DEMOD` on a `rawIQ`
+  channel and any unknown value with `INVALID_ARGUMENT`, attaches the bulk sink with the tap, and
+  echoes the tap in the descriptor. `MalformedInputTests` gets the unknown-value case.
+- Tests: `EngineCoreTests` on `fixtures/nfm_pl.cf32` (NFM, 1 kHz audio, 100 Hz PL at 700 Hz
+  deviation): the demod tap carries the 100 Hz tone (Goertzel at 100 Hz at least 20 dB above 80 Hz
+  and 120 Hz) and the audio tap has it at least 30 dB lower than the demod tap; on the AM fixture
+  the demod tap's mean is the carrier level and the audio tap's mean is near zero; with the squelch
+  closed the audio tap is zeros and the demod tap is not. `LeylineDaemonTests`: a `TAP_DEMOD`
+  subscription on a file-device channel delivers frames whose descriptor echoes the tap; `rawIQ`
+  refused. `docs/engine-internals.md` gets the paragraph under the channel pipeline.
+
+### SV-8c `[ ]` `ley scope` (Go lane, against the fake)
+
+- `go/internal/cli/scope.go` and `scope_view.go`: `ley scope [frequency|preset|channel]` with the
+  tune flags `listen` takes (a channel id or a frequency taps an existing channel exactly as
+  `listen` resolves its target; a fresh frequency creates a channel with no system-audio sink),
+  plus `--tap audio|demod` (default audio), `--window MS` (default 40, range 5..500),
+  `--trigger auto|free` (default auto), `--rate N` frames per second (default 20, max 20),
+  `--count N`, `--width N`.
+- The trace: one window of samples per frame across the terminal width, full scale ±1.0 vertically
+  over the available rows, braille cells (2 × 4 dots, U+2800 + bit pattern) on the Unicode glyph
+  set and a three-level ASCII fallback (`_`, `-`, `¯` or similar) on `--ascii`, through the
+  existing `ui.Glyphs` mechanism. `--trigger auto` starts the frame at a rising zero crossing when
+  the window is periodic enough to hold still (a repeating zero-crossing interval), else free-runs.
+  Redraw in place like `spectrum --watch`; stderr for prose, stdout only for `--json`.
+- Header, one line: channel and mode, tap, window, the frame's peak and RMS in dBFS; on the demod
+  tap for FM modes the DC offset as a tuning error in hertz (±1.0 ≙ ±5 kHz for NFM, ±75 kHz for
+  WFM); and, from a `SUB_AUDIBLE` telemetry subscription on the channel, `PL 100.0 Hz (measured
+  100.02 Hz, 18 dB, confidence 0.9)` when the daemon reports a tone. The view never estimates the
+  tone itself.
+- `--json`: one object per frame `{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs,
+  rms_dbfs, dc, tone_hz}` (`tone_hz` absent until the daemon has reported one), no samples; add it
+  to the bulk-row exception paragraph in `docs/interfaces.md` and to the tree; `docs/cli-guide.md`
+  gains a "See the waveform" section with a transcript recorded against the fake, and `ley help
+  modes` points at `ley scope` as the way to see what a mode does.
+- Tests against the fake: a tone renders as a periodic trace whose zero crossings match the tone
+  (golden for the braille and the ASCII forms); the trigger holds a tone still across frames; the
+  demod header shows the fake's tone and the tuning error; rawIQ exits 1 with the daemon's
+  sentence; `--json` shape and `--count`; the `json_verbs_test` tree walk picks the new verb up.
+
+### SV-8d `[ ]` End to end, and the recorded transcript (cross-language, last)
+
+`go/internal/e2e`: play `fixtures/nfm_pl.cf32` through the real daemon, run
+`ley scope --tap demod --json --count 20` on its channel, assert at least one frame within 10 s
+carries `tone_hz` within 0.5 Hz of 100 and every frame has finite `rms_dbfs` and `dc`, then
+`--tap audio --count 5` frames arrive and carry no `tone_hz` requirement. Then re-record the
+`cli-guide.md` transcript against the fake if the wording moved.
 
