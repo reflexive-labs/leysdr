@@ -431,7 +431,7 @@ so a 0.14 tone sits at ±0.2 through a quarter-second pause and is back down wit
 Implements `docs/design-audio-meters.md`; read it first for every item, it carries the visual
 language the renderers must match and the honesty rules (ballistics shape bars, never numbers).
 
-### SV-10a `[ ]` The audio spectrum on the wire, the fake, the client (cross-language, first)
+### SV-10a `[x]` The audio spectrum on the wire, the fake, the client (cross-language, first)
 
 - `proto/leyline/v1/bulk.proto`: `FftParams` gains `AudioTap tap = <next>` (the enum from
   `AudioParams`), meaningful only when the subscription's source is a channel; comments state the

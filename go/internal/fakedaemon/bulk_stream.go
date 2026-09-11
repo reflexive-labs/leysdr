@@ -177,6 +177,9 @@ func (d *Daemon) fileEOFLocked(c *capture) {
 func (d *Daemon) renderLocked(s *stream, c *capture, now time.Time) []byte {
 	switch p := s.desc.Params.(type) {
 	case *leylinev1.StreamDescriptor_Fft:
+		if s.channelID != "" {
+			return d.renderAudioSpectrumLocked(s, c, p.Fft, now)
+		}
 		return d.renderFFTLocked(c, p.Fft, now)
 	case *leylinev1.StreamDescriptor_Audio:
 		return d.renderAudioLocked(s, p.Audio, now)
@@ -192,17 +195,20 @@ func (d *Daemon) renderLocked(s *stream, c *capture, now time.Time) []byte {
 // subscription asked for: one periodogram under ROW_SNAPSHOT, and otherwise the looks the
 // descriptor promised, spread across the row's interval.
 func (d *Daemon) renderFFTLocked(c *capture, p *leylinev1.FftParams, now time.Time) []byte {
-	bins := int(p.Bins)
-	row := d.accumulateRowLocked(c, bins, now, p)
-	if p.BinFormat == leylinev1.FftBinFormat_DB_U8 {
-		out := make([]byte, bins)
+	return encodeFFTRow(d.accumulateRowLocked(c, int(p.Bins), now, p), p.BinFormat)
+}
+
+// encodeFFTRow writes a row of dB per bin in the negotiated bin format.
+func encodeFFTRow(row []float32, format leylinev1.FftBinFormat) []byte {
+	if format == leylinev1.FftBinFormat_DB_U8 {
+		out := make([]byte, len(row))
 		for i, v := range row {
 			q := math.Round(float64(v+120) * 2)
 			out[i] = byte(math.Max(0, math.Min(255, q)))
 		}
 		return out
 	}
-	out := make([]byte, bins*4)
+	out := make([]byte, len(row)*4)
 	for i, v := range row {
 		binary.LittleEndian.PutUint32(out[i*4:], math.Float32bits(v))
 	}
@@ -345,3 +351,76 @@ func renderIQ(p *leylinev1.IqParams, now time.Time) []byte {
 	}
 	return out
 }
+
+// renderAudioSpectrumLocked encodes one row of the channel's audio spectrum: the levels a
+// transform of the tap's own samples would report, so what a reader sees here matches what
+// the audio stream carries -- the 1 kHz voice stand-in on both taps, and on the demod tap
+// the sub-audible tone the channel's carrier is sending, under it where a PL sits.
+func (d *Daemon) renderAudioSpectrumLocked(s *stream, c *capture, p *leylinev1.FftParams, now time.Time) []byte {
+	pl := 0.0
+	if p.GetTap() == leylinev1.AudioTap_TAP_DEMOD {
+		if ch := d.channels[s.channelID]; ch != nil {
+			pl = carrierTone(uint64(int64(c.CenterHz) + ch.OffsetHz))
+		}
+	}
+	return encodeFFTRow(audioSpectrumRow(int(p.GetBins()), float64(audioRate(c.GetSampleRate())), pl, now), p.GetBinFormat())
+}
+
+// audioSpectrumRow is a floor with the tones standing on it, over 0 Hz to half the audio rate.
+// Levels are the amplitudes the audio payload is built from read as dBFS, a full-scale sine
+// being 0.
+func audioSpectrumRow(bins int, rateHz, plHz float64, now time.Time) []float32 {
+	row := make([]float32, bins)
+	jitter := float64(now.UnixNano()%1000) / 1000
+	for i := range row {
+		row[i] = float32(audioSpectrumFloorDb + 2*math.Sin(float64(i)*0.29+jitter*6.28))
+	}
+	binHz := rateHz / 2 / float64(bins)
+	addSpectrumTone(row, binHz, 1000, dbfsOf(0.5))
+	if plHz > 0 {
+		addSpectrumTone(row, binHz, plHz, dbfsOf(subAudibleTapLevel))
+	}
+	return row
+}
+
+// addSpectrumTone stands a tone on the row at its bin, spread over the neighbours the way a
+// Hann window spreads one: a tone between bins reads up to 1.4 dB low and its neighbour 6 dB
+// down, which is the shape a reader summing bins into bands has to get right.
+func addSpectrumTone(row []float32, binHz, toneHz, db float64) {
+	center := toneHz / binHz
+	lo, hi := int(center)-spectrumToneSkirt, int(center)+spectrumToneSkirt
+	for i := max(lo, 0); i <= min(hi, len(row)-1); i++ {
+		leak := math.Abs(hannLeak(float64(i) - center))
+		if leak <= 0 {
+			continue
+		}
+		if v := float32(db + 20*math.Log10(leak)); v > row[i] {
+			row[i] = v
+		}
+	}
+}
+
+// hannLeak is how much of a tone d bins away lands in this bin, as a fraction of what an
+// on-bin tone would read: the Hann window's kernel, three shifted sincs, normalised at d = 0.
+func hannLeak(d float64) float64 {
+	return (0.5*sinc(d) + 0.25*sinc(d-1) + 0.25*sinc(d+1)) / 0.5
+}
+
+func sinc(x float64) float64 {
+	if x == 0 {
+		return 1
+	}
+	return math.Sin(math.Pi*x) / (math.Pi * x)
+}
+
+// dbfsOf reads a sample amplitude as dBFS.
+func dbfsOf(amplitude float64) float64 { return 20 * math.Log10(amplitude) }
+
+const (
+	// Quiet enough that a tone stands well clear of it, loud enough to look like a real
+	// audio chain rather than digital silence.
+	audioSpectrumFloorDb = -90.0
+	// How far a tone's skirts are worth drawing: past three bins a Hann window has nothing
+	// left above the floor.
+	spectrumToneSkirt = 3
+)

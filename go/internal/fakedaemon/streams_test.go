@@ -871,3 +871,123 @@ func TestAudioTapRefusals(t *testing.T) {
 		t.Errorf("want INVALID_ARGUMENT for an unknown tap, got %v", err)
 	}
 }
+
+func TestAudioSpectrumStream(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 146.940 MHz: a carrier the fake sends a 123.0 Hz CTCSS tone on.
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 940_000, Mode: leylinev1.DemodMode_NFM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := map[leylinev1.AudioTap][]float64{}
+	for _, tap := range []leylinev1.AudioTap{leylinev1.AudioTap_TAP_AUDIO, leylinev1.AudioTap_TAP_DEMOD} {
+		sub, err := c.SubscribeAudioSpectrum(ctx, ch.ChannelId, 1024, 20, leylinev1.FftBinFormat_DB_F32, tap)
+		if err != nil {
+			t.Fatalf("subscribe %v: %v", tap, err)
+		}
+		d := sub.Descriptor
+		// The audio rate is 48 kHz at 2.4 MSPS, so the row runs 0 Hz to 24 kHz and the
+		// descriptor centres it where every FFT reader looks for the middle of the span.
+		if p := d.GetFft(); p.GetBins() != 1024 || p.GetTap() != tap || p.GetRowsPerSecond() != 20 ||
+			p.GetAccumulation() != leylinev1.FftAccumulation_ROW_SNAPSHOT || p.GetLooksPerRow() != 1 {
+			t.Errorf("%v descriptor params = %v", tap, p)
+		}
+		if d.CenterHz != 12_000 || d.SpanHz != 24_000 {
+			t.Errorf("%v descriptor center/span = %d/%d, want 12000/24000", tap, d.CenterHz, d.SpanHz)
+		}
+		rows[tap] = firstRow(t, sub)
+		if err := sub.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}
+	const binHz = 24_000.0 / 1024
+	audio, demod := rows[leylinev1.AudioTap_TAP_AUDIO], rows[leylinev1.AudioTap_TAP_DEMOD]
+	// The voice stand-in is on both taps at half full scale; the PL is only on the demod tap.
+	for tap, row := range rows {
+		if lvl := binLevel(t, row, 1000, binHz); lvl < -8 || lvl > -4 {
+			t.Errorf("%v 1 kHz bin %.1f dB, want about -6", tap, lvl)
+		}
+	}
+	if lvl := binLevel(t, demod, 123, binHz); lvl < -22 || lvl > -18 {
+		t.Errorf("demod tap 123 Hz bin %.1f dB, want about -20", lvl)
+	}
+	if lvl := binLevel(t, audio, 123, binHz); lvl > -60 {
+		t.Errorf("audio tap 123 Hz bin %.1f dB, want the floor", lvl)
+	}
+	// Rows come at most twenty a second however fast they are asked for, and bins round up
+	// the ladder as they do for the radio.
+	sub, err := c.SubscribeAudioSpectrum(ctx, ch.ChannelId, 300, 30, leylinev1.FftBinFormat_DB_U8, leylinev1.AudioTap_TAP_AUDIO)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	if p := sub.Descriptor.GetFft(); p.GetRowsPerSecond() != 20 || p.GetBins() != 512 || p.GetBinFormat() != leylinev1.FftBinFormat_DB_U8 {
+		t.Errorf("clamped descriptor = %v", p)
+	}
+}
+
+// binLevel is the row's level at the bin a tone of hz falls in.
+func binLevel(t *testing.T, row []float64, hz, binHz float64) float64 {
+	t.Helper()
+	i := int(math.Round(hz / binHz))
+	if i < 0 || i >= len(row) {
+		t.Fatalf("%.0f Hz is outside a %d-bin row", hz, len(row))
+	}
+	return row[i]
+}
+
+func TestAudioSpectrumRefusals(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	cap, ch := setupCaptureChannel(t, c)
+	// A raw-IQ channel carries no audio, on either tap; the spectrum of silence would look
+	// like a quiet band.
+	raw, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
+		CaptureId: cap.CaptureId, OffsetHz: 300_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_RAW_IQ,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tap := range []leylinev1.AudioTap{leylinev1.AudioTap_TAP_AUDIO, leylinev1.AudioTap_TAP_DEMOD} {
+		_, err := c.SubscribeAudioSpectrum(ctx, raw.ChannelId, 1024, 10, leylinev1.FftBinFormat_DB_F32, tap)
+		if leyline.Code(err) != leyline.CodeInvalidArgument {
+			t.Errorf("want INVALID_ARGUMENT for %v on a raw-IQ channel, got %v", tap, err)
+		}
+	}
+	// A tap value from a newer client is refused by name rather than served as the audio tap.
+	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+		Kind:   leylinev1.StreamKind_FFT,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 1024, Tap: leylinev1.AudioTap(7)}},
+	})
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("want INVALID_ARGUMENT for an unknown tap, got %v", err)
+	}
+	// An unset tap is the audio tap, as it is on an audio subscription.
+	d, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+		Kind:   leylinev1.StreamKind_FFT,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 1024}},
+	})
+	if err != nil {
+		t.Fatalf("default tap: %v", err)
+	}
+	if got := d.GetFft().GetTap(); got != leylinev1.AudioTap_TAP_AUDIO {
+		t.Errorf("default tap %v, want TAP_AUDIO", got)
+	}
+	// A persistence histogram is still the radio's alone.
+	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+		Kind:   leylinev1.StreamKind_PERSISTENCE,
+		Params: &leylinev1.SubscribeRequest_Persistence{Persistence: &leylinev1.PersistenceParams{Bins: 256, Levels: 32, FloorDb: -110, RangeDb: 60}},
+	})
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("want INVALID_ARGUMENT for persistence on a channel, got %v", err)
+	}
+}

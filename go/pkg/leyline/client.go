@@ -498,6 +498,25 @@ func (c *Client) SubscribeFFTAccumulated(ctx context.Context, captureID string, 
 	})
 }
 
+// SubscribeAudioSpectrum subscribes to the spectrum of a channel's audio: rows
+// of dB per bin from 0 Hz to half the audio rate, over the audio or the demod
+// tap. It is an FFT stream like a capture's, so the descriptor's center_hz and
+// span_hz (rate/4 and rate/2) place the bins the way every FFT reader already
+// reads them; a RAW_IQ channel has no audio and refuses the demod tap. Rows come
+// at most twenty a second, which is as fast as a meter is read.
+func (c *Client) SubscribeAudioSpectrum(ctx context.Context, channelID string, bins uint32, rowsPerSecond float64,
+	format leylinev1.FftBinFormat, tap leylinev1.AudioTap,
+) (*Subscription, error) {
+	return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: channelID},
+		Kind:   leylinev1.StreamKind_FFT,
+		Policy: leylinev1.DeliveryPolicy_GAP_MARKED,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{
+			Bins: bins, BinFormat: format, RowsPerSecond: rowsPerSecond, Tap: tap,
+		}},
+	})
+}
+
 // SubscribePersistence subscribes to a capture's persistence (phosphor)
 // histogram: for each frequency bin, how often each level has been seen lately.
 //

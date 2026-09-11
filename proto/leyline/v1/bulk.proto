@@ -55,6 +55,18 @@ message FftParams {
   // Looks the daemon actually took per row. Answer only: a request must leave
   // it 0. Always 1 under SNAPSHOT.
   uint32 looks_per_row = 5;
+  // Which stage of a channel's chain the spectrum is taken from, meaningful only
+  // when the subscription's source is a channel; the daemon echoes the tap it serves.
+  //
+  // An FFT subscription with a `channel_id` source is the spectrum of that channel's
+  // audio, not of the radio: rows of dB per bin from 0 Hz to half the audio rate,
+  // one transform of a Hann-windowed sliding window per row. The descriptor answers
+  // `center_hz = rate/4` and `span_hz = rate/2`, so the row layout every FFT reader
+  // already understands holds; `bins` comes from the same ladder and `rows_per_second`
+  // is at most 20, which is as fast as a meter is read. `accumulation` does not apply
+  // -- a row is the one transform -- and the descriptor answers ROW_SNAPSHOT. A RAW_IQ
+  // channel has no audio and refuses with INVALID_ARGUMENT, as does an unknown tap.
+  AudioTap tap = 6;
 }
 enum FftAccumulation {
   FFT_ACCUMULATION_UNSPECIFIED = 0;

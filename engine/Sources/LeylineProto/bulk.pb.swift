@@ -439,6 +439,19 @@ public nonisolated struct Leyline_V1_FftParams: Sendable {
   /// it 0. Always 1 under SNAPSHOT.
   public var looksPerRow: UInt32 = 0
 
+  /// Which stage of a channel's chain the spectrum is taken from, meaningful only
+  /// when the subscription's source is a channel; the daemon echoes the tap it serves.
+  ///
+  /// An FFT subscription with a `channel_id` source is the spectrum of that channel's
+  /// audio, not of the radio: rows of dB per bin from 0 Hz to half the audio rate,
+  /// one transform of a Hann-windowed sliding window per row. The descriptor answers
+  /// `center_hz = rate/4` and `span_hz = rate/2`, so the row layout every FFT reader
+  /// already understands holds; `bins` comes from the same ladder and `rows_per_second`
+  /// is at most 20, which is as fast as a meter is read. `accumulation` does not apply
+  /// -- a row is the one transform -- and the descriptor answers ROW_SNAPSHOT. A RAW_IQ
+  /// channel has no audio and refuses with INVALID_ARGUMENT, as does an unknown tap.
+  public var tap: Leyline_V1_AudioTap = .tapAudio
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -885,7 +898,7 @@ nonisolated extension Leyline_V1_IqParams: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FftParams"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}bins\0\u{3}bin_format\0\u{3}rows_per_second\0\u{1}accumulation\0\u{3}looks_per_row\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}bins\0\u{3}bin_format\0\u{3}rows_per_second\0\u{1}accumulation\0\u{3}looks_per_row\0\u{1}tap\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -898,6 +911,7 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
       case 3: try { try decoder.decodeSingularDoubleField(value: &self.rowsPerSecond) }()
       case 4: try { try decoder.decodeSingularEnumField(value: &self.accumulation) }()
       case 5: try { try decoder.decodeSingularUInt32Field(value: &self.looksPerRow) }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.tap) }()
       default: break
       }
     }
@@ -919,6 +933,9 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
     if self.looksPerRow != 0 {
       try visitor.visitSingularUInt32Field(value: self.looksPerRow, fieldNumber: 5)
     }
+    if self.tap != .tapAudio {
+      try visitor.visitSingularEnumField(value: self.tap, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -928,6 +945,7 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.rowsPerSecond != rhs.rowsPerSecond {return false}
     if lhs.accumulation != rhs.accumulation {return false}
     if lhs.looksPerRow != rhs.looksPerRow {return false}
+    if lhs.tap != rhs.tap {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

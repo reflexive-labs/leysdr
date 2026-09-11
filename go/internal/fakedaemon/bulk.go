@@ -25,6 +25,9 @@ const (
 	maxFFTRows     = 30.0
 	defaultFFTRows = 10.0
 	readerReapWait = 10 * time.Second
+	// An audio spectrum is read as a meter rather than scrolled, so it is served no faster than
+	// the eye follows a bar.
+	maxAudioSpectrumRows = 20.0
 
 	minRowsPerSecond = 0.1
 	// The rate the histogram accumulates at, which is as fast as the ladder goes: it wants every
@@ -185,9 +188,6 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 	desc.CenterHz, desc.SpanHz = c.CenterHz, c.SampleRate
 	switch req.GetKind() {
 	case leylinev1.StreamKind_FFT:
-		if s.channelID != "" {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID, "FFT streams are capture-scoped"))
-		}
 		f := req.GetFft()
 		rows := defaultFFTRows
 		if f.GetRowsPerSecond() > 0 {
@@ -201,6 +201,30 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 		// asking the daemon to spend CPU it does not own.
 		if f.GetLooksPerRow() != 0 {
 			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "looks_per_row is answered by the daemon; leave it 0"))
+		}
+		// A channel source asks for the spectrum of that channel's audio rather than the radio's:
+		// one transform per row over 0 Hz to half the audio rate, which is where the descriptor's
+		// centre and span put the bins.
+		if s.channelID != "" {
+			ch := d.channels[s.channelID]
+			if ch.Mode == leylinev1.DemodMode_RAW_IQ {
+				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
+					"an audio spectrum needs a demodulator; this channel is raw IQ"))
+			}
+			tap := f.GetTap()
+			if tap != leylinev1.AudioTap_TAP_AUDIO && tap != leylinev1.AudioTap_TAP_DEMOD {
+				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
+					fmt.Sprintf("unknown AudioTap %d", tap)))
+			}
+			rate := audioRate(c.GetSampleRate())
+			desc.CenterHz, desc.SpanHz = uint64(rate/4), uint64(rate/2)
+			desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
+				Bins: nearestLadder(f.GetBins()), BinFormat: format,
+				RowsPerSecond: math.Min(rows, maxAudioSpectrumRows),
+				Accumulation:  leylinev1.FftAccumulation_ROW_SNAPSHOT,
+				LooksPerRow:   snapshotLooksPerRow, Tap: tap,
+			}}
+			break
 		}
 		acc := f.GetAccumulation()
 		switch acc {

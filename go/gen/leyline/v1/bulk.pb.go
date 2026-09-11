@@ -614,7 +614,19 @@ type FftParams struct {
 	Accumulation FftAccumulation `protobuf:"varint,4,opt,name=accumulation,proto3,enum=leyline.v1.FftAccumulation" json:"accumulation,omitempty"`
 	// Looks the daemon actually took per row. Answer only: a request must leave
 	// it 0. Always 1 under SNAPSHOT.
-	LooksPerRow   uint32 `protobuf:"varint,5,opt,name=looks_per_row,json=looksPerRow,proto3" json:"looks_per_row,omitempty"`
+	LooksPerRow uint32 `protobuf:"varint,5,opt,name=looks_per_row,json=looksPerRow,proto3" json:"looks_per_row,omitempty"`
+	// Which stage of a channel's chain the spectrum is taken from, meaningful only
+	// when the subscription's source is a channel; the daemon echoes the tap it serves.
+	//
+	// An FFT subscription with a `channel_id` source is the spectrum of that channel's
+	// audio, not of the radio: rows of dB per bin from 0 Hz to half the audio rate,
+	// one transform of a Hann-windowed sliding window per row. The descriptor answers
+	// `center_hz = rate/4` and `span_hz = rate/2`, so the row layout every FFT reader
+	// already understands holds; `bins` comes from the same ladder and `rows_per_second`
+	// is at most 20, which is as fast as a meter is read. `accumulation` does not apply
+	// -- a row is the one transform -- and the descriptor answers ROW_SNAPSHOT. A RAW_IQ
+	// channel has no audio and refuses with INVALID_ARGUMENT, as does an unknown tap.
+	Tap           AudioTap `protobuf:"varint,6,opt,name=tap,proto3,enum=leyline.v1.AudioTap" json:"tap,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -682,6 +694,13 @@ func (x *FftParams) GetLooksPerRow() uint32 {
 		return x.LooksPerRow
 	}
 	return 0
+}
+
+func (x *FftParams) GetTap() AudioTap {
+	if x != nil {
+		return x.Tap
+	}
+	return AudioTap_TAP_AUDIO
 }
 
 type AudioParams struct {
@@ -1261,14 +1280,15 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\bIqParams\x12\x1f\n" +
 	"\vsample_rate\x18\x01 \x01(\x04R\n" +
 	"sampleRate\x120\n" +
-	"\x06format\x18\x02 \x01(\x0e2\x18.leyline.v1.SampleFormatR\x06format\"\xe5\x01\n" +
+	"\x06format\x18\x02 \x01(\x0e2\x18.leyline.v1.SampleFormatR\x06format\"\x8d\x02\n" +
 	"\tFftParams\x12\x12\n" +
 	"\x04bins\x18\x01 \x01(\rR\x04bins\x127\n" +
 	"\n" +
 	"bin_format\x18\x02 \x01(\x0e2\x18.leyline.v1.FftBinFormatR\tbinFormat\x12&\n" +
 	"\x0frows_per_second\x18\x03 \x01(\x01R\rrowsPerSecond\x12?\n" +
 	"\faccumulation\x18\x04 \x01(\x0e2\x1b.leyline.v1.FftAccumulationR\faccumulation\x12\"\n" +
-	"\rlooks_per_row\x18\x05 \x01(\rR\vlooksPerRow\"\x8d\x01\n" +
+	"\rlooks_per_row\x18\x05 \x01(\rR\vlooksPerRow\x12&\n" +
+	"\x03tap\x18\x06 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\"\x8d\x01\n" +
 	"\vAudioParams\x12\x1f\n" +
 	"\vsample_rate\x18\x01 \x01(\rR\n" +
 	"sampleRate\x125\n" +
@@ -1392,28 +1412,29 @@ var file_leyline_v1_bulk_proto_depIdxs = []int32{
 	17, // 8: leyline.v1.IqParams.format:type_name -> leyline.v1.SampleFormat
 	3,  // 9: leyline.v1.FftParams.bin_format:type_name -> leyline.v1.FftBinFormat
 	2,  // 10: leyline.v1.FftParams.accumulation:type_name -> leyline.v1.FftAccumulation
-	4,  // 11: leyline.v1.AudioParams.format:type_name -> leyline.v1.AudioSampleFormat
-	5,  // 12: leyline.v1.AudioParams.tap:type_name -> leyline.v1.AudioTap
-	0,  // 13: leyline.v1.StreamDescriptor.kind:type_name -> leyline.v1.StreamKind
-	15, // 14: leyline.v1.StreamDescriptor.policy:type_name -> leyline.v1.DeliveryPolicy
-	7,  // 15: leyline.v1.StreamDescriptor.iq:type_name -> leyline.v1.IqParams
-	8,  // 16: leyline.v1.StreamDescriptor.fft:type_name -> leyline.v1.FftParams
-	9,  // 17: leyline.v1.StreamDescriptor.audio:type_name -> leyline.v1.AudioParams
-	10, // 18: leyline.v1.StreamDescriptor.persistence:type_name -> leyline.v1.PersistenceParams
-	12, // 19: leyline.v1.StreamDescriptor.shm:type_name -> leyline.v1.ShmRing
-	18, // 20: leyline.v1.Frame.time:type_name -> leyline.v1.SampleTime
-	19, // 21: leyline.v1.Frame.gap:type_name -> leyline.v1.Gap
-	6,  // 22: leyline.v1.Bulk.Subscribe:input_type -> leyline.v1.SubscribeRequest
-	14, // 23: leyline.v1.Bulk.Stream:input_type -> leyline.v1.StreamRef
-	14, // 24: leyline.v1.Bulk.Unsubscribe:input_type -> leyline.v1.StreamRef
-	11, // 25: leyline.v1.Bulk.Subscribe:output_type -> leyline.v1.StreamDescriptor
-	13, // 26: leyline.v1.Bulk.Stream:output_type -> leyline.v1.Frame
-	20, // 27: leyline.v1.Bulk.Unsubscribe:output_type -> leyline.v1.Empty
-	25, // [25:28] is the sub-list for method output_type
-	22, // [22:25] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	5,  // 11: leyline.v1.FftParams.tap:type_name -> leyline.v1.AudioTap
+	4,  // 12: leyline.v1.AudioParams.format:type_name -> leyline.v1.AudioSampleFormat
+	5,  // 13: leyline.v1.AudioParams.tap:type_name -> leyline.v1.AudioTap
+	0,  // 14: leyline.v1.StreamDescriptor.kind:type_name -> leyline.v1.StreamKind
+	15, // 15: leyline.v1.StreamDescriptor.policy:type_name -> leyline.v1.DeliveryPolicy
+	7,  // 16: leyline.v1.StreamDescriptor.iq:type_name -> leyline.v1.IqParams
+	8,  // 17: leyline.v1.StreamDescriptor.fft:type_name -> leyline.v1.FftParams
+	9,  // 18: leyline.v1.StreamDescriptor.audio:type_name -> leyline.v1.AudioParams
+	10, // 19: leyline.v1.StreamDescriptor.persistence:type_name -> leyline.v1.PersistenceParams
+	12, // 20: leyline.v1.StreamDescriptor.shm:type_name -> leyline.v1.ShmRing
+	18, // 21: leyline.v1.Frame.time:type_name -> leyline.v1.SampleTime
+	19, // 22: leyline.v1.Frame.gap:type_name -> leyline.v1.Gap
+	6,  // 23: leyline.v1.Bulk.Subscribe:input_type -> leyline.v1.SubscribeRequest
+	14, // 24: leyline.v1.Bulk.Stream:input_type -> leyline.v1.StreamRef
+	14, // 25: leyline.v1.Bulk.Unsubscribe:input_type -> leyline.v1.StreamRef
+	11, // 26: leyline.v1.Bulk.Subscribe:output_type -> leyline.v1.StreamDescriptor
+	13, // 27: leyline.v1.Bulk.Stream:output_type -> leyline.v1.Frame
+	20, // 28: leyline.v1.Bulk.Unsubscribe:output_type -> leyline.v1.Empty
+	26, // [26:29] is the sub-list for method output_type
+	23, // [23:26] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_bulk_proto_init() }
