@@ -73,7 +73,7 @@ to the ley executable, then PATH.`,
 	logs.Flags().BoolVarP(&f.follow, "follow", "f", false, "keep printing as the log grows")
 	cmd.AddCommand(
 		sub("install", "Start the daemon at login (macOS LaunchAgent)",
-			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leyline.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes.",
+			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leyline.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes. It returns once\nthe daemon answers on its socket, or points at the log when it does not.",
 			"  ley daemon install       # start at login from now on\n  ley daemon install --bin /opt/leyline/bin/leylined", false, app.daemonInstall),
 		sub("uninstall", "Stop starting the daemon at login (macOS)",
 			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.",
@@ -234,7 +234,10 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 		return err2
 	}
 	fmt.Fprintf(a.Stdout, "installed %s (%s)\n", path, bin)
-	return nil
+	// bootstrap returns as soon as launchd has the job; the daemon itself needs a moment to
+	// open its socket, and a status check that runs in that moment says "not running". Wait
+	// for it the way start does, and say so, or point at the log when it never answers.
+	return a.awaitDaemon(ctx, f, nil, "started leylined")
 }
 
 func (a *App) daemonUninstall(ctx context.Context, _ *daemonFlags) error {

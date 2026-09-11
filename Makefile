@@ -94,7 +94,7 @@ reload: go swift-release
 	@[ "$$(uname -s)" = Darwin ] || { echo "make reload drives launchd; run it on the Mac" >&2; exit 2; }
 	-$(GOBIN)/ley daemon stop
 	$(GOBIN)/ley daemon install --bin $(CURDIR)/engine/.build/release/leylined
-	$(GOBIN)/ley daemon status
+	@$(GOBIN)/ley daemon status || { echo "--- leylined log (last 20 lines)" >&2; $(GOBIN)/ley daemon logs | tail -20 >&2; exit 1; }
 
 $(TOOLS)/golangci-lint:
 	cd go && GOBIN=$(TOOLS) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
