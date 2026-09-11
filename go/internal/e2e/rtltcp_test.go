@@ -178,7 +178,15 @@ func TestRemoteRadioAgainstRealDaemon(t *testing.T) {
 	if capture["deviceId"] != devID || capture["state"] != "CAPTURE_ACTIVE" {
 		t.Fatalf("unexpected capture %v", capture)
 	}
-	time.Sleep(2 * time.Second)
+	// Wait for the first telemetry line on this capture's timebase rather than a fixed pause: a
+	// loaded machine can take longer than a guess, and an idle one need not wait at all.
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(tuneOut.out.String(), `"captureId":"`+capID+`"`); {
+		if time.Now().After(deadline) {
+			_ = stopTune()
+			t.Fatalf("no telemetry from the remote radio within 10 s:\n%s\n%s", tuneOut.out.String(), tuneOut.errOut.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	if err := stopTune(); err != nil {
 		t.Fatalf("tune exit: %v\n%s\n%s", err, tuneOut.out.String(), tuneOut.errOut.String())
 	}

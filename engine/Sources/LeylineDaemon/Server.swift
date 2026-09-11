@@ -21,7 +21,8 @@ final class Daemon: @unchecked Sendable {
         var registryPersistPath: String? = nil
         /// Remote dongles (rtl_tcp servers) to attach at startup. Failures are logged, never fatal.
         var rtltcp: [RTLTCPEndpoint] = []
-        /// The remembered attach list; nil puts `devices.json` beside the socket.
+        /// The remembered attach list. nil puts `devices.json` beside the socket; "" forgets
+        /// everything when the daemon stops (tests that want no file on disk).
         var devicesPath: String? = nil
     }
 
@@ -60,7 +61,8 @@ final class Daemon: @unchecked Sendable {
         self.config = config
         registry = DefaultDeviceRegistry(persistPath: config.registryPersistPath, pollIntervalMs: config.pollMs)
         let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath)
-        remembered = RememberedDevices(path: config.devicesPath ?? RememberedDevices.pathBeside(socket: config.socketPath))
+        let devicesPath = config.devicesPath ?? RememberedDevices.pathBeside(socket: config.socketPath)
+        remembered = RememberedDevices(path: devicesPath.isEmpty ? nil : devicesPath)
         store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs, remembered: remembered)
         streams = StreamRegistry(store: store)
         let allocator = SessionCaptureAllocator(store: store)
@@ -154,38 +156,24 @@ final class Daemon: @unchecked Sendable {
 
     /// Opens and attaches every rtl_tcp source the daemon starts with: the `--rtltcp` flags first,
     /// then the endpoints remembered from earlier attaches, deduplicated on `host:port` so an
-    /// endpoint named both ways is opened once and belongs to the flag, which is what makes it the
-    /// operator's rather than a client's. A server that cannot be reached is hosted anyway, as a
-    /// `DISCONNECTED` device the registry's reconnect poll keeps calling: one dead remote never
-    /// keeps the daemon from serving local dongles, and a Pi that is merely off joins the moment it
-    /// answers.
+    /// endpoint named both ways is opened once. A server that cannot be reached is logged and left
+    /// in the list: one dead remote never keeps the daemon from serving local dongles, and a Pi that
+    /// is merely off comes back at the next start. (A link that drops after this is the registry's
+    /// reconnect poll, which needs an attached device to retry.)
     func attachRemoteDongles() async {
         var seen: Set<String> = []
-        let flagged = config.rtltcp.map { (endpoint: $0, origin: VirtualDeviceOrigin.operatorFlag) }
-        let saved = await remembered.list().map {
-            (endpoint: RTLTCPEndpoint(host: $0.host, port: $0.port), origin: VirtualDeviceOrigin.client)
-        }
-        for (ep, origin) in (flagged + saved).filter({ seen.insert("\($0.endpoint.host):\($0.endpoint.port)").inserted }) {
+        let endpoints = (config.rtltcp + (await remembered.list()).map { RTLTCPEndpoint(host: $0.host, port: $0.port) })
+            .filter { seen.insert("\($0.host):\($0.port)").inserted }
+        for ep in endpoints {
             let device = RTLTCPDevice(host: ep.host, port: ep.port)
-            var reached = true
             do {
                 try await device.open()
-            } catch {
-                reached = false
-                // The reconnect poll only retries devices the registry holds, so hosting this one
-                // disconnected is what gives it a way back.
-                device.setState(.disconnected)
-                log.warning("rtl_tcp \(ep.host):\(ep.port) is not answering (\(error)); hosting it and waiting")
-            }
-            do {
-                let attachment = try await registry.attachVirtualDevice(device, origin: origin)
+                let attachment = try await registry.attachVirtualDevice(device)
                 let id = attachment.descriptor.id.string
                 if attachment.alreadyHosted {
                     log.info("rtl_tcp \(ep.host):\(ep.port) already attached as \(id)")
-                } else if reached {
-                    log.info("attached rtl_tcp \(ep.host):\(ep.port) as \(id) (\(device.tunerName))")
                 } else {
-                    log.info("attached rtl_tcp \(ep.host):\(ep.port) as \(id), disconnected")
+                    log.info("attached rtl_tcp \(ep.host):\(ep.port) as \(id) (\(device.tunerName))")
                 }
             } catch {
                 log.error("rtl_tcp \(ep.host):\(ep.port): \(error)")

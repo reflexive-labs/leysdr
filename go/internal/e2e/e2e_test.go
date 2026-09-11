@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -164,8 +165,27 @@ func list(m map[string]any, key string) []any {
 
 // liveOutput is what a long-running verb wrote, stdout and stderr apart:
 // under --json stdout must be NDJSON only, so the two are never merged.
+// syncBuffer is a bytes.Buffer a test may read while the child is still writing it: exec copies
+// the process's output from its own goroutine, so an unguarded read of the buffer is a data race.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 type liveOutput struct {
-	out, errOut bytes.Buffer
+	out, errOut syncBuffer
 }
 
 // startLive launches a long-running ley verb (play/tune) and returns a stop func

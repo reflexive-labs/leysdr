@@ -122,9 +122,6 @@ actor SessionStore {
     private(set) var captures: [CaptureID: CaptureEntry] = [:]
     /// Devices whose capture is still starting (see createCapture).
     private var startingDevices: Set<DeviceID> = []
-    /// rtl_tcp endpoints (`host:port`) with an attach in flight: the connect takes seconds, and a
-    /// second attach of the same endpoint joins the first rather than opening a second socket.
-    private var attachingRemotes: [String: Task<DeviceDescriptor, any Error>] = [:]
     private(set) var channels: [ChannelID: ChannelEntry] = [:]
     private(set) var sinks: [SinkID: SinkEntry] = [:]
     private(set) var seq: UInt64 = 0
@@ -378,28 +375,14 @@ actor SessionStore {
 
     /// Attaches a dongle served by rtl_tcp and remembers the endpoint, so the station comes back
     /// with the daemon. One endpoint is one radio: an endpoint already hosted hands back the device
-    /// hosting it, and one another attach is still connecting to joins that attempt, so a second
-    /// socket is never opened. A radio the operator's `--rtltcp` flag brought up becomes the
-    /// client's, so it outlives the flag and can be detached. A server that cannot be reached is
-    /// `DEVICE_IO` naming the endpoint, with nothing remembered.
+    /// hosting it without opening a second connection. A server that cannot be reached is
+    /// `DEVICE_IO` naming the endpoint and nothing is remembered -- a radio never reached once is
+    /// usually a typo, and a typo should not outlive the command that made it.
     func attachRemoteDevice(host: String, port: UInt16, by: ClientContext) async throws -> DeviceDescriptor {
         let endpoint = "\(host):\(port)"
         if let existing = devices.values.first(where: { $0.driver == RTLTCPDevice.driverName && $0.serial == endpoint }) {
-            await registry.claimVirtualDevice(id: existing.id)
-            await remembered?.remember(.init(host: host, port: port))
             return existing
         }
-        if let inFlight = attachingRemotes[endpoint] { return try await inFlight.value }
-        let attach = Task<DeviceDescriptor, any Error> {
-            defer { attachingRemotes[endpoint] = nil }
-            return try await hostRemoteDevice(host: host, port: port, by: by)
-        }
-        attachingRemotes[endpoint] = attach
-        return try await attach.value
-    }
-
-    /// The connect half of `attachRemoteDevice`, as one task per endpoint.
-    private func hostRemoteDevice(host: String, port: UInt16, by: ClientContext) async throws -> DeviceDescriptor {
         let device = RTLTCPDevice(host: host, port: port)
         do {
             try await device.open()
@@ -407,55 +390,32 @@ actor SessionStore {
             await device.close()
             throw error
         }
-        let attachment: VirtualAttachment
-        do {
-            attachment = try await registry.attachVirtualDevice(device, origin: .client)
-        } catch {
-            // Nothing else holds the connection and its reader thread once hosting has failed.
-            await device.close()
-            throw error
-        }
+        let attachment = try await registry.attachVirtualDevice(device)
         let d = attachment.descriptor
         if devices[d.id] == nil {
             devices[d.id] = d
             emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: by)
         }
-        let saved = RememberedDevices.Endpoint(host: host, port: port)
-        await remembered?.remember(saved)
-        // A detach that landed while the endpoint was being remembered wins the endpoint: take the
-        // line out again so the next daemon does not bring back a radio somebody let go.
-        if devices[d.id] == nil { await remembered?.forget(saved) }
+        await remembered?.remember(.init(host: host, port: port))
         return d
     }
 
     /// Detaches a device a client attached, file or remote radio, with any capture on it. Validates
-    /// before mutating: unknown ids are `DEVICE_NOT_FOUND`, a dongle in this machine's port and a
-    /// radio the daemon's own command line asked for are `INVALID_ARGUMENT`, a device whose capture
-    /// is still starting is `DEVICE_BUSY`, and in every case no capture on that device is touched.
-    /// An rtl_tcp endpoint is forgotten here, so it does not come back at the next start.
+    /// before mutating: unknown ids are `DEVICE_NOT_FOUND`, a dongle in this machine's port is
+    /// `INVALID_ARGUMENT`, and in both cases no capture on that device is touched. An rtl_tcp
+    /// endpoint is forgotten here, so it does not come back at the next start.
     ///
-    /// `fileOnly` is `DetachFileDevice`, which names a file and gets one: any other device is
-    /// `INVALID_ARGUMENT` there, whatever it is.
+    /// `fileOnly` is the older `DetachFileDevice`, which names a file and gets one: any other device
+    /// is `DEVICE_NOT_FOUND` there, whatever it is.
     func detachDevice(id: DeviceID, by: ClientContext, fileOnly: Bool = false) async throws {
         guard let d = devices[id] else { throw EngineError.deviceNotFound(id.string) }
-        if fileOnly, d.driver != FilePlaybackDevice.driverName {
-            throw EngineError.invalidArgument("\(d.model) is not a file the daemon plays; DetachDevice takes any device a client attached", target: id.string)
-        }
+        if fileOnly, d.driver != FilePlaybackDevice.driverName { throw EngineError.deviceNotFound(id.string) }
         guard await registry.isDetachableVirtualDevice(id: id) else {
             throw EngineError.invalidArgument("\(d.model) is a radio plugged into this machine, not a device a client attached; unplug it", target: id.string)
         }
-        if await registry.virtualDeviceOrigin(id: id) == .operatorFlag {
-            throw EngineError.invalidArgument("\(d.model) is configured with --rtltcp on the daemon's command line; remove the flag", target: id.string)
-        }
-        // A capture opening this device holds it across an await; closing it under a starting
-        // engine would leave the engine with a device nothing owns. The window is seconds at most.
-        if startingDevices.contains(id) { throw EngineError.deviceStarting(id.string) }
         for (capID, entry) in captures where entry.deviceID == id {
             await destroyCapture(id: capID, by: by)
         }
-        // Everything above suspends, so a second detach can have finished meanwhile: say the device
-        // is gone rather than take apart what is already gone.
-        guard devices[id] != nil else { throw EngineError.deviceNotFound(id.string) }
         try await registry.detachVirtualDevice(id: id)
         if d.driver == RTLTCPDevice.driverName, let endpoint = RememberedDevices.Endpoint(serial: d.serial) {
             await remembered?.forget(endpoint)

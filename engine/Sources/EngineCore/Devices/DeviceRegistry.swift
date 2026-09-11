@@ -63,9 +63,6 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         /// USB index while the dongle is attached; nil for file devices.
         var rtlIndex: UInt32?
         var key: String
-        /// How a hosted virtual device arrived; nil for a dongle in this machine's port, which
-        /// nobody attached.
-        var origin: VirtualDeviceOrigin?
         /// The dongle is claimed by another program (its probe `rtlsdr_open` failed): reported
         /// `.inUse` with feature `held_externally`, re-probed with backoff until it opens.
         var heldExternally = false
@@ -175,26 +172,19 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             Task { await self.deviceStateChanged(id: id, state: state) }
         }
         let descriptor = device.descriptor
-        entries[id] = Entry(descriptor: descriptor, device: device, rtlIndex: nil, key: key, origin: .client)
+        entries[id] = Entry(descriptor: descriptor, device: device, rtlIndex: nil, key: key)
         publish(.arrived(descriptor))
         return descriptor
     }
 
-    /// Whether `id` names a hosted virtual device rather than a dongle in this machine's port
-    /// (`rtlIndex == nil`). A file the daemon plays and a radio served by rtl_tcp are both hosted and
-    /// both leave the same way; a dongle leaves when someone pulls it. Non-mutating, so callers can
-    /// reject a request before touching any capture.
+    /// Whether `id` names a hosted virtual device clients may detach: the entry exists and it is not
+    /// a USB dongle (`rtlIndex == nil`). A file the daemon plays and a radio served by rtl_tcp both
+    /// arrived over the protocol and both leave the same way; a dongle in this machine's port leaves
+    /// when someone pulls it. Non-mutating, so callers can reject a request before touching any
+    /// capture.
     public func isDetachableVirtualDevice(id: DeviceID) -> Bool {
         guard let entry = entries[id] else { return false }
         return entry.rtlIndex == nil
-    }
-
-    /// How a hosted virtual device arrived, or nil for an id that is not hosted (a dongle, or no
-    /// such device). A caller deciding whether a client may detach it needs both this and
-    /// `isDetachableVirtualDevice`.
-    public func virtualDeviceOrigin(id: DeviceID) -> VirtualDeviceOrigin? {
-        guard let entry = entries[id], entry.rtlIndex == nil else { return nil }
-        return entry.origin
     }
 
     /// Detaches any hosted virtual device (file playback or `attachVirtualDevice`).
@@ -210,17 +200,14 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// Hosts any non-USB `RadioDevice` (e.g. `RTLTCPDevice`). Identity is `(serial, driver, model)`
     /// of the device's own descriptor; the stable id is minted from that. Devices conforming to
     /// `VirtualDevice` get the registry id assigned and the state-change hook installed so their
-    /// own `.disconnected` transitions publish `changed` like an unplug. `origin` records who asked
-    /// for it; a client attaching an endpoint the operator's flag already hosts takes ownership of
-    /// it, so the radio stays when the flag goes.
-    public func attachVirtualDevice(_ device: any RadioDevice, origin: VirtualDeviceOrigin = .client) async throws -> VirtualAttachment {
+    /// own `.disconnected` transitions publish `changed` like an unplug.
+    public func attachVirtualDevice(_ device: any RadioDevice) async throws -> VirtualAttachment {
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: provisional.driver, product: provisional.model)
-        if let (id, existing) = entries.first(where: { $0.value.key == key && $0.value.rtlIndex == nil }) {
+        if let existing = entries.values.first(where: { $0.key == key && $0.rtlIndex == nil }) {
             // Callers open before attaching, so a second instance of the same identity arrives with a
             // live socket and a reader thread that nothing else holds a reference to: close it here.
             if !(existing.device === device) { await device.close() }
-            if origin == .client { claimVirtualDevice(id: id) }
             return VirtualAttachment(descriptor: existing.descriptor, alreadyHosted: true)
         }
         let id = stableID(for: key)
@@ -233,17 +220,9 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             }
         }
         let descriptor = device.descriptor
-        entries[id] = Entry(descriptor: descriptor, device: device, rtlIndex: nil, key: key, origin: origin)
+        entries[id] = Entry(descriptor: descriptor, device: device, rtlIndex: nil, key: key)
         publish(.arrived(descriptor))
         return VirtualAttachment(descriptor: descriptor, alreadyHosted: false)
-    }
-
-    /// Records that a client now owns a hosted virtual device the operator's command line brought
-    /// up, so it stays when the flag goes and the client may detach it. Anything else -- a dongle, a
-    /// device a client already owns -- is unchanged.
-    public func claimVirtualDevice(id: DeviceID) {
-        guard let entry = entries[id], entry.rtlIndex == nil, entry.origin == .operatorFlag else { return }
-        entries[id]?.origin = .client
     }
 
     /// Records a state flip reported by a device (e.g. file playback reaching EOF → `.disconnected`).

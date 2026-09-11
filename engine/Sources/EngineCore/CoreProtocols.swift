@@ -125,20 +125,9 @@ public protocol DeviceRegistry: AnyObject, Sendable {
     func attachFileDevice(path: String, loop: Bool) async throws -> DeviceDescriptor
     /// Hosts an already-constructed virtual device (network source, synthetic source). The registry
     /// assigns the stable id, installs its state-change hook and publishes `arrived`.
-    func attachVirtualDevice(_ device: any RadioDevice, origin: VirtualDeviceOrigin) async throws -> VirtualAttachment
+    func attachVirtualDevice(_ device: any RadioDevice) async throws -> VirtualAttachment
     /// Detaches any virtual device (file or `attachVirtualDevice`): closes it and publishes `removed`.
     func detachVirtualDevice(id: DeviceID) async throws
-}
-
-/// How a hosted virtual device arrived, which decides whether a client may let it go: a radio named
-/// by `--rtltcp` is operator configuration and outlives every client, while one attached over the
-/// protocol is the client's to detach. Attaching a flag-hosted endpoint over the protocol makes it
-/// `client`, so it persists once the flag goes.
-public enum VirtualDeviceOrigin: Sendable {
-    /// Named on the daemon's command line (or its environment).
-    case operatorFlag
-    /// Attached over the protocol, or hosted on a client's behalf (file playback).
-    case client
 }
 
 /// What hosting a virtual device produced: the descriptor it is known by, and whether that identity
