@@ -14,6 +14,9 @@ final class BulkSubscription: @unchecked Sendable {
         case audio(AudioFrameSource, any ChannelEngine)
         case iq(FrameRing, IQFrameTap, any CaptureEngine)
         case persistence(FrameRing, SpectrumSubscription, any SpectrumLadder, PersistenceFrameSink)
+        /// An FFT of a channel's audio: the rows come off the channel's own sink table rather than
+        /// the capture's ladder, so it is torn down like the audio tap it reads.
+        case audioSpectrum(FrameRing, AudioSpectrumSink, any ChannelEngine)
     }
 
     let id: StreamID
@@ -43,11 +46,21 @@ final class BulkSubscription: @unchecked Sendable {
     func cancelReader() {
         readerCancelled.store(true, ordering: .releasing)
         switch source {
-        case .fft(let ring, _, _, _), .iq(let ring, _, _), .persistence(let ring, _, _, _): ring.wake()
+        case .fft(let ring, _, _, _), .iq(let ring, _, _), .persistence(let ring, _, _, _),
+             .audioSpectrum(let ring, _, _): ring.wake()
         case .audio(let audio, _): audio.wake()
         }
     }
     func markClosed() { closed.store(true, ordering: .releasing) }
+    /// Whether this stream is fed by a channel tap, and so stops being true the moment the audio
+    /// rate under it can move: both the audio stream and the spectrum taken off it describe a rate
+    /// their descriptor named, and a client re-subscribes for a fresh one.
+    var readsChannelAudio: Bool {
+        switch source {
+        case .audio, .audioSpectrum: true
+        default: false
+        }
+    }
 
     init(id: StreamID, descriptor: Leyline_V1_StreamDescriptor, captureID: CaptureID, channelID: ChannelID?, source: Source) {
         self.id = id
@@ -139,19 +152,23 @@ actor StreamRegistry {
         let source: BulkSubscription.Source
         switch req.kind {
         case .fft:
-            guard channelID == nil else { throw EngineError.invalidArgument("FFT streams are capture-scoped", target: channelID!.string) }
             let want = req.fft
-            var rows = want.rowsPerSecond > 0 ? want.rowsPerSecond : Self.defaultFFTRows
-            rows = min(rows, DefaultSpectrumLadder.maxRowsPerSecond)
-            let format: Leyline_V1_FftBinFormat = want.binFormat == .unspecified ? .dbF32 : want.binFormat
-            let bins = DefaultSpectrumLadder.roundBins(want.bins == 0 ? 1024 : Int(want.bins))
-            let ring = FrameRing(slots: Self.fftSlots, slotBytes: bins * 4)
-            let sink = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8)
             // looks_per_row is an answer, never a request: a client asking for a look count would
             // be asking the daemon to spend CPU it does not own.
             if want.looksPerRow != 0 {
                 throw EngineError.invalidArgument("looks_per_row is answered by the daemon; leave it 0")
             }
+            let format: Leyline_V1_FftBinFormat = want.binFormat == .unspecified ? .dbF32 : want.binFormat
+            if let ch = channel, let chID = channelID {
+                source = try await subscribeAudioSpectrum(channel: ch, id: chID, want: want,
+                                                          format: format, into: &desc)
+                break
+            }
+            var rows = want.rowsPerSecond > 0 ? want.rowsPerSecond : Self.defaultFFTRows
+            rows = min(rows, DefaultSpectrumLadder.maxRowsPerSecond)
+            let bins = DefaultSpectrumLadder.roundBins(want.bins == 0 ? 1024 : Int(want.bins))
+            let ring = FrameRing(slots: Self.fftSlots, slotBytes: bins * 4)
+            let sink = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8)
             let accumulation: SpectrumAccumulation
             switch want.accumulation {
             case .unspecified, .rowSnapshot: accumulation = .snapshot
@@ -288,6 +305,50 @@ actor StreamRegistry {
         return desc
     }
 
+    /// The channel-scoped half of `FFT`: the spectrum of what the channel produces rather than of
+    /// the radio it came from. Rows come off the channel's sink table, so the tap rules and the
+    /// teardown are the audio stream's; only the row layout is the ladder's.
+    private func subscribeAudioSpectrum(channel ch: any ChannelEngine, id chID: ChannelID,
+                                        want: Leyline_V1_FftParams, format: Leyline_V1_FftBinFormat,
+                                        into desc: inout Leyline_V1_StreamDescriptor) async throws -> BulkSubscription.Source
+    {
+        // No detector and no audio on a raw-IQ channel, so there is no stage to take a spectrum of;
+        // the band is what `capture_id` already answers.
+        guard await ch.config.mode != .rawIQ else {
+            throw EngineError.invalidArgument(
+                "a channel FFT is the spectrum of the channel's audio; this one is raw IQ", target: chID.string)
+        }
+        let tap: AudioTap
+        switch want.tap {
+        case .tapAudio: tap = .audio
+        case .tapDemod: tap = .demod
+        case .UNRECOGNIZED(let v):
+            throw EngineError.invalidArgument("unknown AudioTap \(v)", target: chID.string)
+        }
+        let bins = AudioSpectrumSink.roundBins(want.bins == 0 ? 1024 : Int(want.bins))
+        let rows = AudioSpectrumSink.roundRate(want.rowsPerSecond)
+        let ring = FrameRing(slots: Self.fftSlots, slotBytes: bins * 4)
+        let frames = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8)
+        let spectrum = AudioSpectrumSink(tap: tap, bins: bins, rowsPerSecond: rows,
+                                         audioRate: ch.audioRate, sink: frames)
+        try await ch.attach(spectrum)
+        var p = Leyline_V1_FftParams()
+        p.bins = UInt32(bins)
+        p.binFormat = format
+        p.rowsPerSecond = rows
+        // A row is one transform of one window, so there is nothing to accumulate over: the
+        // accumulation a client asked for is answered with the snapshot it actually gets.
+        p.accumulation = .rowSnapshot
+        p.looksPerRow = 1
+        p.tap = want.tap
+        desc.fft = p
+        // The frequency axis in the terms every FFT reader already understands: the row runs from
+        // 0 Hz to half the audio rate.
+        desc.centerHz = spectrum.centerHz
+        desc.spanHz = spectrum.spanHz
+        return .audioSpectrum(ring, spectrum, ch)
+    }
+
     /// Marks a Stream reader attached; `STREAM_NOT_FOUND` when the stream does not exist,
     /// `FAILED_PRECONDITION` when another Stream RPC is already draining it (one ring, one reader).
     func beginReading(_ id: StreamID) throws -> BulkSubscription {
@@ -335,9 +396,9 @@ actor StreamRegistry {
             case .capture(let c) where sub.captureID == c: await close(sub, detach: false)
             case .channel(let ch) where sub.channelID == ch: await close(sub, detach: false)
             case .channelAudioRate(let ch) where sub.channelID == ch:
-                if case .audio = sub.source { await close(sub) }
+                if sub.readsChannelAudio { await close(sub) }
             case .captureRate(let c) where sub.captureID == c:
-                if case .audio = sub.source { await close(sub) }
+                if sub.readsChannelAudio { await close(sub) }
             default: break
             }
         }
@@ -358,6 +419,10 @@ actor StreamRegistry {
             audio.finish()
         case .iq(let ring, let tap, let capture):
             if detach { await capture.removeTap(id: tap.id) }
+            ring.finish()
+        case .audioSpectrum(let ring, let spectrum, let channel):
+            if detach { await channel.detach(spectrum.id) }
+            await spectrum.closeSink()
             ring.finish()
         }
     }
@@ -386,7 +451,8 @@ actor StreamRegistry {
             return f
         }
         switch sub.source {
-        case .fft(let ring, _, _, _), .iq(let ring, _, _), .persistence(let ring, _, _, _):
+        case .fft(let ring, _, _, _), .iq(let ring, _, _), .persistence(let ring, _, _, _),
+             .audioSpectrum(let ring, _, _):
             for await _ in ring.poke {
                 while let p = ring.pop() {
                     try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples, seq: p.seq))

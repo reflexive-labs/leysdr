@@ -213,4 +213,43 @@ final class MalformedInputDaemonTests: XCTestCase {
             XCTAssertEqual(state.captures.count, 1)
         }
     }
+
+    /// A channel-sourced FFT is negotiated on the same params as the band's, so the same absurd
+    /// values arrive on it: every one of them is clamped to something the daemon can serve, and the
+    /// descriptor says what that was.
+    func testAbsurdChannelSpectrumParamsClamp() async throws {
+        guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
+        try await withDaemon { c in
+            let capture = try await self.attachFixtureCapture(c)
+            var cch = Leyline_V1_CreateChannelRequest()
+            cch.captureID = capture.captureID
+            cch.offsetHz = 100_000
+            cch.mode = .nfm
+            let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+            let cases: [(name: String, bins: UInt32, rows: Double, wantBins: UInt32, wantRows: Double)] = [
+                ("bins past the ladder", .max, 10, 16384, 10),
+                ("a rate past the cap", 512, 1e300, 512, AudioSpectrumSink.maxRowsPerSecond),
+                ("a rate that is not a number", 512, .nan, 512, AudioSpectrumSink.maxRowsPerSecond),
+                ("a denormal rate", 512, 1e-300, 512, DefaultSpectrumLadder.minRowsPerSecond),
+            ]
+            for (name, bins, rows, wantBins, wantRows) in cases {
+                var req = Leyline_V1_SubscribeRequest()
+                req.channelID = channel.channelID
+                req.kind = .fft
+                req.policy = .latestWins
+                req.transport = .grpc
+                req.fft.bins = bins
+                req.fft.rowsPerSecond = rows
+                req.fft.binFormat = .dbF32
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                XCTAssertEqual(desc.fft.bins, wantBins, "\(name) bins")
+                XCTAssertEqual(desc.fft.rowsPerSecond, wantRows, "\(name) rows_per_second")
+                var ref = Leyline_V1_StreamRef()
+                ref.streamID = desc.streamID
+                _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+            }
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.channels.count, 1)
+        }
+    }
 }

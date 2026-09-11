@@ -210,6 +210,29 @@ either tap; only the audio-level meter reads the conditioned block. A raw-IQ cha
 detector, so attaching a `.demod` sink to one is `INVALID_ARGUMENT`, and so is a `TAP_DEMOD`
 subscription over the bulk plane.
 
+### The audio spectrum
+
+A channel tap has a spectrum of its own, and `AudioSpectrumSink` is it: an `AudioSink` like any
+other, so it rides the same sink table and the same tap rules, and a channel nobody is metering
+does no work for it at all. It keeps a sliding window of `2 × bins` samples of whichever tap it
+asked for, and whenever the window has advanced by `rate / rows_per_second` samples it Hann-windows
+the newest window, runs it through the ladder's `FFTPlan` with a zero imaginary half, and emits the
+first `bins` magnitudes in dB — 0 Hz to half the audio rate, DC first, not fft-shifted, because
+half the row of a real signal is the mirror of the other half. The scale is `-20·log10(Σw/2)`,
+where the half is the energy a real sine puts in its negative frequency, so a full-scale sine reads
+about 0 dBFS at its own bin. Window and scratch are sized at subscribe: the write path copies,
+transforms and calls the `SpectrumSink`, and allocates nothing.
+
+A row rate faster than the window is long overlaps windows, a slower one leaves samples between
+them unlooked-at, and either way the row is the newest window rather than a summary of the interval
+it closed — which is what a meter wants, and the reason `accumulation` does not apply here. `bins` rounds to a ladder size so every FFT reader's row
+layout holds, and rows are capped at 20 a second — a row is a whole transform, and a meter is read
+by eye. Over the bulk plane this is `kind = FFT` with a `channel_id` source; the descriptor answers
+`center_hz = rate/4` and `span_hz = rate/2`, `ROW_SNAPSHOT` with one look, and the tap it serves. A
+raw-IQ channel has no audio and refuses with `INVALID_ARGUMENT`, as does an unknown tap. Because
+the stream reads a channel tap, it ends exactly as a bulk audio stream does when the audio rate
+under it can move.
+
 ### Squelch and meters
 
 Per block the channel computes mean power of the post-filter IQ in dBFS (`10·log10(mean|x|²)`).
@@ -476,7 +499,9 @@ cancellation) or when the daemon shuts down and finishes the event stream.
 `grpc` (SHM_RING requests are downgraded — the ring is a later milestone); `start` must be `live`
 (`UNIMPLEMENTED` otherwise); policy defaults to `LATEST_WINS`, `GAP_MARKED` honoured by emitting `Gap`.
 FFT: bins/rate via the ladder; bin format `DB_F32` (little-endian f32) or `DB_U8`
-(`clamp(round((db + 120) · 2), 0, 255)`). Audio: channel `audioRate`, `S16` or `F32` mono; a
+(`clamp(round((db + 120) · 2), 0, 255)`). An FFT whose source is a channel is that channel's audio
+spectrum instead of the band's (see “The audio spectrum”), and is torn down with the audio streams
+rather than with the ladder's. Audio: channel `audioRate`, `S16` or `F32` mono; a
 requested `sample_rate` that is neither 0 nor the channel's rate is `INVALID_ARGUMENT` (no
 resampling in v0, and the daemon never upgrades). Any write that re-plans a channel at a new audio
 rate — a capture-rate write, a retune that brings the channel back into capture, a mode, bandwidth

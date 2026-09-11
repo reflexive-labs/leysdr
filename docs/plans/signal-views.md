@@ -446,7 +446,7 @@ language the renderers must match and the honesty rules (ballistics shape bars, 
   `carrierTone` PL at its level, at the negotiated bins and rate; `rawIQ` refused; the descriptor
   echoes tap, bins, rate, centre and span. Tests in the fake's suite.
 
-### SV-10b `[ ]` The audio spectrum in the engine and the daemon (Swift lane)
+### SV-10b `[x]` The audio spectrum in the engine and the daemon (Swift lane)
 
 - `ChannelDSPCore` gains a spectrum tap beside the audio sinks: subscribers are fed from the
   audio or demod block into a sliding window (`2 × bins` samples), Hann-windowed, transformed with
@@ -467,6 +467,17 @@ language the renderers must match and the honesty rules (ballistics shape bars, 
   channel, rows arrive with the echoed descriptor; `rawIQ` refused; `MalformedInputTests` for
   absurd `bins` and `rows_per_second`. `docs/engine-internals.md` paragraph under the channel
   pipeline.
+
+The spectrum tap is an `AudioSink`, which is what let it inherit the demod tap's rules whole: it
+sits in the same sink table, is refused on a raw-IQ channel for the same reason the demod tap is
+(nothing there produces audio to take a spectrum of), and is torn down with the audio streams on an
+audio-rate change (`BulkSubscription.readsChannelAudio` is the one place that says so for both). `AudioSpectrumSink` keeps a `2 × bins` sliding window, emits every
+`rate / rows_per_second` samples, and scales by `-20·log10(Σw/2)` -- the half being the energy a
+real sine puts in its negative frequency -- so a full-scale sine reads 0 dBFS at its bin, which a
+synthetic test asserts to 0.5 dB on a bin centre. The fixture tests read the pair of taps as
+spectra: the PL and the voice tone are the demod tap's two peaks, and 100 Hz is more than 12 dB
+down on the audio tap. Absurd `bins` and `rows_per_second` clamp rather than refuse, like the
+ladder's.
 
 ### SV-10c `[ ]` `ley levels` (Go lane, against the fake)
 
