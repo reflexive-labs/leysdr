@@ -17,8 +17,8 @@ GOBIN := $(CURDIR)/go/bin
 SWIFT_CONFIG ?= debug
 FIXTURE_DURATION ?= 1
 # The root VERSION file is the single source of truth. Swift reads a generated constant (make
-# version); the Go binaries are stamped at link time. Only the commit tagged v$(VERSION) prints the
-# bare number: anything else carries what it actually is — `0.1.0+3-gd34db33-dirty`, or
+# version); the Go binaries are stamped at link time. A checkout sitting on the tag v$(VERSION)
+# prints the bare number; anything else carries what it actually is — `0.1.0+3-gd34db33-dirty`, or
 # `0.1.0-dev+d34db33` before the first tag — so a bug report names one tree.
 VERSION := $(shell tr -d '[:space:]' < $(CURDIR)/VERSION)
 GIT_DESCRIBE := $(shell git -C $(CURDIR) describe --tags --always --dirty --match 'v*' --abbrev=7 2>/dev/null | sed 's/^v$(VERSION)-//')
@@ -50,7 +50,7 @@ version:
 version-check:
 	./scripts/gen-version.sh
 	git diff --exit-code -- engine/Sources/LeylineDaemon/Version.swift
-	cd go && go test -run TestVersionMatchesTheSourceOfTruth ./internal/cli/
+	cd go && go test -count=1 -run TestVersionMatchesTheSourceOfTruth ./internal/cli/
 
 go:
 	cd go && GOBIN=$(GOBIN) go install -ldflags '$(GO_LDFLAGS)' ./cmd/...
