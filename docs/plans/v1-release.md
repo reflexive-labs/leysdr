@@ -103,7 +103,7 @@ message. Invariant 7 says state lives in the daemon, which means an additive `Bo
 small store; the alternative is app-local data the CLI and agents cannot see. Additive either way, so
 not a blocker, but decide before the app starts.
 
-**D7 — Remote radios as daemon state.** R-20 replaces the `--rtltcp` flag with an attach RPC and a
+**D7 — Remote radios as daemon state.** Taken: R-20 is built. It replaces the `--rtltcp` flag with an attach RPC and a
 remembered device list. It is what the "dongle on another machine" story the README advertises
 needs to be usable under launchd. Decide whether it is in v1.0 (recommended if the cut includes
 that story) or first after.
@@ -490,14 +490,14 @@ steps (VERSION bump, `make check` on both hosts, tag, release notes).
 
 ### R-18 `[d]` Trademark check (owner; D3)
 
-### R-19 `[ ]` Signposts on the sample-path code added since Milestone B (S, Opus)
+### R-19 `[x]` Signposts on the sample-path code added since Milestone B (S, Opus)
 
 `Signposts.swift` names six intervals and none covers `AudioSink.write` (`CoreAudioSink`,
 `CallbackSink`), the daemon's `FrameRing` writes, the persistence accumulator, or the sweep's row
 collection. Add the names and the intervals (the wrappers are already allocation-free and compile to
 nothing off macOS), so the S1/S2 Instruments runs in R-16 can see the whole path.
 
-### R-20 `[d]` Remote radios become daemon state (M, Opus; after D7)
+### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
 
 Today a dongle served by `rtl_tcp` is a daemon flag (`leylined --rtltcp host:port`) or an environment
 variable, read once at startup. Under launchd that means editing the plist and restarting the
