@@ -114,6 +114,8 @@ actor SessionStore {
     let info: DaemonInfo
     /// Grace period after a client's presence ends before its non-persistent channels are reaped.
     let presenceGraceNs: UInt64
+    /// The attach list on disk; nil when nothing is remembered across restarts (tests).
+    private let remembered: RememberedDevices?
     private let log = Logger(label: "leyline.store")
 
     private(set) var devices: [DeviceID: DeviceDescriptor] = [:]
@@ -146,10 +148,12 @@ actor SessionStore {
     /// channel is dragged across megahertz with no explanation.
     private var swept: Set<CaptureID> = []
 
-    init(registry: DefaultDeviceRegistry, info: DaemonInfo, presenceGraceNs: UInt64 = 5_000_000_000) {
+    init(registry: DefaultDeviceRegistry, info: DaemonInfo, presenceGraceNs: UInt64 = 5_000_000_000,
+         remembered: RememberedDevices? = nil) {
         self.registry = registry
         self.info = info
         self.presenceGraceNs = presenceGraceNs
+        self.remembered = remembered
     }
 
     func setTeardownHook(_ hook: @escaping @Sendable (TeardownScope) async -> Void) { teardownHook = hook }
@@ -369,18 +373,53 @@ actor SessionStore {
         return d
     }
 
-    /// Detaches a client-attached file device. Validates before mutating: unknown ids are
-    /// `DEVICE_NOT_FOUND`, hardware and operator-configured (rtl_tcp) ids are `INVALID_ARGUMENT`,
-    /// and in both cases no capture on that device is touched.
-    func detachFileDevice(id: DeviceID, by: ClientContext) async throws {
+    /// Attaches a dongle served by rtl_tcp and remembers the endpoint, so the station comes back
+    /// with the daemon. One endpoint is one radio: an endpoint already hosted hands back the device
+    /// hosting it without opening a second connection. A server that cannot be reached is
+    /// `DEVICE_IO` naming the endpoint and nothing is remembered -- a radio never reached once is
+    /// usually a typo, and a typo should not outlive the command that made it.
+    func attachRemoteDevice(host: String, port: UInt16, by: ClientContext) async throws -> DeviceDescriptor {
+        let endpoint = "\(host):\(port)"
+        if let existing = devices.values.first(where: { $0.driver == RTLTCPDevice.driverName && $0.serial == endpoint }) {
+            return existing
+        }
+        let device = RTLTCPDevice(host: host, port: port)
+        do {
+            try await device.open()
+        } catch {
+            await device.close()
+            throw error
+        }
+        let attachment = try await registry.attachVirtualDevice(device)
+        let d = attachment.descriptor
+        if devices[d.id] == nil {
+            devices[d.id] = d
+            emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: by)
+        }
+        await remembered?.remember(.init(host: host, port: port))
+        return d
+    }
+
+    /// Detaches a device a client attached, file or remote radio, with any capture on it. Validates
+    /// before mutating: unknown ids are `DEVICE_NOT_FOUND`, a dongle in this machine's port is
+    /// `INVALID_ARGUMENT`, and in both cases no capture on that device is touched. An rtl_tcp
+    /// endpoint is forgotten here, so it does not come back at the next start.
+    ///
+    /// `fileOnly` is the older `DetachFileDevice`, which names a file and gets one: any other device
+    /// is `DEVICE_NOT_FOUND` there, whatever it is.
+    func detachDevice(id: DeviceID, by: ClientContext, fileOnly: Bool = false) async throws {
         guard let d = devices[id] else { throw EngineError.deviceNotFound(id.string) }
-        guard await registry.isDetachableFileDevice(id: id) else {
-            throw EngineError.invalidArgument("device is not a detachable file device (driver \(d.driver))", target: id.string)
+        if fileOnly, d.driver != FilePlaybackDevice.driverName { throw EngineError.deviceNotFound(id.string) }
+        guard await registry.isDetachableVirtualDevice(id: id) else {
+            throw EngineError.invalidArgument("\(d.model) is a radio plugged into this machine, not a device a client attached; unplug it", target: id.string)
         }
         for (capID, entry) in captures where entry.deviceID == id {
             await destroyCapture(id: capID, by: by)
         }
-        try await registry.detachFileDevice(id: id)
+        try await registry.detachVirtualDevice(id: id)
+        if d.driver == RTLTCPDevice.driverName, let endpoint = RememberedDevices.Endpoint(serial: d.serial) {
+            await remembered?.forget(endpoint)
+        }
         if var d = devices.removeValue(forKey: id) {
             d.state = .disconnected
             emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: by)

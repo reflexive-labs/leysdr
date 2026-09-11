@@ -5,6 +5,7 @@
 //   LeylineProto   generated leyline.v1 messages + grpc-swift 2 stubs (never hand-edit; `make proto`)
 //   CRTLSDR        system-library shim over librtlsdr (brew install librtlsdr)
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
+//   TestSupport    fakes shared by both test suites (test-only; no product depends on it)
 //   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
 //                  to proto, and the session and job stores hold proto messages as their own
 //                  record type
@@ -74,9 +75,14 @@ let package = Package(
             dependencies: ["EngineCore"],
             path: "Sources/S2Throughput"
         ),
+        .target(
+            name: "TestSupport",
+            dependencies: ["EngineCore"],
+            path: "Tests/TestSupport"
+        ),
         .testTarget(
             name: "EngineCoreTests",
-            dependencies: ["EngineCore"],
+            dependencies: ["EngineCore", "TestSupport"],
             path: "Tests/EngineCoreTests"
         ),
         .testTarget(
@@ -85,6 +91,7 @@ let package = Package(
                 "LeylineDaemon",
                 "EngineCore",
                 "LeylineProto",
+                "TestSupport",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),

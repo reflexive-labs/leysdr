@@ -21,6 +21,9 @@ final class Daemon: @unchecked Sendable {
         var registryPersistPath: String? = nil
         /// Remote dongles (rtl_tcp servers) to attach at startup. Failures are logged, never fatal.
         var rtltcp: [RTLTCPEndpoint] = []
+        /// The remembered attach list. nil puts `devices.json` beside the socket; "" forgets
+        /// everything when the daemon stops (tests that want no file on disk).
+        var devicesPath: String? = nil
     }
 
     /// A parsed `--rtltcp host:port`.
@@ -46,6 +49,8 @@ final class Daemon: @unchecked Sendable {
     let config: Config
     let registry: DefaultDeviceRegistry
     let store: SessionStore
+    /// rtl_tcp endpoints the station keeps across restarts.
+    let remembered: RememberedDevices
     let streams: StreamRegistry
     let jobs: JobStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
@@ -56,7 +61,9 @@ final class Daemon: @unchecked Sendable {
         self.config = config
         registry = DefaultDeviceRegistry(persistPath: config.registryPersistPath, pollIntervalMs: config.pollMs)
         let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath)
-        store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs)
+        let devicesPath = config.devicesPath ?? RememberedDevices.pathBeside(socket: config.socketPath)
+        remembered = RememberedDevices(path: devicesPath.isEmpty ? nil : devicesPath)
+        store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs, remembered: remembered)
         streams = StreamRegistry(store: store)
         let allocator = SessionCaptureAllocator(store: store)
         jobs = JobStore(store: store, allocator: allocator)
@@ -147,10 +154,17 @@ final class Daemon: @unchecked Sendable {
         if let served { throw served }
     }
 
-    /// Opens and attaches each configured rtl_tcp source. An unreachable server is logged and
-    /// skipped so one dead remote never keeps the daemon from serving local dongles.
+    /// Opens and attaches every rtl_tcp source the daemon starts with: the `--rtltcp` flags first,
+    /// then the endpoints remembered from earlier attaches, deduplicated on `host:port` so an
+    /// endpoint named both ways is opened once. A server that cannot be reached is logged and left
+    /// in the list: one dead remote never keeps the daemon from serving local dongles, and a Pi that
+    /// is merely off comes back at the next start. (A link that drops after this is the registry's
+    /// reconnect poll, which needs an attached device to retry.)
     func attachRemoteDongles() async {
-        for ep in config.rtltcp {
+        var seen: Set<String> = []
+        let endpoints = (config.rtltcp + (await remembered.list()).map { RTLTCPEndpoint(host: $0.host, port: $0.port) })
+            .filter { seen.insert("\($0.host):\($0.port)").inserted }
+        for ep in endpoints {
             let device = RTLTCPDevice(host: ep.host, port: ep.port)
             do {
                 try await device.open()

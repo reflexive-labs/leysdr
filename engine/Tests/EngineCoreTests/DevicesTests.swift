@@ -391,7 +391,7 @@ final class DevicesRegistryTests: XCTestCase {
         try await reg.markInUse(id: desc.id, false)
         _ = try await next(&a); _ = try await next(&b)
 
-        try await reg.detachFileDevice(id: desc.id)
+        try await reg.detachVirtualDevice(id: desc.id)
         guard case .removed(let rid) = try await next(&a) else { return XCTFail("expected removed") }
         XCTAssertEqual(rid, desc.id)
         guard case .removed = try await next(&b) else { return XCTFail("expected removed") }
@@ -399,7 +399,7 @@ final class DevicesRegistryTests: XCTestCase {
         XCTAssertTrue(empty.isEmpty)
         let gone = await reg.device(id: desc.id)
         XCTAssertNil(gone)
-        await assertCode("DEVICE_NOT_FOUND") { try await reg.detachFileDevice(id: desc.id) }
+        await assertCode("DEVICE_NOT_FOUND") { try await reg.detachVirtualDevice(id: desc.id) }
     }
 
     func testEOFPublishesDisconnected() async throws {

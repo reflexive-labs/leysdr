@@ -36,11 +36,14 @@ struct DaemonClients {
 /// Boots a daemon on a temp socket, runs `body` with connected clients, then shuts down.
 /// `shutdownDeadlineNs` puts a watchdog on the teardown: tests about handlers ending on cancellation
 /// need shutdown to be prompt, and a hung handler shows up here rather than as a stalled suite.
-func withDaemon(presenceGraceNs: UInt64 = 5_000_000_000, shutdownDeadlineNs: UInt64? = nil,
+/// `dir` runs the daemon in a directory the caller owns and keeps -- what a daemon leaves beside
+/// its socket (the remembered device list) is then still there for the next one.
+func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shutdownDeadlineNs: UInt64? = nil,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
-    let dir = NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
+    let caller = dir
+    let dir = caller ?? (NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))")
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(atPath: dir) }
+    defer { if caller == nil { try? FileManager.default.removeItem(atPath: dir) } }
     let socket = dir + "/d.sock"
     let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000, presenceGraceNs: presenceGraceNs))
     let serverTask = Task { try await daemon.run() }

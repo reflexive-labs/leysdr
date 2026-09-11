@@ -36,10 +36,12 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   │                         Resources (UNIMPLEMENTED in v0)
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
+│   ├── RememberedDevices.swift  devices.json beside the socket: the rtl_tcp endpoints to re-attach
 │   └── Mapping/              engine <-> proto conversions
-└── Tests/EngineCoreTests     unit tests; fixture round-trips. Most of the target builds and runs on Linux;
-                              `KernelParityTests` and anything under `#if canImport(Accelerate)` or
-                              `#if canImport(AVFoundation)` need macOS and do not compile elsewhere.
+├── Tests/EngineCoreTests     unit tests; fixture round-trips. Most of the target builds and runs on Linux;
+│                             `KernelParityTests` and anything under `#if canImport(Accelerate)` or
+│                             `#if canImport(AVFoundation)` need macOS and do not compile elsewhere.
+└── Tests/TestSupport         fakes both test targets drive (the rtl_tcp server); no product depends on it
 ```
 
 Go clients live in `go/` (`docs/interfaces.md` for the verb tree). `go/internal/fakedaemon` is an in-memory
@@ -254,9 +256,11 @@ as the consumer drains. At EOF: loop if configured, else stop delivering and mar
 
 ### RTLTCPDevice (remote dongle over rtl_tcp)
 
-A dongle served by osmocom's `rtl_tcp` on another machine, presented as a virtual device. Attached
-at startup by `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`, comma-separated) via
-`DeviceRegistry.attachVirtualDevice`; an unreachable server is logged and skipped, never fatal.
+A dongle served by osmocom's `rtl_tcp` on another machine, presented as a virtual device. Clients
+attach one with `Control.AttachDevice{rtl_tcp{host, port}}` (see "Remembered devices"); a foreground
+run can also name endpoints with `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`,
+comma-separated). Both paths go through `DeviceRegistry.attachVirtualDevice`; a server that cannot be
+reached at startup is logged and skipped, never fatal.
 
 - Transport: BSD sockets (no Network framework, so it builds and tests on Linux). `open()` connects
   with a 5 s timeout, reads the 12-byte header (`"RTL0"`, u32be tuner type, u32be gain count), sends
@@ -340,9 +344,30 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
   is stored and used by the rebuild when the capture moves back over the channel — the channel stays
   `OUT_OF_CAPTURE` at its absolute frequency; only an `offset_hz` write is checked against the capture
   right away.
-- `AttachFileDevice` / `DetachFileDevice`: registry passthrough.
+- `AttachDevice`: a `file` source is the `AttachFileDevice` path (ephemeral); an `rtl_tcp` source
+  opens an `RTLTCPDevice` with the 5 s connect timeout and hosts it. `AttachFileDevice` and
+  `DetachFileDevice` stay as sugar; `DetachFileDevice` names a file and gets one, so any other device
+  is `DEVICE_NOT_FOUND` there.
+- `DetachDevice`: any device a client attached, file or remote radio, closed with its captures. A
+  dongle plugged into this machine is `INVALID_ARGUMENT` ("unplug it"), rejected before anything is
+  touched (`DeviceRegistry.isDetachableVirtualDevice`).
 - Errors: `RPCError(code:message:)` with the `EngineError.code` string in the message and the
   proto `ErrorDetail` serialised into trailing metadata key `leyline-error-bin`.
+
+### Remembered devices
+
+Persistence follows intent (invariant 8): a file a client plays is gone with the daemon, a radio it
+attached is part of the station. `AttachDevice{rtl_tcp}` writes `host`/`port` to `devices.json`
+beside the socket (`{"rtl_tcp":[{"host":"pi.local","port":1234}]}`), rewritten on every change;
+`DetachDevice` takes it out. At startup the daemon opens the `--rtltcp` endpoints and then the
+remembered ones, deduplicated on `host:port`, so an endpoint named both ways is opened once. Attach
+dedupes the same way before constructing anything: a second attach of a hosted endpoint returns the
+existing descriptor, and a server that cannot be reached is `DEVICE_IO` naming the endpoint with
+nothing remembered — a radio never reached is usually a typo. A remembered endpoint that is
+unreachable at startup is logged and kept; it is retried at the next start, while a link that drops
+after attaching is the registry's reconnect poll. An unreadable `devices.json` is an empty list: a
+daemon that will not serve local dongles because it cannot parse a list of remote ones is worse than
+one that forgets a Pi.
 
 ### Error codes
 

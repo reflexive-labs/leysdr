@@ -358,7 +358,7 @@ duplicate returns the existing device; detach removes it and its capture, emitti
 event. `go/pkg/leyline` gains `AttachDevice`/`DetachDevice` wrappers beside the existing ones.
 Tests in the fake's own suite.
 
-### SW-11 `[ ]` Remote radios as daemon state: the daemon
+### SW-11 `[x]` Remote radios as daemon state: the daemon
 
 R-20, second third. `ControlService` implements `AttachDevice` and `DetachDevice` over the
 `SessionStore` and `DefaultDeviceRegistry`. Attach `rtl_tcp`: dedupe on `host:port` against the

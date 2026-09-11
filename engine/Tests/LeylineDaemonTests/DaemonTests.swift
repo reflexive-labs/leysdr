@@ -1058,8 +1058,9 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
         return state
     }
 
-    /// DetachFileDevice is rejected before mutating anything: a virtual non-file device is
-    /// INVALID_ARGUMENT, an unknown id is DEVICE_NOT_FOUND, and a capture on the device survives both.
+    /// DetachFileDevice is rejected before mutating anything: it names a file, so a virtual device
+    /// that is not one and an unknown id are both DEVICE_NOT_FOUND, and a capture on the device
+    /// survives both. (DetachDevice is the RPC that takes any device a client attached.)
     func testDetachRejectsNonFileAndUnknownDevicesWithoutTouchingCaptures() async throws {
         try await withDaemon { c in
             let dev = FaultyStreamDevice()
@@ -1073,17 +1074,18 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             let capture = try await c.control.createCapture(cc, metadata: testMetadata)
             XCTAssertEqual(capture.state, .captureActive)
 
-            // Hosted virtual device that is not file playback (driver "test", like rtl_tcp): rejected.
+            // Hosted virtual device that is not file playback (driver "test"): DetachFileDevice
+            // refuses it even though DetachDevice would take it.
             var detach = Leyline_V1_DetachFileDeviceRequest()
             detach.deviceID = d.id.string
             do {
                 _ = try await c.control.detachFileDevice(detach, metadata: testMetadata)
-                XCTFail("expected INVALID_ARGUMENT")
+                XCTFail("expected DEVICE_NOT_FOUND")
             } catch {
-                XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
+                XCTAssertEqual(errorCode(error).code, "DEVICE_NOT_FOUND")
             }
-            let detachable = await c.daemon.registry.isDetachableFileDevice(id: d.id)
-            XCTAssertFalse(detachable)
+            let detachable = await c.daemon.registry.isDetachableVirtualDevice(id: d.id)
+            XCTAssertTrue(detachable)
 
             // Unknown (well-formed) id: DEVICE_NOT_FOUND.
             detach.deviceID = DeviceID().string
@@ -1118,7 +1120,7 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             attach.loop = true
             let d = try await c.control.attachFileDevice(attach, metadata: testMetadata)
             let id = try XCTUnwrap(DeviceID(string: d.deviceID))
-            let detachable = await c.daemon.registry.isDetachableFileDevice(id: id)
+            let detachable = await c.daemon.registry.isDetachableVirtualDevice(id: id)
             XCTAssertTrue(detachable)
             var detach = Leyline_V1_DetachFileDeviceRequest()
             detach.deviceID = d.deviceID

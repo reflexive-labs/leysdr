@@ -136,7 +136,7 @@ final class DeviceLossDaemonTests: XCTestCase {
 
             // The device goes away entirely (unplug), then comes back with the same identity and so
             // the same stable id: the store rebinds the detached capture and streaming resumes.
-            try await c.daemon.registry.detachFileDevice(id: d.id)
+            try await c.daemon.registry.detachVirtualDevice(id: d.id)
             XCTAssertEqual(first.closes.value, 1)
             let second = RebindableDevice()
             let again = try await c.daemon.registry.attachVirtualDevice(second).descriptor

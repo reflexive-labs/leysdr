@@ -37,7 +37,7 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("poll-ms"), help: "Hot-plug enumeration period in milliseconds.")
     var pollMs: Int = 1000
 
-    @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port (repeatable; env LEYLINE_RTLTCP, comma-separated).")
+    @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port, for foreground runs (repeatable; env LEYLINE_RTLTCP, comma-separated). A radio the daemon should keep is attached over the protocol instead, with `ley devices attach`.")
     var rtltcp: [String] = []
 
     func run() async throws {

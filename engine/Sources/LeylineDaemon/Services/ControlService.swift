@@ -115,8 +115,12 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
             case .file(let f):
                 guard !f.path.isEmpty else { throw EngineError.invalidArgument("path is required") }
                 return ProtoMapping.descriptor(try await store.attachFileDevice(path: f.path, loop: f.loop, by: client))
-            case .rtlTcp:
-                throw EngineError.unimplemented("attaching an rtl_tcp device")
+            case .rtlTcp(let r):
+                guard !r.host.isEmpty else { throw EngineError.invalidArgument("host is required") }
+                guard r.port > 0, r.port <= UInt32(UInt16.max) else {
+                    throw EngineError.invalidArgument("port \(r.port) is outside 1...65535")
+                }
+                return ProtoMapping.descriptor(try await store.attachRemoteDevice(host: r.host, port: UInt16(r.port), by: client))
             case .none:
                 throw EngineError.invalidArgument("a source is required")
             }
@@ -127,7 +131,7 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         await store.touchUnary(client)
         return try await mapErrors {
             guard let id = DeviceID(string: request.deviceID) else { throw EngineError.deviceNotFound(request.deviceID) }
-            try await store.detachFileDevice(id: id, by: client)
+            try await store.detachDevice(id: id, by: client)
             return Leyline_V1_Empty()
         }
     }
@@ -144,7 +148,7 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         await store.touchUnary(client)
         return try await mapErrors {
             guard let id = DeviceID(string: request.deviceID) else { throw EngineError.deviceNotFound(request.deviceID) }
-            try await store.detachFileDevice(id: id, by: client)
+            try await store.detachDevice(id: id, by: client, fileOnly: true)
             return Leyline_V1_Empty()
         }
     }

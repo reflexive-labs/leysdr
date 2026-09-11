@@ -177,17 +177,18 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         return descriptor
     }
 
-    /// Whether `id` names a hosted file-playback device that clients may detach: the entry exists,
-    /// it is not a USB dongle (`rtlIndex == nil`) and its driver is `file`. Operator-configured
-    /// virtual devices (rtl_tcp) are hosted the same way but are not client-detachable. Non-mutating,
-    /// so callers can reject a request before touching any capture.
-    public func isDetachableFileDevice(id: DeviceID) -> Bool {
-        guard let entry = entries[id], entry.rtlIndex == nil else { return false }
-        return entry.descriptor.driver == FilePlaybackDevice.driverName
+    /// Whether `id` names a hosted virtual device clients may detach: the entry exists and it is not
+    /// a USB dongle (`rtlIndex == nil`). A file the daemon plays and a radio served by rtl_tcp both
+    /// arrived over the protocol and both leave the same way; a dongle in this machine's port leaves
+    /// when someone pulls it. Non-mutating, so callers can reject a request before touching any
+    /// capture.
+    public func isDetachableVirtualDevice(id: DeviceID) -> Bool {
+        guard let entry = entries[id] else { return false }
+        return entry.rtlIndex == nil
     }
 
     /// Detaches any hosted virtual device (file playback or `attachVirtualDevice`).
-    public func detachFileDevice(id: DeviceID) async throws {
+    public func detachVirtualDevice(id: DeviceID) async throws {
         guard let entry = entries[id], entry.rtlIndex == nil else { throw EngineError.deviceNotFound(id.string) }
         entries[id] = nil
         await entry.device.close()

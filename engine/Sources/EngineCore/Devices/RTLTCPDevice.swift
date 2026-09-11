@@ -23,6 +23,8 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         UInt64(RTLSDRDevice.usbBuffers) * UInt64(RTLSDRDevice.usbBufferBytes) / 2
     }
 
+    /// `DeviceDescriptor.driver` for every radio reached over rtl_tcp.
+    public static let driverName = "rtltcp"
     /// Samples per delivered block (docs/engine-internals.md "Block size"); 32768 bytes of cu8.
     public static let blockSize = 16384
     /// Same list as `RTLSDRDevice` — the remote end is librtlsdr.
@@ -106,7 +108,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         )
         return DeviceDescriptor(
             id: id,
-            driver: "rtltcp",
+            driver: RTLTCPDevice.driverName,
             model: "rtl_tcp \(host):\(port) (\(tuner))",
             serial: "\(host):\(port)",
             usbLocation: "",

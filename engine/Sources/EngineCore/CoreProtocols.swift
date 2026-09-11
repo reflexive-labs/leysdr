@@ -127,7 +127,7 @@ public protocol DeviceRegistry: AnyObject, Sendable {
     /// assigns the stable id, installs its state-change hook and publishes `arrived`.
     func attachVirtualDevice(_ device: any RadioDevice) async throws -> VirtualAttachment
     /// Detaches any virtual device (file or `attachVirtualDevice`): closes it and publishes `removed`.
-    func detachFileDevice(id: DeviceID) async throws
+    func detachVirtualDevice(id: DeviceID) async throws
 }
 
 /// What hosting a virtual device produced: the descriptor it is known by, and whether that identity
