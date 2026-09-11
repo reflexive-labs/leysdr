@@ -178,6 +178,28 @@ Given capture rate `Fs` and mode:
 `Demodulator.configure` allocates all scratch; `process` allocates nothing. Each demodulator keeps
 one sample of history for the discriminator and IIR states in stored properties.
 
+### The demod tap
+
+`process` takes an optional second output, `rawOut`, and fills it with the detector's own stage
+before any audio conditioning: the discriminator ahead of the 300 Hz high-pass for NFM (the very
+samples the sub-audible tap reads, so a CTCSS tone is still on them) and, decimated to the audio
+rate ahead of de-emphasis and the 15 kHz low-pass, for WFM (so the 19 kHz pilot survives); the
+envelope with the carrier still in it as DC for AM; the product detector before AGC for USB, LSB
+and CW; nothing for raw IQ. Both FM stages are scaled so full-scale deviation reads ±1.0 — 5 kHz
+for NFM, 75 kHz for WFM — which makes the block's mean the tuning error in hertz. The callee sets
+`rawOut.count`, because WFM decimates the tap through a filter of its own and answers for its own
+alignment; every buffer either needs is sized in `configure`, so a block nobody is tapping costs a
+nil check.
+
+`AudioSink` carries an `AudioTap`, and `ChannelDSPCore` keeps its sink table split by it: the
+conditioned block goes to `.audio` sinks, the raw block to `.demod` sinks, and the demodulator is
+handed a raw buffer only while the second list is non-empty. The squelch's zeroing is part of what
+a listener hears, so it applies to `.audio` sinks alone; the demod tap keeps flowing through a
+closed squelch, which is what makes "what is this transmitter sending between words" answerable.
+Meter, squelch and telemetry read the conditioned block exactly as before. A raw-IQ channel has no
+detector, so attaching a `.demod` sink to one is `INVALID_ARGUMENT`, and so is a `TAP_DEMOD`
+subscription over the bulk plane.
+
 ### Squelch and meters
 
 Per block the channel computes mean power of the post-filter IQ in dBFS (`10·log10(mean|x|²)`).

@@ -340,8 +340,29 @@ public protocol Demodulator: AnyObject {
     var maxBlock: Int { get }
     /// `input` is interleaved cf32 at `inputRate`; `output` is real f32 mono (format == .f32) with
     /// capacity `output.count` frames on entry. Returns frames produced (output.count is not mutated).
-    func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int
+    ///
+    /// `rawOut`, when non-nil, also receives the detector's own output for the same block: the
+    /// stage before any audio conditioning, which is what a scope is for. It is real f32 mono at
+    /// `outputRate` with capacity `rawOut.count` on entry, and the callee sets its `count` to the
+    /// frames it wrote -- the audio frame count in every mode, but reported rather than assumed,
+    /// because a mode whose raw stage has its own decimator answers for its own alignment. The raw
+    /// stage per mode: the discriminator before the 300 Hz high-pass for NFM and, decimated to the
+    /// audio rate, before de-emphasis and the 15 kHz low-pass for WFM (both scaled so full-scale
+    /// deviation reads ±1.0); the envelope including the carrier as DC for AM; the product detector
+    /// before AGC for USB, LSB and CW; nothing for raw IQ, which has no detector.
+    ///
+    /// Passing nil is the whole cost of not listening: everything the raw stage needs was sized in
+    /// `configure`, so this is a branch, never an allocation.
+    func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int
     func reset()
+}
+
+public extension Demodulator {
+    /// Audio alone, for the callers -- tests, one-shot conversions -- that have no raw tap to fill.
+    func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
+        var raw: SampleBuffer?
+        return process(iq: input, audioOut: &output, rawOut: &raw)
+    }
 }
 
 /// The shared FFT ladder: fixed power-of-two sizes, one pass per size per tick, fanned to all
@@ -407,10 +428,31 @@ public enum DeliveryPolicy: Hashable, Sendable {
 /// FileRecorderSink, NullSink. Lossless delivery exists only in FileRecorderSink.
 public protocol AudioSink: AnyObject, Sendable {
     var id: SinkID { get }
+    /// Which stage of the channel's chain this sink is fed. Everything that listens takes `.audio`;
+    /// `.demod` is the detector's output before conditioning, and a sink asking for it is refused on
+    /// a raw-IQ channel, where there is no detector to tap.
+    var tap: AudioTap { get }
     /// Hot path: synchronous, allocation-free. `audio` is real f32 mono (format == .f32).
     func write(_ audio: SampleBuffer, at time: SampleTime)
     func flush() async
     func closeSink() async
+}
+
+public extension AudioSink {
+    /// A sink that does not say is listening.
+    var tap: AudioTap { .audio }
+}
+
+/// Which stage of a channel's chain a sink receives.
+///
+/// `.audio` is what a speaker gets: after the high-pass, de-emphasis, limiter and AGC, and zeros
+/// while the squelch is closed, exactly as the listener hears it. `.demod` is the detector's own
+/// output before any of that -- a CTCSS tone under NFM voice, the carrier as DC under AM -- and it
+/// keeps flowing while the squelch is closed, because what a transmitter sends between words is
+/// what it is for.
+public enum AudioTap: Hashable, Sendable {
+    case audio
+    case demod
 }
 
 // MARK: - Detector

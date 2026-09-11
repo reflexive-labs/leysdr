@@ -52,6 +52,22 @@ func discriminate(_ s: DemodScratch, count n: Int, scale: Float) {
     s.carry(n)
 }
 
+/// Hand a demodulator's raw stage to a caller that asked for one: `count` samples from `src`,
+/// optionally rescaled, and the count reported back on the buffer. Hot path, and nothing at all
+/// when `rawOut` is nil.
+@inline(__always)
+func emitRaw(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, count n: Int, scale: Float = 1) {
+    guard let raw = rawOut else { return }
+    precondition(raw.format == .f32 && raw.count >= n)
+    let dst = raw.base.assumingMemoryBound(to: Float.self)
+    if scale == 1 {
+        dst.update(from: src, count: n)
+    } else {
+        Kernels.scaleAdd(src, scale: scale, offset: 0, to: dst, count: n)
+    }
+    rawOut?.count = n
+}
+
 /// Default scratch size: one full capture block, which is the most any channel can hand a demodulator.
 let demodulatorMaxBlock = 16384
 
@@ -158,14 +174,15 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
         }
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
+    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, input.count > 0 else { return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         discriminate(s, count: n, scale: scale)
-        // The tap comes before every stage that follows: the 300 Hz high-pass below is what makes
+        // Both taps come before every stage that follows: the 300 Hz high-pass below is what makes
         // CTCSS inaudible, and it is the reason this has to be taken here rather than off the audio.
         tapSubAudible(s.real, count: n)
+        emitRaw(&rawOut, from: s.real, count: n)
         let out = output.base.assumingMemoryBound(to: Float.self)
         Kernels.onePoleLowPass(s.real, to: out, count: n, coefficient: lpfCoefficient, state: &lpfState)
         highPass(out, count: n)
@@ -214,6 +231,12 @@ public final class WFMDemodulator: Demodulator {
     public private(set) var decimation = 1
     private var scratch: DemodScratch?
     private var audioFilter: RealFIRDecimator?
+    /// Decimation for the raw tap, which keeps everything the audio filter throws away above
+    /// 15 kHz -- the 19 kHz stereo pilot most of all -- and so cannot share the audio filter.
+    private var rawFilter: RealFIRDecimator?
+    /// Whether the raw tap was filled on the previous block: an idle filter holds history from
+    /// whenever it last ran, and that is not history of the block about to be tapped.
+    private var rawActive = false
     private var scale: Float = 0
     private var deemphasisCoefficient: Float = 1
     private var deemphasisState: Float = 0
@@ -232,16 +255,19 @@ public final class WFMDemodulator: Demodulator {
         let transition = max(audioRate - 2 * cutoff, 0.1 * audioRate)
         audioFilter = RealFIRDecimator(taps: FIRDesign.lowPass(cutoffHz: cutoff, rate: rate, transitionHz: transition),
                                        decimation: decimation, maxBlock: maxBlock)
+        rawFilter = RealFIRDecimator(taps: FIRDesign.lowPass(cutoffHz: 0.45 * audioRate, rate: rate, transitionHz: 0.1 * audioRate),
+                                     decimation: decimation, maxBlock: maxBlock)
         if scratch == nil { scratch = DemodScratch(maxBlock: maxBlock) }
         reset()
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
+    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, let filter = audioFilter, input.count > 0 else { return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock)
         precondition(output.count >= (input.count + decimation - 1) / decimation)
         let n = s.load(input)
         discriminate(s, count: n, scale: scale)
+        emitRawTap(&rawOut, from: s.real, count: n)
         Kernels.onePoleLowPass(s.real, to: s.real, count: n, coefficient: deemphasisCoefficient, state: &deemphasisState)
         let out = output.base.assumingMemoryBound(to: Float.self)
         let produced = filter.process(s.real, count: n, out: out)
@@ -249,9 +275,30 @@ public final class WFMDemodulator: Demodulator {
         return produced
     }
 
+    /// Decimate the discriminator into the raw tap, ahead of the de-emphasis and the 15 kHz
+    /// low-pass the audio path applies next, and scaled so ±75 kHz deviation reads ±1.0 as it does
+    /// for NFM. The tap reports its own frame count: its decimator runs only while someone is
+    /// listening, so its phase is its own.
+    @inline(__always)
+    private func emitRawTap(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, count n: Int) {
+        guard let raw = rawOut, let filter = rawFilter else {
+            rawActive = false
+            return
+        }
+        precondition(raw.format == .f32 && raw.count >= (n + decimation - 1) / decimation)
+        if !rawActive { filter.reset() }
+        rawActive = true
+        let dst = raw.base.assumingMemoryBound(to: Float.self)
+        let produced = filter.process(src, count: n, out: dst)
+        Kernels.scaleAdd(dst, scale: 2, offset: 0, to: dst, count: produced)
+        rawOut?.count = produced
+    }
+
     public func reset() {
         scratch?.reset()
         audioFilter?.reset()
+        rawFilter?.reset()
+        rawActive = false
         deemphasisState = 0
     }
 }
@@ -318,12 +365,15 @@ public final class AMDemodulator: Demodulator {
         reset()
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
+    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, input.count > 0 else { return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         let out = output.base.assumingMemoryBound(to: Float.self)
         Kernels.magnitude(re: s.workRe + 1, im: s.workIm + 1, to: s.real, count: n)
+        // The envelope as the detector produced it: the carrier is still in it as DC, which is what
+        // makes the raw tap show a tuning-independent carrier level where the audio shows none.
+        emitRaw(&rawOut, from: s.real, count: n)
         // Carrier level = low-passed magnitude (this is also the DC estimate the HPF subtracts).
         Kernels.onePoleLowPass(s.real, to: s.tmpRe, count: n, coefficient: dcCoefficient, state: &dcState)
         // Slow envelope of the carrier level; fast attack means a steady carrier settles within a few blocks.
@@ -388,7 +438,7 @@ public final class SSBDemodulator: Demodulator {
         reset()
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
+    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, let bfo, input.count > 0 else { return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
@@ -399,6 +449,8 @@ public final class SSBDemodulator: Demodulator {
         Kernels.multiply(s.workIm + 1, oscIm, to: s.tmpIm, count: n)
         Kernels.scaleAdd(s.tmpIm, scale: -1, offset: 0, to: s.tmpIm, count: n)
         Kernels.add(s.tmpRe, s.tmpIm, to: out, count: n)
+        // Before AGC: the raw tap carries the signal at the level it arrived at.
+        emitRaw(&rawOut, from: out, count: n)
         if agcEnabled {
             // Block level = mean |x| of the channel IQ (a tone's |x| is its amplitude); the envelope's
             // attack/release smooths it. Clip after gain so a release-phase overshoot stays in range.
@@ -425,7 +477,12 @@ public final class RawIQDemodulator: Demodulator {
     public let maxBlock = demodulatorMaxBlock
     public init() {}
     public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws { outputRate = inputRate }
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int { 0 }
+    /// No detector, so no raw stage either: `rawOut` comes back empty rather than stale.
+    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
+        rawOut?.count = 0
+        return 0
+    }
+
     public func reset() {}
 }
 

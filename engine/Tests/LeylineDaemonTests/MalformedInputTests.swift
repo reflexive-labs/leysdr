@@ -91,6 +91,37 @@ final class MalformedInputDaemonTests: XCTestCase {
         }
     }
 
+    /// An `AudioTap` value from a contract this daemon has never seen is refused rather than
+    /// served as the default: a client asking for a stage nobody here can produce must be told so,
+    /// not handed the speaker's audio under another name.
+    func testUnknownAudioTapIsRejected() async throws {
+        guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
+        try await withDaemon { c in
+            let capture = try await self.attachFixtureCapture(c)
+            var cch = Leyline_V1_CreateChannelRequest()
+            cch.captureID = capture.captureID
+            cch.offsetHz = 100_000
+            cch.mode = .nfm
+            let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+            var req = Leyline_V1_SubscribeRequest()
+            req.captureID = capture.captureID
+            req.channelID = channel.channelID
+            req.kind = .audio
+            req.policy = .latestWins
+            req.transport = .grpc
+            req.audio.tap = .UNRECOGNIZED(9)
+            do {
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                XCTFail("expected a refusal, got stream \(desc.streamID)")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
+            }
+            // Still serving.
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.channels.count, 1)
+        }
+    }
+
     func testNonFiniteGainIsInvalidArgument() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in

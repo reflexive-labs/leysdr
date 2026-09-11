@@ -10,8 +10,8 @@ final class AudioCollector: @unchecked Sendable {
     private var firstIndex: UInt64?
     private(set) var sink: CallbackSink!
 
-    init() {
-        sink = CallbackSink { [unowned self] buffer, time in self.append(buffer, time) }
+    init(tap: AudioTap = .audio) {
+        sink = CallbackSink(tap: tap) { [unowned self] buffer, time in self.append(buffer, time) }
     }
 
     private func append(_ buffer: SampleBuffer, _ time: SampleTime) {

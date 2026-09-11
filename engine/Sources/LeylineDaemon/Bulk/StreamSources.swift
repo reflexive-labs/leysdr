@@ -63,7 +63,7 @@ final class AudioFrameSource: @unchecked Sendable {
     let audioRate: Double
     private let scratch: UnsafeMutableBufferPointer<Float>
 
-    init(captureRate: UInt64, audioRate: UInt32) {
+    init(captureRate: UInt64, audioRate: UInt32, tap: AudioTap = .audio) {
         self.captureRate = Double(captureRate)
         self.audioRate = Double(max(audioRate, 1))
         ring = FloatRing(capacity: 32768)
@@ -74,7 +74,7 @@ final class AudioFrameSource: @unchecked Sendable {
         let r = ring
         let c = cont!
         let k = counters
-        sink = CallbackSink { audio, time in
+        sink = CallbackSink(tap: tap) { audio, time in
             guard audio.format == .f32, audio.count > 0 else { return }
             let n = r.push(UnsafeBufferPointer(audio.floats))
             k.lastBlockStart.store(time.sampleIndex, ordering: .relaxed)

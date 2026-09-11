@@ -222,13 +222,27 @@ actor StreamRegistry {
                     "audio sample_rate \(req.audio.sampleRate) unavailable; channel produces \(ch.audioRate) Hz (request 0 to accept it)",
                     target: chID.string)
             }
-            let audio = AudioFrameSource(captureRate: snap.sampleRate, audioRate: ch.audioRate)
+            let tap: AudioTap
+            switch req.audio.tap {
+            case .tapAudio: tap = .audio
+            case .tapDemod:
+                // No detector on a raw-IQ channel, so there is no stage before the audio to serve;
+                // silence would look like a quiet band rather than the mistake it is.
+                guard await ch.config.mode != .rawIQ else {
+                    throw EngineError.invalidArgument(
+                        "TAP_DEMOD needs a demodulated channel; this one is raw IQ", target: chID.string)
+                }
+                tap = .demod
+            case .UNRECOGNIZED(let v):
+                throw EngineError.invalidArgument("unknown AudioTap \(v)", target: chID.string)
+            }
+            let audio = AudioFrameSource(captureRate: snap.sampleRate, audioRate: ch.audioRate, tap: tap)
             try await ch.attach(audio.sink)
             var p = Leyline_V1_AudioParams()
             p.sampleRate = ch.audioRate
             p.format = format
+            p.tap = req.audio.tap == .tapDemod ? .tapDemod : .tapAudio
             desc.audio = p
-            _ = chID
             source = .audio(audio, ch)
         case .iq:
             // v0 IQ contract: raw CF32 at the capture's native rate only. The request is validated

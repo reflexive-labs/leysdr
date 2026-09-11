@@ -197,6 +197,10 @@ public actor DefaultChannelEngine: ChannelEngine {
         if sink is PCMOnlyAudioSink, currentConfig.mode == .rawIQ {
             throw EngineError.invalidArgument("system audio requires a demodulated channel", target: id.description)
         }
+        // A raw-IQ channel runs no detector, so there is no stage before the audio to hand over.
+        if sink.tap == .demod, currentConfig.mode == .rawIQ {
+            throw EngineError.invalidArgument("the demod tap requires a demodulated channel", target: id.description)
+        }
         sinkTable.append(sink)
         slot.load()?.setSinks(sinkTable)
     }

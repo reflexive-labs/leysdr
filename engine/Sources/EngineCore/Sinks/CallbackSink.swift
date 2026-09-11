@@ -12,11 +12,13 @@ public final class CallbackSink: AudioSink, @unchecked Sendable {
     public typealias Handler = @Sendable (SampleBuffer, SampleTime) -> Void
 
     public let id: SinkID
+    public let tap: AudioTap
     private let handler: Handler
     private let closed = Atomic<Bool>(false)
 
-    public init(id: SinkID = SinkID(), handler: @escaping Handler) {
+    public init(id: SinkID = SinkID(), tap: AudioTap = .audio, handler: @escaping Handler) {
         self.id = id
+        self.tap = tap
         self.handler = handler
     }
 
