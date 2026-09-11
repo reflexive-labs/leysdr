@@ -22,8 +22,6 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
     private var stopped = false
     private let tuner: UInt32
     private let gainCount: UInt32
-    private var threads: [Thread] = []
-    private let accepted = DispatchSemaphore(value: 0)
     /// Liveness of the two threads that hold the client descriptor. A descriptor closed while a
     /// thread still holds its number can be reissued to the next socket this process opens, and that
     /// thread's next send or recv then lands in someone else's connection: the server is closed and
@@ -57,7 +55,6 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
         let t = Thread { [self] in self.acceptLoop() }
         acceptGroup.enter()
         t.start()
-        threads = [t]
     }
 
     public var commands: [[UInt8]] { lock.lock(); defer { lock.unlock() }; return _commands }
@@ -105,7 +102,6 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
         senderGroup.enter()
         lock.lock(); senderRunning = true; lock.unlock()
         sender.start()
-        lock.lock(); threads.append(sender); lock.unlock()
         // Command reader: blocking 5-byte reads until EOF.
         var buf = [UInt8](repeating: 0, count: 5)
         outer: while true {

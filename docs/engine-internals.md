@@ -260,7 +260,7 @@ A dongle served by osmocom's `rtl_tcp` on another machine, presented as a virtua
 attach one with `Control.AttachDevice{rtl_tcp{host, port}}` (see "Remembered devices"); a foreground
 run can also name endpoints with `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`,
 comma-separated). Both paths go through `DeviceRegistry.attachVirtualDevice`; a server that cannot be
-reached at startup is logged and skipped, never fatal.
+reached at startup is hosted `DISCONNECTED` for the reconnect poll to pick up, never fatal.
 
 - Transport: BSD sockets (no Network framework, so it builds and tests on Linux). `open()` connects
   with a 5 s timeout, reads the 12-byte header (`"RTL0"`, u32be tuner type, u32be gain count), sends
@@ -362,10 +362,20 @@ beside the socket (`{"rtl_tcp":[{"host":"pi.local","port":1234}]}`), rewritten o
 `DetachDevice` takes it out. At startup the daemon opens the `--rtltcp` endpoints and then the
 remembered ones, deduplicated on `host:port`, so an endpoint named both ways is opened once. Attach
 dedupes the same way before constructing anything: a second attach of a hosted endpoint returns the
-existing descriptor, and a server that cannot be reached is `DEVICE_IO` naming the endpoint with
-nothing remembered — a radio never reached is usually a typo. A remembered endpoint that is
-unreachable at startup is logged and kept; it is retried at the next start, while a link that drops
-after attaching is the registry's reconnect poll. An unreadable `devices.json` is an empty list: a
+existing descriptor, and a second attach of an endpoint whose connect is still in flight waits on
+that one rather than opening a second socket. A server that cannot be reached by an attach is
+`DEVICE_IO` naming the endpoint with nothing remembered — a radio never reached is usually a typo.
+
+The registry records how each hosted virtual device arrived. A radio named by `--rtltcp` is operator
+configuration: `DetachDevice` refuses it with `INVALID_ARGUMENT` naming the flag, because a detach
+the daemon's own command line would undo at the next start is not a detach. Attaching that endpoint
+over the protocol makes it the client's — the descriptor comes back unchanged, the endpoint is
+remembered, and from then on it persists and detaches like any other.
+
+An endpoint that is unreachable at startup, remembered or flagged, is hosted anyway as a
+`DISCONNECTED` device, so the registry's reconnect poll — which only retries devices it holds —
+brings it in the moment it answers; the log line says the daemon is waiting for it. One dead remote
+never keeps the daemon from serving local dongles. An unreadable `devices.json` is an empty list: a
 daemon that will not serve local dongles because it cannot parse a list of remote ones is worse than
 one that forgets a Pi.
 

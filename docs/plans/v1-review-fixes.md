@@ -449,7 +449,7 @@ range to 0 dB is exact parity with `GainElement.snapped` and unreachable behind 
 `phosphor.go`'s drain reorder and `scan.go`'s reading of `Job.error` are the intended shapes;
 `bulk_stream.go`'s render under the fake's lock is a fake-only cost.
 
-### SW-13 `[ ]` What the audit of the remote-radio daemon code found
+### SW-13 `[x]` What the audit of the remote-radio daemon code found
 
 An independent read of `6dca426..c686a4b` on the engine side. Line numbers as of `c686a4b`. Edit
 only under `engine/` and `docs/`; the Go lane is running concurrently (the e2e sleep the audit

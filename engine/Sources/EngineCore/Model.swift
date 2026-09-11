@@ -195,6 +195,7 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
 
     public static func deviceNotFound(_ id: String) -> EngineError { .init(code: Code.deviceNotFound, message: "no such device", target: id) }
     public static func deviceBusy(_ id: String) -> EngineError { .init(code: Code.deviceBusy, message: "device already has a capture", target: id) }
+    public static func deviceStarting(_ id: String) -> EngineError { .init(code: Code.deviceBusy, message: "a capture is starting on it; try again", target: id) }
     public static func deviceHeldByOtherProgram(_ id: String) -> EngineError { .init(code: Code.deviceBusy, message: "another program has the device (rtl_tcp, SDR++, GQRX?); quit it and retry", target: id) }
     public static func deviceSweeping(_ id: String) -> EngineError { .init(code: Code.deviceSweeping, message: "a scan is sweeping this radio; it is free again when the scan ends", target: id) }
     public static func deviceDetached(_ id: String) -> EngineError { .init(code: Code.deviceDetached, message: "device is disconnected", target: id) }

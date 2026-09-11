@@ -29,6 +29,22 @@ func rtlTcpSource(host: String, port: UInt16) -> Leyline_V1_AttachDeviceRequest 
     return request
 }
 
+/// Writes `devices.json` in `dir`, as the text a previous daemon (or a fat-fingered operator) left.
+func writeDeviceList(dir: String, _ text: String) throws {
+    try text.write(toFile: dir + "/devices.json", atomically: true, encoding: .utf8)
+}
+
+func fileSource(path: String, loop: Bool = false) -> Leyline_V1_AttachDeviceRequest {
+    var file = Leyline_V1_FileSource()
+    file.path = path
+    file.loop = loop
+    var source = Leyline_V1_DeviceSource()
+    source.file = file
+    var request = Leyline_V1_AttachDeviceRequest()
+    request.source = source
+    return request
+}
+
 /// A directory the caller owns for the life of one test.
 func withTempDir(_ body: (String) async throws -> Void) async throws {
     let dir = NSTemporaryDirectory() + "leyline-remote-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
@@ -157,6 +173,143 @@ final class RemoteDeviceTests: XCTestCase {
                 let devices = testDevices(state.devices)
                 XCTAssertEqual(devices.map(\.serial), ["127.0.0.1:\(port)"])
                 XCTAssertEqual(devices.first?.driver, "rtltcp")
+            }
+        }
+    }
+
+    /// A radio the daemon's own command line asked for is operator configuration: DetachDevice
+    /// refuses it and names the flag, and nothing about the device changes.
+    func testDetachingAFlagConfiguredRadioIsRefused() async throws {
+        let server = try FakeRTLTCPServer()
+        defer { server.stop() }
+        try await withTempDir { dir in
+            try await withDaemon(dir: dir, rtltcp: [.init(host: "127.0.0.1", port: server.port)]) { c in
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                let hosted = try XCTUnwrap(testDevices(state.devices).first)
+                XCTAssertEqual(hosted.serial, "127.0.0.1:\(server.port)")
+                // A flag is not an attach: it is the command line's to take back.
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), [])
+
+                var detach = Leyline_V1_DetachDeviceRequest()
+                detach.deviceID = hosted.deviceID
+                do {
+                    _ = try await c.control.detachDevice(detach, metadata: testMetadata)
+                    XCTFail("expected INVALID_ARGUMENT")
+                } catch {
+                    XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
+                    XCTAssertTrue("\(error)".contains("--rtltcp"), "error must name the flag: \(error)")
+                }
+                let after = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                XCTAssertEqual(testDevices(after.devices).map(\.deviceID), [hosted.deviceID])
+            }
+        }
+    }
+
+    /// Attaching an endpoint the flag already hosts hands back the same radio and makes it the
+    /// client's: it is remembered from then on, and it detaches like any other.
+    func testAttachingAFlagHostedEndpointTakesItOver() async throws {
+        let server = try FakeRTLTCPServer()
+        defer { server.stop() }
+        try await withTempDir { dir in
+            try await withDaemon(dir: dir, rtltcp: [.init(host: "127.0.0.1", port: server.port)]) { c in
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                let hosted = try XCTUnwrap(testDevices(state.devices).first)
+
+                let attached = try await c.control.attachDevice(rtlTcpSource(host: "127.0.0.1", port: server.port), metadata: testMetadata)
+                XCTAssertEqual(attached.deviceID, hosted.deviceID)
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), ["127.0.0.1:\(server.port)"])
+
+                var detach = Leyline_V1_DetachDeviceRequest()
+                detach.deviceID = hosted.deviceID
+                _ = try await c.control.detachDevice(detach, metadata: testMetadata)
+                let after = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                XCTAssertTrue(testDevices(after.devices).isEmpty)
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), [])
+            }
+        }
+    }
+
+    /// A remembered endpoint that is down at startup is hosted anyway, disconnected, and the list
+    /// keeps it: the reconnect poll is what brings it in, and it does so as soon as the radio
+    /// answers.
+    func testARememberedEndpointThatIsDownIsHostedUntilItAnswers() async throws {
+        let port = try FakeRTLTCPServer.closedPort()
+        try await withTempDir { dir in
+            try writeDeviceList(dir: dir, "{\"rtl_tcp\":[{\"host\":\"127.0.0.1\",\"port\":\(port)}]}")
+            try await withDaemon(dir: dir) { c in
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                let waiting = try XCTUnwrap(testDevices(state.devices).first)
+                XCTAssertEqual(waiting.serial, "127.0.0.1:\(port)")
+                XCTAssertEqual(waiting.state, .disconnected)
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), ["127.0.0.1:\(port)"])
+
+                let server = try FakeRTLTCPServer(port: port)
+                defer { server.stop() }
+                var live: Leyline_V1_DeviceState = .disconnected
+                for _ in 0..<100 {
+                    await c.daemon.registry.poll()
+                    let now = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                    live = testDevices(now.devices).first?.state ?? .disconnected
+                    if live == .available { break }
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                }
+                XCTAssertEqual(live, .available, "the radio answered; the poll should have reconnected it")
+            }
+        }
+    }
+
+    /// A `devices.json` nothing can parse is an empty list, not a dead daemon: the station still
+    /// serves, and the next attach writes a list that parses.
+    func testAMalformedDeviceListIsTreatedAsEmpty() async throws {
+        let server = try FakeRTLTCPServer()
+        defer { server.stop() }
+        try await withTempDir { dir in
+            try writeDeviceList(dir: dir, "this is not a device list\n")
+            try await withDaemon(dir: dir) { c in
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                XCTAssertTrue(testDevices(state.devices).isEmpty)
+
+                _ = try await c.control.attachDevice(rtlTcpSource(host: "127.0.0.1", port: server.port), metadata: testMetadata)
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), ["127.0.0.1:\(server.port)"])
+            }
+        }
+    }
+
+    /// AttachDevice takes a file as well as a radio, and DetachDevice takes it back. A file is a
+    /// thing you looked at once, so nothing about it is remembered.
+    func testAttachDeviceHostsAndDetachesAFile() async throws {
+        try await withTempDir { dir in
+            try await withDaemon(dir: dir) { c in
+                let d = try await c.control.attachDevice(fileSource(path: fixturePath("nfm_tone.cf32")), metadata: testMetadata)
+                XCTAssertEqual(d.driver, "file")
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [d.deviceID])
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), [])
+
+                var detach = Leyline_V1_DetachDeviceRequest()
+                detach.deviceID = d.deviceID
+                _ = try await c.control.detachDevice(detach, metadata: testMetadata)
+                let after = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                XCTAssertTrue(testDevices(after.devices).isEmpty)
+            }
+        }
+    }
+
+    /// Two attaches of one endpoint at once are one connect: the second joins the first instead of
+    /// opening a socket the rtl_tcp server (which serves one client) would leave waiting.
+    func testConcurrentAttachesOfOneEndpointOpenOneSocket() async throws {
+        let server = try FakeRTLTCPServer()
+        defer { server.stop() }
+        try await withTempDir { dir in
+            try await withDaemon(dir: dir) { c in
+                let request = rtlTcpSource(host: "127.0.0.1", port: server.port)
+                async let first = c.control.attachDevice(request, metadata: testMetadata)
+                async let second = c.control.attachDevice(request, metadata: testMetadata)
+                let (a, b) = try await (first, second)
+                XCTAssertEqual(a.deviceID, b.deviceID)
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                XCTAssertEqual(testDevices(state.devices).map(\.deviceID), [a.deviceID])
+                XCTAssertEqual(try rememberedEndpoints(dir: dir), ["127.0.0.1:\(server.port)"])
             }
         }
     }

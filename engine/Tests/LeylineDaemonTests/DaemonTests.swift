@@ -1059,8 +1059,8 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
     }
 
     /// DetachFileDevice is rejected before mutating anything: it names a file, so a virtual device
-    /// that is not one and an unknown id are both DEVICE_NOT_FOUND, and a capture on the device
-    /// survives both. (DetachDevice is the RPC that takes any device a client attached.)
+    /// that is not one is INVALID_ARGUMENT and an unknown id is DEVICE_NOT_FOUND, and a capture on
+    /// the device survives both. (DetachDevice is the RPC that takes any device a client attached.)
     func testDetachRejectsNonFileAndUnknownDevicesWithoutTouchingCaptures() async throws {
         try await withDaemon { c in
             let dev = FaultyStreamDevice()
@@ -1075,14 +1075,14 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             XCTAssertEqual(capture.state, .captureActive)
 
             // Hosted virtual device that is not file playback (driver "test"): DetachFileDevice
-            // refuses it even though DetachDevice would take it.
+            // names a file and gets one, even though DetachDevice would take this.
             var detach = Leyline_V1_DetachFileDeviceRequest()
             detach.deviceID = d.id.string
             do {
                 _ = try await c.control.detachFileDevice(detach, metadata: testMetadata)
-                XCTFail("expected DEVICE_NOT_FOUND")
+                XCTFail("expected INVALID_ARGUMENT")
             } catch {
-                XCTAssertEqual(errorCode(error).code, "DEVICE_NOT_FOUND")
+                XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
             }
             let detachable = await c.daemon.registry.isDetachableVirtualDevice(id: d.id)
             XCTAssertTrue(detachable)
