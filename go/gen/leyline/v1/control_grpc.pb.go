@@ -32,6 +32,8 @@ const (
 	Control_AttachSink_FullMethodName       = "/leyline.v1.Control/AttachSink"
 	Control_DetachSink_FullMethodName       = "/leyline.v1.Control/DetachSink"
 	Control_WriteParams_FullMethodName      = "/leyline.v1.Control/WriteParams"
+	Control_AttachDevice_FullMethodName     = "/leyline.v1.Control/AttachDevice"
+	Control_DetachDevice_FullMethodName     = "/leyline.v1.Control/DetachDevice"
 	Control_AttachFileDevice_FullMethodName = "/leyline.v1.Control/AttachFileDevice"
 	Control_DetachFileDevice_FullMethodName = "/leyline.v1.Control/DetachFileDevice"
 )
@@ -50,8 +52,10 @@ type ControlClient interface {
 	AttachSink(ctx context.Context, in *AttachSinkRequest, opts ...grpc.CallOption) (*Sink, error)
 	DetachSink(ctx context.Context, in *DetachSinkRequest, opts ...grpc.CallOption) (*Empty, error)
 	WriteParams(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ParamWrite, WriteSummary], error)
-	// Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-	// attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+	// Virtual devices. A device a client attaches appears in ListDevices/events like any
+	// hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+	AttachDevice(ctx context.Context, in *AttachDeviceRequest, opts ...grpc.CallOption) (*DeviceDescriptor, error)
+	DetachDevice(ctx context.Context, in *DetachDeviceRequest, opts ...grpc.CallOption) (*Empty, error)
 	AttachFileDevice(ctx context.Context, in *AttachFileDeviceRequest, opts ...grpc.CallOption) (*DeviceDescriptor, error)
 	DetachFileDevice(ctx context.Context, in *DetachFileDeviceRequest, opts ...grpc.CallOption) (*Empty, error)
 }
@@ -176,6 +180,26 @@ func (c *controlClient) WriteParams(ctx context.Context, opts ...grpc.CallOption
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Control_WriteParamsClient = grpc.ClientStreamingClient[ParamWrite, WriteSummary]
 
+func (c *controlClient) AttachDevice(ctx context.Context, in *AttachDeviceRequest, opts ...grpc.CallOption) (*DeviceDescriptor, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceDescriptor)
+	err := c.cc.Invoke(ctx, Control_AttachDevice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlClient) DetachDevice(ctx context.Context, in *DetachDeviceRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Control_DetachDevice_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controlClient) AttachFileDevice(ctx context.Context, in *AttachFileDeviceRequest, opts ...grpc.CallOption) (*DeviceDescriptor, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeviceDescriptor)
@@ -210,8 +234,10 @@ type ControlServer interface {
 	AttachSink(context.Context, *AttachSinkRequest) (*Sink, error)
 	DetachSink(context.Context, *DetachSinkRequest) (*Empty, error)
 	WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error
-	// Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-	// attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+	// Virtual devices. A device a client attaches appears in ListDevices/events like any
+	// hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+	AttachDevice(context.Context, *AttachDeviceRequest) (*DeviceDescriptor, error)
+	DetachDevice(context.Context, *DetachDeviceRequest) (*Empty, error)
 	AttachFileDevice(context.Context, *AttachFileDeviceRequest) (*DeviceDescriptor, error)
 	DetachFileDevice(context.Context, *DetachFileDeviceRequest) (*Empty, error)
 	mustEmbedUnimplementedControlServer()
@@ -253,6 +279,12 @@ func (UnimplementedControlServer) DetachSink(context.Context, *DetachSinkRequest
 }
 func (UnimplementedControlServer) WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error {
 	return status.Error(codes.Unimplemented, "method WriteParams not implemented")
+}
+func (UnimplementedControlServer) AttachDevice(context.Context, *AttachDeviceRequest) (*DeviceDescriptor, error) {
+	return nil, status.Error(codes.Unimplemented, "method AttachDevice not implemented")
+}
+func (UnimplementedControlServer) DetachDevice(context.Context, *DetachDeviceRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DetachDevice not implemented")
 }
 func (UnimplementedControlServer) AttachFileDevice(context.Context, *AttachFileDeviceRequest) (*DeviceDescriptor, error) {
 	return nil, status.Error(codes.Unimplemented, "method AttachFileDevice not implemented")
@@ -443,6 +475,42 @@ func _Control_WriteParams_Handler(srv interface{}, stream grpc.ServerStream) err
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Control_WriteParamsServer = grpc.ClientStreamingServer[ParamWrite, WriteSummary]
 
+func _Control_AttachDevice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachDeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).AttachDevice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_AttachDevice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).AttachDevice(ctx, req.(*AttachDeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Control_DetachDevice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DetachDeviceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).DetachDevice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_DetachDevice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).DetachDevice(ctx, req.(*DetachDeviceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Control_AttachFileDevice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AttachFileDeviceRequest)
 	if err := dec(in); err != nil {
@@ -517,6 +585,14 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DetachSink",
 			Handler:    _Control_DetachSink_Handler,
+		},
+		{
+			MethodName: "AttachDevice",
+			Handler:    _Control_AttachDevice_Handler,
+		},
+		{
+			MethodName: "DetachDevice",
+			Handler:    _Control_DetachDevice_Handler,
 		},
 		{
 			MethodName: "AttachFileDevice",

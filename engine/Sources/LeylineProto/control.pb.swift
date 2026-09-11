@@ -1194,6 +1194,7 @@ public nonisolated struct Leyline_V1_DetachSinkRequest: Sendable {
   public init() {}
 }
 
+/// Sugar over AttachDevice with a FileSource; DetachFileDevice is sugar over DetachDevice.
 public nonisolated struct Leyline_V1_AttachFileDeviceRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1216,6 +1217,115 @@ public nonisolated struct Leyline_V1_DetachFileDeviceRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  public var deviceID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Where a virtual device's samples come from. Persistence follows intent: a file you play is
+/// ephemeral, a radio you attach is part of the station.
+public nonisolated struct Leyline_V1_DeviceSource: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var source: Leyline_V1_DeviceSource.OneOf_Source? = nil
+
+  public var file: Leyline_V1_FileSource {
+    get {
+      if case .file(let v)? = source {return v}
+      return Leyline_V1_FileSource()
+    }
+    set {source = .file(newValue)}
+  }
+
+  public var rtlTcp: Leyline_V1_RtlTcpSource {
+    get {
+      if case .rtlTcp(let v)? = source {return v}
+      return Leyline_V1_RtlTcpSource()
+    }
+    set {source = .rtlTcp(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Source: Equatable, Sendable {
+    case file(Leyline_V1_FileSource)
+    case rtlTcp(Leyline_V1_RtlTcpSource)
+
+  }
+
+  public init() {}
+}
+
+/// A recording played back as a device. Ephemeral: it lives until DetachDevice or daemon exit.
+public nonisolated struct Leyline_V1_FileSource: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Filesystem path to <name>.cf32 (+ <name>.json sidecar), as AttachFileDeviceRequest.path.
+  public var path: String = String()
+
+  /// wrap at EOF instead of ending the capture
+  public var loop: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// A dongle served by rtl_tcp on another machine. The daemon remembers the endpoint across
+/// restarts until DetachDevice forgets it.
+public nonisolated struct Leyline_V1_RtlTcpSource: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var host: String = String()
+
+  /// 1..65535; rtl_tcp's own default is 1234
+  public var port: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Leyline_V1_AttachDeviceRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Attach connects once: a server that cannot be reached fails with DEVICE_IO naming
+  /// host:port and is remembered nowhere, because a radio never reached is usually a typo.
+  /// Attaching an rtl_tcp endpoint already hosted returns the existing descriptor rather than a
+  /// second device. A drop after that is DISCONNECTED and the daemon reconnects on its own.
+  public var source: Leyline_V1_DeviceSource {
+    get {_source ?? Leyline_V1_DeviceSource()}
+    set {_source = newValue}
+  }
+  /// Returns true if `source` has been explicitly set.
+  public var hasSource: Bool {self._source != nil}
+  /// Clears the value of `source`. Subsequent reads from it will return its default value.
+  public mutating func clearSource() {self._source = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _source: Leyline_V1_DeviceSource? = nil
+}
+
+public nonisolated struct Leyline_V1_DetachDeviceRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Any device a client attached, file or rtl_tcp: it is closed, its captures end and it is
+  /// forgotten. A USB radio is refused with INVALID_ARGUMENT -- unplug it.
   public var deviceID: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -2915,6 +3025,207 @@ nonisolated extension Leyline_V1_DetachFileDeviceRequest: SwiftProtobuf.Message,
   }
 
   public static func ==(lhs: Leyline_V1_DetachFileDeviceRequest, rhs: Leyline_V1_DetachFileDeviceRequest) -> Bool {
+    if lhs.deviceID != rhs.deviceID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_DeviceSource: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DeviceSource"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}file\0\u{3}rtl_tcp\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: Leyline_V1_FileSource?
+        var hadOneofValue = false
+        if let current = self.source {
+          hadOneofValue = true
+          if case .file(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.source = .file(v)
+        }
+      }()
+      case 2: try {
+        var v: Leyline_V1_RtlTcpSource?
+        var hadOneofValue = false
+        if let current = self.source {
+          hadOneofValue = true
+          if case .rtlTcp(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.source = .rtlTcp(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.source {
+    case .file?: try {
+      guard case .file(let v)? = self.source else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .rtlTcp?: try {
+      guard case .rtlTcp(let v)? = self.source else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_DeviceSource, rhs: Leyline_V1_DeviceSource) -> Bool {
+    if lhs.source != rhs.source {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_FileSource: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".FileSource"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}loop\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.path) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.loop) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.path.isEmpty {
+      try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
+    }
+    if self.loop != false {
+      try visitor.visitSingularBoolField(value: self.loop, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_FileSource, rhs: Leyline_V1_FileSource) -> Bool {
+    if lhs.path != rhs.path {return false}
+    if lhs.loop != rhs.loop {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_RtlTcpSource: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RtlTcpSource"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}host\0\u{1}port\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.host) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.port) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.host.isEmpty {
+      try visitor.visitSingularStringField(value: self.host, fieldNumber: 1)
+    }
+    if self.port != 0 {
+      try visitor.visitSingularUInt32Field(value: self.port, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_RtlTcpSource, rhs: Leyline_V1_RtlTcpSource) -> Bool {
+    if lhs.host != rhs.host {return false}
+    if lhs.port != rhs.port {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_AttachDeviceRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AttachDeviceRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}source\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._source) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._source {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_AttachDeviceRequest, rhs: Leyline_V1_AttachDeviceRequest) -> Bool {
+    if lhs._source != rhs._source {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_DetachDeviceRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DetachDeviceRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}device_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.deviceID.isEmpty {
+      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_DetachDeviceRequest, rhs: Leyline_V1_DetachDeviceRequest) -> Bool {
     if lhs.deviceID != rhs.deviceID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -355,6 +356,78 @@ func (d *Daemon) DetachFileDevice(ctx context.Context, req *leylinev1.DetachFile
 		d.mu.Unlock()
 		return nil, fail(ctx, errorf(leyline.CodeDeviceNotFound, req.DeviceId, "no such file device"))
 	}
+	d.mu.Unlock()
+	return d.detachVirtualDevice(ctx, ci, dev)
+}
+
+// AttachDevice implements Control: the general form the file RPCs are sugar over. A file source is
+// ephemeral; an rtl_tcp source is a radio the station keeps until someone detaches it.
+func (d *Daemon) AttachDevice(ctx context.Context, req *leylinev1.AttachDeviceRequest) (*leylinev1.DeviceDescriptor, error) {
+	switch src := req.GetSource().GetSource().(type) {
+	case *leylinev1.DeviceSource_File:
+		return d.AttachFileDevice(ctx, &leylinev1.AttachFileDeviceRequest{Path: src.File.GetPath(), Loop: src.File.GetLoop()})
+	case *leylinev1.DeviceSource_RtlTcp:
+		return d.attachRTLTCP(ctx, src.RtlTcp)
+	default:
+		d.touchUnary(clientFrom(ctx))
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "a source is required"))
+	}
+}
+
+// attachRTLTCP manufactures the descriptor a real daemon would build from the server's header. It
+// stands in for the connection too: a host under .invalid is the endpoint that cannot be reached.
+func (d *Daemon) attachRTLTCP(ctx context.Context, src *leylinev1.RtlTcpSource) (*leylinev1.DeviceDescriptor, error) {
+	ci := clientFrom(ctx)
+	d.touchUnary(ci)
+	host, port := src.GetHost(), src.GetPort()
+	if host == "" {
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "host is required"))
+	}
+	if port == 0 || port > 65535 {
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", fmt.Sprintf("port %d is outside 1...65535", port)))
+	}
+	endpoint := fmt.Sprintf("%s:%d", host, port)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// One endpoint is one radio: attaching it twice hands back the device already hosting it.
+	for _, dev := range d.devices {
+		if dev.Driver == "rtltcp" && dev.Serial == endpoint {
+			return proto.Clone(dev).(*leylinev1.DeviceDescriptor), nil
+		}
+	}
+	if strings.HasSuffix(host, ".invalid") {
+		return nil, fail(ctx, errorf(leyline.CodeDeviceIO, endpoint, fmt.Sprintf("connect to %s failed: cannot resolve %s", endpoint, host)))
+	}
+	dev := rtlTCPDevice(host, port)
+	d.devices[dev.DeviceId] = dev
+	d.emit(ci, dev)
+	return proto.Clone(dev).(*leylinev1.DeviceDescriptor), nil
+}
+
+// DetachDevice implements Control: any device a client attached goes, file or remote radio, along
+// with the capture on it. A dongle on this machine is not a client's to remove.
+func (d *Daemon) DetachDevice(ctx context.Context, req *leylinev1.DetachDeviceRequest) (*leylinev1.Empty, error) {
+	ci := clientFrom(ctx)
+	d.touchUnary(ci)
+	d.mu.Lock()
+	dev := d.devices[req.DeviceId]
+	if dev == nil {
+		d.mu.Unlock()
+		return nil, fail(ctx, errorf(leyline.CodeDeviceNotFound, req.DeviceId, "no such device"))
+	}
+	if dev.Driver != "file" && dev.Driver != "rtltcp" {
+		d.mu.Unlock()
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.DeviceId,
+			fmt.Sprintf("%s is a radio plugged into this machine, not a device a client attached; unplug it", dev.Model)))
+	}
+	d.mu.Unlock()
+	return d.detachVirtualDevice(ctx, ci, dev)
+}
+
+// detachVirtualDevice drops a hosted device: its capture ends first so clients see the session go
+// before the radio does, then the device leaves as a DISCONNECTED event.
+func (d *Daemon) detachVirtualDevice(ctx context.Context, ci *leylinev1.ClientInfo, dev *leylinev1.DeviceDescriptor) (*leylinev1.Empty, error) {
+	d.mu.Lock()
 	var capID string
 	for _, c := range d.captures {
 		if c.DeviceId == dev.DeviceId {

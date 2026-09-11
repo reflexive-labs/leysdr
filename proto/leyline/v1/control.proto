@@ -201,8 +201,10 @@ service Control {
 
   rpc WriteParams(stream ParamWrite) returns (WriteSummary);
 
-  // Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-  // attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+  // Virtual devices. A device a client attaches appears in ListDevices/events like any
+  // hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+  rpc AttachDevice(AttachDeviceRequest) returns (DeviceDescriptor);
+  rpc DetachDevice(DetachDeviceRequest) returns (Empty);
   rpc AttachFileDevice(AttachFileDeviceRequest) returns (DeviceDescriptor);
   rpc DetachFileDevice(DetachFileDeviceRequest) returns (Empty);
 }
@@ -235,6 +237,7 @@ message CreateChannelRequest {
 message DestroyChannelRequest { string channel_id = 1; }
 message AttachSinkRequest { string channel_id = 1; Sink sink = 2; } // sink_id ignored on input
 message DetachSinkRequest { string sink_id = 1; }
+// Sugar over AttachDevice with a FileSource; DetachFileDevice is sugar over DetachDevice.
 message AttachFileDeviceRequest {
   // Filesystem path to <name>.cf32 (+ <name>.json sidecar). A ley://recordings/<id> URI is the
   // intended spelling once Resources can resolve one; today only a path is understood.
@@ -242,3 +245,36 @@ message AttachFileDeviceRequest {
   bool loop = 2;     // wrap at EOF instead of ending the capture
 }
 message DetachFileDeviceRequest { string device_id = 1; }
+
+// Where a virtual device's samples come from. Persistence follows intent: a file you play is
+// ephemeral, a radio you attach is part of the station.
+message DeviceSource {
+  oneof source {
+    FileSource file = 1;
+    RtlTcpSource rtl_tcp = 2;
+  }
+}
+// A recording played back as a device. Ephemeral: it lives until DetachDevice or daemon exit.
+message FileSource {
+  // Filesystem path to <name>.cf32 (+ <name>.json sidecar), as AttachFileDeviceRequest.path.
+  string path = 1;
+  bool loop = 2;     // wrap at EOF instead of ending the capture
+}
+// A dongle served by rtl_tcp on another machine. The daemon remembers the endpoint across
+// restarts until DetachDevice forgets it.
+message RtlTcpSource {
+  string host = 1;
+  uint32 port = 2;   // 1..65535; rtl_tcp's own default is 1234
+}
+message AttachDeviceRequest {
+  // Attach connects once: a server that cannot be reached fails with DEVICE_IO naming
+  // host:port and is remembered nowhere, because a radio never reached is usually a typo.
+  // Attaching an rtl_tcp endpoint already hosted returns the existing descriptor rather than a
+  // second device. A drop after that is DISCONNECTED and the daemon reconnects on its own.
+  DeviceSource source = 1;
+}
+message DetachDeviceRequest {
+  // Any device a client attached, file or rtl_tcp: it is closed, its captures end and it is
+  // forgotten. A USB radio is refused with INVALID_ARGUMENT -- unplug it.
+  string device_id = 1;
+}

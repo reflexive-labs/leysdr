@@ -213,3 +213,32 @@ func rateOK(dev *leylinev1.DeviceDescriptor, rate uint64) bool {
 	}
 	return false
 }
+
+// rtlTCPDevice builds the descriptor of a dongle served by rtl_tcp, the way RTLTCPDevice does once
+// the server's header has been read: the endpoint is the serial (it is what makes the radio
+// distinct), the tuner the header reports names the ranges and the gain table, and "remote" tells
+// a client this radio is reached over the network. The fake's servers are always R820T.
+func rtlTCPDevice(host string, port uint32) *leylinev1.DeviceDescriptor {
+	endpoint := fmt.Sprintf("%s:%d", host, port)
+	return &leylinev1.DeviceDescriptor{
+		DeviceId:     newID("dev_"),
+		Driver:       "rtltcp",
+		Model:        fmt.Sprintf("rtl_tcp %s (R820T)", endpoint),
+		Serial:       endpoint,
+		State:        leylinev1.DeviceState_AVAILABLE,
+		TuningRanges: []*leylinev1.FrequencyRange{{MinHz: 24_000_000, MaxHz: 1_766_000_000}},
+		SampleRates:  RTLSDRRates,
+		NativeFormat: leylinev1.SampleFormat_CS8,
+		GainElements: []*leylinev1.GainElement{{
+			Name: "TUNER", MinDb: 0, MaxDb: 49.6, StepDb: 0, SupportsAuto: true, ValidDb: R820TGains,
+		}},
+		Features: map[string]*leylinev1.FeatureValue{
+			"tuner":           {Value: &leylinev1.FeatureValue_Text{Text: "R820T"}},
+			"remote":          {Value: &leylinev1.FeatureValue_Text{Text: endpoint}},
+			"bias_tee":        {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
+			"direct_sampling": {Value: &leylinev1.FeatureValue_Integer{Integer: 0}},
+			"ppm_correction":  {Value: &leylinev1.FeatureValue_Integer{Integer: 0}},
+			"rtl_agc":         {Value: &leylinev1.FeatureValue_Flag{Flag: false}},
+		},
+	}
+}

@@ -368,6 +368,30 @@ func (c *Client) ListJobs(ctx context.Context, states ...leylinev1.JobState) ([]
 	return jobs, nil
 }
 
+// AttachDevice hosts a virtual device on the daemon and returns its descriptor. A file source
+// plays a recording until it is detached; an rtl_tcp source is a radio the daemon remembers across
+// restarts, and attaching an endpoint it already hosts hands back the device it has.
+func (c *Client) AttachDevice(ctx context.Context, source *leylinev1.DeviceSource) (*leylinev1.DeviceDescriptor, error) {
+	return c.Control.AttachDevice(ctx, &leylinev1.AttachDeviceRequest{Source: source})
+}
+
+// FileSource names a recording to play back, wrapping at EOF when loop is set.
+func FileSource(path string, loop bool) *leylinev1.DeviceSource {
+	return &leylinev1.DeviceSource{Source: &leylinev1.DeviceSource_File{File: &leylinev1.FileSource{Path: path, Loop: loop}}}
+}
+
+// RtlTcpSource names a dongle served by rtl_tcp on another machine.
+func RtlTcpSource(host string, port uint32) *leylinev1.DeviceSource {
+	return &leylinev1.DeviceSource{Source: &leylinev1.DeviceSource_RtlTcp{RtlTcp: &leylinev1.RtlTcpSource{Host: host, Port: port}}}
+}
+
+// DetachDevice removes a device a client attached: its captures end and the daemon forgets it.
+// A radio plugged into the daemon's own machine is refused.
+func (c *Client) DetachDevice(ctx context.Context, deviceID string) error {
+	_, err := c.Control.DetachDevice(ctx, &leylinev1.DetachDeviceRequest{DeviceId: deviceID})
+	return err
+}
+
 // DetachSink removes a sink from its channel: the audio it was carrying stops, the channel and
 // the capture under it stay.
 func (c *Client) DetachSink(ctx context.Context, sinkID string) error {

@@ -108,6 +108,30 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         return await WriteCoalescer(store: store, client: c).run(request)
     }
 
+    func attachDevice(request: Leyline_V1_AttachDeviceRequest, context: ServerContext) async throws -> Leyline_V1_DeviceDescriptor {
+        await store.touchUnary(client)
+        return try await mapErrors {
+            switch request.source.source {
+            case .file(let f):
+                guard !f.path.isEmpty else { throw EngineError.invalidArgument("path is required") }
+                return ProtoMapping.descriptor(try await store.attachFileDevice(path: f.path, loop: f.loop, by: client))
+            case .rtlTcp:
+                throw EngineError.unimplemented("attaching an rtl_tcp device")
+            case .none:
+                throw EngineError.invalidArgument("a source is required")
+            }
+        }
+    }
+
+    func detachDevice(request: Leyline_V1_DetachDeviceRequest, context: ServerContext) async throws -> Leyline_V1_Empty {
+        await store.touchUnary(client)
+        return try await mapErrors {
+            guard let id = DeviceID(string: request.deviceID) else { throw EngineError.deviceNotFound(request.deviceID) }
+            try await store.detachFileDevice(id: id, by: client)
+            return Leyline_V1_Empty()
+        }
+    }
+
     func attachFileDevice(request: Leyline_V1_AttachFileDeviceRequest, context: ServerContext) async throws -> Leyline_V1_DeviceDescriptor {
         await store.touchUnary(client)
         return try await mapErrors {

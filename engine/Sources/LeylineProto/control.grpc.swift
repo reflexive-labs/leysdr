@@ -153,6 +153,32 @@ public enum Leyline_V1_Control: Sendable {
                 type: .clientStreaming
             )
         }
+        /// Namespace for "AttachDevice" metadata.
+        public enum AttachDevice: Sendable {
+            /// Request type for "AttachDevice".
+            public typealias Input = Leyline_V1_AttachDeviceRequest
+            /// Response type for "AttachDevice".
+            public typealias Output = Leyline_V1_DeviceDescriptor
+            /// Descriptor for "AttachDevice".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Control"),
+                method: "AttachDevice",
+                type: .unary
+            )
+        }
+        /// Namespace for "DetachDevice" metadata.
+        public enum DetachDevice: Sendable {
+            /// Request type for "DetachDevice".
+            public typealias Input = Leyline_V1_DetachDeviceRequest
+            /// Response type for "DetachDevice".
+            public typealias Output = Leyline_V1_Empty
+            /// Descriptor for "DetachDevice".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Control"),
+                method: "DetachDevice",
+                type: .unary
+            )
+        }
         /// Namespace for "AttachFileDevice" metadata.
         public enum AttachFileDevice: Sendable {
             /// Request type for "AttachFileDevice".
@@ -191,6 +217,8 @@ public enum Leyline_V1_Control: Sendable {
             AttachSink.descriptor,
             DetachSink.descriptor,
             WriteParams.descriptor,
+            AttachDevice.descriptor,
+            DetachDevice.descriptor,
             AttachFileDevice.descriptor,
             DetachFileDevice.descriptor
         ]
@@ -363,12 +391,40 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_WriteSummary>
 
-        /// Handle the "AttachFileDevice" method.
+        /// Handle the "AttachDevice" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-        /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+        /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+        /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_AttachDeviceRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_DeviceDescriptor` messages.
+        func attachDevice(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_AttachDeviceRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_DeviceDescriptor>
+
+        /// Handle the "DetachDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_DetachDeviceRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Empty` messages.
+        func detachDevice(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_DetachDeviceRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "AttachFileDevice" method.
         ///
         /// - Parameters:
         ///   - request: A streaming request of `Leyline_V1_AttachFileDeviceRequest` messages.
@@ -549,12 +605,40 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_WriteSummary>
 
-        /// Handle the "AttachFileDevice" method.
+        /// Handle the "AttachDevice" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-        /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+        /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+        /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_AttachDeviceRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_DeviceDescriptor` message.
+        func attachDevice(
+            request: GRPCCore.ServerRequest<Leyline_V1_AttachDeviceRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_DeviceDescriptor>
+
+        /// Handle the "DetachDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_DetachDeviceRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Empty` message.
+        func detachDevice(
+            request: GRPCCore.ServerRequest<Leyline_V1_DetachDeviceRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "AttachFileDevice" method.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_AttachFileDeviceRequest` message.
@@ -734,12 +818,40 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_WriteSummary
 
-        /// Handle the "AttachFileDevice" method.
+        /// Handle the "AttachDevice" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-        /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+        /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+        /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_AttachDeviceRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_DeviceDescriptor` to respond with.
+        func attachDevice(
+            request: Leyline_V1_AttachDeviceRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_DeviceDescriptor
+
+        /// Handle the "DetachDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_DetachDeviceRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Empty` to respond with.
+        func detachDevice(
+            request: Leyline_V1_DetachDeviceRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Empty
+
+        /// Handle the "AttachFileDevice" method.
         ///
         /// - Parameters:
         ///   - request: A `Leyline_V1_AttachFileDeviceRequest` message.
@@ -884,6 +996,28 @@ extension Leyline_V1_Control.StreamingServiceProtocol {
             }
         )
         router.registerHandler(
+            forMethod: Leyline_V1_Control.Method.AttachDevice.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_AttachDeviceRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_DeviceDescriptor>(),
+            handler: { request, context in
+                try await self.attachDevice(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Control.Method.DetachDevice.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_DetachDeviceRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Empty>(),
+            handler: { request, context in
+                try await self.detachDevice(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
             forMethod: Leyline_V1_Control.Method.AttachFileDevice.descriptor,
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_AttachFileDeviceRequest>(),
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_DeviceDescriptor>(),
@@ -1016,6 +1150,28 @@ extension Leyline_V1_Control.ServiceProtocol {
     ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_WriteSummary> {
         let response = try await self.writeParams(
             request: request,
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func attachDevice(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_AttachDeviceRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_DeviceDescriptor> {
+        let response = try await self.attachDevice(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func detachDevice(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_DetachDeviceRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
+        let response = try await self.detachDevice(
+            request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
         return GRPCCore.StreamingServerResponse(single: response)
@@ -1175,6 +1331,32 @@ extension Leyline_V1_Control.SimpleServiceProtocol {
         return GRPCCore.ServerResponse<Leyline_V1_WriteSummary>(
             message: try await self.writeParams(
                 request: request.messages,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func attachDevice(
+        request: GRPCCore.ServerRequest<Leyline_V1_AttachDeviceRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_DeviceDescriptor> {
+        return GRPCCore.ServerResponse<Leyline_V1_DeviceDescriptor>(
+            message: try await self.attachDevice(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func detachDevice(
+        request: GRPCCore.ServerRequest<Leyline_V1_DetachDeviceRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
+        return GRPCCore.ServerResponse<Leyline_V1_Empty>(
+            message: try await self.detachDevice(
+                request: request.message,
                 context: context
             ),
             metadata: [:]
@@ -1411,12 +1593,50 @@ extension Leyline_V1_Control {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_WriteSummary>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
-        /// Call the "AttachFileDevice" method.
+        /// Call the "AttachDevice" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-        /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+        /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+        /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_AttachDeviceRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_AttachDeviceRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_DeviceDescriptor` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func attachDevice<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_AttachDeviceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_AttachDeviceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_DeviceDescriptor>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeviceDescriptor>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DetachDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_DetachDeviceRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_DetachDeviceRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func detachDevice<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_DetachDeviceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_DetachDeviceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "AttachFileDevice" method.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_AttachFileDeviceRequest` message.
@@ -1773,12 +1993,72 @@ extension Leyline_V1_Control {
             )
         }
 
-        /// Call the "AttachFileDevice" method.
+        /// Call the "AttachDevice" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-        /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+        /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+        /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_AttachDeviceRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_AttachDeviceRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_DeviceDescriptor` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func attachDevice<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_AttachDeviceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_AttachDeviceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_DeviceDescriptor>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeviceDescriptor>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Control.Method.AttachDevice.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DetachDevice" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_DetachDeviceRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_DetachDeviceRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func detachDevice<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_DetachDeviceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_DetachDeviceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Control.Method.DetachDevice.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "AttachFileDevice" method.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_AttachFileDeviceRequest` message.
@@ -2095,12 +2375,62 @@ extension Leyline_V1_Control.ClientProtocol {
         )
     }
 
-    /// Call the "AttachFileDevice" method.
+    /// Call the "AttachDevice" method.
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-    /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+    /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+    /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_AttachDeviceRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func attachDevice<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_AttachDeviceRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeviceDescriptor>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.attachDevice(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_AttachDeviceRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_DeviceDescriptor>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DetachDevice" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_DetachDeviceRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func detachDevice<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_DetachDeviceRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.detachDevice(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_DetachDeviceRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AttachFileDevice" method.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Leyline_V1_AttachFileDeviceRequest` message.
@@ -2447,12 +2777,70 @@ extension Leyline_V1_Control.ClientProtocol {
         )
     }
 
-    /// Call the "AttachFileDevice" method.
+    /// Call the "AttachDevice" method.
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Virtual devices. Playback is a device whose tuning range is whatever the recording says;
-    /// > attaching one makes it appear in ListDevices/events like any hot-plugged SDR.
+    /// > Virtual devices. A device a client attaches appears in ListDevices/events like any
+    /// > hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func attachDevice<Result>(
+        _ message: Leyline_V1_AttachDeviceRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeviceDescriptor>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_AttachDeviceRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.attachDevice(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DetachDevice" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func detachDevice<Result>(
+        _ message: Leyline_V1_DetachDeviceRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_DetachDeviceRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.detachDevice(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AttachFileDevice" method.
     ///
     /// - Parameters:
     ///   - message: request message to send.
