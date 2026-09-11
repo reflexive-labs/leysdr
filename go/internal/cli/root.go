@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,9 +28,28 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
+// defaultVersion mirrors the root VERSION file, the single source of truth both
+// languages read: `make go` stamps it into Version at link time and
+// scripts/gen-version.sh writes the same number into the engine's constant.
+// TestVersionMatchesTheSourceOfTruth holds the three together.
+const defaultVersion = "0.1.0-dev"
+
 // Version is the ley build version; overridden at link time with
 // -ldflags "-X github.com/dpup/leysdr/go/internal/cli.Version=...".
-var Version = "0.1.0-dev"
+var Version = defaultVersion
+
+// A binary built outside the Makefile — `go install ...@v0.2.0` — gets no
+// ldflags, and the literal would then claim a number the module metadata
+// already knows better. Go stamps "(devel)" for a build from a working tree,
+// which says nothing, so that case keeps the literal.
+func init() {
+	if Version != defaultVersion {
+		return
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = strings.TrimPrefix(info.Main.Version, "v")
+	}
+}
 
 // Command groups, in the order `ley --help` lists them.
 const (

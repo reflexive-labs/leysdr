@@ -3,7 +3,10 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +39,34 @@ func TestVersionJSONGolden(t *testing.T) {
 	var doc map[string]string
 	if err := json.Unmarshal([]byte(out), &doc); err != nil || doc["version"] != Version {
 		t.Fatalf("version --json is not JSON-encoded: %v %q", err, out)
+	}
+}
+
+// TestVersionMatchesTheSourceOfTruth holds the three copies of the version
+// together: the root VERSION file both build steps read, the constant
+// scripts/gen-version.sh writes for the engine, and the literal an unstamped
+// `go build` falls back to. A number that drifts here ships a daemon and a
+// client that disagree about which build a bug report came from.
+func TestVersionMatchesTheSourceOfTruth(t *testing.T) {
+	root := "../../.."
+	raw, err := os.ReadFile(filepath.Join(root, "VERSION"))
+	if err != nil {
+		// The module also builds extracted from the repo (a module cache
+		// entry carries go/ alone), where there is nothing to compare.
+		t.Skipf("no repo root beside the module: %v", err)
+	}
+	want := strings.TrimSpace(string(raw))
+	if want == "" {
+		t.Fatal("VERSION is empty")
+	}
+	if defaultVersion != want {
+		t.Errorf("go fallback literal is %q, VERSION says %q — edit cli.defaultVersion", defaultVersion, want)
+	}
+	swift, err := os.ReadFile(filepath.Join(root, "engine", "Sources", "LeylineDaemon", "Version.swift"))
+	if err != nil {
+		t.Fatalf("engine version constant: %v", err)
+	}
+	if got := `let leylinedVersion = "` + want + `"`; !strings.Contains(string(swift), got) {
+		t.Errorf("engine version constant does not say %s — run `make version`:\n%s", got, swift)
 	}
 }

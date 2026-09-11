@@ -25,6 +25,9 @@ jobs:
         run: |
           ./scripts/gen-proto.sh
           git diff --exit-code -- go/gen
+      # Swift has no link-time -X, so the engine's version constant is generated and checked in.
+      - name: the version is one number in three places
+        run: make version-check
       - name: go.mod / go.sum are tidy
         working-directory: go
         run: |

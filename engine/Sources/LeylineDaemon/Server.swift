@@ -9,9 +9,6 @@ import LeylineProto
 import Logging
 import Synchronization
 
-/// The version reported in `DaemonInfo` and by `--version`.
-let leylinedVersion = "0.1.0-dev"
-
 /// Everything a running daemon owns: device registry, session store, bulk registry and the gRPC
 /// server on a UDS. `run()` serves until `shutdown()`; tests drive the same object in-process.
 final class Daemon: @unchecked Sendable {

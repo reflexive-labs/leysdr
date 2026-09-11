@@ -330,7 +330,7 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 - `docs/cli-guide.md`: a section for `ley waterfall` and `ley phosphor` (what question each answers,
   from `docs/design-signal-views.md` and `design-band-watching.md`), and the two factual fixes.
 
-### R-2 `[ ]` One version, stamped at build time (S, Opus)
+### R-2 `[x]` One version, stamped at build time (S, Opus)
 
 - A root `VERSION` file is the single source of truth (content stays `0.1.0-dev` until the owner
   tags; the release step bumps it).

@@ -169,7 +169,7 @@ CLI test. Check `RTLSDRDevice.swift` for the feature keys the real driver emits 
 `docs/plans/v1-release.md` section R-5 in full, plus q-go-render-4's package-doc and help-topic
 claims made true.
 
-### GO-9 `[ ]` One version, stamped at build time (R-2 of the release plan)
+### GO-9 `[x]` One version, stamped at build time (R-2 of the release plan)
 
 `docs/plans/v1-release.md` section R-2 in full.
 

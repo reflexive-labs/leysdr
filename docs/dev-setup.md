@@ -106,6 +106,18 @@ rebuilt when that file changes). Nothing on your `PATH` influences the output, s
 only on real drift. To bump a plugin: `cd go && go get -tool <module>@<version>` or update the engine's
 package dependency, then `make proto` and commit the regenerated code.
 
+### Cutting a release
+
+The root `VERSION` file is the one number. `make go` stamps it into `ley` and `leyfix` at link time,
+adding the git description of the tree (`0.1.0+3-gd34db33`) for anything that is not a build of the
+tagged commit; `make version` writes it into `engine/Sources/LeylineDaemon/Version.swift`, which is
+committed because Swift has no link-time equivalent. `make version-check` (part of `make check` and
+of CI) fails if the generated constant or the Go fallback literal has drifted.
+
+To release: bump `VERSION`, edit `defaultVersion` in `go/internal/cli/root.go` to match, run `make
+version`, commit the three files, then tag `v<VERSION>`. Builds from that commit print the bare
+number.
+
 ## Linux / the moat container (Go clients, contract tests, engine compile checks)
 
 - Go side: `make go go-test lint`. `ley` is tested against `go/internal/fakedaemon`, an in-memory

@@ -1,6 +1,7 @@
 # Leyline — top-level developer entry points. See docs/dev-setup.md.
 #
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
+#   make version    regenerate the engine's version constant from the root VERSION file
 #   make go         build the Go clients (ley, leyfix) into go/bin
 #   make go-test    Go unit + contract tests
 #   make race       Go tests that exercise goroutines, under the race detector
@@ -15,6 +16,14 @@ SHELL := /bin/bash
 GOBIN := $(CURDIR)/go/bin
 SWIFT_CONFIG ?= debug
 FIXTURE_DURATION ?= 1
+# The root VERSION file is the single source of truth. Swift reads a generated constant (make
+# version); the Go binaries are stamped at link time. Only the commit tagged v$(VERSION) prints the
+# bare number: anything else carries what it actually is — `0.1.0+3-gd34db33-dirty`, or
+# `0.1.0-dev+d34db33` before the first tag — so a bug report names one tree.
+VERSION := $(shell tr -d '[:space:]' < $(CURDIR)/VERSION)
+GIT_DESCRIBE := $(shell git -C $(CURDIR) describe --tags --always --dirty --match 'v*' --abbrev=7 2>/dev/null | sed 's/^v$(VERSION)-//')
+BUILD_VERSION := $(if $(filter v$(VERSION),$(shell git -C $(CURDIR) describe --tags --exact-match --match 'v*' 2>/dev/null)),$(VERSION),$(VERSION)$(if $(GIT_DESCRIBE),+$(GIT_DESCRIBE)))
+GO_LDFLAGS := -X github.com/dpup/leysdr/go/internal/cli.Version=$(BUILD_VERSION)
 # Repo-pinned developer tools, per host (a checkout shared between a Mac and a Linux container must
 # not hand one host the other's binaries). scripts/gen-proto.sh keeps the protoc plugins here too.
 HOST := $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
@@ -22,7 +31,7 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: all proto proto-check go go-test race swift swift-release swift-test fixtures e2e lint check clean
+.PHONY: all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e lint check clean
 
 all: go swift
 
@@ -34,8 +43,17 @@ proto-check:
 	./scripts/gen-proto.sh
 	git diff --exit-code -- go/gen engine/Sources/LeylineProto
 
+version:
+	./scripts/gen-version.sh
+
+# Fails if the engine's version constant or the Go fallback literal has drifted from VERSION.
+version-check:
+	./scripts/gen-version.sh
+	git diff --exit-code -- engine/Sources/LeylineDaemon/Version.swift
+	cd go && go test -run TestVersionMatchesTheSourceOfTruth ./internal/cli/
+
 go:
-	cd go && GOBIN=$(GOBIN) go install ./cmd/...
+	cd go && GOBIN=$(GOBIN) go install -ldflags '$(GO_LDFLAGS)' ./cmd/...
 
 go-test:
 	cd go && go test ./...
@@ -75,7 +93,7 @@ $(TOOLS)/gofumpt:
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 
-check: proto-check go-test race lint swift swift-test e2e
+check: proto-check version-check go-test race lint swift swift-test e2e
 
 clean:
 	rm -rf go/bin engine/.build
