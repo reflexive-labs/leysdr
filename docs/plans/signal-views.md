@@ -389,3 +389,28 @@ at the top, middle and bottom rows, so the vertical scale is on screen too (full
 the header's tuning-error line carries the hertz). Re-record the goldens and the transcript in
 `docs/cli-guide.md`; `--json` is unchanged. Keep the axis out of `--width` accounting only if it
 was already excluded for `spectrum`; otherwise the trace shrinks by the gutter width.
+
+### SV-8g `[ ]` A vertical scale, and the squelch said out loud (Go lane)
+
+Two things a first real-radio session showed. Full scale on the demod tap is ±5 kHz of deviation
+and speech spends most of its time at a tenth of that, so a voice draws one or two dots high; and
+on the audio tap a closed squelch zeroes the trace while the header still reports the PL tone from
+the daemon's detector, which reads as "the tone is there but my voice is not".
+
+- `--scale full|auto|<n>` (default `full`). `auto` fits the trace to the signal: the scale is the
+  frame's peak with a little headroom, held with a slow decay (about a second) so it does not
+  flicker between syllables, and snapped to 0.02, 0.05, 0.1, 0.2, 0.5 or 1 so the gutter reads a
+  round number. `<n>` in 0.02..1 pins it. The gutter labels become `+0.2`, `0`, `-0.2`; the header
+  says `scale ±0.2`; `--json` gains `scale`. The DC offset still reads out in hertz. `full` keeps the
+  rule that a trace that grows is a signal that grew, and the guide says which to use when.
+- The scope already subscribes to telemetry for `SUB_AUDIBLE`; take `METER` on the same channel as
+  well and, while `squelch_open` is false and the tap is `audio`, print on the header's second line
+  `squelch closed: the audio tap is muted; --tap demod shows what the detector hears`. Nothing is
+  printed on the demod tap or with the squelch off.
+- `docs/cli-guide.md` section 7: a short "looking at speech" paragraph — `--window 250
+  --trigger free --scale auto` for an envelope, `--window 40` with the trigger for a tone — and the
+  sentence that full scale is ±5 kHz on NFM and ±75 kHz on WFM. Re-record the transcript if the
+  header moved. `docs/interfaces.md` JSON paragraph gains `scale`.
+- Tests against the fake: the auto scale snaps to the expected step for a 0.14 tone and holds
+  across frames; a pinned scale labels the gutter; the squelch line appears only on the audio tap
+  with the squelch closed; `--json` carries `scale`; goldens as needed.
