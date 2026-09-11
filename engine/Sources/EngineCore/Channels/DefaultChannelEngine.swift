@@ -153,6 +153,11 @@ public actor DefaultChannelEngine: ChannelEngine {
         if config.mode == .rawIQ, sinkTable.contains(where: { $0 is PCMOnlyAudioSink }) {
             throw EngineError.invalidArgument("cannot switch to raw IQ while a system audio sink is attached", target: id.description)
         }
+        // Raw IQ runs no detector, so a demod tap attached to this channel would stay open and
+        // receive nothing. Refusing the switch keeps the mistake visible to whoever makes it.
+        if config.mode == .rawIQ, sinkTable.contains(where: { $0.tap == .demod }) {
+            throw EngineError.invalidArgument("cannot switch to raw IQ while a demod tap is attached", target: id.description)
+        }
         if !structural {
             // Squelch/AGC-only: adjust the running core in place. Out of capture there is no core;
             // the values are kept for the rebuild that happens once the channel fits again, and

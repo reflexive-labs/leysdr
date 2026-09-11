@@ -179,4 +179,25 @@ final class DemodTapTests: XCTestCase {
         }
         await capture.stop()
     }
+
+    /// Switching a tapped channel to raw IQ would leave the scope subscribed to a stage that no
+    /// longer runs, so the reconfigure is refused while the tap is attached.
+    func testSwitchToRawIQRefusedWhileDemodTapAttached() async throws {
+        let capture = DefaultCaptureEngine(device: try FilePlaybackDevice(path: Fixtures.dir + "/nfm_pl.cf32", loop: true, realtime: false),
+                                           centerHz: 146_520_000, sampleRate: 2_400_000)
+        var config = ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm)
+        let channel = try await capture.addChannel(config)
+        let scope = AudioCollector(tap: .demod)
+        try await channel.attach(scope.sink)
+        config.mode = .rawIQ
+        do {
+            try await channel.update(config)
+            XCTFail("a demod tap cannot survive the switch to raw IQ")
+        } catch let error as EngineError {
+            XCTAssertEqual(error.code, "INVALID_ARGUMENT")
+        }
+        let mode = await channel.config.mode
+        XCTAssertEqual(mode, .nfm, "the rejected update leaves the channel alone")
+        await capture.stop()
+    }
 }
