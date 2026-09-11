@@ -398,7 +398,7 @@ and a test that attaches it through `ley devices attach rtltcp 127.0.0.1:<port>`
 daemon, sees it in `ley devices --json`, tunes it with `--no-audio`, detaches it, and confirms
 `devices.json` in the daemon's directory went from one entry to none.
 
-### SW-12 `[ ]` Signposts on the sample-path code added since Milestone B
+### SW-12 `[x]` Signposts on the sample-path code added since Milestone B
 
 R-19 of the release plan. Add names to `Signposts.swift` and intervals around `AudioSink.write`
 (`CoreAudioSink`, `CallbackSink`), the daemon's `FrameRing` writes, `PersistenceAccumulator.add`,
