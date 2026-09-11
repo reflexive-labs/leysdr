@@ -434,13 +434,17 @@ public protocol AudioSink: AnyObject, Sendable {
     /// a raw-IQ channel, where there is no detector to tap.
     var tap: AudioTap { get }
     /// Hot path: synchronous, allocation-free. `audio` is real f32 mono (format == .f32).
+    ///
+    /// `time` is when the block this came from started at the capture, the same value for both
+    /// taps of one block. It is not a claim that the taps are sample-aligned: WFM decimates its
+    /// raw stage through a filter of its own, with its own reset point and group delay.
     func write(_ audio: SampleBuffer, at time: SampleTime)
     func flush() async
     func closeSink() async
 }
 
 public extension AudioSink {
-    /// A sink that does not say is listening.
+    /// A sink that does not say wants what a listener hears.
     var tap: AudioTap { .audio }
 }
 
@@ -449,8 +453,7 @@ public extension AudioSink {
 /// `.audio` is what a speaker gets: after the high-pass, de-emphasis, limiter and AGC, and zeros
 /// while the squelch is closed, exactly as the listener hears it. `.demod` is the detector's own
 /// output before any of that -- a CTCSS tone under NFM voice, the carrier as DC under AM -- and it
-/// keeps flowing while the squelch is closed, because what a transmitter sends between words is
-/// what it is for.
+/// keeps flowing while the squelch is closed. `AudioTap` in `bulk.proto` says what that is for.
 public enum AudioTap: Hashable, Sendable {
     case audio
     case demod

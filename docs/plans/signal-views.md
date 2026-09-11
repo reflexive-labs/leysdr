@@ -311,7 +311,7 @@ The `cli-guide.md` transcript stands: rendering a demod frame with the guide's n
 its two header lines exactly, so there was no wording to re-record.
 
 
-### SV-8e `[ ]` What the second look at the demod tap found (Swift lane)
+### SV-8e `[x]` What the second look at the demod tap found (Swift lane)
 
 An independent read of `c2a0b08..d39aa56` on the engine side, after the per-item verifiers. Line
 numbers as of `4212935`. Engine and docs only.
@@ -354,6 +354,28 @@ numbers as of `4212935`. Engine and docs only.
    design doc, and have the two code comments refer to the field instead.
 
 Suite green twice at the end.
+
+Item 7's premise is wrong about NFM and WFM: the audio rate is `r1 / round(r1 / 48 kHz)` in both
+modes (the channelizer decimates for NFM, the demodulator for WFM, by the same arithmetic on the
+same `r1`), so a mode write never moves it and there is no NFM→WFM test to write. The write path
+was reconciled anyway, because another route through it does move the rate: a channel left
+`OUT_OF_CAPTURE` by a rate change has its chain re-planned by the first write that fits it back in,
+at the current capture rate. `testOffsetWriteThatRePlansTheChainEndsAudioStreams` is that case --
+an offset write, a listener's stream and a scope's stream both negotiated at 48 kHz, both ended,
+and a fresh subscription served 51.2 kHz.
+
+Everything else landed as written. The sink table is one array plus `hasDemodSink`; `rawOut` is nil
+for raw IQ; WFM's early return zeroes the tap; `emitRaw` lost its unused `scale:`; the alignment
+claim is now in `docs/engine-internals.md` and on `AudioSink.write`, and the WFM test says it
+asserts the fresh-start case; the tap tests guard instead of trapping, and the daemon one reads
+under a deadline. Two new daemon tests cover destroy and a capture-rate change ending a tap stream.
+
+Item 7's last clause could not be answered with a comment: two capture rates can plan to the same
+audio rate (1.024 and 2.048 MSPS both give 51.2 kHz on NFM), so an audio-rate teardown leaves a
+stream running with a stale `captureRate` and frame spans wrong by the ratio. A capture-rate write
+now ends every bulk audio stream on the capture (`TeardownScope.captureRate`), which is what the
+comment at `StreamSources.swift` rests on, and
+`testCaptureRateChangeEndsTheAudioStreamWhenTheAudioRateHolds` is the case where no audio rate moves.
 
 ### SV-8f `[x]` A time axis under the trace (Go lane)
 

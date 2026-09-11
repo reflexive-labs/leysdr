@@ -63,6 +63,10 @@ final class AudioFrameSource: @unchecked Sendable {
     let audioRate: Double
     private let scratch: UnsafeMutableBufferPointer<Float>
 
+    /// `captureRate` is the rate at subscribe time and stays that for the life of the source: a
+    /// capture-rate write ends every audio stream on the capture (`TeardownScope.captureRate`), so
+    /// the source never outlives the rate it scales frame spans by, and the client re-subscribes
+    /// for a fresh descriptor.
     init(captureRate: UInt64, audioRate: UInt32, tap: AudioTap = .audio) {
         self.captureRate = Double(captureRate)
         self.audioRate = Double(max(audioRate, 1))

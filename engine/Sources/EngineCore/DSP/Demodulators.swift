@@ -52,19 +52,13 @@ func discriminate(_ s: DemodScratch, count n: Int, scale: Float) {
     s.carry(n)
 }
 
-/// Hand a demodulator's raw stage to a caller that asked for one: `count` samples from `src`,
-/// optionally rescaled, and the count reported back on the buffer. Hot path, and nothing at all
-/// when `rawOut` is nil.
+/// Hand a demodulator's raw stage to a caller that asked for one: `count` samples from `src`, and
+/// the count reported back on the buffer. Hot path, and nothing at all when `rawOut` is nil.
 @inline(__always)
-func emitRaw(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, count n: Int, scale: Float = 1) {
+func emitRaw(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, count n: Int) {
     guard let raw = rawOut else { return }
     precondition(raw.format == .f32 && raw.count >= n)
-    let dst = raw.base.assumingMemoryBound(to: Float.self)
-    if scale == 1 {
-        dst.update(from: src, count: n)
-    } else {
-        Kernels.scaleAdd(src, scale: scale, offset: 0, to: dst, count: n)
-    }
+    raw.base.assumingMemoryBound(to: Float.self).update(from: src, count: n)
     rawOut?.count = n
 }
 
@@ -282,6 +276,7 @@ public final class WFMDemodulator: Demodulator {
     @inline(__always)
     private func emitRawTap(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, count n: Int) {
         guard let raw = rawOut, let filter = rawFilter else {
+            rawOut?.count = 0
             rawActive = false
             return
         }

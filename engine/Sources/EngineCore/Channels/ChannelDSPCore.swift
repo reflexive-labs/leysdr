@@ -130,18 +130,18 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private let iqOut: SampleStorage
     private let audioOut: SampleStorage
     /// Where the demodulator writes its raw stage for `.demod` sinks. Allocated with everything
-    /// else this core owns, so the hot path only ever borrows it.
-    private let rawOut: SampleStorage
+    /// else this core owns, so the hot path only ever borrows it, and nil for raw IQ channels,
+    /// which have no demodulator stage to tap.
+    private let rawOut: SampleStorage?
     private var meter: PowerMeter
     private var squelch: Squelch
     private let squelchBits = Atomic<UInt32>(Float.nan.bitPattern)
     private let agcAuto = Atomic<Bool>(true)
     private let sinkLock = NSLock()
     private var sinks: [any AudioSink] = []
-    /// The sink table split by tap, so the hot path picks a block per group instead of asking every
-    /// sink what it wanted. A channel nobody scopes has an empty `demodSinks` and pays one branch.
-    private var audioSinks: [any AudioSink] = []
-    private var demodSinks: [any AudioSink] = []
+    /// Whether anything in `sinks` asked for the demod tap, decided when the table is set so the
+    /// hot path spends one branch instead of asking every sink what it wanted.
+    private var hasDemodSink = false
     private let telemetry: ChannelTelemetryQueue
     /// Channel-rate samples per `.meter` emission (100 ms).
     private let meterInterval: Int
@@ -175,7 +175,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
         audioRate = demodulator.outputRate
         iqOut = SampleStorage(capacity: channelizer.maxOutput, format: .cf32)
         audioOut = SampleStorage(capacity: channelizer.maxOutput, format: .f32)
-        rawOut = SampleStorage(capacity: channelizer.maxOutput, format: .f32)
+        rawOut = config.mode == .rawIQ ? nil : SampleStorage(capacity: channelizer.maxOutput, format: .f32)
         meter = PowerMeter(rate: channelizer.outputRateHz)
         squelch = Squelch(thresholdDB: Float(config.squelchDB))
         meterInterval = max(1, Int(channelizer.outputRateHz / 10))
@@ -230,8 +230,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     public func setSinks(_ newSinks: [any AudioSink]) {
         sinkLock.lock()
         sinks = newSinks
-        audioSinks = newSinks.filter { $0.tap == .audio }
-        demodSinks = newSinks.filter { $0.tap == .demod }
+        hasDemodSink = rawOut != nil && newSinks.contains { $0.tap == .demod }
         sinkLock.unlock()
     }
 
@@ -285,13 +284,13 @@ public final class ChannelDSPCore: @unchecked Sendable {
         if let am = amDemodulator { am.agcEnabled = agcOn }
         if let ssb = ssbDemodulator { ssb.agcEnabled = agcOn }
         sinkLock.lock()
-        let table = audioSinks
-        let demodTable = demodSinks
+        let table = sinks
+        let wantsRaw = hasDemodSink
         sinkLock.unlock()
         var audio = audioOut.view()
         // The raw stage costs the demodulator nothing while nobody is watching it: nil here is the
         // single branch a channel with no scope on it pays.
-        var raw: SampleBuffer? = demodTable.isEmpty ? nil : rawOut.view()
+        var raw: SampleBuffer? = wantsRaw ? rawOut?.view() : nil
         let dsp = Signpost.begin(.demodulate)
         var frames = demodulator.process(iq: iq, audioOut: &audio, rawOut: &raw)
         Signpost.end(.demodulate, dsp)
@@ -305,16 +304,16 @@ public final class ChannelDSPCore: @unchecked Sendable {
             out = audio
         }
         // Squelched: the listener hears silence, and only the listener. The demod tap below carries
-        // the detector's own output whether the squelch is open or shut, because what a transmitter
-        // is sending between words is what it is for.
+        // the detector's own output whether the squelch is open or shut; `AudioTap` in `bulk.proto`
+        // says what that is for.
         if !squelch.isOpen, frames > 0 {
             Kernels.clear(out.base.assumingMemoryBound(to: Float.self), count: out.format == .cf32 ? frames * 2 : frames)
         }
         if frames > 0 {
-            for sink in table { sink.write(out, at: time) }
+            for sink in table where sink.tap == .audio { sink.write(out, at: time) }
         }
         if let raw, raw.count > 0 {
-            for sink in demodTable { sink.write(raw, at: time) }
+            for sink in table where sink.tap == .demod { sink.write(raw, at: time) }
         }
         // Audio level over the meter interval. Two vDSP passes over the block that was just written
         // to the sinks, so the data is already in cache. Raw IQ has no audio to measure.

@@ -23,6 +23,10 @@ private func tonePowerDB(_ x: [Float], rate: Double, frequency: Double, size: In
     return 20 * Foundation.log10(Swift.max(amplitude, 1e-12))
 }
 
+/// Thrown when a tap produced less than a test asked for: the assertions below size their windows
+/// from `want`, and `tonePowerDB` preconditions on that length rather than failing.
+private struct TapUnderrun: Error {}
+
 /// The demod tap: what the detector produced, before the conditioning that makes it listenable.
 /// Every assertion here is a thing the audio tap cannot show, which is the reason the tap exists.
 final class DemodTapTests: XCTestCase {
@@ -51,7 +55,10 @@ final class DemodTapTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         await capture.stop()
-        XCTAssertGreaterThanOrEqual(scope.count, want, "the demod tap must flow like the audio one")
+        guard scope.count >= want, listener.count >= want else {
+            XCTFail("the demod tap must flow like the audio one: \(scope.count) demod and \(listener.count) audio of \(want)")
+            throw TapUnderrun()
+        }
         return (listener.all, scope.all, Double(channel.audioRate))
     }
 
@@ -134,7 +141,9 @@ final class DemodTapTests: XCTestCase {
     }
 
     /// WFM: the tap is taken before the 15 kHz audio filter, which is the only reason a 19 kHz
-    /// stereo pilot is visible at all. Its own decimator stays block-aligned with the audio one.
+    /// stereo pilot is visible at all. Both decimators start from a reset here, the case where the
+    /// tap and the audio produce the same count block for block; a tap that attaches mid-stream
+    /// resets its own decimator alone and the two counts can then differ by one on some blocks.
     func testWFMDemodTapKeepsWhatTheAudioFilterCuts() throws {
         let rate: UInt32 = 240_000
         let demod = WFMDemodulator()
@@ -152,11 +161,15 @@ final class DemodTapTests: XCTestCase {
             var audio = audioStore.view()
             var raw: SampleBuffer? = rawStore.view()
             let frames = demod.process(iq: iq.view(count: block), audioOut: &audio, rawOut: &raw)
-            XCTAssertEqual(raw?.count, frames, "the tap decimates in step with the audio")
+            XCTAssertEqual(raw?.count, frames, "from a shared reset the tap decimates in step with the audio")
             heard += Array(UnsafeBufferPointer(start: audioStore.base.assumingMemoryBound(to: Float.self), count: frames))
             tapped += Array(UnsafeBufferPointer(start: rawStore.base.assumingMemoryBound(to: Float.self), count: frames))
         }
         let audioRate = Double(demod.outputRate)
+        guard tapped.count >= 8192, heard.count >= 8192 else {
+            XCTFail("need 8192 samples per tap for the tone measurement: \(tapped.count) tapped, \(heard.count) heard")
+            return
+        }
         let onTap = tonePowerDB(tapped, rate: audioRate, frequency: 19_000, size: 8192)
         let onAudio = tonePowerDB(heard, rate: audioRate, frequency: 19_000, size: 8192)
         XCTAssertGreaterThan(onTap, onAudio + 20, "tap \(onTap) dB against audio \(onAudio) dB")

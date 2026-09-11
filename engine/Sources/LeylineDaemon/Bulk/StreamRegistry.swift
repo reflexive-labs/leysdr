@@ -241,7 +241,7 @@ actor StreamRegistry {
             var p = Leyline_V1_AudioParams()
             p.sampleRate = ch.audioRate
             p.format = format
-            p.tap = req.audio.tap == .tapDemod ? .tapDemod : .tapAudio
+            p.tap = req.audio.tap
             desc.audio = p
             source = .audio(audio, ch)
         case .iq:
@@ -335,6 +335,8 @@ actor StreamRegistry {
             case .capture(let c) where sub.captureID == c: await close(sub, detach: false)
             case .channel(let ch) where sub.channelID == ch: await close(sub, detach: false)
             case .channelAudioRate(let ch) where sub.channelID == ch:
+                if case .audio = sub.source { await close(sub) }
+            case .captureRate(let c) where sub.captureID == c:
                 if case .audio = sub.source { await close(sub) }
             default: break
             }

@@ -186,16 +186,25 @@ samples the sub-audible tap reads, so a CTCSS tone is still on them) and, decima
 rate ahead of de-emphasis and the 15 kHz low-pass, for WFM (so the 19 kHz pilot survives); the
 envelope with the carrier still in it as DC for AM; the product detector before AGC for USB, LSB
 and CW; nothing for raw IQ. Both FM stages are scaled so full-scale deviation reads ±1.0 — 5 kHz
-for NFM, 75 kHz for WFM — which makes the block's mean the tuning error in hertz. The callee sets
+for NFM, 75 kHz for WFM — which makes the block's mean the tuning error in units of full-scale
+deviation, which a client turns into hertz by scaling by 5 000 or 75 000. The callee sets
 `rawOut.count`, because WFM decimates the tap through a filter of its own and answers for its own
 alignment; every buffer either needs is sized in `configure`, so a block nobody is tapping costs a
 nil check.
 
-`AudioSink` carries an `AudioTap`, and `ChannelDSPCore` keeps its sink table split by it: the
-conditioned block goes to `.audio` sinks, the raw block to `.demod` sinks, and the demodulator is
-handed a raw buffer only while the second list is non-empty. The squelch's zeroing is part of what
-a listener hears, so it applies to `.audio` sinks alone; the demod tap keeps flowing through a
+`AudioSink` carries an `AudioTap`, and `ChannelDSPCore` keeps one sink table plus a cached
+`hasDemodSink`, recomputed when the table is set: the conditioned block goes to `.audio` sinks, the
+raw block to `.demod` sinks, and the demodulator is handed a raw buffer only while something asked
+for one, so a channel nobody scopes pays a single branch per block. The squelch's zeroing is part
+of what a listener hears, so it applies to `.audio` sinks alone; the demod tap keeps flowing through a
 closed squelch, which is what makes "what is this transmitter sending between words" answerable.
+Both taps stamp a block with the same `SampleTime` — the capture time the block started — but that
+is the block's time, not a promise that the two are sample-aligned. They are not: WFM's tap runs its
+own decimator, which is reset alone when a tap attaches mid-stream, so from then on the two block
+counts can differ by one, and the two filters have different group delay (about 0.3 ms) in any case.
+That is within what a scope is for; anything needing the two stages aligned to the sample wants a
+daemon-side sink, not two subscriptions.
+
 The squelch decision and the power and SNR telemetry still come from the channelized IQ, before
 either tap; only the audio-level meter reads the conditioned block. A raw-IQ channel has no
 detector, so attaching a `.demod` sink to one is `INVALID_ARGUMENT`, and so is a `TAP_DEMOD`
@@ -469,11 +478,14 @@ cancellation) or when the daemon shuts down and finishes the event stream.
 FFT: bins/rate via the ladder; bin format `DB_F32` (little-endian f32) or `DB_U8`
 (`clamp(round((db + 120) · 2), 0, 255)`). Audio: channel `audioRate`, `S16` or `F32` mono; a
 requested `sample_rate` that is neither 0 nor the channel's rate is `INVALID_ARGUMENT` (no
-resampling in v0, and the daemon never upgrades). A capture-rate write that re-plans a channel at a
-new audio rate rebuilds its system-audio sinks under their existing ids and ends its bulk audio
-streams (re-subscribe for a fresh descriptor). IQ: capture rate only, `CF32` only (no resampling in v0). `Stream` writes frames until the client
-cancels; `Unsubscribe` tears the subscription down; a subscription with no `Stream` reader for 10 s
-is reaped.
+resampling in v0, and the daemon never upgrades). Any write that re-plans a channel at a new audio
+rate — a capture-rate write, a retune that brings the channel back into capture, a mode, bandwidth
+or offset write — rebuilds that channel's system-audio sinks under their existing ids and ends its
+bulk audio streams, both taps. A capture-rate write ends every bulk audio stream on the capture even
+when no audio rate moved: audio frames scale their sample spans by the capture rate, and two capture
+rates can plan to the same audio rate. Re-subscribe for a fresh descriptor. IQ: capture rate only,
+`CF32` only (no resampling in v0). `Stream` writes frames until the client cancels; `Unsubscribe`
+tears the subscription down; a subscription with no `Stream` reader for 10 s is reaped.
 
 ### Jobs service and lease lifecycle
 

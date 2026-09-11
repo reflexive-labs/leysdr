@@ -35,9 +35,14 @@ enum EventScopeFilter: Sendable, Hashable {
 enum TeardownScope: Sendable {
     case capture(CaptureID)
     case channel(ChannelID)
-    /// The channel's audio rate changed (capture rate write): audio streams negotiated at the old
-    /// rate end; the client re-subscribes for a fresh descriptor.
+    /// The channel's audio rate changed (a capture-rate write, a retune that re-plans the chain, or
+    /// a mode/bandwidth/offset write): audio streams negotiated at the old rate end; the client
+    /// re-subscribes for a fresh descriptor.
     case channelAudioRate(ChannelID)
+    /// The capture's sample rate changed. Audio streams derive their frame spans from it, and two
+    /// capture rates can plan to the same audio rate, so they end on the capture rate itself rather
+    /// than waiting for an audio rate to move.
+    case captureRate(CaptureID)
 }
 
 /// `SinkFactory.systemAudio` with a caller-chosen id, so a sink rebuilt at a new audio rate keeps
@@ -858,11 +863,15 @@ actor SessionStore {
                     touchActivity(id, by: by)
                     await emitCapture(id, by: by)
                     await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
+                    await teardownHook?(.captureRate(id))
                     throw error
                 }
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
                 await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
+                // Whatever the channels re-planned to, the capture rate itself moved: bulk audio
+                // scales its frame spans by it, so those streams end even when no audio rate did.
+                await teardownHook?(.captureRate(id))
             case .gain(let g)?:
                 let (id, entry) = try captureTarget(w.targetID)
                 // The lease pins gain for the length of a sweep so every dB it reports is measured
@@ -938,7 +947,14 @@ actor SessionStore {
                     config.squelchDB = db
                 default: break
                 }
+                let audioRateBefore = entry.engine.audioRate
                 try await entry.engine.update(config)
+                // A channel write re-plans the chain, and a channel the capture had moved away from
+                // is re-planned at the capture's current rate -- which can move its audio rate. Every
+                // stream negotiated at the old one then describes something untrue, so reconcile
+                // exactly as a capture-rate change does: system-audio sinks are rebuilt and bulk
+                // streams -- both taps -- end for a fresh subscription.
+                if entry.engine.audioRate != audioRateBefore { await audioRateChanged(chanID, by: by) }
                 touchActivity(entry.captureID, by: by)
                 await emitCapture(entry.captureID, by: by)
                 await emitChannel(chanID, by: by)
