@@ -13,19 +13,27 @@ exit, and it opens no speakers.
 gain control. --tap demod is the detector's own output before any of that,
 which is where a CTCSS tone still stands in the 125 Hz band.
 
+It draws once by default: one still of the bands as they were measured, no
+ballistics and no caps. --watch is the meter itself, redrawn twenty times a
+second until Ctrl-C, where --rate and --count apply. There bars rise
+instantly and fall at 20 dB a second so a syllable leaves a trail, and the
+caps hold the loudest of the last second and a half. That shaping is
+presentation: the numbers under the master pair are the current row's own,
+and --json carries the raw rows.
+
+While the daemon's squelch is shut nothing is coming through, so the ladders
+draw unlit and the header says so; the rows still go out under --json with
+the squelch state on them.
+
 The scale is a meter's and not a chart's: 6 dB a row from 0 to -24 dBFS, then
 10 dB a row to -60, held whatever the signal does, with the -18 dBFS
-alignment level drawn across as a dashed rule. Bars rise instantly and fall
-at 20 dB a second so a syllable leaves a trail, and the caps hold the loudest
-of the last second and a half. That shaping is presentation: the numbers
-under the master pair are the current row's own, and --json carries the raw
-rows.
+alignment level drawn across as a dashed rule.
 
 --bands third draws the twenty-five third-octave bands instead of the nine
 octaves, on a terminal at least 100 columns wide.
 
 --json prints one object per row: {seq, sample_index, tap, bands:
-[{center_hz, db}], rms_dbfs, peak_dbfs}.
+[{center_hz, db}], rms_dbfs, peak_dbfs, squelch_open}.
 
 Usage:
   ley levels <frequency|preset|channel> [flags]
@@ -34,21 +42,23 @@ Examples:
   ley levels 146.52                     # nine bands of what the speaker hears
   ley levels 145.23 --tap demod         # the PL tone standing in the low bands
   ley levels 101.1 --bands third        # twenty-five bands, at 100 columns and up
-  ley levels 145.23 --count 20 --json
+  ley levels 146.52 -w                  # the live meter, until Ctrl-C
+  ley levels 145.23 -w --count 20 --json
 
 Flags:
       --bands string     octave (nine bands) or third (twenty-five third-octave bands, at 100 columns and up) (default "octave")
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
-      --count int        stop after this many rows, e.g. 10 (default: until Ctrl-C)
+      --count int        with --watch: stop after this many rows, e.g. 10 (0 = until Ctrl-C)
       --device string    which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)
       --gain string      receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)
       --height int       ladder height in rows (6..24, clamped to the terminal) (default 12)
   -h, --help             help for levels
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
-      --rate float       rows a second (at most 20) (default 20)
+      --rate float       with --watch: rows a second (at most 20) (default 20)
       --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
       --tap string       which stage to measure: audio (what the speakers get) or demod (the detector's output, before the audio chain) (default "audio")
+  -w, --watch            keep the meter live until Ctrl-C
       --width int        meter width in columns (default: the terminal's, or 80 when piped)
 
 Global Flags:

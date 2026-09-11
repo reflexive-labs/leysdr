@@ -593,7 +593,7 @@ An independent read of `fe26cd3..54ca99f`, after the per-item verifiers. Line nu
 
 Both suites green, `make proto` clean, the e2e green at the end.
 
-### SV-10g `[ ]` `ley levels` behaves like `spectrum`, and tells the truth about tones and squelch (Go lane)
+### SV-10g `[x]` `ley levels` behaves like `spectrum`, and tells the truth about tones and squelch (Go lane)
 
 - **Snapshot by default, `--watch` for live**, exactly `spectrum`'s shape: the bare verb prints one
   frame after the first complete row and exits (no ballistics, no caps in a snapshot; `--json`

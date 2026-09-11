@@ -50,10 +50,19 @@ func levelsBandLabel(hz float64) string {
 	return fmt.Sprintf("%gk", hz/1000)
 }
 
+// levelsWindowEnbw is the equivalent noise bandwidth of the Hann window the
+// daemon transforms through, in bins. A Hann-windowed tone is not one bin: it
+// leaks into its neighbours at a quarter of the power each, so the bins of a
+// band carry about one and a half times the power that is really in it, and
+// the sum has to be divided by that before it is read as a level. It corrects
+// broadband power by the same factor, because the same window spread it.
+const levelsWindowEnbw = 1.5
+
 // levelsBandDb is the level of one band of a spectrum row: the bins whose
-// centres fall inside it, summed in power and said in dB again. Levels are
-// energy, and energy adds where dB do not, so a band of two equal bins reads
-// 3 dB over either of them -- which is what the band actually carries.
+// centres fall inside it, summed in power, corrected for the window and said
+// in dB again. Levels are energy, and energy adds where dB do not, so a band
+// of two equal bins reads 3 dB over either of them -- which is what the band
+// actually carries.
 //
 // A band narrower than a bin still has a level: the bin its centre falls in,
 // because a meter with a blank bar at 63 Hz would read as silence there rather
@@ -72,7 +81,12 @@ func levelsBandDb(bins []float64, binHz float64, b levelsBand) float64 {
 		sum += math.Pow(10, bins[i]/10)
 		n++
 	}
-	if n == 0 {
+	if n > 0 {
+		sum /= levelsWindowEnbw
+	} else {
+		// The band the row cannot split is its centre bin as it stands: the
+		// correction hands a tone back the power it leaked into neighbours,
+		// and where only one bin is counted that peak is already the level.
 		i := int(math.Round(b.centerHz / binHz))
 		if i < 0 || i >= len(bins) {
 			return scopeMinDbfs
@@ -145,6 +159,22 @@ type levelsBar struct {
 	cap     float64
 	capHeld time.Duration
 	over    time.Duration
+}
+
+// levelsStill is a bar drawn as one row measured it: at the level, with no cap
+// hanging over it, because a cap is the loudest of a second and a half and a
+// still covers one row.
+func levelsStill(db float64) levelsBar {
+	if math.IsNaN(db) {
+		db = scopeMinDbfs
+	}
+	b := levelsBar{db: db, cap: scopeMinDbfs}
+	// An overload is a fact about the row, not a trail: the latch exists to
+	// hold a flash long enough to read, and a still is already still.
+	if db >= levelsTopDb {
+		b.over = levelsOverHold
+	}
+	return b
 }
 
 // newLevelsBar starts a bar at silence, so the first frame rises to the signal

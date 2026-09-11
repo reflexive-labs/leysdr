@@ -44,6 +44,12 @@ type LevelsRow struct {
 	// there would be a level nobody reported, and -0 dBFS is a real level.
 	RmsDbfs  *float64 `json:"rms_dbfs"`
 	PeakDbfs *float64 `json:"peak_dbfs"`
+	// SquelchOpen is the daemon's squelch state at the row, which is what says
+	// whether the bands are a signal or the detector talking to itself. It is
+	// null on the same rule as the pair: the telemetry stream, not the
+	// spectrum, carries it, and false would claim a shut squelch nobody
+	// reported.
+	SquelchOpen *bool `json:"squelch_open"`
 }
 
 // levelsMeasured is a meter value for a JSON row: the number where there is
@@ -71,6 +77,7 @@ type levelsOptions struct {
 	tune    *tuneOptions
 	tap     leylinev1.AudioTap
 	third   bool
+	watch   bool
 	rate    float64
 	count   int
 	width   int
@@ -103,23 +110,32 @@ exit, and it opens no speakers.
 gain control. --tap demod is the detector's own output before any of that,
 which is where a CTCSS tone still stands in the 125 Hz band.
 
+It draws once by default: one still of the bands as they were measured, no
+ballistics and no caps. --watch is the meter itself, redrawn twenty times a
+second until Ctrl-C, where --rate and --count apply. There bars rise
+instantly and fall at 20 dB a second so a syllable leaves a trail, and the
+caps hold the loudest of the last second and a half. That shaping is
+presentation: the numbers under the master pair are the current row's own,
+and --json carries the raw rows.
+
+While the daemon's squelch is shut nothing is coming through, so the ladders
+draw unlit and the header says so; the rows still go out under --json with
+the squelch state on them.
+
 The scale is a meter's and not a chart's: 6 dB a row from 0 to -24 dBFS, then
 10 dB a row to -60, held whatever the signal does, with the -18 dBFS
-alignment level drawn across as a dashed rule. Bars rise instantly and fall
-at 20 dB a second so a syllable leaves a trail, and the caps hold the loudest
-of the last second and a half. That shaping is presentation: the numbers
-under the master pair are the current row's own, and --json carries the raw
-rows.
+alignment level drawn across as a dashed rule.
 
 --bands third draws the twenty-five third-octave bands instead of the nine
 octaves, on a terminal at least 100 columns wide.
 
 --json prints one object per row: {seq, sample_index, tap, bands:
-[{center_hz, db}], rms_dbfs, peak_dbfs}.`,
+[{center_hz, db}], rms_dbfs, peak_dbfs, squelch_open}.`,
 		Example: `  ley levels 146.52                     # nine bands of what the speaker hears
   ley levels 145.23 --tap demod         # the PL tone standing in the low bands
   ley levels 101.1 --bands third        # twenty-five bands, at 100 columns and up
-  ley levels 145.23 --count 20 --json`,
+  ley levels 146.52 -w                  # the live meter, until Ctrl-C
+  ley levels 145.23 -w --count 20 --json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch tap {
@@ -179,8 +195,9 @@ octaves, on a terminal at least 100 columns wide.
 	addRadioFlags(cmd, &f, false)
 	cmd.Flags().StringVar(&tap, "tap", "audio", "which stage to measure: audio (what the speakers get) or demod (the detector's output, before the audio chain)")
 	cmd.Flags().StringVar(&bands, "bands", "octave", "octave (nine bands) or third (twenty-five third-octave bands, at 100 columns and up)")
-	cmd.Flags().Float64Var(&o.rate, "rate", 20, "rows a second (at most 20)")
-	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many rows, e.g. 10 (default: until Ctrl-C)")
+	cmd.Flags().BoolVarP(&o.watch, "watch", "w", false, "keep the meter live until Ctrl-C")
+	cmd.Flags().Float64Var(&o.rate, "rate", 20, "with --watch: rows a second (at most 20)")
+	cmd.Flags().IntVar(&o.count, "count", 0, "with --watch: stop after this many rows, e.g. 10 (0 = until Ctrl-C)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "meter width in columns (default: the terminal's, or 80 when piped)")
 	cmd.Flags().IntVar(&o.height, "height", levelsHeight, "ladder height in rows (6..24, clamped to the terminal)")
 	return cmd
@@ -207,9 +224,15 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	defer stop()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// A snapshot asks for rows as fast as the daemon sends them, because the
+	// only one it draws is the first: --rate is how often a live meter moves.
+	rate := o.rate
+	if !o.watch {
+		rate = levelsRateMax
+	}
 	// DB_F32 because the bands are power sums: quantising every bin to a
 	// whole dB before adding them up would show in the total.
-	sub, err := s.client.SubscribeAudioSpectrum(sctx, s.channel.ChannelId, levelsBins, o.rate,
+	sub, err := s.client.SubscribeAudioSpectrum(sctx, s.channel.ChannelId, levelsBins, rate,
 		leylinev1.FftBinFormat_DB_F32, o.tap)
 	if err != nil {
 		return err
@@ -234,8 +257,13 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		return err
 	}
 	what := audioWhat(s)
-	s.say("metering %s: the %s tap, %g rows a second. Ctrl-C stops. %s\n",
-		what, scopeTapName(tap), fp.GetRowsPerSecond(), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+	if o.watch {
+		s.say("metering %s: the %s tap, %g rows a second. Ctrl-C stops. %s\n",
+			what, scopeTapName(tap), fp.GetRowsPerSecond(), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+	} else {
+		s.say("metering %s: the %s tap. %s\n",
+			what, scopeTapName(tap), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+	}
 	// Keep the event stream flowing (and the mirror current) while frames are
 	// drawn; the drain owns the mirror, so it starts after the last read of it
 	// and stops before teardown.
@@ -248,8 +276,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	var w *spectrumWriter
 	if !s.app.JSON {
 		w = newSpectrumWriter(s.app, out, spectrumOptions{
-			bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: true,
-		}, o.rate)
+			bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: o.watch,
+		}, rate)
 		defer w.finish()
 	}
 	tick := time.NewTicker(spectrumTickInterval)
@@ -262,7 +290,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	for i := range frame.bands {
 		frame.bands[i] = newLevelsBar()
 	}
-	last := time.Now()
+	start := time.Now()
+	last := start
 	rows := 0
 	for {
 		select {
@@ -271,6 +300,11 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		case <-tick.C:
 			if w != nil {
 				w.idle()
+			}
+			// A snapshot draws one frame and leaves; waiting for ever with a
+			// blank screen is not a still of anything.
+			if !o.watch && rows == 0 && time.Since(start) > spectrumFirstRow {
+				return fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", spectrumFirstRow.Seconds())
 			}
 		case m, ok := <-msgs:
 			if !ok {
@@ -288,6 +322,14 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			if !ok {
 				return levelsEnd(ctx, sub.Err(), rows)
 			}
+			// A row is complete once the daemon has also said whether the
+			// squelch is passing anything: a band level means one thing behind
+			// an open squelch and nothing at all behind a shut one, and the
+			// first frame has to say which. Later rows draw whatever arrives,
+			// so a telemetry stream that ends does not stop the meter.
+			if rows == 0 && !frame.squelchKnown {
+				continue
+			}
 			bins := leyline.DecodeFFTBins(fr.Payload, fp.GetBinFormat())
 			now := time.Now()
 			dt := now.Sub(last)
@@ -295,15 +337,14 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			levels := make([]float64, len(view.bands))
 			for i, b := range view.bands {
 				levels[i] = levelsBandDb(bins, binHz, b)
-				frame.bands[i].update(levels[i], dt)
 			}
-			frame.rms.update(frame.rmsDb, dt)
-			frame.peak.update(frame.peakDb, dt)
+			frame.advance(levels, dt, o.watch)
 			if s.app.JSON {
 				row := LevelsRow{
 					Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), Tap: scopeTapName(tap),
 					Bands:   make([]LevelsBin, len(view.bands)),
 					RmsDbfs: levelsMeasured(frame.rmsDb), PeakDbfs: levelsMeasured(frame.peakDb),
+					SquelchOpen: frame.squelch(),
 				}
 				for i, b := range view.bands {
 					row.Bands[i] = LevelsBin{CenterHz: b.centerHz, Db: levels[i]}
@@ -321,7 +362,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 				return err
 			}
 			rows++
-			if o.count > 0 && rows >= o.count {
+			if !o.watch || (o.count > 0 && rows >= o.count) {
 				return nil
 			}
 		}

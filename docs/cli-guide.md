@@ -423,28 +423,35 @@ the daemon's, the shaping is the screen's.
 $ ley levels 145.23 --tap demod
 145.230 MHz NFM  tap demod  squelch open  PL 100.0 Hz
   0 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
- -6 │░░░   ░░░   ░░░   ░░░   ━━━   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+ -6 │░░░   ░░░   ░░░   ░░░   ▃▃▃   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
     │░░░   ░░░   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
 -12 │░░░   ░░░   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
--18 │░░░ ─ ━━━ ─ ░░░ ─ ░░░ ─ ███ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ─ ░░░ ─ ░░░
-    │░░░   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ━━━
--24 │░░░   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ━━━   ░░░
--30 │━━━   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ▁▁▁   ▆▆▆
--40 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
-    │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
--50 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
+-18 │░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ███ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ─ ░░░ ─ ░░░
+    │░░░   ▅▅▅   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-24 │░░░   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-30 │▃▃▃   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-40 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+    │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ▁▁▁
+-50 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ▄▄▄   ███
 -60 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
     ──────────────────────────────────────────────────────────│─────│────
      63    125   250   500   1k    2k    4k    8k    16k Hz  rms  peak
-                                                             -38   -34 dBFS
+                                                             -50   -46 dBFS
 ```
 
 Nine ladders on the ISO octave centres audio equipment has used for decades, and the master pair —
-rms and peak, from the daemon's meter — set apart at the right. The bar is where the band is now;
-the cap above it is the loudest of the last second and a half, hanging there before it falls. Bars
-rise the instant the level does and fall at 20 dB a second, so a syllable leaves a trail you can
-read after it has gone. That shaping is the picture's: the two numbers under the master pair are
-the current row's own, and `--json` carries the rows before any of it.
+rms and peak, from the daemon's meter — set apart at the right. That is one still: the bare verb
+draws the bands as one row measured them and exits, the way `ley spectrum` does. `ley levels 145.23
+-w` is the meter itself, redrawn twenty times a second until Ctrl-C. There a cap hangs above each
+bar at the loudest of the last second and a half before it falls, and the bars rise the instant the
+level does and fall at 20 dB a second, so a syllable leaves a trail you can read after it has gone.
+That shaping is the picture's: the two numbers under the master pair are the current row's own, and
+`--json` carries the rows before any of it.
+
+While the daemon's squelch is shut every ladder is drawn unlit and the header says `squelch
+closed`. Nothing is coming through, and the detector keeps putting out noise behind a shut squelch
+that a lit bar would report as sound. Between words the squelch is open, which is why the PL still
+stands in the picture above.
 
 The scale is a meter's rather than a chart's — 6 dB a row from 0 down to −24 dBFS, then 10 dB a row
 to −60, held whatever the signal does, so a bar of a given height means the same dB tomorrow — and
@@ -491,9 +498,9 @@ error — is taken out before the envelope is drawn and the header says how much
 a mistuned channel draws its whole clip off centre.
 
 Both views carry their frames raw. `ley levels --json` prints one object per spectrum row, before
-any of the ballistics: `{seq, sample_index, tap, bands: [{center_hz, db}], rms_dbfs, peak_dbfs}`,
-where `rms_dbfs` and `peak_dbfs` are `null` until the daemon has measured a block, because a level
-nobody reported is not a level. `ley waveform --json` prints one object per column as it completes,
+any of the ballistics: `{seq, sample_index, tap, bands: [{center_hz, db}], rms_dbfs, peak_dbfs,
+squelch_open}`, where `rms_dbfs`, `peak_dbfs` and `squelch_open` are `null` until the daemon has
+measured a block, because a level nobody reported is not a level. `ley waveform --json` prints one object per column as it completes,
 `{sample_index, seconds, peak_dbfs, rms_dbfs, squelch_open}`, carrying the same slice the picture
 would have drawn at that width — which is what makes `ley waveform --seconds 120 --json` a way to
 log when a repeater was busy without drawing anything at all.

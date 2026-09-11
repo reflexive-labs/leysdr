@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/ui"
@@ -51,6 +52,38 @@ type levelsFrame struct {
 	// that announced a closed squelch before then would be guessing.
 	squelchKnown bool
 	tone         *leylinev1.SubAudible
+}
+
+// advance moves the frame on by one row. A live meter runs the ballistics
+// over it; a snapshot is the row as it was measured, because attack, release
+// and a hanging cap are ways of reading motion and a still has none. A shut
+// squelch moves nothing at all: there is no audio behind it to follow, and a
+// cap left chasing the detector's own noise would hang over a silent channel.
+func (f *levelsFrame) advance(levels []float64, dt time.Duration, watch bool) {
+	switch {
+	case !watch:
+		for i := range f.bands {
+			f.bands[i] = levelsStill(levels[i])
+		}
+		f.rms, f.peak = levelsStill(f.rmsDb), levelsStill(f.peakDb)
+	case f.squelchKnown && !f.squelchOpen:
+	default:
+		for i := range f.bands {
+			f.bands[i].update(levels[i], dt)
+		}
+		f.rms.update(f.rmsDb, dt)
+		f.peak.update(f.peakDb, dt)
+	}
+}
+
+// squelch is the squelch state for a JSON row: what the daemon said, and
+// nothing where it has not said anything.
+func (f *levelsFrame) squelch() *bool {
+	if !f.squelchKnown {
+		return nil
+	}
+	open := f.squelchOpen
+	return &open
 }
 
 // levelsView draws the meter: a header of facts, the ladders, and the scale
@@ -138,6 +171,14 @@ func (v *levelsView) render(f levelsFrame) string {
 	bars := make([]levelsBar, 0, len(f.bands)+2)
 	bars = append(bars, f.bands...)
 	bars = append(bars, f.rms, f.peak)
+	// A shut squelch is passing nothing, so every ladder is drawn unlit. The
+	// spectrum behind it is still arriving -- on the demod tap it is the
+	// detector's own noise -- and a lit bar would report that as sound.
+	if f.squelchKnown && !f.squelchOpen {
+		for i := range bars {
+			bars[i] = newLevelsBar()
+		}
+	}
 	var b strings.Builder
 	for _, l := range v.header(f) {
 		b.WriteString(l + "\n")

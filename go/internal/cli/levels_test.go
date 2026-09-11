@@ -98,6 +98,104 @@ func TestLevelsStillFrame(t *testing.T) {
 	}
 }
 
+// A shut squelch is passing nothing, so the ladders are drawn unlit whatever
+// the spectrum behind them says and the header says which. Both alphabets,
+// because a person reading the ASCII screen has the same question.
+const (
+	levelsClosedUnicode = `147.435 MHz NFM  tap demod  squelch closed
+  0 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+ -6 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+    │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-12 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-18 │░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ─ ░░░ ─ ░░░
+    │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-24 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-30 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-40 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+    │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-50 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-60 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+    ──────────────────────────────────────────────────────────│─────│────
+     63    125   250   500   1k    2k    4k    8k    16k Hz  rms  peak
+                                                             -18   -9  dBFS
+`
+	levelsClosedASCII = `147.435 MHz NFM  tap demod  squelch closed
+  0 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+ -6 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+    |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-12 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-18 |... - ... - ... - ... - ... - ... - ... - ... - ... - - ... - ...
+    |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-24 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-30 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-40 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+    |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-50 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+-60 |...   ...   ...   ...   ...   ...   ...   ...   ...     ...   ...
+    ----------------------------------------------------------|-----|----
+     63    125   250   500   1k    2k    4k    8k    16k Hz  rms  peak
+                                                             -18   -9  dBFS
+`
+)
+
+func TestLevelsSquelchClosedDrawsNothingLit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		st     ui.Style
+		golden string
+	}{
+		{"unicode", ui.Style{Unicode: true}, levelsClosedUnicode},
+		{"ascii", ui.Style{}, levelsClosedASCII},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := newLevelsView(tc.st, 80, levelsHeight, false)
+			f := levelsTestFrame(v)
+			f.squelchOpen = false
+			if got := v.render(f); got != tc.golden {
+				t.Errorf("the shut-squelch meter differs from the golden\n--- want\n%s\n--- got\n%s", tc.golden, got)
+			}
+		})
+	}
+	// A squelch nobody has reported yet is not a shut one: until the daemon's
+	// first meter the bands are drawn as they are measured.
+	v := newLevelsView(ui.Style{Unicode: true}, 80, levelsHeight, false)
+	f := levelsTestFrame(v)
+	f.squelchOpen, f.squelchKnown = false, false
+	if got := v.render(f); strings.Contains(got, "squelch") || got == levelsClosedUnicode {
+		t.Errorf("an unreported squelch drew the shut picture:\n%s", got)
+	}
+}
+
+// A shut squelch moves nothing: the bars stay where the last open row left
+// them rather than following the noise the detector is still putting out, and
+// a snapshot is the row as measured, with no cap over it.
+func TestLevelsFrameAdvance(t *testing.T) {
+	const dt = 50 * time.Millisecond
+	f := levelsFrame{bands: []levelsBar{newLevelsBar()}, rms: newLevelsBar(), peak: newLevelsBar()}
+	f.rmsDb, f.peakDb = -20, -12
+	f.squelchOpen, f.squelchKnown = true, true
+	f.advance([]float64{-30}, dt, true)
+	if f.bands[0].db != -30 || f.rms.db != -20 {
+		t.Fatalf("an open row left the bars at %.1f/%.1f, want -30 and -20", f.bands[0].db, f.rms.db)
+	}
+	f.squelchOpen = false
+	f.advance([]float64{-10}, dt, true)
+	if f.bands[0].db != -30 || f.bands[0].cap != -30 {
+		t.Errorf("a shut squelch moved the bar to %.1f/%.1f, want it left at -30", f.bands[0].db, f.bands[0].cap)
+	}
+	// A still has no ballistics at all: the level, and no cap hanging over it.
+	f.squelchOpen = true
+	f.advance([]float64{-45}, dt, false)
+	if f.bands[0].db != -45 || f.bands[0].cap != scopeMinDbfs {
+		t.Errorf("the still drew %.1f with a cap at %.1f, want -45 and no cap", f.bands[0].db, f.bands[0].cap)
+	}
+	// An overload is a fact about the row, so a still says so too.
+	f.advance([]float64{0.5}, dt, false)
+	if f.bands[0].over <= 0 {
+		t.Errorf("a still of a band at full scale does not light OVER")
+	}
+}
+
 // The scale is a meter's: 6 dB a row where a voice lives, 10 dB a row down to
 // the floor, held whatever the signal does. The marks are what a person reads
 // a bar against, so each of them must land on a row of its own at the default
@@ -205,31 +303,35 @@ func TestLevelsBallistics(t *testing.T) {
 	}
 }
 
-// Bands are sums of bins in power, which is the only way to add levels: two
-// equal bins carry twice the energy of one and read 3 dB over it, and a tone
-// standing alone in a band reads as itself.
+// Bands are sums of bins in power corrected for the window, which is the only
+// way to add levels: two equal bins carry twice the energy of one and read
+// 3 dB over it, and a tone standing alone in a band reads as itself.
 func TestLevelsBandSumsInPower(t *testing.T) {
 	const binHz = 10.0
-	// A row of a hundred bins at -90 dB with a -20 dB tone at 500 Hz.
+	// A row of a hundred bins at -90 dB with a -20 dB tone at 500 Hz, drawn as
+	// the daemon's Hann window leaves it: the peak bin at the tone's own level
+	// and a quarter of the power in each neighbour.
 	row := make([]float64, 100)
 	for i := range row {
 		row[i] = -90
 	}
-	row[50] = -20
+	row[49], row[50], row[51] = -26.02, -20, -26.02
 	bands := levelsBands([]float64{500}, levelsOctaveEdge)
 	// The band runs 354 to 707 Hz: the tone plus 35 bins of floor, which the
-	// tone stands 55 dB clear of.
+	// tone stands 55 dB clear of. Its three bins add to one and a half times
+	// its power, which is what the window correction takes back out.
 	if got := levelsBandDb(row, binHz, bands[0]); math.Abs(got+20) > 0.1 {
 		t.Errorf("the 500 Hz band reads %.2f dB, want the tone's -20", got)
 	}
-	// Two equal bins in one band are twice the energy: 3 dB over either.
+	// Two equal bins in one band are twice the energy: 3 dB over either, less
+	// the 1.76 dB the window spread them by.
 	flat := make([]float64, 100)
 	for i := range flat {
 		flat[i] = -120
 	}
 	flat[50], flat[51] = -40, -40
-	if got := levelsBandDb(flat, binHz, bands[0]); math.Abs(got+36.99) > 0.01 {
-		t.Errorf("two equal bins read %.2f dB, want -36.99 (3 dB over either)", got)
+	if got := levelsBandDb(flat, binHz, bands[0]); math.Abs(got+38.75) > 0.01 {
+		t.Errorf("two equal bins read %.2f dB, want -38.75 (3 dB over either, 1.76 dB off for the window)", got)
 	}
 	// A band narrower than a bin still has a level: the bin its centre falls
 	// in, because a blank bar would read as silence rather than as a row too
@@ -302,12 +404,12 @@ func TestLevelsWidthRules(t *testing.T) {
 	}
 }
 
-// Against the daemon: the bands the fake's channel carries are the bands that
-// light up, and the header says what is being measured. The demod tap has the
-// sub-audible tone in the 125 Hz band, where a 100 Hz PL falls.
+// Against the daemon: the bare verb is one still of the bands the fake's
+// channel carries, and the header says what is being measured. The demod tap
+// has the sub-audible tone in the 125 Hz band, where a 100 Hz PL falls.
 func TestLevelsMetersTheDaemonsBands(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod", "--count", "5")
+	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod")
 	if err != nil {
 		t.Fatalf("ley levels: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -316,8 +418,49 @@ func TestLevelsMetersTheDaemonsBands(t *testing.T) {
 			t.Errorf("the meter does not say %q:\n%s", want, out)
 		}
 	}
-	if !strings.Contains(errOut, "metering 145.230 MHz NFM: the demod tap") {
+	if n := strings.Count(out, "tap demod"); n != 1 {
+		t.Errorf("the bare verb drew %d frames, want the one still:\n%s", n, out)
+	}
+	// A still is not a live meter, so nothing counts frames under it.
+	if strings.Contains(out, "frame ") {
+		t.Errorf("the still carries a live meter's status line:\n%s", out)
+	}
+	if !strings.Contains(errOut, "metering 145.230 MHz NFM: the demod tap.") {
 		t.Errorf("the prose on stderr does not say what is being metered:\n%s", errOut)
+	}
+}
+
+// --watch is the meter itself: it keeps drawing until --count says stop, and
+// the prose says what is happening and how to end it.
+func TestLevelsWatchKeepsDrawing(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--watch", "--count", "3")
+	if err != nil {
+		t.Fatalf("ley levels --watch: %v\nstdout: %s\nstderr: %s", err, out, errOut)
+	}
+	if n := strings.Count(out, "tap audio"); n != 3 {
+		t.Errorf("--count 3 drew %d frames:\n%s", n, out)
+	}
+	if !strings.Contains(errOut, "20 rows a second. Ctrl-C stops") {
+		t.Errorf("the prose on stderr does not say the meter is live:\n%s", errOut)
+	}
+}
+
+// A squelch shut over the fake's signal: the header says so and every ladder
+// is unlit, because the spectrum still arriving behind a shut squelch is not
+// sound anybody heard.
+func TestLevelsSquelchClosedAgainstTheDaemon(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod", "--squelch", "-10")
+	if err != nil {
+		t.Fatalf("ley levels --squelch -10: %v\nstdout: %s\nstderr: %s", err, out, errOut)
+	}
+	if !strings.Contains(out, "squelch closed") {
+		t.Errorf("the header does not say the squelch is shut:\n%s", out)
+	}
+	// The ASCII ladder lights ':' through '%' and caps with '='; unlit is '.'.
+	if strings.ContainsAny(out, ":%#*+=") {
+		t.Errorf("a ladder is lit behind a shut squelch:\n%s", out)
 	}
 }
 
@@ -325,7 +468,7 @@ func TestLevelsMetersTheDaemonsBands(t *testing.T) {
 // ballistics that shape the bars.
 func TestLevelsJSONRows(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out := mustRun(t, sock, "--json", "levels", "145.23", "--tap", "demod", "--count", "8")
+	out := mustRun(t, sock, "--json", "levels", "145.23", "--tap", "demod", "--watch", "--count", "8")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 8 {
 		t.Fatalf("--count 8 printed %d rows:\n%s", len(lines), out)
@@ -373,6 +516,19 @@ func TestLevelsJSONRows(t *testing.T) {
 	}
 	if metered == 0 {
 		t.Errorf("no row carried the daemon's meter:\n%s", out)
+	}
+	// Without --watch the row the still would have been drawn from is the
+	// whole output, and it says what the squelch was doing.
+	snap := mustRun(t, sock, "--json", "levels", "145.23", "--tap", "demod")
+	if n := strings.Count(strings.TrimSpace(snap), "\n"); n != 0 {
+		t.Fatalf("the bare verb printed %d rows, want the one:\n%s", n+1, snap)
+	}
+	var row LevelsRow
+	if err := json.Unmarshal([]byte(snap), &row); err != nil {
+		t.Fatalf("the snapshot row is not JSON (%v): %q", err, snap)
+	}
+	if row.SquelchOpen == nil || !*row.SquelchOpen {
+		t.Errorf("the snapshot row does not carry the open squelch: %s", snap)
 	}
 }
 

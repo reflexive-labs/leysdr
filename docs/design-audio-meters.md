@@ -33,9 +33,13 @@ at subscribe, one transform per row, no per-block work for channels nobody is li
 way. `rawIQ` channels have no audio and refuse. The fake serves rows built from its synthetic
 tone and PL.
 
-Band levels are sums of bins in power and back to dB; that is aggregation over the daemon's row,
-the same kind of presentation as `spectrum`'s peak list, and the client does it. Both `levels`
-and the later `sonogram` (a waterfall over the same rows) read this one stream.
+Band levels are sums of bins in power, divided by the window's equivalent noise bandwidth (1.5 for
+Hann) and back to dB; that is aggregation over the daemon's row, the same kind of presentation as
+`spectrum`'s peak list, and the client does it. The correction is what makes a band level a level:
+a Hann-windowed tone leaks a quarter of its power into each neighbouring bin, so the bins of a band
+add up to about one and a half times what is really in it, and broadband power is spread by the
+same factor. Both `levels` and the later `sonogram` (a waterfall over the same rows) read this one
+stream.
 
 ## `ley levels`
 
@@ -43,17 +47,22 @@ and the later `sonogram` (a waterfall over the same rows) read this one stream.
 147.435 MHz NFM  tap demod  squelch open  PL 100.0 Hz
    0 ┤                                                 ▁▁
   -6 ┤                                                 ██
- -12 ┤                        ▂▂        ━━             ██   ━━
+ -12 ┤                        ▂▂                       ██
  -18 ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─██─ ─ ─ ─ ▅▅ ─ ─ ─ ─ ─ ─ ██ ─ ██ ─ ─
- -24 ┤             ━━         ██   ━━   ██   ━━        ██   ██
- -30 ┤   ━━        ▃▃   ▇▇    ██   ██   ██   ▆▆   ━━   ██   ██
- -40 ┤   ▅▅   ━━   ██   ██    ██   ██   ██   ██   ▄▄   ██   ██
+ -24 ┤                        ██        ██             ██   ██
+ -30 ┤             ▃▃   ▇▇    ██   ██   ██   ▆▆        ██   ██
+ -40 ┤   ▅▅        ██   ██    ██   ██   ██   ██   ▄▄   ██   ██
  -50 ┤   ██   ▂▂   ██   ██    ██   ██   ██   ██   ██   ██   ██
  -60 ┤   ░░   ░░   ░░   ░░    ░░   ░░   ░░   ░░   ░░   ░░   ░░
      └───────────────────────────────────────────────────┴────┴───
        63  125  250  500   1k   2k   4k   8k  16k Hz    rms  peak
                                                         -18   -9 dBFS
 ```
+
+**One still, or the meter.** The bare verb draws one frame from the first complete row — the bands
+as they were measured, no ballistics and no caps — and exits, exactly as `spectrum` does;
+the transcript above is that still. `--watch` is the meter itself, twenty frames a second until
+Ctrl-C, and `--rate` and `--count` belong to it.
 
 **What is on screen.** Nine octave bands on the ISO centres (`--bands third` gives twenty-five
 at 100 columns and up), and at the right a master pair, `rms` and `peak`, drawn as two more bars
@@ -77,6 +86,12 @@ at the top. The **unlit part is drawn, faintly**: `░` in `Muted`. Every real L
 dark segments, and it is what lets the eye read a level against the scale when nothing is playing.
 A bar at or over 0 dBFS lights `OVER` in `Err` above it and holds it for two seconds.
 
+**A shut squelch is not a level.** While `METER` reports `squelch_open` false nothing is passing:
+every ladder draws unlit, the header says `squelch closed`, and the caps stop where they are. The
+spectrum keeps arriving behind it — on the demod tap it is the detector's own noise — and a lit
+bar would report that as sound. The rows still go out under `--json`, with `squelch_open` on them.
+Between words the squelch is open, which is where the demod tap's PL stands.
+
 **Ballistics are what make it alive.** Attack is instant: a bar rises to the row's value within
 one frame. Release is slow, 20 dB a second, so a syllable leaves a trail the eye can follow instead
 of a flicker. The **peak cap** (`━` in `Label`, drawn at its own sub-row) sits on the highest value
@@ -89,11 +104,12 @@ ladder is ` .:-=+*#%`, the unlit segment `.`, the cap `=`, the horizon `- -`. St
 and the plain text is the same picture, per the guide's identity rule. Width below 60 columns
 drops the master pair's labels to one line; below 44 it drops to six bands.
 
-**Motion.** Twenty frames a second, redrawn in place with the writer `spectrum --watch` uses.
+**Motion.** Under `--watch`, twenty frames a second, redrawn in place with the writer `spectrum
+--watch` uses.
 
 Flags: `[frequency|preset|channel]` and the tune flags as `scope` takes them, `--tap`, `--bands
-octave|third`, `--rate`, `--count`, `--width`, `--height` (default 12, clamped to the terminal
-like the spectrum chart).
+octave|third`, `--watch`, `--rate`, `--count`, `--width`, `--height` (default 12, clamped to the
+terminal like the spectrum chart).
 
 ## `ley waveform`
 

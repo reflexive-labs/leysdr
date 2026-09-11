@@ -40,6 +40,15 @@ func TestMetersAgainstRealDaemon(t *testing.T) {
 	if got != [2]float64{125, 1000} && got != [2]float64{1000, 125} {
 		t.Errorf("demod tap: loudest bands %v Hz, want 125 and 1000: %v", got, demod)
 	}
+	// And they read as the levels the recording carries. A band is the sum of
+	// its bins corrected for the Hann window, so a tone in one reads its own
+	// level rather than the 1.76 dB the window spread it over.
+	for _, tc := range []struct{ hz, want float64 }{{125, -17}, {1000, -6}} {
+		if math.Abs(demod[tc.hz]-tc.want) > 1 {
+			t.Errorf("demod tap: the %g Hz band reads %.1f dBFS, want %.0f within 1 dB: the tone is %.0f dBFS in the fixture",
+				tc.hz, demod[tc.hz], tc.want, tc.want)
+		}
+	}
 
 	// The audio tap is the same detector output past the high-pass that takes the PL out, so the
 	// voice tone is alone at the top and the 125 Hz band has dropped well below where it stood.
@@ -113,7 +122,7 @@ func levelsBands(t *testing.T, e *env, chanID, tap string) map[float64]float64 {
 	const want = 5
 	sum := map[float64]float64{}
 	rows := 0
-	out := e.mustRun("levels", chanID, "--tap", tap, "--json", "--count", strconv.Itoa(want))
+	out := e.mustRun("levels", chanID, "--tap", tap, "--json", "--watch", "--count", strconv.Itoa(want))
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if line == "" {
 			continue
