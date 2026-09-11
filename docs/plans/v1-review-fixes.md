@@ -405,3 +405,46 @@ R-19 of the release plan. Add names to `Signposts.swift` and intervals around `A
 and the sweep's row collection in `ScanRunner`, so the S1/S2 Instruments runs see the whole path.
 The wrappers are allocation-free and compile to nothing off macOS; keep it that way (no string
 formatting on the hot path). A test that each new name is distinct and stable is enough.
+
+### GO-11 `[ ]` What the audit of the Go lanes found
+
+An independent read of commits `6044fcb..42a84a3` on the Go side, made after the per-item
+verifiers. Line numbers are as of `42a84a3`.
+
+1. q-go-fake-5 landed without its test: add one where a telemetry subscriber arriving during an
+   open transmission receives no fabricated `SquelchTransition` (a revert of
+   `telemetry.go:122-124` must fail it).
+2. Bare `ley --json` prints prose on stderr and exits 0 with empty stdout (`root.go:683-686`),
+   which is neither of the two answers R-5 allows. Decision: bare `ley --json` prints exactly what
+   `ley state --json` prints; `json_verbs_test.go:194-197` stops excluding the root; the
+   `docs/interfaces.md` sentence about bare `ley` says so.
+3. `root.go:357`: `usageErrorf`'s doc comment was orphaned above the inserted `compCmdName`; move
+   it back onto `usageErrorf`.
+4. `daemon_test.go:501`: replace the 20 ms sleep with `leyline.ScopeSince(nil, st.EventSeq)`, as the
+   rest of that file now does.
+5. `state.go:226-231`: presence-drop `reap` emits the terminal CANCELLED event before the sweep
+   stores its partial results (q-go-fake-2 on a second path). Route it through the same stop path
+   `CancelJob` uses so the results land first and the detail reads
+   `stopped in step X of Y, N found` like `JobStore.clientGone`.
+6. `jobs.go:143, 145, 191`: `failScan` calls with bare `"NO_DEVICE"` and `"DEVICE_BUSY"` literals;
+   use the `leyline.Code*` constants.
+7. Fake parity, each with the CLI assertion it protects where one exists:
+   `bulk.go:174` drop the `DEVICE_DETACHED` refusal (the daemon's `StreamRegistry.subscribe` has
+   no capture-state check); `writes.go:272-281` a nil `GainWrite.value` is `INVALID_ARGUMENT`
+   "gain value is required"; `writes.go:273-278` `auto:false` restores the last manual level, else
+   a mid-range default, as `SessionStore.swift:798-808`; `jobs.go:538` completed detail is
+   `N found in X steps` with the daemon's clipped and short-rows variants (`JobStore.swift:238-250`);
+   `jobs.go:84` the detail passes through `sweeping N steps` before `step 1/N`; `jobs.go:517-523`
+   `failScan` stamps `CompletedAtNs`; `jobs.go:93, 96` `step_hz` and `resolution_hz` are stamped
+   only once allocation succeeds, from the plan; `control.go:197-200` the narrow-bandwidth refusal
+   uses the daemon's exact sentence (`Channelizer.swift:61`); `bulk.go:195-233` and `control.go:199`
+   `INVALID_ARGUMENT` details carry no `target`, as the daemon's do; `jobs.go:584-586` `CancelJob`
+   on a terminal job leaves it untouched.
+8. Docs: one sentence in `docs/cli-guide.md`'s waterfall section that each row is the loudest of
+   the looks across its interval (the ROW_MAX accumulation GO-8 made the default), matching the
+   stderr note.
+
+Dropped from the audit with reason: `SnapGain` clamping a descriptor with no table, no step and no
+range to 0 dB is exact parity with `GainElement.snapped` and unreachable behind `CheckGain`;
+`phosphor.go`'s drain reorder and `scan.go`'s reading of `Job.error` are the intended shapes;
+`bulk_stream.go`'s render under the fake's lock is a fake-only cost.
