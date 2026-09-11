@@ -2,6 +2,7 @@ package fakedaemon_test
 
 import (
 	"context"
+	"encoding/binary"
 	"math"
 	"os"
 	"path/filepath"
@@ -730,5 +731,143 @@ func TestCancelLeavesAFinishedJobAlone(t *testing.T) {
 	}
 	if got.State != leylinev1.JobState_COMPLETED || got.StatusDetail != done.StatusDetail {
 		t.Errorf("cancel rewrote a finished job: %v", got)
+	}
+}
+
+// f32Payload decodes an F32 audio payload; the taps are compared as numbers,
+// because two payloads rendered a moment apart never match byte for byte.
+func f32Payload(t *testing.T, b []byte) []float64 {
+	t.Helper()
+	if len(b)%4 != 0 || len(b) == 0 {
+		t.Fatalf("payload of %d bytes is not F32 samples", len(b))
+	}
+	out := make([]float64, len(b)/4)
+	for i := range out {
+		out[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:])))
+	}
+	return out
+}
+
+// toneLevel is the amplitude of hz in x, by correlation (a Goertzel would answer
+// the same question with less arithmetic and more explaining).
+func toneLevel(x []float64, hz, rate float64) float64 {
+	var re, im float64
+	for i, v := range x {
+		ph := 2 * math.Pi * hz * float64(i) / rate
+		re += v * math.Cos(ph)
+		im += v * math.Sin(ph)
+	}
+	return 2 * math.Hypot(re, im) / float64(len(x))
+}
+
+func mean(x []float64) float64 {
+	var s float64
+	for _, v := range x {
+		s += v
+	}
+	return s / float64(len(x))
+}
+
+func firstAudioFrame(t *testing.T, sub *leyline.Subscription) []float64 {
+	t.Helper()
+	select {
+	case f := <-sub.Frames:
+		return f32Payload(t, f.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("no audio frame")
+	}
+	return nil
+}
+
+func TestAudioTaps(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 146.940 MHz: a carrier the fake sends a 123.0 Hz CTCSS tone on.
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 940_000, Mode: leylinev1.DemodMode_NFM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const rate = 48000.0
+	taps := map[leylinev1.AudioTap][]float64{}
+	for _, tap := range []leylinev1.AudioTap{leylinev1.AudioTap_TAP_AUDIO, leylinev1.AudioTap_TAP_DEMOD} {
+		sub, err := c.SubscribeAudioTap(ctx, ch.ChannelId, 0, leylinev1.AudioSampleFormat_F32, tap)
+		if err != nil {
+			t.Fatalf("subscribe %v: %v", tap, err)
+		}
+		if got := sub.Descriptor.GetAudio().GetTap(); got != tap {
+			t.Errorf("descriptor tap %v, want %v", got, tap)
+		}
+		taps[tap] = firstAudioFrame(t, sub)
+		if err := sub.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}
+	// The tone the daemon reports under the voice is on the demod tap and not on
+	// the audio tap, which is high-passed above it, and the demod tap carries the
+	// discriminator's DC offset.
+	audio, demod := taps[leylinev1.AudioTap_TAP_AUDIO], taps[leylinev1.AudioTap_TAP_DEMOD]
+	if lvl := toneLevel(demod, 123, rate); lvl < 0.05 {
+		t.Errorf("demod tap 123 Hz level %.3f, want the fake's tone", lvl)
+	}
+	if lvl := toneLevel(audio, 123, rate); lvl > 0.02 {
+		t.Errorf("audio tap 123 Hz level %.3f, want no tone", lvl)
+	}
+	if m := mean(demod); m < 0.005 {
+		t.Errorf("demod tap mean %.4f, want a DC offset", m)
+	}
+	if m := mean(audio); math.Abs(m) > 0.005 {
+		t.Errorf("audio tap mean %.4f, want no DC", m)
+	}
+	// An unset tap is the audio tap, so an old subscription is unchanged.
+	sub, err := c.SubscribeAudio(ctx, ch.ChannelId, 0, leylinev1.AudioSampleFormat_F32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sub.Descriptor.GetAudio().GetTap(); got != leylinev1.AudioTap_TAP_AUDIO {
+		t.Errorf("default tap %v, want TAP_AUDIO", got)
+	}
+	if lvl := toneLevel(firstAudioFrame(t, sub), 123, rate); lvl > 0.02 {
+		t.Errorf("default tap 123 Hz level %.3f, want no tone", lvl)
+	}
+	if err := sub.Close(); err != nil {
+		t.Errorf("close: %v", err)
+	}
+}
+
+func TestAudioTapRefusals(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	cap, ch := setupCaptureChannel(t, c)
+	// A raw-IQ channel has no detector to tap.
+	raw, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
+		CaptureId: cap.CaptureId, OffsetHz: 300_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_RAW_IQ,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.SubscribeAudioTap(ctx, raw.ChannelId, 0, leylinev1.AudioSampleFormat_F32, leylinev1.AudioTap_TAP_DEMOD)
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("want INVALID_ARGUMENT for the demod tap on a raw-IQ channel, got %v", err)
+	}
+	// The audio tap on the same channel is the stream ley listen already takes.
+	sub, err := c.SubscribeAudio(ctx, raw.ChannelId, 0, leylinev1.AudioSampleFormat_F32)
+	if err != nil {
+		t.Errorf("audio tap on a raw-IQ channel: %v", err)
+	} else if err := sub.Close(); err != nil {
+		t.Errorf("close: %v", err)
+	}
+	// A tap value from a newer client is refused by name, not served as audio.
+	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+		Kind:   leylinev1.StreamKind_AUDIO,
+		Params: &leylinev1.SubscribeRequest_Audio{Audio: &leylinev1.AudioParams{Tap: leylinev1.AudioTap(7)}},
+	})
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("want INVALID_ARGUMENT for an unknown tap, got %v", err)
 	}
 }

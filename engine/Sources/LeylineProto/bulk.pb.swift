@@ -243,6 +243,55 @@ public nonisolated enum Leyline_V1_AudioSampleFormat: SwiftProtobuf.Enum, Swift.
 
 }
 
+/// Where in the channel the audio is taken from.
+///
+/// TAP_AUDIO is what a speaker gets -- after the high-pass, de-emphasis, limiter and
+/// AGC -- and is the default, so a subscription that does not mention a tap is served
+/// exactly what it always was.
+///
+/// TAP_DEMOD is the detector's own output before any audio conditioning: the
+/// discriminator for NFM (the samples the sub-audible detector reads, so a CTCSS tone
+/// is still on them) and for WFM (decimated to the audio rate, before de-emphasis and
+/// the 15 kHz low-pass, so the 19 kHz pilot is visible), the envelope including the
+/// carrier as DC for AM, and the product detector before AGC for USB, LSB and CW. It
+/// keeps flowing while the squelch is closed, because what a transmitter is sending
+/// between words is what it is for, where TAP_AUDIO is zeros there as the speaker
+/// hears. A RAW_IQ channel has no detector, so TAP_DEMOD on one is refused with
+/// INVALID_ARGUMENT rather than served silence.
+public nonisolated enum Leyline_V1_AudioTap: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case tapAudio // = 0
+  case tapDemod // = 1
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .tapAudio
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .tapAudio
+    case 1: self = .tapDemod
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .tapAudio: return 0
+    case .tapDemod: return 1
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_AudioTap] = [
+    .tapAudio,
+    .tapDemod,
+  ]
+
+}
+
 public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -403,6 +452,10 @@ public nonisolated struct Leyline_V1_AudioParams: Sendable {
   public var sampleRate: UInt32 = 0
 
   public var format: Leyline_V1_AudioSampleFormat = .unspecified
+
+  /// Which stage of the channel's chain this stream carries; the daemon echoes the
+  /// tap it serves in the descriptor.
+  public var tap: Leyline_V1_AudioTap = .tapAudio
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -642,6 +695,10 @@ nonisolated extension Leyline_V1_AudioSampleFormat: SwiftProtobuf._ProtoNameProv
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0AUDIO_SAMPLE_FORMAT_UNSPECIFIED\0\u{1}S16\0\u{1}F32\0")
 }
 
+nonisolated extension Leyline_V1_AudioTap: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TAP_AUDIO\0\u{1}TAP_DEMOD\0")
+}
+
 nonisolated extension Leyline_V1_SubscribeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SubscribeRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}channel_id\0\u{1}kind\0\u{1}policy\0\u{1}start\0\u{1}transport\0\u{1}iq\0\u{1}fft\0\u{1}audio\0\u{1}persistence\0")
@@ -878,7 +935,7 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AudioParams"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sample_rate\0\u{1}format\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sample_rate\0\u{1}format\0\u{1}tap\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -888,6 +945,7 @@ nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtob
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularUInt32Field(value: &self.sampleRate) }()
       case 2: try { try decoder.decodeSingularEnumField(value: &self.format) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.tap) }()
       default: break
       }
     }
@@ -900,12 +958,16 @@ nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtob
     if self.format != .unspecified {
       try visitor.visitSingularEnumField(value: self.format, fieldNumber: 2)
     }
+    if self.tap != .tapAudio {
+      try visitor.visitSingularEnumField(value: self.tap, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_AudioParams, rhs: Leyline_V1_AudioParams) -> Bool {
     if lhs.sampleRate != rhs.sampleRate {return false}
     if lhs.format != rhs.format {return false}
+    if lhs.tap != rhs.tap {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -162,7 +162,21 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 			if format == leylinev1.AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED {
 				format = leylinev1.AudioSampleFormat_S16
 			}
-			desc.Params = &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{SampleRate: rate, Format: format}}
+			tap := a.GetTap()
+			switch tap {
+			case leylinev1.AudioTap_TAP_AUDIO:
+			case leylinev1.AudioTap_TAP_DEMOD:
+				// A raw-IQ channel runs no detector, so there is no stage before the audio
+				// conditioning to tap; serving silence would look like a quiet band.
+				if ch.Mode == leylinev1.DemodMode_RAW_IQ {
+					return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
+						"the demod tap needs a demodulator; this channel is raw IQ"))
+				}
+			default:
+				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
+					fmt.Sprintf("unknown AudioTap %d", tap)))
+			}
+			desc.Params = &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{SampleRate: rate, Format: format, Tap: tap}}
 		}
 	default:
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "source is required"))

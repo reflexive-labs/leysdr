@@ -179,7 +179,7 @@ func (d *Daemon) renderLocked(s *stream, c *capture, now time.Time) []byte {
 	case *leylinev1.StreamDescriptor_Fft:
 		return d.renderFFTLocked(c, p.Fft, now)
 	case *leylinev1.StreamDescriptor_Audio:
-		return renderAudio(p.Audio, now)
+		return d.renderAudioLocked(s, p.Audio, now)
 	case *leylinev1.StreamDescriptor_Iq:
 		return renderIQ(p.Iq, now)
 	case *leylinev1.StreamDescriptor_Persistence:
@@ -276,25 +276,62 @@ func (d *Daemon) spectrumRowLocked(c *capture, bins int, now time.Time) []float3
 	return row
 }
 
-// renderAudio: 20 ms of a 1 kHz sine at the negotiated rate, mono.
-func renderAudio(p *leylinev1.AudioParams, now time.Time) []byte {
+// renderAudioLocked: 20 ms of a 1 kHz sine at the negotiated rate, mono. The demod
+// tap carries what the detector would hand over before the audio chain cleans it up:
+// the same voice, the sub-audible tone the channel's carrier is sending (the one
+// SUB_AUDIBLE telemetry reports) riding under it, and a DC offset standing in for a
+// tuning error. A client can tell the two taps apart by looking, which is the point
+// of the view they feed.
+func (d *Daemon) renderAudioLocked(s *stream, p *leylinev1.AudioParams, now time.Time) []byte {
+	tone := 0.0
+	if p.Tap == leylinev1.AudioTap_TAP_DEMOD {
+		if ch := d.channels[s.channelID]; ch != nil {
+			if c := d.captures[ch.CaptureId]; c != nil {
+				tone = carrierTone(uint64(int64(c.CenterHz) + ch.OffsetHz))
+			}
+		}
+	}
+	return renderAudio(p, tone, now)
+}
+
+// renderAudio encodes one 20 ms block; toneHz > 0 adds the sub-audible tone and the
+// demod tap's DC offset.
+func renderAudio(p *leylinev1.AudioParams, toneHz float64, now time.Time) []byte {
 	n := int(p.SampleRate / 50)
 	t0 := float64(now.UnixNano()%1_000_000_000) / 1e9
+	dc := 0.0
+	if p.Tap == leylinev1.AudioTap_TAP_DEMOD {
+		dc = demodTapDC
+	}
+	sample := func(i int) float64 {
+		t := t0 + float64(i)/float64(p.SampleRate)
+		v := 0.5 * math.Sin(2*math.Pi*1000*t)
+		if toneHz > 0 {
+			v += subAudibleTapLevel * math.Sin(2*math.Pi*toneHz*t)
+		}
+		return v + dc
+	}
 	if p.Format == leylinev1.AudioSampleFormat_F32 {
 		out := make([]byte, n*4)
 		for i := range n {
-			v := float32(0.5 * math.Sin(2*math.Pi*1000*(t0+float64(i)/float64(p.SampleRate))))
-			binary.LittleEndian.PutUint32(out[i*4:], math.Float32bits(v))
+			binary.LittleEndian.PutUint32(out[i*4:], math.Float32bits(float32(sample(i))))
 		}
 		return out
 	}
 	out := make([]byte, n*2)
 	for i := range n {
-		v := 0.5 * math.Sin(2*math.Pi*1000*(t0+float64(i)/float64(p.SampleRate)))
-		binary.LittleEndian.PutUint16(out[i*2:], uint16(int16(v*32767)))
+		binary.LittleEndian.PutUint16(out[i*2:], uint16(int16(sample(i)*32767)))
 	}
 	return out
 }
+
+const (
+	// A CTCSS tone is sent well under the voice it rides with.
+	subAudibleTapLevel = 0.1
+	// The discriminator's DC offset is the tuning error; a real receiver is never
+	// exactly on frequency.
+	demodTapDC = 0.02
+)
 
 // renderIQ: 20 ms of a complex tone at +100 kHz, CF32 interleaved.
 func renderIQ(p *leylinev1.IqParams, now time.Time) []byte {

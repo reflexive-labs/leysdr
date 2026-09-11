@@ -518,13 +518,24 @@ func (c *Client) SubscribePersistence(ctx context.Context, captureID string, bin
 	})
 }
 
-// SubscribeAudio subscribes to a channel's demodulated audio. sampleRate 0 asks
-// for the channel's native audio rate.
+// SubscribeAudio subscribes to a channel's audio as a speaker would hear it.
+// sampleRate 0 asks for the channel's native audio rate.
 func (c *Client) SubscribeAudio(ctx context.Context, channelID string, sampleRate uint32, format leylinev1.AudioSampleFormat) (*Subscription, error) {
+	return c.SubscribeAudioTap(ctx, channelID, sampleRate, format, leylinev1.AudioTap_TAP_AUDIO)
+}
+
+// SubscribeAudioTap is SubscribeAudio with a say in which stage of the channel
+// the samples come from. TAP_DEMOD is the detector's output before the audio
+// conditioning, so an NFM stream still carries its CTCSS tone and keeps flowing
+// while the squelch is closed; a RAW_IQ channel has no detector and refuses it.
+// Read the returned Descriptor for the tap the daemon serves.
+func (c *Client) SubscribeAudioTap(ctx context.Context, channelID string, sampleRate uint32,
+	format leylinev1.AudioSampleFormat, tap leylinev1.AudioTap,
+) (*Subscription, error) {
 	return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
 		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: channelID},
 		Kind:   leylinev1.StreamKind_AUDIO,
-		Params: &leylinev1.SubscribeRequest_Audio{Audio: &leylinev1.AudioParams{SampleRate: sampleRate, Format: format}},
+		Params: &leylinev1.SubscribeRequest_Audio{Audio: &leylinev1.AudioParams{SampleRate: sampleRate, Format: format, Tap: tap}},
 	})
 }
 
