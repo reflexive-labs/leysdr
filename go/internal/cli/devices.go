@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -22,14 +25,17 @@ sample rates (how wide a band it can take in at once) and gain elements
 is followed by a checklist of what to try. --watch keeps running and prints
 a line whenever a radio is plugged in or removed. Row numbers from this
 list are accepted wherever a device id is (ley tune --device 2), and --wide
-adds the driver, serial and full device id columns.
+adds the driver, serial and full device id columns. A radio on another
+machine joins the list with 'ley devices attach' and leaves it with
+'ley devices detach'.
 
 --json prints a ListDevicesResponse; with --watch that line comes first and
 each plug or unplug then adds an Event line carrying the full device.`,
 		Example: `  ley devices              # is my radio visible?
   ley devices --watch      # print a line on plug and unplug
   ley devices --watch --json   # {"devices":[...]}, then one Event per change
-  ley devices detach 2     # remove the second listed file playback device`,
+  ley devices attach rtltcp pi.local:1234   # a radio on another machine
+  ley devices detach 2     # remove the second listed attached device`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -38,19 +44,27 @@ each plug or unplug then adds an Event line carrying the full device.`,
 	}
 	cmd.Flags().BoolVar(&watch, "watch", false, "keep running and print a line when a radio is plugged in or removed")
 	cmd.Flags().BoolVar(&wide, "wide", false, "add the driver, serial and full device id columns")
+	cmd.AddCommand(newDevicesAttachCommand(app))
 	cmd.AddCommand(newDevicesDetachCommand(app))
 	return cmd
 }
 
-// newDevicesDetachCommand removes a file playback device attached by `ley play` (typically one
-// left behind by `ley play --persistent`). Its capture and channels are destroyed with it.
+// newDevicesDetachCommand removes a device a client attached: a file playback device from
+// `ley play --persistent`, or a radio `ley devices attach` added. Its capture and channels are
+// destroyed with it.
 func newDevicesDetachCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "detach <device>",
-		Short: "Remove a file playback device left behind by ley play",
-		Long: `detach removes a file playback device (one 'ley play --persistent' left
-behind) together with its capture and channels. The device can be given as
-its id, an unambiguous id prefix, or its row number in 'ley devices'.`,
+		Short: "Remove an attached radio or playback file",
+		Long: `detach removes a device a client attached -- a radio added with
+'ley devices attach', or a file playback device 'ley play --persistent'
+left behind -- together with its capture and channels. A remote radio is
+forgotten, so the daemon stops re-attaching it at startup. The device can
+be given as its id, an unambiguous id prefix, or its row number in
+'ley devices'.
+
+A dongle plugged into this machine is found, not attached, so there is
+nothing to detach: unplug it, or free it with 'ley stop --all'.`,
 		Example: `  ley devices detach dev_01J...   # by id
   ley devices detach 2            # the second row of ley devices`,
 		Args: cobra.ExactArgs(1),
@@ -69,16 +83,13 @@ its id, an unambiguous id prefix, or its row number in 'ley devices'.`,
 			if err != nil {
 				return fmt.Errorf("%w. Run: ley devices", err)
 			}
-			if d.Driver == "rtltcp" {
-				// A remote dongle is daemon configuration, not session state: it
-				// enters the registry from --rtltcp (or LEYLINE_RTLTCP) at
-				// startup, so the way out is the same place it came in.
-				return fmt.Errorf("%s (%s) is a remote radio configured on leylined's command line (--rtltcp); drop the flag there and restart the daemon: ley daemon stop && ley daemon start", d.DeviceId, d.Model)
-			}
-			if d.Driver != "file" {
+			// A radio in this machine's USB port is the daemon's to find, not a
+			// client's to remove; the daemon refuses it too, but saying it here
+			// costs a round trip and names the way to free the hardware.
+			if d.Driver != "file" && d.Driver != "rtltcp" {
 				return fmt.Errorf("%s is a real radio (%s), not a playback file; free it with: ley stop --all", d.DeviceId, d.Model)
 			}
-			if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: d.DeviceId}); err != nil {
+			if err := c.DetachDevice(ctx, d.DeviceId); err != nil {
 				return err
 			}
 			if app.JSON {
@@ -238,4 +249,119 @@ func deviceStateString(d *leylinev1.DeviceDescriptor) string {
 		s += " (other program)"
 	}
 	return s
+}
+
+// newDevicesAttachCommand adds a radio the daemon cannot find by itself. The kind is a word
+// rather than a flag so a later source (another network protocol, a named pipe) slots in beside
+// rtltcp without changing the shape of the command.
+func newDevicesAttachCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "attach rtltcp <host:port>",
+		Short: "Add a radio another machine is serving",
+		Long: `attach adds a dongle served over the network by rtl_tcp -- a Pi on the roof
+with an antenna on it -- to the daemon's device list, where it behaves like
+any other radio: ley devices shows it, ley tune and ley scan use it. The
+daemon remembers it across restarts, so this is done once; the undo is
+'ley devices detach'.
+
+The kind is 'rtltcp'. Attaching connects once, so an unreachable host is an
+error and nothing is remembered (a radio never reached is usually a typo).
+A drop afterwards is not an error: the daemon reconnects to a radio it
+knows. Attaching an endpoint already attached prints the radio it has.
+
+The device id is on stdout; --json prints the DeviceDescriptor instead.`,
+		Example: `  ley devices attach rtltcp pi.local:1234   # the dongle on the Pi
+  ley devices attach rtltcp 10.0.0.5:1234 --json
+  ley devices detach 2                     # remove it again, by row number`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDevicesAttach(cmd, app, args[0], args[1])
+		},
+	}
+}
+
+// rtlTCPPort is what rtl_tcp listens on unless it is told otherwise, so it is the port to suggest.
+const rtlTCPPort = 1234
+
+func runDevicesAttach(cmd *cobra.Command, app *App, kind, endpoint string) error {
+	if kind != "rtltcp" {
+		return usageErrorf("%q is not a kind of radio ley can attach; the kinds are: rtltcp", kind)
+	}
+	host, port, err := parseEndpoint(endpoint)
+	if err != nil {
+		return usageError(err)
+	}
+	ctx := cmd.Context()
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	// A second attach of one endpoint hands back the radio the daemon already
+	// has, which is the right answer but a different sentence; the list taken
+	// before the call is what tells the two apart, and only the prose needs it.
+	var before []*leylinev1.DeviceDescriptor
+	if !app.JSON {
+		resp, lerr := c.Control.ListDevices(ctx, &leylinev1.ListDevicesRequest{})
+		if lerr != nil {
+			return app.notRunning(lerr)
+		}
+		before = resp.GetDevices()
+	}
+	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource(host, port))
+	if err != nil {
+		return err
+	}
+	if app.JSON {
+		return app.printJSON(dev)
+	}
+	// The id is machine output and goes to stdout; the sentence about it is
+	// prose for the person, as in ley play.
+	fmt.Fprintf(app.Stdout, "device %s\n", dev.DeviceId)
+	if hasDevice(before, dev.DeviceId) {
+		fmt.Fprintf(app.Stderr, "%s is already attached as %s\n", dev.Model, dev.DeviceId)
+		return nil
+	}
+	fmt.Fprintf(app.Stderr, "attached %s as %s; the daemon remembers it. Forget it with: ley devices detach %s\n",
+		dev.Model, dev.DeviceId, detachSelector(ctx, c, dev))
+	return nil
+}
+
+// parseEndpoint splits host:port, which is how an rtl_tcp server is spelled everywhere else (its
+// own command line, the address people paste at each other), with the mistake said in those terms.
+func parseEndpoint(endpoint string) (string, uint32, error) {
+	host, portText, err := net.SplitHostPort(endpoint)
+	if err != nil || host == "" {
+		return "", 0, fmt.Errorf("%q is not a host:port; rtl_tcp usually listens on %d, so try: ley devices attach rtltcp pi.local:%d", endpoint, rtlTCPPort, rtlTCPPort)
+	}
+	port, err := strconv.ParseUint(portText, 10, 32)
+	if err != nil || port == 0 || port > 65535 {
+		return "", 0, fmt.Errorf("%q is not a port between 1 and 65535; rtl_tcp usually listens on %d", portText, rtlTCPPort)
+	}
+	return host, uint32(port), nil
+}
+
+// hasDevice reports whether this list already named the device.
+func hasDevice(devices []*leylinev1.DeviceDescriptor, id string) bool {
+	for _, d := range devices {
+		if d.GetDeviceId() == id {
+			return true
+		}
+	}
+	return false
+}
+
+// detachSelector is what to type to remove this radio again: its row number in ley devices, which
+// is shorter than a ULID, and the id itself when the list cannot be read.
+func detachSelector(ctx context.Context, c *leyline.Client, dev *leylinev1.DeviceDescriptor) string {
+	st, err := c.State(ctx)
+	if err != nil {
+		return dev.DeviceId
+	}
+	for i, d := range st.GetDevices() {
+		if d.GetDeviceId() == dev.DeviceId {
+			return strconv.Itoa(i + 1)
+		}
+	}
+	return dev.DeviceId
 }

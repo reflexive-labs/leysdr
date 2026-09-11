@@ -1,6 +1,12 @@
-detach removes a file playback device (one 'ley play --persistent' left
-behind) together with its capture and channels. The device can be given as
-its id, an unambiguous id prefix, or its row number in 'ley devices'.
+detach removes a device a client attached -- a radio added with
+'ley devices attach', or a file playback device 'ley play --persistent'
+left behind -- together with its capture and channels. A remote radio is
+forgotten, so the daemon stops re-attaching it at startup. The device can
+be given as its id, an unambiguous id prefix, or its row number in
+'ley devices'.
+
+A dongle plugged into this machine is found, not attached, so there is
+nothing to detach: unplug it, or free it with 'ley stop --all'.
 
 Usage:
   ley devices detach <device> [flags]

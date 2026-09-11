@@ -54,20 +54,30 @@ served with osmocom's `rtl_tcp` and used by `leylined` as a virtual device:
 rtl_tcp -a 0.0.0.0 -p 1234
 
 # on the Mac
-leylined --rtltcp pi.local:1234            # repeatable: --rtltcp a:1234 --rtltcp b:1234
-LEYLINE_RTLTCP=pi.local:1234,shack:1234 leylined   # same thing via the environment
+ley devices attach rtltcp pi.local:1234    # the way in: the daemon remembers it across restarts
 ley devices                                # shows driver rtltcp, model "rtl_tcp pi.local:1234 (R820T)"
+ley devices detach 2                       # the way out: the daemon forgets it
 ```
 
-The daemon connects at startup (5 s timeout); an unreachable server is logged and skipped, so a dead
-remote never stops local dongles from working. Tune, gain, sample rate, bias tee, ppm and AGC all
-work the same as on a local dongle (they are sent as rtl_tcp commands). `rtl_tcp` serves one client
-at a time and drops one that stops reading, so do not point two daemons at the same server. If the
-link drops, the device goes `disconnected` (its capture detaches) and the daemon retries the
-connection on every device poll (about once a second, 5 s timeout per attempt); once the server is
-back the device is `available` again under the same id and a detached capture rebinds to it by
-itself. Samples cross the network as raw 8-bit I/Q (2.4 MSPS ≈ 4.8 MB/s), so a wired LAN or good
-Wi-Fi is needed.
+Attaching is a client asking the running daemon, so nothing needs restarting and the remembered
+list (`devices.json` beside the socket) survives one. A foreground run started from a terminal can
+still be given its radios on the command line, which is what `--rtltcp` is for:
+
+```sh
+leylined --rtltcp pi.local:1234            # repeatable: --rtltcp a:1234 --rtltcp b:1234
+LEYLINE_RTLTCP=pi.local:1234,shack:1234 leylined   # same thing via the environment
+```
+
+Attaching connects once (5 s timeout) and fails naming the endpoint if the server does not answer,
+remembering nothing. A remembered or flag-given server that is unreachable at startup is logged and
+kept, so a dead remote never stops local dongles from working. Tune, gain, sample rate, bias tee,
+ppm and AGC all work the same as on a local dongle (they are sent as rtl_tcp commands). `rtl_tcp`
+serves one client at a time and drops one that stops reading, so do not point two daemons at the
+same server. If the link drops, the device goes `disconnected` (its capture detaches) and the
+daemon retries the connection on every device poll (about once a second, 5 s timeout per attempt);
+once the server is back the device is `available` again under the same id and a detached capture
+rebinds to it by itself. Samples cross the network as raw 8-bit I/Q (2.4 MSPS ≈ 4.8 MB/s), so a
+wired LAN or good Wi-Fi is needed.
 
 ### Running as a launchd agent
 

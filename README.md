@@ -5,8 +5,9 @@ and does all the signal processing; the `ley` command-line tool (Go) drives it o
 using one gRPC contract, `leyline.v1`. Anything else that speaks the contract — a script, an agent,
 a future app — is a peer of the CLI, never a second path into the hardware.
 
-**What works today:** an RTL-SDR plugged into the Mac (or served from another machine by `rtl_tcp`),
-or an IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
+**What works today:** an RTL-SDR plugged into the Mac (or one another machine serves with
+`rtl_tcp`, added by `ley devices attach rtltcp pi.local:1234` and remembered from then on), or an
+IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
 squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
 views in the terminal; a band scan with an honest energy detector; two channels on one radio; a
 second terminal adjusting what the first is hearing; `--json` for scripts and agents.

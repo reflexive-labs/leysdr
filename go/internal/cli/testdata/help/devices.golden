@@ -4,7 +4,9 @@ sample rates (how wide a band it can take in at once) and gain elements
 is followed by a checklist of what to try. --watch keeps running and prints
 a line whenever a radio is plugged in or removed. Row numbers from this
 list are accepted wherever a device id is (ley tune --device 2), and --wide
-adds the driver, serial and full device id columns.
+adds the driver, serial and full device id columns. A radio on another
+machine joins the list with 'ley devices attach' and leaves it with
+'ley devices detach'.
 
 --json prints a ListDevicesResponse; with --watch that line comes first and
 each plug or unplug then adds an Event line carrying the full device.
@@ -17,10 +19,12 @@ Examples:
   ley devices              # is my radio visible?
   ley devices --watch      # print a line on plug and unplug
   ley devices --watch --json   # {"devices":[...]}, then one Event per change
-  ley devices detach 2     # remove the second listed file playback device
+  ley devices attach rtltcp pi.local:1234   # a radio on another machine
+  ley devices detach 2     # remove the second listed attached device
 
 Available Commands:
-  detach      Remove a file playback device left behind by ley play
+  attach      Add a radio another machine is serving
+  detach      Remove an attached radio or playback file
 
 Flags:
   -h, --help    help for devices

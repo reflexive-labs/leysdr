@@ -61,7 +61,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
 ├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
-├── devices [--watch] | devices detach <SEL>
+├── devices [--watch] | devices attach rtltcp <host:port> | devices detach <SEL>
+│                                    # attach adds a radio another machine serves with rtl_tcp and the daemon
+│                                    # remembers it across restarts; detach removes any device a client attached
 ├── state                            # GetState snapshot, the debugging entry point
 ├── daemon [install|uninstall|start|stop|status|logs]
 ├── version
@@ -164,7 +166,11 @@ status carries success; when `stop --all` finds nothing running it prints nothin
 stderr prose without `--json`) and exits 0. `ley set --json` prints the confirming or rejecting
 Event and exits 1 on a `WriteRejected` with nothing on stderr. `ley devices --watch --json` prints
 the `ListDevicesResponse` first (the same line `devices --json` prints), then one `Event` per plug
-or unplug carrying the full `DeviceDescriptor`. `ley daemon start --json` and `daemon stop --json`
+or unplug carrying the full `DeviceDescriptor`. `ley devices attach rtltcp <host:port> --json`
+prints the `DeviceDescriptor` the daemon attached, or the one it already hosts for that endpoint,
+since one endpoint is one radio and a second attach is not an error; without the flag the id is on
+stdout and the sentence about it on stderr, as `ley play --persistent` does. An endpoint that
+cannot be reached is exit 1 with the daemon's `DEVICE_IO` sentence and nothing remembered. `ley daemon start --json` and `daemon stop --json`
 print the same `DaemonInfo` as `daemon status --json` (start from a fresh `GetState` after the
 action; stop the last info the daemon reported, pid included, or only `socketPath` when nothing was
 running); `daemon install`, `uninstall` and `logs` have no JSON shape and reject `--json` as a

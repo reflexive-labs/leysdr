@@ -377,7 +377,7 @@ unreachable (`.invalid` host or a closed port), detach, and the round trip throu
 (attach, tear the daemon down, bring a new one up on the same directory, the device is present).
 `docs/engine-internals.md` gets the paragraph.
 
-### GO-10 `[ ]` Remote radios as daemon state: `ley devices attach`
+### GO-10 `[x]` Remote radios as daemon state: `ley devices attach`
 
 R-20, last third, against the fake. `ley devices attach rtltcp <host:port>` (the kind is a literal
 so later sources slot in) calls `AttachDevice`, prints one line in the `ley play` style ("attached

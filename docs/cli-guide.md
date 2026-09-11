@@ -59,6 +59,25 @@ list work wherever a device id is accepted (`ley tune 146.52 --device 2`). An em
 (plugged in? does `rtl_test` see it? does anything else have it open? what does `ley daemon logs` say?). `ley devices --watch`
 prints a line when a radio is plugged in or removed.
 
+### A radio on another machine
+
+A dongle need not be in this Mac. Run `rtl_tcp -a 0.0.0.0` on the machine it is plugged into (a Pi
+with the antenna on the roof, say) and tell the daemon where it is:
+
+```console
+$ ley devices attach rtltcp pi.local:1234
+device dev_01J8Z6K2T7QF3N9WX4RBV5MCDE
+attached rtl_tcp pi.local:1234 (R820T) as dev_01J8Z6K2T7QF3N9WX4RBV5MCDE; the daemon remembers it. Forget it with: ley devices detach 2
+```
+
+From here it is a radio like any other: it has a row in `ley devices`, and `ley tune`, `ley scan`
+and the rest take it with `--device 2`. The daemon remembers it across restarts, so this is done
+once; `ley devices detach 2` removes it and stops it coming back. Attaching connects once, so a
+host that cannot be reached is an error on the spot and nothing is remembered — a radio never
+reached is usually a typo. A radio that drops later is not an error: it goes DISCONNECTED and the
+daemon reconnects when it answers again. Attaching an endpoint twice is not an error either; the
+second time prints the radio the daemon already has.
+
 The daemon keeps running after you close the terminal; `ley daemon status` says whether it is
 answering (exit 3 when not), `ley daemon stop` stops it, and on macOS `ley daemon install`
 starts it at login. Status is one line whose first word is the answer:

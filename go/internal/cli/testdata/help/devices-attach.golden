@@ -1,0 +1,29 @@
+attach adds a dongle served over the network by rtl_tcp -- a Pi on the roof
+with an antenna on it -- to the daemon's device list, where it behaves like
+any other radio: ley devices shows it, ley tune and ley scan use it. The
+daemon remembers it across restarts, so this is done once; the undo is
+'ley devices detach'.
+
+The kind is 'rtltcp'. Attaching connects once, so an unreachable host is an
+error and nothing is remembered (a radio never reached is usually a typo).
+A drop afterwards is not an error: the daemon reconnects to a radio it
+knows. Attaching an endpoint already attached prints the radio it has.
+
+The device id is on stdout; --json prints the DeviceDescriptor instead.
+
+Usage:
+  ley devices attach rtltcp <host:port> [flags]
+
+Examples:
+  ley devices attach rtltcp pi.local:1234   # the dongle on the Pi
+  ley devices attach rtltcp 10.0.0.5:1234 --json
+  ley devices detach 2                     # remove it again, by row number
+
+Flags:
+  -h, --help   help for attach
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

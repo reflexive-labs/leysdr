@@ -516,29 +516,26 @@ func TestPickDeviceSkipsExternallyHeld(t *testing.T) {
 	}
 }
 
-// A remote dongle over rtl_tcp is daemon start-up configuration: it enters the
-// registry from leylined's command line and no RPC removes it, so detach says
-// where it came from rather than offering a command that frees captures.
+// A radio on another machine is daemon state a client drives: attach adds it, detach removes it
+// and the daemon forgets it, so detach must not refuse a driver it did not attach itself.
 func TestDetachRemoteRadio(t *testing.T) {
-	remote := &leylinev1.DeviceDescriptor{
-		DeviceId:     "dev_remote",
-		Driver:       "rtltcp",
-		Model:        "rtl_tcp pi.local:1234 (R820T)",
-		State:        leylinev1.DeviceState_AVAILABLE,
-		TuningRanges: []*leylinev1.FrequencyRange{{MinHz: 24_000_000, MaxHz: 1_766_000_000}},
-		SampleRates:  fakedaemon.RTLSDRRates,
+	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
+	ctx := context.Background()
+	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	if err != nil {
+		t.Fatal(err)
 	}
-	sock, _ := harness(t, fakedaemon.Options{NoDevice: true, ExtraDevices: []*leylinev1.DeviceDescriptor{remote}})
-	_, _, err := run(t, context.Background(), sock, "devices", "detach", "dev_remote")
-	if exitCode(err) != 1 || err == nil {
-		t.Fatalf("detach a remote radio: exit %d (%v)", exitCode(err), err)
+	out := mustRun(t, sock, "devices", "detach", dev.DeviceId)
+	if !strings.Contains(out, "detached "+dev.DeviceId) {
+		t.Fatalf("detach a remote radio said %q", out)
 	}
-	for _, want := range []string{"--rtltcp", "restart the daemon"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("message %q lacks %q", err, want)
+	st, err := c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range st.Devices {
+		if d.DeviceId == dev.DeviceId {
+			t.Fatalf("the remote radio is still in the device list")
 		}
-	}
-	if strings.Contains(err.Error(), "ley stop --all") {
-		t.Errorf("stop --all frees captures and leaves the remote attached: %v", err)
 	}
 }

@@ -57,6 +57,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "daemon status", args: []string{"daemon", "status"}},
 	{path: "daemon stop", args: []string{"daemon", "stop"}, noDaemon: true},
 	{path: "devices", args: []string{"devices"}},
+	{path: "devices attach", args: []string{"devices", "attach", "rtltcp", "pi.local:1234"}},
 	{path: "devices detach", args: []string{"devices", "detach"}, prep: prepPlaybackDevice},
 	{path: "fft", args: []string{"fft", "--freq", "146.52", "--count", "2"}},
 	{path: "help", args: []string{"help"}, refuse: jsonNoOutput},
