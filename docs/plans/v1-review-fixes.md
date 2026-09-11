@@ -448,3 +448,52 @@ Dropped from the audit with reason: `SnapGain` clamping a descriptor with no tab
 range to 0 dB is exact parity with `GainElement.snapped` and unreachable behind `CheckGain`;
 `phosphor.go`'s drain reorder and `scan.go`'s reading of `Job.error` are the intended shapes;
 `bulk_stream.go`'s render under the fake's lock is a fake-only cost.
+
+### SW-13 `[ ]` What the audit of the remote-radio daemon code found
+
+An independent read of `6dca426..c686a4b` on the engine side. Line numbers as of `c686a4b`. Edit
+only under `engine/` and `docs/`; the Go lane is running concurrently (the e2e sleep the audit
+noted is handled separately).
+
+Decisions:
+- A radio hosted because of a `--rtltcp` flag is operator configuration: `DetachDevice` refuses it
+  with `INVALID_ARGUMENT` naming the flag ("configured with --rtltcp on the daemon's command line;
+  remove the flag"), matching the registry's original rule and the CLI's refusal sentence. The
+  registry therefore records how each hosted virtual device arrived (`operatorFlag` or `client`).
+- `AttachDevice` of an endpoint that is hosted by a flag returns the existing descriptor **and
+  remembers it**, flipping its origin to `client`, so it persists once the flag goes and can be
+  detached.
+- A remembered endpoint that cannot be reached at startup is hosted anyway, as a `DISCONNECTED`
+  device, so `reconnectDisconnectedRemotes` brings it back on a later poll, as the proto and the
+  plan promise; the log line says it is waiting. Same for a `--rtltcp` flag that fails at start.
+- `DetachFileDevice` on a hosted non-file device goes back to `INVALID_ARGUMENT` (an observable
+  code changed in `64cd45e`; `DaemonTests.swift:1078-1086` asserts the old code again).
+
+1. `SessionStore.swift:383-393`: hold the endpoint in an in-flight set across `await device.open()`
+   (the `startingDevices` pattern at `:474`); a second attach of the same endpoint during the
+   connect waits for the first or returns its result, never opens a second socket. Make the
+   comment at `:377-378` true.
+2. `SessionStore.swift:395-399`: remember the endpoint before publishing the device and before any
+   further `await`, or re-check `devices[d.id]` after the awaits and forget if it is gone, so a
+   detach interleaved with the attach cannot leave a stale line in `devices.json`.
+3. `SessionStore.swift:416-419`: detach consults `startingDevices` and refuses with `DEVICE_BUSY`
+   ("a capture is starting on it; try again") rather than closing a device under a starting engine;
+   after its awaits it re-checks the device still exists so a concurrent second detach gets
+   `DEVICE_NOT_FOUND` before it destroys anything.
+4. `SessionStore.swift:393`: if `registry.attachVirtualDevice` throws, close the opened device.
+5. `Server.swift:26-28` and `RememberedDevices.swift:41`: the `devicesPath == ""` and `path: nil`
+   modes have no caller; delete them and the comments that describe them.
+6. `engine/Tests/TestSupport/FakeRTLTCPServer.swift:25-26`: `accepted` and `threads` are written
+   and never read; delete them.
+7. Tests in `RemoteDeviceTests`: detaching a `--rtltcp`-configured device is refused; attaching a
+   flag-hosted endpoint remembers it; a daemon started with an unreachable remembered endpoint
+   hosts it as `DISCONNECTED` and keeps the file entry, and it becomes `AVAILABLE` once the fake
+   server appears; a malformed `devices.json` is logged and treated as empty; `AttachDevice{file}`
+   through the new RPC attaches and detaches a fixture.
+8. Comments: `DeviceRegistry.swift:180-184` (both kinds "arrived over the protocol" is untrue once
+   flags are distinguished; say what the origin field means), `SessionStore.swift:408` (drop "is the
+   older", say what `fileOnly` does), `SessionStore.swift:379-380` (one sentence; the rationale
+   already lives in the proto comment), `docs/engine-internals.md` "Remembered devices" (state the
+   in-flight dedupe and the disconnected-hosting behaviour as they now are).
+
+Suite green twice at the end.
