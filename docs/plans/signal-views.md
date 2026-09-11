@@ -355,7 +355,7 @@ numbers as of `4212935`. Engine and docs only.
 
 Suite green twice at the end.
 
-### SV-8f `[ ]` A time axis under the trace (Go lane)
+### SV-8f `[x]` A time axis under the trace (Go lane)
 
 The trace has no timebase on screen. Draw one under it in the style `spectrum` uses for
 frequency (`spectrum_axis.go`): a rule with tick marks and labels beneath, ticks chosen from

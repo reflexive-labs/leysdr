@@ -63,11 +63,13 @@ func newScopeView(st ui.Style, width int) *scopeView {
 	return &scopeView{st: st, width: width}
 }
 
+// cols is the trace's width: the resolved width less the level axis, which
+// stands left of it.
 func (v *scopeView) cols() int {
-	if v.width < scopeMinCols {
-		return scopeMinCols
+	if c := v.width - scopeGutter; c >= scopeMinCols {
+		return c
 	}
-	return v.width
+	return scopeMinCols
 }
 
 func (v *scopeView) render(f scopeFrame) string {
@@ -75,7 +77,10 @@ func (v *scopeView) render(f scopeFrame) string {
 	for _, l := range v.header(f) {
 		b.WriteString(l + "\n")
 	}
-	for _, l := range v.trace(f.samples) {
+	for r, l := range v.trace(f.samples) {
+		b.WriteString(v.gutter(r) + l + "\n")
+	}
+	for _, l := range v.axis(f.windowMs) {
 		b.WriteString(l + "\n")
 	}
 	return b.String()

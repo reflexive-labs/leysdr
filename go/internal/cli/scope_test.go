@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,6 +33,10 @@ func scopeTestFrame() scopeFrame {
 		peakDbfs: -2, rmsDbfs: -5, tuningHz: math.NaN(), what: "145.230 MHz NFM",
 	}
 }
+
+// scopeTraceCols is the trace width the goldens below were drawn at; the views
+// under test are sized to it plus the level axis beside it.
+const scopeTraceCols = 32
 
 // peakRuns counts the runs of columns the trace reaches row into: one per
 // cycle of the tone, which is what ties the picture to the number beside it.
@@ -85,7 +91,7 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 		{"ascii", ui.Style{}, scopeToneASCII},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rows := newScopeView(tc.st, 32).trace(f.samples)
+			rows := newScopeView(tc.st, scopeTraceCols+scopeGutter).trace(f.samples)
 			if len(rows) != scopeHeight {
 				t.Fatalf("trace is %d rows, want %d", len(rows), scopeHeight)
 			}
@@ -106,7 +112,7 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 // draws the same picture. The free-running comparison is what makes this a
 // test of the trigger rather than of the sine.
 func TestScopeTriggerHoldsAToneStill(t *testing.T) {
-	v := newScopeView(ui.Style{Unicode: true}, 32)
+	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeGutter)
 	window := 192
 	var triggered, free string
 	for i, shift := range []int{0, 7, 19, 31, 44} {
@@ -313,4 +319,103 @@ func TestScopeUsageErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The timebase under the trace: round steps, four to eight of them, starting
+// at zero and ending at the window the header states. The step table is the
+// point -- an axis that marked 5.7 ms would be arithmetic, not a timebase.
+func TestScopeAxisTicks(t *testing.T) {
+	for _, tc := range []struct {
+		windowMs int
+		want     []int
+	}{
+		{5, []int{0, 1, 2, 3, 4, 5}},
+		{10, []int{0, 2, 4, 6, 8, 10}},
+		{20, []int{0, 5, 10, 15, 20}},
+		{40, []int{0, 10, 20, 30, 40}},
+		{100, []int{0, 20, 40, 60, 80, 100}},
+		{500, []int{0, 100, 200, 300, 400, 500}},
+	} {
+		t.Run(fmt.Sprintf("%dms", tc.windowMs), func(t *testing.T) {
+			ticks := scopeTicks(tc.windowMs, ui.DefaultWidth-scopeGutter)
+			var got []int
+			for _, tick := range ticks {
+				got = append(got, tick.ms)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("ticks at %v ms, want %v", got, tc.want)
+			}
+			if len(ticks) < 4 || len(ticks) > 8 {
+				t.Errorf("%d marks on the axis, want four to eight", len(ticks))
+			}
+			if ticks[0].col != 0 {
+				t.Errorf("the axis starts at column %d, want the frame's first", ticks[0].col)
+			}
+			if last := ticks[len(ticks)-1]; last.col != ui.DefaultWidth-scopeGutter-1 {
+				t.Errorf("the window length sits at column %d, want the right edge", last.col)
+			}
+		})
+	}
+}
+
+// Both scales are on screen beside the picture, in either alphabet: the level
+// down the gutter, the time along the rule beneath. The trace comes out of the
+// same width they do, so a wider terminal draws a wider trace and not a wider
+// gutter.
+func TestScopeRenderCarriesBothScales(t *testing.T) {
+	f := scopeTestFrame()
+	for _, tc := range []struct {
+		name string
+		st   ui.Style
+	}{
+		{"braille", ui.Style{Unicode: true}},
+		{"ascii", ui.Style{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := newScopeView(tc.st, ui.DefaultWidth)
+			if got, want := v.cols(), ui.DefaultWidth-scopeGutter; got != want {
+				t.Errorf("the trace is %d columns of %d, want %d beside the level axis", got, ui.DefaultWidth, want)
+			}
+			lines := strings.Split(strings.TrimRight(v.render(f), "\n"), "\n")
+			for _, l := range lines {
+				if w := ui.Visible(l); w > ui.DefaultWidth {
+					t.Errorf("a line is %d columns wide: %q", w, l)
+				}
+			}
+			// The eight trace rows sit between the header and the axis.
+			rows := lines[len(lines)-2-scopeHeight : len(lines)-2]
+			for row, want := range map[int]string{0: "+1", scopeHeight / 2: " 0", scopeHeight - 1: "-1"} {
+				if !strings.HasPrefix(rows[row], want) {
+					t.Errorf("row %d starts %q, want the gutter to read %q", row, firstRunes(rows[row], 3), want)
+				}
+			}
+			for row, l := range rows {
+				switch row {
+				case 0, scopeHeight / 2, scopeHeight - 1:
+				default:
+					if !strings.HasPrefix(l, "  ") {
+						t.Errorf("row %d names a level the scale does not stop at: %q", row, firstRunes(l, 3))
+					}
+				}
+			}
+			// The rule and its labels: full scale is the gutter's job, the
+			// window length is the axis'.
+			rule, labels := lines[len(lines)-2], lines[len(lines)-1]
+			if !strings.Contains(rule, strings.Repeat(string(tc.st.Glyphs().Rule), 4)) {
+				t.Errorf("the axis draws no rule: %q", rule)
+			}
+			if !strings.HasPrefix(strings.TrimLeft(labels, " "), "0 ms") || !strings.HasSuffix(labels, "40 ms") {
+				t.Errorf("the labels run %q, want 0 ms to the window's 40 ms", labels)
+			}
+		})
+	}
+}
+
+// firstRunes is the head of a line, for an error message about its gutter.
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		r = r[:n]
+	}
+	return string(r)
 }

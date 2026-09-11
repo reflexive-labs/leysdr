@@ -360,20 +360,25 @@ the tuning error, which the header reads out in hertz (full scale is ±5 kHz on 
 $ ley scope 145.23 --tap demod --window 10
 145.230 MHz NFM  tap demod  window 10 ms  peak -4 dBFS  rms -9 dBFS
 tuning +100 Hz  PL 100.0 Hz (measured 100.12 Hz, 18 dB, confidence 0.9)
-
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⡠⡀⠀⠀⠀⠀⠀⠀⡤⣄⠀⠀⠀⠀⠀⠀⡤⡄⠀⠀⠀⠀⠀⠀⣀⡀
-⢀⠖⢦⠀⠀⠀⠀⠀⢀⠖⢦⠀⠀⠀⠀⠀⢠⠊⢣⠀⠀⠀⠀⠀⣰⠁⠱⡀⠀⠀⠀⠀⡸⠁⠘⡄⠀⠀⠀⠀⡜⠀⠘⡄⠀⠀⠀⠀⡜⠀⠘⡄⠀⠀⠀⠀⡸⠁⠹⡀⠀⠀⠀⠀⢰⠋⢳⠀⠀⠀⠀⠀⢠⠖⢦
-⡎⠀⠈⡆⠀⠀⠀⠀⡎⠀⠈⢇⠀⠀⠀⢀⠇⠀⠀⢧⠀⠀⠀⢠⠃⠀⠀⢣⠀⠀⠀⢰⠁⠀⠀⢱⠀⠀⠀⢰⠁⠀⠀⠸⡀⠀⠀⢰⠁⠀⠀⢱⠀⠀⠀⢰⠃⠀⠀⢱⠀⠀⠀⢠⠃⠀⠀⢣⠀⠀⠀⢀⠏⠀⠀⢇
-⠀⠀⠀⠸⡀⠀⠀⡸⠀⠀⠀⠘⡄⠀⠀⡜⠀⠀⠀⠈⡆⠀⠀⡎⠀⠀⠀⠈⢇⠀⢀⠎⠀⠀⠀⠀⢧⠀⢀⠇⠀⠀⠀⠀⢣⠀⢀⠇⠀⠀⠀⠀⢇⠀⢀⠇⠀⠀⠀⠈⢆⠀⠀⡎⠀⠀⠀⠈⡄⠀⠀⡜⠀⠀⠀⠘⡄⠀⠀⡸
-⠀⠀⠀⠀⢱⡀⢠⠃⠀⠀⠀⠀⠱⡀⡰⠁⠀⠀⠀⠀⠸⣄⡼⠀⠀⠀⠀⠀⠘⠦⠞⠀⠀⠀⠀⠀⠈⠳⠊⠀⠀⠀⠀⠀⠈⠓⠋⠀⠀⠀⠀⠀⠈⠢⠎⠀⠀⠀⠀⠀⠘⢆⡜⠀⠀⠀⠀⠀⠸⡄⡰⠁⠀⠀⠀⠀⢱⡀⣠⠃
-⠀⠀⠀⠀⠀⠉⠁⠀⠀⠀⠀⠀⠀⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠉⠁
++1│
+  │⠀⢀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠀⢠⣄⠀⠀⠀⠀⠀⠀⡤⡄⠀⠀⠀⠀⠀⢀⢤⡀
+  │⢠⠃⠈⡆⠀⠀⠀⠀⢰⠋⢳⠀⠀⠀⠀⠀⢠⠒⡄⠀⠀⠀⠀⠀⡰⢲⡀⠀⠀⠀⠀⢀⡖⢢⠀⠀⠀⠀⠀⣰⠋⢦⠀⠀⠀⠀⠀⡎⠈⢆⠀⠀⠀⠀⢠⠃⠈⡆⠀⠀⠀⠀⡜⠀⠸⡀⠀⠀⠀⢀⠏⠀⢱
+  │⠇⠀⠀⠸⡀⠀⠀⢀⠇⠀⠀⢇⠀⠀⠀⢠⠃⠀⠘⡄⠀⠀⠀⢰⠁⠀⢣⠀⠀⠀⠀⡜⠀⠀⢇⠀⠀⠀⢠⠃⠀⠈⡆⠀⠀⠀⡸⠀⠀⠘⡄⠀⠀⢀⠇⠀⠀⠸⡀⠀⠀⢰⠁⠀⠀⢣⠀⠀⠀⡜⠀⠀⠈⡆⠀⠀⢀
+ 0│⠀⠀⠀⠀⢇⠀⠀⡜⠀⠀⠀⠘⡄⠀⠀⡎⠀⠀⠀⢱⠀⠀⢀⠇⠀⠀⠈⡆⠀⠀⢰⠁⠀⠀⠘⡄⠀⠀⡎⠀⠀⠀⠸⡀⠀⢠⠃⠀⠀⠀⠱⡀⠀⡜⠀⠀⠀⠀⢣⠀⢀⠇⠀⠀⠀⠈⢇⠀⣰⠁⠀⠀⠀⠸⡀⠀⡸
+  │⠀⠀⠀⠀⠈⢦⡴⠁⠀⠀⠀⠀⠹⣀⡼⠀⠀⠀⠀⠀⢇⢀⡞⠀⠀⠀⠀⠘⡄⢠⠇⠀⠀⠀⠀⠱⡀⡰⠁⠀⠀⠀⠀⢣⣀⠎⠀⠀⠀⠀⠀⠣⠴⠁⠀⠀⠀⠀⠀⠳⠊⠀⠀⠀⠀⠀⠈⠒⠃⠀⠀⠀⠀⠀⠱⠴⠁
+  │⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠉⠁
+-1│
+  ─│──────────────│──────────────│───────────────│──────────────│──────────────│
+   0 ms         2 ms           4 ms            6 ms           8 ms         10 ms
 ```
 
 The header is the daemon's claim: the tone comes from the same sub-audible detector `ley tune`
 prints, and `scope` never estimates one itself, so the picture and the number can disagree — which
-is the reason both are on screen. `--window` (5 to 500 ms, default 40) is the timebase: 40 ms is a
-syllable of voice, four cycles of a 100 Hz tone, and a narrower window spreads a 1 kHz note out
-into a wave. `--trigger auto` starts each frame at a rising zero crossing when the window repeats
+is the reason both are on screen. Both scales are drawn: the gutter down the left is full scale,
+±1.0 (hertz are the header's tuning line), and the rule beneath the trace is milliseconds from the
+start of the frame out to the window length. `--window` (5 to 500 ms, default 40) is the timebase:
+40 ms is a syllable of voice, four cycles of a 100 Hz tone, and a narrower window spreads a 1 kHz
+note out into a wave. `--trigger auto` starts each frame at a rising zero crossing when the window repeats
 steadily, which holds a tone still; `--trigger free` lets the trace run. On a terminal without
 UTF-8, or with `--ascii`, the same trace is drawn with three levels per character.
 
