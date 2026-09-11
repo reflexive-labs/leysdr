@@ -310,3 +310,47 @@ first run already carries `tone_hz: 100`.
 The `cli-guide.md` transcript stands: rendering a demod frame with the guide's numbers reproduces
 its two header lines exactly, so there was no wording to re-record.
 
+
+### SV-8e `[ ]` What the second look at the demod tap found (Swift lane)
+
+An independent read of `c2a0b08..d39aa56` on the engine side, after the per-item verifiers. Line
+numbers as of `4212935`. Engine and docs only.
+
+1. `Demodulators.swift:284-286` (WFM): the one early return that does not zero `rawOut.count`; make
+   it `rawOut?.count = 0` like every other exit, so a stale scratch block can never ship.
+2. `ChannelDSPCore.swift:287-294`: keep one sink table plus a cached `hasDemodSink: Bool` rather than
+   two arrays snapshotted per block, so an untapped channel pays one branch and the comment at
+   `:292-293` becomes true; skip allocating `rawOut` for `rawIQ` channels, which can never have a
+   tap.
+3. `Demodulators.swift:59`: drop the dead `scale:` parameter on `emitRaw` (WFM rescales through its
+   own path).
+4. WFM's raw decimator is reset alone when a tap attaches mid-stream (`:289`), so from then on its
+   block counts and the audio's differ by one on some blocks, and the two taps are not
+   sample-aligned (different group delay, about 0.3 ms). That is acceptable for a scope, but say it:
+   in `docs/engine-internals.md`'s demod-tap paragraph and on the `SampleTime` both taps share; and
+   `DemodTapTests.swift:137,155` must stop claiming general alignment (assert the fresh-start case
+   it actually exercises, and say so).
+5. `DemodTapTests.swift:54` and the WFM test: `XCTAssertGreaterThanOrEqual` falls through into a
+   `precondition` in `tonePowerDB` and traps the process; use `guard … else { XCTFail; return }`.
+   `DemodTapStreamTests.swift:56-58`: bound the `for try await` with a deadline like the rest of
+   the daemon tests.
+6. Two daemon tests the contract lacks: destroying a channel closes its demod-tap stream; a
+   capture-rate change ends it (the descriptor is no longer true), exactly as for the audio tap.
+7. Pre-existing, now inherited by the tap: `SessionStore.swift:906-943` mode, bandwidth and offset
+   writes call `engine.update` without reconciling audio rates, so a mode change that moves the
+   channel's audio rate (NFM to WFM or back) leaves bulk audio streams, both taps, open at a rate
+   their descriptor no longer describes. Route those writes through the same audio-rate
+   reconciliation the capture-rate write uses, so the streams end and a client re-subscribes for a
+   fresh descriptor; daemon test: `ley listen`-style audio stream open, mode write NFM→WFM, the
+   stream ends. `StreamSources.swift:66` captures `captureRate` at subscribe; if the reconciliation
+   above ends the stream on every audio-rate change the stale value is unreachable — say so in a
+   comment, or read it live.
+8. `StreamRegistry.swift:244`: the descriptor echo can be `req.audio.tap` (the unknown case has
+   already thrown).
+9. Comments: `docs/engine-internals.md:189` the block's mean is the tuning error in units of
+   full-scale deviation, not hertz (the client scales by 5 000 or 75 000); `CoreProtocols.swift:443`
+   is garbled ("A sink that does not say is listening."); the sentence "what a transmitter is
+   sending between words is what it is for" appears in four places — keep it in the proto and the
+   design doc, and have the two code comments refer to the field instead.
+
+Suite green twice at the end.
