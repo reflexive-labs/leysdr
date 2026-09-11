@@ -507,7 +507,7 @@ absent until it has looked: the alternative is a level nobody measured, and NaN 
 axis has no cross glyph where the horizon meets it -- the alphabet carries none and the dashed rule
 is what names the alignment level -- so the gutter is the scope's, `│` on every row.
 
-### SV-10d `[ ]` `ley waveform` (Go lane, against the fake)
+### SV-10d `[x]` `ley waveform` (Go lane, against the fake)
 
 Everything in the design's `ley waveform` section: over the audio stream the scope subscribes
 (share its subscription and stats code), peak envelope per column symmetric about the centre,
@@ -518,6 +518,20 @@ seconds axis in the scope's axis style, `--seconds` 2..120 (default 10), `--scal
 with `auto` the default, `--tap`, `--rate`, `--count`, `--width`. `--json`: one object per column
 as it completes: `{sample_index, seconds, peak_dbfs, rms_dbfs, squelch_open}`. Tests: goldens in
 both alphabets, the blank-when-squelched rule, DC removal, `--json` shape, the tree walk.
+
+A column is a fixed number of samples rather than a slice of wall clock, so the axis measures the
+signal the picture is built from and the `--json` rows carry the same slices the picture would
+have drawn at that width. Each one is folded from five running numbers -- count, sum, sum of
+squares and the two extremes -- so a two-minute window costs what a two-second one does, and the
+demod tap's offset comes out of the peak and the rms together rather than being drawn around; the
+header says how much was taken out. A slice whose envelope reaches no dot either side of the
+centre is drawn as the centre rule, because below that the picture cannot resolve it and a pair of
+marks around the axis would claim more than the view knows. Blank is kept for what never came
+through -- a slice the squelch was shut for, or a column the run has not reached -- so a gap reads
+as a gap; a slice the squelch opened partway through counts as open, since something did come
+through it. The playhead is the alphabet's own vertical stroke in `Label` ink, and the gutter,
+the scale and the ASCII fallback are the scope's, so a clip and a trace asked for the same
+`--width` line up.
 
 ### SV-10e `[ ]` End to end, and the docs (cross-language, last)
 

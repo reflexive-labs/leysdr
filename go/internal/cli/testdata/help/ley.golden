@@ -35,6 +35,7 @@ Looking around:
   spectrum    Show what is on the air around a frequency
   state       Show everything the daemon knows right now
   waterfall   Watch a band over time, so you can see what comes and goes
+  waveform    Draw the last minutes of audio as a clip
 
 Data for tools:
   completion  Generate the autocompletion script for the specified shell

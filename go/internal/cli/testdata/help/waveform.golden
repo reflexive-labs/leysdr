@@ -1,0 +1,57 @@
+waveform draws the audio the way an editor draws a recording: every column
+is the loudest the signal got in the slice of time it covers, above and below
+a centre line, with the newest at the right and the past scrolling away to
+the left. Where 'ley scope' shows one window of the wave itself, this shows
+the shape of a transmission -- where the words are, how long the pauses ran,
+whether the level held.
+
+It takes a frequency, a preset or a channel id the way 'ley listen' does,
+making a capture and a channel when none exists and removing what it made on
+exit, and it opens no speakers.
+
+--tap audio is what the speakers get, after the high-pass, de-emphasis and
+gain control. --tap demod is the detector's own output before any of that,
+with its DC offset taken out so the clip sits on its centre line; the header
+names the offset that was removed.
+
+A slice the daemon's squelch was closed for is left blank rather than drawn
+flat, so a gap between transmissions looks like a gap. A slice that is open
+and silent keeps the centre rule.
+
+--seconds is how much of the past one frame holds, 2 to 120. --scale auto,
+the default, fits the clip to the loudest of the last few seconds, because
+the point of the view is the shape; --scale full draws the whole range the
+tap can carry, and a number pins it.
+
+--json prints one object per column as it completes: {sample_index, seconds,
+peak_dbfs, rms_dbfs, squelch_open}.
+
+Usage:
+  ley waveform <frequency|preset|channel> [flags]
+
+Examples:
+  ley waveform 146.52                   # the last ten seconds of the speaker
+  ley waveform 145.23 --seconds 60      # a minute of traffic, gaps and all
+  ley waveform 145.23 --tap demod       # the detector's own clip, DC removed
+  ley waveform 101.1 --seconds 2 --count 20 --json
+
+Flags:
+      --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
+      --count int        stop after this many columns, e.g. 10 (default: until Ctrl-C)
+      --device string    which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)
+      --gain string      receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)
+  -h, --help             help for waveform
+      --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
+      --rate float       frames a second (at most 20) (default 20)
+      --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
+      --scale string     how far from the centre the top of the clip stands: auto (fit the signal), full (±1.0), or a number such as 0.2 (default "auto")
+      --seconds float    how much of the past one frame holds (2..120) (default 10)
+      --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
+      --tap string       which stage to draw: audio (what the speakers get) or demod (the detector's output, before the audio chain) (default "audio")
+      --width int        picture width in columns (default: the terminal's, or 80 when piped)
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

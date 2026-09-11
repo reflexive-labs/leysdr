@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"strings"
+
+	"github.com/dpup/leysdr/go/internal/ui"
 )
 
 // scopeStepsMs are the tick spacings the time axis may use: the round numbers
@@ -54,11 +56,12 @@ func scopeTicks(windowMs, cols int) []scopeTick {
 	return append(ticks, scopeTick{ms: windowMs, col: end})
 }
 
-// gutter is the vertical scale beside one trace row: the top, the axis and the
-// bottom, rather than all eight rows, because three numbers are what a scale
-// is read from. The numbers are the tap's own units -- hertz are the header's
-// tuning line -- and they are ±1.0 until --scale says otherwise.
-func (v *scopeView) gutter(row int, scale float64) string {
+// scopeGutter is the vertical scale beside one row of a trace or a clip: the
+// top, the axis and the bottom, rather than all eight rows, because three
+// numbers are what a scale is read from. The numbers are the tap's own units
+// -- hertz are the header's tuning line -- and they are ±1.0 until --scale
+// says otherwise.
+func scopeGutter(st ui.Style, gutterW, row int, scale float64) string {
 	label := ""
 	switch row {
 	case 0:
@@ -68,7 +71,11 @@ func (v *scopeView) gutter(row int, scale float64) string {
 	case scopeHeight - 1:
 		label = scopeScaleLabel(-scale)
 	}
-	return v.st.Muted(fmt.Sprintf("%*s", v.gutterW-1, label) + v.st.Glyphs().TreeTrunk)
+	return st.Muted(fmt.Sprintf("%*s", gutterW-1, label) + st.Glyphs().TreeTrunk)
+}
+
+func (v *scopeView) gutter(row int, scale float64) string {
+	return scopeGutter(v.st, v.gutterW, row, scale)
 }
 
 // axis draws the timebase under the trace: a rule with a mark at every
@@ -89,25 +96,41 @@ func (v *scopeView) axis(windowMs int) []string {
 	}
 }
 
-// labelRow writes each mark's time under it, dropping any label the width
-// cannot fit beside its neighbour.
+// labelRow writes each mark's time under it.
 func (v *scopeView) labelRow(ticks []scopeTick) string {
-	width := v.gutterW + v.cols()
+	marks := make([]axisTick, len(ticks))
+	for i, t := range ticks {
+		marks[i] = axisTick{col: t.col, text: fmt.Sprintf("%d ms", t.ms)}
+	}
+	return axisLabelRow(v.gutterW, v.cols(), marks)
+}
+
+// axisTick is one mark of a timebase: the plot column it falls in and what is
+// written under it.
+type axisTick struct {
+	col  int
+	text string
+}
+
+// axisLabelRow writes each mark's text under it, dropping any label the width
+// cannot fit beside its neighbour: two labels run together read as a third
+// number that is neither.
+func axisLabelRow(gutterW, cols int, ticks []axisTick) string {
+	width := gutterW + cols
 	row := make([]byte, 0, width)
 	for _, t := range ticks {
-		text := fmt.Sprintf("%d ms", t.ms)
-		at := v.gutterW + t.col - len(text)/2
-		if at < v.gutterW {
-			at = v.gutterW
+		at := gutterW + t.col - len(t.text)/2
+		if at < gutterW {
+			at = gutterW
 		}
-		if at+len(text) > width {
-			at = width - len(text)
+		if at+len(t.text) > width {
+			at = width - len(t.text)
 		}
-		if at < len(row)+1 || at < v.gutterW {
+		if at < len(row)+1 || at < gutterW {
 			continue
 		}
 		row = append(row, strings.Repeat(" ", at-len(row))...)
-		row = append(row, text...)
+		row = append(row, t.text...)
 	}
 	return string(row)
 }

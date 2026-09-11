@@ -182,6 +182,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newPhosphorCommand(app),
 		newScopeCommand(app),
 		newLevelsCommand(app),
+		newWaveformCommand(app),
 		newScanCommand(app),
 		newJobsCommand(app),
 		newFFTCommand(app),
