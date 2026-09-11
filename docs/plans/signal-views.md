@@ -208,7 +208,7 @@ Follow-ups deliberately left out of this plan: tone squelch (`Channel` field 13 
 `ley watch` reusing the waterfall renderer over a client-side ring, and `AUDIO_FFT` if DCS or
 two-tone paging ever needs it.
 
-## SV-8 `[ ]` The scope: `ley scope`
+## SV-8 `[x]` The scope: `ley scope`
 
 Implements `docs/design-scope.md`, in four work items the loop runs by section name. Read the
 design doc first for every one of them; it states the contract each item serves. Additive `AudioParams.tap` (`AUDIO`, `DEMOD`); the demodulators
@@ -241,7 +241,7 @@ Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall.
   the tap. Tests in the fake's suite: both taps negotiate, the demod payload differs from the audio
   payload, rawIQ refused, unknown tap value refused.
 
-### SV-8b `[ ]` The tap in the engine and the daemon (Swift lane)
+### SV-8b `[x]` The tap in the engine and the daemon (Swift lane)
 
 - `CoreProtocols.swift` (hand-written; changing it is allowed): `Demodulator.process` gains a raw
   output beside `audioOut`, written into scratch sized at `configure` (invariant 4: no allocation on
