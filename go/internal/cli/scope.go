@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -31,6 +32,115 @@ const (
 	wfmFullScaleHz = 75_000
 )
 
+// scopeScaleSteps are the vertical scales --scale auto chooses between: round
+// numbers the gutter can be read at a glance, each about twice the one below,
+// so a step up is a visible change of picture rather than a drift.
+var scopeScaleSteps = []float64{0.02, 0.05, 0.1, 0.2, 0.5, 1}
+
+// How the auto scale follows the signal. A louder frame takes it up at once,
+// and it comes back down over about a second, so a pause between syllables
+// does not resize the picture. The headroom keeps a steady tone off the top
+// and bottom rows, where a peak and a clipped peak look the same.
+const (
+	scopeScaleDecay    = time.Second
+	scopeScaleHeadroom = 1.1
+)
+
+// scopeScale is what --scale asked for: how far from the centre the top of the
+// trace stands, in the tap's own units, either pinned or fitted per frame.
+type scopeScale struct {
+	auto bool
+	// fixed is the pinned scale, and the whole scale unless auto is set.
+	fixed float64
+}
+
+// scopeFull is the default: full scale, so a trace that grows is a signal that
+// grew and never a scale that moved under it.
+var scopeFull = scopeScale{fixed: 1}
+
+// parseScopeScale reads the --scale flag: the two words, or a number in the
+// range the steps cover.
+func parseScopeScale(s string) (scopeScale, error) {
+	switch s {
+	case "full":
+		return scopeFull, nil
+	case "auto":
+		return scopeScale{auto: true}, nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v < scopeScaleSteps[0] || v > 1 {
+		return scopeScale{}, usageErrorf(
+			"--scale must be full, auto, or a number from %g to 1 (how far from the centre the top of the trace stands)",
+			scopeScaleSteps[0])
+	}
+	return scopeScale{fixed: v}, nil
+}
+
+// named says whether the header states the scale. Full scale is the rule the
+// view is read by, so it is worth a word only once something has changed it.
+func (s scopeScale) named() bool { return s.auto || s.fixed != 1 }
+
+// labelWidth is how many columns the gutter reserves for its labels. Auto
+// reserves the widest step it could ever pick rather than resizing the trace
+// when the scale moves: a picture that changes width mid-run is harder to read
+// than a column of space.
+func (s scopeScale) labelWidth() int {
+	if !s.auto {
+		return len(scopeScaleLabel(s.fixed))
+	}
+	w := 0
+	for _, step := range scopeScaleSteps {
+		w = max(w, len(scopeScaleLabel(step)))
+	}
+	return w
+}
+
+// scopeScaleLabel writes a scale the way the gutter and the header do: as few
+// digits as say it, because the gutter is read, not measured.
+func scopeScaleLabel(v float64) string { return fmt.Sprintf("%+g", v) }
+
+// scopeScaler carries the auto scale between frames.
+type scopeScaler struct {
+	scale scopeScale
+	// held is the peak the scale currently stands at, before it is snapped.
+	held  float64
+	decay float64
+}
+
+func newScopeScaler(sc scopeScale, interval time.Duration) *scopeScaler {
+	return &scopeScaler{scale: sc, decay: math.Exp(-interval.Seconds() / scopeScaleDecay.Seconds())}
+}
+
+// next is the scale to draw a window of this peak at: the pinned one, or the
+// loudest of the last second or so snapped up to a step the gutter can name.
+// Snapping up is what keeps a fitted trace inside the rows: it is never
+// clipped, only drawn coarser than the signal deserves.
+func (s *scopeScaler) next(peak float64) float64 {
+	if !s.scale.auto {
+		return s.scale.fixed
+	}
+	s.held = math.Max(peak*scopeScaleHeadroom, s.held*s.decay)
+	for _, step := range scopeScaleSteps {
+		if s.held <= step {
+			return step
+		}
+	}
+	return 1
+}
+
+// scopePeak is the window's largest excursion either side of zero, which is
+// what the auto scale is fitted to; the header's peak is the same number said
+// as a level.
+func scopePeak(samples []float32) float64 {
+	peak := 0.0
+	for _, s := range samples {
+		if a := math.Abs(float64(s)); a > peak {
+			peak = a
+		}
+	}
+	return peak
+}
+
 // ScopeRow is one JSON row of `ley scope --json`: the frame's statistics and
 // what the daemon says is under them, never the samples -- those are `ley
 // listen --format json`. Bulk frames have no proto message, so this shape is
@@ -46,6 +156,10 @@ type ScopeRow struct {
 	PeakDbfs    float64 `json:"peak_dbfs"`
 	RmsDbfs     float64 `json:"rms_dbfs"`
 	DC          float64 `json:"dc"`
+	// Scale is the vertical scale the frame was drawn at, so a row says what
+	// the picture beside it meant: 1 at full scale, the fitted step under
+	// --scale auto.
+	Scale float64 `json:"scale"`
 	// ToneHz is the sub-audible tone the daemon named, or its measurement when
 	// it named none; it is absent until the daemon has reported one, because a
 	// zero there would read as "no tone" rather than "not looked yet".
@@ -62,6 +176,7 @@ type scopeOptions struct {
 	channel  string
 	tune     *tuneOptions
 	tap      leylinev1.AudioTap
+	scale    scopeScale
 	windowMs int
 	trigger  bool
 	rate     float64
@@ -75,6 +190,7 @@ func newScopeCommand(app *App) *cobra.Command {
 		o       scopeOptions
 		tap     string
 		trigger string
+		scale   string
 	)
 	cmd := &cobra.Command{
 		Use:     "scope <frequency|preset|channel>",
@@ -94,12 +210,21 @@ exit, and it opens no speakers.
 gain control. --tap demod is the detector's own output before any of that: an
 NFM trace still carries its CTCSS tone and the DC offset that is the tuning
 error, and it keeps drawing while the squelch is closed, which is how you see
-what a transmitter sends between words. A raw-IQ channel has no detector, and
-the daemon refuses the demod tap on one.
+what a transmitter sends between words. While the squelch is closed the audio
+tap says under the header that it is muted, because a flat trace under a
+header that still names a tone reads as a fault. A raw-IQ channel has no
+detector, and the daemon refuses the demod tap on one.
 
 --trigger auto starts each frame at a rising zero crossing when the window
 repeats steadily, which holds a tone still; free lets the trace run. The
 trigger is presentation, the same as a bench scope's.
+
+--scale full, the default, draws the whole range the tap can carry, so a
+trace that grows is a signal that grew. That range is the mode's full
+deviation on the demod tap -- 5 kHz on NFM -- and speech spends most of its
+time at a tenth of it, a dot or two high: --scale auto fits the trace to the
+signal and holds the fit for about a second so it does not flicker between
+syllables, and --scale 0.2 pins it. The gutter names whichever is in force.
 
 The tone in the header is the daemon's measurement. scope never estimates one
 itself, so the picture and the claim can disagree, which is the point of
@@ -107,10 +232,11 @@ having both.
 
 --json prints one object per frame and no samples:
 {seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc,
-tone_hz}. The samples themselves are 'ley listen --format json'.`,
+scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 		Example: `  ley scope 146.52                      # what the speaker would hear
   ley scope 145.23 --tap demod          # the PL tone riding under the voice
   ley scope chan_01J... --window 100    # a wider window on a channel already running
+  ley scope 145.23 --tap demod --scale auto --window 250   # the shape of speech
   ley scope 101.1 --tap demod --count 20 --json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -130,6 +256,11 @@ tone_hz}. The samples themselves are 'ley listen --format json'.`,
 			default:
 				return usageErrorf("--trigger must be auto (hold a repeating window still) or free (never trigger)")
 			}
+			sc, err := parseScopeScale(scale)
+			if err != nil {
+				return err
+			}
+			o.scale = sc
 			if o.windowMs < scopeWindowMin || o.windowMs > scopeWindowMax {
 				return usageErrorf("--window must be %d..%d ms, got %d", scopeWindowMin, scopeWindowMax, o.windowMs)
 			}
@@ -171,6 +302,7 @@ tone_hz}. The samples themselves are 'ley listen --format json'.`,
 	cmd.Flags().StringVar(&tap, "tap", "audio", "which stage to draw: audio (what the speakers get) or demod (the detector's output, before the audio chain)")
 	cmd.Flags().IntVar(&o.windowMs, "window", 40, "how much of the signal one frame covers, in milliseconds (5..500)")
 	cmd.Flags().StringVar(&trigger, "trigger", "auto", "auto holds a repeating window still; free lets the trace run")
+	cmd.Flags().StringVar(&scale, "scale", "full", "how far from the centre the top of the trace stands: full (±1.0), auto (fit the signal), or a number such as 0.2")
 	cmd.Flags().Float64Var(&o.rate, "rate", 20, "frames a second (at most 20)")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many frames, e.g. 10 (default: until Ctrl-C)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "trace width in columns (default: the terminal's, or 80 when piped)")
@@ -198,13 +330,16 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	defer sub.Close()
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
-	// The tone is the daemon's to report; the view only carries it. The stream's
-	// error is deliberately not read: the tone is a garnish on the picture, so a
-	// telemetry stream that ends takes the header's PL with it and leaves the
-	// trace running.
+	// The tone and the squelch are the daemon's to report; the view only carries
+	// them. The stream's error is deliberately not read: both are garnish on the
+	// picture, so a telemetry stream that ends takes the header's PL and its
+	// squelch line with it and leaves the trace running.
 	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
-		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_SUB_AUDIBLE},
+		Types: []leylinev1.TelemetryType{
+			leylinev1.TelemetryType_SUB_AUDIBLE,
+			leylinev1.TelemetryType_METER,
+		},
 	})
 	if err != nil {
 		return err
@@ -218,7 +353,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	stopDrain := s.drainEvents()
 	defer stopDrain()
 
-	view := newScopeView(s.app.Style, o.width)
+	view := newScopeView(s.app.Style, o.width, o.scale)
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
 	var w *spectrumWriter
@@ -240,6 +375,10 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	interval := time.Duration(float64(time.Second) / o.rate)
 	var tone *leylinev1.SubAudible
 	var last time.Time
+	// Muted until the daemon says otherwise: a view that announced a closed
+	// squelch before the first meter would be guessing at what it cannot see.
+	muted := false
+	scaler := newScopeScaler(o.scale, interval)
 	frames := 0
 	for {
 		select {
@@ -251,11 +390,14 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 			}
 		case m, ok := <-msgs:
 			if !ok {
-				msgs, tone = nil, nil
+				msgs, tone, muted = nil, nil, false
 				continue
 			}
-			if b, is := m.Body.(*leylinev1.TelemetryMsg_SubAudible); is {
+			switch b := m.Body.(type) {
+			case *leylinev1.TelemetryMsg_SubAudible:
 				tone = b.SubAudible
+			case *leylinev1.TelemetryMsg_Meter:
+				muted = !b.Meter.GetSquelchOpen()
 			}
 		case fr, ok := <-sub.Frames:
 			if !ok {
@@ -275,11 +417,15 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 			}
 			samples := buf[start : start+window]
 			peak, rms, dc := scopeStats(samples)
+			// Every frame moves the auto scale on, drawn or not, so that the
+			// hold measures the last second of signal rather than the last
+			// second of JSON rows.
+			scale := scaler.next(scopePeak(samples))
 			if s.app.JSON {
 				row := ScopeRow{
 					Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), SampleRate: rate,
 					Tap: scopeTapName(tap), WindowMs: o.windowMs,
-					PeakDbfs: peak, RmsDbfs: rms, DC: dc, ToneHz: scopeToneHz(tone),
+					PeakDbfs: peak, RmsDbfs: rms, DC: dc, Scale: scale, ToneHz: scopeToneHz(tone),
 				}
 				b, err := json.Marshal(row)
 				if err != nil {
@@ -289,9 +435,12 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 				out.WriteByte('\n')
 			} else {
 				w.frame(view.render(scopeFrame{
-					samples: samples, tap: tap, windowMs: o.windowMs,
+					samples: samples, tap: tap, windowMs: o.windowMs, scale: scale,
 					peakDbfs: peak, rmsDbfs: rms,
 					tuningHz: scopeTuningHz(mode, tap, dc), what: what, tone: tone,
+					// The squelch mutes the audio tap and not the detector, so
+					// it is only the audio trace that needs explaining.
+					muted: muted && tap == leylinev1.AudioTap_TAP_AUDIO,
 				}), "")
 			}
 			if err := out.Flush(); err != nil {

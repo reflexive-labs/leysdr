@@ -52,10 +52,11 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # scrolling history of FFT rows as a terminal heatmap; a band plan covers the whole band, not one frequency
 ├── phosphor [frequency] [--span N] [--band NAME] [--bins N] [--levels N] [--half-life S] [--rate N] [--count N] [--device SEL] [--retune] [--width N]
 │                                    # per-bin amplitude histogram decayed over time, the "which bins are ever busy" view
-├── scope <freq|preset|chan_ID> [--tap audio|demod] [--window MS] [--trigger auto|free] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
+├── scope <freq|preset|chan_ID> [--tap audio|demod] [--window MS] [--trigger auto|free] [--scale full|auto|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
 │                                    # the demodulated waveform, one window a frame, as a braille trace (three ASCII
 │                                    # levels with --ascii); --tap demod draws the detector's own output, where an
-│                                    # NFM channel still carries its CTCSS tone and its tuning error
+│                                    # NFM channel still carries its CTCSS tone and its tuning error; --scale fits
+│                                    # the trace to a signal that does not use the whole range
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
@@ -112,10 +113,12 @@ exception: `{seq, sample_index, sample_rate, format, pcm}`, `pcm` being the fram
 base64-encoded and `format` the `AudioSampleFormat` the daemon settled on (`S16` in v0); every row
 repeats the rate and format so a consumer needs no header. `--format bin` writes those same frames
 raw, back to back and nothing else. `ley scope --json` is the statistics member: one object per
-frame, `{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc, tone_hz}`, where
-`seq` and `sample_index` name the daemon frame the drawn window closed on, `peak_dbfs`, `rms_dbfs`
-and `dc` are measured over that window (presentation over the stream, as spectrum's peaks are),
-and `tone_hz` is the sub-audible tone the daemon reported, absent until it has reported one. It
+frame, `{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc, scale,
+tone_hz}`, where `seq` and `sample_index` name the daemon frame the drawn window closed on,
+`peak_dbfs`, `rms_dbfs` and `dc` are measured over that window (presentation over the stream, as
+spectrum's peaks are), `scale` is the vertical scale the frame was drawn at (1 at full scale, the
+fitted step under `--scale auto`), and `tone_hz` is the sub-audible tone the daemon reported,
+absent until it has reported one. It
 carries no samples: those are `ley listen --format json`. `ley fft` and `ley waterfall` subscribe GAP_MARKED (audio and
 IQ stay LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sample":B}}` line before
 the next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value

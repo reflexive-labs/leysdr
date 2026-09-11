@@ -374,13 +374,30 @@ tuning +100 Hz  PL 100.0 Hz (measured 100.12 Hz, 18 dB, confidence 0.9)
 
 The header is the daemon's claim: the tone comes from the same sub-audible detector `ley tune`
 prints, and `scope` never estimates one itself, so the picture and the number can disagree — which
-is the reason both are on screen. Both scales are drawn: the gutter down the left is full scale,
-±1.0 (hertz are the header's tuning line), and the rule beneath the trace is milliseconds from the
-start of the frame out to the window length. `--window` (5 to 500 ms, default 40) is the timebase:
-40 ms is a syllable of voice, four cycles of a 100 Hz tone, and a narrower window spreads a 1 kHz
-note out into a wave. `--trigger auto` starts each frame at a rising zero crossing when the window repeats
-steadily, which holds a tone still; `--trigger free` lets the trace run. On a terminal without
+is the reason both are on screen. Both scales are drawn: the gutter down the left is the
+vertical one, ±1.0 until `--scale` says otherwise (hertz are the header's tuning line), and the
+rule beneath the trace is milliseconds from the start of the frame out to the window length.
+`--window` (5 to 500 ms, default 40) is the timebase: 40 ms is a syllable of voice, four cycles of
+a 100 Hz tone, and a narrower window spreads a 1 kHz note out into a wave. `--trigger auto` starts
+each frame at a rising zero crossing when the window repeats steadily, which holds a tone still;
+`--trigger free` lets the trace run. On a terminal without
 UTF-8, or with `--ascii`, the same trace is drawn with three levels per character.
+
+Looking at speech takes a second setting. Full scale is the whole range the tap can carry, and on
+the demod tap that is the mode's whole deviation — ±5 kHz on NFM, ±75 kHz on WFM — while a voice
+spends most of its time at a tenth of it, which draws a dot or two either side of the centre.
+`--scale auto` fits the trace to the signal instead: the frame's peak with a little headroom,
+snapped to a round number (0.02, 0.05, 0.1, 0.2, 0.5 or 1) so the gutter stays readable, and held
+for about a second so the picture does not resize between syllables. `--scale 0.2` pins it there
+for good. Use `--window 250 --trigger free --scale auto` to watch the envelope of speech, the shape
+of the words; `--window 40` with the trigger left alone to hold a tone still enough to count its
+cycles.
+
+On the audio tap a closed squelch draws a flat line, because a flat line is what the speaker gets.
+The view says so under the header — `squelch closed: the audio tap is muted; --tap demod shows what
+the detector hears` — because a flat trace beneath a header that still names a PL tone otherwise
+reads as "the tone is there but my voice is not". Nothing is printed on the demod tap, which the
+squelch does not silence.
 
 `scope` takes a frequency, a preset or a channel id the way `listen` does, opens no speakers, and
 removes whatever it created on exit; `--rate` (frames a second, at most 20), `--count`, `--width`
@@ -388,8 +405,9 @@ and the tune flags behave as they do elsewhere. A raw-IQ channel has no detector
 refuses `--tap demod` on one and says why.
 
 `--json` prints the frame statistics and no samples: one object per frame,
-`{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc, tone_hz}`, with
-`tone_hz` absent until the daemon has reported a tone. The samples themselves are
+`{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc, scale, tone_hz}`, where
+`scale` is the vertical scale the frame was drawn at and `tone_hz` is absent until the daemon has
+reported a tone. The samples themselves are
 `ley listen --format json`.
 
 ## 8. Two channels on one radio

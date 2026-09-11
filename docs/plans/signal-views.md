@@ -390,7 +390,7 @@ the header's tuning-error line carries the hertz). Re-record the goldens and the
 `docs/cli-guide.md`; `--json` is unchanged. Keep the axis out of `--width` accounting only if it
 was already excluded for `spectrum`; otherwise the trace shrinks by the gutter width.
 
-### SV-8g `[ ]` A vertical scale, and the squelch said out loud (Go lane)
+### SV-8g `[x]` A vertical scale, and the squelch said out loud (Go lane)
 
 Two things a first real-radio session showed. Full scale on the demod tap is ±5 kHz of deviation
 and speech spends most of its time at a tenth of that, so a voice draws one or two dots high; and
@@ -414,3 +414,14 @@ the daemon's detector, which reads as "the tone is there but my voice is not".
 - Tests against the fake: the auto scale snaps to the expected step for a 0.14 tone and holds
   across frames; a pinned scale labels the gutter; the squelch line appears only on the audio tap
   with the squelch closed; `--json` carries `scale`; goldens as needed.
+
+The squelch sentence is 81 columns, one more than the default width, so it is drawn as the one
+sentence it is where the width takes it and split at the semicolon where it does not -- two lines
+under the header at 80 columns. The header names the scale only when something has changed it
+(`--scale auto` or a pinned number), which keeps the default view byte-identical: re-rendering the
+guide's demod frame reproduces its two header lines and its gutter exactly, so the transcript in
+`cli-guide.md` stands and section 7 gained only the "looking at speech" paragraph. The gutter's
+width is fixed for the run rather than per frame -- `auto` reserves the widest step it could pick,
+`+0.02` -- because a trace that changes width between frames is harder to read than a column of
+space. The auto scale's hold is a peak with 10% headroom decaying on a one-second time constant,
+so a 0.14 tone sits at ±0.2 through a quarter-second pause and is back down within two seconds.

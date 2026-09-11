@@ -5,12 +5,6 @@ import (
 	"strings"
 )
 
-// scopeGutter is the level axis left of the trace: two columns for the label
-// and the axis column itself. It comes out of the width the same way the
-// spectrum's level axis does, so a trace and a chart asked for the same
-// --width end up the same number of columns wide.
-const scopeGutter = 3
-
 // scopeStepsMs are the tick spacings the time axis may use: the round numbers
 // a person counts milliseconds in.
 var scopeStepsMs = []int{1, 2, 5, 10, 20, 50, 100}
@@ -60,20 +54,21 @@ func scopeTicks(windowMs, cols int) []scopeTick {
 	return append(ticks, scopeTick{ms: windowMs, col: end})
 }
 
-// gutter is the vertical scale beside one trace row. Full scale is ±1.0 and
-// never moves, so it is named three times -- the top, the axis, the bottom --
-// rather than eight; the header's tuning line is where hertz are read.
-func (v *scopeView) gutter(row int) string {
-	label := "  "
+// gutter is the vertical scale beside one trace row: the top, the axis and the
+// bottom, rather than all eight rows, because three numbers are what a scale
+// is read from. The numbers are the tap's own units -- hertz are the header's
+// tuning line -- and they are ±1.0 until --scale says otherwise.
+func (v *scopeView) gutter(row int, scale float64) string {
+	label := ""
 	switch row {
 	case 0:
-		label = "+1"
+		label = scopeScaleLabel(scale)
 	case scopeHeight / 2:
-		label = " 0"
+		label = "0"
 	case scopeHeight - 1:
-		label = "-1"
+		label = scopeScaleLabel(-scale)
 	}
-	return v.st.Muted(label + v.st.Glyphs().TreeTrunk)
+	return v.st.Muted(fmt.Sprintf("%*s", v.gutterW-1, label) + v.st.Glyphs().TreeTrunk)
 }
 
 // axis draws the timebase under the trace: a rule with a mark at every
@@ -89,7 +84,7 @@ func (v *scopeView) axis(windowMs int) []string {
 		rule[t.col+1] = []rune(g.TreeTrunk)[0]
 	}
 	return []string{
-		strings.Repeat(" ", scopeGutter-1) + v.st.Muted(string(rule)),
+		strings.Repeat(" ", v.gutterW-1) + v.st.Muted(string(rule)),
 		v.st.Muted(v.labelRow(ticks)),
 	}
 }
@@ -97,18 +92,18 @@ func (v *scopeView) axis(windowMs int) []string {
 // labelRow writes each mark's time under it, dropping any label the width
 // cannot fit beside its neighbour.
 func (v *scopeView) labelRow(ticks []scopeTick) string {
-	width := scopeGutter + v.cols()
+	width := v.gutterW + v.cols()
 	row := make([]byte, 0, width)
 	for _, t := range ticks {
 		text := fmt.Sprintf("%d ms", t.ms)
-		at := scopeGutter + t.col - len(text)/2
-		if at < scopeGutter {
-			at = scopeGutter
+		at := v.gutterW + t.col - len(text)/2
+		if at < v.gutterW {
+			at = v.gutterW
 		}
 		if at+len(text) > width {
 			at = width - len(text)
 		}
-		if at < len(row)+1 || at < scopeGutter {
+		if at < len(row)+1 || at < v.gutterW {
 			continue
 		}
 		row = append(row, strings.Repeat(" ", at-len(row))...)

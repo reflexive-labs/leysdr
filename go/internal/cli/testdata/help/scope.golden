@@ -12,12 +12,21 @@ exit, and it opens no speakers.
 gain control. --tap demod is the detector's own output before any of that: an
 NFM trace still carries its CTCSS tone and the DC offset that is the tuning
 error, and it keeps drawing while the squelch is closed, which is how you see
-what a transmitter sends between words. A raw-IQ channel has no detector, and
-the daemon refuses the demod tap on one.
+what a transmitter sends between words. While the squelch is closed the audio
+tap says under the header that it is muted, because a flat trace under a
+header that still names a tone reads as a fault. A raw-IQ channel has no
+detector, and the daemon refuses the demod tap on one.
 
 --trigger auto starts each frame at a rising zero crossing when the window
 repeats steadily, which holds a tone still; free lets the trace run. The
 trigger is presentation, the same as a bench scope's.
+
+--scale full, the default, draws the whole range the tap can carry, so a
+trace that grows is a signal that grew. That range is the mode's full
+deviation on the demod tap -- 5 kHz on NFM -- and speech spends most of its
+time at a tenth of it, a dot or two high: --scale auto fits the trace to the
+signal and holds the fit for about a second so it does not flicker between
+syllables, and --scale 0.2 pins it. The gutter names whichever is in force.
 
 The tone in the header is the daemon's measurement. scope never estimates one
 itself, so the picture and the claim can disagree, which is the point of
@@ -25,7 +34,7 @@ having both.
 
 --json prints one object per frame and no samples:
 {seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc,
-tone_hz}. The samples themselves are 'ley listen --format json'.
+scale, tone_hz}. The samples themselves are 'ley listen --format json'.
 
 Usage:
   ley scope <frequency|preset|channel> [flags]
@@ -34,6 +43,7 @@ Examples:
   ley scope 146.52                      # what the speaker would hear
   ley scope 145.23 --tap demod          # the PL tone riding under the voice
   ley scope chan_01J... --window 100    # a wider window on a channel already running
+  ley scope 145.23 --tap demod --scale auto --window 250   # the shape of speech
   ley scope 101.1 --tap demod --count 20 --json
 
 Flags:
@@ -45,6 +55,7 @@ Flags:
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
       --rate float       frames a second (at most 20) (default 20)
       --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
+      --scale string     how far from the centre the top of the trace stands: full (±1.0), auto (fit the signal), or a number such as 0.2 (default "full")
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
       --tap string       which stage to draw: audio (what the speakers get) or demod (the detector's output, before the audio chain) (default "audio")
       --trigger string   auto holds a repeating window still; free lets the trace run (default "auto")

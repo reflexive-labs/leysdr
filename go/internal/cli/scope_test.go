@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
@@ -29,14 +30,17 @@ func scopeTone(hz, rate float64, n int, amp, dc float64) []float32 {
 func scopeTestFrame() scopeFrame {
 	return scopeFrame{
 		samples: scopeTone(100, 4800, 192, 0.8, 0),
-		tap:     leylinev1.AudioTap_TAP_AUDIO, windowMs: 40,
+		tap:     leylinev1.AudioTap_TAP_AUDIO, windowMs: 40, scale: 1,
 		peakDbfs: -2, rmsDbfs: -5, tuningHz: math.NaN(), what: "145.230 MHz NFM",
 	}
 }
 
 // scopeTraceCols is the trace width the goldens below were drawn at; the views
-// under test are sized to it plus the level axis beside it.
+// under test are sized to it plus the level axis beside it, which at full
+// scale is "+1" and the axis column.
 const scopeTraceCols = 32
+
+var scopeFullGutter = scopeFull.labelWidth() + 1
 
 // peakRuns counts the runs of columns the trace reaches row into: one per
 // cycle of the tone, which is what ties the picture to the number beside it.
@@ -91,7 +95,7 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 		{"ascii", ui.Style{}, scopeToneASCII},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rows := newScopeView(tc.st, scopeTraceCols+scopeGutter).trace(f.samples)
+			rows := newScopeView(tc.st, scopeTraceCols+scopeFullGutter, scopeFull).trace(f.samples, f.scale)
 			if len(rows) != scopeHeight {
 				t.Fatalf("trace is %d rows, want %d", len(rows), scopeHeight)
 			}
@@ -112,14 +116,14 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 // draws the same picture. The free-running comparison is what makes this a
 // test of the trigger rather than of the sine.
 func TestScopeTriggerHoldsAToneStill(t *testing.T) {
-	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeGutter)
+	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeFullGutter, scopeFull)
 	window := 192
 	var triggered, free string
 	for i, shift := range []int{0, 7, 19, 31, 44} {
 		buf := scopeTone(100, 4800, 2*window+shift, 0.8, 0.02)[shift:]
 		start := scopeTrigger(buf, window)
-		got := strings.Join(v.trace(buf[start:start+window]), "\n")
-		last := strings.Join(v.trace(buf[len(buf)-window:]), "\n")
+		got := strings.Join(v.trace(buf[start:start+window], 1), "\n")
+		last := strings.Join(v.trace(buf[len(buf)-window:], 1), "\n")
 		if i == 0 {
 			triggered, free = got, last
 			continue
@@ -307,6 +311,9 @@ func TestScopeUsageErrors(t *testing.T) {
 		{[]string{"scope", "146.52", "--window", "1"}, "--window must be 5..500 ms"},
 		{[]string{"scope", "146.52", "--window", "900"}, "--window must be 5..500 ms"},
 		{[]string{"scope", "146.52", "--rate", "60"}, "--rate must be more than 0 and at most 20"},
+		{[]string{"scope", "146.52", "--scale", "loud"}, "--scale must be full, auto, or a number"},
+		{[]string{"scope", "146.52", "--scale", "2"}, "--scale must be full, auto, or a number"},
+		{[]string{"scope", "146.52", "--scale", "0.001"}, "--scale must be full, auto, or a number"},
 		{[]string{"scope", "chan_01J", "--mode", "am"}, "--mode cannot be used with a channel id"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
@@ -337,7 +344,7 @@ func TestScopeAxisTicks(t *testing.T) {
 		{500, []int{0, 100, 200, 300, 400, 500}},
 	} {
 		t.Run(fmt.Sprintf("%dms", tc.windowMs), func(t *testing.T) {
-			ticks := scopeTicks(tc.windowMs, ui.DefaultWidth-scopeGutter)
+			ticks := scopeTicks(tc.windowMs, ui.DefaultWidth-scopeFullGutter)
 			var got []int
 			for _, tick := range ticks {
 				got = append(got, tick.ms)
@@ -351,7 +358,7 @@ func TestScopeAxisTicks(t *testing.T) {
 			if ticks[0].col != 0 {
 				t.Errorf("the axis starts at column %d, want the frame's first", ticks[0].col)
 			}
-			if last := ticks[len(ticks)-1]; last.col != ui.DefaultWidth-scopeGutter-1 {
+			if last := ticks[len(ticks)-1]; last.col != ui.DefaultWidth-scopeFullGutter-1 {
 				t.Errorf("the window length sits at column %d, want the right edge", last.col)
 			}
 		})
@@ -372,8 +379,8 @@ func TestScopeRenderCarriesBothScales(t *testing.T) {
 		{"ascii", ui.Style{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := newScopeView(tc.st, ui.DefaultWidth)
-			if got, want := v.cols(), ui.DefaultWidth-scopeGutter; got != want {
+			v := newScopeView(tc.st, ui.DefaultWidth, scopeFull)
+			if got, want := v.cols(), ui.DefaultWidth-scopeFullGutter; got != want {
 				t.Errorf("the trace is %d columns of %d, want %d beside the level axis", got, ui.DefaultWidth, want)
 			}
 			lines := strings.Split(strings.TrimRight(v.render(f), "\n"), "\n")
@@ -418,4 +425,143 @@ func firstRunes(s string, n int) string {
 		r = r[:n]
 	}
 	return string(r)
+}
+
+// The auto scale's two jobs: fit the trace to a signal that fills a tenth of
+// full scale, and then sit still for long enough that a gap between syllables
+// does not resize the picture.
+func TestScopeAutoScaleFitsAndHolds(t *testing.T) {
+	const frame = 50 * time.Millisecond
+	s := newScopeScaler(scopeScale{auto: true}, frame)
+	loud := scopePeak(scopeTone(100, 4800, 192, 0.14, 0))
+	if got := s.next(loud); got != 0.2 {
+		t.Fatalf("a 0.14 tone drew at ±%g, want it snapped up to the 0.2 step", got)
+	}
+	// Five frames of near-silence is a quarter second, longer than the gap
+	// between two syllables.
+	quiet := scopePeak(scopeTone(100, 4800, 192, 0.005, 0))
+	for i := range 5 {
+		if got := s.next(quiet); got != 0.2 {
+			t.Fatalf("frame %d of the pause drew at ±%g, want the fit held at 0.2", i, got)
+		}
+	}
+	// It does come down, though: a scale that only ever grew would be full
+	// scale again by the end of a transmission.
+	for range 40 {
+		s.next(quiet)
+	}
+	if got := s.next(quiet); got >= 0.2 {
+		t.Errorf("two seconds after the tone the scale is still ±%g, want it back down", got)
+	}
+	// And it goes up at once, because a syllable clipped while the scale
+	// catches up is a syllable not drawn.
+	if got := s.next(scopePeak(scopeTone(100, 4800, 192, 0.6, 0))); got != 1 {
+		t.Errorf("a 0.6 peak drew at ±%g, want full scale on the frame it arrived", got)
+	}
+}
+
+// full and a pinned scale are promises: whatever the signal does, the rows are
+// worth what the gutter says they are worth.
+func TestScopeFixedScalesNeverMove(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		scale scopeScale
+		want  float64
+	}{
+		{"full", scopeFull, 1},
+		{"pinned", scopeScale{fixed: 0.2}, 0.2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newScopeScaler(tc.scale, 50*time.Millisecond)
+			for _, peak := range []float64{0.001, 0.9, 0.05} {
+				if got := s.next(peak); got != tc.want {
+					t.Errorf("a peak of %g drew at ±%g, want ±%g", peak, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// What the item is for: a tenth of full scale is a dot or two high, and the
+// same signal on the scale that fits it uses the whole picture.
+func TestScopeScaleFillsTheRows(t *testing.T) {
+	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeFullGutter, scopeScale{auto: true})
+	tone := scopeTone(100, 4800, 192, 0.14, 0)
+	full := v.trace(tone, 1)
+	fitted := v.trace(tone, 0.2)
+	if drawn := scopeDrawnRows(full); drawn > 2 {
+		t.Errorf("a 0.14 tone at full scale covers %d rows; this test assumes it is a sliver", drawn)
+	}
+	// Not quite every row: the step above the peak is the headroom that keeps
+	// the trace off the rails, where a peak and a clipped peak look alike.
+	if drawn := scopeDrawnRows(fitted); drawn < scopeHeight-2 {
+		t.Errorf("the same tone at ±0.2 covers %d rows of %d, want most of them", drawn, scopeHeight)
+	}
+}
+
+// scopeDrawnRows counts the rows a trace puts any ink in.
+func scopeDrawnRows(rows []string) int {
+	n := 0
+	for _, r := range rows {
+		if strings.TrimRight(r, " "+string(rune(brailleBase))) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// A pinned scale is a promise made in three places: the header states it, the
+// gutter names it at the top and the bottom, and the JSON row carries it, so a
+// picture and a row drawn from the same frame mean the same thing.
+func TestScopePinnedScaleNamesItself(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "scope", "145.23", "--scale", "0.2", "--count", "3")
+	for _, want := range []string{"scale ±0.2", "+0.2", "-0.2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the view never says %q:\n%s", want, out)
+		}
+	}
+	// The gutter grew by two columns; the trace, not the line, is what gives
+	// them up.
+	for _, l := range strings.Split(out, "\n") {
+		if w := ui.Visible(l); w > ui.DefaultWidth {
+			t.Errorf("a line is %d columns wide: %q", w, l)
+		}
+	}
+	rows := mustRun(t, sock, "--json", "scope", "145.23", "--scale", "0.2", "--count", "3")
+	for i, line := range strings.Split(strings.TrimSpace(rows), "\n") {
+		var row ScopeRow
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatalf("row %d: %v", i, err)
+		}
+		if row.Scale != 0.2 {
+			t.Errorf("row %d was drawn at scale %g, want the pinned 0.2", i, row.Scale)
+		}
+	}
+}
+
+// A closed squelch zeroes the audio tap while the daemon's detector keeps
+// reporting a tone, which reads as "the tone is there but my voice is not".
+// The view says which it is, on the tap the squelch silences and nowhere else.
+func TestScopeSaysTheSquelchIsClosed(t *testing.T) {
+	const note = "squelch closed: the audio tap is muted;"
+	sock, _ := harness(t, fakedaemon.Options{})
+	// The fake's synthetic power never reaches -20 dBFS, so this squelch is
+	// shut for the whole run.
+	if out := mustRun(t, sock, "scope", "145.23", "--squelch", "-20", "--count", "12"); !strings.Contains(out, note) {
+		t.Errorf("a muted audio tap does not say so:\n%s", out)
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"demod tap", []string{"scope", "145.23", "--squelch", "-20", "--tap", "demod", "--count", "12"}},
+		{"squelch off", []string{"scope", "145.23", "--squelch", "off", "--count", "12"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if out := mustRun(t, sock, tc.args...); strings.Contains(out, note) {
+				t.Errorf("nothing is muted here, but the view says it is:\n%s", out)
+			}
+		})
+	}
 }

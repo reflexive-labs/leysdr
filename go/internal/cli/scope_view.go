@@ -37,6 +37,8 @@ type scopeFrame struct {
 	samples  []float32
 	tap      leylinev1.AudioTap
 	windowMs int
+	// scale is how far from the centre the top row stands, in the tap's units.
+	scale    float64
 	peakDbfs float64
 	rmsDbfs  float64
 	// tuningHz reads the DC offset as a tuning error, NaN where the mode and
@@ -48,25 +50,38 @@ type scopeFrame struct {
 	// view never estimates a tone itself: the picture is the evidence and the
 	// header is the daemon's claim, and they are allowed to disagree.
 	tone *leylinev1.SubAudible
+	// muted says the daemon's squelch is closed on a tap that the squelch
+	// silences, which is why the trace is flat under a header that may still
+	// name a tone.
+	muted bool
 }
 
 // scopeView draws one window of samples: a header of facts, then the trace.
 type scopeView struct {
 	st    ui.Style
 	width int
+	// scale is what --scale asked for; the frame carries the number it came
+	// out at, which under auto moves from frame to frame.
+	scale scopeScale
+	// gutterW is the level axis left of the trace: as many columns as the
+	// run's scale labels need, plus the axis column itself. It is fixed for
+	// the run, so the trace does not change width when the scale does, and it
+	// comes out of the width the way the spectrum's level axis does, so a
+	// trace and a chart asked for the same --width are the same width.
+	gutterW int
 }
 
-func newScopeView(st ui.Style, width int) *scopeView {
+func newScopeView(st ui.Style, width int, scale scopeScale) *scopeView {
 	if width <= 0 {
 		width = ui.DefaultWidth
 	}
-	return &scopeView{st: st, width: width}
+	return &scopeView{st: st, width: width, scale: scale, gutterW: scale.labelWidth() + 1}
 }
 
 // cols is the trace's width: the resolved width less the level axis, which
 // stands left of it.
 func (v *scopeView) cols() int {
-	if c := v.width - scopeGutter; c >= scopeMinCols {
+	if c := v.width - v.gutterW; c >= scopeMinCols {
 		return c
 	}
 	return scopeMinCols
@@ -77,8 +92,8 @@ func (v *scopeView) render(f scopeFrame) string {
 	for _, l := range v.header(f) {
 		b.WriteString(l + "\n")
 	}
-	for r, l := range v.trace(f.samples) {
-		b.WriteString(v.gutter(r) + l + "\n")
+	for r, l := range v.trace(f.samples, f.scale) {
+		b.WriteString(v.gutter(r, f.scale) + l + "\n")
 	}
 	for _, l := range v.axis(f.windowMs) {
 		b.WriteString(l + "\n")
@@ -97,13 +112,38 @@ func (v *scopeView) header(f scopeFrame) []string {
 		{name: "peak ", value: fmtDb(f.peakDbfs) + " dBFS"},
 		{name: "rms ", value: fmtDb(f.rmsDbfs) + " dBFS"},
 	}
+	if v.scale.named() {
+		segs = append(segs, headerSeg{name: "scale ", value: fmt.Sprintf("±%g", f.scale)})
+	}
 	if !math.IsNaN(f.tuningHz) {
 		segs = append(segs, headerSeg{name: "tuning ", value: fmt.Sprintf("%+.0f Hz", f.tuningHz)})
 	}
 	if tone := scopeToneText(f.tone); tone != "" {
 		segs = append(segs, headerSeg{name: "PL ", value: tone})
 	}
-	return packSegments(v.st, segs, v.width)
+	lines := packSegments(v.st, segs, v.width)
+	if f.muted {
+		for _, l := range scopeMutedNote(v.width) {
+			lines = append(lines, v.st.Muted(l))
+		}
+	}
+	return lines
+}
+
+// scopeMutedNote says why the trace is flat when the daemon's squelch is shut,
+// and where to look instead: a header that still names a PL tone over a flat
+// audio trace otherwise reads as "the tone is there but my voice is not".
+// The two halves go on one line where the width takes them, because they are
+// one sentence.
+func scopeMutedNote(width int) []string {
+	const (
+		what  = "squelch closed: the audio tap is muted;"
+		where = "--tap demod shows what the detector hears"
+	)
+	if len(what)+1+len(where) <= width {
+		return []string{what + " " + where}
+	}
+	return []string{what, where}
 }
 
 // scopeToneText is the daemon's sub-audible claim as one phrase: the tone it
@@ -150,17 +190,17 @@ func scopeTapName(tap leylinev1.AudioTap) string {
 // samples and is drawn from the lowest to the highest of them, so a waveform
 // that swings between one column and the next reads as a line rather than as
 // two dots with a hole between them.
-func (v *scopeView) trace(samples []float32) []string {
+func (v *scopeView) trace(samples []float32, scale float64) []string {
 	cols := v.cols()
 	if g := v.st.Glyphs(); g.Trace != "" {
-		return v.levelTrace(samples, cols, []rune(g.Trace))
+		return v.levelTrace(samples, cols, []rune(g.Trace), scale)
 	}
-	return v.brailleTrace(samples, cols)
+	return v.brailleTrace(samples, cols, scale)
 }
 
 // brailleTrace draws with 2 x 4 dot cells: eight times the detail of the
 // character grid, at the cost of a glyph set not every terminal has.
-func (v *scopeView) brailleTrace(samples []float32, cols int) []string {
+func (v *scopeView) brailleTrace(samples []float32, cols int, scale float64) []string {
 	dotCols, dotRows := cols*2, scopeHeight*4
 	cells := make([][]byte, scopeHeight)
 	for r := range cells {
@@ -171,7 +211,7 @@ func (v *scopeView) brailleTrace(samples []float32, cols int) []string {
 		if !ok {
 			continue
 		}
-		for r := scopeRow(hi, dotRows); r <= scopeRow(lo, dotRows); r++ {
+		for r := scopeRow(hi, scale, dotRows); r <= scopeRow(lo, scale, dotRows); r++ {
 			cells[r/4][x/2] |= brailleDots[x%2][r%4]
 		}
 	}
@@ -191,7 +231,7 @@ func (v *scopeView) brailleTrace(samples []float32, cols int) []string {
 // levelTrace is the same picture in the ASCII alphabet: one glyph per column,
 // carrying the level in its height, so a cell resolves three levels instead of
 // a braille cell's four rows of two.
-func (v *scopeView) levelTrace(samples []float32, cols int, glyphs []rune) []string {
+func (v *scopeView) levelTrace(samples []float32, cols int, glyphs []rune, scale float64) []string {
 	steps := len(glyphs)
 	levels := scopeHeight * steps
 	grid := make([][]rune, scopeHeight)
@@ -203,7 +243,7 @@ func (v *scopeView) levelTrace(samples []float32, cols int, glyphs []rune) []str
 		if !ok {
 			continue
 		}
-		top, bottom := scopeRow(hi, levels), scopeRow(lo, levels)
+		top, bottom := scopeRow(hi, scale, levels), scopeRow(lo, scale, levels)
 		for r := top / steps; r <= bottom/steps; r++ {
 			// The cell shows the middle of the span it covers: a column that
 			// crosses the whole cell has no one level to name, and its middle
@@ -240,13 +280,17 @@ func scopeSpan(samples []float32, col, cols int) (lo, hi float64, ok bool) {
 	return lo, hi, true
 }
 
-// scopeRow maps a sample to a row from the top, over a vertical scale that is
-// always full scale: a trace that grows is a signal that grew, never a scale
-// that moved under it.
-func scopeRow(v float64, rows int) int {
+// scopeRow maps a sample to a row from the top, over a vertical scale of
+// ±scale. At the default full scale a trace that grows is a signal that grew;
+// under --scale the gutter and the header say what the rows are worth, and a
+// sample past the scale is drawn at the edge rather than off the picture.
+func scopeRow(v, scale float64, rows int) int {
 	if math.IsNaN(v) {
 		v = 0
 	}
-	r := int(math.Round((1 - math.Max(-1, math.Min(1, v))) / 2 * float64(rows-1)))
+	if scale <= 0 {
+		scale = 1
+	}
+	r := int(math.Round((1 - math.Max(-1, math.Min(1, v/scale))) / 2 * float64(rows-1)))
 	return max(0, min(rows-1, r))
 }
