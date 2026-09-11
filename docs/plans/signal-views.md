@@ -354,3 +354,16 @@ numbers as of `4212935`. Engine and docs only.
    design doc, and have the two code comments refer to the field instead.
 
 Suite green twice at the end.
+
+### SV-8f `[ ]` A time axis under the trace (Go lane)
+
+The trace has no timebase on screen. Draw one under it in the style `spectrum` uses for
+frequency (`spectrum_axis.go`): a rule with tick marks and labels beneath, ticks chosen from
+1, 2, 5, 10, 20, 50, 100 ms so that between four and eight fit the width, labels in milliseconds
+(`0 ms`, `2 ms`, …, the right edge labelled with the window length), the same rule under the
+`--ascii` form. When `--trigger auto` has locked, the axis is still time from the frame's start;
+the header already says the window. Left of the trace, one gutter column with `+1`, `0` and `-1`
+at the top, middle and bottom rows, so the vertical scale is on screen too (full scale is ±1.0;
+the header's tuning-error line carries the hertz). Re-record the goldens and the transcript in
+`docs/cli-guide.md`; `--json` is unchanged. Keep the axis out of `--width` accounting only if it
+was already excluded for `spectrum`; otherwise the trace shrinks by the gutter width.
