@@ -223,7 +223,7 @@ the fake. Docs: `interfaces.md` tree and JSON paragraph, `cli-guide.md` section.
 
 Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall. After SV-8.
 
-### SV-8a `[ ]` The tap on the wire, the fake, the client (cross-language, first)
+### SV-8a `[x]` The tap on the wire, the fake, the client (cross-language, first)
 
 - `proto/leyline/v1/bulk.proto`: `AudioParams` gains `AudioTap tap = 3;` with
   `enum AudioTap { TAP_AUDIO = 0; TAP_DEMOD = 1; }` (enum value names are package-scoped, so they
