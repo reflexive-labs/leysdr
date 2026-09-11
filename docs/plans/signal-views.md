@@ -294,11 +294,19 @@ Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall.
   demod header shows the fake's tone and the tuning error; rawIQ exits 1 with the daemon's
   sentence; `--json` shape and `--count`; the `json_verbs_test` tree walk picks the new verb up.
 
-### SV-8d `[ ]` End to end, and the recorded transcript (cross-language, last)
+### SV-8d `[x]` End to end, and the recorded transcript (cross-language, last)
 
 `go/internal/e2e`: play `fixtures/nfm_pl.cf32` through the real daemon, run
 `ley scope --tap demod --json --count 20` on its channel, assert at least one frame within 10 s
 carries `tone_hz` within 0.5 Hz of 100 and every frame has finite `rms_dbfs` and `dc`, then
 `--tap audio --count 5` frames arrive and carry no `tone_hz` requirement. Then re-record the
 `cli-guide.md` transcript against the fake if the wording moved.
+
+`go/internal/e2e/scope_test.go`. The demod tap needs a few windows before the detector names a
+tone, and a row drawn before the first telemetry message carries none, so the test keeps drawing
+20-frame runs until one arrives or ten seconds pass. Against the real daemon on `nfm_pl.cf32` the
+first run already carries `tone_hz: 100`.
+
+The `cli-guide.md` transcript stands: rendering a demod frame with the guide's numbers reproduces
+its two header lines exactly, so there was no wording to re-record.
 
