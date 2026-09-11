@@ -425,3 +425,84 @@ width is fixed for the run rather than per frame -- `auto` reserves the widest s
 `+0.02` -- because a trace that changes width between frames is harder to read than a column of
 space. The auto scale's hold is a peak with 10% headroom decaying on a one-second time constant,
 so a 0.14 tone sits at ±0.2 through a quarter-second pause and is back down within two seconds.
+
+## SV-10 `[ ]` Audio meters: `ley levels` and `ley waveform`
+
+Implements `docs/design-audio-meters.md`; read it first for every item, it carries the visual
+language the renderers must match and the honesty rules (ballistics shape bars, never numbers).
+
+### SV-10a `[ ]` The audio spectrum on the wire, the fake, the client (cross-language, first)
+
+- `proto/leyline/v1/bulk.proto`: `FftParams` gains `AudioTap tap = <next>` (the enum from
+  `AudioParams`), meaningful only when the subscription's source is a channel; comments state the
+  contract: `kind = FFT` with a `channel_id` source is the spectrum of that channel's audio or
+  demod tap, rows of dB per bin from 0 Hz to half the audio rate, the descriptor's `center_hz` and
+  `span_hz` are `rate/4` and `rate/2` so every FFT reader's row layout holds, `rows_per_second` at
+  most 20, `bins` from the ladder's sizes, `rawIQ` refused with `INVALID_ARGUMENT`. `make proto`.
+- `go/pkg/leyline`: `SubscribeAudioSpectrum(ctx, channelID, bins, rowsPerSecond, format, tap)`
+  beside `SubscribeFFT`, returning the same `Subscription`.
+- Fake: an FFT subscription on a channel source answers rows synthesised from what the fake's
+  channel carries: a floor near −90 dB, the 1 kHz audio tone, and on the demod tap the
+  `carrierTone` PL at its level, at the negotiated bins and rate; `rawIQ` refused; the descriptor
+  echoes tap, bins, rate, centre and span. Tests in the fake's suite.
+
+### SV-10b `[ ]` The audio spectrum in the engine and the daemon (Swift lane)
+
+- `ChannelDSPCore` gains a spectrum tap beside the audio sinks: subscribers are fed from the
+  audio or demod block into a sliding window (`2 × bins` samples), Hann-windowed, transformed with
+  the existing FFT (real input; a zero imaginary half through the complex transform is acceptable
+  if no real transform exists, and the portable kernel must run on Linux), `|X|²` to dB scaled so
+  a full-scale sine reads about 0 dBFS, one row whenever the window has advanced by
+  `rate / rows_per_second` samples. Allocation-free like `SpectrumLadder`: scratch sized at
+  subscribe, no per-block work for channels without a subscriber.
+- Daemon: `StreamRegistry.subscribe(FFT)` with a channel source takes this path, validates
+  `bins`, `rows_per_second` (clamped like the ladder's) and `tap`, refuses `rawIQ` and unknown
+  taps with `INVALID_ARGUMENT`, reuses the FFT frame sink and formats (`DB_F32`, `DB_U8`), and
+  echoes tap, bins, rate, `center_hz = rate/4`, `span_hz = rate/2`. Teardown and the rate-change
+  ending follow the audio tap's rules from SV-8e.
+- Tests: `EngineCoreTests` on `fixtures/nfm_pl.cf32`: the demod-tap spectrum has its two largest
+  peaks at 100 Hz and 1 kHz (within a bin), the audio-tap spectrum has 1 kHz and its 100 Hz bin at
+  least 12 dB below the demod tap's; the AM fixture's tone at its bin; a `KernelParityTests`-style
+  guard is not needed because the FFT is shared. `LeylineDaemonTests`: subscribe on a file-device
+  channel, rows arrive with the echoed descriptor; `rawIQ` refused; `MalformedInputTests` for
+  absurd `bins` and `rows_per_second`. `docs/engine-internals.md` paragraph under the channel
+  pipeline.
+
+### SV-10c `[ ]` `ley levels` (Go lane, against the fake)
+
+Everything in the design's `ley levels` section, as written: the octave bands on ISO centres
+(`--bands third` at ≥ 100 columns), band levels as power sums of the row's bins back to dB, the
+master `rms` and `peak` pair from the daemon's `METER` telemetry (`audio_dbfs`, `audio_peak_dbfs`),
+the meter's scale (6 dB rows to −24, 10 dB below, −18 dBFS horizon as a dashed `Muted` rule), the
+LED ladders (column ramp for sub-levels, lit part in `ui.Style.Level`, unlit `░` in `Muted`, cap
+`━` in `Label`, `OVER` in `Err` latched two seconds), the ballistics (instant attack, 20 dB/s
+release, cap holds 1.5 s then falls 10 dB/s; presentation only), the header (channel, mode, tap,
+squelch, PL), the numbers under the master pair from the current row, twenty frames a second in
+place, degradation with colour off and under `--ascii`, and the width rules. Flags as the design
+lists. `--json`: one object per row, raw and unsmoothed: `{seq, sample_index, tap, bands:
+[{center_hz, db}], rms_dbfs, peak_dbfs}`. Tests: goldens in both alphabets for a still frame,
+unit tests for the ballistics and the scale mapping, band summing against a synthetic row, `--json`
+shape, the tree walk picks the verb up.
+
+### SV-10d `[ ]` `ley waveform` (Go lane, against the fake)
+
+Everything in the design's `ley waveform` section: over the audio stream the scope subscribes
+(share its subscription and stats code), peak envelope per column symmetric about the centre,
+braille with the ASCII fallback, column ink from the level ramp for its peak, a centre rule through
+silence, squelch-closed slices blank (state from `METER` telemetry on either tap), the DC offset
+removed on the demod tap and said in the header, newest at the right under a `Label` playhead, a
+seconds axis in the scope's axis style, `--seconds` 2..120 (default 10), `--scale` as the scope
+with `auto` the default, `--tap`, `--rate`, `--count`, `--width`. `--json`: one object per column
+as it completes: `{sample_index, seconds, peak_dbfs, rms_dbfs, squelch_open}`. Tests: goldens in
+both alphabets, the blank-when-squelched rule, DC removal, `--json` shape, the tree walk.
+
+### SV-10e `[ ]` End to end, and the docs (cross-language, last)
+
+`go/internal/e2e`: play `fixtures/nfm_pl.cf32` through the real daemon; `ley levels --tap demod
+--json --count 5` reports the 125 Hz band (88–177 Hz, where the 100 Hz PL falls) and the 1 kHz
+band as the two loudest; `--tap audio` has the 1 kHz band loudest and the 125 Hz band at least
+10 dB lower than on the demod tap; `ley waveform --seconds 2 --json --count 10` columns have
+finite peaks and `squelch_open` true. Docs: `docs/interfaces.md` tree and the bulk-row exception
+paragraph (the audio-spectrum rows are FFT rows, the two `--json` shapes are named), a
+`docs/cli-guide.md` section "Hear it with your eyes" with both transcripts recorded against the
+fake, README's "What works today" sentence, and `docs/design-audio-meters.md`'s status line.
