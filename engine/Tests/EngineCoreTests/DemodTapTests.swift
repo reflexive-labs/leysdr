@@ -67,9 +67,9 @@ final class DemodTapTests: XCTestCase {
         XCTAssertGreaterThan(tone, below + 20, "100 Hz \(tone) dB against 80 Hz \(below) dB")
         XCTAssertGreaterThan(tone, above + 20, "100 Hz \(tone) dB against 120 Hz \(above) dB")
         let heard = tonePowerDB(audio, rate: rate, frequency: 100, size: size)
-        // The high-pass is two poles at 300 Hz and the de-emphasis behind it hands about 5 dB of
-        // that back at 100 Hz, so what reaches the listener is some 14 dB under the tap. The tap is
-        // where the tone is a signal; in the audio it is a residue.
+        // Two cascaded 300 Hz poles put 100 Hz about 20 dB down and the de-emphasis make-up gain
+        // hands some 6 dB of that back, so the listener gets the tone about 14 dB under the tap:
+        // on the discriminator it is a signal, in the audio a residue.
         XCTAssertLessThan(heard, tone - 12, "the listener hears \(heard) dB where the tap has \(tone) dB")
     }
 
@@ -111,8 +111,8 @@ final class DemodTapTests: XCTestCase {
         XCTAssertTrue(scope.all.contains { abs($0) > 0.1 }, "the detector's output keeps flowing while the squelch is shut")
     }
 
-    /// Nobody watching costs the demodulator nothing: with no demod sink attached the audio is the
-    /// same block it always was.
+    /// Nobody watching costs the demodulator nothing: the conditioned block a listener gets is the
+    /// same whether or not a demod sink is attached beside it.
     func testAudioIsUnchangedByTheTapBeingAvailable() throws {
         let rate: UInt64 = 240_000
         let block = 4096

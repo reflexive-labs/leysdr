@@ -349,7 +349,8 @@ public protocol Demodulator: AnyObject {
     /// stage per mode: the discriminator before the 300 Hz high-pass for NFM and, decimated to the
     /// audio rate, before de-emphasis and the 15 kHz low-pass for WFM (both scaled so full-scale
     /// deviation reads ±1.0); the envelope including the carrier as DC for AM; the product detector
-    /// before AGC for USB, LSB and CW; nothing for raw IQ, which has no detector.
+    /// before AGC for USB, LSB and CW; nothing for raw IQ, which has no detector. A call that
+    /// produces no audio reports zero raw frames too, so a scope never sees the block before it.
     ///
     /// Passing nil is the whole cost of not listening: everything the raw stage needs was sized in
     /// `configure`, so this is a branch, never an allocation.

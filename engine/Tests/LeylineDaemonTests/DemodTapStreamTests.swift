@@ -72,7 +72,7 @@ final class DemodTapStreamDaemonTests: XCTestCase {
         }
     }
 
-    /// The default is unchanged: a subscription that says nothing about a tap gets the speaker's audio.
+    /// A subscription that says nothing about a tap gets the speaker's audio.
     func testDefaultTapIsAudio() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in

@@ -165,7 +165,7 @@ Given capture rate `Fs` and mode:
 ### Demodulators (all vDSP-backed on macOS; see `DSP/Kernels.swift`)
 
 - **NFM**: quadrature discriminator `arg(x[n]·conj(x[n−1]))` (`vDSP_zvmul` conjugate + `vvatan2f`),
-  scaled so ±5 kHz deviation ≈ ±1.0 (full scale); a 300 Hz two-pole high-pass strips CTCSS/PL tones, then 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, matching transmitter pre-emphasis) with ×2 make-up gain, then a 1-pole LPF ≈ 4 kHz; output hard-limited
+  scaled so ±5 kHz deviation ≈ ±1.0 (full scale); a 300 Hz two-pole high-pass pushes CTCSS/PL tones under the voice (about 20 dB at 100 Hz, of which the make-up gain below returns some 6 dB), then 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, matching transmitter pre-emphasis) with ×2 make-up gain, then a 1-pole LPF ≈ 4 kHz; output hard-limited
   to ±1 (unsquelched noise otherwise reaches ±2.4).
 - **WFM**: same discriminator at `r1`, ±75 kHz deviation, 75 µs de-emphasis, FIR LPF 15 kHz +
   decimate by `D2`, output hard-limited to ±1. Mono in v0.
@@ -196,7 +196,7 @@ conditioned block goes to `.audio` sinks, the raw block to `.demod` sinks, and t
 handed a raw buffer only while the second list is non-empty. The squelch's zeroing is part of what
 a listener hears, so it applies to `.audio` sinks alone; the demod tap keeps flowing through a
 closed squelch, which is what makes "what is this transmitter sending between words" answerable.
-Meter, squelch and telemetry read the conditioned block exactly as before. A raw-IQ channel has no
+Meter, squelch and telemetry read the conditioned block. A raw-IQ channel has no
 detector, so attaching a `.demod` sink to one is `INVALID_ARGUMENT`, and so is a `TAP_DEMOD`
 subscription over the bulk plane.
 

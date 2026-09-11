@@ -175,7 +175,7 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
     }
 
     public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
-        guard let s = scratch, input.count > 0 else { return 0 }
+        guard let s = scratch, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         discriminate(s, count: n, scale: scale)
@@ -262,7 +262,7 @@ public final class WFMDemodulator: Demodulator {
     }
 
     public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
-        guard let s = scratch, let filter = audioFilter, input.count > 0 else { return 0 }
+        guard let s = scratch, let filter = audioFilter, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock)
         precondition(output.count >= (input.count + decimation - 1) / decimation)
         let n = s.load(input)
@@ -366,7 +366,7 @@ public final class AMDemodulator: Demodulator {
     }
 
     public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
-        guard let s = scratch, input.count > 0 else { return 0 }
+        guard let s = scratch, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         let out = output.base.assumingMemoryBound(to: Float.self)
@@ -439,7 +439,7 @@ public final class SSBDemodulator: Demodulator {
     }
 
     public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
-        guard let s = scratch, let bfo, input.count > 0 else { return 0 }
+        guard let s = scratch, let bfo, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         bfo.fill(cosOut: oscRe, sinOut: oscIm, count: n)
