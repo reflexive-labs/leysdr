@@ -331,7 +331,7 @@ The suite stays green; run it twice at the end.
 
 ## Closing out (the release-plan items that were decided)
 
-### X-5 `[ ]` Remote radios as daemon state: the contract, the fake, the client wrappers
+### X-5 `[x]` Remote radios as daemon state: the contract, the fake, the client wrappers
 
 R-20 of the release plan, first third. Additive proto in `control.proto`:
 
