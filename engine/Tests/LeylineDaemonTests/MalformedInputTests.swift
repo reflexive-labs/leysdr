@@ -227,9 +227,11 @@ final class MalformedInputDaemonTests: XCTestCase {
             cch.mode = .nfm
             let channel = try await c.control.createChannel(cch, metadata: testMetadata)
             let cases: [(name: String, bins: UInt32, rows: Double, wantBins: UInt32, wantRows: Double)] = [
-                ("bins past the ladder", .max, 10, 16384, 10),
+                ("bins past the cap", .max, 10, UInt32(AudioSpectrumSink.maxBins), 10),
                 ("a rate past the cap", 512, 1e300, 512, AudioSpectrumSink.maxRowsPerSecond),
-                ("a rate that is not a number", 512, .nan, 512, AudioSpectrumSink.maxRowsPerSecond),
+                ("a rate that is not a number", 512, .nan, 512, AudioSpectrumSink.defaultRowsPerSecond),
+                ("an unset rate", 512, 0, 512, AudioSpectrumSink.defaultRowsPerSecond),
+                ("a negative rate", 512, -5, 512, AudioSpectrumSink.defaultRowsPerSecond),
                 ("a denormal rate", 512, 1e-300, 512, DefaultSpectrumLadder.minRowsPerSecond),
             ]
             for (name, bins, rows, wantBins, wantRows) in cases {

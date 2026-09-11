@@ -471,13 +471,13 @@ language the renderers must match and the honesty rules (ballistics shape bars, 
 The spectrum tap is an `AudioSink`, which is what let it inherit the demod tap's rules whole: it
 sits in the same sink table, is refused on a raw-IQ channel for the same reason the demod tap is
 (nothing there produces audio to take a spectrum of), and is torn down with the audio streams on an
-audio-rate change (`BulkSubscription.readsChannelAudio` is the one place that says so for both). `AudioSpectrumSink` keeps a `2 × bins` sliding window, emits every
-`rate / rows_per_second` samples, and scales by `-20·log10(Σw/2)` -- the half being the energy a
-real sine puts in its negative frequency -- so a full-scale sine reads 0 dBFS at its bin, which a
-synthetic test asserts to 0.5 dB on a bin centre. The fixture tests read the pair of taps as
-spectra: the PL and the voice tone are the demod tap's two peaks, and 100 Hz is more than 12 dB
-down on the audio tap. Absurd `bins` and `rows_per_second` clamp rather than refuse, like the
-ladder's.
+audio-rate change (`BulkSubscription.readsChannelAudio` is the one place that says so for both).
+`AudioSpectrumSink` keeps a `2 × bins` sliding window, emits every `rate / rows_per_second`
+samples, and scales by `-20·log10(Σw/2)` -- the half being the energy a real sine puts in its
+negative frequency -- so a full-scale sine reads 0 dBFS at its bin, which a synthetic test asserts
+to 0.5 dB on a bin centre. The fixture tests read the pair of taps as spectra: the PL and the voice
+tone are the demod tap's two peaks, and 100 Hz is more than 12 dB down on the audio tap. Absurd
+`bins` and `rows_per_second` clamp rather than refuse, like the ladder's.
 
 ### SV-10c `[x]` `ley levels` (Go lane, against the fake)
 
@@ -554,7 +554,7 @@ carrier power swings through that threshold, because a steady tone at full duty 
 and the picture is about when something came through. The `--json` shapes are described in prose
 there rather than shown, the way `scope`'s are: a nine-band row is one 470-character line.
 
-### SV-10f `[ ]` What the second look at the audio spectrum found (cross-language)
+### SV-10f `[x]` What the second look at the audio spectrum found (cross-language)
 
 An independent read of `fe26cd3..54ca99f`, after the per-item verifiers. Line numbers as of
 `54ca99f`. Engine, fake, client and docs together.

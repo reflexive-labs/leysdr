@@ -558,7 +558,7 @@ func TestPersistenceNegotiation(t *testing.T) {
 	if sumCounts(second) <= sumCounts(first) {
 		t.Errorf("counts must accumulate: %d then %d", sumCounts(first), sumCounts(second))
 	}
-	// A channel is not a band: persistence is capture-scoped, as FFT is.
+	// A channel is not a band: persistence reads the radio, and a channel source is refused.
 	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 0})
 	if err != nil {
 		t.Fatal(err)
@@ -930,6 +930,16 @@ func TestAudioSpectrumStream(t *testing.T) {
 	if p := sub.Descriptor.GetFft(); p.GetRowsPerSecond() != 20 || p.GetBins() != 512 || p.GetBinFormat() != leylinev1.FftBinFormat_DB_U8 {
 		t.Errorf("clamped descriptor = %v", p)
 	}
+	// Past the cap this path serves, a request comes back at the cap; a request that names no
+	// rate gets the same ten rows a second the radio's FFT answers.
+	wide, err := c.SubscribeAudioSpectrum(ctx, ch.ChannelId, 16384, 0, leylinev1.FftBinFormat_DB_F32, leylinev1.AudioTap_TAP_AUDIO)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wide.Close()
+	if p := wide.Descriptor.GetFft(); p.GetBins() != 4096 || p.GetRowsPerSecond() != 10 {
+		t.Errorf("capped descriptor = %v, want 4096 bins at 10 rows a second", p)
+	}
 }
 
 // binLevel is the row's level at the bin a tone of hz falls in.
@@ -980,6 +990,31 @@ func TestAudioSpectrumRefusals(t *testing.T) {
 	}
 	if got := d.GetFft().GetTap(); got != leylinev1.AudioTap_TAP_AUDIO {
 		t.Errorf("default tap %v, want TAP_AUDIO", got)
+	}
+	// A row is one transform of one window, so an accumulation the daemon knows is answered
+	// ROW_SNAPSHOT and one it does not know is refused rather than quietly ignored.
+	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+		Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+		Kind:   leylinev1.StreamKind_FFT,
+		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 1024, Accumulation: leylinev1.FftAccumulation(9)}},
+	})
+	if leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("want INVALID_ARGUMENT for an unknown accumulation, got %v", err)
+	}
+	for _, acc := range []leylinev1.FftAccumulation{
+		leylinev1.FftAccumulation_ROW_SNAPSHOT, leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX,
+	} {
+		d, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
+			Source: &leylinev1.SubscribeRequest_ChannelId{ChannelId: ch.ChannelId},
+			Kind:   leylinev1.StreamKind_FFT,
+			Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 1024, Accumulation: acc}},
+		})
+		if err != nil {
+			t.Fatalf("%v: %v", acc, err)
+		}
+		if got := d.GetFft().GetAccumulation(); got != leylinev1.FftAccumulation_ROW_SNAPSHOT {
+			t.Errorf("%v answered %v, want ROW_SNAPSHOT", acc, got)
+		}
 	}
 	// A persistence histogram is still the radio's alone.
 	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{

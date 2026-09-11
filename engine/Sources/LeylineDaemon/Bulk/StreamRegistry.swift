@@ -325,12 +325,24 @@ actor StreamRegistry {
         case .UNRECOGNIZED(let v):
             throw EngineError.invalidArgument("unknown AudioTap \(v)", target: chID.string)
         }
+        // A row is one transform of one window, so there is nothing to accumulate over -- but an
+        // enum value the daemon does not know is still a request it cannot answer.
+        if case .UNRECOGNIZED(let v) = want.accumulation {
+            throw EngineError.invalidArgument("unknown FftAccumulation \(v)", target: chID.string)
+        }
+        // The rate is the audio timebase the window advances on; a channel whose chain is not
+        // running yet has none to offer.
+        let audioRate = ch.audioRate
+        guard audioRate > 0 else {
+            throw EngineError.invalidArgument(
+                "the channel has no audio rate yet; retry once it is running", target: chID.string)
+        }
         let bins = AudioSpectrumSink.roundBins(want.bins == 0 ? 1024 : Int(want.bins))
         let rows = AudioSpectrumSink.roundRate(want.rowsPerSecond)
         let ring = FrameRing(slots: Self.fftSlots, slotBytes: bins * 4)
         let frames = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8)
         let spectrum = AudioSpectrumSink(tap: tap, bins: bins, rowsPerSecond: rows,
-                                         audioRate: ch.audioRate, sink: frames)
+                                         audioRate: audioRate, sink: frames)
         try await ch.attach(spectrum)
         var p = Leyline_V1_FftParams()
         p.bins = UInt32(bins)

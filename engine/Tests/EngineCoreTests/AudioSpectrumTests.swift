@@ -2,6 +2,13 @@ import Foundation
 import XCTest
 @testable import EngineCore
 
+/// Thrown when the fixture run ends before both taps have produced their rows: a stall is a
+/// failure of the pipeline under test, not a reason to pass the suite.
+struct RowsNeverArrived: Error, CustomStringConvertible {
+    let detail: String
+    var description: String { "both taps must produce rows: \(detail)" }
+}
+
 /// Collects the rows an `AudioSpectrumSink` produces.
 final class SpectrumCollector: SpectrumSink, @unchecked Sendable {
     private let lock = NSLock()
@@ -94,8 +101,7 @@ final class AudioSpectrumTests: XCTestCase {
         }
         await capture.stop()
         guard listener.count >= rows, scope.count >= rows else {
-            XCTFail("both taps must produce rows: \(scope.count) demod and \(listener.count) audio of \(rows)")
-            throw XCTSkip("no rows")
+            throw RowsNeverArrived(detail: "\(scope.count) demod and \(listener.count) audio of \(rows)")
         }
         return (listener.meanDB, scope.meanDB, Double(rate))
     }

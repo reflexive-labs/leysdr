@@ -225,13 +225,23 @@ transforms and calls the `SpectrumSink`, and allocates nothing.
 
 A row rate faster than the window is long overlaps windows, a slower one leaves samples between
 them unlooked-at, and either way the row is the newest window rather than a summary of the interval
-it closed — which is what a meter wants, and the reason `accumulation` does not apply here. `bins` rounds to a ladder size so every FFT reader's row
-layout holds, and rows are capped at 20 a second — a row is a whole transform, and a meter is read
-by eye. Over the bulk plane this is `kind = FFT` with a `channel_id` source; the descriptor answers
-`center_hz = rate/4` and `span_hz = rate/2`, `ROW_SNAPSHOT` with one look, and the tap it serves. A
-raw-IQ channel has no audio and refuses with `INVALID_ARGUMENT`, as does an unknown tap. Because
-the stream reads a channel tap, it ends exactly as a bulk audio stream does when the audio rate
-under it can move.
+it closed — which is what a meter wants, and the reason `accumulation` does not apply here.
+`bins` rounds to a ladder size so every FFT reader's row layout holds, capped at 4096 because every
+subscription on a tap runs its own transform, and rows are capped at 20 a second and default to 10
+— a row is a whole transform, and a meter is read by eye. Over the bulk plane this is `kind = FFT`
+with a `channel_id` source; the descriptor answers `center_hz = rate/4` and `span_hz = rate/2`,
+`ROW_SNAPSHOT` with one look, and the tap it serves. A raw-IQ channel has no audio and refuses with
+`INVALID_ARGUMENT`, as does an unknown tap, an unknown `accumulation`, or a channel with no audio
+rate yet. Because the stream reads a channel tap, it ends exactly as a bulk audio stream does when
+the audio rate under it can move.
+
+Two things the row is honest about rather than fixed. Bin 0 is DC, and the window puts a DC offset
+there about 6 dB above a tone of the same amplitude, with no mirrored copy of it further up the
+row — only the demod tap carries an offset worth naming (AM's carrier), and bin 0 sits below the
+lowest band a meter draws, so nothing is subtracted for it. And a row is emitted from the window as
+it stands when it comes due, so one that spans a retune straddles the two frequencies; at a couple
+of tens of milliseconds the smear is over before the next row, and pausing the meter across a
+retune would cost more than it buys.
 
 ### Squelch and meters
 

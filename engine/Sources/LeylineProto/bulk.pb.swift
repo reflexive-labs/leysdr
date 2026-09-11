@@ -446,10 +446,15 @@ public nonisolated struct Leyline_V1_FftParams: Sendable {
   /// audio, not of the radio: rows of dB per bin from 0 Hz to half the audio rate,
   /// one transform of a Hann-windowed sliding window per row. The descriptor answers
   /// `center_hz = rate/4` and `span_hz = rate/2`, so the row layout every FFT reader
-  /// already understands holds; `bins` comes from the same ladder and `rows_per_second`
-  /// is at most 20, which is as fast as a meter is read. `accumulation` does not apply
-  /// -- a row is the one transform -- and the descriptor answers ROW_SNAPSHOT. A RAW_IQ
-  /// channel has no audio and refuses with INVALID_ARGUMENT, as does an unknown tap.
+  /// already understands holds; `bins` comes from the same ladder and is at most 4096
+  /// here, and `rows_per_second` is at most 20 and 10 where the request names none,
+  /// which is as fast as a meter is read. Each subscription on a tap runs its own
+  /// transform, so N subscribers cost N of them, which is what the bin cap bounds.
+  /// `accumulation` does not apply -- a row is the one transform -- and the descriptor
+  /// answers ROW_SNAPSHOT. Bin 0 is DC, and a real window puts a DC offset there 6 dB
+  /// above a tone of the same amplitude, with no mirror of it further up the row. A
+  /// RAW_IQ channel has no audio and refuses with INVALID_ARGUMENT, as does an unknown
+  /// tap or an unknown accumulation.
   public var tap: Leyline_V1_AudioTap = .tapAudio
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

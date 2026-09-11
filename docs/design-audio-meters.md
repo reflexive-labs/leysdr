@@ -22,15 +22,16 @@ Both are renderings over a stream of daemon-computed numbers. The first needs on
 ## The stream: audio spectrum rows
 
 `Bulk.Subscribe` with `kind = FFT` and a **channel** as the source (today FFT sources are
-captures). `FftParams` apply as they do for the radio: `bins` (256 … 4096, the ladder rounds up),
-`rows_per_second` (≤ 20), `bin_format`; a new additive `AudioTap tap` picks the audio or the demod
-tap, reusing the enum from `AudioParams`. The daemon computes a real FFT over a Hann-windowed
-sliding window of the tap's samples (2048 at 48 kHz is 43 ms and 23 Hz per bin, enough to put a
-PL tone in its own band) and answers rows of dB per bin from 0 Hz to half the audio rate; the
-descriptor's `center_hz` and `span_hz` are `rate/4` and `rate/2`, so the row layout every FFT
-client already understands holds. Allocation-free like the ladder: scratch sized at subscribe, one
-transform per row, no per-block work for channels nobody is listening to this way. `rawIQ`
-channels have no audio and refuse. The fake serves rows built from its synthetic tone and PL.
+captures). `FftParams` apply as they do for the radio: `bins` (256 … 4096, the design's cap for
+this path), `rows_per_second` (≤ 20), `bin_format`; a new additive `AudioTap tap` picks the audio
+or the demod tap, reusing the enum from `AudioParams`. The daemon computes a real FFT over a
+Hann-windowed sliding window of the tap's samples (2048 at 48 kHz is 43 ms and 23 Hz per bin,
+enough to put a PL tone in its own band) and answers rows of dB per bin from 0 Hz to half the
+audio rate; the descriptor's `center_hz` and `span_hz` are `rate/4` and `rate/2`, so the row
+layout every FFT client already understands holds. Allocation-free like the ladder: scratch sized
+at subscribe, one transform per row, no per-block work for channels nobody is listening to this
+way. `rawIQ` channels have no audio and refuse. The fake serves rows built from its synthetic
+tone and PL.
 
 Band levels are sums of bins in power and back to dB; that is aggregation over the daemon's row,
 the same kind of presentation as `spectrum`'s peak list, and the client does it. Both `levels`

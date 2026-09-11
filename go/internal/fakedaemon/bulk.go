@@ -28,6 +28,9 @@ const (
 	// An audio spectrum is read as a meter rather than scrolled, so it is served no faster than
 	// the eye follows a bar.
 	maxAudioSpectrumRows = 20.0
+	// Every subscription on a tap runs its own transform, and at 48 kHz this is already 5 Hz a
+	// bin over a 171 ms window: finer than a meter is read, and more than the tap should pay for.
+	maxAudioSpectrumBins = 4096
 
 	minRowsPerSecond = 0.1
 	// The rate the histogram accumulates at, which is as fast as the ladder goes: it wants every
@@ -109,6 +112,16 @@ func nearestLadder(bins uint32) uint32 {
 		}
 	}
 	return FFTLadder[len(FFTLadder)-1]
+}
+
+// audioSpectrumBins rounds a channel-sourced request the way the engine's
+// AudioSpectrumSink does: up to a ladder size, then down to the cap this path
+// serves.
+func audioSpectrumBins(bins uint32) uint32 {
+	if b := nearestLadder(bins); b < maxAudioSpectrumBins {
+		return b
+	}
+	return maxAudioSpectrumBins
 }
 
 // Subscribe implements Bulk: answers with the authoritative descriptor. v0
@@ -216,10 +229,19 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
 					fmt.Sprintf("unknown AudioTap %d", tap)))
 			}
+			// A row is one transform of one window, so there is nothing to accumulate over -- but
+			// an enum value the daemon does not know is still a request it cannot answer.
+			switch a := f.GetAccumulation(); a {
+			case leylinev1.FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED, leylinev1.FftAccumulation_ROW_SNAPSHOT,
+				leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
+			default:
+				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
+					fmt.Sprintf("unknown FftAccumulation %d", a)))
+			}
 			rate := audioRate(c.GetSampleRate())
 			desc.CenterHz, desc.SpanHz = uint64(rate/4), uint64(rate/2)
 			desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
-				Bins: nearestLadder(f.GetBins()), BinFormat: format,
+				Bins: audioSpectrumBins(f.GetBins()), BinFormat: format,
 				RowsPerSecond: math.Min(rows, maxAudioSpectrumRows),
 				Accumulation:  leylinev1.FftAccumulation_ROW_SNAPSHOT,
 				LooksPerRow:   snapshotLooksPerRow, Tap: tap,

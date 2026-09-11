@@ -502,8 +502,9 @@ func (c *Client) SubscribeFFTAccumulated(ctx context.Context, captureID string, 
 // of dB per bin from 0 Hz to half the audio rate, over the audio or the demod
 // tap. It is an FFT stream like a capture's, so the descriptor's center_hz and
 // span_hz (rate/4 and rate/2) place the bins the way every FFT reader already
-// reads them; a RAW_IQ channel has no audio and refuses the demod tap. Rows come
-// at most twenty a second, which is as fast as a meter is read.
+// reads them; a RAW_IQ channel has no audio and refuses either tap. Rows come at
+// most twenty a second, ten where the request names no rate, and bins at most
+// 4096 -- a meter is read by eye, and each subscription runs its own transform.
 func (c *Client) SubscribeAudioSpectrum(ctx context.Context, channelID string, bins uint32, rowsPerSecond float64,
 	format leylinev1.FftBinFormat, tap leylinev1.AudioTap,
 ) (*Subscription, error) {

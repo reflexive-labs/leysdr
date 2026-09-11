@@ -8,6 +8,9 @@ import GRPCCore
 import LeylineProto
 import XCTest
 
+/// Thrown when a bounded stream read runs past its deadline.
+private struct StreamDeadlineExceeded: Error {}
+
 final class AudioSpectrumStreamDaemonTests: XCTestCase {
     private func fixtureChannel(_ c: DaemonClients, mode: Leyline_V1_DemodMode)
         async throws -> Leyline_V1_Channel
@@ -51,6 +54,21 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
         return try await cond()
     }
 
+    /// Bounds a read on a stream: a tap that stalls fails this test rather than hanging the suite
+    /// until the runner gives up on it.
+    private func withDeadline<T: Sendable>(seconds: Double, _ body: @Sendable @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await body() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
+                throw StreamDeadlineExceeded()
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { throw StreamDeadlineExceeded() }
+            return first
+        }
+    }
+
     /// The descriptor answers the whole negotiation -- tap, bins, rate and the axis the rows are
     /// on -- and the rows themselves arrive at the negotiated width.
     func testChannelFFTEchoesTheDescriptorAndDeliversRows() async throws {
@@ -70,18 +88,20 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
             XCTAssertEqual(desc.spanHz, 24_000)
             var ref = Leyline_V1_StreamRef()
             ref.streamID = desc.streamID
-            let frames: [Leyline_V1_Frame] = try await c.bulk.stream(ref, metadata: testMetadata) { response in
-                var out: [Leyline_V1_Frame] = []
-                for try await f in response.messages {
-                    out.append(f)
-                    if out.count == 2 { break }
+            let frames = try await self.withDeadline(seconds: 20) {
+                try await c.bulk.stream(ref, metadata: testMetadata) { response in
+                    var out: [Leyline_V1_Frame] = []
+                    for try await f in response.messages {
+                        out.append(f)
+                        if out.count == 2 { break }
+                    }
+                    return out
                 }
-                return out
             }
             XCTAssertEqual(frames.count, 2)
             XCTAssertTrue(frames.allSatisfy { $0.payload.count == 512 * 4 }, "one f32 per bin")
             // The fixture's discriminator carries a 1 kHz tone: somewhere in the row is a peak well
-            // above the -200 dB floor an empty row would be.
+            // above the floor an empty row reads.
             let loud = frames.contains { frame in
                 frame.payload.withUnsafeBytes { raw in raw.bindMemory(to: Float.self).contains { $0 > -60 } }
             }
@@ -104,6 +124,32 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
                 } catch {
                     XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT", "\(tap)")
                 }
+            }
+        }
+    }
+
+    /// A row is one transform of one window, so every accumulation the daemon knows is answered
+    /// with the snapshot it actually gets -- and one it does not know is refused, as on the band.
+    func testChannelFFTAnswersKnownAccumulationsAndRefusesUnknownOnes() async throws {
+        guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
+        try await withDaemon { c in
+            let channel = try await self.fixtureChannel(c, mode: .nfm)
+            for acc in [Leyline_V1_FftAccumulation.unspecified, .rowSnapshot, .rowMean, .rowMax] {
+                var req = self.spectrumRequest(channel: channel.channelID, tap: .tapAudio)
+                req.fft.accumulation = acc
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                XCTAssertEqual(desc.fft.accumulation, .rowSnapshot, "\(acc)")
+                var ref = Leyline_V1_StreamRef()
+                ref.streamID = desc.streamID
+                _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+            }
+            var bad = self.spectrumRequest(channel: channel.channelID, tap: .tapAudio)
+            bad.fft.accumulation = .UNRECOGNIZED(99)
+            do {
+                _ = try await c.bulk.subscribe(bad, metadata: testMetadata)
+                XCTFail("expected a refusal for an unknown accumulation")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, "INVALID_ARGUMENT")
             }
         }
     }

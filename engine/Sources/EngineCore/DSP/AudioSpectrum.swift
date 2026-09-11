@@ -19,12 +19,23 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     /// several tens of milliseconds long; faster than this buys resolution nobody can see.
     public static let maxRowsPerSecond: Double = 20
 
-    /// Round a request to a size the ladder also serves, so every FFT reader's row layout holds.
-    public static func roundBins(_ bins: Int) -> Int { DefaultSpectrumLadder.roundBins(bins) }
+    /// Rows served where the request named no rate, the same number a capture-sourced FFT answers.
+    public static let defaultRowsPerSecond: Double = 10
 
-    /// Clamp a requested row rate. Non-finite or non-positive means "as fast as allowed".
+    /// Widest row served. Every subscription on a tap runs its own transform, and at 48 kHz a
+    /// 4096-bin row is already 5 Hz a bin over a 171 ms window -- finer than a meter is read, and
+    /// past here the DSP thread pays for resolution nobody looks at.
+    public static let maxBins = 4096
+
+    /// Round a request to a size the ladder also serves, so every FFT reader's row layout holds;
+    /// a request past the cap comes back at the cap.
+    public static func roundBins(_ bins: Int) -> Int {
+        Swift.min(DefaultSpectrumLadder.roundBins(bins), maxBins)
+    }
+
+    /// Clamp a requested row rate. Non-finite or non-positive means "the default".
     public static func roundRate(_ rowsPerSecond: Double) -> Double {
-        guard rowsPerSecond.isFinite, rowsPerSecond > 0 else { return maxRowsPerSecond }
+        guard rowsPerSecond.isFinite, rowsPerSecond > 0 else { return defaultRowsPerSecond }
         return Swift.min(Swift.max(rowsPerSecond, DefaultSpectrumLadder.minRowsPerSecond), maxRowsPerSecond)
     }
 
@@ -56,11 +67,12 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     /// - Parameters:
     ///   - bins: rounded to a ladder size; the window is twice this.
     ///   - rowsPerSecond: clamped to `[DefaultSpectrumLadder.minRowsPerSecond, maxRowsPerSecond]`.
-    ///   - audioRate: the channel's audio rate, which is also the tapped rate.
+    ///   - audioRate: the channel's audio rate, which is also the tapped rate, and must be
+    ///     positive -- a channel whose chain is not built yet reports zero, and the subscribe path
+    ///     refuses that with `INVALID_ARGUMENT` rather than building a sink with no timebase.
     public init(id: SinkID = SinkID(), tap: AudioTap, bins: Int, rowsPerSecond: Double,
                 audioRate: UInt32, sink: any SpectrumSink)
     {
-        precondition(audioRate > 0)
         self.id = id
         self.tap = tap
         self.sink = sink
@@ -94,6 +106,8 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     /// transforms whenever a row comes due; no allocation, nothing held across the sink call.
     public func write(_ audio: SampleBuffer, at time: SampleTime) {
         guard !closed.load(ordering: .relaxed), audio.format == .f32, audio.count > 0 else { return }
+        let sp = Signpost.begin(.audioWrite)
+        defer { Signpost.end(.audioWrite, sp) }
         let src = audio.base.assumingMemoryBound(to: Float.self)
         var i = 0
         while i < audio.count {
