@@ -207,3 +207,18 @@ Same tap, same message, `kind = DCS`. A DCS lock suppresses the CTCSS claim.
 Follow-ups deliberately left out of this plan: tone squelch (`Channel` field 13 is held for it),
 `ley watch` reusing the waterfall renderer over a client-side ring, and `AUDIO_FFT` if DCS or
 two-tone paging ever needs it.
+
+## SV-8 `[ ]` The scope: `ley scope`
+
+Implements `docs/design-scope.md`. Additive `AudioParams.tap` (`AUDIO`, `DEMOD`); the demodulators
+produce the raw stage into preallocated scratch; the channel core routes it to `DEMOD` subscribers
+and keeps it flowing while the squelch is closed; `rawIQ` refuses the tap. Fixture test: the NFM
+`demod` tap on `nfm_pl.cf32` carries the PL tone the sidecar names, and the `audio` tap does not.
+Fake: the `demod` tap is the audio plus the configured tone. CLI: the trace (braille, ASCII
+fallback), the trigger, the header with the daemon's tone, `--json` frame statistics, tests against
+the fake. Docs: `interfaces.md` tree and JSON paragraph, `cli-guide.md` section.
+
+## SV-9 `[ ]` The audio spectrogram: `ley sonogram`
+
+Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall. After SV-8.
+
