@@ -112,6 +112,18 @@ func (e *env) state() map[string]any {
 	return parseJSON(e.t, e.mustRun("state", "--json"))
 }
 
+// repoVersion is the root VERSION file, the one number `make version` stamps
+// into the daemon. Reading it keeps this assertion off a literal that a release
+// bump would have to remember to visit.
+func repoVersion(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile("../../../VERSION")
+	if err != nil {
+		t.Fatalf("read VERSION: %v", err)
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 func parseJSON(t *testing.T, s string) map[string]any {
 	t.Helper()
 	var m map[string]any
@@ -236,7 +248,7 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 		t.Fatalf("unexpected owner %v", playChan["owner"])
 	}
 	info, _ := st["daemon"].(map[string]any)
-	if info["version"] != "0.1.0-dev" || info["socketPath"] != e.socket || info["pid"] != strconv.Itoa(daemon.Process.Pid) {
+	if info["version"] != repoVersion(t) || info["socketPath"] != e.socket || info["pid"] != strconv.Itoa(daemon.Process.Pid) {
 		t.Fatalf("unexpected daemon info %v", info)
 	}
 
