@@ -479,7 +479,7 @@ spectra: the PL and the voice tone are the demod tap's two peaks, and 100 Hz is 
 down on the audio tap. Absurd `bins` and `rows_per_second` clamp rather than refuse, like the
 ladder's.
 
-### SV-10c `[ ]` `ley levels` (Go lane, against the fake)
+### SV-10c `[x]` `ley levels` (Go lane, against the fake)
 
 Everything in the design's `ley levels` section, as written: the octave bands on ISO centres
 (`--bands third` at ≥ 100 columns), band levels as power sums of the row's bins back to dB, the
@@ -494,6 +494,18 @@ lists. `--json`: one object per row, raw and unsmoothed: `{seq, sample_index, ta
 [{center_hz, db}], rms_dbfs, peak_dbfs}`. Tests: goldens in both alphabets for a still frame,
 unit tests for the ballistics and the scale mapping, band summing against a synthetic row, `--json`
 shape, the tree walk picks the verb up.
+
+The meter is drawn as one block packed from the left -- bands, a wider gap, then the master pair --
+rather than spread to the resolved width: a picture whose bars drift apart as the terminal grows
+is harder to compare with yesterday's than one that keeps its shape, and the gap is what makes the
+pair read as a second instrument. The `OVER` line is drawn only while something is lit, because a
+frame carrying a blank line reads as the end of one where frames are separated by blank lines. The
+scale's rows are a piecewise ruler (`levelsRows`), so the gutter's marks and the bars are placed by
+one function and land on the same rows; at the default height each mark gets a row of its own. In
+`--json` the master pair is `null` until the daemon's first meter, the way `scope`'s `tone_hz` is
+absent until it has looked: the alternative is a level nobody measured, and NaN is not JSON. The
+axis has no cross glyph where the horizon meets it -- the alphabet carries none and the dashed rule
+is what names the alignment level -- so the gutter is the scope's, `│` on every row.
 
 ### SV-10d `[ ]` `ley waveform` (Go lane, against the fake)
 

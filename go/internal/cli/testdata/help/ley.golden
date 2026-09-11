@@ -27,6 +27,7 @@ Looking around:
   devices     List the radios the daemon can see
   help        Help for a command, or a longer explanation of a topic
   jobs        List the work the daemon is doing in the background
+  levels      Watch the audio level band by band
   phosphor    Show what is usually on a band, not just what is on it now
   presets     List the named frequencies tune accepts
   scan        Sweep a range and list the signals on it

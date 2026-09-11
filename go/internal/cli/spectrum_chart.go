@@ -18,6 +18,9 @@ import (
 const (
 	inkPlain = -1
 	inkMuted = -2
+	// inkLabel is the emphasis a mark carries when it is not a level: the peak
+	// cap of a meter ladder stands over the ramp, not in it.
+	inkLabel = -3
 )
 
 // inkedLine builds one chart row, merging neighbouring cells that share an ink
@@ -48,6 +51,8 @@ func (l *inkedLine) flush() {
 	switch {
 	case l.band == inkMuted:
 		text = l.st.Muted(text)
+	case l.band == inkLabel:
+		text = l.st.Label(text)
 	case l.band >= 0:
 		text = l.st.Level(levelFrac(l.band), text)
 	}
