@@ -38,13 +38,12 @@ actor RememberedDevices {
         }
     }
 
-    /// nil keeps the list in memory only (tests, and a daemon whose socket has no directory).
-    private let path: String?
+    private let path: String
     private var endpoints: [Endpoint] = []
     private var loaded = false
     private let log = Logger(label: "leyline.devices")
 
-    init(path: String?) {
+    init(path: String) {
         self.path = path
     }
 
@@ -57,7 +56,7 @@ actor RememberedDevices {
     func list() -> [Endpoint] {
         if !loaded {
             loaded = true
-            if let path, let data = FileManager.default.contents(atPath: path) {
+            if let data = FileManager.default.contents(atPath: path) {
                 if let file = try? JSONDecoder().decode(File.self, from: data) {
                     endpoints = file.rtlTcp
                 } else {
@@ -87,7 +86,6 @@ actor RememberedDevices {
     }
 
     private func write() {
-        guard let path else { return }
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
