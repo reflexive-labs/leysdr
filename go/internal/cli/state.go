@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -28,15 +29,9 @@ and 'ley state --json' is the snapshot scripts and agents should read.`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			c, err := app.dial(ctx)
+			st, err := stateSnapshot(cmd.Context(), app)
 			if err != nil {
-				return app.notRunning(err)
-			}
-			defer c.Close()
-			st, err := c.State(ctx)
-			if err != nil {
-				return app.notRunning(err)
+				return err
 			}
 			if app.JSON {
 				return app.printJSON(st)
@@ -47,6 +42,22 @@ and 'ley state --json' is the snapshot scripts and agents should read.`,
 	}
 	cmd.Flags().BoolVar(&wide, "wide", false, "flat tables (every id, owner and column) instead of the tree")
 	return cmd
+}
+
+// stateSnapshot dials, reads the daemon's whole picture and hangs up. The bare
+// `ley` under --json answers with the same snapshot `ley state --json` prints,
+// so a script has one shape to read whichever it types.
+func stateSnapshot(ctx context.Context, app *App) (*leylinev1.GetStateResponse, error) {
+	c, err := app.dial(ctx)
+	if err != nil {
+		return nil, app.notRunning(err)
+	}
+	defer c.Close()
+	st, err := c.State(ctx)
+	if err != nil {
+		return nil, app.notRunning(err)
+	}
+	return st, nil
 }
 
 func daemonLine(d *leylinev1.DaemonInfo) string {

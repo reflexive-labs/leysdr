@@ -3,9 +3,11 @@ package fakedaemon_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
 // TestStoredWritesWhileOutOfCapture mirrors the daemon's rule: bandwidth,
@@ -91,5 +93,115 @@ func TestStoredWritesWhileOutOfCapture(t *testing.T) {
 	got = channel()
 	if got.State != leylinev1.ChannelState_CHANNEL_ACTIVE || got.BandwidthHz != 8_000 || got.Mode != leylinev1.DemodMode_AM || got.SquelchDb != -60 {
 		t.Errorf("re-entered channel = %v", got)
+	}
+}
+
+// gainOf returns the capture's state for one gain element.
+func gainOf(t *testing.T, c *leyline.Client, capID, element string) *leylinev1.GainState {
+	t.Helper()
+	for _, cap := range mustState(t, c).Captures {
+		if cap.CaptureId != capID {
+			continue
+		}
+		for _, g := range cap.Gains {
+			if g.Element == element {
+				return g
+			}
+		}
+	}
+	t.Fatalf("capture %s has no %s gain", capID, element)
+	return nil
+}
+
+// Turning automatic gain off asks for a manual level without naming one, so the daemon puts back
+// the level the client last set by hand; an element nothing has ever set lands mid-range rather
+// than at the minimum, which would deafen the radio.
+func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := st.Devices[0].GainElements[0]
+	gain := func(g *leylinev1.GainWrite) *leylinev1.ParamWrite {
+		g.Element = el.Name
+		return &leylinev1.ParamWrite{TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: g}}
+	}
+	// Nothing set by hand yet: off means mid-range.
+	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: false}})); err != nil {
+		t.Fatal(err)
+	}
+	got := gainOf(t, c, cap.CaptureId, el.Name)
+	mid := el.ValidDb[len(el.ValidDb)/2]
+	if got.Auto || got.Db != mid {
+		t.Errorf("auto off with no manual level = %v, want %g dB manual", got, mid)
+	}
+	// A level set by hand survives a trip through automatic gain.
+	manual := el.ValidDb[2]
+	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Db{Db: manual}})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: true}})); err != nil {
+		t.Fatal(err)
+	}
+	if got := gainOf(t, c, cap.CaptureId, el.Name); !got.Auto {
+		t.Fatalf("auto on = %v", got)
+	}
+	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: false}})); err != nil {
+		t.Fatal(err)
+	}
+	if got := gainOf(t, c, cap.CaptureId, el.Name); got.Auto || got.Db != manual {
+		t.Errorf("auto off after a manual level = %v, want %g dB", got, manual)
+	}
+}
+
+// A GainWrite with neither a level nor an auto flag says nothing: the element exists, so the
+// refusal is about the argument's shape rather than the name.
+func TestGainWriteNeedsAValue(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := st.Devices[0].GainElements[0]
+	before := gainOf(t, c, cap.CaptureId, el.Name)
+	evCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	start := mustState(t, c)
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), start.EventSeq))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := c.WriteParams(ctx, &leylinev1.ParamWrite{Tag: 3, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{
+		Gain: &leylinev1.GainWrite{Element: el.Name},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.WritesApplied != 0 {
+		t.Errorf("summary = %v", sum)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			r := ev.GetWriteRejected()
+			if r == nil || r.Tag != 3 {
+				continue
+			}
+			if r.Error.GetCode() != leyline.CodeInvalidArgument || r.Error.GetMessage() != "gain value is required" {
+				t.Errorf("rejection = %v", r.Error)
+			}
+			if got := gainOf(t, c, cap.CaptureId, el.Name); got.Auto != before.Auto || got.Db != before.Db {
+				t.Errorf("gain moved on a refused write: %v", got)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no WriteRejected for a gain write with no value")
+		}
 	}
 }

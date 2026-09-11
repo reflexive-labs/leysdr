@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc"
@@ -208,7 +209,7 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			if c != nil && uint64(p.BandwidthHz) > c.SampleRate {
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, fmt.Sprintf("bandwidth %d Hz is wider than the %d sps capture", p.BandwidthHz, c.SampleRate)))
 			}
-			if e := checkBandwidth(c, ch.Mode, p.BandwidthHz, w.TargetId); e != nil {
+			if e := checkBandwidth(c, ch.Mode, p.BandwidthHz); e != nil {
 				return d.rejectLocked(ci, w.Tag, e)
 			}
 			ch.BandwidthHz = p.BandwidthHz
@@ -218,7 +219,7 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			}
 			// A channel is re-planned on every write, so a mode that cannot carry the bandwidth
 			// it already has is refused rather than quietly filtered narrower.
-			if e := checkBandwidth(c, p.Mode, ch.BandwidthHz, w.TargetId); e != nil {
+			if e := checkBandwidth(c, p.Mode, ch.BandwidthHz); e != nil {
 				return d.rejectLocked(ci, w.Tag, e)
 			}
 			ch.Mode = p.Mode
@@ -271,20 +272,46 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 			}
 			switch v := g.Value.(type) {
 			case *leylinev1.GainWrite_Auto:
-				// Only asking for automatic gain needs the element to offer it; turning it off is
-				// what a manual dB write does anyway.
-				if v.Auto && !el.SupportsAuto {
-					return unknown
+				if v.Auto {
+					// Only asking for automatic gain needs the element to offer it.
+					if !el.SupportsAuto {
+						return unknown
+					}
+					gs.Auto = true
+					return nil
 				}
-				gs.Auto = v.Auto
+				// Manual, level unspecified: the level the client last confirmed by hand, else
+				// the manual level the element already sits at, else a mid-range default. Never
+				// the minimum, which deafens the radio.
+				switch db, ok := c.manualGain[el.Name]; {
+				case ok:
+					gs.Db = db
+				case gs.Auto:
+					gs.Db = midGain(el)
+				}
+				gs.Auto = false
+				c.manualGain[el.Name] = gs.Db
 			case *leylinev1.GainWrite_Db:
 				gs.Auto = false
 				gs.Db = leyline.SnapGain(el, v.Db)
+				c.manualGain[el.Name] = gs.Db
+			default:
+				return errorf(leyline.CodeInvalidArgument, target, "gain value is required")
 			}
 			return nil
 		}
 	}
 	return unknown
+}
+
+// midGain is the level `auto: false` falls back to for an element nothing has set by hand: the
+// middle of what the element offers, so the radio hears something either way.
+func midGain(el *leylinev1.GainElement) float64 {
+	valid := slices.Sorted(slices.Values(el.GetValidDb()))
+	if len(valid) == 0 {
+		return leyline.SnapGain(el, (el.GetMinDb()+el.GetMaxDb())/2)
+	}
+	return valid[len(valid)/2]
 }
 
 // recheckChannelsLocked flips channels between ACTIVE and OUT_OF_CAPTURE after

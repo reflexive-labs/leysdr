@@ -104,3 +104,34 @@ func TestSlowMeterIntervalStillTicks(t *testing.T) {
 		t.Fatal("no telemetry at a 1.2 s cadence")
 	}
 }
+
+// A channel with no squelch is open from the moment it exists, so a subscriber that arrives later
+// is mid-transmission. The daemon forwards only edges its engine crossed, and has nothing to say
+// about a transmission that opened before anyone was listening.
+func TestNoSquelchTransitionOnFirstTick(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	setupCaptureChannel(t, c)
+	msgs, _, err := c.WatchTelemetry(ctx, &leylinev1.TelemetrySubscription{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	for meters := 0; meters < 4; {
+		select {
+		case m, ok := <-msgs:
+			if !ok {
+				t.Fatal("telemetry ended early")
+			}
+			if sq := m.GetSquelch(); sq != nil {
+				t.Fatalf("squelch transition open=%v after %d meters, with no edge to report", sq.Open, meters)
+			}
+			if m.GetMeter() != nil {
+				meters++
+			}
+		case <-deadline:
+			t.Fatal("no telemetry")
+		}
+	}
+}

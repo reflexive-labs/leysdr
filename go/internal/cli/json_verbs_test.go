@@ -41,6 +41,9 @@ type jsonVerbCase struct {
 const jsonNoOutput = "no --json output"
 
 var jsonVerbs = []jsonVerbCase{
+	// The bare `ley` is the orientation screen, and a script asking it where
+	// things stand gets the state snapshot.
+	{path: "ley", args: nil},
 	{path: "bands", args: []string{"bands"}},
 	{path: "completion", args: []string{"completion"}, refuse: jsonNoOutput},
 	{path: "completion bash", args: []string{"completion", "bash"}, refuse: jsonNoOutput},
@@ -188,11 +191,9 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 }
 
 // The table above is only a rule if it covers the tree, so the tree is walked
-// and every command that runs has to be in it. The bare `ley` is left out: it
-// is the orientation screen rather than a verb, and under --json it says so
-// and names `ley state --json`. The help topics are left out too -- they are
-// `ley help <topic>` under another name, print prose whatever the flags, and
-// never reach the daemon.
+// and every command that runs has to be in it, the root included. The help
+// topics are left out: they are `ley help <topic>` under another name, print
+// prose whatever the flags, and never reach the daemon.
 func TestJSONVerbTableCoversTheTree(t *testing.T) {
 	root := NewRootCommand(&App{LookupEnv: func(string) (string, bool) { return "", false }})
 	root.InitDefaultHelpCmd()
@@ -206,7 +207,7 @@ func TestJSONVerbTableCoversTheTree(t *testing.T) {
 		for _, sub := range c.Commands() {
 			walk(sub)
 		}
-		if !c.Runnable() || c == root {
+		if !c.Runnable() {
 			return
 		}
 		path := strings.TrimPrefix(c.CommandPath(), "ley ")

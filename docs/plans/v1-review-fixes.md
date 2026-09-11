@@ -406,7 +406,7 @@ and the sweep's row collection in `ScanRunner`, so the S1/S2 Instruments runs se
 The wrappers are allocation-free and compile to nothing off macOS; keep it that way (no string
 formatting on the hot path). A test that each new name is distinct and stable is enough.
 
-### GO-11 `[ ]` What the audit of the Go lanes found
+### GO-11 `[x]` What the audit of the Go lanes found
 
 An independent read of commits `6044fcb..42a84a3` on the Go side, made after the per-item
 verifiers. Line numbers are as of `42a84a3`.

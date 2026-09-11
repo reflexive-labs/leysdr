@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -443,8 +444,8 @@ func TestOrientationPerState(t *testing.T) {
 	}
 
 	// Piped: the same orientation block, unstyled, so `ley | tee log` answers
-	// the question the Long text promises it answers. --json: a pointer to
-	// state --json, nothing on stdout.
+	// the question the Long text promises it answers. --json: the same
+	// snapshot `ley state --json` prints, because it is the same question.
 	out, _, err = run(t, context.Background(), sock)
 	if err != nil || !strings.Contains(out, "Playing   146.520 MHz NFM") || !strings.Contains(out, "Next:") {
 		t.Fatalf("piped: %v\n%s", err, out)
@@ -453,12 +454,27 @@ func TestOrientationPerState(t *testing.T) {
 		t.Fatalf("piped orientation must be the block, unstyled:\n%s", out)
 	}
 	out, errOut, err := run(t, context.Background(), sock, "--json")
-	if err != nil || out != "" || !strings.Contains(errOut, "ley state --json") {
-		t.Fatalf("--json: %v out %q err %q", err, out, errOut)
+	if err != nil || errOut != "" {
+		t.Fatalf("--json: %v err %q", err, errOut)
 	}
-	// Bare ley never fails, whatever the daemon state.
-	if _, _, err := runApp(t, ttyApp(dead), "--json"); err != nil {
-		t.Fatalf("--json no daemon: %v", err)
+	stateOut, _, err := run(t, context.Background(), sock, "state", "--json")
+	if err != nil {
+		t.Fatalf("state --json: %v", err)
+	}
+	var bare, asked map[string]any
+	if err := json.Unmarshal([]byte(out), &bare); err != nil {
+		t.Fatalf("--json is not JSON (%v): %s", err, out)
+	}
+	if err := json.Unmarshal([]byte(stateOut), &asked); err != nil {
+		t.Fatalf("state --json is not JSON (%v): %s", err, stateOut)
+	}
+	if !reflect.DeepEqual(bare, asked) {
+		t.Errorf("bare --json and state --json disagree:\n%s\n%s", out, stateOut)
+	}
+	// With no daemon it fails the way `ley state --json` does, rather than
+	// handing a script an empty answer.
+	if _, _, err := runApp(t, ttyApp(dead), "--json"); exitCode(err) != ExitNotRunning {
+		t.Fatalf("--json no daemon: exit %d (%v)", exitCode(err), err)
 	}
 }
 

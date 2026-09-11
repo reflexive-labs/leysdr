@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -642,4 +643,92 @@ func median(t *testing.T, row []float64) float64 {
 	sorted := append([]float64(nil), row...)
 	sort.Float64s(sorted)
 	return sorted[len(sorted)/2]
+}
+
+// A sweep whose client vanished ends the way a cancel does: what it found is stored first and the
+// terminal event goes out last, so a client that reads the scan when it sees CANCELLED reads the
+// part that ran rather than an empty one.
+func TestPresenceDropEndsASweepLikeACancel(t *testing.T) {
+	c, sock := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
+	ctx := context.Background()
+	// A second identity to watch with: the owner must make no calls, or it stays present.
+	watcher, err := leyline.Dial(ctx, sock, leyline.WithClientID(leyline.NewID("cli_")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watcher.Close()
+	job, err := c.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{
+		Scan: &leylinev1.ScanConfig{Range: &leylinev1.FrequencyRange{MinHz: 145_000_000, MaxHz: 147_000_000}, DwellMs: 50},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		j, err := watcher.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if j.State == leylinev1.JobState_CANCELLED {
+			if !strings.Contains(j.StatusDetail, "stopped in step ") || !strings.Contains(j.StatusDetail, " found") {
+				t.Errorf("detail = %q", j.StatusDetail)
+			}
+			sc, err := watcher.Jobs.GetScan(ctx, &leylinev1.ScanRef{ScanId: strings.TrimPrefix(job.ResultUris[0], "ley://scans/")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sc.CompletedAtNs == 0 {
+				t.Error("the scan was still unfinished when the terminal event went out")
+			}
+			return
+		}
+		if j.State != leylinev1.JobState_RUNNING {
+			t.Fatalf("state = %v (%s)", j.State, j.StatusDetail)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the sweep outlived its client")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// Cancelling a sweep that has already finished is not an error and not a change: the job stays
+// completed, with the detail it ended on.
+func TestCancelLeavesAFinishedJobAlone(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	job, err := c.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{
+		Scan: &leylinev1.ScanConfig{Range: &leylinev1.FrequencyRange{MinHz: 145_000_000, MaxHz: 147_000_000}, DwellMs: 20},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var done *leylinev1.Job
+	for deadline := time.Now().Add(10 * time.Second); done == nil; {
+		j, err := c.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if j.State == leylinev1.JobState_COMPLETED {
+			done = j
+			break
+		}
+		if j.State != leylinev1.JobState_RUNNING {
+			t.Fatalf("state = %v (%s)", j.State, j.StatusDetail)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the sweep never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(done.StatusDetail, " found in ") {
+		t.Errorf("completed detail = %q", done.StatusDetail)
+	}
+	got, err := c.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != leylinev1.JobState_COMPLETED || got.StatusDetail != done.StatusDetail {
+		t.Errorf("cancel rewrote a finished job: %v", got)
+	}
 }

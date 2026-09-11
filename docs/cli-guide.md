@@ -17,8 +17,9 @@ station picked out of a capture (frequency, mode, squelch); a **sink** is where 
 
 Run `ley` with no arguments. It prints where things stand and the next two or three commands
 chosen from that state — coloured on a terminal, the same words plain when piped, so `ley | tee
-log` says what a screenshot would; `ley --help` is the command list and `--json` points you at
-`ley state --json`. It exits 0 in every state, including "daemon not running".
+log` says what a screenshot would; `ley --help` is the command list and `--json` prints exactly
+what `ley state --json` prints. The screen exits 0 in every state, including "daemon not
+running"; `ley --json` fails the way `ley state --json` does when there is no daemon to ask.
 
 ```console
 $ ley
@@ -304,10 +305,11 @@ is time, newest row at the bottom, a denser cell for a stronger signal. It is th
 answers *is that signal always there, or did it start and stop?* — a birdie draws a dead straight
 line, a transmission draws a block with a beginning and an end, a pager burst draws a dash, and none
 of the three can be told apart in a single `spectrum` frame. Each row covers the whole interval
-since the last one, not an instant, so a transmission shorter than a row still shows up, and the dB
-scale is chosen from the first rows and held for the run so shading stays comparable across it. At a
-wide span each column covers tens of kHz — a map of where energy is, not a picture of a signal's
-shape — so narrow `--span` to see shape.
+since the last one, not an instant: the daemon takes as many looks as the interval allows and each
+bin keeps the loudest of them, which is what the note on stderr counts, so a transmission shorter
+than a row still shows up. The dB scale is chosen from the first rows and held for the run so
+shading stays comparable across it. At a wide span each column covers tens of kHz — a map of where
+energy is, not a picture of a signal's shape — so narrow `--span` to see shape.
 
 ```console
 $ ley waterfall 146.52              # is the local repeater busy?

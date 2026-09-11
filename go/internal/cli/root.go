@@ -374,7 +374,6 @@ func usageError(err error) error {
 	return &ExitError{Code: ExitUsage, Message: err.Error(), Err: err}
 }
 
-// usageErrorf builds an exit-2 usage error from a format string.
 // compCmdName is Cobra's name for the completion verb.
 const compCmdName = "completion"
 
@@ -402,6 +401,7 @@ func refuseJSON(app *App, cmd *cobra.Command, instead string) {
 	}
 }
 
+// usageErrorf builds an exit-2 usage error from a format string.
 func usageErrorf(format string, args ...any) error {
 	return &ExitError{Code: ExitUsage, Message: fmt.Sprintf(format, args...)}
 }
@@ -697,12 +697,16 @@ const orientDialTimeout = 300 * time.Millisecond
 // runOrientation is the bare `ley`: it shows where things stand and what to
 // type next, styled on a terminal and plain in a pipe — the Long text promises
 // "run it with no arguments to see where things stand", so `ley | tee log`
-// keeps that promise and `ley --help` stays the verb list. --json points at the
-// machine-readable state. Exit 0 in every state.
+// keeps that promise and `ley --help` stays the verb list. --json is the same
+// question asked by a script, so it answers with `ley state --json`'s snapshot.
+// Exit 0 in every state the screen can draw.
 func runOrientation(ctx context.Context, app *App, _ *cobra.Command) error {
 	if app.JSON {
-		fmt.Fprintln(app.Stderr, "ley: the orientation screen is for terminals; for machine output use: ley state --json")
-		return nil
+		st, err := stateSnapshot(ctx, app)
+		if err != nil {
+			return err
+		}
+		return app.printJSON(st)
 	}
 	dctx, cancel := context.WithTimeout(ctx, orientDialTimeout)
 	defer cancel()

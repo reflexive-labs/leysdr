@@ -117,7 +117,7 @@ func (d *Daemon) CreateCapture(ctx context.Context, req *leylinev1.CreateCapture
 		return nil, fail(ctx, errorf(leyline.CodeRateUnsupported, req.DeviceId, fmt.Sprintf("%d sps is not a supported sample rate", rate)))
 	}
 	now := time.Now()
-	c := &capture{startedAt: now, Capture: &leylinev1.Capture{
+	c := &capture{startedAt: now, manualGain: map[string]float64{}, Capture: &leylinev1.Capture{
 		CaptureId:  newID("cap_"),
 		DeviceId:   req.DeviceId,
 		CenterHz:   req.CenterHz,
@@ -188,7 +188,7 @@ func maxNarrowBandwidth(rate uint64) float64 {
 
 // checkBandwidth is ChannelPlan.plan's refusal, which the daemon applies when a channel is created
 // and again on every write that changes its bandwidth or its mode.
-func checkBandwidth(c *capture, mode leylinev1.DemodMode, bw uint32, target string) *leyline.Error {
+func checkBandwidth(c *capture, mode leylinev1.DemodMode, bw uint32) *leyline.Error {
 	if c == nil || mode == leylinev1.DemodMode_WFM {
 		return nil
 	}
@@ -196,8 +196,10 @@ func checkBandwidth(c *capture, mode leylinev1.DemodMode, bw uint32, target stri
 	if float64(bw) <= maxBW {
 		return nil
 	}
-	return errorf(leyline.CodeInvalidArgument, target, fmt.Sprintf(
-		"bandwidth %d Hz exceeds %d Hz, the most a %s channel can carry at %d sps (narrow modes run at r2 ~ 48 kHz); use wfm for wide channels",
+	// Word for word the engine's refusal, target included: it names no object, because the
+	// bandwidth is the caller's argument rather than something wrong with the channel.
+	return errorf(leyline.CodeInvalidArgument, "", fmt.Sprintf(
+		"bandwidth %d Hz exceeds %d Hz, the most a %s channel can carry at %d S/s (narrow modes run at r2 ≈ 48 kHz); use wfm for wide channels",
 		bw, int(maxBW), leyline.ModeName(mode), c.SampleRate))
 }
 
@@ -226,7 +228,7 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 	if !channelFits(c, req.OffsetHz, bw) {
 		return nil, fail(ctx, errorf(leyline.CodeOffsetOutOfCapture, req.CaptureId, fmt.Sprintf("offset %d Hz falls outside the capture bandwidth", req.OffsetHz)))
 	}
-	if e := checkBandwidth(c, mode, bw, req.CaptureId); e != nil {
+	if e := checkBandwidth(c, mode, bw); e != nil {
 		return nil, fail(ctx, e)
 	}
 	ch := &leylinev1.Channel{

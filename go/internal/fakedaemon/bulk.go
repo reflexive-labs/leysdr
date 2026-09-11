@@ -167,12 +167,6 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 	default:
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "source is required"))
 	}
-	// Nothing flows from a capture whose radio has gone -- a playback file that ran out, an
-	// unplugged dongle: the daemon has no source to read and ends the streams it had, so a fresh
-	// subscription is refused rather than served frames from a stopped timebase.
-	if c.State != leylinev1.CaptureState_CAPTURE_ACTIVE {
-		return nil, fail(ctx, errorf(leyline.CodeDeviceDetached, c.CaptureId, "the capture is detached; there is nothing to stream"))
-	}
 	s.captureID = c.CaptureId
 	desc.CenterHz, desc.SpanHz = c.CenterHz, c.SampleRate
 	switch req.GetKind() {
@@ -192,7 +186,7 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 		// looks_per_row is an answer, never a request: a client asking for a look count would be
 		// asking the daemon to spend CPU it does not own.
 		if f.GetLooksPerRow() != 0 {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId, "looks_per_row is answered by the daemon; leave it 0"))
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "looks_per_row is answered by the daemon; leave it 0"))
 		}
 		acc := f.GetAccumulation()
 		switch acc {
@@ -200,7 +194,7 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 			acc = leylinev1.FftAccumulation_ROW_SNAPSHOT
 		case leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
 		default:
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId, fmt.Sprintf("unknown FftAccumulation %d", acc)))
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", fmt.Sprintf("unknown FftAccumulation %d", acc)))
 		}
 		// A snapshot row is one periodogram; an accumulated row is however many the ladder can
 		// take across the interval, up to its cap, which is the number the descriptor states.
@@ -221,7 +215,7 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 		// descriptor before any row had arrived, and a histogram on the wrong scale is not
 		// obviously wrong to look at, so this is refused rather than defaulted.
 		if !(pp.GetRangeDb() > 0) {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
 				"persistence needs range_db > 0 and a floor_db; take an FFT row first to find the floor"))
 		}
 		levels := int(pp.GetLevels())
@@ -229,7 +223,7 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 			levels = defaultPersistLevels
 		}
 		if levels < 2 || levels > maxPersistLevels {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
 				fmt.Sprintf("persistence levels must be 2...%d, got %d", maxPersistLevels, levels)))
 		}
 		wantBins := pp.GetBins()

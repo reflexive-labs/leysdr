@@ -85,15 +85,11 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	}
 	scanID := newID("scan_")
 	job.ResultUris = []string{"ley://scans/" + scanID}
-	rate := uint64(2_400_000)
-	if dev != nil && len(dev.SampleRates) > 0 {
-		rate = dev.SampleRates[len(dev.SampleRates)-1]
-	}
+	// The plan's numbers -- how far each step moves and how finely it looks -- are stamped once
+	// the radio is in hand and the geometry exists. A job that never got a radio has none.
 	stored := proto.Clone(sc).(*leylinev1.ScanConfig)
-	stored.StepHz = uint32(0.4 * float64(rate))
 	d.jobs[job.JobId] = &fakeJob{proto: job, scan: &leylinev1.Scan{
 		ScanId: scanID, Config: stored, StartedAtNs: job.CreatedAtNs,
-		ResolutionHz: uint32(rate / 1024),
 	}, owner: ci.GetClientId()}
 	d.jobOrder = append(d.jobOrder, job.JobId)
 	d.trimJobsLocked()
@@ -140,9 +136,9 @@ func (d *Daemon) busyReason(deviceID string) string {
 func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.DeviceDescriptor) {
 	if dev == nil {
 		if sc.DeviceId != "" {
-			d.failScan(jobID, "NO_DEVICE", sc.DeviceId+" cannot tune that range, or is not here")
+			d.failScan(jobID, leyline.CodeNoDevice, sc.DeviceId+" cannot tune that range, or is not here")
 		} else {
-			d.failScan(jobID, "NO_DEVICE", "no radio here can tune that range")
+			d.failScan(jobID, leyline.CodeNoDevice, "no radio here can tune that range")
 		}
 		return
 	}
@@ -188,7 +184,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	}
 	d.mu.Unlock()
 	if reason != "" {
-		d.failScan(jobID, "DEVICE_BUSY", reason)
+		d.failScan(jobID, leyline.CodeDeviceBusy, reason)
 		return
 	}
 	defer func() {
@@ -215,6 +211,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 			leyline.FormatFrequency(uint64(guardFraction*float64(rate))), leyline.FormatFrequency(centre)))
 		return
 	}
+	d.planScan(jobID, plan, rate)
 	gains := d.sweepGains(dev)
 	// Rows the dwell is meant to yield, fixed up front the way the daemon fixes its threshold:
 	// each row is one chance a signal has to appear, so this is what looks are counted in.
@@ -265,7 +262,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 			det.LooksPossible = chances
 		}
 	}
-	d.finishScan(jobID, found, floors, gains)
+	d.finishScan(jobID, found, floors, gains, len(plan.steps), len(plan.steps), plan.clipped)
 }
 
 // fakeCarriers is the synthetic band the fake daemon reports: what a scan finds, and what a
@@ -451,6 +448,31 @@ func (d *Daemon) jobCancelled(id string) bool {
 	return j == nil || j.cancelled || j.proto.State != leylinev1.JobState_RUNNING
 }
 
+// scanBins is how many bins a sweep step looks through, as ScanRunner does: the resolution every
+// dB in a Scan is quoted per.
+const scanBins = 1024
+
+// planScan stamps the geometry on the job's Scan and says the sweep is under way. The daemon does
+// both once the lease is in hand, so a job that never got a radio carries neither.
+func (d *Daemon) planScan(id string, plan *sweepPlan, rate uint64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	j := d.jobs[id]
+	if j == nil || j.proto.State != leylinev1.JobState_RUNNING {
+		return
+	}
+	// The advance the geometry uses, stated rather than measured off the step positions.
+	j.scan.Config.StepHz = uint32(math.Round((edgeFraction - guardFraction) * float64(rate)))
+	// How finely it looked, so a client can print a floor without knowing the geometry.
+	j.scan.ResolutionHz = uint32(math.Round(float64(rate) / scanBins))
+	steps := "1 step"
+	if len(plan.steps) != 1 {
+		steps = fmt.Sprintf("%d steps", len(plan.steps))
+	}
+	j.proto.StatusDetail = "sweeping " + steps
+	d.emit(byDaemon(), j.proto)
+}
+
 // setJobDetail also writes what has been found so far into the job's Scan, so a CancelJob that
 // lands mid-sweep answers with the part that ran -- which is what the Swift daemon does, and what
 // the CLI prints after Ctrl-C.
@@ -516,6 +538,11 @@ func (d *Daemon) failScan(id, code, reason string) {
 	if j == nil || j.proto.State != leylinev1.JobState_RUNNING {
 		return
 	}
+	// A job that ends any way but completed has finished looking, and its Scan says when: a
+	// client that reads a terminal job must not find a scan that looks like it is still running.
+	if j.scan != nil {
+		j.scan.CompletedAtNs = time.Now().UnixNano()
+	}
 	j.proto.State = leylinev1.JobState_FAILED
 	// The daemon splits the two: prose in status_detail, the stable code in error.
 	j.proto.StatusDetail = reason
@@ -523,7 +550,25 @@ func (d *Daemon) failScan(id, code, reason string) {
 	d.emit(byDaemon(), j.proto)
 }
 
-func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, gains []*leylinev1.GainState) {
+// completedDetail is what a sweep that ran to the end says about itself: how many carriers it
+// found and over how many steps, whether the range had to be clipped to what the radio can tune,
+// and how many steps saw too few rows to be believed and were left out of the coverage.
+func completedDetail(found, stepsDone, steps int, clipped bool) string {
+	if stepsDone < steps {
+		return fmt.Sprintf("%d found; %d of %d steps saw too few rows to trust and were left out",
+			found, steps-stepsDone, steps)
+	}
+	plural := fmt.Sprintf("%d steps", steps)
+	if steps == 1 {
+		plural = "1 step"
+	}
+	if clipped {
+		return fmt.Sprintf("%d found in %s, clipped to what the radio can tune", found, plural)
+	}
+	return fmt.Sprintf("%d found in %s", found, plural)
+}
+
+func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*leylinev1.NoiseFloorSegment, gains []*leylinev1.GainState, stepsDone, steps int, clipped bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	j := d.jobs[id]
@@ -535,7 +580,7 @@ func (d *Daemon) finishScan(id string, found []*leylinev1.Detection, floors []*l
 	j.scan.CompletedAtNs = time.Now().UnixNano()
 	j.scan.Gains = gains
 	j.proto.State = leylinev1.JobState_COMPLETED
-	j.proto.StatusDetail = fmt.Sprintf("%d found", len(found))
+	j.proto.StatusDetail = completedDetail(len(found), stepsDone, steps, clipped)
 	d.emit(byDaemon(), j.proto)
 	d.trimJobsLocked()
 }
@@ -581,8 +626,12 @@ func (d *Daemon) CancelJob(ctx context.Context, req *leylinev1.JobRef) (*leyline
 		d.mu.Unlock()
 		return nil, fail(ctx, errorf(leyline.CodeJobNotFound, req.JobId, "no such job"))
 	}
+	// A job that has already ended is answered as it stands: asking a finished sweep to stop
+	// changes nothing about it, not even the flag its goroutine is no longer reading.
 	running := j.proto.State == leylinev1.JobState_RUNNING
-	j.cancelled = true
+	if running {
+		j.cancelled = true
+	}
 	d.mu.Unlock()
 	if running {
 		d.awaitStopped(ctx, req.JobId)

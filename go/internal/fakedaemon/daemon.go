@@ -107,6 +107,10 @@ type capture struct {
 	// file is set for captures on a playback device: without loop the sample
 	// index stops at file.samples and the capture detaches there (EOF).
 	file fileInfo
+	// manualGain is the last level each element was written to by hand, which is what
+	// `auto: false` puts back: turning automatic gain off asks for the manual level, and the
+	// one the client last confirmed is the one it means.
+	manualGain map[string]float64
 }
 
 // sampleIndex returns the capture's current sample position: wall-clock

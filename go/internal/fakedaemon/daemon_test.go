@@ -494,11 +494,12 @@ func TestDestroyCaptureEmitsTheTombstone(t *testing.T) {
 
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	events, errs, err := c.Events(evCtx, nil)
+	// From the snapshot's seq, so the create and destroy are replayed rather
+	// than raced against the watcher registering.
+	events, errs, err := c.Events(evCtx, leyline.ScopeSince(nil, st.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(20 * time.Millisecond) // let the watcher register
 
 	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
 	if err != nil {
