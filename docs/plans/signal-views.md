@@ -592,3 +592,58 @@ An independent read of `fe26cd3..54ca99f`, after the per-item verifiers. Line nu
    true after item 1; wrap `docs/engine-internals.md:228` and `docs/plans/signal-views.md:474`.
 
 Both suites green, `make proto` clean, the e2e green at the end.
+
+### SV-10g `[ ]` `ley levels` behaves like `spectrum`, and tells the truth about tones and squelch (Go lane)
+
+- **Snapshot by default, `--watch` for live**, exactly `spectrum`'s shape: the bare verb prints one
+  frame after the first complete row and exits (no ballistics, no caps in a snapshot; `--json`
+  prints that one row); `--watch` is the twenty-frames-a-second meter with `--rate` and `--count`
+  as they are today. The guide and `interfaces.md` say so; the design doc's transcript is the
+  snapshot.
+- **Squelch closed means nothing coming through.** On either tap, while `METER` reports
+  `squelch_open` false, every ladder draws unlit and the header says `squelch closed`; the caps
+  do not update. The raw rows still go out under `--json` with the squelch state alongside
+  (`"squelch_open": false`). The demod tap between words still shows the PL, because the squelch
+  is open then.
+- **Band sums corrected for the window.** A Hann-windowed tone spreads over about 1.5 bins of
+  power, so a band sum overstates a tone by 1.76 dB (measured on the PL fixture: −15.6 and −4.3
+  where the tones are −17.1 and −6.0). Divide each band's power sum by the window's equivalent
+  noise bandwidth (1.5 for Hann) before the dB; a tone then reads its own level and broadband power
+  is still right. The e2e on `nfm_pl.cf32` asserts the 125 Hz band within 1 dB of −17 and the
+  1 kHz band within 1 dB of −6 on the demod tap.
+- Tests against the fake for the snapshot, the watch loop, the squelch-closed rendering in both
+  alphabets, the corrected sums; goldens re-recorded where the header moved.
+
+### SV-10h `[ ]` The waveform as a clip, and frames on the three views (Go lane)
+
+- **Filled columns, not dots.** The envelope column is drawn with the block glyphs `█`, `▀` and
+  `▄`: full cells between the edges, `▄` for a top cell whose edge falls in its lower half and `▀`
+  for a bottom cell whose edge falls in its upper half, so both edges have half-row precision and
+  the clip is solid, as an editor draws it. `--ascii` uses `#`. Braille stays on the scope, which
+  is a line.
+- **Ink relative to the scale on screen.** A column's ramp fraction is its peak over the current
+  scale (`peak / scale`), so the loudest thing on screen is hot and a quiet passage at
+  `--scale 0.1` still has colour; the header's `scale ±n` says what full colour means. Squelched
+  slices stay blank.
+- **The same frame `spectrum` has.** `levels`, `waveform` and `scope` wrap their chart and axis in
+  `ui.Style.Box` the way `spectrum_render.go:137` does, header above the frame, width accounted
+  for so nothing exceeds `--width`. Goldens re-recorded; the guide's transcripts re-recorded
+  against the fake.
+
+### SV-11 `[ ]` One chart toolkit, one colour rule (Go lane)
+
+The four live views and `spectrum` each carry their own header line, gutter, axis, frame handling,
+in-place redraw and ramp normalisation. Consolidate into one package-level toolkit in
+`go/internal/cli` (a `chart.go` with the shared pieces; `ui` stays the palette and glyph layer):
+
+- `headerSeg`/header line (scope and waveform already share one; spectrum and levels join it);
+  the dB or amplitude gutter; one axis renderer (`spectrum_axis.go`, `scope_axis.go` and the
+  waveform's are three copies of the same tick-and-label rule); the `Box` framing with width
+  accounting; the in-place redraw writer.
+- **One ramp normalisation** in one place with named constants: `rampFrac(value, floor, top)`,
+  where the floor is the chart's own reference (the noise line for `spectrum`, −60 dBFS for
+  `levels`, zero for the waveform's scale), replacing `levelFrac(band)` and `levelsFrac(dBFS)`.
+  `docs/cli-style.md` section 3a gains the sentence that says what the cold end is per chart.
+- `spectrum`'s goldens must be byte-identical after the change (it is the reference the others
+  join); the other views' goldens change only where SV-10h intended. `waterfall` and `phosphor`
+  adopt the header and axis pieces where they fit without changing their pictures.
