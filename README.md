@@ -36,7 +36,8 @@ ley daemon start --bin $PWD/engine/.build/release/leylined
 
 `scripts/bootstrap-mac.sh` runs the same steps. `ley daemon install --bin …` instead of `start`
 writes a LaunchAgent so the daemon starts at login; after that `ley daemon start|stop|status|logs`
-go through launchd. Developer details, the remote-dongle setup and troubleshooting are in
+go through launchd, and `make reload` rebuilds both binaries and restarts the daemon on the new
+build in one step. Developer details, the remote-dongle setup and troubleshooting are in
 [`docs/dev-setup.md`](docs/dev-setup.md).
 
 ## Quickstart

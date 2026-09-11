@@ -10,6 +10,8 @@
 #                   LEYLINE_FIXTURES to point the tests elsewhere)
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
+#   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
+#                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
 #   make check      everything CI runs on this platform (includes the fixture and e2e suites)
 SHELL := /bin/bash
@@ -31,7 +33,7 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e lint check clean
+.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e lint check clean
 
 all: go swift
 
@@ -83,6 +85,16 @@ fixtures: go
 e2e: go swift fixtures
 	cd go && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
 		go test -count=1 -v ./internal/e2e/...
+
+# The daemon under test is the one launchd runs, so a rebuild is only half the loop: the old process
+# keeps serving until it is replaced. `ley daemon stop` ends a launchd job or a bare spawn alike;
+# `install` rewrites the plist, boots out what is loaded and bootstraps the new binary, so this is
+# safe to run whether or not an agent was installed before.
+reload: go swift-release
+	@[ "$$(uname -s)" = Darwin ] || { echo "make reload drives launchd; run it on the Mac" >&2; exit 2; }
+	-$(GOBIN)/ley daemon stop
+	$(GOBIN)/ley daemon install --bin $(CURDIR)/engine/.build/release/leylined
+	$(GOBIN)/ley daemon status
 
 $(TOOLS)/golangci-lint:
 	cd go && GOBIN=$(TOOLS) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)

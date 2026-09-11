@@ -90,6 +90,10 @@ ley daemon uninstall
 
 `ley daemon start|stop` work with or without the plist (without it they spawn/kill the binary directly).
 
+After a change, `make reload` is the whole loop: it rebuilds `ley` and the release `leylined`, stops
+the daemon that is running (launchd job or bare spawn), reinstalls the LaunchAgent on the fresh
+binary and prints `ley daemon status` so you can see the version it came up with.
+
 ### Troubleshooting
 
 - `ley devices` is empty but the dongle is plugged in: check `rtl_test -t` (from `brew install librtlsdr`).
