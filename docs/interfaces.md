@@ -57,6 +57,13 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # levels with --ascii); --tap demod draws the detector's own output, where an
 │                                    # NFM channel still carries its CTCSS tone and its tuning error; --scale fits
 │                                    # the trace to a signal that does not use the whole range
+├── levels <freq|preset|chan_ID> [--tap audio|demod] [--bands octave|third] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N] [--height N]
+│                                    # the rack unit's band meter over the daemon's audio spectrum: one LED ladder
+│                                    # per octave band with a peak cap, and the meter's rms/peak pair at the right;
+│                                    # --tap demod is where a CTCSS tone still stands in the 125 Hz band
+├── waveform <freq|preset|chan_ID> [--tap audio|demod] [--seconds S] [--scale full|auto|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
+│                                    # the clip view: seconds of audio as a peak envelope about the centre, newest
+│                                    # at the right, blank where the squelch was shut
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
@@ -119,7 +126,19 @@ tone_hz}`, where `seq` and `sample_index` name the daemon frame the drawn window
 spectrum's peaks are), `scale` is the vertical scale the frame was drawn at (1 at full scale, the
 fitted step under `--scale auto`), and `tone_hz` is the sub-audible tone the daemon reported,
 absent until it has reported one. It
-carries no samples: those are `ley listen --format json`. `ley fft` and `ley waterfall` subscribe GAP_MARKED (audio and
+carries no samples: those are `ley listen --format json`. `ley levels --json` and `ley waveform --json` are the
+audio-meter members. Both read the daemon's audio spectrum, which is an FFT subscription on a
+channel source and so arrives as FFT rows like any other -- dB per bin from 0 Hz to half the audio
+rate, `center_hz` and `span_hz` of `rate/4` and `rate/2` -- but what the views print is what they
+measured off those rows. `ley levels --json` is one object per row, raw and before the ballistics
+that shape the bars: `{seq, sample_index, tap, bands: [{center_hz, db}], rms_dbfs, peak_dbfs}`,
+where `bands` are the ISO octave centres with their bins summed in power, and `rms_dbfs` and
+`peak_dbfs` come from the daemon's `METER` telemetry and are `null` until it has measured a block --
+a number there would be a level nobody reported, and -0 dBFS is a real level. `ley waveform --json`
+is one object per column as it completes: `{sample_index, seconds, peak_dbfs, rms_dbfs,
+squelch_open}`, a column being a fixed slice of audio rather than a slice of wall clock, `seconds`
+how much audio the picture holds by the end of it, and `squelch_open` whether the daemon's squelch
+let anything through during that slice. `ley fft` and `ley waterfall` subscribe GAP_MARKED (audio and
 IQ stay LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sample":B}}` line before
 the next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in

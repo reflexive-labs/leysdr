@@ -410,7 +410,95 @@ refuses `--tap demod` on one and says why.
 reported a tone. The samples themselves are
 `ley listen --format json`.
 
-## 8. Two channels on one radio
+## 8. Hear it with your eyes
+
+`ley scope` draws one window of samples — a syllable, a few cycles. Two more views take the same
+audio at the two scales either side of it. `ley levels` is the band meter off the front of a rack
+unit: what the sound is made of right now, band by band. `ley waveform` is the clip view: when
+something came through, over seconds or minutes. Neither opens the speakers, both take a frequency,
+a preset or a channel id, and both read the daemon's own audio spectrum and meter — the numbers are
+the daemon's, the shaping is the screen's.
+
+```console
+$ ley levels 145.23 --tap demod
+145.230 MHz NFM  tap demod  squelch open  PL 100.0 Hz
+  0 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+ -6 │░░░   ░░░   ░░░   ░░░   ━━━   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+    │░░░   ░░░   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-12 │░░░   ░░░   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
+-18 │░░░ ─ ━━━ ─ ░░░ ─ ░░░ ─ ███ ─ ░░░ ─ ░░░ ─ ░░░ ─ ░░░ ─ ─ ░░░ ─ ░░░
+    │░░░   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ━━━
+-24 │░░░   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ━━━   ░░░
+-30 │━━━   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ▁▁▁   ▆▆▆
+-40 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
+    │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
+-50 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
+-60 │███   ███   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ███   ███
+    ──────────────────────────────────────────────────────────│─────│────
+     63    125   250   500   1k    2k    4k    8k    16k Hz  rms  peak
+                                                             -38   -34 dBFS
+```
+
+Nine ladders on the ISO octave centres audio equipment has used for decades, and the master pair —
+rms and peak, from the daemon's meter — set apart at the right. The bar is where the band is now;
+the cap above it is the loudest of the last second and a half, hanging there before it falls. Bars
+rise the instant the level does and fall at 20 dB a second, so a syllable leaves a trail you can
+read after it has gone. That shaping is the picture's: the two numbers under the master pair are
+the current row's own, and `--json` carries the rows before any of it.
+
+The scale is a meter's rather than a chart's — 6 dB a row from 0 down to −24 dBFS, then 10 dB a row
+to −60, held whatever the signal does, so a bar of a given height means the same dB tomorrow — and
+the dashed rule across −18 dBFS is the alignment level a speaking voice should sit around. `OVER`
+appears above the ladders when something reaches full scale and stays up for two seconds, because
+a clip is over before you have looked up.
+
+The lit 125 Hz bar above is the picture's whole point. A 100 Hz CTCSS tone falls in that band
+(88 to 177 Hz), and it stands there on `--tap demod`, the detector's own output. Run the same
+command with `--tap audio` — what the speakers get — and that bar drops out of sight: the audio
+chain high-passes at 300 Hz precisely to remove it. Voice lives in the 250 Hz to 2 kHz bars, hiss
+in the 4 kHz and up, mains hum in the 63 Hz one. `--bands third` draws twenty-five third-octave
+bands instead of nine, on a terminal at least 100 columns wide.
+
+The other view is the same audio spread out over time.
+
+```console
+$ ley waveform 145.23 --squelch -50
+145.230 MHz NFM  tap audio  10 s  scale ±1  squelch closed
+   +1│                                                                         │
+     │                                                                         │
+     │⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
+     │⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
+    0│⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
+     │⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
+     │                                                                         │
+   -1│                                                                         │
+     ─│─────────────│──────────────│─────────────│──────────────│─────────────│
+      -10 s       -8 s           -6 s          -4 s           -2 s         -0 s
+```
+
+Each column is a slice of audio drawn as the loudest it got, up and down from the centre, with the
+newest at the right under the playhead; the axis counts seconds back from now. What you are looking
+for here is shape and timing: how long the transmissions are, how long the gaps between them,
+whether one starts strong and fades. A slice the squelch was shut for is left blank rather than
+drawn as a flat line, so a gap in the picture is a gap in what came through — above, a squelch at
+−50 dBFS is opening and closing on a signal that drifts across it. Silence that did come through
+is the centre rule, which is what a live but quiet channel looks like.
+
+`--seconds` sets how much the picture holds, 2 to 120, default 10; a wider terminal buys resolution
+rather than more time. `--scale auto`, the default, fits the trace to the signal the way `scope`
+does, and `--scale 0.2` pins it where you want it. On `--tap demod` the DC offset — the tuning
+error — is taken out before the envelope is drawn and the header says how much, because otherwise
+a mistuned channel draws its whole clip off centre.
+
+Both views carry their frames raw. `ley levels --json` prints one object per spectrum row, before
+any of the ballistics: `{seq, sample_index, tap, bands: [{center_hz, db}], rms_dbfs, peak_dbfs}`,
+where `rms_dbfs` and `peak_dbfs` are `null` until the daemon has measured a block, because a level
+nobody reported is not a level. `ley waveform --json` prints one object per column as it completes,
+`{sample_index, seconds, peak_dbfs, rms_dbfs, squelch_open}`, carrying the same slice the picture
+would have drawn at that width — which is what makes `ley waveform --seconds 120 --json` a way to
+log when a repeater was busy without drawing anything at all.
+
+## 9. Two channels on one radio
 
 A capture is a wide slice of the band (2.4 MHz on an RTL-SDR), so one radio can feed several
 channels at once. `--persistent` leaves a channel running after the command exits and prints
@@ -488,7 +576,7 @@ a state too large to read as a tree or a line you want to `awk`; `--ascii` swaps
 drawing for `+-` and `\-`. `ley state --json` is still the machine snapshot, and it is unchanged
 by any of this.
 
-## 9. Play a recording
+## 10. Play a recording
 
 `play` attaches an IQ recording (a `.cf32` file: the raw samples a radio produced) as a pretend
 radio and tunes on it exactly as `tune` would, so `set` and `spectrum` work on it unchanged. No
@@ -514,7 +602,7 @@ channels.
 Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12;
 `ley help roadmap`).
 
-## 10. For scripts and agents
+## 11. For scripts and agents
 
 `ley help scripting` is the authoritative short version; the contract is `docs/interfaces.md`.
 
@@ -569,7 +657,7 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
-## 11. When things go wrong
+## 12. When things go wrong
 
 Every error is one line that says what happened and what to run next. The ones a newcomer
 meets first:

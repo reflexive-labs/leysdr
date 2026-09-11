@@ -1,6 +1,6 @@
 # Design: Audio meters — `ley levels` and `ley waveform`
 
-Status: draft, 2026-09-11. Companion to `design-scope.md` (the millisecond view, which stays), to
+Status: implemented. Companion to `design-scope.md` (the millisecond view, which stays), to
 `design-signal-views.md` (the spectrum, waterfall and channel views) and to `cli-style.md`, whose
 palette and layout rules every picture here obeys. The point of this document is the visual
 language, because a meter that is honest but dead-looking is not looked at.

@@ -426,7 +426,7 @@ width is fixed for the run rather than per frame -- `auto` reserves the widest s
 space. The auto scale's hold is a peak with 10% headroom decaying on a one-second time constant,
 so a 0.14 tone sits at ±0.2 through a quarter-second pause and is back down within two seconds.
 
-## SV-10 `[ ]` Audio meters: `ley levels` and `ley waveform`
+## SV-10 `[x]` Audio meters: `ley levels` and `ley waveform`
 
 Implements `docs/design-audio-meters.md`; read it first for every item, it carries the visual
 language the renderers must match and the honesty rules (ballistics shape bars, never numbers).
@@ -533,7 +533,7 @@ through it. The playhead is the alphabet's own vertical stroke in `Label` ink, a
 the scale and the ASCII fallback are the scope's, so a clip and a trace asked for the same
 `--width` line up.
 
-### SV-10e `[ ]` End to end, and the docs (cross-language, last)
+### SV-10e `[x]` End to end, and the docs (cross-language, last)
 
 `go/internal/e2e`: play `fixtures/nfm_pl.cf32` through the real daemon; `ley levels --tap demod
 --json --count 5` reports the 125 Hz band (88–177 Hz, where the 100 Hz PL falls) and the 1 kHz
@@ -543,3 +543,13 @@ finite peaks and `squelch_open` true. Docs: `docs/interfaces.md` tree and the bu
 paragraph (the audio-spectrum rows are FFT rows, the two `--json` shapes are named), a
 `docs/cli-guide.md` section "Hear it with your eyes" with both transcripts recorded against the
 fake, README's "What works today" sentence, and `docs/design-audio-meters.md`'s status line.
+
+The e2e reads the meters as numbers rather than pictures: `ley levels --json` over the real daemon
+on `nfm_pl.cf32` puts the 125 Hz and 1 kHz octave bands at the top of the demod tap and drops 125 Hz
+by more than 10 dB on the audio tap, which is the high-pass doing what the guide says it does, and
+the band levels are averaged over the five rows so one row caught between syllables cannot decide
+the order. The guide's section is section 8, ahead of the two-channel one, so the three audio views
+sit together; its waveform transcript is recorded with `--squelch -50` against the fake, whose
+carrier power swings through that threshold, because a steady tone at full duty draws a solid block
+and the picture is about when something came through. The `--json` shapes are described in prose
+there rather than shown, the way `scope`'s are: a nine-band row is one 470-character line.
