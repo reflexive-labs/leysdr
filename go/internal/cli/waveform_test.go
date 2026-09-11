@@ -51,7 +51,7 @@ func waveformTestFrame(n int) waveformFrame {
 }
 
 func waveformTestView(st ui.Style) *waveformView {
-	return newWaveformView(st, waveformTestWidth, 10, scopeScale{fixed: waveformTestScale})
+	return newWaveformView(st, waveformTestWidth, 10, scopeScale{fixed: waveformTestScale}, false)
 }
 
 // The still frame, in both alphabets: nothing where the run has not reached,
@@ -62,27 +62,27 @@ func waveformTestView(st ui.Style) *waveformView {
 const (
 	waveformStillUnicode = `147.435 MHz NFM  tap audio  10 s  scale ±0.5
 squelch open
-+0.5│                 ⣤⣤⣤⣤                       │
-    │               ⣤⣿⣿⣿⣿⣿⣿⣤                     │
-    │              ⣶⣿⣿⣿⣿⣿⣿⣿⣿⣶             ⣀⣀⣀⣀   │
-    │             ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          ⣤⣶⣿⣿⣿⣿⣶⣤ │
-   0│            ─⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿──────────⠛⠿⣿⣿⣿⣿⠿⠛─│
-    │              ⠿⣿⣿⣿⣿⣿⣿⣿⣿⠿             ⠉⠉⠉⠉   │
-    │               ⠛⣿⣿⣿⣿⣿⣿⠛                     │
--0.5│                 ⠛⠛⠛⠛                       │
++0.5│                 ▄▄▄▄                       │
+    │               ▄██████▄                     │
+    │              ██████████              ▄▄    │
+    │             ████████████           ██████  │
+   0│            ─████████████───────────██████──│
+    │              ██████████              ▀▀    │
+    │               ▀██████▀                     │
+-0.5│                 ▀▀▀▀                       │
     ─│────────│───────│────────│───────│────────│
      -10 s  -8 s    -6 s     -4 s    -2 s    -0 s
 `
 	waveformStillASCII = `147.435 MHz NFM  tap audio  10 s  scale ±0.5
 squelch open
-+0.5|                  ##                        |
++0.5|                 ####                       |
     |               ########                     |
     |              ##########              ##    |
-    |              ##########              ##    |
-   0|            --##########--------------##----|
+    |             ############           ######  |
+   0|            -############-----------######--|
     |              ##########              ##    |
     |               ########                     |
--0.5|                  ##                        |
+-0.5|                 ####                       |
     -|--------|-------|--------|-------|--------|
      -10 s  -8 s    -6 s     -4 s    -2 s    -0 s
 `
@@ -239,7 +239,7 @@ func TestWaveformStaysInsideTheWidth(t *testing.T) {
 			if sc.auto {
 				at = 0.5
 			}
-			v := newWaveformView(ui.Style{Unicode: true}, width, 10, sc)
+			v := newWaveformView(ui.Style{Unicode: true}, width, 10, sc, false)
 			for _, line := range strings.Split(v.render(waveformTestFrame(v.cols()), at), "\n") {
 				if w := ui.Visible(line); w > width {
 					t.Errorf("at %d columns a line is %d wide: %q", width, w, line)
@@ -344,5 +344,70 @@ func TestWaveformUsageErrors(t *testing.T) {
 				t.Errorf("a refused verb draws nothing, got:\n%s", out)
 			}
 		})
+	}
+}
+
+// waveformColumn is one column of the clip drawn down its rows, and the ink
+// each cell carries, straight from the renderer: the glyphs are the shape of
+// the envelope and the ink is the level behind it.
+func waveformColumn(v *waveformView, c waveformCol, scale float64) (string, []int) {
+	var b strings.Builder
+	inks := make([]int, 0, scopeHeight)
+	for r := range scopeHeight {
+		cell, ink := v.cell(c, r, scale)
+		b.WriteString(cell)
+		inks = append(inks, ink)
+	}
+	return b.String(), inks
+}
+
+// A column is a filled shape, not a column of dots: whole cells between the
+// envelope's edges, and the half of a cell an edge reaches into where it falls
+// mid-cell, so the clip resolves half a row either side of the centre. ASCII
+// has no half cell and draws the coarser picture with the one it has.
+func TestWaveformFillsItsColumns(t *testing.T) {
+	// An envelope whose edges fall in the lower half of the top cell and the
+	// upper half of the bottom one, which is the case the halves are for.
+	half := waveformCol{present: true, open: true, peak: waveformTestScale * 13 / 15}
+	for _, tc := range []struct {
+		name string
+		st   ui.Style
+		col  waveformCol
+		want string
+	}{
+		{"half rows", ui.Style{Unicode: true}, half, "▄██████▀"},
+		{"full scale", ui.Style{Unicode: true}, waveformCol{present: true, open: true, peak: waveformTestScale}, "████████"},
+		{"ascii", ui.Style{}, half, "########"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := waveformTestView(tc.st)
+			if got, _ := waveformColumn(v, tc.col, waveformTestScale); got != tc.want {
+				t.Errorf("the column draws %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The ink is keyed to the scale the frame is drawn at, not to full scale: the
+// loudest thing on screen is hot whatever the signal is doing, so a quiet
+// passage under --scale 0.1 still has colour in it.
+func TestWaveformInkFollowsTheScaleOnScreen(t *testing.T) {
+	v := waveformTestView(ui.Style{Unicode: true})
+	col := waveformCol{present: true, open: true, peak: 0.25}
+	_, hot := waveformColumn(v, col, 0.25)
+	_, cold := waveformColumn(v, col, 1)
+	if hot[0] != spectrumLevelSteps-1 {
+		t.Errorf("a column at the scale takes ramp step %d, want the hot end %d", hot[0], spectrumLevelSteps-1)
+	}
+	mid := scopeHeight / 2
+	if cold[mid] >= hot[0] {
+		t.Errorf("the same peak inks %d at ten times the scale, want colder than %d", cold[mid], hot[0])
+	}
+	if cold[mid] <= 0 {
+		t.Errorf("a column a quarter of the scale inks %d, want colour in it", cold[mid])
+	}
+	// A squelched slice is not drawn at all, so it carries no level either.
+	if _, shut := waveformColumn(v, waveformCol{present: true, peak: 0.5}, waveformTestScale); shut[0] != inkPlain {
+		t.Errorf("a closed slice inks %d, want the blank it draws", shut[0])
 	}
 }

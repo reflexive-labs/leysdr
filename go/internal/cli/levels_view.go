@@ -98,27 +98,33 @@ type levelsView struct {
 	// x is the left column of every bar inside the plot: the bands in order,
 	// then rms and peak.
 	x []int
+	// framed draws the ladders, their scale and their labels inside a Box,
+	// the way the spectrum's chart is framed, with the header above it.
+	framed bool
 }
 
 // newLevelsView fits the meter to the width: the third-octave set only on a
 // screen wide enough to draw it, the six speech bands on a narrow one, and the
 // widest bars and gaps the bands and the master pair both fit in.
-func newLevelsView(st ui.Style, width, height int, third bool) *levelsView {
+func newLevelsView(st ui.Style, width, height int, third, frame bool) *levelsView {
 	if width <= 0 {
 		width = ui.DefaultWidth
 	}
+	v := &levelsView{
+		st: st, width: width, height: min(max(height, levelsMinRows), levelsMaxRows),
+		bar: 2, gap: 1, framed: chartFramed(st, width, frame),
+	}
+	// Which set of bands fits is read off the width the meter actually has,
+	// so a frame costs resolution rather than overflowing the terminal.
 	centres := levelsOctaveHz
 	edge := levelsOctaveEdge
 	switch {
-	case width < levelsNarrowCols:
+	case v.inner() < levelsNarrowCols:
 		centres = levelsNarrowHz
-	case third && width >= levelsThirdCols:
+	case third && v.inner() >= levelsThirdCols:
 		centres, edge = levelsThirdHz, levelsThirdEdge
 	}
-	v := &levelsView{
-		st: st, width: width, height: min(max(height, levelsMinRows), levelsMaxRows),
-		bands: levelsBands(centres, edge), bar: 2, gap: 1,
-	}
+	v.bands = levelsBands(centres, edge)
 	plot := v.cols()
 	n := len(v.bands)
 	for _, bar := range []int{3, 2} {
@@ -157,8 +163,17 @@ func (v *levelsView) layout(n int) {
 	v.x = append(v.x, rms, rms+v.bar+levelsPairGap(v.gap))
 }
 
+// inner is the width the meter may use: the whole width, less what the frame
+// spends on its border and padding when there is one.
+func (v *levelsView) inner() int {
+	if v.framed {
+		return v.width - ui.BoxPadding
+	}
+	return v.width
+}
+
 // cols is the plot's width: everything right of the gutter.
-func (v *levelsView) cols() int { return max(v.width-levelsGutterW, levelsMinCols) }
+func (v *levelsView) cols() int { return max(v.inner()-levelsGutterW, levelsMinCols) }
 
 // levelsOverWord is what an overload says. It is latched rather than drawn
 // while it lasts: an overload is a thing that happened, and a flash too short
@@ -183,15 +198,24 @@ func (v *levelsView) render(f levelsFrame) string {
 	for _, l := range v.header(f) {
 		b.WriteString(l + "\n")
 	}
+	var chart strings.Builder
 	if over := v.overRow(bars); over != "" {
-		b.WriteString(over + "\n")
+		chart.WriteString(over + "\n")
 	}
 	for r := range v.height {
-		b.WriteString(v.row(r, bars) + "\n")
+		chart.WriteString(v.row(r, bars) + "\n")
 	}
-	b.WriteString(v.axis() + "\n")
+	chart.WriteString(v.axis() + "\n")
 	for _, l := range v.labels(f) {
-		b.WriteString(l + "\n")
+		chart.WriteString(l + "\n")
+	}
+	// The ladders, their scale and the labels that name them are one object
+	// and are framed as one; the header reads as prose above it and stays
+	// outside.
+	if v.framed {
+		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
+	} else {
+		b.WriteString(chart.String())
 	}
 	return b.String()
 }
@@ -350,7 +374,7 @@ func (v *levelsView) labels(f levelsFrame) []string {
 		segs = append(segs, levelsSeg{at: levelsGutterW + last + 1, text: v.st.Muted("Hz"), width: 2})
 	}
 	rms, peak := len(v.bands), len(v.bands)+1
-	if v.width < levelsWordsCols {
+	if v.inner() < levelsWordsCols {
 		segs = append(segs,
 			v.centred(rms, fmtDb(f.rmsDb), false),
 			v.centred(peak, fmtDb(f.peakDb), false))
@@ -364,7 +388,7 @@ func (v *levelsView) labels(f levelsFrame) []string {
 	// The unit is written once, after the numbers, and only where the width
 	// has room for it: it names what the two figures are, and a figure that
 	// wrapped would be worse than an unnamed one.
-	if at := levelsGutterW + v.x[peak] + v.bar + 1; at+4 <= v.width {
+	if at := levelsGutterW + v.x[peak] + v.bar + 1; at+4 <= v.inner() {
 		numbers = append(numbers, levelsSeg{at: at, text: v.st.Muted("dBFS"), width: 4})
 	}
 	return []string{levelsTextRow(segs), levelsTextRow(numbers)}

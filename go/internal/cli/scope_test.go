@@ -95,7 +95,7 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 		{"ascii", ui.Style{}, scopeToneASCII},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rows := newScopeView(tc.st, scopeTraceCols+scopeFullGutter, scopeFull).trace(f.samples, f.scale)
+			rows := newScopeView(tc.st, scopeTraceCols+scopeFullGutter, scopeFull, false).trace(f.samples, f.scale)
 			if len(rows) != scopeHeight {
 				t.Fatalf("trace is %d rows, want %d", len(rows), scopeHeight)
 			}
@@ -116,7 +116,7 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 // draws the same picture. The free-running comparison is what makes this a
 // test of the trigger rather than of the sine.
 func TestScopeTriggerHoldsAToneStill(t *testing.T) {
-	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeFullGutter, scopeFull)
+	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeFullGutter, scopeFull, false)
 	window := 192
 	var triggered, free string
 	for i, shift := range []int{0, 7, 19, 31, 44} {
@@ -379,7 +379,7 @@ func TestScopeRenderCarriesBothScales(t *testing.T) {
 		{"ascii", ui.Style{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := newScopeView(tc.st, ui.DefaultWidth, scopeFull)
+			v := newScopeView(tc.st, ui.DefaultWidth, scopeFull, false)
 			if got, want := v.cols(), ui.DefaultWidth-scopeFullGutter; got != want {
 				t.Errorf("the trace is %d columns of %d, want %d beside the level axis", got, ui.DefaultWidth, want)
 			}
@@ -485,7 +485,7 @@ func TestScopeFixedScalesNeverMove(t *testing.T) {
 // What the item is for: a tenth of full scale is a dot or two high, and the
 // same signal on the scale that fits it uses the whole picture.
 func TestScopeScaleFillsTheRows(t *testing.T) {
-	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeFullGutter, scopeScale{auto: true})
+	v := newScopeView(ui.Style{Unicode: true}, scopeTraceCols+scopeFullGutter, scopeScale{auto: true}, false)
 	tone := scopeTone(100, 4800, 192, 0.14, 0)
 	full := v.trace(tone, 1)
 	fitted := v.trace(tone, 0.2)

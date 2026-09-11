@@ -473,29 +473,31 @@ $ ley waveform 145.23 --squelch -50
 145.230 MHz NFM  tap audio  10 s  scale ±1  squelch closed
    +1│                                                                         │
      │                                                                         │
-     │⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
-     │⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
-    0│⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
-     │⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿              │
+     │█              ███████████████               ███████████████             │
+     │█              ███████████████               ███████████████             │
+    0│█              ███████████████               ███████████████             │
+     │█              ███████████████               ███████████████             │
      │                                                                         │
    -1│                                                                         │
      ─│─────────────│──────────────│─────────────│──────────────│─────────────│
       -10 s       -8 s           -6 s          -4 s           -2 s         -0 s
 ```
 
-Each column is a slice of audio drawn as the loudest it got, up and down from the centre, with the
-newest at the right under the playhead; the axis counts seconds back from now. What you are looking
-for here is shape and timing: how long the transmissions are, how long the gaps between them,
-whether one starts strong and fades. A slice the squelch was shut for is left blank rather than
+Each column is a slice of audio drawn as the loudest it got, up and down from the centre, filled
+the way an editor draws a clip, with the newest at the right under the playhead; the axis counts
+seconds back from now. What you are looking for here is shape and timing: how long the
+transmissions are, how long the gaps between them, whether one starts strong and fades. A slice the squelch was shut for is left blank rather than
 drawn as a flat line, so a gap in the picture is a gap in what came through — above, a squelch at
 −50 dBFS is opening and closing on a signal that drifts across it. Silence that did come through
 is the centre rule, which is what a live but quiet channel looks like.
 
 `--seconds` sets how much the picture holds, 2 to 120, default 10; a wider terminal buys resolution
 rather than more time. `--scale auto`, the default, fits the trace to the signal the way `scope`
-does, and `--scale 0.2` pins it where you want it. On `--tap demod` the DC offset — the tuning
-error — is taken out before the envelope is drawn and the header says how much, because otherwise
-a mistuned channel draws its whole clip off centre.
+does, and `--scale 0.2` pins it where you want it. The colour is read against whatever the scale
+came out at — the `scale ±n` in the header says what full colour means — so the loudest thing on
+screen is hot and a quiet passage under `--scale 0.1` still has colour in it. On `--tap demod` the
+DC offset — the tuning error — is taken out before the envelope is drawn and the header says how
+much, because otherwise a mistuned channel draws its whole clip off centre.
 
 Both views carry their frames raw. `ley levels --json` prints one object per spectrum row, before
 any of the ballistics: `{seq, sample_index, tap, bands: [{center_hz, db}], rms_dbfs, peak_dbfs,

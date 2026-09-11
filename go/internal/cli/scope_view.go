@@ -69,19 +69,34 @@ type scopeView struct {
 	// comes out of the width the way the spectrum's level axis does, so a
 	// trace and a chart asked for the same --width are the same width.
 	gutterW int
+	// framed draws the trace and its timebase inside a Box, the way the
+	// spectrum's chart is framed, with the header above it.
+	framed bool
 }
 
-func newScopeView(st ui.Style, width int, scale scopeScale) *scopeView {
+func newScopeView(st ui.Style, width int, scale scopeScale, frame bool) *scopeView {
 	if width <= 0 {
 		width = ui.DefaultWidth
 	}
-	return &scopeView{st: st, width: width, scale: scale, gutterW: scale.labelWidth() + 1}
+	return &scopeView{
+		st: st, width: width, scale: scale,
+		gutterW: scale.labelWidth() + 1, framed: chartFramed(st, width, frame),
+	}
 }
 
-// cols is the trace's width: the resolved width less the level axis, which
-// stands left of it.
+// inner is the width the trace and its timebase may use: the whole width, less
+// what the frame spends on its border and padding when there is one.
+func (v *scopeView) inner() int {
+	if v.framed {
+		return v.width - ui.BoxPadding
+	}
+	return v.width
+}
+
+// cols is the trace's width: the width inside any frame, less the level axis,
+// which stands left of it.
 func (v *scopeView) cols() int {
-	if c := v.width - v.gutterW; c >= scopeMinCols {
+	if c := v.inner() - v.gutterW; c >= scopeMinCols {
 		return c
 	}
 	return scopeMinCols
@@ -92,11 +107,19 @@ func (v *scopeView) render(f scopeFrame) string {
 	for _, l := range v.header(f) {
 		b.WriteString(l + "\n")
 	}
+	var chart strings.Builder
 	for r, l := range v.trace(f.samples, f.scale) {
-		b.WriteString(v.gutter(r, f.scale) + l + "\n")
+		chart.WriteString(v.gutter(r, f.scale) + l + "\n")
 	}
 	for _, l := range v.axis(f.windowMs) {
-		b.WriteString(l + "\n")
+		chart.WriteString(l + "\n")
+	}
+	// The trace and the milliseconds under it are one object and are framed as
+	// one; the header reads as prose above it and stays outside.
+	if v.framed {
+		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
+	} else {
+		b.WriteString(chart.String())
 	}
 	return b.String()
 }

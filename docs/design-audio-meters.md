@@ -128,11 +128,12 @@ terminal like the spectrum chart).
 
 Newest at the right under a `Label` playhead, scrolling left. Each column covers its slice of
 the window (`--seconds 10` across 77 columns is 130 ms) and draws the **peak envelope** of that
-slice, symmetric about the centre line, in braille, the way an editor draws a clip; the column's
-ink is the level ramp for its peak, so a shout is hot and a murmur is cold before the height says
-so. A centre rule runs through silence. A squelch-closed slice is **left blank**, not drawn at
-zero: the floor draws as space (guide, section 5), and a gap between transmissions then looks like
-a gap. `--scale` as on the scope, `auto` by default here because the point is the shape. The DC
+slice, symmetric about the centre line, the way an editor draws a clip: filled with block glyphs,
+with half-cell precision at either edge. The column's ink is the level ramp for its peak against
+the scale the frame is drawn at, so the loudest thing on screen is hot and a quiet passage is cold
+before the height says so. A centre rule runs through silence. A squelch-closed slice is **left
+blank**, not drawn at zero: the floor draws as space (guide, section 5), and a gap between
+transmissions then looks like a gap. `--scale` as on the scope, `auto` by default here because the point is the shape. The DC
 offset of the demod tap is removed before drawing (the scope shows it; the editor's view would only
 shift the clip off its centre line), and said in the header.
 

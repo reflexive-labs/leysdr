@@ -256,7 +256,7 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	stopDrain := s.drainEvents()
 	defer stopDrain()
 
-	view := newWaveformView(s.app.Style, o.width, o.seconds, o.scale)
+	view := newWaveformView(s.app.Style, o.width, o.seconds, o.scale, s.app.IsTTY())
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
 	var w *spectrumWriter

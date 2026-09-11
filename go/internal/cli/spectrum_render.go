@@ -33,10 +33,18 @@ const spectrumLevelSteps = 24
 // the texture is visible as blue through cyan, and nothing is ever warm.
 const spectrumQuietRampCap = 0.34
 
-// spectrumFrameMinWidth is the narrowest terminal that gets a frame around the
+// chartFrameMinWidth is the narrowest terminal that gets a frame around a
 // chart. The border and its padding cost ui.BoxPadding columns of chart, which
 // a cramped screen cannot spare.
-const spectrumFrameMinWidth = 60
+const chartFrameMinWidth = 60
+
+// chartFramed says whether a view may draw the border: the caller has to want
+// one -- a pipe never does -- and the screen has to have both the alphabet and
+// the columns for it. Every chart answers it the same way, so a spectrum and a
+// meter side by side either both carry a frame or neither does.
+func chartFramed(st ui.Style, width int, frame bool) bool {
+	return frame && st.Unicode && width >= chartFrameMinWidth
+}
 
 // How the scale is chosen, and how the max-hold trace behaves. The top tracks
 // the loudest column with a little headroom, and only a dead-flat band falls
@@ -85,7 +93,7 @@ func newSpectrumView(st ui.Style, width int, mark uint64, hold, frame bool) *spe
 		width:  width,
 		mark:   mark,
 		holdOn: hold,
-		framed: frame && st.Unicode && width >= spectrumFrameMinWidth,
+		framed: chartFramed(st, width, frame),
 	}
 }
 

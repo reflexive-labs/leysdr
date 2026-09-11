@@ -62,6 +62,11 @@ type Glyphs struct {
 	Ramp string
 	// BarFull and BarEmpty draw level meters.
 	BarFull, BarEmpty rune
+	// BlockTop and BlockBottom are the upper and lower halves of a cell,
+	// which give a filled shape half-row precision at its edges. ASCII has no
+	// half cell, so both fall back to the full one: a clip drawn there is
+	// coarser, not broken.
+	BlockTop, BlockBottom rune
 	// Marker points at a frequency or a squelch threshold under an axis.
 	Marker rune
 	// Shade is the waterfall's density ramp, empty first then four levels. A
@@ -93,34 +98,38 @@ type Glyphs struct {
 
 var (
 	unicodeGlyphs = Glyphs{
-		Ramp:       " ▁▂▃▄▅▆▇█",
-		Shade:      " ░▒▓█",
-		Trace:      "",
-		BarFull:    '█',
-		BarEmpty:   '░',
-		Marker:     '▲',
-		Rule:       '─',
-		RuleHeavy:  '━',
-		TreeBranch: "├─",
-		TreeLast:   "└─",
-		TreeTrunk:  "│",
-		Absent:     "-",
-		Ellipsis:   "…",
+		Ramp:        " ▁▂▃▄▅▆▇█",
+		Shade:       " ░▒▓█",
+		Trace:       "",
+		BarFull:     '█',
+		BarEmpty:    '░',
+		BlockTop:    '▀',
+		BlockBottom: '▄',
+		Marker:      '▲',
+		Rule:        '─',
+		RuleHeavy:   '━',
+		TreeBranch:  "├─",
+		TreeLast:    "└─",
+		TreeTrunk:   "│",
+		Absent:      "-",
+		Ellipsis:    "…",
 	}
 	asciiGlyphs = Glyphs{
-		Ramp:       " .:-=+*#%",
-		Shade:      " .:+#",
-		Trace:      `_-"`,
-		BarFull:    '#',
-		BarEmpty:   '.',
-		Marker:     '^',
-		Rule:       '-',
-		RuleHeavy:  '=',
-		TreeBranch: "+-",
-		TreeLast:   "\\-",
-		TreeTrunk:  "|",
-		Absent:     "-",
-		Ellipsis:   "...",
+		Ramp:        " .:-=+*#%",
+		Shade:       " .:+#",
+		Trace:       `_-"`,
+		BarFull:     '#',
+		BarEmpty:    '.',
+		BlockTop:    '#',
+		BlockBottom: '#',
+		Marker:      '^',
+		Rule:        '-',
+		RuleHeavy:   '=',
+		TreeBranch:  "+-",
+		TreeLast:    "\\-",
+		TreeTrunk:   "|",
+		Absent:      "-",
+		Ellipsis:    "...",
 	}
 )
 

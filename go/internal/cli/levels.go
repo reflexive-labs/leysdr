@@ -270,7 +270,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	stopDrain := s.drainEvents()
 	defer stopDrain()
 
-	view := newLevelsView(s.app.Style, o.width, o.height, o.third)
+	view := newLevelsView(s.app.Style, o.width, o.height, o.third, s.app.IsTTY())
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
 	var w *spectrumWriter

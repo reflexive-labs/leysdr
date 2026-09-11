@@ -127,6 +127,7 @@ survives as height.
 | Spectrum stem | `│` | `\|` | under a column's top edge, above the floor rule |
 | Waterfall shade | ` ░▒▓█` | ` .:+#` | four levels plus empty; densities that tile |
 | Level bar filled / empty | `█` / `░` | `#` / `.` | meter bars |
+| Half cell top / bottom | `▀` / `▄` | `#` / `#` | a filled shape whose edge falls mid-cell, as the clip's envelope does |
 | Marker (squelch, tuned freq) | `▲` | `^` | placed under the axis |
 | Horizontal rule | `─` | `-` | section separators, the noise floor |
 | Heavy rule | `━` | `=` | a break a light rule cannot carry |

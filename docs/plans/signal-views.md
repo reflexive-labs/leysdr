@@ -614,7 +614,7 @@ Both suites green, `make proto` clean, the e2e green at the end.
 - Tests against the fake for the snapshot, the watch loop, the squelch-closed rendering in both
   alphabets, the corrected sums; goldens re-recorded where the header moved.
 
-### SV-10h `[ ]` The waveform as a clip, and frames on the three views (Go lane)
+### SV-10h `[x]` The waveform as a clip, and frames on the three views (Go lane)
 
 - **Filled columns, not dots.** The envelope column is drawn with the block glyphs `█`, `▀` and
   `▄`: full cells between the edges, `▄` for a top cell whose edge falls in its lower half and `▀`

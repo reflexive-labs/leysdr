@@ -353,7 +353,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	stopDrain := s.drainEvents()
 	defer stopDrain()
 
-	view := newScopeView(s.app.Style, o.width, o.scale)
+	view := newScopeView(s.app.Style, o.width, o.scale, s.app.IsTTY())
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
 	var w *spectrumWriter

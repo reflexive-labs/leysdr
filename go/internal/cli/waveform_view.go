@@ -62,19 +62,34 @@ type waveformView struct {
 	// gutterW is the level axis left of the clip, sized the way the scope's
 	// is, so a clip and a trace asked for the same --width line up.
 	gutterW int
+	// framed draws the clip and its axis inside a Box, the way the spectrum's
+	// chart is framed, with the header above it.
+	framed bool
 }
 
-func newWaveformView(st ui.Style, width int, seconds float64, scale scopeScale) *waveformView {
+func newWaveformView(st ui.Style, width int, seconds float64, scale scopeScale, frame bool) *waveformView {
 	if width <= 0 {
 		width = ui.DefaultWidth
 	}
-	return &waveformView{st: st, width: width, seconds: seconds, scale: scale, gutterW: scale.labelWidth() + 1}
+	return &waveformView{
+		st: st, width: width, seconds: seconds, scale: scale,
+		gutterW: scale.labelWidth() + 1, framed: chartFramed(st, width, frame),
+	}
 }
 
-// cols is the clip's width: the resolved width less the level axis and the
-// playhead, which stand either side of it.
+// inner is the width the clip and its axis may use: the whole width, less what
+// the frame spends on its border and padding when there is one.
+func (v *waveformView) inner() int {
+	if v.framed {
+		return v.width - ui.BoxPadding
+	}
+	return v.width
+}
+
+// cols is the clip's width: the width inside any frame, less the level axis
+// and the playhead, which stand either side of it.
 func (v *waveformView) cols() int {
-	if c := v.width - v.gutterW - 1; c >= waveformMinCols {
+	if c := v.inner() - v.gutterW - 1; c >= waveformMinCols {
 		return c
 	}
 	return waveformMinCols
@@ -89,11 +104,19 @@ func (v *waveformView) render(f waveformFrame, scale float64) string {
 	// The playhead is the now edge: the newest column is under it, and the
 	// picture runs backwards from there.
 	head := v.st.Label(v.st.Glyphs().TreeTrunk)
+	var chart strings.Builder
 	for r := range scopeHeight {
-		b.WriteString(scopeGutter(v.st, v.gutterW, r, scale) + v.row(f, r, scale) + head + "\n")
+		chart.WriteString(scopeGutter(v.st, v.gutterW, r, scale) + v.row(f, r, scale) + head + "\n")
 	}
 	for _, l := range v.axis() {
-		b.WriteString(l + "\n")
+		chart.WriteString(l + "\n")
+	}
+	// The clip and the seconds it runs through are one object and are framed
+	// as one; the header reads as prose above it and stays outside.
+	if v.framed {
+		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
+	} else {
+		b.WriteString(chart.String())
 	}
 	return b.String()
 }
@@ -139,46 +162,50 @@ func (v *waveformView) row(f waveformFrame, r int, scale float64) string {
 
 // cell is one column of one row. The envelope is drawn symmetric about the
 // centre from the slice's peak, which is how an editor draws a clip: the
-// picture is the shape of the transmission, not the wave inside it. Its ink
-// is the level ramp for that peak, so a shout is hot and a murmur is cold
-// before the height says so, in the same colours `ley levels` uses.
+// picture is the shape of the transmission, not the wave inside it. It is
+// filled with block glyphs rather than dotted with braille, so the clip reads
+// as a solid shape, and its edges are found on a grid of two halves a row, so
+// a cell the envelope reaches only part way into is drawn as the half it
+// reaches. Its ink is the ramp fraction of the peak against the scale on
+// screen, so the loudest thing in the picture is hot whatever the scale is,
+// in the same colours `ley levels` uses.
 func (v *waveformView) cell(c waveformCol, r int, scale float64) (string, int) {
 	if !c.present || !c.open {
 		return " ", inkPlain
 	}
 	g := v.st.Glyphs()
-	// Braille cells are 2 x 4 dots, so the picture resolves the envelope four
-	// times as finely as the character grid the ASCII set has to draw it on.
-	rows, dots := scopeHeight*4, 4
-	if g.Trace != "" {
-		rows, dots = scopeHeight, 1
-	}
-	top, bottom := scopeRow(c.peak, scale, rows), scopeRow(-c.peak, scale, rows)
+	halves := scopeHeight * 2
+	top, bottom := scopeRow(c.peak, scale, halves), scopeRow(-c.peak, scale, halves)
 	if bottom-top <= 1 {
-		// An envelope that reaches no dot either side of the centre is under
+		// An envelope that reaches no half either side of the centre is under
 		// the resolution of the picture, and a mark around the centre would
 		// claim more of it than the view knows.
-		return v.centre(r, scopeRow(0, scale, rows)/dots)
+		return v.centre(r, scopeRow(0, scale, halves)/2)
 	}
-	ink := levelsInk(levelsFrac(c.peakDbfs))
-	if dots == 1 {
-		if r < top || r > bottom {
-			return " ", inkPlain
-		}
+	ink := levelsInk(waveformFrac(c.peak, scale))
+	upper, lower := r*2 >= top && r*2 <= bottom, r*2+1 >= top && r*2+1 <= bottom
+	switch {
+	case upper && lower:
 		return string(g.BarFull), ink
+	case upper:
+		// The envelope's lower edge falls in this cell's upper half.
+		return string(g.BlockTop), ink
+	case lower:
+		// Its upper edge falls in this cell's lower half.
+		return string(g.BlockBottom), ink
 	}
-	// A column fills both dot columns of the cell it stands in, so the
-	// envelope reads as a solid clip rather than as a comb.
-	bits := byte(0)
-	for dot := range dots {
-		if d := r*dots + dot; d >= top && d <= bottom {
-			bits |= brailleDots[0][dot] | brailleDots[1][dot]
-		}
+	return " ", inkPlain
+}
+
+// waveformFrac is how much of the colour ramp a column's peak takes: its
+// amplitude against the scale the frame is drawn at. The reference is the
+// picture rather than full scale, so a quiet passage under --scale 0.1 still
+// has colour in it and the header's scale says what full colour means.
+func waveformFrac(peak, scale float64) float64 {
+	if scale <= 0 || math.IsNaN(peak) {
+		return 0
 	}
-	if bits == 0 {
-		return " ", inkPlain
-	}
-	return string(rune(brailleBase + int(bits))), ink
+	return math.Max(0, math.Min(1, math.Abs(peak)/scale))
 }
 
 // centre draws the rule a slice with nothing in it leaves behind: the line the

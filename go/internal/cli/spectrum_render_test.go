@@ -473,7 +473,7 @@ func TestSpectrumFrame(t *testing.T) {
 	}{
 		{"piped", ui.Style{Unicode: true, Width: 100}, 100, false},
 		{"ascii", ui.Style{Width: 100}, 100, true},
-		{"narrow", ui.Style{Unicode: true, Width: spectrumFrameMinWidth - 1}, spectrumFrameMinWidth - 1, true},
+		{"narrow", ui.Style{Unicode: true, Width: chartFrameMinWidth - 1}, chartFrameMinWidth - 1, true},
 	} {
 		v := newSpectrumView(tc.style, tc.width, 0, false, tc.frame)
 		got := v.render(bins, nil, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
@@ -490,7 +490,7 @@ func TestSpectrumFrame(t *testing.T) {
 // the ink is still nothing but ink.
 func TestSpectrumFramedFitsWidth(t *testing.T) {
 	bins := spectrumFixture(1024, 640, -21)
-	for _, width := range []int{spectrumFrameMinWidth, 80, 100, ui.MaxWidth} {
+	for _, width := range []int{chartFrameMinWidth, 80, 100, ui.MaxWidth} {
 		plain := renderFramed(t, ui.Style{Unicode: true, Width: width}, width, bins)
 		styled := renderFramed(t, ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: width}, width, bins)
 		if got := ui.Strip(styled); got != plain {

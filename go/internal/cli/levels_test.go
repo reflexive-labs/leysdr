@@ -85,14 +85,14 @@ func TestLevelsStillFrame(t *testing.T) {
 		{"ascii", ui.Style{}, levelsStillASCII},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := newLevelsView(tc.st, 80, levelsHeight, false)
+			v := newLevelsView(tc.st, 80, levelsHeight, false, false)
 			if got := v.render(levelsTestFrame(v)); got != tc.golden {
 				t.Errorf("the meter differs from the golden\n--- want\n%s\n--- got\n%s", tc.golden, got)
 			}
 		})
 	}
 	// Colour is ink over the same screen and never a different one.
-	v := newLevelsView(ui.Style{Unicode: true, Color: true, Profile: ui.ProfileTrueColor}, 80, levelsHeight, false)
+	v := newLevelsView(ui.Style{Unicode: true, Color: true, Profile: ui.ProfileTrueColor}, 80, levelsHeight, false, false)
 	if got := ui.Strip(v.render(levelsTestFrame(v))); got != levelsStillUnicode {
 		t.Errorf("the inked meter strips to a different picture\n--- want\n%s\n--- got\n%s", levelsStillUnicode, got)
 	}
@@ -148,7 +148,7 @@ func TestLevelsSquelchClosedDrawsNothingLit(t *testing.T) {
 		{"ascii", ui.Style{}, levelsClosedASCII},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := newLevelsView(tc.st, 80, levelsHeight, false)
+			v := newLevelsView(tc.st, 80, levelsHeight, false, false)
 			f := levelsTestFrame(v)
 			f.squelchOpen = false
 			if got := v.render(f); got != tc.golden {
@@ -158,7 +158,7 @@ func TestLevelsSquelchClosedDrawsNothingLit(t *testing.T) {
 	}
 	// A squelch nobody has reported yet is not a shut one: until the daemon's
 	// first meter the bands are drawn as they are measured.
-	v := newLevelsView(ui.Style{Unicode: true}, 80, levelsHeight, false)
+	v := newLevelsView(ui.Style{Unicode: true}, 80, levelsHeight, false, false)
 	f := levelsTestFrame(v)
 	f.squelchOpen, f.squelchKnown = false, false
 	if got := v.render(f); strings.Contains(got, "squelch") || got == levelsClosedUnicode {
@@ -231,7 +231,7 @@ func TestLevelsScaleIsAMetersNotACharts(t *testing.T) {
 	if got := levelsFrac(-200); got != 0 {
 		t.Errorf("levelsFrac(-200) = %.3f, want the floor", got)
 	}
-	v := newLevelsView(ui.Style{Unicode: true}, 80, levelsHeight, false)
+	v := newLevelsView(ui.Style{Unicode: true}, 80, levelsHeight, false, false)
 	seen := map[int]float64{}
 	for _, m := range levelsMarks {
 		r := v.markRow(m)
@@ -377,13 +377,13 @@ func TestLevelsBandLabels(t *testing.T) {
 // lives in, and the master pair loses its words before it loses its numbers.
 func TestLevelsWidthRules(t *testing.T) {
 	st := ui.Style{Unicode: true}
-	if n := len(newLevelsView(st, 120, levelsHeight, true).bands); n != len(levelsThirdHz) {
+	if n := len(newLevelsView(st, 120, levelsHeight, true, false).bands); n != len(levelsThirdHz) {
 		t.Errorf("120 columns drew %d bands, want the %d third-octave ones", n, len(levelsThirdHz))
 	}
-	if n := len(newLevelsView(st, 90, levelsHeight, true).bands); n != len(levelsOctaveHz) {
+	if n := len(newLevelsView(st, 90, levelsHeight, true, false).bands); n != len(levelsOctaveHz) {
 		t.Errorf("90 columns drew %d bands with --bands third, want the %d octaves", n, len(levelsOctaveHz))
 	}
-	if n := len(newLevelsView(st, 40, levelsHeight, false).bands); n != len(levelsNarrowHz) {
+	if n := len(newLevelsView(st, 40, levelsHeight, false, false).bands); n != len(levelsNarrowHz) {
 		t.Errorf("40 columns drew %d bands, want the %d speech bands", n, len(levelsNarrowHz))
 	}
 	for _, tc := range []struct {
@@ -394,7 +394,7 @@ func TestLevelsWidthRules(t *testing.T) {
 		{80, 2, "rms"},
 		{levelsWordsCols - 1, 1, "-18"},
 	} {
-		v := newLevelsView(st, tc.width, levelsHeight, false)
+		v := newLevelsView(st, tc.width, levelsHeight, false, false)
 		got := v.labels(levelsTestFrame(v))
 		if len(got) != tc.lines {
 			t.Errorf("at %d columns the master pair takes %d label lines, want %d:\n%s",
@@ -407,7 +407,7 @@ func TestLevelsWidthRules(t *testing.T) {
 	}
 	// Every picture stays inside the width it was given, whatever it drops.
 	for _, width := range []int{40, 44, 60, 80, 100, 120, 160} {
-		v := newLevelsView(st, width, levelsHeight, true)
+		v := newLevelsView(st, width, levelsHeight, true, false)
 		for _, line := range strings.Split(v.render(levelsTestFrame(v)), "\n") {
 			if w := ui.Visible(line); w > width {
 				t.Errorf("at %d columns a line is %d wide: %q", width, w, line)
