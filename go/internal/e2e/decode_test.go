@@ -138,3 +138,74 @@ func ndjson(t *testing.T, s string) []map[string]any {
 	}
 	return out
 }
+
+// Driver C end to end (docs/plans/decoders.md, DEC-9): the real daemon decodes a SAME weather
+// alert, a predicate keeps only the county asked for, and a shell notifier fires with the record
+// -- the trigger a watch exists to raise. A non-matching county fires nothing.
+func TestWatchSameCountyAgainstRealDaemon(t *testing.T) {
+	decoders := os.Getenv("LEYLINE_DECODERS")
+	if decoders == "" {
+		t.Skip("set LEYLINE_DECODERS to the repository's decoders/ directory (make e2e does)")
+	}
+	fixture, err := filepath.Abs("../../../fixtures/same_alert.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e, _ := setup(t, "--store", filepath.Join(t.TempDir(), "store"), "--decoders", decoders)
+
+	stopPlay, _ := e.startLive("play", fixture, "--no-audio", "--loop", "--json")
+	defer func() { _ = stopPlay() }()
+	e.waitChannels(1)
+
+	// The alert names Kansas FIPS 20103 and 20209; a watch on 20103 sees it, one on a Texas county
+	// does not. The shell notifier appends the event code to a file, so a match is a line and a
+	// miss is an empty file.
+	hit := filepath.Join(t.TempDir(), "hit.txt")
+	out, err := e.run("watch", "same", "--county", "20103",
+		"--notify=shell:printf %s\\\\n \"$LEYLINE_DEVICE_ID\" >> "+hit,
+		"--json", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley watch same: %v\nstdout: %s", err, out)
+	}
+	recs := ndjson(t, out)
+	if len(recs) != 1 {
+		t.Fatalf("want one matching alert, got %d: %s", len(recs), out)
+	}
+	rec := recs[0]
+	if rec["protocol"] != "same" || rec["kind"] != "alert" {
+		t.Errorf("not a SAME alert: %v", rec)
+	}
+	fields, _ := rec["fields"].(map[string]any)
+	if fips, _ := fields["fips"].(map[string]any); fips == nil || !strings.Contains(fips["text"].(string), "20103") {
+		t.Errorf("the alert does not name the county watched: %v", fields)
+	}
+	if v, _ := rec["validity"].(map[string]any); v == nil || v["endNs"] == nil {
+		t.Errorf("a SAME alert carries a validity window: %v", rec)
+	}
+	// The notifier fired for the match.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		b, _ := os.ReadFile(hit)
+		if strings.Contains(string(b), "KEAX/NWS") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the shell notifier did not fire for the matching county (file: %q)", string(b))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// A county the alert does not name: no record within a bounded wait, and the notifier is silent.
+	miss := filepath.Join(t.TempDir(), "miss.txt")
+	ctxOut, _ := e.runFor(6*time.Second, "watch", "same", "--county", "48113",
+		"--notify=shell:printf hit >> "+miss, "--json", "--count", "1")
+	if n := len(ndjson(t, ctxOut)); n != 0 {
+		t.Errorf("a non-matching county still delivered %d records: %s", n, ctxOut)
+	}
+	if b, _ := os.ReadFile(miss); len(b) != 0 {
+		t.Errorf("the notifier fired for a county the alert does not name: %q", string(b))
+	}
+}

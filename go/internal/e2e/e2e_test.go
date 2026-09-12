@@ -84,6 +84,28 @@ func setup(t *testing.T, daemonArgs ...string) (*env, *exec.Cmd) {
 	return e, daemon
 }
 
+// runFor runs a ley verb with a deadline, SIGINT-ing it when the deadline passes, and returns
+// whatever it wrote. It is how a watch that is meant to find nothing is tested: it cannot finish
+// on its own, so the test stops it and asserts on the silence.
+func (e *env) runFor(d time.Duration, args ...string) (string, error) {
+	cmd := exec.Command(e.ley, append([]string{"--socket", e.socket}, args...)...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Start(); err != nil {
+		e.t.Fatalf("start ley %v: %v", args, err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return stdout.String(), err
+	case <-time.After(d):
+		_ = cmd.Process.Signal(syscall.SIGINT)
+		<-done
+		return stdout.String(), nil
+	}
+}
+
 // run executes one ley verb against the temp socket and returns stdout.
 func (e *env) run(args ...string) (string, error) {
 	cmd := exec.Command(e.ley, append([]string{"--socket", e.socket}, args...)...)
