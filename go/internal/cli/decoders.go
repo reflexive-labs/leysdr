@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -138,4 +139,29 @@ func formatBytes(n uint64) string {
 	default:
 		return fmt.Sprintf("%d bytes", n)
 	}
+}
+
+// completeDecoders offers the names the daemon has installed for a <decoder> argument, the way
+// kubectl and helm complete plugin names from what is present rather than a list baked into the
+// binary (docs/design/decoders.md: a decoder is data, not a compiled-in verb). Completion runs
+// without a guaranteed daemon, so any failure yields no suggestions rather than an error.
+func completeDecoders(app *App, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	c, err := app.dial(ctx)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	defer c.Close()
+	resp, err := c.ListDecoders(ctx)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []cobra.Completion
+	for _, m := range resp.GetDecoders() {
+		if strings.HasPrefix(m.GetName(), toComplete) {
+			out = append(out, cobra.CompletionWithDesc(m.GetName(), m.GetDescription()))
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
 }

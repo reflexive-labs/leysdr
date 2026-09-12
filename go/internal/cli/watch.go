@@ -44,7 +44,9 @@ func newWatchCommand(app *App) *cobra.Command {
 		Long: `watch runs a decoder like 'ley decode', but only shows records that pass a
 filter, and can hand a match to a notifier. It is how you wait for one thing
 on the air: a county's weather alert, a particular station, traffic from a
-place.
+place. The decoder is any 'ley decoders' lists; the filter and the notifier
+work the same whichever one you name, because they read the record every
+decoder produces, not the decoder.
 
 By default watch stays attached and streams the matching records, the way
 decode streams every record. --detach leaves the job running in the daemon
@@ -52,15 +54,20 @@ after ley exits, so the notifier fires with nothing connected -- which is the
 point of a watch: an alert must reach you when you are not looking. --detach
 prints the job id and how to stop it ('ley jobs cancel') and exits.
 
-The filter is built from the flags, ANDed together:
+The filter is built from the flags, ANDed together. --where is the general
+form and works on any field a decoder emits; --near and --county are shortcuts
+for two common cases:
 
-  --where field=value   an equality test; also field!=value (not equal),
-                        field~value (contains), and field>value, >=, <, <=
-                        (numeric). Repeat for more tests.
-  --county FIPS         a county's records: a CONTAINS test on the 'fips'
-                        field a SAME alert carries. Repeat for more counties;
-                        a record matches if it names any of them.
-  --near LAT,LON --radius R   records from a place (R is 10km, 500m, 5nm, 3mi).
+  --where field=value   the general test: any field, by name. Also field!=value
+                        (not equal), field~value (contains), and field>value,
+                        >=, <, <= (numeric). Repeat for more tests.
+  --near LAT,LON --radius R   records with a position within R of a point
+                        (R is 10km, 500m, 5nm, 3mi). Position is a field every
+                        decoder that has one reports, so this is not tied to any.
+  --county FIPS         shorthand for --where fips~FIPS: the county codes a SAME
+                        weather alert carries. Repeat for more; a record matches
+                        if it names any of them. A decoder with no 'fips' field
+                        never matches, which is the honest answer.
 
 --notify hands each match to a notifier. Bare --notify is a macOS
 notification; --notify=webhook:URL POSTs the record, --notify=shell:CMD runs
@@ -76,6 +83,12 @@ notifier, so it fires whether or not ley is attached.
   ley watch same --county 06009 --notify=shell:'say alert' --detach`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
+		ValidArgsFunction: func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			if len(args) != 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return completeDecoders(app, toComplete)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
 			if freq != "" {

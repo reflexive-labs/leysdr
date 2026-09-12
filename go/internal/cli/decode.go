@@ -60,6 +60,12 @@ reads; 'ley jobs cancel' is how to stop one.
   ley decode aprs --json | jq -r .deviceId`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
+		ValidArgsFunction: func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			if len(args) != 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return completeDecoders(app, toComplete)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
 			if freq != "" {
