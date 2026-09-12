@@ -1,7 +1,7 @@
 # Trademark policy
 
-Daniel Pupius claims "Leyline" and the `ley` command name as trademarks for this project. They are
-unregistered: use ™ with them if you need a symbol, never ® until a registration issues. A
+Daniel Pupius claims "Leyline", the `ley` command name and "leysdr" (the repository, domain and
+handle) as trademarks for this project. They are unregistered: use ™ with them if you need a symbol, never ® until a registration issues. A
 clearance search and an application are planned before the first public release.
 
 The code is open source (see `LICENSE` and `engine/LICENSE`), and open code does not open the name.
@@ -20,7 +20,7 @@ licence that grants none. This page says what you can do with the name without a
 
 ## Please ask first
 
-- Using "Leyline", `ley`, or a confusingly similar name for a modified version, a product, a
+- Using "Leyline", `ley`, "leysdr", or a confusingly similar name for a modified version, a product, a
   service, a domain, an app-store listing, or a company. A fork that changes behaviour needs its own
   name; "Leyline Pro", "Leyline for Windows" and "Leyline SDR Cloud" are the kind of thing this
   policy exists for.

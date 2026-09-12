@@ -8,8 +8,8 @@ it links librtlsdr. engine/Sources/LeylineProto is generated from the Apache-2.0
 definitions in proto/ and stays Apache-2.0. Every source file names its licence on an
 SPDX-License-Identifier line; docs/decisions/D2-licensing.md is the decision and its reasoning.
 
-"Leyline" is a trademark of Daniel Pupius. The licences above do not grant trademark rights;
-TRADEMARK.md says what use of the name is fine without asking.
+Daniel Pupius claims "Leyline", "ley" and "leysdr" as trademarks. The licences above do not grant
+trademark rights; TRADEMARK.md says what use of the names is fine without asking.
 
 Third-party software
 ====================
