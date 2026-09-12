@@ -44,6 +44,9 @@ type scopeFrame struct {
 	// tuningHz reads the DC offset as a tuning error, NaN where the mode and
 	// the tap give it no such meaning.
 	tuningHz float64
+	// fullScaleHz is what the top of the trace is worth in hertz, 0 on a tap
+	// whose samples are amplitude.
+	fullScaleHz uint32
 	// what names the channel: its frequency and mode.
 	what string
 	// tone is the daemon's sub-audible report, nil until it has made one. The
@@ -129,6 +132,9 @@ func (v *scopeView) header(f scopeFrame) []string {
 	if v.scale.named() {
 		segs = append(segs, headerSeg{name: "scale ", value: fmt.Sprintf("±%g", f.scale)})
 	}
+	if note := fullScaleNote(f.tap, f.fullScaleHz); note != "" {
+		segs = append(segs, headerSeg{name: "full scale ", value: note})
+	}
 	if !math.IsNaN(f.tuningHz) {
 		segs = append(segs, headerSeg{name: "tuning ", value: fmt.Sprintf("%+.0f Hz", f.tuningHz)})
 	}
@@ -190,6 +196,18 @@ func scopeToneText(sa *leylinev1.SubAudible) string {
 		text += " (" + strings.Join(parts, ", ") + ")"
 	}
 	return text
+}
+
+// fullScaleNote says what ±1.0 on the tap is worth, for the views whose rows
+// are fractions of it. An FM channel's full scale follows its own bandwidth,
+// so a narrow radio and a broadcast one fill the same rows for very different
+// deviations and a reader who knew only the mode would read the picture
+// wrong. "" where the samples are amplitude and stand for no deviation.
+func fullScaleNote(tap leylinev1.AudioTap, fullScaleHz uint32) string {
+	if tap != leylinev1.AudioTap_TAP_DEMOD || fullScaleHz == 0 {
+		return ""
+	}
+	return "±" + formatBandwidth(fullScaleHz)
 }
 
 // scopeTapName is the tap as the flag spells it.
@@ -295,9 +313,9 @@ func scopeSpan(samples []float32, col, cols int) (lo, hi float64, ok bool) {
 }
 
 // scopeRow maps a sample to a row from the top, over a vertical scale of
-// ±scale. At the default full scale a trace that grows is a signal that grew;
-// under --scale the gutter and the header say what the rows are worth, and a
-// sample past the scale is drawn at the edge rather than off the picture.
+// ±scale. The gutter and the header say what the rows are worth, since the
+// fitted scale moves between frames, and a sample past the scale is drawn at
+// the edge rather than off the picture.
 func scopeRow(v, scale float64, rows int) int {
 	if math.IsNaN(v) {
 		v = 0

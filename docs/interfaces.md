@@ -52,18 +52,18 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # scrolling history of FFT rows as a terminal heatmap; a band plan covers the whole band, not one frequency
 ├── phosphor [frequency] [--span N] [--band NAME] [--bins N] [--levels N] [--half-life S] [--rate N] [--count N] [--device SEL] [--retune] [--width N]
 │                                    # per-bin amplitude histogram decayed over time, the "which bins are ever busy" view
-├── scope <freq|preset|chan_ID> [--tap audio|demod] [--window MS] [--trigger auto|free] [--scale full|auto|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
+├── scope <freq|preset|chan_ID> [--tap audio|demod] [--window MS] [--trigger auto|free] [--scale auto|full|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
 │                                    # the demodulated waveform, one window a frame, as a braille trace (three ASCII
 │                                    # levels with --ascii); --tap demod draws the detector's own output, where an
-│                                    # NFM channel still carries its CTCSS tone and its tuning error; --scale fits
-│                                    # the trace to a signal that does not use the whole range
+│                                    # NFM channel still carries its CTCSS tone and its tuning error; --scale auto,
+│                                    # the default, fits the trace to the signal; --scale full is the tap's whole range
 ├── levels <freq|preset|chan_ID> [--tap audio|demod] [--bands octave|third] [--watch] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N] [--height N]
 │                                    # the rack unit's band meter over the daemon's audio spectrum: one LED ladder
 │                                    # per octave band, and the meter's rms/peak pair at the right; one still by
 │                                    # default and the live meter (caps, ballistics, --rate, --count) under --watch,
 │                                    # as spectrum does; the ladders draw unlit while the squelch is shut;
 │                                    # --tap demod is where a CTCSS tone still stands in the 125 Hz band
-├── waveform <freq|preset|chan_ID> [--tap audio|demod] [--seconds S] [--scale full|auto|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
+├── waveform <freq|preset|chan_ID> [--tap audio|demod] [--seconds S] [--scale auto|full|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
 │                                    # the clip view: seconds of audio as a peak envelope about the centre, newest
 │                                    # at the right, blank where the squelch was shut
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]

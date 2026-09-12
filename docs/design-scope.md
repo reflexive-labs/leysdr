@@ -26,11 +26,12 @@ So the view needs two taps, and the second is the one that makes it worth buildi
 - **`audio`** — what the speaker gets: after the high-pass, de-emphasis, limiter and AGC. The default.
 - **`demod`** — the detector's own output before any audio conditioning. For NFM that is the
   discriminator: the voice, the PL tone riding under it, and a DC offset that is the tuning error
-  in hertz (±5 kHz ≙ ±1.0). For AM it is the envelope, carrier level included as DC. For USB/LSB and
-  CW it is the product detector before AGC. For WFM it is the discriminator before the 15 kHz audio
-  low-pass, so the 19 kHz stereo pilot is visible at 48 kHz. When the squelch is closed the `audio`
-  tap is zeros, as it is for the speaker; the `demod` tap keeps flowing, because "what is the
-  transmitter sending between words" is exactly what it is for.
+  in hertz, read against the channel's own full-scale deviation (±2.5 kHz ≙ ±1.0 on a 12.5 kHz
+  channel), which the audio descriptor answers. For AM it is the envelope, carrier level included
+  as DC. For USB/LSB and CW it is the product detector before AGC. For WFM it is the discriminator
+  before the 15 kHz audio low-pass, so the 19 kHz stereo pilot is visible at 48 kHz. When the
+  squelch is closed the `audio` tap is zeros, as it is for the speaker; the `demod` tap keeps
+  flowing, because "what is the transmitter sending between words" is exactly what it is for.
 
 Both taps are the existing `AUDIO` bulk stream at the channel's audio rate (48 kHz at 2.4 MSPS),
 `S16` or `F32`, `LATEST_WINS`. The wire change is one additive field:
@@ -54,19 +55,21 @@ already uses to drive `SUB_AUDIBLE` telemetry, so the CLI view is testable.
 [--rate N] [--count N]`, plus the tune flags every listening verb takes.
 
 - One window of samples per frame, drawn as a trace across the terminal width; the vertical axis is
-  full scale (±1.0, so ±5 kHz deviation for NFM `demod`). Braille cells (2 × 4 dots) on terminals
-  that have them; the `--ascii` set draws with three levels per cell. Up to 20 frames a second;
-  `--count` bounds it for scripts.
+  a fraction of full scale, which on the `demod` tap of an FM mode is the deviation the daemon
+  answers in the audio descriptor (±2.5 kHz on a 12.5 kHz NFM channel, ±75 kHz on WFM) and which the
+  header names. Braille cells (2 × 4 dots) on terminals that have them; the `--ascii` set draws with
+  three levels per cell. Up to 20 frames a second; `--count` bounds it for scripts.
 - `--window` defaults to 40 ms: a syllable of voice, two cycles of 50 Hz, four of a 100 Hz tone.
 - `--trigger auto` (default) starts each frame at a rising zero crossing when the window is
   periodic enough to hold still (a tone, a PL tone between words), else free-runs; `free` never
   triggers. This is presentation, the same as a bench scope's trigger.
 - The header names the channel, mode, tap and window, and the frame's peak and RMS in dBFS. On the
-  `demod` tap it adds the DC offset as a tuning error in hertz for FM modes. When the daemon's
-  sub-audible detector has a tone it prints `PL 100.0 Hz (measured 100.02 Hz, 18 dB, confidence
-  0.9)` from the `SUB_AUDIBLE` telemetry. **The number always comes from the daemon; the view never
-  estimates the tone itself** (invariant 2 and the detector-stays-honest rule). The picture is the
-  evidence, the header is the daemon's claim, and they can disagree, which is the point.
+  `demod` tap it adds the deviation full scale stands for and the DC offset as a tuning error in
+  hertz for FM modes. When the daemon's sub-audible detector has a tone it prints `PL 100.0 Hz
+  (measured 100.02 Hz, 18 dB, confidence 0.9)` from the `SUB_AUDIBLE` telemetry. **The number always
+  comes from the daemon; the view never estimates the tone itself** (invariant 2 and the
+  detector-stays-honest rule). The picture is the evidence, the header is the daemon's claim, and
+  they can disagree, which is the point.
 - `--json` prints one object per frame, `{seq, sample_index, sample_rate, tap, window_ms,
   peak_dbfs, rms_dbfs, dc, tone_hz}`, with no samples: the samples are `ley listen --format json`.
   `peak`, `rms` and `dc` are frame statistics, presentation over the daemon's stream, like

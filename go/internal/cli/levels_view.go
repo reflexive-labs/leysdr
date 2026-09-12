@@ -47,7 +47,10 @@ type levelsFrame struct {
 	rmsDb, peakDb float64
 	tap           leylinev1.AudioTap
 	what          string
-	squelchOpen   bool
+	// fullScaleHz is what 0 dBFS is worth in hertz on a tap whose samples are
+	// frequency, 0 where they are amplitude.
+	fullScaleHz uint32
+	squelchOpen bool
 	// squelchKnown is false until the daemon has sent a meter, because a view
 	// that announced a closed squelch before then would be guessing.
 	squelchKnown bool
@@ -217,6 +220,9 @@ func (v *levelsView) header(f levelsFrame) []string {
 	segs := []headerSeg{
 		{value: f.what},
 		tapSeg(f.tap),
+	}
+	if note := fullScaleNote(f.tap, f.fullScaleHz); note != "" {
+		segs = append(segs, headerSeg{name: "full scale ", value: note})
 	}
 	if f.squelchKnown {
 		segs = append(segs, squelchSeg(v.st, f.squelchOpen))

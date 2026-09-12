@@ -1,8 +1,8 @@
 scope draws what the demodulator made: one window of samples per frame,
-full scale top to bottom, redrawn where it stands. It is the view that tells
-the modes apart -- FM voice through the AM detector is a flat line with
-ripple, a carrier in CW is a sine, NFM voice is a voice -- and on the demod
-tap it is the only view that shows what rides under the audio.
+fitted to the signal top to bottom, redrawn where it stands. It is the view
+that tells the modes apart -- FM voice through the AM detector is a flat
+line with ripple, a carrier in CW is a sine, NFM voice is a voice -- and on
+the demod tap it is the only view that shows what rides under the audio.
 
 It takes a frequency, a preset or a channel id the way 'ley listen' does,
 making a capture and a channel when none exists and removing what it made on
@@ -21,12 +21,13 @@ detector, and the daemon refuses the demod tap on one.
 repeats steadily, which holds a tone still; free lets the trace run. The
 trigger is presentation, the same as a bench scope's.
 
---scale full, the default, draws the whole range the tap can carry, so a
-trace that grows is a signal that grew. That range is the mode's full
-deviation on the demod tap -- 5 kHz on NFM -- and speech spends most of its
-time at a tenth of it, a dot or two high: --scale auto fits the trace to the
-signal and holds the fit for about a second so it does not flicker between
-syllables, and --scale 0.2 pins it. The gutter names whichever is in force.
+--scale auto, the default, fits the trace to the signal and holds the fit for
+about a second so it does not flicker between syllables; a spike louder than
+the rest of that second draws clamped rather than shrinking the picture.
+--scale full draws the whole range the tap can carry, so a trace that grows
+is a signal that grew, and on the demod tap that range is the channel's own
+full deviation, which the header names in hertz; --scale 0.2 pins it. The
+gutter names whichever is in force.
 
 The tone in the header is the daemon's measurement. scope never estimates one
 itself, so the picture and the claim can disagree, which is the point of
@@ -43,7 +44,7 @@ Examples:
   ley scope 146.52                      # what the speaker would hear
   ley scope 145.23 --tap demod          # the PL tone riding under the voice
   ley scope chan_01J... --window 100    # a wider window on a channel already running
-  ley scope 145.23 --tap demod --scale auto --window 250   # the shape of speech
+  ley scope 145.23 --tap demod --scale full --window 250   # the whole deviation
   ley scope 101.1 --tap demod --count 20 --json
 
 Flags:
@@ -55,7 +56,7 @@ Flags:
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
       --rate float       frames a second (at most 20) (default 20)
       --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
-      --scale string     how far from the centre the top of the trace stands: full (±1.0), auto (fit the signal), or a number such as 0.2 (default "full")
+      --scale string     how far from the centre the top of the trace stands: auto (fit the signal), full (±1.0), or a number such as 0.2 (default "auto")
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
       --tap string       which stage to draw: audio (what the speakers get) or demod (the detector's output, before the audio chain) (default "audio")
       --trigger string   auto holds a repeating window still; free lets the trace run (default "auto")

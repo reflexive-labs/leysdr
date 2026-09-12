@@ -42,8 +42,11 @@ func TestMetersAgainstRealDaemon(t *testing.T) {
 	}
 	// And they read as the levels the recording carries. A band is the sum of
 	// its bins corrected for the Hann window, so a tone in one reads its own
-	// level rather than the 1.76 dB the window spread it over.
-	for _, tc := range []struct{ hz, want float64 }{{125, -17}, {1000, -6}} {
+	// level rather than the 1.76 dB the window spread it over. The fixture's
+	// channel is 12.5 kHz wide, so full scale on the detector is the 2.5 kHz
+	// of deviation it can carry and both tones read 6 dB hotter than they
+	// would against a 5 kHz one.
+	for _, tc := range []struct{ hz, want float64 }{{125, -11}, {1000, 0}} {
 		if math.Abs(demod[tc.hz]-tc.want) > 1 {
 			t.Errorf("demod tap: the %g Hz band reads %.1f dBFS, want %.0f within 1 dB: the tone is %.0f dBFS in the fixture",
 				tc.hz, demod[tc.hz], tc.want, tc.want)

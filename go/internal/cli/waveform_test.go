@@ -189,6 +189,49 @@ func TestWaveformRemovesTheDemodDC(t *testing.T) {
 	}
 }
 
+// The scale the clip is fitted to is the columns' percentile, not the loudest
+// of them: one squelch tail at several times full scale stays in the picture
+// for as long as the window is wide, and a scale it had set would draw every
+// word of the transmission around it as a flat line.
+func TestWaveformBurstDoesNotOwnTheScale(t *testing.T) {
+	cols := make([]waveformCol, 40)
+	for i := range cols {
+		cols[i] = waveformCol{present: true, open: true, peak: 0.2}
+	}
+	quiet := waveformPeak(cols)
+	if math.Abs(quiet-0.2) > 1e-9 {
+		t.Fatalf("a window of 0.2 columns fits at %.3f, want 0.2", quiet)
+	}
+	cols[7].peak = 4.8
+	if got := waveformPeak(cols); math.Abs(got-quiet) > 1e-9 {
+		t.Errorf("one burst column took the fit to %.3f, want it left at %.3f", got, quiet)
+	}
+	// A transmission is not a burst: once the loud columns are more than the
+	// top tenth of the window, they are what the clip is drawn to.
+	for i := range 8 {
+		cols[i].peak = 4.8
+	}
+	if got := waveformPeak(cols); got != 4.8 {
+		t.Errorf("a fifth of the window at 4.8 fits at %.3f, want the clip drawn to it", got)
+	}
+}
+
+// The clip says what its rows are worth on a tap whose samples are frequency,
+// because full scale follows the channel's bandwidth and a reader who knew
+// only the mode would put the wrong deviation on a narrow one.
+func TestWaveformHeaderNamesFullScale(t *testing.T) {
+	v := newWaveformView(ui.Style{Unicode: true}, waveformTestWidth, 10, scopeScale{fixed: 1}, false)
+	f := waveformTestFrame(v.cols())
+	f.tap, f.fullScaleHz = leylinev1.AudioTap_TAP_DEMOD, 2_500
+	if got := strings.Join(v.header(f, 1), "\n"); !strings.Contains(got, "full scale ±2.5 kHz") {
+		t.Errorf("the demod header does not name its full scale:\n%s", got)
+	}
+	f.tap, f.fullScaleHz = leylinev1.AudioTap_TAP_AUDIO, 2_500
+	if got := strings.Join(v.header(f, 1), "\n"); strings.Contains(got, "full scale") {
+		t.Errorf("the audio tap named a deviation it does not carry:\n%s", got)
+	}
+}
+
 // The timebase runs backwards from the playhead in round steps, four to eight
 // of them, the newest at the right edge: an axis that marked -7.3 s would be
 // arithmetic, not a timebase.

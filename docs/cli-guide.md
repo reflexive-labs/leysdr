@@ -342,56 +342,61 @@ read, not a list to act on.
 
 ## 7. See the waveform
 
-`ley scope` draws what the demodulator made: one window of samples a frame, full scale top to
-bottom, redrawn where it stands. It answers two questions the level meter and the spectrum cannot,
-because both of those are measured before demodulation. The first is *what does this mode actually
-do* — FM voice through the AM detector is a flat line with ripple, a carrier in CW is a sine, NFM
-voice is a voice, and `ley set mode am` from another terminal changes the picture while you watch.
-The second needs the other tap.
+`ley scope` draws what the demodulator made: one window of samples a frame, fitted to the signal top
+to bottom, redrawn where it stands. It answers two questions the level meter and the spectrum
+cannot, because both of those are measured before demodulation. The first is *what does this mode
+actually do* — FM voice through the AM detector is a flat line with ripple, a carrier in CW is a
+sine, NFM voice is a voice, and `ley set mode am` from another terminal changes the picture while
+you watch. The second needs the other tap.
 
 `--tap audio` (the default) is what the speakers get, after the high-pass, de-emphasis and gain
 control. `--tap demod` is the detector's own output before any of that, and on an NFM channel that
 is where the CTCSS (PL) tone lives: the audio chain high-passes at 300 Hz precisely to remove it,
 so a picture of what you hear cannot show it. The demod tap also keeps drawing while the squelch is
 closed — *what is the transmitter sending between words* is what it is for — and its DC offset is
-the tuning error, which the header reads out in hertz (full scale is ±5 kHz on NFM, ±75 kHz on WFM).
+the tuning error, which the header reads out in hertz against the deviation the top of the trace
+stands for. That deviation is the channel's own, which the header names: a 12.5 kHz NFM channel
+cannot carry more than ±2.5 kHz, a 25 kHz one goes to ±5 kHz, and WFM is broadcast's ±75 kHz.
 
 ```console
 $ ley scope 145.23 --tap demod --window 10
-145.230 MHz NFM  tap demod  window 10 ms  peak -4 dBFS  rms -9 dBFS
-tuning +100 Hz  PL 100.0 Hz (measured 100.12 Hz, 18 dB, confidence 0.9)
-+1│
-  │⠀⢀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠀⢠⣄⠀⠀⠀⠀⠀⠀⡤⡄⠀⠀⠀⠀⠀⢀⢤⡀
-  │⢠⠃⠈⡆⠀⠀⠀⠀⢰⠋⢳⠀⠀⠀⠀⠀⢠⠒⡄⠀⠀⠀⠀⠀⡰⢲⡀⠀⠀⠀⠀⢀⡖⢢⠀⠀⠀⠀⠀⣰⠋⢦⠀⠀⠀⠀⠀⡎⠈⢆⠀⠀⠀⠀⢠⠃⠈⡆⠀⠀⠀⠀⡜⠀⠸⡀⠀⠀⠀⢀⠏⠀⢱
-  │⠇⠀⠀⠸⡀⠀⠀⢀⠇⠀⠀⢇⠀⠀⠀⢠⠃⠀⠘⡄⠀⠀⠀⢰⠁⠀⢣⠀⠀⠀⠀⡜⠀⠀⢇⠀⠀⠀⢠⠃⠀⠈⡆⠀⠀⠀⡸⠀⠀⠘⡄⠀⠀⢀⠇⠀⠀⠸⡀⠀⠀⢰⠁⠀⠀⢣⠀⠀⠀⡜⠀⠀⠈⡆⠀⠀⢀
- 0│⠀⠀⠀⠀⢇⠀⠀⡜⠀⠀⠀⠘⡄⠀⠀⡎⠀⠀⠀⢱⠀⠀⢀⠇⠀⠀⠈⡆⠀⠀⢰⠁⠀⠀⠘⡄⠀⠀⡎⠀⠀⠀⠸⡀⠀⢠⠃⠀⠀⠀⠱⡀⠀⡜⠀⠀⠀⠀⢣⠀⢀⠇⠀⠀⠀⠈⢇⠀⣰⠁⠀⠀⠀⠸⡀⠀⡸
-  │⠀⠀⠀⠀⠈⢦⡴⠁⠀⠀⠀⠀⠹⣀⡼⠀⠀⠀⠀⠀⢇⢀⡞⠀⠀⠀⠀⠘⡄⢠⠇⠀⠀⠀⠀⠱⡀⡰⠁⠀⠀⠀⠀⢣⣀⠎⠀⠀⠀⠀⠀⠣⠴⠁⠀⠀⠀⠀⠀⠳⠊⠀⠀⠀⠀⠀⠈⠒⠃⠀⠀⠀⠀⠀⠱⠴⠁
-  │⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠉⠁
--1│
-  ─│──────────────│──────────────│───────────────│──────────────│──────────────│
-   0 ms         2 ms           4 ms            6 ms           8 ms         10 ms
+145.230 MHz NFM  tap demod  window 10 ms  peak -4 dBFS  rms -9 dBFS  scale ±1
+full scale ±2.5 kHz  tuning +50 Hz
+PL 100.0 Hz (measured 100.12 Hz, 18 dB, confidence 0.9)
+   +1│
+     │⠀⢠⢄⠀⠀⠀⠀⠀⠀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⢀⣤⠀⠀⠀⠀⠀⠀⡤⣄
+     │⢠⠃⠈⢇⠀⠀⠀⠀⡜⠀⢣⠀⠀⠀⠀⢀⠏⠱⡀⠀⠀⠀⠀⡰⠒⡄⠀⠀⠀⠀⢀⠖⢦⠀⠀⠀⠀⠀⡰⠲⡀⠀⠀⠀⠀⢰⠋⢆⠀⠀⠀⠀⢀⠏⠙⡄⠀⠀⠀⠀⡎⠀⢣⠀⠀⠀⠀⡸⠀⠘⡄
+     │⡎⠀⠀⠘⡄⠀⠀⢠⠃⠀⠀⢇⠀⠀⠀⡜⠀⠀⢣⠀⠀⠀⢰⠃⠀⠸⡀⠀⠀⠀⡜⠀⠘⡆⠀⠀⠀⢰⠁⠀⢱⠀⠀⠀⢀⠇⠀⠈⡆⠀⠀⠀⡎⠀⠀⢱⠀⠀⠀⢸⠀⠀⠈⡆⠀⠀⢠⠃⠀⠀⢱
+    0│⠀⠀⠀⠀⢣⠀⢀⠎⠀⠀⠀⠘⡄⠀⡸⠁⠀⠀⠈⡆⠀⠀⡎⠀⠀⠀⢣⠀⠀⢰⠁⠀⠀⠸⡀⠀⢀⠇⠀⠀⠀⡇⠀⠀⡜⠀⠀⠀⠸⡀⠀⣰⠁⠀⠀⠀⢇⠀⢠⠇⠀⠀⠀⠸⡀⢀⡎⠀⠀⠀⠀⢇⠀⣸
+     │⠀⠀⠀⠀⠀⠳⠞⠀⠀⠀⠀⠀⠳⣠⠃⠀⠀⠀⠀⠸⣄⡼⠀⠀⠀⠀⠘⡄⢠⠇⠀⠀⠀⠀⢣⠀⡼⠀⠀⠀⠀⠸⡄⣰⠁⠀⠀⠀⠀⢣⣠⠇⠀⠀⠀⠀⠘⠦⠎⠀⠀⠀⠀⠀⠑⠞⠀⠀⠀⠀⠀⠘⠒⠃
+     │⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠈⠉⠁⠀⠀⠀⠀⠀⠈⠁
+   -1│
+     ─│─────────────│──────────────│──────────────│──────────────│─────────────│
+      0 ms        2 ms           4 ms           6 ms           8 ms        10 ms
 ```
 
 The header is the daemon's claim: the tone comes from the same sub-audible detector `ley tune`
 prints, and `scope` never estimates one itself, so the picture and the number can disagree — which
 is the reason both are on screen. Both scales are drawn: the gutter down the left is the
-vertical one, ±1.0 until `--scale` says otherwise (hertz are the header's tuning line), and the
-rule beneath the trace is milliseconds from the start of the frame out to the window length.
+vertical one, the fit the header names (hertz are the header's tuning line), and the rule beneath
+the trace is milliseconds from the start of the frame out to the window length.
 `--window` (5 to 500 ms, default 40) is the timebase: 40 ms is a syllable of voice, four cycles of
 a 100 Hz tone, and a narrower window spreads a 1 kHz note out into a wave. `--trigger auto` starts
 each frame at a rising zero crossing when the window repeats steadily, which holds a tone still;
 `--trigger free` lets the trace run. On a terminal without
 UTF-8, or with `--ascii`, the same trace is drawn with three levels per character.
 
-Looking at speech takes a second setting. Full scale is the whole range the tap can carry, and on
-the demod tap that is the mode's whole deviation — ±5 kHz on NFM, ±75 kHz on WFM — while a voice
-spends most of its time at a tenth of it, which draws a dot or two either side of the centre.
-`--scale auto` fits the trace to the signal instead: the frame's peak with a little headroom,
-snapped to a round number (0.02, 0.05, 0.1, 0.2, 0.5 or 1) so the gutter stays readable, and held
-for about a second so the picture does not resize between syllables. `--scale 0.2` pins it there
-for good. Use `--window 250 --trigger free --scale auto` to watch the envelope of speech, the shape
-of the words; `--window 40` with the trigger left alone to hold a tone still enough to count its
-cycles.
+Looking at speech is what the default scale is for. `--scale auto` fits the trace to the signal:
+the loudest the last second held bar its top tenth, with a little headroom, snapped to a round
+number (0.02, 0.05, 0.1, 0.2, 0.5 or 1) so the gutter stays readable. Reading the percentile
+rather than the peak is what keeps the picture still through a squelch tail — one frame several
+times full scale draws clamped rather than shrinking the next second of speech to a dot — and the
+second of hold is what keeps it from resizing between syllables. `--scale full` draws the whole
+range the tap can carry instead, which on the demod tap is the channel's whole deviation: a
+narrow handheld fills that trace, because full scale there is the ±2.5 kHz its own channel can
+carry rather than a number the mode was assigned. `--scale 0.2` pins it for good. Use `--window 250
+--trigger free` to watch the envelope of speech, the shape of the words; `--window 40` with the
+trigger left alone to hold a tone still enough to count its cycles.
 
 On the audio tap a closed squelch draws a flat line, because a flat line is what the speaker gets.
 The view says so under the header — `squelch closed: the audio tap is muted; --tap demod shows what
@@ -421,7 +426,7 @@ the daemon's, the shaping is the screen's.
 
 ```console
 $ ley levels 145.23 --tap demod
-145.230 MHz NFM  tap demod  squelch open  PL 100.0 Hz
+145.230 MHz NFM  tap demod  full scale ±2.5 kHz  squelch open  PL 100.0 Hz
   0 │░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
  -6 │░░░   ░░░   ░░░   ░░░   ▃▃▃   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░
     │░░░   ░░░   ░░░   ░░░   ███   ░░░   ░░░   ░░░   ░░░     ░░░   ░░░

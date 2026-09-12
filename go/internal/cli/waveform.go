@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -90,9 +91,11 @@ flat, so a gap between transmissions looks like a gap. A slice that is open
 and silent keeps the centre rule.
 
 --seconds is how much of the past one frame holds, 2 to 120. --scale auto,
-the default, fits the clip to the loudest of the last few seconds, because
-the point of the view is the shape; --scale full draws the whole range the
-tap can carry, and a number pins it.
+the default, fits the clip to the bulk of the last few seconds, because the
+point of the view is the shape; a column louder than the rest of them draws
+clamped rather than shrinking the picture. --scale full draws the whole range
+the tap can carry, and on the demod tap that range is the channel's own full
+deviation, which the header names in hertz; a number pins it.
 
 --json prints one object per column as it completes: {sample_index, seconds,
 peak_dbfs, rms_dbfs, squelch_open}.`,
@@ -237,6 +240,7 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	defer sub.Close()
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
+	fullScaleHz := scopeFullScaleHz(ap, s.channel)
 	// The squelch is the daemon's to report and the view's only to draw with.
 	// The stream's error is deliberately not read: a telemetry stream that
 	// ends leaves the clip drawing, on the last state it knew.
@@ -269,7 +273,7 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	interval := time.Duration(float64(time.Second) / o.rate)
 	frame := waveformFrame{
 		cols: make([]waveformCol, view.cols()), tap: tap, what: what,
-		seconds: o.seconds, dc: math.NaN(), squelchOpen: true,
+		seconds: o.seconds, dc: math.NaN(), fullScaleHz: fullScaleHz, squelchOpen: true,
 	}
 	// How much of the stream one column stands for. The columns are the
 	// picture's own geometry, so --json carries the same slices the picture
@@ -374,14 +378,18 @@ func waveformEnd(ctx context.Context, err error, cols int) error {
 	return nil
 }
 
-// waveformPeak is the loudest the window holds, which is what the auto scale
-// fits the clip to. A blank column is not a quiet one and does not count.
+// waveformPeak is how loud the window is, which is what the auto scale fits
+// the clip to: the percentile of the columns rather than the loudest of them,
+// so one column of squelch tail at several times full scale does not shrink
+// every other column in the picture for as long as it stays in view. A blank
+// column is not a quiet one and does not count.
 func waveformPeak(cols []waveformCol) float64 {
-	peak := 0.0
+	peaks := make([]float64, 0, len(cols))
 	for _, c := range cols {
 		if c.present && c.open {
-			peak = math.Max(peak, c.peak)
+			peaks = append(peaks, c.peak)
 		}
 	}
-	return peak
+	slices.Sort(peaks)
+	return scopePercentile(peaks, scopeScalePercent)
 }

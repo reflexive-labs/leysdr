@@ -178,25 +178,54 @@ func TestScopeStats(t *testing.T) {
 }
 
 // The DC offset is a tuning error only where the detector's output is
-// frequency, and only on the tap that has not had it removed.
+// frequency, and only on the tap that has not had it removed. It is the
+// daemon's own full scale it is measured against, so a 12.5 kHz channel and a
+// 25 kHz one read the same offset as different errors.
 func TestScopeTuningHz(t *testing.T) {
-	if got := scopeTuningHz(leylinev1.DemodMode_NFM, leylinev1.AudioTap_TAP_DEMOD, 0.02); math.Abs(got-100) > 0.001 {
-		t.Errorf("NFM demod tap at 0.02 full scale = %.2f Hz, want 100", got)
-	}
-	if got := scopeTuningHz(leylinev1.DemodMode_WFM, leylinev1.AudioTap_TAP_DEMOD, -0.01); math.Abs(got+750) > 0.001 {
-		t.Errorf("WFM demod tap at -0.01 full scale = %.2f Hz, want -750", got)
-	}
 	for _, tc := range []struct {
-		mode leylinev1.DemodMode
-		tap  leylinev1.AudioTap
+		name        string
+		fullScaleHz uint32
+		dc          float64
+		want        float64
 	}{
-		{leylinev1.DemodMode_NFM, leylinev1.AudioTap_TAP_AUDIO},
-		{leylinev1.DemodMode_AM, leylinev1.AudioTap_TAP_DEMOD},
-		{leylinev1.DemodMode_USB, leylinev1.AudioTap_TAP_DEMOD},
+		{"a narrow NFM channel", 2_500, 0.02, 50},
+		{"a 25 kHz NFM channel", 5_000, 0.02, 100},
+		{"WFM", 75_000, -0.01, -750},
 	} {
-		if got := scopeTuningHz(tc.mode, tc.tap, 0.02); !math.IsNaN(got) {
-			t.Errorf("%v on the %s tap reported a tuning error of %.2f Hz", tc.mode, scopeTapName(tc.tap), got)
+		if got := scopeTuningHz(leylinev1.AudioTap_TAP_DEMOD, tc.fullScaleHz, tc.dc); math.Abs(got-tc.want) > 0.001 {
+			t.Errorf("%s at %g of full scale = %.2f Hz, want %.0f", tc.name, tc.dc, got, tc.want)
 		}
+	}
+	// The audio tap has had the offset taken out of it, and a tap whose
+	// samples are amplitude has no deviation to scale one by.
+	for _, tc := range []struct {
+		name        string
+		tap         leylinev1.AudioTap
+		fullScaleHz uint32
+	}{
+		{"the audio tap", leylinev1.AudioTap_TAP_AUDIO, 2_500},
+		{"an amplitude mode", leylinev1.AudioTap_TAP_DEMOD, 0},
+	} {
+		if got := scopeTuningHz(tc.tap, tc.fullScaleHz, 0.02); !math.IsNaN(got) {
+			t.Errorf("%s reported a tuning error of %.2f Hz", tc.name, got)
+		}
+	}
+}
+
+// The deviation the descriptor answers is what the views read; a daemon that
+// left it at zero on an FM mode is answered from the channel by the same
+// rule, and an amplitude mode has none either way.
+func TestScopeFullScaleHz(t *testing.T) {
+	ch := &leylinev1.Channel{Mode: leylinev1.DemodMode_NFM, BandwidthHz: 25_000}
+	if got := scopeFullScaleHz(&leylinev1.AudioParams{FullScaleDeviationHz: 2_500}, ch); got != 2_500 {
+		t.Errorf("the descriptor said 2500 Hz and the view read %d", got)
+	}
+	if got := scopeFullScaleHz(&leylinev1.AudioParams{}, ch); got != 5_000 {
+		t.Errorf("a descriptor without a deviation on a 25 kHz NFM channel = %d Hz, want 5000", got)
+	}
+	am := &leylinev1.Channel{Mode: leylinev1.DemodMode_AM, BandwidthHz: 10_000}
+	if got := scopeFullScaleHz(&leylinev1.AudioParams{}, am); got != 0 {
+		t.Errorf("AM has no deviation, and the view read %d Hz", got)
 	}
 }
 
@@ -209,7 +238,10 @@ func TestScopeDemodHeaderCarriesTheDaemonsTone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley scope: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
-	for _, want := range []string{"145.230 MHz NFM", "tap demod", "window 40 ms", "tuning +100 Hz"} {
+	// The channel is 12.5 kHz wide and cannot carry more than 2.5 kHz of
+	// deviation, which is what full scale on its detector is worth, so the
+	// tap's 0.02 offset reads as 50 Hz.
+	for _, want := range []string{"145.230 MHz NFM", "tap demod", "window 40 ms", "full scale ±2.5 kHz", "tuning +50 Hz"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the header does not say %q:\n%s", want, out)
 		}
@@ -437,6 +469,11 @@ func TestScopeAutoScaleFitsAndHolds(t *testing.T) {
 	if got := s.next(loud); got != 0.2 {
 		t.Fatalf("a 0.14 tone drew at ±%g, want it snapped up to the 0.2 step", got)
 	}
+	// A hold window of the tone, so the pause arrives at a scale the window
+	// agrees with rather than at one frame's word.
+	for range s.size - 1 {
+		s.next(loud)
+	}
 	// Five frames of near-silence is a quarter second, longer than the gap
 	// between two syllables.
 	quiet := scopePeak(scopeTone(100, 4800, 192, 0.005, 0))
@@ -453,10 +490,65 @@ func TestScopeAutoScaleFitsAndHolds(t *testing.T) {
 	if got := s.next(quiet); got >= 0.2 {
 		t.Errorf("two seconds after the tone the scale is still ±%g, want it back down", got)
 	}
-	// And it goes up at once, because a syllable clipped while the scale
-	// catches up is a syllable not drawn.
-	if got := s.next(scopePeak(scopeTone(100, 4800, 192, 0.6, 0))); got != 1 {
-		t.Errorf("a 0.6 peak drew at ±%g, want full scale on the frame it arrived", got)
+	// And it goes up for a signal, over the few frames it takes the loud ones
+	// to outnumber the top tenth of the window.
+	loudFrame := scopePeak(scopeTone(100, 4800, 192, 0.6, 0))
+	var up float64
+	for range 5 {
+		up = s.next(loudFrame)
+	}
+	if up != 1 {
+		t.Errorf("a quarter second of 0.6 peaks drew at ±%g, want full scale", up)
+	}
+}
+
+// A burst is not a signal: the squelch tail at the end of a transmission is
+// several times full scale for one frame, and a scale fitted to it would
+// leave the next second of picture drawn at a size nothing in it needs.
+func TestScopeAutoScaleIgnoresABurst(t *testing.T) {
+	const frame = 50 * time.Millisecond
+	s := newScopeScaler(scopeScale{auto: true}, frame)
+	quiet := scopePeak(scopeTone(100, 4800, 192, 0.03, 0))
+	// A full hold window of the signal as it stands, so the burst arrives at
+	// a scale that has settled.
+	var fit float64
+	for range 20 {
+		fit = s.next(quiet)
+	}
+	if fit != 0.05 {
+		t.Fatalf("a 0.03 tone drew at ±%g, want it snapped up to the 0.05 step", fit)
+	}
+	if got := s.next(4.8); got != fit {
+		t.Errorf("the burst drew at ±%g, want the picture left at ±%g and the burst clamped", got, fit)
+	}
+	for i := range 10 {
+		if got := s.next(quiet); got != fit {
+			t.Errorf("frame %d after the burst drew at ±%g, want the picture still at ±%g", i, got, fit)
+		}
+	}
+}
+
+// The burst is not a signal at any frame rate --rate takes: a hold window of
+// a handful of frames still has to drop the loudest of them, or half the
+// documented range would hand a squelch tail the whole scale.
+func TestScopeAutoScaleIgnoresABurstAtSlowRates(t *testing.T) {
+	for _, rate := range []float64{9, 5, 2, 1} {
+		t.Run(fmt.Sprintf("%gfps", rate), func(t *testing.T) {
+			s := newScopeScaler(scopeScale{auto: true}, time.Duration(float64(time.Second)/rate))
+			var fit float64
+			for range s.size {
+				fit = s.next(0.03)
+			}
+			if fit != 0.05 {
+				t.Fatalf("a 0.03 peak drew at ±%g, want it snapped up to the 0.05 step", fit)
+			}
+			if got := s.next(4.8); got != fit {
+				t.Errorf("the burst drew at ±%g, want the picture left at ±%g and the burst clamped", got, fit)
+			}
+			if got := s.next(0.03); got != fit {
+				t.Errorf("the frame after the burst drew at ±%g, want the picture still at ±%g", got, fit)
+			}
+		})
 	}
 }
 

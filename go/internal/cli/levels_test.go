@@ -425,7 +425,10 @@ func TestLevelsMetersTheDaemonsBands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley levels: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
-	for _, want := range []string{"145.230 MHz NFM", "tap demod", "squelch open", "PL 100.0 Hz", "rms", "peak", "dBFS"} {
+	// On the demod tap the ladders are dB against a deviation, and a 12.5 kHz
+	// channel cannot carry more than 2.5 kHz of one, so the header says what
+	// the top of the scale is worth.
+	for _, want := range []string{"145.230 MHz NFM", "tap demod", "full scale ±2.5 kHz", "squelch open", "PL 100.0 Hz", "rms", "peak", "dBFS"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the meter does not say %q:\n%s", want, out)
 		}

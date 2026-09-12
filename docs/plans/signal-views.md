@@ -677,7 +677,7 @@ on the `Subscription`'s descriptor as it does the rest.
   channel keeps the old numbers; `SubAudibleTests` still see 700 Hz on `nfm_pl`; fixture
   round-trips green. `docs/engine-internals.md` Demodulators paragraph states the rule.
 
-### SV-12c `[ ]` The views follow the descriptor, and a burst cannot own the scale (Go lane)
+### SV-12c `[x]` The views follow the descriptor, and a burst cannot own the scale (Go lane)
 
 - `scope`, `waveform` and `levels` read `full_scale_deviation_hz` from the descriptor for every
   hertz readout (tuning error, the header's "full scale ±n kHz" note); the `nfmFullScaleHz` and

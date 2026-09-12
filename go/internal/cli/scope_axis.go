@@ -58,8 +58,8 @@ func scopeTicks(windowMs, cols int) []scopeTick {
 // scopeGutter is the vertical scale beside one row of a trace or a clip: the
 // top, the axis and the bottom, rather than all eight rows, because three
 // numbers are what a scale is read from. The numbers are the tap's own units
-// -- hertz are the header's tuning line -- and they are ±1.0 until --scale
-// says otherwise.
+// -- hertz are the header's tuning line -- and under the fitted scale they
+// are whichever step the fit has snapped to, rather than a fixed ±1.0.
 func scopeGutter(st ui.Style, gutterW, row int, scale float64) string {
 	label := ""
 	switch row {

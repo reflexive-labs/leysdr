@@ -19,9 +19,11 @@ flat, so a gap between transmissions looks like a gap. A slice that is open
 and silent keeps the centre rule.
 
 --seconds is how much of the past one frame holds, 2 to 120. --scale auto,
-the default, fits the clip to the loudest of the last few seconds, because
-the point of the view is the shape; --scale full draws the whole range the
-tap can carry, and a number pins it.
+the default, fits the clip to the bulk of the last few seconds, because the
+point of the view is the shape; a column louder than the rest of them draws
+clamped rather than shrinking the picture. --scale full draws the whole range
+the tap can carry, and on the demod tap that range is the channel's own full
+deviation, which the header names in hertz; a number pins it.
 
 --json prints one object per column as it completes: {sample_index, seconds,
 peak_dbfs, rms_dbfs, squelch_open}.

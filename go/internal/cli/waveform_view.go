@@ -43,7 +43,10 @@ type waveformFrame struct {
 	seconds float64
 	// dc is the offset taken out of the newest column, NaN on a tap that
 	// keeps its own.
-	dc          float64
+	dc float64
+	// fullScaleHz is what the top of the clip is worth in hertz, 0 on a tap
+	// whose samples are amplitude.
+	fullScaleHz uint32
 	squelchOpen bool
 	// squelchKnown is false until the daemon has sent a meter, because a view
 	// that announced a closed squelch before then would be guessing.
@@ -123,6 +126,9 @@ func (v *waveformView) header(f waveformFrame, scale float64) []string {
 	}
 	if v.scale.named() {
 		segs = append(segs, headerSeg{name: "scale ", value: fmt.Sprintf("±%g", scale)})
+	}
+	if note := fullScaleNote(f.tap, f.fullScaleHz); note != "" {
+		segs = append(segs, headerSeg{name: "full scale ", value: note})
 	}
 	if !math.IsNaN(f.dc) {
 		segs = append(segs, headerSeg{name: "dc removed ", value: fmt.Sprintf("%+.3f", f.dc)})

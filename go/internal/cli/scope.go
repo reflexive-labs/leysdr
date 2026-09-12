@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"time"
 
@@ -25,25 +26,24 @@ const (
 	scopeRateMax   = 20
 )
 
-// Full scale on the demod tap is the detector's own range, so on FM the DC
-// offset reads straight off as how far the radio is from the transmitter.
-const (
-	nfmFullScaleHz = 5_000
-	wfmFullScaleHz = 75_000
-)
-
 // scopeScaleSteps are the vertical scales --scale auto chooses between: round
 // numbers the gutter can be read at a glance, each about twice the one below,
 // so a step up is a visible change of picture rather than a drift.
 var scopeScaleSteps = []float64{0.02, 0.05, 0.1, 0.2, 0.5, 1}
 
-// How the auto scale follows the signal. A louder frame takes it up at once,
-// and it comes back down over about a second, so a pause between syllables
-// does not resize the picture. The headroom keeps a steady tone off the top
-// and bottom rows, where a peak and a clipped peak look the same.
+// How the auto scale follows the signal. It is fitted to the ninetieth
+// percentile of the peaks the last second held rather than to the loudest of
+// them, so a signal that stays loud takes the scale up within a few frames
+// while a single spike -- a squelch tail is several times full scale for one
+// frame -- draws clamped and leaves the picture the size it was. A second is
+// longer than a pause between syllables and shorter than a pause between
+// words. The headroom keeps a steady tone off the top and bottom rows, where
+// a peak and a clipped peak look the same.
 const (
-	scopeScaleDecay    = time.Second
+	scopeScaleHold     = time.Second
+	scopeScaleMinHold  = 2
 	scopeScaleHeadroom = 1.1
+	scopeScalePercent  = 0.9
 )
 
 // scopeScale is what --scale asked for: how far from the centre the top of the
@@ -54,8 +54,8 @@ type scopeScale struct {
 	fixed float64
 }
 
-// scopeFull is the default: full scale, so a trace that grows is a signal that
-// grew and never a scale that moved under it.
+// scopeFull is the whole range the tap can carry: a trace that grows is a
+// signal that grew and never a scale that moved under it.
 var scopeFull = scopeScale{fixed: 1}
 
 // parseScopeScale reads the --scale flag: the two words, or a number in the
@@ -99,33 +99,73 @@ func (s scopeScale) labelWidth() int {
 // digits as say it, because the gutter is read, not measured.
 func scopeScaleLabel(v float64) string { return fmt.Sprintf("%+g", v) }
 
-// scopeScaler carries the auto scale between frames.
+// scopeScaler carries the auto scale between frames: the peaks of the frames
+// the hold window covers, oldest overwritten first.
 type scopeScaler struct {
-	scale scopeScale
-	// held is the peak the scale currently stands at, before it is snapped.
-	held  float64
-	decay float64
+	scale  scopeScale
+	recent []float64
+	// at is where the next peak goes once the window is full.
+	at int
+	// size is how many frames the hold window holds at this frame rate.
+	size int
+	// sorted is scratch the percentile is taken in, so a frame that moves the
+	// scale allocates nothing.
+	sorted []float64
 }
 
 func newScopeScaler(sc scopeScale, interval time.Duration) *scopeScaler {
-	return &scopeScaler{scale: sc, decay: math.Exp(-interval.Seconds() / scopeScaleDecay.Seconds())}
+	// Two frames is the shortest window a fit can mean anything in: one frame
+	// has nothing to disagree with a burst, so at a frame rate slow enough
+	// that a second holds a single frame the window runs long instead.
+	size := scopeScaleMinHold
+	if interval > 0 {
+		size = max(int(math.Round(scopeScaleHold.Seconds()/interval.Seconds())), scopeScaleMinHold)
+	}
+	return &scopeScaler{scale: sc, size: size, recent: make([]float64, 0, size), sorted: make([]float64, 0, size)}
 }
 
 // next is the scale to draw a window of this peak at: the pinned one, or the
-// loudest of the last second or so snapped up to a step the gutter can name.
-// Snapping up is what keeps a fitted trace inside the rows: it is never
-// clipped, only drawn coarser than the signal deserves.
+// hold window's percentile snapped up to a step the gutter can name. Snapping
+// up is what keeps a fitted trace inside the rows: it is never clipped, only
+// drawn coarser than the signal deserves. A peak above the fit is drawn
+// clamped, which is the honest picture of a spike the rest of the second
+// disagrees with.
 func (s *scopeScaler) next(peak float64) float64 {
 	if !s.scale.auto {
 		return s.scale.fixed
 	}
-	s.held = math.Max(peak*scopeScaleHeadroom, s.held*s.decay)
+	if len(s.recent) < s.size {
+		s.recent = append(s.recent, peak)
+	} else {
+		s.recent[s.at] = peak
+		s.at = (s.at + 1) % s.size
+	}
+	s.sorted = append(s.sorted[:0], s.recent...)
+	slices.Sort(s.sorted)
+	fit := scopePercentile(s.sorted, scopeScalePercent) * scopeScaleHeadroom
 	for _, step := range scopeScaleSteps {
-		if s.held <= step {
+		if fit <= step {
 			return step
 		}
 	}
 	return 1
+}
+
+// scopePercentile is the largest of an ascending slice once its loudest tail
+// is dropped: p of 1 keeps everything, and p of 0.9 drops the loudest tenth,
+// rounded up so that at least one value goes whenever there is more than one
+// to rank. Rounding up is what makes the fit mean the same thing in a short
+// window as in a long one: a nearest-rank tenth of nine or fewer values is no
+// values at all, which would hand a single burst the whole scale at the low
+// frame rates and over the first frames of any run. Zero where there is
+// nothing to rank yet.
+func scopePercentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	drop := int(math.Ceil((1 - p) * float64(len(sorted))))
+	i := len(sorted) - 1 - drop
+	return sorted[max(0, min(i, len(sorted)-1))]
 }
 
 // scopePeak is the window's largest excursion either side of zero, which is
@@ -197,10 +237,10 @@ func newScopeCommand(app *App) *cobra.Command {
 		Short:   "Draw the waveform a mode produces",
 		GroupID: GroupLooking,
 		Long: `scope draws what the demodulator made: one window of samples per frame,
-full scale top to bottom, redrawn where it stands. It is the view that tells
-the modes apart -- FM voice through the AM detector is a flat line with
-ripple, a carrier in CW is a sine, NFM voice is a voice -- and on the demod
-tap it is the only view that shows what rides under the audio.
+fitted to the signal top to bottom, redrawn where it stands. It is the view
+that tells the modes apart -- FM voice through the AM detector is a flat
+line with ripple, a carrier in CW is a sine, NFM voice is a voice -- and on
+the demod tap it is the only view that shows what rides under the audio.
 
 It takes a frequency, a preset or a channel id the way 'ley listen' does,
 making a capture and a channel when none exists and removing what it made on
@@ -219,12 +259,13 @@ detector, and the daemon refuses the demod tap on one.
 repeats steadily, which holds a tone still; free lets the trace run. The
 trigger is presentation, the same as a bench scope's.
 
---scale full, the default, draws the whole range the tap can carry, so a
-trace that grows is a signal that grew. That range is the mode's full
-deviation on the demod tap -- 5 kHz on NFM -- and speech spends most of its
-time at a tenth of it, a dot or two high: --scale auto fits the trace to the
-signal and holds the fit for about a second so it does not flicker between
-syllables, and --scale 0.2 pins it. The gutter names whichever is in force.
+--scale auto, the default, fits the trace to the signal and holds the fit for
+about a second so it does not flicker between syllables; a spike louder than
+the rest of that second draws clamped rather than shrinking the picture.
+--scale full draws the whole range the tap can carry, so a trace that grows
+is a signal that grew, and on the demod tap that range is the channel's own
+full deviation, which the header names in hertz; --scale 0.2 pins it. The
+gutter names whichever is in force.
 
 The tone in the header is the daemon's measurement. scope never estimates one
 itself, so the picture and the claim can disagree, which is the point of
@@ -236,7 +277,7 @@ scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 		Example: `  ley scope 146.52                      # what the speaker would hear
   ley scope 145.23 --tap demod          # the PL tone riding under the voice
   ley scope chan_01J... --window 100    # a wider window on a channel already running
-  ley scope 145.23 --tap demod --scale auto --window 250   # the shape of speech
+  ley scope 145.23 --tap demod --scale full --window 250   # the whole deviation
   ley scope 101.1 --tap demod --count 20 --json`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -302,7 +343,7 @@ scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 	cmd.Flags().StringVar(&tap, "tap", "audio", "which stage to draw: audio (what the speakers get) or demod (the detector's output, before the audio chain)")
 	cmd.Flags().IntVar(&o.windowMs, "window", 40, "how much of the signal one frame covers, in milliseconds (5..500)")
 	cmd.Flags().StringVar(&trigger, "trigger", "auto", "auto holds a repeating window still; free lets the trace run")
-	cmd.Flags().StringVar(&scale, "scale", "full", "how far from the centre the top of the trace stands: full (±1.0), auto (fit the signal), or a number such as 0.2")
+	cmd.Flags().StringVar(&scale, "scale", "auto", "how far from the centre the top of the trace stands: auto (fit the signal), full (±1.0), or a number such as 0.2")
 	cmd.Flags().Float64Var(&o.rate, "rate", 20, "frames a second (at most 20)")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many frames, e.g. 10 (default: until Ctrl-C)")
 	cmd.Flags().IntVar(&o.width, "width", 0, "trace width in columns (default: the terminal's, or 80 when piped)")
@@ -330,6 +371,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	defer sub.Close()
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
+	fullScaleHz := scopeFullScaleHz(ap, s.channel)
 	// The tone and the squelch are the daemon's to report; the view only carries
 	// them. The stream's error is deliberately not read: both are garnish on the
 	// picture, so a telemetry stream that ends takes the header's PL and its
@@ -344,7 +386,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	if err != nil {
 		return err
 	}
-	mode, what := s.channel.Mode, audioWhat(s)
+	what := audioWhat(s)
 	s.say("drawing %s: the %s tap at %d Hz, %d ms a frame. Ctrl-C stops. %s\n",
 		what, scopeTapName(tap), rate, o.windowMs, s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
 	// Keep the event stream flowing (and the mirror current) while frames are
@@ -434,8 +476,8 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 			} else {
 				w.frame(view.render(scopeFrame{
 					samples: samples, tap: tap, windowMs: o.windowMs, scale: scale,
-					peakDbfs: peak, rmsDbfs: rms,
-					tuningHz: scopeTuningHz(mode, tap, dc), what: what, tone: tone,
+					peakDbfs: peak, rmsDbfs: rms, fullScaleHz: fullScaleHz,
+					tuningHz: scopeTuningHz(tap, fullScaleHz, dc), what: what, tone: tone,
 					// The squelch mutes the audio tap and not the detector, so
 					// it is only the audio trace that needs explaining.
 					muted: muted && tap == leylinev1.AudioTap_TAP_AUDIO,
@@ -499,21 +541,26 @@ func scopeDbfs(amplitude float64) float64 {
 	return db
 }
 
+// scopeFullScaleHz is what ±1.0 on the tap stands for in hertz: the deviation
+// the daemon answered in the descriptor, which follows the channel's own
+// bandwidth and so cannot be inferred from the mode alone. A daemon that left
+// it at zero on an FM mode is answered from the same rule, and 0 stands for
+// the amplitude modes, whose samples are not frequency at all.
+func scopeFullScaleHz(ap *leylinev1.AudioParams, ch *leylinev1.Channel) uint32 {
+	if hz := ap.GetFullScaleDeviationHz(); hz != 0 {
+		return hz
+	}
+	return leyline.FullScaleDeviationHz(ch.GetMode(), ch.GetBandwidthHz())
+}
+
 // scopeTuningHz reads a demod tap's DC offset as a tuning error. Only the FM
 // detectors have one: their output is frequency, so a constant offset is a
 // constant frequency error, scaled by the deviation full scale stands for.
-func scopeTuningHz(mode leylinev1.DemodMode, tap leylinev1.AudioTap, dc float64) float64 {
-	if tap != leylinev1.AudioTap_TAP_DEMOD {
+func scopeTuningHz(tap leylinev1.AudioTap, fullScaleHz uint32, dc float64) float64 {
+	if tap != leylinev1.AudioTap_TAP_DEMOD || fullScaleHz == 0 {
 		return math.NaN()
 	}
-	switch mode {
-	case leylinev1.DemodMode_NFM:
-		return dc * nfmFullScaleHz
-	case leylinev1.DemodMode_WFM:
-		return dc * wfmFullScaleHz
-	default:
-		return math.NaN()
-	}
+	return dc * float64(fullScaleHz)
 }
 
 // scopeToneHz is the tone for the JSON row: the one the daemon named, or its

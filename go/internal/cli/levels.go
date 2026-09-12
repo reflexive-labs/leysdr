@@ -293,6 +293,11 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		bands: make([]levelsBar, len(view.bands)),
 		rms:   newLevelsBar(), peak: newLevelsBar(),
 		rmsDb: math.NaN(), peakDb: math.NaN(), tap: tap, what: what,
+		// The bands are dB against full scale, and on the demod tap of an FM
+		// mode full scale is a deviation. The FFT descriptor carries no such
+		// field, so the meter answers it from the channel by the rule the
+		// daemon states in the audio descriptor.
+		fullScaleHz: scopeFullScaleHz(nil, s.channel),
 	}
 	for i := range frame.bands {
 		frame.bands[i] = newLevelsBar()
