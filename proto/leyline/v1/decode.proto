@@ -153,6 +153,76 @@ message DecodeConfig {
   // its records exist only on the live stream. With it the job outlives the client and its
   // records are the resource ley://records/<job_id>.
   bool keep = 5;
+  // A daemon-side filter on records before delivery (docs/design/decoders.md, "Predicates and
+  // delivery"). Unset matches everything, which is what `ley decode` uses; `ley watch` sets one so
+  // a trigger fires with no client connected. Stateless: every clause is judged on one record.
+  Predicate predicate = 6;
+  // Where a record that passes the predicate goes when it fires: a notification, a webhook, a shell
+  // hook. A triggered alert is a channel output going somewhere, and "somewhere" is now a notifier
+  // (docs/design/decoders.md); it is not a parallel delivery path, it rides the same records.
+  NotifyTarget notify = 7;
+}
+
+// A stateless record filter. `all` clauses must match (AND); an empty predicate matches every
+// record. Stateful predicates -- ones that need track history -- are a later, opt-in aggregator and
+// are not this message.
+message Predicate {
+  repeated Clause all = 1;
+}
+
+message Clause {
+  oneof test {
+    FieldTest field = 1;
+    GeoTest geo = 2;
+  }
+}
+
+// A test on one field: a promoted name (`device_id`, `kind`, `protocol`) or a `fields` key. Numbers
+// compare numerically, everything else as text; `values` holds one value for the scalar operators
+// and many for IN / NOT_IN.
+message FieldTest {
+  string field = 1;
+  PredicateOp op = 2;
+  repeated FieldValue values = 3;
+}
+
+enum PredicateOp {
+  PREDICATE_OP_UNSPECIFIED = 0;
+  PRED_EQ = 1;
+  PRED_NE = 2;
+  PRED_LT = 3;
+  PRED_LTE = 4;
+  PRED_GT = 5;
+  PRED_GTE = 6;
+  PRED_IN = 7;
+  PRED_NOT_IN = 8;
+  // The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+  PRED_CONTAINS = 9;
+  // The field is present and non-empty; `values` is ignored.
+  PRED_EXISTS = 10;
+}
+
+// A record whose `position` is within `radius_m` of `center`. A record with no position never
+// matches.
+message GeoTest {
+  Position center = 1;
+  double radius_m = 2;
+}
+
+// Where a matching record goes. External delivery happens in the daemon, so a webhook or a shell
+// hook is the daemon reaching out, never a client relaying; a client that wants records subscribes.
+message NotifyTarget {
+  oneof target {
+    // HTTP POST of the record as proto3 JSON to this URL.
+    string webhook = 1;
+    // A command line run with the record's proto3 JSON on stdin and its promoted fields in the
+    // environment (LEYLINE_PROTOCOL, LEYLINE_DEVICE_ID, LEYLINE_KIND, ...). The daemon runs it,
+    // so it runs with the daemon's privileges: the socket already trusts the local user.
+    string shell = 2;
+    // A macOS user notification on the machine the daemon runs on. UNIMPLEMENTED off macOS, where
+    // the daemon logs the record instead so a headless run is not silent.
+    bool macos_notification = 3;
+  }
 }
 
 // ---------- Service ----------

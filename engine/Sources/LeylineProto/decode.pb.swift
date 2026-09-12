@@ -205,6 +205,80 @@ public nonisolated enum Leyline_V1_FieldType: SwiftProtobuf.Enum, Swift.CaseIter
 
 }
 
+public nonisolated enum Leyline_V1_PredicateOp: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case predEq // = 1
+  case predNe // = 2
+  case predLt // = 3
+  case predLte // = 4
+  case predGt // = 5
+  case predGte // = 6
+  case predIn // = 7
+  case predNotIn // = 8
+
+  /// The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+  case predContains // = 9
+
+  /// The field is present and non-empty; `values` is ignored.
+  case predExists // = 10
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .predEq
+    case 2: self = .predNe
+    case 3: self = .predLt
+    case 4: self = .predLte
+    case 5: self = .predGt
+    case 6: self = .predGte
+    case 7: self = .predIn
+    case 8: self = .predNotIn
+    case 9: self = .predContains
+    case 10: self = .predExists
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .predEq: return 1
+    case .predNe: return 2
+    case .predLt: return 3
+    case .predLte: return 4
+    case .predGt: return 5
+    case .predGte: return 6
+    case .predIn: return 7
+    case .predNotIn: return 8
+    case .predContains: return 9
+    case .predExists: return 10
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_PredicateOp] = [
+    .unspecified,
+    .predEq,
+    .predNe,
+    .predLt,
+    .predLte,
+    .predGt,
+    .predGte,
+    .predIn,
+    .predNotIn,
+    .predContains,
+    .predExists,
+  ]
+
+}
+
 public nonisolated struct Leyline_V1_DecoderManifest: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -618,7 +692,184 @@ public nonisolated struct Leyline_V1_DecodeConfig: Sendable {
   /// records are the resource ley://records/<job_id>.
   public var keep: Bool = false
 
+  /// A daemon-side filter on records before delivery (docs/design/decoders.md, "Predicates and
+  /// delivery"). Unset matches everything, which is what `ley decode` uses; `ley watch` sets one so
+  /// a trigger fires with no client connected. Stateless: every clause is judged on one record.
+  public var predicate: Leyline_V1_Predicate {
+    get {_predicate ?? Leyline_V1_Predicate()}
+    set {_predicate = newValue}
+  }
+  /// Returns true if `predicate` has been explicitly set.
+  public var hasPredicate: Bool {self._predicate != nil}
+  /// Clears the value of `predicate`. Subsequent reads from it will return its default value.
+  public mutating func clearPredicate() {self._predicate = nil}
+
+  /// Where a record that passes the predicate goes when it fires: a notification, a webhook, a shell
+  /// hook. A triggered alert is a channel output going somewhere, and "somewhere" is now a notifier
+  /// (docs/design/decoders.md); it is not a parallel delivery path, it rides the same records.
+  public var notify: Leyline_V1_NotifyTarget {
+    get {_notify ?? Leyline_V1_NotifyTarget()}
+    set {_notify = newValue}
+  }
+  /// Returns true if `notify` has been explicitly set.
+  public var hasNotify: Bool {self._notify != nil}
+  /// Clears the value of `notify`. Subsequent reads from it will return its default value.
+  public mutating func clearNotify() {self._notify = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _predicate: Leyline_V1_Predicate? = nil
+  fileprivate var _notify: Leyline_V1_NotifyTarget? = nil
+}
+
+/// A stateless record filter. `all` clauses must match (AND); an empty predicate matches every
+/// record. Stateful predicates -- ones that need track history -- are a later, opt-in aggregator and
+/// are not this message.
+public nonisolated struct Leyline_V1_Predicate: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var all: [Leyline_V1_Clause] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Leyline_V1_Clause: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var test: Leyline_V1_Clause.OneOf_Test? = nil
+
+  public var field: Leyline_V1_FieldTest {
+    get {
+      if case .field(let v)? = test {return v}
+      return Leyline_V1_FieldTest()
+    }
+    set {test = .field(newValue)}
+  }
+
+  public var geo: Leyline_V1_GeoTest {
+    get {
+      if case .geo(let v)? = test {return v}
+      return Leyline_V1_GeoTest()
+    }
+    set {test = .geo(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Test: Equatable, Sendable {
+    case field(Leyline_V1_FieldTest)
+    case geo(Leyline_V1_GeoTest)
+
+  }
+
+  public init() {}
+}
+
+/// A test on one field: a promoted name (`device_id`, `kind`, `protocol`) or a `fields` key. Numbers
+/// compare numerically, everything else as text; `values` holds one value for the scalar operators
+/// and many for IN / NOT_IN.
+public nonisolated struct Leyline_V1_FieldTest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var field: String = String()
+
+  public var op: Leyline_V1_PredicateOp = .unspecified
+
+  public var values: [Leyline_V1_FieldValue] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// A record whose `position` is within `radius_m` of `center`. A record with no position never
+/// matches.
+public nonisolated struct Leyline_V1_GeoTest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var center: Leyline_V1_Position {
+    get {_center ?? Leyline_V1_Position()}
+    set {_center = newValue}
+  }
+  /// Returns true if `center` has been explicitly set.
+  public var hasCenter: Bool {self._center != nil}
+  /// Clears the value of `center`. Subsequent reads from it will return its default value.
+  public mutating func clearCenter() {self._center = nil}
+
+  public var radiusM: Double = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _center: Leyline_V1_Position? = nil
+}
+
+/// Where a matching record goes. External delivery happens in the daemon, so a webhook or a shell
+/// hook is the daemon reaching out, never a client relaying; a client that wants records subscribes.
+public nonisolated struct Leyline_V1_NotifyTarget: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var target: Leyline_V1_NotifyTarget.OneOf_Target? = nil
+
+  /// HTTP POST of the record as proto3 JSON to this URL.
+  public var webhook: String {
+    get {
+      if case .webhook(let v)? = target {return v}
+      return String()
+    }
+    set {target = .webhook(newValue)}
+  }
+
+  /// A command line run with the record's proto3 JSON on stdin and its promoted fields in the
+  /// environment (LEYLINE_PROTOCOL, LEYLINE_DEVICE_ID, LEYLINE_KIND, ...). The daemon runs it,
+  /// so it runs with the daemon's privileges: the socket already trusts the local user.
+  public var shell: String {
+    get {
+      if case .shell(let v)? = target {return v}
+      return String()
+    }
+    set {target = .shell(newValue)}
+  }
+
+  /// A macOS user notification on the machine the daemon runs on. UNIMPLEMENTED off macOS, where
+  /// the daemon logs the record instead so a headless run is not silent.
+  public var macosNotification: Bool {
+    get {
+      if case .macosNotification(let v)? = target {return v}
+      return false
+    }
+    set {target = .macosNotification(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Target: Equatable, Sendable {
+    /// HTTP POST of the record as proto3 JSON to this URL.
+    case webhook(String)
+    /// A command line run with the record's proto3 JSON on stdin and its promoted fields in the
+    /// environment (LEYLINE_PROTOCOL, LEYLINE_DEVICE_ID, LEYLINE_KIND, ...). The daemon runs it,
+    /// so it runs with the daemon's privileges: the socket already trusts the local user.
+    case shell(String)
+    /// A macOS user notification on the machine the daemon runs on. UNIMPLEMENTED off macOS, where
+    /// the daemon logs the record instead so a headless run is not silent.
+    case macosNotification(Bool)
+
+  }
 
   public init() {}
 }
@@ -844,6 +1095,10 @@ nonisolated extension Leyline_V1_OutputShape: SwiftProtobuf._ProtoNameProviding 
 
 nonisolated extension Leyline_V1_FieldType: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FIELD_TYPE_UNSPECIFIED\0\u{1}TEXT\0\u{1}INTEGER\0\u{1}NUMBER\0\u{1}FLAG\0\u{1}DATA\0")
+}
+
+nonisolated extension Leyline_V1_PredicateOp: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PREDICATE_OP_UNSPECIFIED\0\u{1}PRED_EQ\0\u{1}PRED_NE\0\u{1}PRED_LT\0\u{1}PRED_LTE\0\u{1}PRED_GT\0\u{1}PRED_GTE\0\u{1}PRED_IN\0\u{1}PRED_NOT_IN\0\u{1}PRED_CONTAINS\0\u{1}PRED_EXISTS\0")
 }
 
 nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -1489,7 +1744,7 @@ nonisolated extension Leyline_V1_FieldValue: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecodeConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1502,12 +1757,18 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
       case 3: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.keep) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._predicate) }()
+      case 7: try { try decoder.decodeSingularMessageField(value: &self._notify) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.decoder.isEmpty {
       try visitor.visitSingularStringField(value: self.decoder, fieldNumber: 1)
     }
@@ -1523,6 +1784,12 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if self.keep != false {
       try visitor.visitSingularBoolField(value: self.keep, fieldNumber: 5)
     }
+    try { if let v = self._predicate {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    try { if let v = self._notify {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1532,6 +1799,253 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if lhs.deviceID != rhs.deviceID {return false}
     if lhs.takeOver != rhs.takeOver {return false}
     if lhs.keep != rhs.keep {return false}
+    if lhs._predicate != rhs._predicate {return false}
+    if lhs._notify != rhs._notify {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Predicate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Predicate"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}all\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.all) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.all.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.all, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Predicate, rhs: Leyline_V1_Predicate) -> Bool {
+    if lhs.all != rhs.all {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Clause: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Clause"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}field\0\u{1}geo\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: Leyline_V1_FieldTest?
+        var hadOneofValue = false
+        if let current = self.test {
+          hadOneofValue = true
+          if case .field(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.test = .field(v)
+        }
+      }()
+      case 2: try {
+        var v: Leyline_V1_GeoTest?
+        var hadOneofValue = false
+        if let current = self.test {
+          hadOneofValue = true
+          if case .geo(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.test = .geo(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.test {
+    case .field?: try {
+      guard case .field(let v)? = self.test else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .geo?: try {
+      guard case .geo(let v)? = self.test else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Clause, rhs: Leyline_V1_Clause) -> Bool {
+    if lhs.test != rhs.test {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_FieldTest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".FieldTest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}field\0\u{1}op\0\u{1}values\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.field) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.op) }()
+      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.values) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.field.isEmpty {
+      try visitor.visitSingularStringField(value: self.field, fieldNumber: 1)
+    }
+    if self.op != .unspecified {
+      try visitor.visitSingularEnumField(value: self.op, fieldNumber: 2)
+    }
+    if !self.values.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.values, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_FieldTest, rhs: Leyline_V1_FieldTest) -> Bool {
+    if lhs.field != rhs.field {return false}
+    if lhs.op != rhs.op {return false}
+    if lhs.values != rhs.values {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_GeoTest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GeoTest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}center\0\u{3}radius_m\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._center) }()
+      case 2: try { try decoder.decodeSingularDoubleField(value: &self.radiusM) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._center {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if self.radiusM.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.radiusM, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_GeoTest, rhs: Leyline_V1_GeoTest) -> Bool {
+    if lhs._center != rhs._center {return false}
+    if lhs.radiusM != rhs.radiusM {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_NotifyTarget: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".NotifyTarget"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}webhook\0\u{1}shell\0\u{3}macos_notification\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.target != nil {try decoder.handleConflictingOneOf()}
+          self.target = .webhook(v)
+        }
+      }()
+      case 2: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.target != nil {try decoder.handleConflictingOneOf()}
+          self.target = .shell(v)
+        }
+      }()
+      case 3: try {
+        var v: Bool?
+        try decoder.decodeSingularBoolField(value: &v)
+        if let v = v {
+          if self.target != nil {try decoder.handleConflictingOneOf()}
+          self.target = .macosNotification(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.target {
+    case .webhook?: try {
+      guard case .webhook(let v)? = self.target else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 1)
+    }()
+    case .shell?: try {
+      guard case .shell(let v)? = self.target else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 2)
+    }()
+    case .macosNotification?: try {
+      guard case .macosNotification(let v)? = self.target else { preconditionFailure() }
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_NotifyTarget, rhs: Leyline_V1_NotifyTarget) -> Bool {
+    if lhs.target != rhs.target {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
