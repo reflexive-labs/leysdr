@@ -17,13 +17,6 @@ const (
 	spectrumMinCols = 10
 )
 
-// How the chart carries level as colour. Every column takes the ramp ink its
-// own dB lands on, so the noise floor reads cold and a carrier hot. The steps
-// quantise the ramp so a row of eighty columns emits a handful of escape
-// sequences rather than one per column: neighbouring columns that land on the
-// same step share one run of ink.
-const spectrumLevelSteps = 24
-
 // spectrumQuietRampCap is how much of the ramp a band with no detection may
 // use. A quiet band's loudest column is only a few dB over its median, so
 // keying the ramp to that span unmodified would paint noise texture red and
@@ -32,19 +25,6 @@ const spectrumLevelSteps = 24
 // one flat field of blue with no shape in it. Capping the ramp keeps both --
 // the texture is visible as blue through cyan, and nothing is ever warm.
 const spectrumQuietRampCap = 0.34
-
-// chartFrameMinWidth is the narrowest terminal that gets a frame around a
-// chart. The border and its padding cost ui.BoxPadding columns of chart, which
-// a cramped screen cannot spare.
-const chartFrameMinWidth = 60
-
-// chartFramed says whether a view may draw the border: the caller has to want
-// one -- a pipe never does -- and the screen has to have both the alphabet and
-// the columns for it. Every chart answers it the same way, so a spectrum and a
-// meter side by side either both carry a frame or neither does.
-func chartFramed(st ui.Style, width int, frame bool) bool {
-	return frame && st.Unicode && width >= chartFrameMinWidth
-}
 
 // How the scale is chosen, and how the max-hold trace behaves. The top tracks
 // the loudest column with a little headroom, and only a dead-flat band falls
@@ -99,12 +79,7 @@ func newSpectrumView(st ui.Style, width int, mark uint64, hold, frame bool) *spe
 
 // inner is the width the chart itself may use: the whole width, less what the
 // frame spends on its border and padding when there is one.
-func (v *spectrumView) inner() int {
-	if v.framed {
-		return v.width - ui.BoxPadding
-	}
-	return v.width
-}
+func (v *spectrumView) inner() int { return chartInner(v.width, v.framed) }
 
 // cols is the chart's width in columns, never less than spectrumMinCols even
 // on a terminal too narrow to deserve one, and never more than there are bins.
@@ -141,11 +116,7 @@ func (v *spectrumView) render(bins []float64, peaks []Peak, floor float64, cente
 	v.chart(&chart, colDb, floor)
 	v.axis(&chart, cols, centerHz, spanHz)
 	var b strings.Builder
-	if v.framed {
-		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
-	} else {
-		b.WriteString(chart.String())
-	}
+	b.WriteString(chartFrame(v.st, v.framed, chart.String()))
 	v.peakBlock(&b, peaks, floor)
 	return b.String()
 }

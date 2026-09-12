@@ -165,12 +165,7 @@ func (v *levelsView) layout(n int) {
 
 // inner is the width the meter may use: the whole width, less what the frame
 // spends on its border and padding when there is one.
-func (v *levelsView) inner() int {
-	if v.framed {
-		return v.width - ui.BoxPadding
-	}
-	return v.width
-}
+func (v *levelsView) inner() int { return chartInner(v.width, v.framed) }
 
 // cols is the plot's width: everything right of the gutter.
 func (v *levelsView) cols() int { return max(v.inner()-levelsGutterW, levelsMinCols) }
@@ -212,11 +207,7 @@ func (v *levelsView) render(f levelsFrame) string {
 	// The ladders, their scale and the labels that name them are one object
 	// and are framed as one; the header reads as prose above it and stays
 	// outside.
-	if v.framed {
-		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
-	} else {
-		b.WriteString(chart.String())
-	}
+	b.WriteString(chartFrame(v.st, v.framed, chart.String()))
 	return b.String()
 }
 
@@ -225,16 +216,10 @@ func (v *levelsView) render(f levelsFrame) string {
 func (v *levelsView) header(f levelsFrame) []string {
 	segs := []headerSeg{
 		{value: f.what},
-		{name: "tap ", value: scopeTapName(f.tap)},
+		tapSeg(f.tap),
 	}
 	if f.squelchKnown {
-		word, ink := "open", v.st.Ok
-		if !f.squelchOpen {
-			word, ink = "closed", v.st.Warn
-		}
-		segs = append(segs, headerSeg{
-			name: "squelch ", value: ink(word), width: len("squelch ") + len(word),
-		})
+		segs = append(segs, squelchSeg(v.st, f.squelchOpen))
 	}
 	// The tone the daemon named, and only that: a meter is read at a glance,
 	// and the measurement behind the name is `ley scope`'s header to carry.
@@ -320,7 +305,7 @@ func (v *levelsView) cell(b levelsBar, top, bottom float64) (string, int) {
 // levelsInk is a height on the meter as a step of the chart's level ramp, so
 // the ladders and `ley spectrum` say the same level in the same colour.
 func levelsInk(frac float64) int {
-	return max(0, min(spectrumLevelSteps-1, int(math.Round(frac*float64(spectrumLevelSteps-1)))))
+	return max(0, min(chartLevelSteps-1, int(math.Round(frac*float64(chartLevelSteps-1)))))
 }
 
 // markRow is the row a level falls in, top row first.
@@ -331,7 +316,8 @@ func (v *levelsView) markRow(db float64) int {
 
 // gutter is the scale beside one row: the mark that falls in it, if any, and
 // the axis. Where a short meter puts two marks in one row the higher one is
-// written, because it is the one nearer the levels a person is watching.
+// written, because it is the one nearer the levels a person is watching. The
+// unit is a blank column: "dBFS" is written once, under the master pair.
 func (v *levelsView) gutter(r int) string {
 	label := ""
 	for _, m := range levelsMarks {
@@ -340,21 +326,18 @@ func (v *levelsView) gutter(r int) string {
 			break
 		}
 	}
-	return v.st.Muted(fmt.Sprintf("%3s ", label) + v.st.Glyphs().TreeTrunk)
+	return chartGutter(v.st, levelsGutterW, label, " ")
 }
 
 // axis rules the meter off from its labels, with a mark under each of the
 // master pair: they are a second instrument, and the marks say so.
 func (v *levelsView) axis() string {
-	g := v.st.Glyphs()
 	plot := min(v.reach()+levelsMasterGap-2, v.cols())
-	rule := []rune(strings.Repeat(string(g.Rule), plot+1))
+	marks := make([]axisTick, 0, 2)
 	for _, i := range []int{len(v.bands), len(v.bands) + 1} {
-		if c := v.x[i] + v.bar/2 + 1; c < len(rule) {
-			rule[c] = []rune(g.TreeTrunk)[0]
-		}
+		marks = append(marks, axisTick{col: v.x[i] + v.bar/2})
 	}
-	return strings.Repeat(" ", levelsGutterW-1) + v.st.Muted(string(rule))
+	return strings.Repeat(" ", levelsGutterW-1) + axisRule(v.st, plot, marks)
 }
 
 // labels writes what the bars are: the band centres under the ladders, then

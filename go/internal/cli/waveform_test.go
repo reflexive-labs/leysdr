@@ -396,8 +396,8 @@ func TestWaveformInkFollowsTheScaleOnScreen(t *testing.T) {
 	col := waveformCol{present: true, open: true, peak: 0.25}
 	_, hot := waveformColumn(v, col, 0.25)
 	_, cold := waveformColumn(v, col, 1)
-	if hot[0] != spectrumLevelSteps-1 {
-		t.Errorf("a column at the scale takes ramp step %d, want the hot end %d", hot[0], spectrumLevelSteps-1)
+	if hot[0] != chartLevelSteps-1 {
+		t.Errorf("a column at the scale takes ramp step %d, want the hot end %d", hot[0], chartLevelSteps-1)
 	}
 	mid := scopeHeight / 2
 	if cold[mid] >= hot[0] {

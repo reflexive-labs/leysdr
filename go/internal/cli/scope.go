@@ -356,14 +356,12 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	view := newScopeView(s.app.Style, o.width, o.scale, s.app.IsTTY())
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
-	var w *spectrumWriter
+	var w *chartWriter
 	if !s.app.JSON {
-		w = newSpectrumWriter(s.app, out, spectrumOptions{
-			bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: true,
-		}, o.rate)
+		w = newChartWriter(s.app, out, true, o.rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(spectrumTickInterval)
+	tick := time.NewTicker(chartTickInterval)
 	defer tick.Stop()
 	window := o.windowMs * int(rate) / 1000
 	if window < 1 {

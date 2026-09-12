@@ -282,14 +282,12 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	view := newLevelsView(s.app.Style, o.width, o.height, o.third, s.app.IsTTY())
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
-	var w *spectrumWriter
+	var w *chartWriter
 	if !s.app.JSON {
-		w = newSpectrumWriter(s.app, out, spectrumOptions{
-			bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: o.watch,
-		}, rate)
+		w = newChartWriter(s.app, out, o.watch, rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(spectrumTickInterval)
+	tick := time.NewTicker(chartTickInterval)
 	defer tick.Stop()
 	frame := levelsFrame{
 		bands: make([]levelsBar, len(view.bands)),
@@ -312,8 +310,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			}
 			// A snapshot draws one frame and leaves; waiting for ever with a
 			// blank screen is not a still of anything.
-			if !o.watch && rows == 0 && time.Since(start) > spectrumFirstRow {
-				return fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", spectrumFirstRow.Seconds())
+			if !o.watch && rows == 0 && time.Since(start) > chartFirstRow {
+				return fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", chartFirstRow.Seconds())
 			}
 		case m, ok := <-msgs:
 			if !ok {

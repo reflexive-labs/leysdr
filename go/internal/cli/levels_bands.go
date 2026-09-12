@@ -130,14 +130,13 @@ func levelsRows(db float64) float64 {
 }
 
 // levelsFrac is a level as a fraction of the meter's height, 0 at the floor
-// and 1 at full scale. Anything outside the scale is drawn at its end: a bar
-// that ran off the top would say less than a bar pinned to it.
+// and 1 at full scale. The meter's cold end is levelsFloorDb rather than a
+// noise line, because a meter is read against a scale that does not move.
+// Anything outside the scale is drawn at its end: a bar that ran off the top
+// would say less than a bar pinned to it. The piecewise ruler is applied
+// first, so a mark and a bar of the same level land in the same place.
 func levelsFrac(db float64) float64 {
-	if math.IsNaN(db) {
-		return 0
-	}
-	bottom, top := levelsRows(levelsFloorDb), levelsRows(levelsTopDb)
-	return math.Max(0, math.Min(1, (levelsRows(db)-bottom)/(top-bottom)))
+	return rampFrac(levelsRows(db), levelsRows(levelsFloorDb), levelsRows(levelsTopDb))
 }
 
 // Ballistics: what makes a meter alive rather than a bar chart that flickers.

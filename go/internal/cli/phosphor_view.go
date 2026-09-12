@@ -154,7 +154,7 @@ func (v *phosphorView) render(h phosphorHistogram) string {
 			cells[c], bands[c] = cell, inkPlain
 			if cell != " " {
 				last = c
-				bands[c] = waterfallBand(frac)
+				bands[c] = rampBand(frac)
 			}
 		}
 		for c := 0; c <= last; c++ {
@@ -166,12 +166,14 @@ func (v *phosphorView) render(h phosphorHistogram) string {
 	return b.String()
 }
 
+// gutter is the level axis' left column, the way `ley spectrum` writes it: the
+// level plain so it reads over the map, the unit once beside the top.
 func (v *phosphorView) gutter(label string, unit bool) string {
 	suffix := "     "
 	if unit {
 		suffix = " dBFS"
 	}
-	return fmt.Sprintf("%4s", label) + v.st.Muted(suffix)
+	return chartGutterField(v.st, phosphorGutter, label, suffix)
 }
 
 // axis is the frequency scale, the marker and the key.
@@ -179,13 +181,11 @@ func (v *phosphorView) axis(b *strings.Builder, cols int) {
 	g := v.st.Glyphs()
 	lo, hi := spectrumEdges(v.centerHz, v.spanHz)
 	ticks := spectrumTicks(lo, hi, cols)
-	rule := []rune(strings.Repeat(string(g.Rule), cols+1))
+	marks := make([]axisTick, 0, len(ticks))
 	for _, t := range ticks {
-		if t.col+1 < len(rule) {
-			rule[t.col+1] = []rune(g.TreeTrunk)[0]
-		}
+		marks = append(marks, axisTick{col: t.col})
 	}
-	b.WriteString(v.gutter(fmtDb(v.floorDb), false) + v.st.Muted(string(rule)) + "\n")
+	b.WriteString(v.gutter(fmtDb(v.floorDb), false) + axisRule(v.st, cols, marks) + "\n")
 	if v.mark != 0 && v.mark >= lo && v.mark <= hi && hi > lo {
 		col := int(float64(v.mark-lo) / float64(hi-lo) * float64(cols))
 		if col >= cols {

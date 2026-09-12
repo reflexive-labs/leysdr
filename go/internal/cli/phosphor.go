@@ -133,9 +133,9 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	view.halfLife = p.GetHalfLifeSeconds()
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
-	w := newSpectrumWriter(app, out, spectrumOptions{bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: true}, o.rate)
+	w := newChartWriter(app, out, true, o.rate)
 	defer w.finish()
-	tick := time.NewTicker(spectrumTickInterval)
+	tick := time.NewTicker(chartTickInterval)
 	defer tick.Stop()
 	n := 0
 	for {
@@ -175,14 +175,14 @@ func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error
 	}
 	defer sub.Close()
 	binFormat := sub.Descriptor.GetFft().GetBinFormat()
-	deadline := time.NewTimer(spectrumFirstRow)
+	deadline := time.NewTimer(chartFirstRow)
 	defer deadline.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		case <-deadline.C:
-			return 0, fmt.Errorf("no spectrum row arrived in %.0f s, so there is no noise floor to measure against. Check the radio is still capturing with: ley state", spectrumFirstRow.Seconds())
+			return 0, fmt.Errorf("no spectrum row arrived in %.0f s, so there is no noise floor to measure against. Check the radio is still capturing with: ley state", chartFirstRow.Seconds())
 		case fr, ok := <-sub.Frames:
 			if !ok {
 				return 0, spectrumEnd(ctx, "spectrum", sub.Err(), 0)

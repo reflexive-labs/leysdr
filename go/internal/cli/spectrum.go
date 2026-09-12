@@ -138,9 +138,9 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	// The frame is a terminal's: piped output stays plain lines a script can
 	// read, and newSpectrumView drops it again on an ASCII or narrow screen.
 	view := newSpectrumView(app.Style, o.width, o.freq, o.watch, app.IsTTY())
-	w := newSpectrumWriter(app, out, o, rate)
+	w := newChartWriter(app, out, o.watch, rate)
 	defer w.finish()
-	tick := time.NewTicker(spectrumTickInterval)
+	tick := time.NewTicker(chartTickInterval)
 	defer tick.Stop()
 	n := 0
 	for {
@@ -153,8 +153,8 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			// gives up rather than hanging for ever with nothing on screen;
 			// --watch keeps waiting, and says so.
 			w.idle()
-			if !o.watch && n == 0 && time.Since(w.start) > spectrumFirstRow {
-				return fmt.Errorf("no spectrum row arrived in %.0f s, so there is nothing to draw. Check the radio is still capturing with: ley state", spectrumFirstRow.Seconds())
+			if !o.watch && n == 0 && time.Since(w.start) > chartFirstRow {
+				return fmt.Errorf("no spectrum row arrived in %.0f s, so there is nothing to draw. Check the radio is still capturing with: ley state", chartFirstRow.Seconds())
 			}
 		case fr, ok := <-sub.Frames:
 			if !ok {

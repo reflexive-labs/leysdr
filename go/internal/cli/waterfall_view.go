@@ -136,16 +136,13 @@ func (v *waterfallView) row(bins []float64, elapsed float64) string {
 	cells := make([]string, cols)
 	bands := make([]int, cols)
 	for i, db := range colDb {
-		frac := 0.0
-		if !math.IsNaN(v.floor) {
-			frac = (db - v.floor) / waterfallRangeDb
-		}
+		frac := rampFrac(db, v.floor, v.floor+waterfallRangeDb)
 		cell := v.st.Shade(frac)
 		cells[i] = cell
 		bands[i] = inkPlain
 		if cell != " " {
 			last = i
-			bands[i] = waterfallBand(frac)
+			bands[i] = rampBand(frac)
 		}
 	}
 	for i := 0; i <= last; i++ {
@@ -153,18 +150,6 @@ func (v *waterfallView) row(bins []float64, elapsed float64) string {
 	}
 	v.rows++
 	return line.String()
-}
-
-// waterfallBand quantises a level onto the ramp so neighbouring cells at the
-// same level share one run of ink, as the spectrum chart's bands do.
-func waterfallBand(frac float64) int {
-	if frac < 0 {
-		frac = 0
-	}
-	if frac > 1 {
-		frac = 1
-	}
-	return int(frac * float64(spectrumLevelSteps-1))
 }
 
 // gutter is the elapsed time, printed on every waterfallTimeEvery-th row so

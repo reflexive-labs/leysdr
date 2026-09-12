@@ -630,7 +630,7 @@ Both suites green, `make proto` clean, the e2e green at the end.
   for so nothing exceeds `--width`. Goldens re-recorded; the guide's transcripts re-recorded
   against the fake.
 
-### SV-11 `[ ]` One chart toolkit, one colour rule (Go lane)
+### SV-11 `[x]` One chart toolkit, one colour rule (Go lane)
 
 The four live views and `spectrum` each carry their own header line, gutter, axis, frame handling,
 in-place redraw and ramp normalisation. Consolidate into one package-level toolkit in

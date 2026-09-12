@@ -259,14 +259,12 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	view := newWaveformView(s.app.Style, o.width, o.seconds, o.scale, s.app.IsTTY())
 	out := bufio.NewWriter(s.app.Stdout)
 	defer out.Flush()
-	var w *spectrumWriter
+	var w *chartWriter
 	if !s.app.JSON {
-		w = newSpectrumWriter(s.app, out, spectrumOptions{
-			bandFlags: bandFlags{rate: o.rate, width: o.width}, watch: true,
-		}, o.rate)
+		w = newChartWriter(s.app, out, true, o.rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(spectrumTickInterval)
+	tick := time.NewTicker(chartTickInterval)
 	defer tick.Stop()
 	interval := time.Duration(float64(time.Second) / o.rate)
 	frame := waveformFrame{

@@ -3,134 +3,10 @@ package cli
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 
-	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
-
-// The ink bands a chart cell can be drawn in. A non-negative band is a step of
-// the level ramp (see spectrumLevelSteps); the two negative bands are the inks
-// that are not keyed to a level. They are indices, not colours: a run of cells
-// sharing one band is inked once, so a row carries a handful of escape
-// sequences rather than one per column.
-const (
-	inkPlain = -1
-	inkMuted = -2
-	// inkLabel is the emphasis a mark carries when it is not a level: the peak
-	// cap of a meter ladder stands over the ramp, not in it.
-	inkLabel = -3
-)
-
-// inkedLine builds one chart row, merging neighbouring cells that share an ink
-// band into a single run.
-type inkedLine struct {
-	st   ui.Style
-	out  strings.Builder
-	run  strings.Builder
-	band int
-	open bool
-}
-
-func (l *inkedLine) add(s string, band int) {
-	if l.open && band != l.band {
-		l.flush()
-	}
-	l.band, l.open = band, true
-	l.run.WriteString(s)
-}
-
-func (l *inkedLine) flush() {
-	if !l.open {
-		return
-	}
-	text := l.run.String()
-	l.run.Reset()
-	l.open = false
-	switch {
-	case l.band == inkMuted:
-		text = l.st.Muted(text)
-	case l.band == inkLabel:
-		text = l.st.Label(text)
-	case l.band >= 0:
-		text = l.st.Level(levelFrac(l.band), text)
-	}
-	l.out.WriteString(text)
-}
-
-func (l *inkedLine) String() string {
-	l.flush()
-	return l.out.String()
-}
-
-// fmtDb is a level as the axis writes it: whole dB, no unit (the unit is
-// written once, beside the top of the axis).
-func fmtDb(db float64) string {
-	if math.IsNaN(db) || math.IsInf(db, 0) {
-		return "-"
-	}
-	return strconv.FormatFloat(math.Round(db), 'f', 0, 64)
-}
-
-// headerSeg is one fact in the header. The word that names it is Muted, the
-// value it names is plain, and a whole segment that is scaffolding is Muted.
-type headerSeg struct {
-	name, value string
-	dim         bool
-	// inked marks a name that carries its own colour -- a legend swatch is the
-	// ramp's own glyph -- so it is written verbatim: muting it would show the
-	// reader a shade the map never draws.
-	inked bool
-	// width overrides the measured width for a segment whose name is already
-	// inked, where counting bytes would count escape sequences as columns.
-	width int
-}
-
-func (s headerSeg) visible() int {
-	if s.width > 0 {
-		return s.width
-	}
-	return len(s.name) + len(s.value)
-}
-
-func (s headerSeg) render(st ui.Style) string {
-	if s.dim {
-		return st.Muted(s.name + s.value)
-	}
-	if s.inked {
-		return s.name + s.value
-	}
-	return st.Muted(s.name) + s.value
-}
-
-// packSegments lays facts out greedily across as many lines as the width needs,
-// so a narrow terminal gets more lines rather than a truncated fact.
-func packSegments(st ui.Style, segs []headerSeg, width int) []string {
-	var lines []string
-	var cur strings.Builder
-	curw := 0
-	for _, s := range segs {
-		w := s.visible()
-		switch {
-		case curw == 0:
-			cur.WriteString(s.render(st))
-			curw = w
-		case curw+2+w <= width:
-			cur.WriteString("  " + s.render(st))
-			curw += 2 + w
-		default:
-			lines = append(lines, cur.String())
-			cur.Reset()
-			cur.WriteString(s.render(st))
-			curw = w
-		}
-	}
-	if curw > 0 {
-		lines = append(lines, cur.String())
-	}
-	return lines
-}
 
 // header states what band this is, how wide, and what the floor is, then the
 // scaffolding: the edges and the bin size. Segments are packed greedily into
@@ -150,14 +26,14 @@ func (v *spectrumView) header(nbins int, floor float64, centerHz, spanHz uint64)
 }
 
 // gutter is the level axis' left column: the level, and the unit written once
-// beside the top of the axis. It is spectrumGutter-1 columns wide; the caller
-// adds the axis column itself.
+// beside the top of the axis. The level is plain so it reads over the trace
+// beside it. The caller adds the axis column itself.
 func (v *spectrumView) gutter(label string, unit bool) string {
 	suffix := "     "
 	if unit {
 		suffix = " dBFS"
 	}
-	return fmt.Sprintf("%4s", label) + v.st.Muted(suffix)
+	return chartGutterField(v.st, spectrumGutter, label, suffix)
 }
 
 // chart draws the band as a trace: one glyph per column, on the row that
@@ -272,43 +148,32 @@ func (v *spectrumView) traceRow(db, step float64) int {
 	return r
 }
 
-// levelBand is where a level sits on the ramp, as a step of spectrumLevelSteps.
+// levelBand is where a level sits on the ramp, as a step of chartLevelSteps.
 // The cold end is the noise line and the hot end the loudest column the run has
 // seen, so hue says what a reader actually wants to know: how far over the
 // floor this is. Keying it to the bottom of the axis instead would count the
 // row of air reserved under the floor as levels to ink, so every noise column
 // would draw a little warm and the whole ramp would be offset.
 func (v *spectrumView) levelBand(db float64) int {
-	span := v.peak - v.noise
-	if span <= 0 || math.IsNaN(db) || math.IsInf(db, 0) {
+	if math.IsInf(db, 0) {
+		// A bin with no power in it is not a level and takes the coldest ink
+		// there is rather than either end of the ramp.
 		return 0
 	}
-	frac := (db - v.noise) / span
+	frac := rampFrac(db, v.noise, v.peak)
 	if v.quiet {
 		// Nothing was detected, so the span this is keyed to is noise against
 		// noise. Hold the ramp to its cold end: the texture still shows, but
 		// an empty band never wears the colours of a busy one.
 		frac *= spectrumQuietRampCap
 	}
-	step := int(frac * float64(spectrumLevelSteps-1))
-	if step < 0 {
-		return 0
-	}
-	if step > spectrumLevelSteps-1 {
-		return spectrumLevelSteps - 1
-	}
-	return step
-}
-
-// levelFrac is a ramp step as the normalised level ui.Style.Level takes.
-func levelFrac(band int) float64 {
-	return float64(band) / float64(spectrumLevelSteps-1)
+	return rampBand(frac)
 }
 
 // levelInk is levelBand as ink, for the values outside the chart that must
 // agree with it.
 func (v *spectrumView) levelInk(db float64, text string) string {
-	return v.st.Level(levelFrac(v.levelBand(db)), text)
+	return v.st.Level(rampFrac(float64(v.levelBand(db)), 0, chartLevelSteps-1), text)
 }
 
 // spectrumEdges is the band's low and high frequency.

@@ -79,12 +79,7 @@ func newWaveformView(st ui.Style, width int, seconds float64, scale scopeScale, 
 
 // inner is the width the clip and its axis may use: the whole width, less what
 // the frame spends on its border and padding when there is one.
-func (v *waveformView) inner() int {
-	if v.framed {
-		return v.width - ui.BoxPadding
-	}
-	return v.width
-}
+func (v *waveformView) inner() int { return chartInner(v.width, v.framed) }
 
 // cols is the clip's width: the width inside any frame, less the level axis
 // and the playhead, which stand either side of it.
@@ -113,11 +108,7 @@ func (v *waveformView) render(f waveformFrame, scale float64) string {
 	}
 	// The clip and the seconds it runs through are one object and are framed
 	// as one; the header reads as prose above it and stays outside.
-	if v.framed {
-		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
-	} else {
-		b.WriteString(chart.String())
-	}
+	b.WriteString(chartFrame(v.st, v.framed, chart.String()))
 	return b.String()
 }
 
@@ -127,7 +118,7 @@ func (v *waveformView) render(f waveformFrame, scale float64) string {
 func (v *waveformView) header(f waveformFrame, scale float64) []string {
 	segs := []headerSeg{
 		{value: f.what},
-		{name: "tap ", value: scopeTapName(f.tap)},
+		tapSeg(f.tap),
 		{value: fmt.Sprintf("%g s", f.seconds)},
 	}
 	if v.scale.named() {
@@ -137,13 +128,7 @@ func (v *waveformView) header(f waveformFrame, scale float64) []string {
 		segs = append(segs, headerSeg{name: "dc removed ", value: fmt.Sprintf("%+.3f", f.dc)})
 	}
 	if f.squelchKnown {
-		word, ink := "open", v.st.Ok
-		if !f.squelchOpen {
-			word, ink = "closed", v.st.Warn
-		}
-		segs = append(segs, headerSeg{
-			name: "squelch ", value: ink(word), width: len("squelch ") + len(word),
-		})
+		segs = append(segs, squelchSeg(v.st, f.squelchOpen))
 	}
 	return packSegments(v.st, segs, v.width)
 }
@@ -198,14 +183,12 @@ func (v *waveformView) cell(c waveformCol, r int, scale float64) (string, int) {
 }
 
 // waveformFrac is how much of the colour ramp a column's peak takes: its
-// amplitude against the scale the frame is drawn at. The reference is the
-// picture rather than full scale, so a quiet passage under --scale 0.1 still
-// has colour in it and the header's scale says what full colour means.
+// amplitude against the scale the frame is drawn at, counting up from silence.
+// The hot end is the picture rather than full scale, so a quiet passage under
+// --scale 0.1 still has colour in it and the header's scale says what full
+// colour means.
 func waveformFrac(peak, scale float64) float64 {
-	if scale <= 0 || math.IsNaN(peak) {
-		return 0
-	}
-	return math.Max(0, math.Min(1, math.Abs(peak)/scale))
+	return rampFrac(math.Abs(peak), 0, scale)
 }
 
 // centre draws the rule a slice with nothing in it leaves behind: the line the
@@ -264,15 +247,6 @@ func waveformTicks(seconds float64, cols int) []axisTick {
 // instant, then the labels. Time runs backwards from the playhead, because
 // that is the direction the picture scrolls.
 func (v *waveformView) axis() []string {
-	g := v.st.Glyphs()
 	cols := v.cols()
-	ticks := waveformTicks(v.seconds, cols)
-	rule := []rune(strings.Repeat(string(g.Rule), cols+1))
-	for _, t := range ticks {
-		rule[t.col+1] = []rune(g.TreeTrunk)[0]
-	}
-	return []string{
-		strings.Repeat(" ", v.gutterW-1) + v.st.Muted(string(rule)),
-		v.st.Muted(axisLabelRow(v.gutterW, cols, ticks)),
-	}
+	return chartAxis(v.st, v.gutterW, cols, waveformTicks(v.seconds, cols))
 }

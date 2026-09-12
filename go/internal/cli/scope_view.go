@@ -86,12 +86,7 @@ func newScopeView(st ui.Style, width int, scale scopeScale, frame bool) *scopeVi
 
 // inner is the width the trace and its timebase may use: the whole width, less
 // what the frame spends on its border and padding when there is one.
-func (v *scopeView) inner() int {
-	if v.framed {
-		return v.width - ui.BoxPadding
-	}
-	return v.width
-}
+func (v *scopeView) inner() int { return chartInner(v.width, v.framed) }
 
 // cols is the trace's width: the width inside any frame, less the level axis,
 // which stands left of it.
@@ -116,11 +111,7 @@ func (v *scopeView) render(f scopeFrame) string {
 	}
 	// The trace and the milliseconds under it are one object and are framed as
 	// one; the header reads as prose above it and stays outside.
-	if v.framed {
-		b.WriteString(v.st.Box(strings.TrimRight(chart.String(), "\n")) + "\n")
-	} else {
-		b.WriteString(chart.String())
-	}
+	b.WriteString(chartFrame(v.st, v.framed, chart.String()))
 	return b.String()
 }
 
@@ -130,7 +121,7 @@ func (v *scopeView) render(f scopeFrame) string {
 func (v *scopeView) header(f scopeFrame) []string {
 	segs := []headerSeg{
 		{value: f.what},
-		{name: "tap ", value: scopeTapName(f.tap)},
+		tapSeg(f.tap),
 		{name: "window ", value: fmt.Sprintf("%d ms", f.windowMs)},
 		{name: "peak ", value: fmtDb(f.peakDbfs) + " dBFS"},
 		{name: "rms ", value: fmtDb(f.rmsDbfs) + " dBFS"},

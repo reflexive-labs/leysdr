@@ -100,6 +100,14 @@ blue at the noise floor, then cyan, green, amber, red at full scale. **The cold 
 noise line, not the bottom of the chart**, so hue answers the question a reader actually
 has: how far over the floor is this.
 
+**Every chart names its own cold end, and one function does the normalising.** `rampFrac(value,
+floor, top)` in `internal/cli/chart.go` is the only place a level becomes a ramp fraction. What
+differs is the two references: `spectrum` runs from the noise line to the loudest column the run
+has seen; `levels` from −60 dBFS to full scale, a held scale a meter can be read against;
+`waveform` from silence to the scale on screen, so a quiet passage under `--scale 0.1` still has
+colour in it; `waterfall` from the noise floor over its fixed 40 dB range. One colour, one answer
+in every view: this far above what this chart calls nothing.
+
 **Hue sweeps; luminance does not.** Every stop is held between 0.18 and 0.26 relative
 luminance, which is the only band clearing 3.2:1 contrast against a black terminal *and* a
 white one. We are forbidden from asking which the reader has (no OSC query, no

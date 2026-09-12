@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/dpup/leysdr/go/internal/ui"
 )
@@ -71,7 +70,9 @@ func scopeGutter(st ui.Style, gutterW, row int, scale float64) string {
 	case scopeHeight - 1:
 		label = scopeScaleLabel(-scale)
 	}
-	return st.Muted(fmt.Sprintf("%*s", gutterW-1, label) + st.Glyphs().TreeTrunk)
+	// An amplitude has no unit to write: the header names the tap the numbers
+	// are in.
+	return chartGutter(st, gutterW, label, "")
 }
 
 func (v *scopeView) gutter(row int, scale float64) string {
@@ -83,54 +84,11 @@ func (v *scopeView) gutter(row int, scale float64) string {
 // whether or not --trigger auto moved where that start is, because what the
 // axis measures is the window, and the window is what the header states.
 func (v *scopeView) axis(windowMs int) []string {
-	g := v.st.Glyphs()
 	cols := v.cols()
 	ticks := scopeTicks(windowMs, cols)
-	rule := []rune(strings.Repeat(string(g.Rule), cols+1))
-	for _, t := range ticks {
-		rule[t.col+1] = []rune(g.TreeTrunk)[0]
-	}
-	return []string{
-		strings.Repeat(" ", v.gutterW-1) + v.st.Muted(string(rule)),
-		v.st.Muted(v.labelRow(ticks)),
-	}
-}
-
-// labelRow writes each mark's time under it.
-func (v *scopeView) labelRow(ticks []scopeTick) string {
 	marks := make([]axisTick, len(ticks))
 	for i, t := range ticks {
 		marks[i] = axisTick{col: t.col, text: fmt.Sprintf("%d ms", t.ms)}
 	}
-	return axisLabelRow(v.gutterW, v.cols(), marks)
-}
-
-// axisTick is one mark of a timebase: the plot column it falls in and what is
-// written under it.
-type axisTick struct {
-	col  int
-	text string
-}
-
-// axisLabelRow writes each mark's text under it, dropping any label the width
-// cannot fit beside its neighbour: two labels run together read as a third
-// number that is neither.
-func axisLabelRow(gutterW, cols int, ticks []axisTick) string {
-	width := gutterW + cols
-	row := make([]byte, 0, width)
-	for _, t := range ticks {
-		at := gutterW + t.col - len(t.text)/2
-		if at < gutterW {
-			at = gutterW
-		}
-		if at+len(t.text) > width {
-			at = width - len(t.text)
-		}
-		if at < len(row)+1 || at < gutterW {
-			continue
-		}
-		row = append(row, strings.Repeat(" ", at-len(row))...)
-		row = append(row, t.text...)
-	}
-	return string(row)
+	return chartAxis(v.st, v.gutterW, cols, marks)
 }

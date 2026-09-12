@@ -421,7 +421,7 @@ func TestSpectrumPeakListTakesRampInk(t *testing.T) {
 	v := newSpectrumView(st, 80, 0, false, false)
 	peaks := loudestBins(bins, fixtureCenterHz, fixtureSpanHz, spectrumPeaks, medianDb(bins)+peakAboveFloorDb)
 	text := v.render(bins, peaks, medianDb(bins), fixtureCenterHz, fixtureSpanHz)
-	want := levelSGR(st, levelFrac(v.levelBand(peaks[0].Db)))
+	want := levelSGR(st, rampFrac(float64(v.levelBand(peaks[0].Db)), 0, chartLevelSteps-1))
 	line := ""
 	for _, l := range strings.Split(text, "\n") {
 		if strings.Contains(ui.Strip(l), "peak") {

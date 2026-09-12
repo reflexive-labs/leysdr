@@ -10,17 +10,17 @@ import (
 
 // How the live chart behaves in time.
 const (
-	// spectrumTickInterval is how often the status line is refreshed while no
+	// chartTickInterval is how often the status line is refreshed while no
 	// row has arrived.
-	spectrumTickInterval = 250 * time.Millisecond
-	// spectrumWaitNote is how long stdout may stay empty before the person is
+	chartTickInterval = 250 * time.Millisecond
+	// chartWaitNote is how long stdout may stay empty before the person is
 	// told, on stderr, that nothing has arrived yet.
-	spectrumWaitNote = time.Second
-	// spectrumNoteFor is how long a scale change stays on the status line.
-	spectrumNoteFor = 3 * time.Second
-	// spectrumFirstRow is how long a one-shot waits for its only row before
+	chartWaitNote = time.Second
+	// chartNoteFor is how long a scale change stays on the status line.
+	chartNoteFor = 3 * time.Second
+	// chartFirstRow is how long a one-shot waits for its only row before
 	// saying that nothing came. --watch waits for ever, and says so.
-	spectrumFirstRow = 10 * time.Second
+	chartFirstRow = 10 * time.Second
 )
 
 // Terminal control the live chart needs. These are the only escapes ley
@@ -33,10 +33,10 @@ const (
 	ansiCursorUpFmt = "\x1b[%dA"
 )
 
-// spectrumWriter puts charts on the screen: appended when piped, redrawn in
+// chartWriter puts charts on the screen: appended when piped, redrawn in
 // place on a terminal, always with a status line that says whether the stream
 // is alive.
-type spectrumWriter struct {
+type chartWriter struct {
 	app    *App
 	out    *bufio.Writer
 	redraw bool // in-place redraw (a --watch run on a terminal)
@@ -62,12 +62,15 @@ type spectrumWriter struct {
 	hidden    bool
 }
 
-func newSpectrumWriter(app *App, out *bufio.Writer, o spectrumOptions, rate float64) *spectrumWriter {
-	return &spectrumWriter{
+// newChartWriter fits a writer to one run: watch says the run redraws rather
+// than printing once, and rate is how many frames a second the daemon means to
+// send, which is what silence is measured against.
+func newChartWriter(app *App, out *bufio.Writer, watch bool, rate float64) *chartWriter {
+	return &chartWriter{
 		app:    app,
 		out:    out,
-		redraw: o.watch && !app.JSON && app.IsTTY(),
-		watch:  o.watch,
+		redraw: watch && !app.JSON && app.IsTTY(),
+		watch:  watch,
 		rate:   rate,
 		height: app.Style.Height,
 		start:  time.Now(),
@@ -78,10 +81,10 @@ func newSpectrumWriter(app *App, out *bufio.Writer, o spectrumOptions, rate floa
 // one, erasing each line as it goes so a shorter chart cannot leave the tail
 // of a longer one behind; piped, charts are appended with a blank line
 // between them, which is what scripts already read.
-func (w *spectrumWriter) frame(text, note string) {
+func (w *chartWriter) frame(text, note string) {
 	w.row()
 	if note != "" {
-		w.note, w.noteUntil = note, w.last.Add(spectrumNoteFor)
+		w.note, w.noteUntil = note, w.last.Add(chartNoteFor)
 	}
 	if !w.redraw {
 		w.out.WriteString(text)
@@ -114,14 +117,14 @@ func (w *spectrumWriter) frame(text, note string) {
 // fits reports whether a block of n lines can be redrawn in place. An unknown
 // height keeps the old behaviour: it is no worse than before, and on a terminal
 // that will not report its size there is nothing better to do.
-func (w *spectrumWriter) fits(n int) bool {
+func (w *chartWriter) fits(n int) bool {
 	return w.height <= 0 || n <= w.height
 }
 
 // scroll appends a block that is too tall to redraw, and says why once. Left
 // silent, a chart that suddenly started scrolling would look like a bug rather
 // than a window that is too short.
-func (w *spectrumWriter) scroll(lines []string) {
+func (w *chartWriter) scroll(lines []string) {
 	if !w.toldWhy {
 		w.toldWhy = true
 		fmt.Fprintf(w.app.Stderr, "%s\n", w.app.ErrStyle.Muted(fmt.Sprintf(
@@ -143,13 +146,13 @@ func (w *spectrumWriter) scroll(lines []string) {
 
 // row records that the daemon delivered one. --json writes its own line and
 // draws nothing, but the stream is alive and must not be reported as stalled.
-func (w *spectrumWriter) row() {
+func (w *chartWriter) row() {
 	w.frames++
 	w.last = time.Now()
 }
 
 // footer writes the one-shot's next-step line under the chart.
-func (w *spectrumWriter) footer(text string) {
+func (w *chartWriter) footer(text string) {
 	if text != "" {
 		w.out.WriteString(text)
 	}
@@ -159,15 +162,15 @@ func (w *spectrumWriter) footer(text string) {
 // (elapsed, or how long the stream has been silent); everywhere else it makes
 // sure a stream that never produces a row says so on stderr rather than
 // hanging with no output at all.
-func (w *spectrumWriter) idle() {
-	if w.frames == 0 && !w.warned && time.Since(w.start) > spectrumWaitNote {
+func (w *chartWriter) idle() {
+	if w.frames == 0 && !w.warned && time.Since(w.start) > chartWaitNote {
 		w.warned = true
 		fmt.Fprintln(w.app.Stderr, w.app.ErrStyle.Muted("waiting for the first spectrum row from the daemon"))
 	}
 	if !w.redraw {
 		return
 	}
-	if w.lines == 0 && w.frames == 0 && time.Since(w.start) < spectrumWaitNote {
+	if w.lines == 0 && w.frames == 0 && time.Since(w.start) < chartWaitNote {
 		return
 	}
 	if !w.hidden {
@@ -191,7 +194,7 @@ func (w *spectrumWriter) idle() {
 }
 
 // up moves the cursor back to the top of the block on screen.
-func (w *spectrumWriter) up() {
+func (w *chartWriter) up() {
 	if w.lines > 0 {
 		fmt.Fprintf(w.out, ansiCursorUpFmt, w.lines)
 	}
@@ -199,7 +202,7 @@ func (w *spectrumWriter) up() {
 
 // status is the live chart's last line: how many rows have been drawn, how
 // fast, for how long, and whether the stream has gone quiet.
-func (w *spectrumWriter) status() string {
+func (w *chartWriter) status() string {
 	st := w.app.Style
 	if w.frames == 0 {
 		return st.Warn("waiting for data")
@@ -216,7 +219,7 @@ func (w *spectrumWriter) status() string {
 
 // stallAfter is how much silence counts as a stall: three rows' worth, and
 // never less than a second and a half.
-func (w *spectrumWriter) stallAfter() time.Duration {
+func (w *chartWriter) stallAfter() time.Duration {
 	if w.rate <= 0 {
 		return 3 * time.Second
 	}
@@ -229,7 +232,7 @@ func (w *spectrumWriter) stallAfter() time.Duration {
 
 // finish restores the terminal: the cursor comes back whatever ended the run,
 // Ctrl-C included.
-func (w *spectrumWriter) finish() {
+func (w *chartWriter) finish() {
 	if w.hidden {
 		w.out.WriteString(ansiShowCursor)
 		w.hidden = false
