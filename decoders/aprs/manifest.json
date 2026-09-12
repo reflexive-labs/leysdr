@@ -1,0 +1,52 @@
+{
+  "name": "aprs",
+  "version": "0.1.0",
+  "description": "APRS over AX.25, Bell 202 AFSK at 1200 baud on 2 m",
+  "attribution": "",
+  "license": "Apache-2.0",
+  "recipe": {
+    "frequenciesHz": ["144390000", "144800000"],
+    "sampleRate": "0",
+    "bandwidthHz": 15000,
+    "mode": "NFM",
+    "gain": "GAIN_LEAVE"
+  },
+  "input": {
+    "mode": "CONTINUOUS",
+    "tap": "TAP_AUDIO"
+  },
+  "outputs": ["SHAPE_RECORDS", "SHAPE_ENTITIES"],
+  "entitySilenceS": 1800,
+  "fields": [
+    {"name": "symbol", "type": "TEXT", "description": "APRS symbol as its table identifier and code"},
+    {"name": "comment", "type": "TEXT", "description": "the free text the station sent"},
+    {"name": "path", "type": "TEXT", "description": "digipeater path, used hops marked with a star"},
+    {"name": "destination", "type": "TEXT", "description": "AX.25 destination address, usually the software's identifier"},
+    {"name": "speed_kmh", "type": "NUMBER", "unit": "km/h", "description": "speed over ground"},
+    {"name": "course_deg", "type": "NUMBER", "unit": "deg", "description": "course over ground, degrees true"},
+    {"name": "temp_c", "type": "NUMBER", "unit": "degC", "description": "air temperature"},
+    {"name": "wind_kmh", "type": "NUMBER", "unit": "km/h", "description": "sustained wind speed"},
+    {"name": "wind_dir_deg", "type": "NUMBER", "unit": "deg", "description": "wind direction"},
+    {"name": "gust_kmh", "type": "NUMBER", "unit": "km/h", "description": "peak gust in the last five minutes"},
+    {"name": "rain_mm_1h", "type": "NUMBER", "unit": "mm", "description": "rain in the last hour"},
+    {"name": "humidity_pct", "type": "NUMBER", "unit": "%", "description": "relative humidity"},
+    {"name": "pressure_hpa", "type": "NUMBER", "unit": "hPa", "description": "barometric pressure"},
+    {"name": "seq", "type": "TEXT", "description": "telemetry sequence number"},
+    {"name": "a1", "type": "NUMBER", "description": "telemetry analogue channel 1"},
+    {"name": "a2", "type": "NUMBER", "description": "telemetry analogue channel 2"},
+    {"name": "a3", "type": "NUMBER", "description": "telemetry analogue channel 3"},
+    {"name": "a4", "type": "NUMBER", "description": "telemetry analogue channel 4"},
+    {"name": "a5", "type": "NUMBER", "description": "telemetry analogue channel 5"},
+    {"name": "digital", "type": "TEXT", "description": "telemetry digital bits, most significant first"},
+    {"name": "addressee", "type": "TEXT", "description": "who a message is for"},
+    {"name": "text", "type": "TEXT", "description": "a message's text"},
+    {"name": "msg_id", "type": "TEXT", "description": "message identifier an ack or reject quotes"},
+    {"name": "object_name", "type": "TEXT", "description": "name of an object or item"},
+    {"name": "alive", "type": "FLAG", "description": "whether an object or item is live or killed"}
+  ],
+  "supportsMultiChannel": false,
+  "needsDedicatedCapture": false,
+  "statefulPredicatesAvailable": false,
+  "executable": "leydec-aprs",
+  "args": []
+}

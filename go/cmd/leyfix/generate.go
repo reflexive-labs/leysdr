@@ -69,6 +69,13 @@ func generate(o genOptions, w io.Writer) error {
 		if len(selected) > 0 && !selected[f.name] {
 			continue
 		}
+		if f.minDurationS > 0 && o.duration < f.minDurationS {
+			if selected[f.name] {
+				return fmt.Errorf("generate: %s needs at least %.0f s, not %g", f.name, f.minDurationS, o.duration)
+			}
+			fmt.Fprintf(w, "skip %s: needs at least %.0f s\n", f.name, f.minDurationS)
+			continue
+		}
 		if !f.fits(o.rate) {
 			if selected[f.name] {
 				return fmt.Errorf("generate: %s does not fit in %.0f Hz", f.name, o.rate)

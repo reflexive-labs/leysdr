@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 
+	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
 	"github.com/dpup/leysdr/go/pkg/iqfile"
 )
 
@@ -29,6 +30,10 @@ type fixture struct {
 	build func(rate float64) []source
 	// expect returns the assertions for a file generated at rate.
 	expect func(rate float64) []iqfile.Expect
+	// minDurationS is the shortest file the fixture's expectations hold for; a
+	// packet fixture asserts a count, and half a second of it is not the same
+	// file with fewer samples. 0 means any duration.
+	minDurationS float64
 }
 
 func f64(v float64) *float64 { return &v }
@@ -208,6 +213,31 @@ var catalog = []fixture{
 		expect: func(float64) []iqfile.Expect { return []iqfile.Expect{toneExpect("WFM", 400_000, 200_000, 1000, 30)} },
 	},
 	{
+		// The decoder fixture. It sits on 144.39 MHz with the carrier at the
+		// capture's centre so `ley decode aprs` with no arguments finds the
+		// capture `ley play` makes for it; a file device has no DC spike to
+		// stay clear of, which is the only reason the other fixtures offset
+		// theirs.
+		name: "aprs_afsk", centerHz: 144_390_000,
+		description: "three APRS packets as NFM AFSK 1200 at the centre frequency, 3.5 kHz deviation, -20 dBFS",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(144_390_000)},
+		build: func(rate float64) []source {
+			return []source{aprsSource(rate)}
+		},
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{{
+				Mode: "NFM", OffsetHz: 0, BandwidthHz: 15_000,
+				Meter: &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
+				Decode: &iqfile.DecodeExpect{
+					Protocol: "aprs", Records: 3, DeviceIDs: aprsSource(rate).deviceIDs(),
+				},
+			}}
+		},
+		// The three frames are 0.93 s of signal at 1200 baud, so the pattern is
+		// a second long and a shorter file would hold fewer than three records.
+		minDurationS: 1,
+	},
+	{
 		name: "noise_floor", centerHz: 146_520_000,
 		description: "complex white noise only, -60 dBFS",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
@@ -281,6 +311,21 @@ func (f *fixture) fits(rate float64) bool {
 		}
 	}
 	return true
+}
+
+// aprsSource builds the aprs_afsk fixture's transmitter. The three frames are
+// a position, a weather report and a status, from three stations, which is the
+// set docs/plans/decoders.md (DEC-3) asks the sidecar to expect.
+func aprsSource(rate float64) *afskPacket {
+	return &afskPacket{
+		rate: rate, carrierHz: 0, devHz: 3500, dbfs: signalDBFS,
+		preambleFlags: 8,
+		packets: []packet{
+			{source: ax25.Address{Call: "LEYTST", SSID: 1}, dest: "APZLEY", info: "!3745.60N/12225.00W>test position"},
+			{source: ax25.Address{Call: "LEYTST", SSID: 2}, dest: "APZLEY", info: "_09121200c220s004t077"},
+			{source: ax25.Address{Call: "LEYTST", SSID: 3}, dest: "APZLEY", info: ">test status"},
+		},
+	}
 }
 
 func newNoise(seed uint64) *gaussNoise {

@@ -46,15 +46,30 @@ type MeterExpect struct {
 	SquelchOpen *bool `json:"squelch_open,omitempty"`
 }
 
+// DecodeExpect describes what a decoder run over the channel must produce. It
+// is what a fixture carrying a data mode asserts instead of a tone: the
+// protocol whose plugin is expected to read it, how many records it holds, and
+// which transmitters they come from (docs/plans/decoders.md, DEC-3).
+type DecodeExpect struct {
+	// Protocol is the decoder manifest's name, which is also DecodeRecord.protocol.
+	Protocol string `json:"protocol"`
+	// Records is how many records the file yields, exactly.
+	Records int `json:"records"`
+	// DeviceIDs are the DecodeRecord.device_id values expected, in the order
+	// the fixture transmits them.
+	DeviceIDs []string `json:"device_ids,omitempty"`
+}
+
 // Expect describes one channel to create on a capture of the file and what
 // its demodulated audio and meters must satisfy.
 type Expect struct {
-	Mode        string       `json:"mode"`
-	OffsetHz    float64      `json:"offset_hz"`
-	BandwidthHz float64      `json:"bandwidth_hz"`
-	Audio       *AudioExpect `json:"audio,omitempty"`
-	Meter       *MeterExpect `json:"meter,omitempty"`
-	SubAudible  *SubExpect   `json:"sub_audible,omitempty"`
+	Mode        string        `json:"mode"`
+	OffsetHz    float64       `json:"offset_hz"`
+	BandwidthHz float64       `json:"bandwidth_hz"`
+	Audio       *AudioExpect  `json:"audio,omitempty"`
+	Meter       *MeterExpect  `json:"meter,omitempty"`
+	SubAudible  *SubExpect    `json:"sub_audible,omitempty"`
+	Decode      *DecodeExpect `json:"decode,omitempty"`
 }
 
 // SubExpect is what a sub-audible detector should say about a fixture. It is
