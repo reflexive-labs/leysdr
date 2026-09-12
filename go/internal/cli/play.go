@@ -18,7 +18,7 @@ import (
 )
 
 // fileSidecar is the subset of the .json sidecar that play consults
-// (docs/fixtures.md): centre frequency and the first expected channel.
+// (docs/reference/iq-files.md): centre frequency and the first expected channel.
 type fileSidecar struct {
 	CenterHz uint64 `json:"center_hz"`
 	Expect   []struct {

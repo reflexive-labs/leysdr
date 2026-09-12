@@ -1,6 +1,6 @@
 # Design: Scan
 
-Status: decided, implemented in Milestone D.13. Companion to `design-semantic-tier.md`, which
+Status: decided, implemented in Milestone D.13. Companion to `semantic-tier.md`, which
 introduced the detector and the scan resource in prose; this doc is the version with numbers in it.
 
 ## The story
@@ -24,7 +24,7 @@ The failure mode this design exists to prevent has already happened twice in thi
 chart's peak list once used a 6 dB threshold and four of five "loudest bins" were random noise
 quoted like carriers. The ISM occupancy measurement compared each channel's loudest bin against the
 band's median and reported quiet channels as 99% busy, because the maximum of N noise draws sits
-about 8 dB above their median by chance alone. `docs/plans/cli-papercuts.md` recorded the general
+about 8 dB above their median by chance alone. `docs/plans/archive/cli-papercuts.md` recorded the general
 form of the bug and reserved the fix for exactly this work:
 
 > The honest quantity scales with bin count, because the maximum of N noise bins grows with ln N …
@@ -334,7 +334,7 @@ client goes away, which is what makes Ctrl-C stop the sweep and hand the radio b
 leaving it walking a band nobody is watching. `ley scan` sends `CancelJob` on interrupt; the
 existing five-second presence reaper is the backstop for a hard kill.
 
-This is `design-semantic-tier.md`'s rule applied literally — "ad-hoc scans return the same shape
+This is `semantic-tier.md`'s rule applied literally — "ad-hoc scans return the same shape
 inline and are gone when the client is" — and it is the same rule that already governs channels.
 Persistence follows intent (invariant 8), and nobody typing `ley scan` has declared an intent to
 keep anything.
@@ -402,7 +402,7 @@ ley scan <lo>..<hi> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr]
 
 A range positional, parsed by `leyline.ParseUserRange`, which accepts `144M..148M` and `144..148`
 and refuses band names: `2m` is 2 MHz everywhere else in `ley`, and letting it mean the 2 m band
-here is the collision `--band` exists to avoid (see PC-9 in `docs/plans/cli-papercuts.md`).
+here is the collision `--band` exists to avoid (see PC-9 in `docs/plans/archive/cli-papercuts.md`).
 `--band 2m` is the way to say the band. Giving both is a usage error, not a precedence rule.
 
 There is deliberately no `--step`: the geometry is what makes the sweep honest, and a user-supplied
@@ -472,7 +472,7 @@ So the sweep is covered in three pieces:
 - **Sweeping while someone is listening.** The allocator declines. A sweep is not a retune; it takes
   the radio for seconds at a time.
 - **Continuous rescanning (`--watch`).** That is a watch job, and it wants the occupancy accumulator
-  from `design-band-watching.md` rather than a loop around this.
+  from `band-watching.md` rather than a loop around this.
 - **Audio clips per detection.** Record-job territory.
 - **Multi-device parallel sweeps.** Invariant 10.
 

@@ -24,7 +24,7 @@ func tty(kv map[string]string) Options {
 	return Options{StdoutTTY: true, StderrTTY: true, LookupEnv: env(kv)}
 }
 
-// TestColorChain walks every row of section 2 of docs/cli-style.md, in order.
+// TestColorChain walks every row of section 2 of docs/dev/cli-style.md, in order.
 func TestColorChain(t *testing.T) {
 	tests := []struct {
 		name string

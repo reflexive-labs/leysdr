@@ -64,7 +64,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
   `setSampleRate` and after `deviceRebound`, the delivered SampleTime is strictly increasing and a live
   spectrum subscription keeps producing rows. DaemonTests: capture_sample_rate write while an FFT bulk
   stream is open; assert rows keep arriving after the write.
-- docs/engine-internals.md: one paragraph on the capture-owned index base.
+- docs/dev/engine-internals.md: one paragraph on the capture-owned index base.
 
 ### WI-4 `[x]` Malformed-input hardening (#14, #11, #10, #24, all P2)
 
@@ -117,7 +117,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 - Tests (RTLTCPTests with `FakeRTLTCPServer`): server closes the connection -> device `.disconnected`,
   `fd` cleared; restart the fake server on the same port -> `open()` succeeds and streams again. Registry
   test: disconnected rtl_tcp entry becomes `.available` after a poll with the server back.
-- docs/dev-setup.md + engine-internals.md: rtl_tcp reconnects on the next poll after the server returns.
+- docs/dev/setup.md + docs/dev/engine-internals.md: rtl_tcp reconnects on the next poll after the server returns.
 
 ### WI-8 `[x]` Telemetry ring is latest-wins with visible gaps (#20 P2)
 
@@ -130,7 +130,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 - Tests: ChannelTests: push `capacity + 10` records, pop all -> the last pushed record is present, the
   oldest were evicted, `dropped == 10`. DaemonTests (or a service-level test): a slow subscriber observes a
   `seq` gap after the queue overflowed.
-- docs/engine-internals.md + design-data-planes.md: telemetry queue policy is drop-oldest with seq gaps.
+- docs/dev/engine-internals.md + docs/design/data-planes.md: telemetry queue policy is drop-oldest with seq gaps.
 
 ### WI-9 `[x]` Device open off the cooperative pool (#5 P3, plus the adjacent #16 one-liner)
 
@@ -146,7 +146,7 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 - `StreamRegistry.subscribe` `.iq` case: validate `req.iq.format` and `req.iq.sampleRate` per the decision
   above; reject with `INVALID_ARGUMENT`. Answer `cf32` at the capture rate as today.
 - proto/leyline/v1/bulk.proto: document the v0 IQ contract on `IqParams` (comment only) and regenerate with
-  `scripts/gen-proto.sh`. docs/design-data-planes.md: same note next to the IQ stream description.
+  `scripts/gen-proto.sh`. docs/design/data-planes.md: same note next to the IQ stream description.
 - Tests (DaemonTests `checkIQ`): subscribe kind=IQ with default params -> descriptor is cf32 at the capture
   rate; stream frames and assert `payload.count == frames * 8` bytes per cf32 sample block; unsubscribe;
   a second unsubscribe/stream returns `STREAM_NOT_FOUND`. Requests with `CS16` or a foreign sample rate
@@ -221,7 +221,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
 - Tests: ChannelTests (out-of-capture channel accepts mode+bandwidth, stays out, retune back -> `.active`
   with the new mode/bandwidth) and a DaemonTests case over WriteParams asserting the Channel event shows
   the new bandwidth with state OUT_OF_CAPTURE, then ACTIVE after `center_hz` moves back.
-- docs/engine-internals.md: one sentence on the rule (all non-offset writes are stored while out of capture).
+- docs/dev/engine-internals.md: one sentence on the rule (all non-offset writes are stored while out of capture).
 
 ### FU-3 `[x]` WatchEvents and Bulk.Stream end on client cancel (#20 follow-up)
 
@@ -244,7 +244,7 @@ Same loop as WI-1..WI-11: one commit each, verified independently, `make check` 
 - Tests: a hub subscriber that does not read sees `dropped` grow past capacity; the existing
   `testTelemetrySeqGapsAfterQueueOverflow` gains a variant that stalls the gRPC reader instead of the
   ring and still observes a seq gap equal to the records lost.
-- docs/engine-internals.md: note that all three telemetry buffers are gap-marked.
+- docs/dev/engine-internals.md: note that all three telemetry buffers are gap-marked.
 
 ### FU-5 `[x]` rtl_tcp connect runs off the cooperative pool; reconnect publishes only when available (#9 follow-up)
 

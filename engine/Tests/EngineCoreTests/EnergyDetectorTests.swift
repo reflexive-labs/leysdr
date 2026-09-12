@@ -5,7 +5,7 @@ import XCTest
 @testable import EngineCore
 
 /// The detector's claims, checked against synthetic spectra. Every number here is from
-/// `docs/design-scan.md`, and the design doc's numbers came from a Monte Carlo run before any of
+/// `docs/design/scan.md`, and the design doc's numbers came from a Monte Carlo run before any of
 /// this was written; these tests are what stops them drifting.
 final class EnergyDetectorTests: XCTestCase {
     let bins = 1024

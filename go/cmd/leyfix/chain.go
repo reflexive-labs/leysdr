@@ -20,7 +20,7 @@ type channelResult struct {
 	audioRate float64
 }
 
-// referenceChain runs the float64 reference chain from docs/engine-internals.md
+// referenceChain runs the float64 reference chain from docs/dev/engine-internals.md
 // "Channelizer plan" and "Demodulators": NCO mix → stage-1 FIR/decimate to
 // r1 ≥ 240 kHz → stage-2 FIR/decimate to ≈ 48 kHz → demod.
 func referenceChain(x []complex128, rate float64, mode string, offset, bw float64) (*channelResult, error) {

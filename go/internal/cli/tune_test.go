@@ -181,7 +181,7 @@ func liveTune(t *testing.T, sock string, want string, args ...string) (string, s
 func TestTuneLifecycle(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	stdout, errOut := liveTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio", "--squelch", "-40")
-	// The banner is stdout's and the meter is stderr's (docs/cli-style.md 3):
+	// The banner is stdout's and the meter is stderr's (docs/dev/cli-style.md 3):
 	// what a person sees is the two together.
 	out := stdout + errOut
 	if strings.Contains(stdout, "signal ") {

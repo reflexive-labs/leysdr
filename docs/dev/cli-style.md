@@ -191,7 +191,7 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 Styling may add SGR and may re-lay a screen, but these do not move:
 
 - Exit codes `0` success, `1` daemon or runtime error, `2` usage, `3` daemon not
-  running, `130` interrupted before the live phase (docs/interfaces.md).
+  running, `130` interrupted before the live phase (docs/reference/cli.md).
 - The error shape `ley: <sentence> [CODE]`. The sentence is the verb's own words and is
   never rewritten for ink. **Five spans may take ink**, by SGR only, each redundant on
   words that are there with colour off: the `ley:` prefix (`Err`); a parenthetical
@@ -209,7 +209,7 @@ Styling may add SGR and may re-lay a screen, but these do not move:
 - The golden help snapshots in `go/internal/cli/testdata/help/`: help is captured
   through a non-terminal writer, so styling must be TTY-gated and leave them
   byte-identical. A golden that must change is a deliberate, reviewed diff.
-- The documented wording in docs/interfaces.md and docs/cli-guide.md. Emphasis may be
+- The documented wording in docs/reference/cli.md and docs/guide/using-ley.md. Emphasis may be
   added to a sentence; the sentence is not rewritten as part of a visuals change.
 
 ## 7. The `ui` package

@@ -290,7 +290,7 @@ func scanFailure(job *leylinev1.Job, st ui.Style) string {
 	case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
 		return detail + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune"
 	}
-	// interfaces.md: an error line keeps the daemon's stable code unless ley has a plainer
+	// docs/reference/cli.md: an error line keeps the daemon's stable code unless ley has a plainer
 	// sentence for it. The cases above are the plainer sentences; everything else keeps it.
 	return detail + " [" + code + "]"
 }

@@ -12,7 +12,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 - **`--json` on destructive verbs (#25, agent-native detach warning).** `stop`, `stop --all` and `devices detach`
   print the daemon's `Empty` response (`{}`) under `--json`; the exit code carries success. No stale or invented
-  object is echoed. docs/interfaces.md states this.
+  object is echoed. docs/reference/cli.md states this.
 - **`version --json` (#27).** Documented as the second named exception to the proto3 mapping (keys `version`,
   `go`, `os`, `arch`), emitted through encoding/json (not `%q`) and pinned by a golden test. No proto message for a
   client-local value.
@@ -22,7 +22,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   `ley stop all`. Help and cli-guide say this.
 - **Audio for agents (agent-native critical).** A `ley listen <sel|freq> [--format json|bin]` verb mirrors `ley fft`
   and streams the channel's decoded audio via the client library's SubscribeAudio; audio rows are added to the
-  documented bulk-row exception in docs/interfaces.md. `ley presets` and `ley bands` list the client-local tables,
+  documented bulk-row exception in docs/reference/cli.md. `ley presets` and `ley bands` list the client-local tables,
   with `--json` arrays documented as client-local data.
 
 ## Work items (dependency order)
@@ -37,7 +37,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 - #1 daemon.go: `start`/`stop` under `--json` print the same DaemonInfo-shaped JSON `status` prints (after the
   action, from a fresh GetState; for stop, the last known info with pid); `install`/`uninstall`/`logs` reject
   `--json` as a usage error (exit 2).
-- #27 version.go: encoding/json output of the four keys; golden test; docs/interfaces.md exception paragraph.
+- #27 version.go: encoding/json output of the four keys; golden test; docs/reference/cli.md exception paragraph.
 - Tests: fake-backed CLI cases for each (idle `stop --all --json` has empty stdout; `set --json` rejection exits 1
   with the event on stdout; `stop --json` prints `{}`; `devices --watch --json` first line is the wrapped list;
   `daemon start --json` output parses as DaemonInfo; `version --json` golden).
@@ -101,10 +101,10 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 ### CLI-7 `[x]` Docs, leyfix coverage and the span decision (#18, #30, #7)
 
-- #18 cli-guide.md: append ` [FREQ_OUT_OF_RANGE]` / ` [DEVICE_BUSY]` to the two example lines.
+- #18 docs/guide/using-ley.md: append ` [FREQ_OUT_OF_RANGE]` / ` [DEVICE_BUSY]` to the two example lines.
 - #30 leyfix_test: generate+check am_tone, wfm_tone and two_nfm individually via `--only` at a rate that fits.
 - #7 spectrum: implement the Decisions entry (snap for a fresh capture with a stderr note; exit 2 on an existing
-  capture with a different width); update the flag help, cli-guide.md and the spectrum golden.
+  capture with a different width); update the flag help, docs/guide/using-ley.md and the spectrum golden.
 
 ### CLI-8 `[x]` Agent parity: `ley listen`, `ley presets`, `ley bands`
 
@@ -112,9 +112,9 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   capture/channel when needed, no system-audio sink), subscribes AUDIO via the client library, writes NDJSON rows
   `{seq, sample_index, sample_rate, format, pcm(base64)}` or raw PCM frames (`bin`), ends on --count or Ctrl-C
   (exit 130), tears down what it created. Document the row shape as part of the bulk-row exception in
-  docs/interfaces.md; add it to cli-guide.md and `ley help scripting`; remove any roadmap stub it supersedes.
+  docs/reference/cli.md; add it to docs/guide/using-ley.md and `ley help scripting`; remove any roadmap stub it supersedes.
 - `ley presets` and `ley bands`: tables from Presets()/Bands(); `--json` prints arrays (documented as client-local
-  data in docs/interfaces.md). `ley help presets` keeps its prose.
+  data in docs/reference/cli.md). `ley help presets` keeps its prose.
 - Tests: fake-backed listen test asserting rows and teardown; golden help files for the new verbs.
 
 ## Closing

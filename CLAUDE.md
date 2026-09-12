@@ -1,6 +1,6 @@
 # CLAUDE.md — Leyline
 
-Native macOS SDR engine + app. Read `docs/design-*.md` before structural changes — every invariant below has a rationale there; `docs/engine-internals.md` is the implementation contract (threads, hot path, pipeline math, daemon rules). This file is the enforcement summary.
+Native macOS SDR engine + app. Read `docs/design/*.md` before structural changes — every invariant below has a rationale there; `docs/dev/engine-internals.md` is the implementation contract (threads, hot path, pipeline math, daemon rules); `docs/writing-guide.md` is how every document, help text, error line, comment and commit message is written, and `docs/README.md` says which page is for whom. This file is the enforcement summary.
 
 ## What this is
 
@@ -31,6 +31,7 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` C
 - Instrument the sample path with `os_signpost` from the start — the spikes depend on it.
 - Errors: stable machine codes in `ErrorDetail.code`; prose goes in `message`.
 - Licensing: GPL is fine (open-source engine); prefer first-party driver bindings (librtlsdr, libhackrf, vendor SDKs) wrapped behind `RadioDevice`.
+- Docs: `docs/README.md` is the map, by reader (`guide/`, `reference/`, `design/`, `dev/`, `decisions/`, `plans/`); prose follows `docs/writing-guide.md`. A moved page takes every `docs/` reference with it. The "Error codes" table in `docs/dev/engine-internals.md` and the help goldens are parsed by tests.
 
 ## Testing without hardware
 
@@ -38,4 +39,4 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` C
 
 ## Build order
 
-Follow `docs/build-order.md`. Spikes S1–S3 gate everything: if S2 (20 MSPS throughput) fails its threshold, stop and escalate — the all-Swift decision gets revisited, not worked around silently.
+Follow `docs/plans/build-order.md`. Spikes S1–S3 gate everything: if S2 (20 MSPS throughput) fails its threshold, stop and escalate — the all-Swift decision gets revisited, not worked around silently.

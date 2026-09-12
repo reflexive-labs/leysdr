@@ -2,7 +2,7 @@
 
 // Renders engine values to leyline.v1 proto messages (and back for the demod-mode enum, the one a request carries).
 // EngineCore never imports the protos; the session and job stores hold proto messages directly
-// as their own record type rather than going through this mapping (docs/engine-internals.md
+// as their own record type rather than going through this mapping (docs/dev/engine-internals.md
 // "Daemon").
 
 import EngineCore
@@ -198,7 +198,7 @@ enum ProtoMapping {
     }
 
     /// gRPC status for a stable engine code, entry for entry with the table in
-    /// `docs/engine-internals.md`. Anything that reads the status rather than the trailer -- a retry
+    /// `docs/dev/engine-internals.md`. Anything that reads the status rather than the trailer -- a retry
     /// interceptor, a mesh policy, a client in a fourth language -- must see the same answer from
     /// every daemon, so the table is the contract and this switch follows it.
     static func statusCode(for code: String) -> RPCError.Code {

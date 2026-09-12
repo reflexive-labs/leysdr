@@ -38,7 +38,7 @@ const (
 // LevelsRow is one JSON row of `ley levels`: the daemon's own numbers for one
 // spectrum row, in dB, before any of the ballistics that shape the bars. Bulk
 // frames have no proto message, so this shape is part of the documented
-// bulk-row exception to the proto3 rule; see docs/interfaces.md.
+// bulk-row exception to the proto3 rule; see docs/reference/cli.md.
 type LevelsRow struct {
 	Seq         uint64      `json:"seq"`
 	SampleIndex uint64      `json:"sample_index"`
@@ -182,7 +182,7 @@ octaves, on a terminal at least 100 columns wide.
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
-			// clamp (docs/cli-style.md section 2).
+			// clamp (docs/dev/cli-style.md section 2).
 			if o.width = app.Style.Width; o.width <= 0 {
 				o.width = ui.DefaultWidth
 			}

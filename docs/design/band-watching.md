@@ -1,7 +1,7 @@
 # Design: Band Watching — Persistence, Burst Capture, Occupancy
 
-Status: draft. Companion to `design-signal-views.md` (which owns the spectrum, waterfall and channel
-views this builds on) and `design-data-planes.md` (which owns the plane split).
+Status: draft. Companion to `signal-views.md` (which owns the spectrum, waterfall and channel
+views this builds on) and `data-planes.md` (which owns the plane split).
 
 ## Context
 
@@ -93,7 +93,7 @@ The only thing that will show a LoRa chirp: stop scrolling, and capture.
 
 **Trigger, capture a window around it, then draw a fixed image you can zoom.** This is what a
 spectrum analyser's single-sweep-with-trigger does and what a logic analyser does, and it is the
-same instinct as the DVR story in `sdr-user-stories.md` — the difference is scale, milliseconds
+same instinct as the DVR story in `docs/plans/user-stories.md` — the difference is scale, milliseconds
 rather than minutes.
 
 The mechanism this needs, and the one real cost in this document, is **pre-trigger IQ retention in
@@ -153,7 +153,7 @@ This is also the view that survives being left running for an hour, which neithe
 ## Wire changes
 
 Sketched, not settled — each work item pins its own field numbers when it lands, following the
-`design-signal-views.md` precedent of settling them in one place.
+`signal-views.md` precedent of settling them in one place.
 
 - **Persistence**: a new `FftAccumulation` value is the wrong home (it changes what a row *is*).
   Likely a separate `StreamKind` or a telemetry snapshot, since a late subscriber wants the whole

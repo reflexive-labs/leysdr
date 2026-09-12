@@ -6,14 +6,14 @@ import GRPCCore
 @testable import LeylineDaemon
 import XCTest
 
-/// The error table in `docs/engine-internals.md` is the contract every client reads: the stable codes
+/// The error table in `docs/dev/engine-internals.md` is the contract every client reads: the stable codes
 /// and the gRPC status each is served with. The Go library has the twin of this test, so a code added
 /// on one side alone, or a status changed in one switch, fails on both.
 final class ErrorTableTests: XCTestCase {
     func testRegistryMatchesDocumentedTable() throws {
         let table = try documentedErrorTable()
         XCTAssertEqual(Set(EngineError.Code.all), Set(table.keys),
-                       "EngineError.Code.all and the table in docs/engine-internals.md disagree")
+                       "EngineError.Code.all and the table in docs/dev/engine-internals.md disagree")
         XCTAssertEqual(EngineError.Code.all.count, Set(EngineError.Code.all).count, "duplicate code in the registry")
     }
 
@@ -28,7 +28,7 @@ final class ErrorTableTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let doc = try String(contentsOf: root.appendingPathComponent("docs/engine-internals.md"), encoding: .utf8)
+        let doc = try String(contentsOf: root.appendingPathComponent("docs/dev/engine-internals.md"), encoding: .utf8)
         let statuses: [String: RPCError.Code] = [
             "NOT_FOUND": .notFound, "FAILED_PRECONDITION": .failedPrecondition, "UNAVAILABLE": .unavailable,
             "INVALID_ARGUMENT": .invalidArgument, "UNIMPLEMENTED": .unimplemented, "INTERNAL": .internalError,
@@ -51,7 +51,7 @@ final class ErrorTableTests: XCTestCase {
             }
             table[code] = mapped
         }
-        XCTAssertFalse(table.isEmpty, "no error-code rows found in docs/engine-internals.md")
+        XCTAssertFalse(table.isEmpty, "no error-code rows found in docs/dev/engine-internals.md")
         return table
     }
 }

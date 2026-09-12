@@ -154,7 +154,7 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
     public var description: String { "\(code): \(message)\(target.isEmpty ? "" : " (\(target))")" }
 
     /// Every stable code a daemon puts in `ErrorDetail.code`, spelled once. The gRPC status each one
-    /// maps to is the table in `docs/engine-internals.md`; a client switch keys on these strings, so
+    /// maps to is the table in `docs/dev/engine-internals.md`; a client switch keys on these strings, so
     /// a new code is added here before it is thrown anywhere.
     public enum Code {
         public static let deviceNotFound = "DEVICE_NOT_FOUND"

@@ -2,7 +2,7 @@
 
 // RTLTCPDevice: a virtual RadioDevice that speaks the osmocom rtl_tcp protocol to a dongle served on
 // another machine. BSD sockets only (no Network framework) so it builds and tests on Linux. See
-// docs/engine-internals.md "Devices".
+// docs/dev/engine-internals.md "Devices".
 //
 // Wire protocol: on connect the server sends 12 bytes — magic "RTL0", u32be tuner type, u32be tuner
 // gain count — then streams raw cu8 I/Q forever. Commands are 5 bytes (u8 opcode + u32be argument),
@@ -27,7 +27,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
 
     /// `DeviceDescriptor.driver` for every radio reached over rtl_tcp.
     public static let driverName = "rtltcp"
-    /// Samples per delivered block (docs/engine-internals.md "Block size"); 32768 bytes of cu8.
+    /// Samples per delivered block (docs/dev/engine-internals.md "Block size"); 32768 bytes of cu8.
     public static let blockSize = 16384
     /// Same list as `RTLSDRDevice` — the remote end is librtlsdr.
     public static let sampleRates = RTLSDRDevice.sampleRates

@@ -60,7 +60,7 @@ func TestOrientationSurvivesColourOff(t *testing.T) {
 	}
 }
 
-// TestOrientationWordingIsUnchanged holds the sentences docs/interfaces.md
+// TestOrientationWordingIsUnchanged holds the sentences docs/reference/cli.md
 // pins: styling may add ink and may not rewrite a line.
 func TestOrientationWordingIsUnchanged(t *testing.T) {
 	fixedOrientClock(t)

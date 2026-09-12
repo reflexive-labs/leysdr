@@ -1,7 +1,7 @@
 # Design: Audio meters — `ley levels` and `ley waveform`
 
-Status: implemented. Companion to `design-scope.md` (the millisecond view, which stays), to
-`design-signal-views.md` (the spectrum, waterfall and channel views) and to `cli-style.md`, whose
+Status: implemented. Companion to `scope.md` (the millisecond view, which stays), to
+`signal-views.md` (the spectrum, waterfall and channel views) and to `docs/dev/cli-style.md`, whose
 palette and layout rules every picture here obeys. The point of this document is the visual
 language, because a meter that is honest but dead-looking is not looked at.
 
@@ -76,7 +76,7 @@ under the master pair, plain ink, because they are the answer.
 
 **The scale is a meter's, not a chart's.** Fine at the top and coarse at the bottom: 6 dB per
 row from 0 to −24, then 10 dB per row to −60. A voice living at −20 gets four rows of resolution
-where it matters and the floor is still on screen. Held, never fitted to the data (`cli-style.md`
+where it matters and the floor is still on screen. Held, never fitted to the data (`docs/dev/cli-style.md`
 section 5): a bar of a given height means the same dB tomorrow.
 
 **Bars are LED ladders.** Two cells wide with a one-cell gap (three wide when the width allows),

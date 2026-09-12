@@ -1,6 +1,6 @@
 # Design: Telemetry & Bulk Planes
 
-Status: draft. Covers §3 of the planning doc. Companion to `design-control-plane.md`.
+Status: draft. Covers §3 of the planning doc. Companion to `control-plane.md`.
 
 ## Context
 
@@ -67,4 +67,4 @@ Rationale for a separate plane rather than folding into control events: control 
 
 ## Phase exit
 
-With `design-control-plane.md`, this completes the protocol surface. Next: §4 semantic tier doc, then the §5 proto files and Swift protocols fall out of the three docs.
+With `control-plane.md`, this completes the protocol surface. Next: §4 semantic tier doc, then the §5 proto files and Swift protocols fall out of the three docs.

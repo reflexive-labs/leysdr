@@ -1,6 +1,6 @@
 # Design: Semantic Tier
 
-Status: draft. Covers §4 of the planning doc. Companion to `design-control-plane.md` and `design-data-planes.md`.
+Status: draft. Covers §4 of the planning doc. Companion to `control-plane.md` and `data-planes.md`.
 
 ## Context
 
@@ -44,15 +44,20 @@ Results flow twice: live as telemetry/events while running, and durable as resou
 
 ## MCP surface
 
-Tools (generated from protos, names indicative):
+This is the design for Milestone D.16; nothing in it is implemented yet. Tools map one-to-one onto
+RPCs (names indicative):
 
-- `list_devices`, `get_capture_state` — discovery and orientation
-- `tune` — create/adjust a channel; respects don't-disturb on shared captures
-- `listen_summary` — subscribe to a channel's telemetry for a bounded time, return activity segments observed
-- `scan` — ad-hoc sweep, inline results
-- `snapshot` — spectrum image (adapter-rendered) plus the underlying data
-- `start_job`, `list_jobs`, `get_job`, `cancel_job` — the durable layer
-- `get_transcript`, `find_recordings` — resource retrieval
+| Tool | Maps to | Notes |
+|---|---|---|
+| `list_devices` | Control.ListDevices | descriptors with capability detail |
+| `get_state` | Control.GetState | orientation: captures, channels, activity |
+| `tune` | CreateCapture/CreateChannel/WriteParams | refuses to retune active captures (don't-disturb) unless `override: true`; returns refusal reason |
+| `listen_summary` | Telemetry.Subscribe (bounded) | subscribes for `duration_s`, returns activity segments observed |
+| `scan` | Jobs.StartJob(ScanConfig{once}) + Jobs.GetScan | inline results, ephemeral: the job dies with the client that started it. Recurring scans need the durable store (D.15) and are refused |
+| `snapshot` | Bulk.Subscribe(FFT, one row) | returns PNG (adapter-rendered) + binned data |
+| `start_job` / `list_jobs` / `get_job` / `cancel_job` | Jobs service | watch, scan, record configs as typed payloads |
+| `get_transcript` | Jobs.GetTranscript | segments + coverage gaps; adapter adds waterfall thumbnails |
+| `find_recordings` | Resources.ListResources | metadata-filtered; returns `ley://` URIs |
 
 Resources map one-to-one onto `ley://` URIs. The adapter's value-adds beyond proto transcription: PNG rendering for snapshots, waterfall thumbnails for transcripts, and compact text summaries of scans (band-plan labels applied to detections) so agents spend context on reasoning rather than JSON.
 

@@ -14,7 +14,7 @@ import (
 )
 
 // RTLSDRRates is the RTL-SDR sample-rate list the fake device advertises: the rates librtlsdr
-// accepts without warnings, which is what the real driver offers (docs/engine-internals.md).
+// accepts without warnings, which is what the real driver offers (docs/dev/engine-internals.md).
 var RTLSDRRates = []uint64{250_000, 1_024_000, 1_536_000, 1_800_000, 1_920_000, 2_048_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000}
 
 // RTLSDRDefaultRate is the rate used when CreateCapture asks for 0.
@@ -77,7 +77,7 @@ func HeldRTLSDR() *leylinev1.DeviceDescriptor {
 	}
 }
 
-// sidecar is the <name>.json sidecar of a .cf32|.cu8 recording (docs/fixtures.md).
+// sidecar is the <name>.json sidecar of a .cf32|.cu8 recording (docs/reference/iq-files.md).
 type sidecar struct {
 	SampleRate uint64 `json:"sample_rate"`
 	CenterHz   uint64 `json:"center_hz"`

@@ -1,6 +1,6 @@
 # Leyline — Build Order
 
-Agent-sized tasks with acceptance criteria. V0 user stories in `sdr-user-stories.md` are the acceptance tests of record; tasks reference them. Sequence matters: each task's dependencies are the tasks above it.
+Agent-sized tasks with acceptance criteria. V0 user stories in `docs/plans/user-stories.md` are the acceptance tests of record; tasks reference them. Sequence matters: each task's dependencies are the tasks above it.
 
 ## Spikes (gate everything)
 
@@ -33,9 +33,9 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `sdr-user-stories
 
 ## Milestone D — semantic tier
 
-13. **Done.** Detector (energy detection, noise floor, persistence tracking); telemetry plane; `ley scan`. *(Story: scan with detections.)* Design and measured numbers: `docs/design-scan.md`.
+13. **Done.** Detector (energy detection, noise floor, persistence tracking); telemetry plane; `ley scan`. *(Story: scan with detections.)* Design and measured numbers: `docs/design/scan.md`.
 14. TUI dashboard: bare `ley` opens a Bubble Tea dashboard — shaded-cell waterfall from a negotiated low-rate FFT stream, tuning controls, channel list, meters from telemetry. First real exercise of stream negotiation by a constrained consumer.
 15. Jobs: store, JobRunner respawn, CaptureAllocator with don't-disturb; watch job → ActivitySegments → transcript.
-16. MCP adapter (Go, sharing the `ley` client library); tools from `docs/interfaces.md`; snapshot PNG rendering.
+16. MCP adapter (Go, sharing the `ley` client library); tools from `docs/reference/cli.md`; snapshot PNG rendering.
 
 Each task lands with: tests (fixture-based where DSP), os_signpost instrumentation on any new sample-path code, and no invariant violations (CLAUDE.md is the review checklist).

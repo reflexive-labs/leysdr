@@ -30,7 +30,7 @@ const (
 // it completes, the statistics taken over the slice it covers and the state
 // the daemon's squelch was in while it arrived. Bulk frames have no proto
 // message, so this shape is part of the documented bulk-row exception to the
-// proto3 rule; see docs/interfaces.md.
+// proto3 rule; see docs/reference/cli.md.
 type WaveformRow struct {
 	// SampleIndex is the daemon's own index for the first sample of the slice.
 	// Seconds is how much audio the picture holds by the end of it, which is
@@ -142,7 +142,7 @@ peak_dbfs, rms_dbfs, squelch_open}.`,
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
-			// clamp (docs/cli-style.md section 2).
+			// clamp (docs/dev/cli-style.md section 2).
 			if o.width = app.Style.Width; o.width <= 0 {
 				o.width = ui.DefaultWidth
 			}

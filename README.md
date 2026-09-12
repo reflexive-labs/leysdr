@@ -14,7 +14,7 @@ channel is hearing; a band scan with an honest energy detector; two channels on 
 second terminal adjusting what the first is hearing; `--json` for scripts and agents.
 
 **Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app, the
-MCP adapter for agents. `docs/build-order.md` is the order they arrive in and
+MCP adapter for agents. `docs/plans/build-order.md` is the order they arrive in and
 `docs/plans/v1-release.md` is the gap analysis for the first shared release.
 
 ## Requirements
@@ -37,9 +37,10 @@ ley daemon start --bin $PWD/engine/.build/release/leylined
 
 `scripts/bootstrap-mac.sh` runs the same steps. `ley daemon install --bin …` instead of `start`
 writes a LaunchAgent so the daemon starts at login; after that `ley daemon start|stop|status|logs`
-go through launchd, and `make reload` rebuilds both binaries and restarts the daemon on the new
-build in one step. Developer details, the remote-dongle setup and troubleshooting are in
-[`docs/dev-setup.md`](docs/dev-setup.md).
+go through launchd. Starting at login, a radio on another machine over `rtl_tcp`, where the daemon
+keeps its files and uninstalling are in [`docs/guide/install.md`](docs/guide/install.md); when
+something fails, [`docs/guide/troubleshooting.md`](docs/guide/troubleshooting.md). Building for
+development (the gate, `make reload`, the Linux container) is [`docs/dev/setup.md`](docs/dev/setup.md).
 
 ## Quickstart
 
@@ -95,7 +96,7 @@ Bare `ley` tells you where things stand and what to type next; `ley help glossar
 words (capture, channel, dBFS, FFT, squelch); `ley help presets` lists names like `noaa` and
 `calling` that `tune` accepts in place of a frequency. The task-by-task walkthrough, including
 `--json` and exit codes for scripts and what to do when something fails, is
-[`docs/cli-guide.md`](docs/cli-guide.md).
+[`docs/guide/using-ley.md`](docs/guide/using-ley.md).
 
 ### Without a radio
 
@@ -111,11 +112,11 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 | `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks), `LeylineDaemon` (`leylined`: services, session store, jobs), generated `LeylineProto`, the `s2-throughput` spike harness |
 | `go/` | Go module: `pkg/leyline` client library, `cmd/ley`, `cmd/leyfix` (fixture generator and analyser), `internal/fakedaemon` (an in-memory implementation of the contract the CLI tests run against), `internal/e2e` (`ley` driving a real `leylined`) |
 | `fixtures/` | generated IQ signals with expected demod outputs (`make fixtures`; gitignored) |
-| `docs/` | design docs (`design-*.md`, read before structural changes), `engine-internals.md` (the implementation contract), `interfaces.md` (the CLI and MCP surface), `build-order.md`, `plans/` |
+| `docs/` | [`docs/README.md`](docs/README.md) is the map: `guide/` for using Leyline, `reference/` for `ley` and the contract, `design/` for why it is built this way, `dev/` for contributor contracts (engine internals, CLI style), `decisions/`, `plans/` |
 
 ## Where things stand
 
-Against [`docs/build-order.md`](docs/build-order.md):
+Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 
 - Device backends: an RTL-SDR on USB (librtlsdr) and an RTL-SDR another machine serves with
   `rtl_tcp`. Both are supported, not experiments: the engine tests drive a fake `rtl_tcp` server and
@@ -137,9 +138,9 @@ Against [`docs/build-order.md`](docs/build-order.md):
 
 Every verb's `--json` is the standard proto3 JSON mapping of the contract, and everything a person
 reads goes to stderr, so stdout is always parseable (`ley help scripting`). If you write your own
-client, read the "Client requirements" section of [`docs/interfaces.md`](docs/interfaces.md) first:
-the daemon's HTTP/2 stack drops connections that ping on every data frame, which grpc-go and
-grpc-python do by default, and the fix is one dial option.
+client, read [`docs/reference/clients.md`](docs/reference/clients.md) first: the daemon's HTTP/2
+stack drops connections that ping on every data frame, which grpc-go and grpc-python do by default,
+and the fix is one dial option.
 
 ## Contributing, security, licence
 

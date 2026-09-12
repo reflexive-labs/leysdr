@@ -355,7 +355,7 @@ id           every object has one: dev_..., cap_..., chan_.... ley also
 func topicScripting() string {
 	return `Machine output: add --json to any command that has data to give.
 It prints the proto3 JSON mapping of the leyline.v1 messages
-(docs/interfaces.md): lowerCamelCase keys, 64-bit integers as strings, one
+(docs/reference/cli.md): lowerCamelCase keys, 64-bit integers as strings, one
 object per line for streams (NDJSON). Anything meant for a person (banners,
 "using NFM: ...") goes to stderr, so stdout is always parseable. A verb
 whose output is a script, a file or a launchd action ('ley help', 'ley

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Demodulators (docs/engine-internals.md, "Demodulators"). `configure` allocates all scratch;
+// Demodulators (docs/dev/engine-internals.md, "Demodulators"). `configure` allocates all scratch;
 // `process` is the hot path — kernels only, no allocation, no locks.
 
 import Foundation

@@ -90,7 +90,7 @@ func (f *bandFlags) parse(app *App, args []string, span string, u bandUsage) err
 	}
 	// Width comes from the resolved style, which has already applied --width,
 	// COLUMNS, the terminal's own size and the [40, 160] clamp
-	// (docs/cli-style.md section 2).
+	// (docs/dev/cli-style.md section 2).
 	f.width = app.Style.Width
 	if f.width <= 0 {
 		f.width = ui.DefaultWidth

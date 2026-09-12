@@ -4,7 +4,7 @@ package fakedaemon
 
 import "testing"
 
-// audioRate must follow the engine's channelizer plan (engine-internals.md):
+// audioRate must follow the engine's channelizer plan (docs/dev/engine-internals.md):
 // r2 = (fs / max(1, floor(fs/240k))) / max(1, round(r1/48k)).
 func TestAudioRateFollowsChannelizerPlan(t *testing.T) {
 	for _, tc := range []struct {

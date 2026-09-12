@@ -187,7 +187,7 @@ func scopePeak(samples []float32) float64 {
 // what the daemon says is under them, never the samples -- those are `ley
 // listen --format json`. Bulk frames have no proto message, so this shape is
 // part of the documented bulk-row exception to the proto3 rule; see
-// docs/interfaces.md. Seq and SampleIndex name the daemon frame the window
+// docs/reference/cli.md. Seq and SampleIndex name the daemon frame the window
 // closed on.
 type ScopeRow struct {
 	Seq         uint64  `json:"seq"`
@@ -327,7 +327,7 @@ scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
-			// clamp (docs/cli-style.md section 2).
+			// clamp (docs/dev/cli-style.md section 2).
 			if o.width = app.Style.Width; o.width <= 0 {
 				o.width = ui.DefaultWidth
 			}

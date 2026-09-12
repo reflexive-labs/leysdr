@@ -1,6 +1,6 @@
 # Engine internals
 
-Status: v0 implementation contract. Companion to `design-control-plane.md` and `design-data-planes.md`;
+Status: v0 implementation contract. Companion to `docs/design/control-plane.md` and `docs/design/data-planes.md`;
 the wire contract is `proto/leyline/v1`, the engine contract is `engine/Sources/EngineCore/CoreProtocols.swift`.
 CLAUDE.md invariants apply throughout; this doc says *how* the engine keeps them.
 
@@ -44,7 +44,7 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 └── Tests/TestSupport         fakes both test targets drive (the rtl_tcp server); no product depends on it
 ```
 
-Go clients live in `go/` (`docs/interfaces.md` for the verb tree). `go/internal/fakedaemon` is an in-memory
+Go clients live in `go/` (`docs/reference/cli.md` for the verb tree). `go/internal/fakedaemon` is an in-memory
 implementation of the leyline.v1 services used to test `ley` without hardware or Swift.
 
 ## Threads and ownership
@@ -319,7 +319,7 @@ up; capped to 16384), `actualRate` is `min(requested, 30)`.
 
 ### FilePlaybackDevice
 
-Reads the IQ file format in `docs/fixtures.md` (`<name>.cf32` + `<name>.json`). Descriptor: driver
+Reads the IQ file format in `docs/reference/iq-files.md` (`<name>.cf32` + `<name>.json`). Descriptor: driver
 `"file"`, model = file name, serial = path hash, one tuning range `[center, center]`, one sample rate,
 native `.cf32`, no gain elements, features `loop`, `duration_s`, `path`. Streaming is paced to real
 time by default (sleep per block); `realtime: false` (tests, `leyline` internal only) delivers as fast

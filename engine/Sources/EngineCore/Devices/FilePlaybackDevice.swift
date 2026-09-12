@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// FilePlaybackDevice: a virtual RadioDevice that replays an IQ file (docs/fixtures.md) through the
+// FilePlaybackDevice: a virtual RadioDevice that replays an IQ file (docs/reference/iq-files.md) through the
 // same delivery path as hardware. Paced to real time by default; `realtime: false` runs flat out.
 
 import Foundation
 import Logging
 
-/// Replays `<name>.cf32|.cu8` + sidecar as a `RadioDevice`. See docs/engine-internals.md "Devices".
+/// Replays `<name>.cf32|.cu8` + sidecar as a `RadioDevice`. See docs/dev/engine-internals.md "Devices".
 public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
-    /// Samples per delivered block (docs/engine-internals.md "Block size").
+    /// Samples per delivered block (docs/dev/engine-internals.md "Block size").
     public static let blockSize = 16384
     /// `DeviceDescriptor.driver` value every file-playback device reports.
     public static let driverName = "file"

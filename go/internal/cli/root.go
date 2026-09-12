@@ -343,7 +343,7 @@ func (a *App) dial(ctx context.Context) (*leyline.Client, error) {
 	return c, nil
 }
 
-// Exit statuses (documented in interfaces.md and `ley help scripting`).
+// Exit statuses (documented in docs/reference/cli.md and `ley help scripting`).
 const (
 	// ExitUsage is a usage error: bad flag, wrong arguments, unknown verb or
 	// parameter. Nothing was sent to the daemon.

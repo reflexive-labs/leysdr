@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Leyline — top-level developer entry points. See docs/dev-setup.md.
+# Leyline — top-level developer entry points. See docs/dev/setup.md.
 #
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
 #   make version    regenerate the engine's version constant from the root VERSION file

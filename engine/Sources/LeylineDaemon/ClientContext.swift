@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Client identity (docs/engine-internals.md "Client identity and ownership").
+// Client identity (docs/dev/engine-internals.md "Client identity and ownership").
 
 import EngineCore
 import GRPCCore

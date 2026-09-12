@@ -1,6 +1,6 @@
 # Plan: ley scan (Milestone D.13)
 
-Design: `docs/design-scan.md`. Every number in the detector was measured before it was written down;
+Design: `docs/design/scan.md`. Every number in the detector was measured before it was written down;
 the design doc carries the tables. This file is the work list and the record of what each step
 actually found.
 
@@ -65,8 +65,8 @@ client, 16–17 the harness and the docs.
 - [x] **SC-16 Fixtures and a synthetic retunable device.** A multi-carrier fixture with carriers at
       known offsets and levels for the one-step detector test; a test-only device in the daemon
       tests that changes its content late after `tune`, for the multi-step loop.
-- [x] **SC-17 Docs.** `interfaces.md` (the CLI tree, the JSON shape, the additive fields),
-      `cli-guide.md` (a section), `build-order.md` (D.13 done), `fixtures.md` (the new fixture).
+- [x] **SC-17 Docs.** `docs/reference/cli.md` (the CLI tree, the JSON shape, the additive fields),
+      `docs/guide/using-ley.md` (a section), `docs/plans/build-order.md` (D.13 done), `docs/reference/iq-files.md` (the new fixture).
 
 ## Notes
 

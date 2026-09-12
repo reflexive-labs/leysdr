@@ -6,7 +6,7 @@
 //
 // This file is the engine's contract. The concrete model types it references live in
 // Model.swift, Identifiers.swift and Buffers.swift. Threading and ownership rules are in
-// docs/engine-internals.md — read that before implementing anything here.
+// docs/dev/engine-internals.md — read that before implementing anything here.
 //
 // Hot-path conventions (CLAUDE.md invariant 4):
 //   - Sample buffers are engine-owned, preallocated, and reused. No allocation in process paths.
@@ -487,7 +487,7 @@ public struct Detection: Hashable, Sendable {
 /// Daemon-owned persistent intents. Respawned from the store on daemon start.
 /// A table of watches, not a workflow engine.
 ///
-/// This is the Milestone D.15 contract (docs/build-order.md) for the watch job; there is no
+/// This is the Milestone D.15 contract (docs/plans/build-order.md) for the watch job; there is no
 /// implementation yet, and the scan job (`ScanRunner`) does not go through it.
 public protocol JobRunner: AnyObject, Sendable {
     var id: JobID { get }
@@ -568,7 +568,7 @@ public protocol CaptureLease: AnyObject, Sendable {
 
 /// Resources: a plain directory Finder can see, plus a metadata index.
 ///
-/// This is the Milestone D.15 contract (docs/build-order.md); no implementation exists yet, and it
+/// This is the Milestone D.15 contract (docs/plans/build-order.md); no implementation exists yet, and it
 /// declares the shape jobs will persist their outputs through.
 public protocol ResourceStore: AnyObject, Sendable {
     func create(kind: ResourceKind, metadata: [String: String]) async throws -> ResourceHandle

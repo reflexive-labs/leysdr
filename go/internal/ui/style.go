@@ -55,7 +55,7 @@ func (s Style) Err(text string) string { return s.ink(inkErr, text) }
 // Cmd is cyan: commands the reader is meant to copy and run.
 func (s Style) Cmd(text string) string { return s.ink(inkCmd, text) }
 
-// Glyphs is the drawing vocabulary of section 4 of docs/cli-style.md, in
+// Glyphs is the drawing vocabulary of section 4 of docs/dev/cli-style.md, in
 // whichever alphabet the style resolved to. Every glyph has an ASCII
 // fallback: a screen must be legible in both.
 type Glyphs struct {

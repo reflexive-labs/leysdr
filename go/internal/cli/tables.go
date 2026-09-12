@@ -17,7 +17,7 @@ import (
 // presetJSON and bandJSON are the `--json` shapes of `ley presets` and `ley
 // bands`. Both tables are client-local data with no proto message (the CLI
 // resolves them into the same RPCs a number uses), so they are emitted
-// through encoding/json as one array; docs/interfaces.md names the exception.
+// through encoding/json as one array; docs/reference/cli.md names the exception.
 type presetJSON struct {
 	Name        string   `json:"name"`
 	Aliases     []string `json:"aliases"`
@@ -49,7 +49,7 @@ func bandModeName(m leylinev1.DemodMode) string {
 // printArray marshals a client-local JSON shape -- an array of table rows, or
 // the single object a band lookup answers with. It is deliberately not
 // printJSON, which takes a proto message: none of this data has one, which is
-// the documented exception in docs/interfaces.md.
+// the documented exception in docs/reference/cli.md.
 func (a *App) printArray(v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {

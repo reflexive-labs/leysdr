@@ -3,7 +3,7 @@
 // Package ui owns how `ley` looks: the resolved terminal capabilities
 // (colour, unicode, width), the six ink roles, the glyph vocabulary and the
 // visible-width helpers every renderer aligns with. It implements section 7
-// of docs/cli-style.md and depends on nothing outside the standard library.
+// of docs/dev/cli-style.md and depends on nothing outside the standard library.
 //
 // The zero Style is plain, ASCII and unknown-width, and every one of its ink
 // methods is the identity function: the default path is the plain path, which

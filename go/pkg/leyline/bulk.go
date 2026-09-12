@@ -10,7 +10,7 @@ import (
 )
 
 // Bulk frames are the one part of leyline.v1 with no proto message: a frame
-// carries a descriptor-shaped byte payload (docs/interfaces.md). The decoders
+// carries a descriptor-shaped byte payload (docs/reference/cli.md). The decoders
 // below are the Go half of that contract, and they live here rather than in a
 // client so that every client — CLI, TUI, MCP adapter — reads a spectrum on the
 // same scale as the daemon wrote it.

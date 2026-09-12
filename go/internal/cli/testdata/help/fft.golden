@@ -16,7 +16,7 @@ for the run (destroyed on exit).
                floor for the same row. --format bin carries no floor.
                Bulk rows have no proto message, so this shape (and the
                matching 'spectrum --json') is the documented exception to
-               ley's proto3 JSON rule; see docs/interfaces.md. Rows are
+               ley's proto3 JSON rule; see docs/reference/cli.md. Rows are
                delivered gap-marked: when the daemon had to drop rows, a
                line {"gap":{"from_sample":A,"to_sample":B}} precedes the
                next row and names the samples it skipped.

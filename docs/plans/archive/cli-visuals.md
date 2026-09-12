@@ -2,7 +2,7 @@
 
 Make `ley` look like a finished tool. Source: the visuals audit (2026-09-09, six passes:
 terminal capabilities, static screens, live verbs, the spectrum showpiece, daemon/help/errors,
-and a constraints-and-seams map). The contract every item follows is `docs/cli-style.md`; read it
+and a constraints-and-seams map). The contract every item follows is `docs/dev/cli-style.md`; read it
 first, it is short and prescriptive.
 
 Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
@@ -29,7 +29,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 ### UI-0 `[x]` The `ui` package (foundation; everything else depends on it)
 
 - New package `go/internal/ui`, standard library only, implementing section 7 of
-  `docs/cli-style.md` exactly: `Style` with `Color`/`Unicode`/`Width`, the six ink methods
+  `docs/dev/cli-style.md` exactly: `Style` with `Color`/`Unicode`/`Width`, the six ink methods
   (`Label`, `Muted`, `Ok`, `Warn`, `Err`, `Cmd`), `Glyphs()`, `Pad`, `Truncate`, `Bar`, `Ramp`,
   `Rule`, and the package functions `Visible` and `Strip`. Zero value is plain, ASCII, unknown
   width, and every method on it is the identity function.
@@ -57,7 +57,7 @@ Files: `root.go` (renderOrientation), `state.go`, `format.go`, `version.go`.
 
 - Bare `ley`: `Label` the `Daemon`/`Devices`/`Playing` column, `Muted` the diagnostics (pid,
   socket, serial, trailing ids), `Cmd` the commands in the `Next:` block with their explanations
-  `Muted`. Wording stays byte-identical (docs/interfaces.md pins it). Piped, print the
+  `Muted`. Wording stays byte-identical (docs/reference/cli.md pins it). Piped, print the
   orientation block rather than the help screen.
 - `ley state`: render device to capture to channel to sink as an indented tree using the tree
   glyphs; each level names only what is new, so the repeated ULID columns disappear. Units go in
@@ -350,7 +350,7 @@ least 60 columns wide and never when piped or under `--ascii`.
 
 ### Follow-ups
 
-Now tracked in `cli-papercuts.md`, which is where small CLI improvements collect so they are not
+Now tracked in `docs/plans/archive/cli-papercuts.md`, which is where small CLI improvements collect so they are not
 lost in the Closing section of whichever plan was open when they were noticed. Kept here for the
 context they were written in.
 
@@ -368,6 +368,6 @@ context they were written in.
   different streams. Worth deciding deliberately.
 - `ley bands`' NOTE column truncates to about 15 columns at 80 columns wide, because NAME, RANGE,
   MODE and BANDWIDTH already spend 63. Dropping BANDWIDTH would give NOTE room.
-- `docs/cli-style.md` section 6 says only the `ley:` prefix and the `[CODE]` suffix may take ink on
+- `docs/dev/cli-style.md` section 6 says only the `ley:` prefix and the `[CODE]` suffix may take ink on
   an error line, while the VIS-5 item also allowed a muted path and a highlighted remedy. The
   implementation followed the item; the guide should be reconciled to match.

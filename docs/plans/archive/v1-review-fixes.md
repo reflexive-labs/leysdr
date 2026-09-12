@@ -1,6 +1,6 @@
 # Review fixes, v1.0 pass
 
-Source: `docs/plans/v1-review-findings.md` (in-repo this time, so the ids below resolve). Scope: every
+Source: `docs/plans/archive/v1-review-findings.md` (in-repo this time, so the ids below resolve). Scope: every
 confirmed or adjudicated finding that is a code or comment change. Design findings that need a
 milestone go to `docs/plans/v1-release.md` and are listed under "Deferred" here with the item that
 carries them. One commit per work item, verified independently, both suites green after each.
@@ -9,7 +9,7 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 ## Decisions
 
-- **gRPC status per stable code (a-layering-2).** One table, written into `docs/engine-internals.md`
+- **gRPC status per stable code (a-layering-2).** One table, written into `docs/dev/engine-internals.md`
   next to the `leyline-error-bin` paragraph, asserted by a test on each side: `DEVICE_BUSY` and
   `DEVICE_SWEEPING` → `FAILED_PRECONDITION` (`RESOURCE_EXHAUSTED` is retriable under default gRPC
   retry policies, and a busy radio must not be retried blind); `DEVICE_DETACHED` → `UNAVAILABLE`
@@ -17,8 +17,8 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
   (the element name is the caller's argument); `MODE_UNSUPPORTED` → `UNIMPLEMENTED` (a capability
   gap, beside `PLATFORM_UNSUPPORTED`); everything else as both tables already agree.
 - **`ley watch` is the watch job, not the dashboard (a-layering-8, a-layering-13).**
-  `docs/design-semantic-tier.md` names `watch` as the CLI mirror of the D.15 watch job;
-  `docs/interfaces.md` already says the dashboard replaces bare `ley` on a TTY. The `watch` stub's
+  `docs/design/semantic-tier.md` names `watch` as the CLI mirror of the D.15 watch job;
+  `docs/reference/cli.md` already says the dashboard replaces bare `ley` on a TTY. The `watch` stub's
   text and `ley help roadmap` change to "watch a frequency and log what is heard (Milestone D.15)";
   the dashboard is described under bare `ley`.
 - **Auto squelch applies in every mode of `tune` (a-layering-10, PC-11).** `--persistent` and
@@ -126,11 +126,11 @@ q-go-verbs-3 (`parseNegativeSafe` must not hand a marker to a flag: only substit
 or restore the flag's value), -5, -6, -7 (`fileSidecar.SampleRate`: delete it, R-6 will bring its
 own), -9, -10 (replace the sleep with a synchronisation and stop the runner on failure);
 a-layering-8 and -13 (the `watch` stub per the decision above, and the matching line in
-`docs/interfaces.md`); a-layering-11 (`scanIDOf` returns an error when no `ley://scans/` URI is
+`docs/reference/cli.md`); a-layering-11 (`scanIDOf` returns an error when no `ley://scans/` URI is
 present, and the caller reports it); a-invariants-9 (`devices.go:73`: the refusal for an `rtltcp`
 device says it is configured on the daemon's command line and how to remove it); a-layering-10 and
 PC-11 (auto squelch in `--persistent` and `--json` modes per the decision; tick PC-11 in
-`docs/plans/cli-papercuts.md`).
+`docs/plans/archive/cli-papercuts.md`).
 
 ### GO-4 `[x]` The client library carries what every client needs
 
@@ -162,7 +162,7 @@ partial scan; a write refused with `DEVICE_SWEEPING` during a scan; no fabricate
 
 The ten divergences listed under "The wire contract" in `docs/plans/v1-release.md`, each with its
 CLI test. Check `RTLSDRDevice.swift` for the feature keys the real driver emits and fix
-`docs/engine-internals.md` if it disagrees.
+`docs/dev/engine-internals.md` if it disagrees.
 
 ### GO-8 `[x]` Every verb answers `--json` or refuses it (R-5 of the release plan)
 
@@ -262,7 +262,7 @@ fake, `session.fold` (`withoutCapture`), tests on all three.
 
 a-layering-3 (`EngineError.deviceSweeping`, `.streamNotFound`, `.internalError`; the six literal
 throw sites use them), a-layering-2 (the status table per the decision, written into
-`docs/engine-internals.md`, with a test on each side asserting its switch matches the table entry
+`docs/dev/engine-internals.md`, with a test on each side asserting its switch matches the table entry
 for entry), and R-15's first bullet from the release plan (Go constants for `BLIND_SPOT`,
 `NO_DEVICE`, `FAILED_PRECONDITION`, `INTERNAL`; `scan.go` uses them; a test that the Go list and the
 engine's registry are the same set).
@@ -375,7 +375,7 @@ exactly like an unreachable flag today. `--rtltcp` stays for foreground runs and
 as such. Tests in `LeylineDaemonTests` with the engine tests' `FakeRTLTCPServer`: attach, duplicate,
 unreachable (`.invalid` host or a closed port), detach, and the round trip through `devices.json`
 (attach, tear the daemon down, bring a new one up on the same directory, the device is present).
-`docs/engine-internals.md` gets the paragraph.
+`docs/dev/engine-internals.md` gets the paragraph.
 
 ### GO-10 `[x]` Remote radios as daemon state: `ley devices attach`
 
@@ -385,8 +385,8 @@ rtl_tcp pi.local:1234 (R820T) as dev_…; the daemon remembers it. Forget it wit
 <n>") on stderr with the id on stdout, `--json` prints the `DeviceDescriptor`; an unreachable host
 exits 1 with the daemon's sentence; a duplicate says so and exits 0. `ley devices detach` uses
 `DetachDevice` for any driver, so an rtl_tcp device detaches, and the USB refusal keeps its current
-sentence. Docs: `docs/interfaces.md` tree and the `--json` paragraph; `docs/cli-guide.md` section 1
-("a radio on another machine"); `docs/dev-setup.md`'s rtl_tcp section says `ley devices attach` is
+sentence. Docs: `docs/reference/cli.md` tree and the `--json` paragraph; `docs/guide/using-ley.md` section 1
+("a radio on another machine"); `docs/dev/setup.md`'s rtl_tcp section says `ley devices attach` is
 the way and `--rtltcp` is for foreground runs; README's "What works today" mentions it. Tests
 fake-backed, including the exit codes.
 
@@ -417,7 +417,7 @@ verifiers. Line numbers are as of `42a84a3`.
 2. Bare `ley --json` prints prose on stderr and exits 0 with empty stdout (`root.go:683-686`),
    which is neither of the two answers R-5 allows. Decision: bare `ley --json` prints exactly what
    `ley state --json` prints; `json_verbs_test.go:194-197` stops excluding the root; the
-   `docs/interfaces.md` sentence about bare `ley` says so.
+   `docs/reference/cli.md` sentence about bare `ley` says so.
 3. `root.go:357`: `usageErrorf`'s doc comment was orphaned above the inserted `compCmdName`; move
    it back onto `usageErrorf`.
 4. `daemon_test.go:501`: replace the 20 ms sleep with `leyline.ScopeSince(nil, st.EventSeq)`, as the
@@ -440,7 +440,7 @@ verifiers. Line numbers are as of `42a84a3`.
    uses the daemon's exact sentence (`Channelizer.swift:61`); `bulk.go:195-233` and `control.go:199`
    `INVALID_ARGUMENT` details carry no `target`, as the daemon's do; `jobs.go:584-586` `CancelJob`
    on a terminal job leaves it untouched.
-8. Docs: one sentence in `docs/cli-guide.md`'s waterfall section that each row is the loudest of
+8. Docs: one sentence in `docs/guide/using-ley.md`'s waterfall section that each row is the loudest of
    the looks across its interval (the ROW_MAX accumulation GO-8 made the default), matching the
    stderr note.
 
@@ -493,7 +493,7 @@ Decisions:
 8. Comments: `DeviceRegistry.swift:180-184` (both kinds "arrived over the protocol" is untrue once
    flags are distinguished; say what the origin field means), `SessionStore.swift:408` (drop "is the
    older", say what `fileOnly` does), `SessionStore.swift:379-380` (one sentence; the rationale
-   already lives in the proto comment), `docs/engine-internals.md` "Remembered devices" (state the
+   already lives in the proto comment), `docs/dev/engine-internals.md` "Remembered devices" (state the
    in-flight dedupe and the disconnected-hosting behaviour as they now are).
 
 Suite green twice at the end.

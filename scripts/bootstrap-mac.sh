@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# One-shot macOS setup: Homebrew deps, Go clients, release daemon, fixtures. See docs/dev-setup.md.
+# One-shot macOS setup: Homebrew deps, Go clients, release daemon, fixtures. See docs/dev/setup.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

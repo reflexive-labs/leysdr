@@ -12,7 +12,7 @@ import (
 
 // versionInfo is the `ley version --json` document: a client-local value with
 // no proto message, so it is the second named exception to the proto3 JSON
-// mapping (docs/interfaces.md). Key order is part of the contract.
+// mapping (docs/reference/cli.md). Key order is part of the contract.
 type versionInfo struct {
 	Version string `json:"version"`
 	Go      string `json:"go"`

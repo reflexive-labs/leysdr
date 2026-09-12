@@ -222,7 +222,7 @@ func gainStatesString(gains []*leylinev1.GainState) string {
 }
 
 // rangesPhrase renders tuning ranges as "24.000 MHz to 1.766 GHz", never with a
-// dash, so a dash always means "no value" (docs/cli-style.md section 4). A range
+// dash, so a dash always means "no value" (docs/dev/cli-style.md section 4). A range
 // with one frequency in it -- a file device plays back a single centre --
 // collapses to that frequency rather than spending the columns saying it twice.
 //

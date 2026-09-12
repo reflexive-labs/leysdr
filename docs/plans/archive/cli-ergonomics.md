@@ -12,7 +12,7 @@ every existing knob and `--json`; nothing gets less capable, the defaults just g
 words get plainer. The CLI adds no capability the protocol lacks (CLAUDE.md): presets, band
 defaults and automatic squelch are client-side translations into the same RPCs.
 
-## What the V0 stories look like today (docs/sdr-user-stories.md) and what blocks a newcomer
+## What the V0 stories look like today (docs/plans/user-stories.md) and what blocks a newcomer
 
 | story | today | blocker for a newcomer |
 |---|---|---|
@@ -84,7 +84,7 @@ interpreted value; every error keys on the daemon's `ErrorDetail.code`, never on
   width) (the daemon's own spectrum; a median is presentation), threshold = floor + 10 dB, written
   with WriteParams and printed ("squelch auto → -58 dBFS, 10 dB above the band's noise floor").
   If no row arrives within 2 s, squelch stays off and the banner says so. Follow-up recorded in
-  interfaces.md: an additive daemon-side relative squelch (`ParamWrite.squelch_relative_db`).
+  docs/reference/cli.md: an additive daemon-side relative squelch (`ParamWrite.squelch_relative_db`).
 - Banner: `Listening to 146.620 MHz (NFM, 2 m amateur band) on <model>, gain auto. Squelch auto →
   -58 dBFS. Ctrl-C stops. From another terminal: ley set squelch -50 · ley set gain 30 · ley spectrum`.
 - Meter line: `146.620 MHz NFM  signal -42 dBFS  muted, waiting for a signal` / `audio`
@@ -114,7 +114,7 @@ interpreted value; every error keys on the daemon's `ErrorDetail.code`, never on
 - `--json` for `spectrum` and `fft --format json` emit the documented FFT row line shape
   (`{seq, sample_index, center_hz, span_hz, bins}`; spectrum adds `peaks`). Bulk rows have no
   proto message, so this is the one documented exception to the proto3 rule, recorded in
-  interfaces.md beside the shm bypass. `fft`'s help explains what a row is and points to spectrum.
+  docs/reference/cli.md beside the shm bypass. `fft`'s help explains what a row is and points to spectrum.
 
 ### E. Bare `ley`
 - Root gets a `RunE` with a custom `Args` validator that keeps Cobra's "did you mean" for unknown
@@ -122,7 +122,7 @@ interpreted value; every error keys on the daemon's `ErrorDetail.code`, never on
   the next two or three commands chosen from the state (no daemon → how to start it; no device →
   checklist; idle → `ley tune …`; listening → `ley set …`, `ley spectrum`). Exit 0 in every state,
   dial timeout 300 ms; piped or `--json` → the command list / a pointer to `ley state --json`.
-- Decision recorded in interfaces.md: this screen is the placeholder the V0.5 dashboard replaces
+- Decision recorded in docs/reference/cli.md: this screen is the placeholder the V0.5 dashboard replaces
   on a TTY; the renderer is one function the dashboard reuses for its no-daemon/no-device states.
 
 ### F. Help texts, groups and topics
@@ -136,7 +136,7 @@ interpreted value; every error keys on the daemon's `ErrorDetail.code`, never on
   `scripting` (exit codes, `--json`, presence), `roadmap`. Root help lists them.
 
 ### G. Daemon lifecycle messages and exit codes
-- Exit codes (interfaces.md + `help scripting`): 0 ok · 1 daemon/runtime error · 2 usage error ·
+- Exit codes (docs/reference/cli.md + `help scripting`): 0 ok · 1 daemon/runtime error · 2 usage error ·
   3 daemon not running (all verbs) · 130 interrupted before the live phase. Error lines are
   `ley: <plain sentence>. <next command>` and keep `[CODE]` when a daemon code exists.
 - Not running → `the Leyline daemon is not running (socket …). Start it with: ley daemon start`;
@@ -145,9 +145,9 @@ interpreted value; every error keys on the daemon's `ErrorDetail.code`, never on
 
 ### H. Documentation
 - README: a newcomer quickstart (five commands with expected output) and a glossary pointer.
-- `docs/cli-guide.md`: task walkthrough mirroring the V0 stories, then "for scripts and agents",
+- `docs/guide/using-ley.md`: task walkthrough mirroring the V0 stories, then "for scripts and agents",
   then "when things go wrong"; cross-links to `ley help <topic>` rather than duplicating them.
-- `docs/interfaces.md`: new verb, selectors, presets, exit codes, the bulk-row JSON exception,
+- `docs/reference/cli.md`: new verb, selectors, presets, exit codes, the bulk-row JSON exception,
   the bare-`ley` decision, the relative-squelch follow-up.
 
 ### I. Tests

@@ -1,6 +1,6 @@
 # Plan: Signal Views
 
-Implements `docs/design-signal-views.md`. Work items in build order; each of SV-1, SV-2 and SV-4 is
+Implements `docs/design/signal-views.md`. Work items in build order; each of SV-1, SV-2 and SV-4 is
 independently shippable. Mark `[x]` only when the item's tests pass and the full gate is green.
 
 ## SV-1 `[x]` Transmission log
@@ -210,14 +210,14 @@ two-tone paging ever needs it.
 
 ## SV-8 `[x]` The scope: `ley scope`
 
-Implements `docs/design-scope.md`, in four work items the loop runs by section name. Read the
+Implements `docs/design/scope.md`, in four work items the loop runs by section name. Read the
 design doc first for every one of them; it states the contract each item serves. Additive `AudioParams.tap` (`AUDIO`, `DEMOD`); the demodulators
 produce the raw stage into preallocated scratch; the channel core routes it to `DEMOD` subscribers
 and keeps it flowing while the squelch is closed; `rawIQ` refuses the tap. Fixture test: the NFM
 `demod` tap on `nfm_pl.cf32` carries the PL tone the sidecar names, and the `audio` tap does not.
 Fake: the `demod` tap is the audio plus the configured tone. CLI: the trace (braille, ASCII
 fallback), the trigger, the header with the daemon's tone, `--json` frame statistics, tests against
-the fake. Docs: `interfaces.md` tree and JSON paragraph, `cli-guide.md` section.
+the fake. Docs: `docs/reference/cli.md` tree and JSON paragraph, `docs/guide/using-ley.md` section.
 
 ## SV-9 `[ ]` The audio spectrogram: `ley sonogram`
 
@@ -263,7 +263,7 @@ Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall.
   the demod tap's mean is the carrier level and the audio tap's mean is near zero; with the squelch
   closed the audio tap is zeros and the demod tap is not. `LeylineDaemonTests`: a `TAP_DEMOD`
   subscription on a file-device channel delivers frames whose descriptor echoes the tap; `rawIQ`
-  refused. `docs/engine-internals.md` gets the paragraph under the channel pipeline.
+  refused. `docs/dev/engine-internals.md` gets the paragraph under the channel pipeline.
 
 ### SV-8c `[x]` `ley scope` (Go lane, against the fake)
 
@@ -286,7 +286,7 @@ Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall.
   tone itself.
 - `--json`: one object per frame `{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs,
   rms_dbfs, dc, tone_hz}` (`tone_hz` absent until the daemon has reported one), no samples; add it
-  to the bulk-row exception paragraph in `docs/interfaces.md` and to the tree; `docs/cli-guide.md`
+  to the bulk-row exception paragraph in `docs/reference/cli.md` and to the tree; `docs/guide/using-ley.md`
   gains a "See the waveform" section with a transcript recorded against the fake, and `ley help
   modes` points at `ley scope` as the way to see what a mode does.
 - Tests against the fake: a tone renders as a periodic trace whose zero crossings match the tone
@@ -300,14 +300,14 @@ Daemon-side FFT ladder over the audio or demod tap, rendered like the waterfall.
 `ley scope --tap demod --json --count 20` on its channel, assert at least one frame within 10 s
 carries `tone_hz` within 0.5 Hz of 100 and every frame has finite `rms_dbfs` and `dc`, then
 `--tap audio --count 5` frames arrive and carry no `tone_hz` requirement. Then re-record the
-`cli-guide.md` transcript against the fake if the wording moved.
+`docs/guide/using-ley.md` transcript against the fake if the wording moved.
 
 `go/internal/e2e/scope_test.go`. The demod tap needs a few windows before the detector names a
 tone, and a row drawn before the first telemetry message carries none, so the test keeps drawing
 20-frame runs until one arrives or ten seconds pass. Against the real daemon on `nfm_pl.cf32` the
 first run already carries `tone_hz: 100`.
 
-The `cli-guide.md` transcript stands: rendering a demod frame with the guide's numbers reproduces
+The `docs/guide/using-ley.md` transcript stands: rendering a demod frame with the guide's numbers reproduces
 its two header lines exactly, so there was no wording to re-record.
 
 
@@ -327,7 +327,7 @@ numbers as of `4212935`. Engine and docs only.
 4. WFM's raw decimator is reset alone when a tap attaches mid-stream (`:289`), so from then on its
    block counts and the audio's differ by one on some blocks, and the two taps are not
    sample-aligned (different group delay, about 0.3 ms). That is acceptable for a scope, but say it:
-   in `docs/engine-internals.md`'s demod-tap paragraph and on the `SampleTime` both taps share; and
+   in `docs/dev/engine-internals.md`'s demod-tap paragraph and on the `SampleTime` both taps share; and
    `DemodTapTests.swift:137,155` must stop claiming general alignment (assert the fresh-start case
    it actually exercises, and say so).
 5. `DemodTapTests.swift:54` and the WFM test: `XCTAssertGreaterThanOrEqual` falls through into a
@@ -347,7 +347,7 @@ numbers as of `4212935`. Engine and docs only.
    comment, or read it live.
 8. `StreamRegistry.swift:244`: the descriptor echo can be `req.audio.tap` (the unknown case has
    already thrown).
-9. Comments: `docs/engine-internals.md:189` the block's mean is the tuning error in units of
+9. Comments: `docs/dev/engine-internals.md:189` the block's mean is the tuning error in units of
    full-scale deviation, not hertz (the client scales by 5 000 or 75 000); `CoreProtocols.swift:443`
    is garbled ("A sink that does not say is listening."); the sentence "what a transmitter is
    sending between words is what it is for" appears in four places — keep it in the proto and the
@@ -366,7 +366,7 @@ and a fresh subscription served 51.2 kHz.
 
 Everything else landed as written. The sink table is one array plus `hasDemodSink`; `rawOut` is nil
 for raw IQ; WFM's early return zeroes the tap; `emitRaw` lost its unused `scale:`; the alignment
-claim is now in `docs/engine-internals.md` and on `AudioSink.write`, and the WFM test says it
+claim is now in `docs/dev/engine-internals.md` and on `AudioSink.write`, and the WFM test says it
 asserts the fresh-start case; the tap tests guard instead of trapping, and the daemon one reads
 under a deadline. Two new daemon tests cover destroy and a capture-rate change ending a tap stream.
 
@@ -387,7 +387,7 @@ frequency (`spectrum_axis.go`): a rule with tick marks and labels beneath, ticks
 the header already says the window. Left of the trace, one gutter column with `+1`, `0` and `-1`
 at the top, middle and bottom rows, so the vertical scale is on screen too (full scale is ±1.0;
 the header's tuning-error line carries the hertz). Re-record the goldens and the transcript in
-`docs/cli-guide.md`; `--json` is unchanged. Keep the axis out of `--width` accounting only if it
+`docs/guide/using-ley.md`; `--json` is unchanged. Keep the axis out of `--width` accounting only if it
 was already excluded for `spectrum`; otherwise the trace shrinks by the gutter width.
 
 ### SV-8g `[x]` A vertical scale, and the squelch said out loud (Go lane)
@@ -407,10 +407,10 @@ the daemon's detector, which reads as "the tone is there but my voice is not".
   well and, while `squelch_open` is false and the tap is `audio`, print on the header's second line
   `squelch closed: the audio tap is muted; --tap demod shows what the detector hears`. Nothing is
   printed on the demod tap or with the squelch off.
-- `docs/cli-guide.md` section 7: a short "looking at speech" paragraph — `--window 250
+- `docs/guide/using-ley.md` section 7: a short "looking at speech" paragraph — `--window 250
   --trigger free --scale auto` for an envelope, `--window 40` with the trigger for a tone — and the
   sentence that full scale is ±5 kHz on NFM and ±75 kHz on WFM. Re-record the transcript if the
-  header moved. `docs/interfaces.md` JSON paragraph gains `scale`.
+  header moved. `docs/reference/cli.md` JSON paragraph gains `scale`.
 - Tests against the fake: the auto scale snaps to the expected step for a 0.14 tone and holds
   across frames; a pinned scale labels the gutter; the squelch line appears only on the audio tap
   with the squelch closed; `--json` carries `scale`; goldens as needed.
@@ -420,7 +420,7 @@ sentence it is where the width takes it and split at the semicolon where it does
 under the header at 80 columns. The header names the scale only when something has changed it
 (`--scale auto` or a pinned number), which keeps the default view byte-identical: re-rendering the
 guide's demod frame reproduces its two header lines and its gutter exactly, so the transcript in
-`cli-guide.md` stands and section 7 gained only the "looking at speech" paragraph. The gutter's
+`docs/guide/using-ley.md` stands and section 7 gained only the "looking at speech" paragraph. The gutter's
 width is fixed for the run rather than per frame -- `auto` reserves the widest step it could pick,
 `+0.02` -- because a trace that changes width between frames is harder to read than a column of
 space. The auto scale's hold is a peak with 10% headroom decaying on a one-second time constant,
@@ -428,7 +428,7 @@ so a 0.14 tone sits at ±0.2 through a quarter-second pause and is back down wit
 
 ## SV-10 `[x]` Audio meters: `ley levels` and `ley waveform`
 
-Implements `docs/design-audio-meters.md`; read it first for every item, it carries the visual
+Implements `docs/design/audio-meters.md`; read it first for every item, it carries the visual
 language the renderers must match and the honesty rules (ballistics shape bars, never numbers).
 
 ### SV-10a `[x]` The audio spectrum on the wire, the fake, the client (cross-language, first)
@@ -465,7 +465,7 @@ language the renderers must match and the honesty rules (ballistics shape bars, 
   least 12 dB below the demod tap's; the AM fixture's tone at its bin; a `KernelParityTests`-style
   guard is not needed because the FFT is shared. `LeylineDaemonTests`: subscribe on a file-device
   channel, rows arrive with the echoed descriptor; `rawIQ` refused; `MalformedInputTests` for
-  absurd `bins` and `rows_per_second`. `docs/engine-internals.md` paragraph under the channel
+  absurd `bins` and `rows_per_second`. `docs/dev/engine-internals.md` paragraph under the channel
   pipeline.
 
 The spectrum tap is an `AudioSink`, which is what let it inherit the demod tap's rules whole: it
@@ -539,10 +539,10 @@ the scale and the ASCII fallback are the scope's, so a clip and a trace asked fo
 --json --count 5` reports the 125 Hz band (88–177 Hz, where the 100 Hz PL falls) and the 1 kHz
 band as the two loudest; `--tap audio` has the 1 kHz band loudest and the 125 Hz band at least
 10 dB lower than on the demod tap; `ley waveform --seconds 2 --json --count 10` columns have
-finite peaks and `squelch_open` true. Docs: `docs/interfaces.md` tree and the bulk-row exception
+finite peaks and `squelch_open` true. Docs: `docs/reference/cli.md` tree and the bulk-row exception
 paragraph (the audio-spectrum rows are FFT rows, the two `--json` shapes are named), a
-`docs/cli-guide.md` section "Hear it with your eyes" with both transcripts recorded against the
-fake, README's "What works today" sentence, and `docs/design-audio-meters.md`'s status line.
+`docs/guide/using-ley.md` section "Hear it with your eyes" with both transcripts recorded against the
+fake, README's "What works today" sentence, and `docs/design/audio-meters.md`'s status line.
 
 The e2e reads the meters as numbers rather than pictures: `ley levels --json` over the real daemon
 on `nfm_pl.cf32` puts the 125 Hz and 1 kHz octave bands at the top of the demod tap and drops 125 Hz
@@ -581,15 +581,15 @@ An independent read of `fe26cd3..54ca99f`, after the per-item verifiers. Line nu
 6. Say the two facts the audit measured: bin 0 carries DC at 6 dB above a tone of the same
    amplitude (no mirror image), which matters only on the demod tap and sits below the 63 Hz band
    anyway; and a row emitted across a retune straddles it, which is accepted. Both in
-   `docs/engine-internals.md`'s audio-spectrum paragraph, the first also in the proto comment.
+   `docs/dev/engine-internals.md`'s audio-spectrum paragraph, the first also in the proto comment.
 7. Small truths: `AudioSpectrumStreamTests.swift:84` claims a −200 dB floor an empty row would
    read; it reads about −248 at 512 bins, so say "the floor an empty row reads" without the
    number; `:73-80` bounds its `for try await` with the harness's deadline pattern;
    `AudioSpectrumTests.swift:97-98` reports a timeout as a failure, not a failure and a skip;
    `go/pkg/leyline/client.go:~505` says a raw-IQ channel refuses either tap;
    `go/internal/fakedaemon/streams_test.go:~561` stops saying FFT is capture-scoped;
-   `docs/design-audio-meters.md:24` reads "256 … 4096, the design's cap for this path" and stays
-   true after item 1; wrap `docs/engine-internals.md:228` and `docs/plans/signal-views.md:474`.
+   `docs/design/audio-meters.md:24` reads "256 … 4096, the design's cap for this path" and stays
+   true after item 1; wrap `docs/dev/engine-internals.md:228` and `docs/plans/signal-views.md:474`.
 
 Both suites green, `make proto` clean, the e2e green at the end.
 
@@ -598,7 +598,7 @@ Both suites green, `make proto` clean, the e2e green at the end.
 - **Snapshot by default, `--watch` for live**, exactly `spectrum`'s shape: the bare verb prints one
   frame after the first complete row and exits (no ballistics, no caps in a snapshot; `--json`
   prints that one row); `--watch` is the twenty-frames-a-second meter with `--rate` and `--count`
-  as they are today. The guide and `interfaces.md` say so; the design doc's transcript is the
+  as they are today. The guide and `docs/reference/cli.md` say so; the design doc's transcript is the
   snapshot.
 - **Squelch closed means nothing coming through.** On either tap, while `METER` reports
   `squelch_open` false, every ladder draws unlit and the header says `squelch closed`; the caps
@@ -643,7 +643,7 @@ in-place redraw and ramp normalisation. Consolidate into one package-level toolk
 - **One ramp normalisation** in one place with named constants: `rampFrac(value, floor, top)`,
   where the floor is the chart's own reference (the noise line for `spectrum`, −60 dBFS for
   `levels`, zero for the waveform's scale), replacing `levelFrac(band)` and `levelsFrac(dBFS)`.
-  `docs/cli-style.md` section 3a gains the sentence that says what the cold end is per chart.
+  `docs/dev/cli-style.md` section 3a gains the sentence that says what the cold end is per chart.
 - `spectrum`'s goldens must be byte-identical after the change (it is the reference the others
   join); the other views' goldens change only where SV-10h intended. `waterfall` and `phosphor`
   adopt the header and axis pieces where they fit without changing their pictures.
@@ -679,7 +679,7 @@ on the `Subscription`'s descriptor as it does the rest.
 - Tests: `DemodTapTests` and `AudioSpectrumTests` absolute levels move by +6 dB on the 12.5 kHz
   fixture channels (the PL band to about −11, the 1 kHz tone to about 0); a test that a 25 kHz
   channel keeps the old numbers; `SubAudibleTests` still see 700 Hz on `nfm_pl`; fixture
-  round-trips green. `docs/engine-internals.md` Demodulators paragraph states the rule.
+  round-trips green. `docs/dev/engine-internals.md` Demodulators paragraph states the rule.
 
 ### SV-12c `[x]` The views follow the descriptor, and a burst cannot own the scale (Go lane)
 

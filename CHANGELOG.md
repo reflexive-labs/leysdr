@@ -18,4 +18,4 @@ Nothing has been released yet. This file starts with everything that exists on `
   `third_party/licenses/`, an SPDX line on every source file, `TRADEMARK.md`, and
   `make license-check`, which refuses copyleft outside the engine.
 - Not yet: recording to files, watch jobs and transcripts, the TUI dashboard, the Mac app, the MCP
-  adapter (`docs/build-order.md` has the order).
+  adapter (`docs/plans/build-order.md` has the order).

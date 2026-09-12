@@ -25,7 +25,7 @@ func main() {
 }
 
 // exitStatus maps Execute's error to a process status, per the taxonomy in
-// docs/interfaces.md and `ley help scripting`: 0 ok, 1 daemon/runtime error,
+// docs/reference/cli.md and `ley help scripting`: 0 ok, 1 daemon/runtime error,
 // 2 usage error (bad flag, unknown verb or parameter), 3 daemon not running,
 // 130 interrupted by Ctrl-C before the live phase (a verb whose live phase
 // was interrupted returns nil and so exits 0). Verbs carry 2 and 3 as

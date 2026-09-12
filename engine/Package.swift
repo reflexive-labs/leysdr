@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Leyline engine — SwiftPM package. See docs/engine-internals.md for the module map.
+// Leyline engine — SwiftPM package. See docs/dev/engine-internals.md for the module map.
 //
 // Targets:
 //   LeylineProto   generated leyline.v1 messages + grpc-swift 2 stubs (never hand-edit; `make proto`)
@@ -14,7 +14,7 @@
 // The product is Mac-only. Platform-specific code (Accelerate, AVFoundation, IOKit, os_signpost) is
 // guarded with `#if canImport(...)` so the package also builds on Linux for CI/dev checks. The only
 // portable code path is DSP/Kernels.swift, which is the reference implementation the macOS parity
-// tests compare vDSP against (docs/engine-internals.md, "Platform posture").
+// tests compare vDSP against (docs/dev/engine-internals.md, "Platform posture").
 import PackageDescription
 
 let package = Package(

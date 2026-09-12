@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// RTLSDRDevice: librtlsdr-backed RadioDevice. See docs/engine-internals.md "Devices" and
+// RTLSDRDevice: librtlsdr-backed RadioDevice. See docs/dev/engine-internals.md "Devices" and
 // docs/decisions/S3-usb-posture.md. The async read callback is a C function that must not touch
 // Swift concurrency or take locks; it wraps the USB buffer and calls the stored deliver closure.
 
@@ -68,7 +68,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         UInt64(Self.usbBuffers) * UInt64(Self.usbBufferBytes) / 2
     }
 
-    /// Sample rates librtlsdr accepts without warnings (docs/engine-internals.md).
+    /// Sample rates librtlsdr accepts without warnings (docs/dev/engine-internals.md).
     public static let sampleRates: [UInt64] = [
         250_000, 1_024_000, 1_536_000, 1_800_000, 1_920_000, 2_048_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000,
     ]
@@ -208,7 +208,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     // MARK: Enumeration
 
-    /// Tuner name and tuning ranges for a librtlsdr tuner enum (docs/engine-internals.md table).
+    /// Tuner name and tuning ranges for a librtlsdr tuner enum (docs/dev/engine-internals.md table).
     static func tunerInfo(_ t: rtlsdr_tuner) -> (name: String, ranges: [FrequencyRange]) {
         switch t {
         case RTLSDR_TUNER_E4000:
@@ -310,7 +310,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     /// Claims the dongle. `rtlsdr_open` blocks for up to hundreds of ms (USB interface claim, EEPROM
     /// read, plus the retry sleep), so the whole sequence runs on a dedicated thread via
-    /// `BlockingWork.run` rather than parking a cooperative-pool thread (docs/engine-internals.md).
+    /// `BlockingWork.run` rather than parking a cooperative-pool thread (docs/dev/engine-internals.md).
     public func open() async throws {
         try await BlockingWork.run { [self] in
             try withLock {

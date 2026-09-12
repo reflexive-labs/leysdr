@@ -189,7 +189,7 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 // deviceDoing describes what one radio is playing, for a picker whose rows
 // would otherwise differ only by an id: the frequency and mode of its first
 // channel, and how many others ride with it. It is plain text -- these rows
-// live inside an error message, which takes no ink (docs/cli-style.md 6).
+// live inside an error message, which takes no ink (docs/dev/cli-style.md 6).
 func deviceDoing(st *leylinev1.GetStateResponse, d *leylinev1.DeviceDescriptor) string {
 	var chs []*leylinev1.Channel
 	for _, c := range st.Captures {

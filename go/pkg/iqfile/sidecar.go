@@ -2,7 +2,7 @@
 
 // Package iqfile reads and writes Leyline IQ files: raw interleaved samples
 // (.cf32 little-endian float32 I/Q, or .cu8 offset-binary) plus a JSON
-// sidecar describing the recording. See docs/fixtures.md for the format.
+// sidecar describing the recording. See docs/reference/iq-files.md for the format.
 package iqfile
 
 import (

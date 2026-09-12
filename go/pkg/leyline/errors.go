@@ -21,7 +21,7 @@ import (
 const ErrorTrailerKey = "leyline-error-bin"
 
 // Stable machine error codes carried in ErrorDetail.code. The registry lives in
-// docs/engine-internals.md next to the gRPC status each code is served with;
+// docs/dev/engine-internals.md next to the gRPC status each code is served with;
 // DaemonCodes below is this side of it, and the engine's EngineError.Code is the
 // other.
 const (
@@ -199,7 +199,7 @@ func codeForGRPC(c codes.Code) string {
 }
 
 // GRPCCode maps a stable machine code to the gRPC status it is served with,
-// entry for entry with the table in docs/engine-internals.md — the fake daemon
+// entry for entry with the table in docs/dev/engine-internals.md — the fake daemon
 // serves through here and leylined through its own switch, so both answer a
 // retry interceptor the same way. Every code codeForGRPC can produce round-trips
 // back to the code it came from, so an Error parsed off the wire and re-served

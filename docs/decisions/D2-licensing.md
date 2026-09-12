@@ -82,7 +82,7 @@ commercial consumer (ours or someone else's) never needs to vendor GPL code.
 
 ## Distribution obligations
 
-On every binary release (`docs/release-checklist.md` carries these as checklist items):
+On every binary release (`docs/dev/release-checklist.md` carries these as checklist items):
 
 - GPL source offer for the daemon (a link to the tagged source suffices).
 - `NOTICE` file covering the Apache-2.0 dependencies.

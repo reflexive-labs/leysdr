@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // IQ file format: raw samples (`<name>.cf32`, or `.cu8` for rtl_sdr captures) plus a JSON sidecar.
-// See docs/fixtures.md. Everything Leyline writes is cf32; `.cu8` is read-only convenience.
+// See docs/reference/iq-files.md. Everything Leyline writes is cf32; `.cu8` is read-only convenience.
 
 import Foundation
 
-/// The JSON sidecar next to an IQ file (`<name>.json`). Field names mirror docs/fixtures.md exactly.
+/// The JSON sidecar next to an IQ file (`<name>.json`). Field names mirror docs/reference/iq-files.md exactly.
 public struct IQSidecar: Codable, Hashable, Sendable {
     /// Wall clock anchor of sample 0 (recordings); zeros for synthetic fixtures.
     public struct Anchor: Codable, Hashable, Sendable {

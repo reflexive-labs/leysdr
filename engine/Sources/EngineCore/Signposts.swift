@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// os_signpost helpers for the sample path. Category "SamplePath" (docs/engine-internals.md,
+// os_signpost helpers for the sample path. Category "SamplePath" (docs/dev/engine-internals.md,
 // "Hot-path rules"). No-ops where the `os` module is unavailable. Nothing here allocates: names are
 // `StaticString`, the `OSLog` handle is created once and intervals use the free-function
 // `os_signpost` API with value-type `OSSignpostID`s (no `OSSignpostIntervalState` objects).

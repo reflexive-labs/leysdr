@@ -12,7 +12,7 @@ import (
 // column is one column of an aligned table. Cells arrive already inked: the
 // renderer measures visible width and pads with ui.Style.Pad, so SGR inside a
 // cell cannot move a column the way it would inside a tabwriter cell
-// (docs/cli-style.md section 3).
+// (docs/dev/cli-style.md section 3).
 type column struct {
 	// head is the ALL-CAPS header; the renderer gives it Label ink.
 	head string
@@ -27,7 +27,7 @@ type column struct {
 	drop int
 }
 
-// gutter is the two spaces between columns; docs/cli-style.md section 5.
+// gutter is the two spaces between columns; docs/dev/cli-style.md section 5.
 const gutter = 2
 
 // tableStyle is stdout's style with the width budget a table should honour.

@@ -1,7 +1,7 @@
 # Design: Signal Views — Waterfall, Channel View, Sub-Audible Tones
 
-Status: draft. Companion to `design-data-planes.md` (which owns the plane split this builds on) and
-`cli-style.md` (which owns how any of it is drawn). Covers three related features that all answer
+Status: draft. Companion to `data-planes.md` (which owns the plane split this builds on) and
+`docs/dev/cli-style.md` (which owns how any of it is drawn). Covers three related features that all answer
 one question — *what is actually happening on this frequency* — and one shared standard for what an
 honest answer looks like.
 
@@ -56,7 +56,7 @@ rendering problem and cannot be fixed in the client.
 
 ## Drawing the waterfall
 
-The full rules live in `cli-style.md`; the decisions that are specific to this view:
+The full rules live in `docs/dev/cli-style.md`; the decisions that are specific to this view:
 
 - **One shaded cell per column.** New `ui.Glyphs.Shade` = `" ░▒▓█"`, ASCII `" .:+#"`. These are
   density textures that tile; the block ramp `▁▂▃` does not — stacked, it reads as scan lines.
@@ -277,8 +277,8 @@ Each of 1, 2 and 4 is independently shippable and improves `ley` on its own.
 
 ## Documentation debt this creates
 
-- `build-order.md` item 14 and `sdr-user-stories.md` say "braille-cell waterfall"; both become
+- `docs/plans/build-order.md` item 14 and `docs/plans/user-stories.md` say "braille-cell waterfall"; both become
   "shaded-cell", with the reason (colour-off legibility) recorded here.
-- `design-data-planes.md` gains a note that the FFT ladder can integrate over a row, and what `MAX`
+- `data-planes.md` gains a note that the FFT ladder can integrate over a row, and what `MAX`
   does to the apparent noise floor.
-- `cli-style.md` gains the `Shade` glyph row and the waterfall rules.
+- `docs/dev/cli-style.md` gains the `Shade` glyph row and the waterfall rules.

@@ -1,39 +1,12 @@
-# Leyline — MCP Surface & CLI Tree
+# `ley` reference
 
-Both are renderings of the leyline.v1 protos. The CLI is the reference client; `--json` output is the standard proto3 JSON mapping. The MCP adapter adds presentation only (PNG rendering, band-plan labels, compact summaries) — never capability.
-
-## Client requirements
-
-The daemon's UDS socket has no authentication — any local process that can open it has full control
-of the radio (see SECURITY.md). This section covers the other landmine every third-party client
-hits.
-
-The daemon's HTTP/2 stack (swift-nio-http2) drops a connection with `GOAWAY ENHANCE_YOUR_CALM` when
-a client sends more than 200 control frames (PING, SETTINGS, PRIORITY) in 30 s, and the gRPC
-transport does not expose that limit. Clients that ping for bandwidth estimation on every data frame
-(grpc-go's default dynamic windows, grpc-python's BDP probing) therefore lose every busy bulk stream
-after about a second. Use fixed flow-control windows instead: the Go client library dials with 1 MiB
-initial stream and connection windows, which disables grpc-go's estimator. Other clients must do
-the equivalent (grpc-go: `WithInitialWindowSize`/`WithInitialConnWindowSize` above 64 KiB;
-grpc-core: `grpc.http2.bdp_probe=0`).
-
-## MCP tools
-
-This table is the design for Milestone D.16; nothing in it is implemented yet.
-
-| Tool | Maps to | Notes |
-|---|---|---|
-| `list_devices` | Control.ListDevices | descriptors with capability detail |
-| `get_state` | Control.GetState | orientation: captures, channels, activity |
-| `tune` | CreateCapture/CreateChannel/WriteParams | refuses to retune active captures (don't-disturb) unless `override: true`; returns refusal reason |
-| `listen_summary` | Telemetry.Subscribe (bounded) | subscribes for `duration_s`, returns activity segments observed |
-| `scan` | Jobs.StartJob(ScanConfig{once}) + Jobs.GetScan | inline results, ephemeral: the job dies with the client that started it. Recurring scans need the durable store (D.15) and are refused |
-| `snapshot` | Bulk.Subscribe(FFT, one row) | returns PNG (adapter-rendered) + binned data |
-| `start_job` / `list_jobs` / `get_job` / `cancel_job` | Jobs service | watch, scan, record configs as typed payloads |
-| `get_transcript` | Jobs.GetTranscript | segments + coverage gaps; adapter adds waterfall thumbnails |
-| `find_recordings` | Resources.ListResources | metadata-filtered; returns `ley://` URIs |
-
-MCP resources = `ley://` URIs one-to-one. Enforcement of don't-disturb is daemon-side policy; the adapter's refusal-with-reason is the polite layer on top.
+The command tree, input conventions, every `--json` shape and the exit status of `ley`, the
+reference client of the `leyline.v1` contract. It is organised for lookup; the task-by-task walk is
+[Using `ley`](../guide/using-ley.md), and `ley help <verb|topic>` carries the same facts at the
+prompt. `--json` output is the standard proto3 JSON mapping of the protos; the exceptions are
+listed here and nowhere else. A program that speaks the contract without going through `ley`
+starts at [Writing a client](clients.md); the MCP adapter's planned tool surface is in the
+[semantic tier design](../design/semantic-tier.md).
 
 ## CLI tree
 
@@ -86,7 +59,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 └── (planned) jobs, transcript, recordings   # arrive with the durable job store and Resources (Milestones C.12, D.15)
 ```
 
-Global flags: `--json` on every verb (answered, or refused with exit 2 where there is no machine form); `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
+Global flags: `--json` on every verb (answered, or refused with exit 2 where there is no machine form); `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/dev/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
 
 **Input conventions** (`go/pkg/leyline`, shared by every verb): a bare frequency number is MHz
 (`146.52`, `1010`); units `k`, `M`, `G`, `Hz`, `e6` are exact; commas are refused with a hint.
@@ -174,7 +147,7 @@ as searched would be claiming coverage nobody measured. `Scan.config.step_hz` is
 daemon chose; there is no `--step`, because the step geometry is what keeps the sweep free of blind
 spots. `ScanConfig.device_id` names the radio when there is more than one. `snr_db` here is *spectral* -- a bin against a spectral floor -- and will not agree
 numerically with `Meter.snr_db`, which is a block's power against a five-second running minimum.
-Full design, with the measured numbers: `docs/design-scan.md`.
+Full design, with the measured numbers: `docs/design/scan.md`.
 
 While a sweep holds a radio it is the only thing tuning it: `CreateCapture`, `CreateChannel` and
 centre or rate writes on that capture are refused with the stable code `DEVICE_SWEEPING`, which is
@@ -231,7 +204,7 @@ devices, what is playing, and the next commands chosen from the state; exit 0 in
 300 ms dial timeout. Piped it prints the same block unstyled (`ley --help` is the verb list);
 `--json` prints exactly what `ley state --json` prints, including its failure when no daemon
 answers. This screen is the placeholder the V0.5 TUI dashboard replaces on a TTY
-(`docs/sdr-user-stories.md`); its renderer (`renderOrientation` in `go/internal/cli`) is the one
+(`docs/plans/user-stories.md`); its renderer (`renderOrientation` in `go/internal/cli`) is the one
 function the dashboard reuses for its no-daemon and no-device states, so the words stay the same.
 
 **Auto squelch and the daemon-side follow-up.** `tune --squelch auto` (the default for NFM and

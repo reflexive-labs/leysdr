@@ -13,7 +13,7 @@ import (
 )
 
 // TestVersionJSONGolden pins `ley version --json`: the client-local document
-// docs/interfaces.md names as the second exception to the proto3 mapping,
+// docs/reference/cli.md names as the second exception to the proto3 mapping,
 // with exactly these four keys in this order.
 func TestVersionJSONGolden(t *testing.T) {
 	old := Version

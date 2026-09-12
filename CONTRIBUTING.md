@@ -2,13 +2,14 @@
 
 Leyline is a macOS SDR engine (`leylined`, Swift) with a Go CLI (`ley`) as its first client. The
 two halves meet at one generated contract, `proto/leyline/v1`. This page is the short version of
-how to work on it; the long version is `docs/dev-setup.md` (building), `docs/engine-internals.md`
-(how the engine keeps its promises) and `docs/cli-style.md` (how `ley` talks).
+how to work on it; the long version is `docs/dev/setup.md` (building), `docs/dev/engine-internals.md`
+(how the engine keeps its promises) and `docs/dev/cli-style.md` (how `ley` talks). `docs/README.md`
+is the map of everything under `docs/`, by reader.
 
 ## Before you change anything
 
 Read `CLAUDE.md`. It is written as instructions to an agent, but it is also the review checklist:
-thirteen invariants, each with a rationale in `docs/design-*.md`. A change that breaks one needs a
+thirteen invariants, each with a rationale in `docs/design/*.md`. A change that breaks one needs a
 design-doc change first, not a clever workaround. The ones people trip on:
 
 - **All DSP runs in the daemon.** Clients render. If a feature only works from Swift, or only from
@@ -30,9 +31,9 @@ pinned), the engine build and tests, and the cross-language e2e suite that drive
 job proves the Go half and the portable engine core, but only macOS compiles the Accelerate kernels
 and the audio sink, and only macOS is the product.
 
-Every DSP change must pass the fixture round-trips (`make fixtures` generates them; `docs/fixtures.md`
+Every DSP change must pass the fixture round-trips (`make fixtures` generates them; `docs/reference/iq-files.md`
 says what each signal is). Anything on the sample path gets `os_signpost` instrumentation.
-Hardware-in-the-loop checks are manual: `docs/release-checklist.md`.
+Hardware-in-the-loop checks are manual: `docs/dev/release-checklist.md`.
 
 ## Tests without hardware
 
@@ -49,7 +50,15 @@ in plain prose. Sign off every commit (`git commit -s`), which adds a `Signed-of
 in the sense of the Developer Certificate of Origin (developercertificate.org), that you wrote the
 change or have the right to submit it under the terms below; `git config core.hooksPath
 scripts/git-hooks` makes the line automatic for this clone. Larger work starts from a plan in
-`docs/plans/` with `[ ]` work items, and a design decision starts from a `docs/design-*.md` change.
+`docs/plans/` with `[ ]` work items, and a design decision starts from a `docs/design/*.md` change.
+
+## Documentation
+
+Prose follows `docs/writing-guide.md`: the voice, the words, and which kind of page goes in which
+directory. `docs/README.md` says where a new page belongs and lists every page, so a page that is
+added, moved or retired changes the index too. A moved page takes every `docs/` reference in the
+repository with it, code comments and tests included; two documents are parsed by tests (the error
+table in `docs/dev/engine-internals.md` and the help goldens) and keep their shape.
 
 ## The licence of your contribution
 

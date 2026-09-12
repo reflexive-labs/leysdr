@@ -18,7 +18,7 @@ func meterFixture(db float64, open bool) *leylinev1.Meter {
 	return &leylinev1.Meter{PowerDbfs: db, SquelchOpen: open}
 }
 
-// TestMeterRenderSurvivesColourOff is rule 1 of docs/cli-style.md on the
+// TestMeterRenderSurvivesColourOff is rule 1 of docs/dev/cli-style.md on the
 // screen that matters most: the bar, the marker and every word are there
 // with the ink stripped. Colour is compared at a fixed glyph set, since the
 // alphabet is the reader's terminal, not the emphasis.

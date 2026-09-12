@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// FIR design and decimating FIR filters (docs/engine-internals.md, "Channelizer plan").
+// FIR design and decimating FIR filters (docs/dev/engine-internals.md, "Channelizer plan").
 // Design happens at configure time; `process` is allocation-free and keeps `taps−1` samples of
 // history so decimation phase is continuous across blocks (block-wise output == one-shot output).
 

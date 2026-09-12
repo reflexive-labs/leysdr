@@ -1,7 +1,7 @@
 # Plan: v1.0 — what a release shared with other people is missing
 
 Status: gap analysis of `main` at `36adcb8`, 2026-09-10. Measured against the promises of record —
-`docs/sdr-user-stories.md`, `docs/build-order.md`, the `leyline.v1` protos and `docs/interfaces.md` —
+`docs/plans/user-stories.md`, `docs/plans/build-order.md`, the `leyline.v1` protos and `docs/reference/cli.md` —
 by reading the code and running the suites, not by trusting the status sections of README.md or the
 plan files (which, it turns out, disagree with each other). Every claim below has a `path:line` or a
 test name behind it; the raw per-item evidence is long and lives in the review run, this file keeps
@@ -26,8 +26,8 @@ stranger meets before the code:
   `engine/Sources/LeylineDaemon/Server.swift:12`), nothing stamps a build, there is no git remote and
   no tag.
 - **Three status documents contradict each other.** README.md:76 says Milestone D is not started;
-  `docs/build-order.md:36` marks D.13 done (it is: `ley scan`, the detector, the job store all ship
-  and pass an e2e against the real daemon); `docs/sdr-planning-todo.md:38-40` still has S3 unticked
+  `docs/plans/build-order.md:36` marks D.13 done (it is: `ley scan`, the detector, the job store all ship
+  and pass an e2e against the real daemon); `docs/plans/archive/planning-phase.md:38-40` still has S3 unticked
   while `docs/decisions/S3-usb-posture.md` decides it.
 - **The README quickstart does not work as written** from a clean clone: `ley` is not on PATH,
   `leylined` is not found without `--bin`, and `fixtures/nfm_tone.cf32` does not exist until
@@ -41,7 +41,7 @@ stranger meets before the code:
   that would notice — `go/internal/e2e` — skip themselves unless two environment variables name the
   binaries, and CI runs them only on Linux.
 - **No authentication, by design.** Anything that can open the socket controls the radio
-  (`design-control-plane.md`: local UDS trusts the user account). Right for one Mac; it has to be
+  (`docs/design/control-plane.md`: local UDS trusts the user account). Right for one Mac; it has to be
   said where the contract is read, and it bears on any cut that adds an agent.
 
 ## Decisions needed
@@ -53,7 +53,7 @@ honest options for a first public release:
 |---|---|---|
 | (a) engine + `ley` | V0 complete: recording lands (C.12), the docs tell the truth, it installs | L (recording) + the release plumbing |
 | (a′) = (a) + the terminal dashboard | V0.5; the three live views exist and the rest is composition and an event loop over the client-library move in LIB-1 | + M–L |
-| (b) = (a) + MCP adapter | the agent story, which is the positioning (`sdr-user-stories.md` "spectrum explorer … agents"); six of the nine MCP tools can be written against today's daemon | + L (adapter, after the client-library move in LIB-1) |
+| (b) = (a) + MCP adapter | the agent story, which is the positioning (`docs/plans/user-stories.md` "spectrum explorer … agents"); six of the nine MCP tools can be written against today's daemon | + L (adapter, after the client-library move in LIB-1) |
 | (c) = (b) + durable watch jobs | the "watch 146.52 for an hour" story; needs the job store, respawn, transcript (D.15) | + XL |
 | (d) = (b) + the native app | V1a; needs the app, the shm ring, and spikes S1/S2 run on hardware | + XL, and the architecture gate has not been passed |
 
@@ -81,7 +81,7 @@ Apache-2.0 with DCO sign-off (`CONTRIBUTING.md`); the name is the moat (`TRADEMA
 `LICENSE`, `engine/LICENSE`, `NOTICE`, `third_party/licenses/`, SPDX headers everywhere,
 `make license-check` in the gate and CI. REL-1 and REL-2 are closed by it.
 
-**D3 — The name.** `docs/sdr-planning-todo.md:32`: "USPTO check on 'Leyline' before first public
+**D3 — The name.** `docs/plans/archive/planning-phase.md:32`: "USPTO check on 'Leyline' before first public
 release." Not recorded as done. The name is now in the proto package, the launchd label
 (`com.leyline.daemon`), the socket path and the URI scheme, so a rename after release is a breaking
 change. Owner action, before the repo goes public.
@@ -99,7 +99,7 @@ it runs the portable kernels, which `main.swift:78` itself says is not the gate 
 check here: 19.99 MSPS, 0 overruns). The 10-minute, zero-allocation and headroom criteria need an
 Instruments run and probably a longer harness option. S3's five-minute host check
 (`docs/decisions/S3-usb-posture.md:34-40`) is also outstanding, as is the scan settle-constant
-measurement in `docs/design-scan.md` Open questions. All three need the owner's Mac and dongle; the
+measurement in `docs/design/scan.md` Open questions. All three need the owner's Mac and dongle; the
 results should be recorded as `docs/decisions/` notes before tagging.
 
 **D6 — Where bookmarks live.** The V1a stories (bookmarks, CHIRP import, scan lists) have no proto
@@ -119,7 +119,7 @@ Decisions taken here without waiting, because there is one reasonable answer and
 
 ## Gap map
 
-### V0 stories (`docs/sdr-user-stories.md`)
+### V0 stories (`docs/plans/user-stories.md`)
 
 | # | story | status | what is missing |
 |---|---|---|---|
@@ -133,7 +133,7 @@ Decisions taken here without waiting, because there is one reasonable answer and
 | V0-8 | two channels on one radio | done | — |
 | V0-9 | every verb has `--json` | **partial** | `waterfall` and `phosphor` ignore the flag and print the picture (`waterfall.go:98`, `phosphor.go:105`, no reference to `app.JSON` in either file); `help --json` and `completion --json` print prose |
 
-### Build order (`docs/build-order.md`)
+### Build order (`docs/plans/build-order.md`)
 
 | task | status | note |
 |---|---|---|
@@ -147,8 +147,8 @@ Decisions taken here without waiting, because there is one reasonable answer and
 | B.7 NFM + CoreAudio | done | see V0-3 |
 | C.8 – C.11 | done | |
 | C.12 FileSink + Resources + record/play/recordings | **missing** except `ley play` | the largest hole in V0 |
-| D.13 detector + telemetry + `ley scan` | done | `docs/design-scan.md` |
-| D.14 TUI dashboard | partial | three live views exist (`spectrum --watch`, `waterfall`, `phosphor`) and negotiate low-rate streams; no dashboard, no event loop, no bubbletea dependency. README, CLAUDE.md and `interfaces.md` all still say "Bubble Tea TUI" |
+| D.13 detector + telemetry + `ley scan` | done | `docs/design/scan.md` |
+| D.14 TUI dashboard | partial | three live views exist (`spectrum --watch`, `waterfall`, `phosphor`) and negotiate low-rate streams; no dashboard, no event loop, no bubbletea dependency. README, CLAUDE.md and `docs/reference/cli.md` all still say "Bubble Tea TUI" |
 | D.15 jobs | one of five pieces | `CaptureAllocator` with don't-disturb landed with scan; the store is in-memory (`JobStore.swift:3`), no respawn, no watch job (`JobsService.swift:22`), no transcript (`:51`) |
 | D.16 MCP adapter | missing | |
 
@@ -252,17 +252,17 @@ CLI behaviour proven against the wrong answer:
 | REL-5 | README quickstart fails from a clean clone (PATH, `--bin`, fixtures) — **fixed** (`aa88c59`) | — |
 | REL-6 | README status section a milestone behind — **fixed** (`aa88c59`) | — |
 | REL-7 | README promises an app and an MCP adapter — **fixed** (`aa88c59`) | — |
-| REL-8 | `interfaces.md` CLI tree lacks `waterfall`, `phosphor` | |
-| REL-9 | `interfaces.md` opens with an MCP table nothing implements, unlabelled as a design | |
-| REL-10 | `engine-internals.md` module map lacks `Jobs/`, `S2Throughput`, four DSP files; says fixture round-trips are macOS-only (CI runs them on Linux) | |
+| REL-8 | `docs/reference/cli.md` CLI tree lacks `waterfall`, `phosphor` | |
+| REL-9 | `docs/reference/cli.md` opens with an MCP table nothing implements, unlabelled as a design | |
+| REL-10 | `docs/dev/engine-internals.md` module map lacks `Jobs/`, `S2Throughput`, four DSP files; says fixture round-trips are macOS-only (CI runs them on Linux) | |
 | REL-11 | `RTLTCPDeviceTests.testLinkLossReleasesSocketAndReopenReconnects` fails in roughly half of full `swift test` runs (`bad magic` on reconnect to a rebound ephemeral port), passes in isolation | yes — the gate is red at random |
 | REL-12 | no macOS CI job runs `ley`, `make e2e`, or the launchd path | |
 | REL-13 | no CONTRIBUTING, CHANGELOG, SECURITY, issue templates — the three files **added** (`9e5d69d`); issue templates remain (R-9) | |
 | REL-14 | no contact, repository URL or issues link anywhere — **fixed** in README (`aa88c59`); the repo has no remote yet | |
-| REL-15 | `dev-setup.md:118-124` ships one sandbox's `/home/moatuser` paths as instructions; `moat.yaml` at the root | |
+| REL-15 | `docs/dev/setup.md:118-124` ships one sandbox's `/home/moatuser` paths as instructions; `moat.yaml` at the root | |
 | REL-16 | two plan files cite review reports under `/tmp` on one machine; their `#N` references resolve nowhere | |
 | REL-17 | trademark check outstanding (D3) | |
-| REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `dev-setup.md`, not the README — **fixed** (`aa88c59`) | — |
+| REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`aa88c59`) | — |
 | REL-19 | `engine/launchd/com.leyline.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
 | REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails well; stubs are honest | — |
 | REL-24 | the repo root speaks to an agent (CLAUDE.md, moat.yaml) and not to a person | |
@@ -278,19 +278,19 @@ CLI behaviour proven against the wrong answer:
   "on <model>"; the spectrum header and "loudest bins:" line were shapes the renderer never prints;
   and README.md:43-44 claimed all of it was "recorded against the contract fake daemon". **Fixed**:
   the transcripts are now recorded against the fake, from the module's own test harness.
-- `docs/interfaces.md:33` says spectrum's peak threshold is floor + 6 dB; the code uses 15 dB.
-- `docs/cli-guide.md:105-106` says `--volume` takes the mode's usual value; it is 100 % for every mode.
+- `docs/reference/cli.md:33` says spectrum's peak threshold is floor + 6 dB; the code uses 15 dB.
+- `docs/guide/using-ley.md:105-106` says `--volume` takes the mode's usual value; it is 100 % for every mode.
   `:446` misquotes the BLIND_SPOT recovery line.
-- `docs/engine-internals.md:30` "Jobs/Resources return UNIMPLEMENTED"; `:34` "macOS only, need
+- `docs/dev/engine-internals.md:30` "Jobs/Resources return UNIMPLEMENTED"; `:34` "macOS only, need
   Accelerate" for the whole test target.
-- `docs/design-semantic-tier.md`, `design-control-plane.md`, `design-data-planes.md` use `sdr://`
-  URIs; the code, CLAUDE.md and `interfaces.md` use `ley://`.
-- `docs/sdr-user-stories.md` names every V0 verb `sdr …`; the binary has been `ley` since the naming
-  decision in `sdr-planning-todo.md` §5.
-- `docs/design-semantic-tier.md` and `interfaces.md` state the CLI verbs are "generated from the
+- `docs/design/semantic-tier.md`, `docs/design/control-plane.md`, `docs/design/data-planes.md` use `sdr://`
+  URIs; the code, CLAUDE.md and `docs/reference/cli.md` use `ley://`.
+- `docs/plans/user-stories.md` names every V0 verb `sdr …`; the binary has been `ley` since the naming
+  decision in `docs/plans/archive/planning-phase.md` §5.
+- `docs/design/semantic-tier.md` and `docs/reference/cli.md` state the CLI verbs are "generated from the
   protos"; `go/internal/cli` is hand-written cobra. True claim: mapped one-to-one, by discipline.
-- CLAUDE.md:9, `sdr-planning-todo.md:32`, `interfaces.md:153`: "Bubble Tea TUI"; no bubbletea.
-- `docs/interfaces.md:174-183` documents the grpc-go ping / swift-nio GOAWAY landmine every third-party
+- CLAUDE.md:9, `docs/plans/archive/planning-phase.md:32`, `docs/reference/cli.md:153`: "Bubble Tea TUI"; no bubbletea.
+- `docs/reference/cli.md:174-183` documents the grpc-go ping / swift-nio GOAWAY landmine every third-party
   client will hit; it belongs where a client author looks first, not at the end of the CLI contract.
 
 ## Work list
@@ -299,20 +299,20 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason, `[d]` waits
 Sizes: S under a day, M a few days, L a week or two. "Sonnet"/"Opus"/"owner" says who does it: the
 mechanical items go to the smaller model, the scoped code changes to the larger one, and the
 measurements and decisions to the person with the hardware. The review findings from the same pass
-get their own list, `docs/plans/v1-review-fixes.md`, written when the review returns; they land first.
+get their own list, `docs/plans/archive/v1-review-fixes.md`, written when the review returns; they land first.
 
 ### R-1 `[x]` The documents tell the truth (S, Sonnet)
 
 Every item in "Documentation drift" above except README.md, which R-8 rewrites whole. Plus:
 
-- `docs/interfaces.md`: add `waterfall` and `phosphor` to the CLI tree with their flags; head the MCP
+- `docs/reference/cli.md`: add `waterfall` and `phosphor` to the CLI tree with their flags; head the MCP
   table with one sentence saying it is the design for Milestone D.16 and nothing implements it yet;
   the peak threshold is 15 dB; move the "Client requirements" (GOAWAY / BDP ping) section to the top
   of the doc under a heading a client author will find, and open it with one sentence that the socket
   has no authentication (link SECURITY.md).
-- `docs/sdr-user-stories.md`: the persona line says "an RTL-SDR or HackRF"; only RTL-SDR (USB or
+- `docs/plans/user-stories.md`: the persona line says "an RTL-SDR or HackRF"; only RTL-SDR (USB or
   `rtl_tcp`) and IQ files are supported, and there is no HackRF driver.
-- `docs/engine-internals.md`: the module map lists `Jobs/` (JobStore, ScanRunner,
+- `docs/dev/engine-internals.md`: the module map lists `Jobs/` (JobStore, ScanRunner,
   SessionCaptureAllocator), `S2Throughput/`, and every file under `DSP/`; the Services line says
   what is implemented (scan jobs) and what is not (watch, record, transcript, Resources); the test
   line says which tests need macOS (`KernelParityTests`, anything under `canImport(Accelerate)` or
@@ -320,19 +320,19 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 - `sdr://` → `ley://` in the three design docs; `sdr <verb>` → `ley <verb>` in the user stories;
   "generated from the protos" → "mapped one-to-one from the protos" wherever the CLI is described;
   "Bubble Tea TUI" → "terminal live views today (`spectrum --watch`, `waterfall`, `phosphor`); the
-  dashboard is Milestone D.14" in CLAUDE.md, `interfaces.md` and `sdr-planning-todo.md`; tick S3 in
-  `sdr-planning-todo.md` §6 and point at the decision note.
-- `docs/dev-setup.md`: replace the `/home/moatuser` paragraph with the generic recipe (a Swift 6.2
+  dashboard is Milestone D.14" in CLAUDE.md, `docs/reference/cli.md` and `docs/plans/archive/planning-phase.md`; tick S3 in
+  `docs/plans/archive/planning-phase.md` §6 and point at the decision note.
+- `docs/dev/setup.md`: replace the `/home/moatuser` paragraph with the generic recipe (a Swift 6.2
   toolchain, librtlsdr headers or a stub `.so` that reports zero devices, `protoc`; `LD_LIBRARY_PATH`
   at the stub for `make e2e`) with no personal paths; say that a bare `swift test` skips the fixture
   round-trips and a bare `go test ./...` skips the e2e package (both visibly only under `-v`), which is
   why `make swift-test` and `make e2e` are the gate.
-- `docs/plans/engine-review-fixes.md` and `cli-review-fixes.md` headers: the review reports were
+- `docs/plans/archive/engine-review-fixes.md` and `docs/plans/archive/cli-review-fixes.md` headers: the review reports were
   ephemeral; the `#N` numbers are kept because the commit messages cite them.
 - Delete `engine/launchd/com.leyline.daemon.plist.template` (REL-19): `ley daemon install` writes
   the plist from `go/internal/cli/daemon.go`, and the template disagrees with it.
-- `docs/cli-guide.md`: a section for `ley waterfall` and `ley phosphor` (what question each answers,
-  from `docs/design-signal-views.md` and `design-band-watching.md`), and the two factual fixes.
+- `docs/guide/using-ley.md`: a section for `ley waterfall` and `ley phosphor` (what question each answers,
+  from `docs/design/signal-views.md` and `docs/design/band-watching.md`), and the two factual fixes.
 
 ### R-2 `[x]` One version, stamped at build time (S, Opus)
 
@@ -348,7 +348,7 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 - A test or `make version-check` asserts `VERSION`, `Version.swift` and the Go fallback literal agree.
 - `go/internal/cli/version.go`'s help example (`ley 0.1.0 (go1.25 darwin/arm64)`) shows what a
   stamped build prints, suffix included.
-- `docs/dev-setup.md` gets a "Cutting a release" paragraph: bump `VERSION`, `make version`, commit,
+- `docs/dev/setup.md` gets a "Cutting a release" paragraph: bump `VERSION`, `make version`, commit,
   tag `v<VERSION>`.
 
 ### R-3 `[x]` CI proves the product on the product's platform (S, Sonnet)
@@ -393,7 +393,7 @@ the whole log and file it against this item.
   answered for the accumulation it negotiated); gap lines as `ley fft`. `ley phosphor --json` prints
   one object per persistence frame: `{seq, sample_index, center_hz, span_hz, bins, levels, floor_db,
   range_db, counts}` where `counts` is the daemon's `bins × levels` little-endian uint16 grid,
-  base64-encoded like `ley listen`'s `pcm`. Both are documented in `docs/interfaces.md` as members of
+  base64-encoded like `ley listen`'s `pcm`. Both are documented in `docs/reference/cli.md` as members of
   the bulk-row exception.
 - `ley help --json` and `ley completion --json` reject the flag with the same usage error (exit 2)
   `ley daemon logs --json` uses, and the doc says so.
@@ -422,7 +422,7 @@ app, no MCP adapter, no recording), requirements (macOS 26, Xcode 26, Homebrew, 
 install, a quickstart that works from a clean clone (`make go swift-release fixtures`,
 `export PATH=$PWD/go/bin:$PATH`, `ley daemon start --bin engine/.build/release/leylined`), console
 transcripts that match what the renderers print (record them against the daemon or the fake rather
-than paraphrasing), the docs map, a status section that agrees with `docs/build-order.md`, licence
+than paraphrasing), the docs map, a status section that agrees with `docs/plans/build-order.md`, licence
 (placeholder until D2), and where to report problems (the module path already names
 `github.com/dpup/leysdr`). The GOAWAY/ping note for client authors is linked, not buried.
 
@@ -447,7 +447,7 @@ in the daemon and the fake; `Jobs.StartJob(record)` with `duration_ms` and `star
 resource store directory (`~/Library/Application Support/Leyline/recordings`) and the minimum of the
 `Resources` service that makes `ley://recordings/<id>` real (`ListResources`, `GetResource`,
 `ResolveLocalPath`); `ley record <freq> [--iq|--audio] [--for DURATION]`, `ley recordings`, and
-`ley play` accepting a `ley://` URI. Design note first (`docs/design-recording.md`, short: what the
+`ley play` accepting a `ley://` URI. Design note first (`docs/design/recording.md`, short: what the
 sidecar carries, where files go, retention) because the store shape outlives v1.0.
 
 ### R-12 `[d]` MCP adapter (L, Opus; after D1 and R-13)
@@ -456,7 +456,7 @@ Milestone D.16. Go binary `leymcp` (stdio transport) sharing `go/pkg/leyline`; t
 can back today (`list_devices`, `get_state`, `tune`, `listen_summary`, `scan`, `snapshot` as PNG
 plus data); the three that cannot return a typed "not available until Milestone D.15" refusal.
 Design note first: tool schemas, refusal semantics, how the don't-disturb refusal reads. The CLI is
-the reference client (`design-semantic-tier.md`), so every tool ships with its `ley` mirror: `scan`,
+the reference client (`docs/design/semantic-tier.md`), so every tool ships with its `ley` mirror: `scan`,
 `tune`, `listen`, `spectrum` exist, `jobs` arrives with R-15, `recordings` with R-11, and `watch`
 stays a stub until D.15 — the adapter's `start_job(watch)` refuses with the same sentence.
 
@@ -475,7 +475,7 @@ semantics, and add the CLI test that could not exist before (a `ley phosphor` ru
 `ley tune`'s CTCSS line from a fake channel with a tone; `subaudible_detect` shown; first/last seen
 and a real look count on detections; `Scan.gains` printed; a scan refused because of a write in the
 last 60 s; the real driver's feature keys — check `RTLSDRDevice.swift` for what it emits and fix
-`docs/engine-internals.md` if the doc disagrees; `BLIND_SPOT` from the fake when the request falls in
+`docs/dev/engine-internals.md` if the doc disagrees; `BLIND_SPOT` from the fake when the request falls in
 the DC guard). Split into two commits if it helps: bulk/telemetry parity, then jobs parity.
 
 ### R-15 `[x]` Contract hygiene (S, Opus)
@@ -495,16 +495,16 @@ the DC guard). Split into two commits if it helps: bulk/telemetry parity, then j
 
 ### R-16 `[ ]` Measurements only the owner can make (owner)
 
-- S2 on an M-series Mac under Instruments against `docs/build-order.md`'s criteria; record the result
+- S2 on an M-series Mac under Instruments against `docs/plans/build-order.md`'s criteria; record the result
   as `docs/decisions/S2-throughput.md`, pass or fail.
 - S3's host check (`docs/decisions/S3-usb-posture.md:34-40`).
-- The scan settle constant (`docs/design-scan.md` Open questions): one known carrier, several
+- The scan settle constant (`docs/design/scan.md` Open questions): one known carrier, several
   `--dwell` values, does the reported frequency drift.
 - The audio acceptance run from R-17.
 
 ### R-17 `[x]` A release checklist (S)
 
-`docs/release-checklist.md`: the manual acceptance pass a Mac must complete before a tag — fixture
+`docs/dev/release-checklist.md`: the manual acceptance pass a Mac must complete before a tag — fixture
 tone audible, a real station audible, `set` from a second terminal, `scan` of a known band,
 record → play, `daemon install` / `status` / `uninstall`, unplug and replug — plus the mechanical
 steps (VERSION bump, `make check` on both hosts, tag, release notes).
@@ -526,7 +526,7 @@ it pins facts no synthesised fixture carries: the no-carrier noise at 4.8× full
 a transmission, a 305 Hz PL deviation, speech peaking at the narrow-mode limit. Give such files a
 home: a `fixtures/hardware/` directory with sidecars whose `description` says radio, distance, gain
 and mode; e2e and engine tests that use one skip with a named reason when it is absent; `docs/
-fixtures.md` says how to record one (`ley daemon stop`, `rtl_sdr -f <100 kHz off the channel> -s
+docs/reference/iq-files.md` says how to record one (`ley daemon stop`, `rtl_sdr -f <100 kHz off the channel> -s
 2400000 -g 0 -n 24000000`, the sidecar, `ley play … --freq`). The first tests: the waveform's
 blank-when-squelched rule over a real key-up, and `levels` reading the PL band within 2 dB of the
 value measured here.
@@ -534,7 +534,7 @@ value measured here.
 ### R-22 `[ ]` The content layer needs a specification before pricing (M, owner + Opus)
 
 D2 makes a curated content layer half of the revenue model and nothing describes it. Write
-`docs/requirements-content-layer.md` before v1 pricing is announced: what a pack is (band plans,
+`docs/design/content-layer.md` before v1 pricing is announced: what a pack is (band plans,
 decoder recipe bundles, listening presets, CHIRP mappings, regional frequency databases), how it is
 versioned and updated (in-app fetch versus git), which packs are free and which paid, how the
 community submits and who curates, and the licence per pack (data, not code: CC-BY-SA or similar,

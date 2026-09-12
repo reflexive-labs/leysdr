@@ -5,7 +5,7 @@ that needs a design decision belongs in a `design-*.md` instead.
 
 The point of this file is that papercuts otherwise get recorded in the Closing section of whatever
 plan happened to be open when they were noticed, and then never found again. Items collected from
-`cli-visuals.md` say so, so the original context is still reachable.
+`docs/plans/archive/cli-visuals.md` say so, so the original context is still reachable.
 
 ## PC-1 `[x]` `ley bands <frequency>`
 
@@ -49,7 +49,7 @@ Two more corrections to the description:
   exchange for a stub, is not an improvement. **Left as it is**, and PC-9's note corrected.
 - `--json` for a lookup returns a single object, not `null` when no band matches: `null` would throw
   away the mode and bandwidth a script came for. `{hz, band, mode, bandwidth_hz, reason}` with
-  `band: null` keeps the answer. Documented in `interfaces.md` as its own sentence, since that file
+  `band: null` keeps the answer. Documented in `docs/reference/cli.md` as its own sentence, since that file
   froze `bands --json` as an array.
 
 The `reason` field is the preset's rationale when the argument was a preset, and the band default
@@ -68,7 +68,7 @@ deciding deliberately at some point rather than growing a fourth.
 ## PC-2 `[x]` `ley state` collapses a one-frequency tuning range
 
 `ley state`'s per-device line printed `146.520 MHz to 146.520 MHz` for a file device where
-`ley devices` collapsed it to a single frequency. (from `cli-visuals.md`, where it was recorded
+`ley devices` collapsed it to a single frequency. (from `docs/plans/archive/cli-visuals.md`, where it was recorded
 twice)
 
 **There were four renderers of a frequency range, not two**, and only one was wrong:
@@ -81,7 +81,7 @@ twice)
 
 The first two are now one pure `rangesPhrase` in `format.go`, returning `""` for none so the caller
 supplies the absent form. The other two were **deliberately left alone**: both use a dash where the
-style guide says a dash means "no value", but both spellings are documented in `docs/cli-guide.md`,
+style guide says a dash means "no value", but both spellings are documented in `docs/guide/using-ley.md`,
 which section 6 freezes, and both are pinned by tests. Folding them in is a separate, deliberate
 change, not a drive-by.
 
@@ -93,7 +93,7 @@ assertions in `TestStateTreeContent`.
 ## PC-3 `[x]` `ley play`'s banner
 
 `tune`'s banner got the one-fact-per-line treatment and `play`'s did not; it still reads as a
-five-line block of ids. Symmetry only. (from `cli-visuals.md`)
+five-line block of ids. Symmetry only. (from `docs/plans/archive/cli-visuals.md`)
 
 **The premise was wrong: there is only one banner.** `play` calls `runTune`, so it has printed
 `session.banner` all along -- one fact per line, five lines, the same code. What made it read as a
@@ -130,7 +130,7 @@ Tests: `TestPlayedSource`, `TestPlayedSourceSurvivesAThinDescriptor`,
 the strip-identity across both alphabets at widths 0/40/100 -- the ASCII ellipsis is `...` and the
 Unicode one is a single glyph, so a mismatched alphabet is not what that assertion is for).
 
-`docs/cli-guide.md`'s playback transcript was the old block verbatim; it is now the verified output
+`docs/guide/using-ley.md`'s playback transcript was the old block verbatim; it is now the verified output
 of `ley play fixtures/nfm_tone.cf32` against the daemon.
 
 ## PC-4 `[x]` `ley fft` rows carry no noise floor
@@ -189,9 +189,9 @@ the reason is said exactly once, and every frame still arrives) and
 
 ## PC-6 `[x]` Reconcile the style guide on error inking
 
-`docs/cli-style.md` section 6 said only the `ley:` prefix and the `[CODE]` suffix may take ink on an
+`docs/dev/cli-style.md` section 6 said only the `ley:` prefix and the `[CODE]` suffix may take ink on an
 error line, while the VIS-5 work item also allowed a muted path and a highlighted remedy. (from
-`cli-visuals.md`)
+`docs/plans/archive/cli-visuals.md`)
 
 The guide was widened, because the implementation is already inside the guide's own principles:
 every span is redundant on words present with colour off, ink is SGR-only so ids and `ley ...`
@@ -210,7 +210,7 @@ strip-identity, so the guide now describes tests that exist rather than a rule n
 ## PC-7 `[x]` The live session writes its two halves to different streams
 
 The live meter moved to stderr so the stderr-TTY gate is coherent, but the banner still went to
-stdout in human mode. (from `cli-visuals.md`)
+stdout in human mode. (from `docs/plans/archive/cli-visuals.md`)
 
 Settled by the guide once the question was put properly: **the banner carries no ids at all** --
 frequency, mode, model, gain, the squelch sentence and two hint lines. Ids live in `printCreated`,
@@ -230,7 +230,7 @@ Two consequences worth naming:
   `meter.clear()`, which only clears stderr -- on stdout it corrupted the redraw whenever the two
   streams pointed at different places.
 
-**Still non-conforming, deliberately:** `ley set`'s `say` calls remain on stdout. `docs/cli-guide.md`
+**Still non-conforming, deliberately:** `ley set`'s `say` calls remain on stdout. `docs/guide/using-ley.md`
 already claims all person-facing prose is on stderr, so `set` was non-conforming before this and
 still is; it is a separate change with its own test fallout, not a drive-by.
 
@@ -413,4 +413,4 @@ Recorded here so they are not mistaken for one:
   scales with bin count, because the maximum of N noise bins grows with ln N -- the same
   max-versus-median bias that has now bitten the spectrum scale and the ISM occupancy measurement.
   If `scan` ever wants real detection it needs the scaled form, and that is a design change rather
-  than a papercut. (from `cli-visuals.md`)
+  than a papercut. (from `docs/plans/archive/cli-visuals.md`)

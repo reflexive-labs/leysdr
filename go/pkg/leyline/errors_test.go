@@ -54,7 +54,7 @@ func TestGRPCCodeRoundTripsTransportCodes(t *testing.T) {
 	}
 }
 
-// docs/engine-internals.md carries the one error table: every stable code and the
+// docs/dev/engine-internals.md carries the one error table: every stable code and the
 // gRPC status it is served with. Both daemons follow it, so a code added on one
 // side alone, or a status changed in one switch, fails here and in the engine's
 // twin of this test.
@@ -85,9 +85,9 @@ func TestErrorTableMatchesDocumentation(t *testing.T) {
 // documentedErrorTable reads the "### Error codes" table as code -> gRPC status.
 func documentedErrorTable(t *testing.T) map[string]codes.Code {
 	t.Helper()
-	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "engine-internals.md"))
+	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "dev", "engine-internals.md"))
 	if err != nil {
-		t.Fatalf("reading engine-internals.md: %v", err)
+		t.Fatalf("reading docs/dev/engine-internals.md: %v", err)
 	}
 	row := regexp.MustCompile("^\\| `([A-Z_]+)` \\| `([A-Z_]+)` \\|")
 	table := map[string]codes.Code{}
@@ -111,7 +111,7 @@ func documentedErrorTable(t *testing.T) map[string]codes.Code {
 		table[m[1]] = st
 	}
 	if len(table) == 0 {
-		t.Fatal("no error-code rows found in engine-internals.md")
+		t.Fatal("no error-code rows found in docs/dev/engine-internals.md")
 	}
 	return table
 }

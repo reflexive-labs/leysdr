@@ -54,7 +54,7 @@ type Options struct {
 }
 
 // Resolve applies the colour, width and unicode chains of section 2 of
-// docs/cli-style.md and returns the style for the stream o names.
+// docs/dev/cli-style.md and returns the style for the stream o names.
 func Resolve(o Options) Style {
 	color := resolveColor(o)
 	return Style{

@@ -12,7 +12,7 @@ import (
 )
 
 // Profile is the colour depth one stream reports. It exists for the level
-// ramp only (section 3a of docs/cli-style.md): every other ink role stays on
+// ramp only (section 3a of docs/dev/cli-style.md): every other ink role stays on
 // the 16 ANSI names whatever the profile says, so the user's terminal theme
 // resolves them.
 //
@@ -91,7 +91,7 @@ func (s Style) ink(st lipgloss.Style, text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// levelStops is the ramp of section 3a of docs/cli-style.md as RGB: blue at
+// levelStops is the ramp of section 3a of docs/dev/cli-style.md as RGB: blue at
 // the noise floor, then cyan, green, amber and red at full scale. The hue
 // sweeps monotonically from cold to hot, but the luminance deliberately does
 // not: every stop is held between 0.18 and 0.26 relative luminance, which is

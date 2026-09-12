@@ -17,7 +17,7 @@ import (
 
 // AudioRow is one JSON row of `ley listen --format json`. Bulk audio frames
 // have no proto message, so this shape (snake_case, pcm base64) is part of
-// the documented bulk-row exception to the proto3 rule; see docs/interfaces.md.
+// the documented bulk-row exception to the proto3 rule; see docs/reference/cli.md.
 type AudioRow struct {
 	Seq         uint64 `json:"seq"`
 	SampleIndex uint64 `json:"sample_index"`
@@ -69,7 +69,7 @@ Everything meant for a person goes to stderr; stdout is only the stream.
                {seq, sample_index, sample_rate, format, pcm}
                with pcm base64-encoded. Bulk rows have no proto message, so
                this shape is part of the documented exception to ley's proto3
-               JSON rule; see docs/interfaces.md.
+               JSON rule; see docs/reference/cli.md.
 --format bin:  the raw PCM frames as the daemon delivers them, back to back
                and nothing else (mono, little-endian, the sample rate and
                format named on stderr; S16 in this build).

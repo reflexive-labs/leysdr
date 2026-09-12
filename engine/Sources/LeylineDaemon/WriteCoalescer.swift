@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Coalesced parameter writes (docs/engine-internals.md "Control service", WriteParams).
+// Coalesced parameter writes (docs/dev/engine-internals.md "Control service", WriteParams).
 
 import EngineCore
 import Foundation

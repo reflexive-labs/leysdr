@@ -1,0 +1,101 @@
+# Leyline documentation
+
+Start with who you are. The first section is for someone who wants to use Leyline; the rest is for
+people and agents working on it. Prose in this directory follows the [writing guide](writing-guide.md).
+
+## Using Leyline
+
+You have an RTL-SDR (or an IQ recording) and a Mac.
+
+| read | when |
+|---|---|
+| [Installing Leyline](guide/install.md) | building the daemon and `ley`, starting at login, a radio on another machine, uninstalling |
+| [Using `ley`](guide/using-ley.md) | the tasks in the order a newcomer meets them: see the radio, hear a station, adjust it, see the band, scan, watch, the waveform, two channels, a recording, scripts |
+| [Troubleshooting](guide/troubleshooting.md) | the daemon is not running, no radio listed, a busy dongle, no audio, and every message `ley` prints |
+| [`ley` reference](reference/cli.md) | the command tree, input conventions, every `--json` shape, exit status |
+| [IQ files and fixtures](reference/iq-files.md) | the `.cf32` + sidecar format `ley play` reads, and the generated signals |
+| [Writing a client](reference/clients.md) | a script, agent or program that speaks the contract without `ley` |
+
+`ley help <topic>` carries the same facts at the prompt: `squelch`, `frequencies`, `modes`, `gain`,
+`presets`, `glossary`, `scripting`, `roadmap`. What works today and what is next is the "Where
+things stand" section of the [README](../README.md) and `ley help roadmap`;
+[`plans/build-order.md`](plans/build-order.md) is the order features arrive in.
+
+## Working on Leyline
+
+Contributors and coding agents. Read first, in this order:
+
+1. [`CLAUDE.md`](../CLAUDE.md): the thirteen invariants, written as instructions to an agent and
+   used as the review checklist. Each has its rationale in a design doc below.
+2. [`CONTRIBUTING.md`](../CONTRIBUTING.md): the gate (`make check`), tests without hardware,
+   commits, the licence of your contribution.
+3. [Writing guide](writing-guide.md): the voice, the words, and which kind of document goes where.
+
+### Contracts and setup (`dev/`)
+
+| read | before |
+|---|---|
+| [Developer setup](dev/setup.md) | building on the Mac, the Linux container, regenerating protos, cutting a release |
+| [Engine internals](dev/engine-internals.md) | touching the engine or daemon: threads, the hot path, pipeline math, devices, services, the error-code table, daemon lifecycle |
+| [CLI style](dev/cli-style.md) | changing anything a `ley` user sees: colour, streams, glyphs, layout, the frozen contracts |
+| [Release checklist](dev/release-checklist.md) | tagging a release: the mechanical gate, licence obligations, the acceptance pass on a real dongle |
+
+### Why it is built this way (`design/`)
+
+Each design doc opens with a status line and the question it answers. A change that contradicts one
+changes the doc first.
+
+| doc | question | status |
+|---|---|---|
+| [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | draft; v0 implements it |
+| [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | draft; v0 implements it |
+| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the planned MCP surface | draft; scan implemented, jobs and MCP not |
+| [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | decided, implemented (D.13) |
+| [Signal views](design/signal-views.md) | the waterfall, the channel view, sub-audible (CTCSS) tones, and what honest means | draft; implemented except DCS and the sonogram |
+| [Scope](design/scope.md) | the audio waveform and the demod tap under it | draft; `ley scope` implements it |
+| [Audio meters](design/audio-meters.md) | `ley levels` and `ley waveform` as instruments | implemented |
+| [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | draft; persistence implemented, the rest not |
+
+### Decisions (`decisions/`)
+
+One decision each, dated, with what it costs and what would reopen it.
+[D2 licensing](decisions/D2-licensing.md) (everything ships open; engine GPL-3.0-or-later, all else
+Apache-2.0) and [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb now, IOUSBHost later).
+
+### Plans (`plans/`)
+
+What is being built, in what order, and the record of what each step found.
+
+- [Build order](plans/build-order.md): milestones A to D and the spikes, with acceptance criteria.
+  [User stories](plans/user-stories.md) are the acceptance tests of record.
+- Live plans, with `[ ]` items still open: [v1 release](plans/v1-release.md) (the gap analysis and
+  work list for the first shared release), [signal views](plans/signal-views.md) (DCS and the
+  sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain).
+- [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit
+  messages cite their item ids. Nothing in there is a work list any more.
+
+### For coding agents
+
+`CLAUDE.md` is loaded automatically; this directory is where its rules come from. The three reads
+that prevent the most rework: the design doc for the area before a structural change,
+[CLI style](dev/cli-style.md) before changing output, and [Engine internals](dev/engine-internals.md)
+plus the fixture round-trips in [IQ files and fixtures](reference/iq-files.md) before DSP.
+
+Two documents are parsed by tests, so their shape is part of the contract: the "Error codes" table
+in `dev/engine-internals.md` (`ErrorTableTests` on the Swift side, the error registry test on the Go
+side) and `ley`'s help texts (golden files under `go/internal/cli/testdata/help/`). A page that
+moves takes every `docs/` reference in the repository with it.
+
+## Map
+
+```
+docs/
+├── README.md              this page
+├── writing-guide.md       voice, words, document kinds
+├── guide/                 using Leyline: install, using-ley, troubleshooting
+├── reference/             lookup: cli, iq-files, clients
+├── design/                why it is built this way, with the measured numbers
+├── decisions/             dated decision records (D2, S3)
+├── dev/                   contributor contracts: setup, engine-internals, cli-style, release-checklist
+└── plans/                 build-order, user-stories, live plans; archive/ for finished ones
+```

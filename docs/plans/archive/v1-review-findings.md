@@ -1,6 +1,6 @@
 # Review findings, v1.0 pass (2026-09-10)
 
-The record of the deep review that `docs/plans/v1-review-fixes.md` acts on: eighteen reviewers over Go quality, Swift quality, three architecture lenses and comment language, each batch of findings checked by independent verifiers told to refute (two lenses for code findings, one for comments). A finding is **confirmed** when no verifier refuted it, **contested** when one did, and **refuted** when all did; contested ones were adjudicated in the fixes plan. Severity is the verifiers' (never higher than the finder's). Line numbers are as of `36adcb8`.
+The record of the deep review that `docs/plans/archive/v1-review-fixes.md` acts on: eighteen reviewers over Go quality, Swift quality, three architecture lenses and comment language, each batch of findings checked by independent verifiers told to refute (two lenses for code findings, one for comments). A finding is **confirmed** when no verifier refuted it, **contested** when one did, and **refuted** when all did; contested ones were adjudicated in the fixes plan. Severity is the verifiers' (never higher than the finder's). Line numbers are as of `36adcb8`.
 
 Totals: 206 findings — 179 confirmed, 11 contested, 16 refuted.
 
@@ -239,7 +239,7 @@ Suggested fix: Delete the field and its two assignments.
 
 `go/internal/cli/format.go:65` · P3 · scoped · confirmed
 
-format.go carries two renderers for the same data: rangesString joins with "-" and returns "-" when empty; rangesPhrase joins with " to " and returns "" for the caller to fill. docs/cli-style.md:136 states ranges are never written with a dash "so a dash always means" no value.
+format.go carries two renderers for the same data: rangesString joins with "-" and returns "-" when empty; rangesPhrase joins with " to " and returns "" for the caller to fill. docs/dev/cli-style.md:136 states ranges are never written with a dash "so a dash always means" no value.
 
 Why it matters: `ley orient` prints "tunes 24 MHz-1.766 GHz" (root.go:753) while the same device in `ley state` and `ley devices` prints "24 MHz to 1.766 GHz"; a device with no ranges renders "tunes -", which is exactly the ambiguity the style rule exists to prevent.
 
@@ -1013,14 +1013,14 @@ Suggested fix: Share one pacing helper (sec/nsec split plus the EINTR retry loop
 
 parse() accepts any Double for --seconds, and the value goes straight into UInt64(options.seconds * 1e9). A negative argument traps the process with 'Negative value is not representable' instead of printing the usage line the parser prints for every other bad input.
 
-Why it matters: The spike harness is run by hand from docs/build-order.md; a typo'd flag should print usage, not a Swift runtime crash that looks like an engine fault.
+Why it matters: The spike harness is run by hand from docs/plans/build-order.md; a typo'd flag should print usage, not a Swift runtime crash that looks like an engine fault.
 
 Suggested fix: Validate in parse(): reject seconds <= 0 (and rate == 0, channels < 0) with the usage message and exit(2).
 
 
 ## Swift code quality: the daemon (`LeylineDaemon`)
 
-Coverage: Read in full (every non-test file in scope): engine/Sources/LeylineDaemon/ClientContext.swift, WriteCoalescer.swift, Server.swift, DaemonCommand.swift, Mapping/ProtoMapping.swift, Services/ControlService.swift, Services/BulkService.swift, Services/JobsService.swift, Services/TelemetryService.swift, Bulk/FrameRing.swift, Bulk/StreamSources.swift, Bulk/StreamRegistry.swift, Jobs/JobStore.swift, Jobs/ScanRunner.swift, Jobs/SessionCaptureAllocator.swift, Session/SessionStore.swift (all 917 lines, in six sections). Also read docs/plans/engine-review-fixes.md in full to avoid re-reporting fixed …
+Coverage: Read in full (every non-test file in scope): engine/Sources/LeylineDaemon/ClientContext.swift, WriteCoalescer.swift, Server.swift, DaemonCommand.swift, Mapping/ProtoMapping.swift, Services/ControlService.swift, Services/BulkService.swift, Services/JobsService.swift, Services/TelemetryService.swift, Bulk/FrameRing.swift, Bulk/StreamSources.swift, Bulk/StreamRegistry.swift, Jobs/JobStore.swift, Jobs/ScanRunner.swift, Jobs/SessionCaptureAllocator.swift, Session/SessionStore.swift (all 917 lines, in six sections). Also read docs/plans/archive/engine-review-fixes.md in full to avoid re-reporting fixed …
 
 
 ### q-swift-daemon-1 — Persistence subscribe traps the daemon on a tiny rows_per_second
@@ -1130,7 +1130,7 @@ Suggested fix: Make readiness observable from the daemon side — e.g. after sta
 
 ## Architecture: the thirteen invariants
 
-Coverage: Read in full: /workspace/CLAUDE.md, /workspace/docs/engine-internals.md, /workspace/docs/interfaces.md (the relevant sections on client-side exceptions, auto-squelch, roadmap stubs, client requirements), /workspace/Makefile, /workspace/.github/workflows/ci.yml, /workspace/scripts/gen-proto.sh, /workspace/proto/leyline/v1/common.proto, /workspace/engine/Sources/LeylineDaemon/Services/{ControlService,JobsService}.swift, /workspace/engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift, /workspace/engine/Sources/LeylineDaemon/Server.swift. Read by section: proto/leyline/v1/control.proto …
+Coverage: Read in full: /workspace/CLAUDE.md, /workspace/docs/dev/engine-internals.md, /workspace/docs/reference/cli.md (the relevant sections on client-side exceptions, auto-squelch, roadmap stubs, client requirements), /workspace/Makefile, /workspace/.github/workflows/ci.yml, /workspace/scripts/gen-proto.sh, /workspace/proto/leyline/v1/common.proto, /workspace/engine/Sources/LeylineDaemon/Services/{ControlService,JobsService}.swift, /workspace/engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift, /workspace/engine/Sources/LeylineDaemon/Server.swift. Read by section: proto/leyline/v1/control.proto …
 
 
 ### a-invariants-1 — Jobs service registers no client presence, so an orphaned job holds the radio forever
@@ -1143,7 +1143,7 @@ Why it matters: `reap` documents itself as "the backstop for a hard kill" of a s
 
 Suggested fix: Give JobsService the store and call `await store.touchUnary(ClientContext.current)` at the top of each method (StartJob, GetJob, ListJobs, CancelJob), the same as ControlService. That makes a job-only client present for one grace period per call, so a poller keeps its job and a vanished client's job is cancelled by the existing `clientGoneHook` path. Add an e2e case that starts a scan over a raw connection, drops it, and asserts the capture is free within the grace window.
 
-- verifier (comment, downgraded P2): Confirmed mechanically: JobsService.swift holds only `let jobs: JobStore` and none of its six methods touches presence, while SessionStore only creates a Presence entry in streamOpened/touchUnary (SessionStore.swift:217/233), so armGrace/reap/clientGoneHook never fire for a client whose only RPCs are Jobs.*. docs/interfaces.md:117 states the contract this breaks ("it belongs to the connection that started it and the daemon cancels it when that connection goes"). Downgraded from P1: `ley scan` …
+- verifier (comment, downgraded P2): Confirmed mechanically: JobsService.swift holds only `let jobs: JobStore` and none of its six methods touches presence, while SessionStore only creates a Presence entry in streamOpened/touchUnary (SessionStore.swift:217/233), so armGrace/reap/clientGoneHook never fire for a client whose only RPCs are Jobs.*. docs/reference/cli.md:117 states the contract this breaks ("it belongs to the connection that started it and the daemon cancels it when that connection goes"). Downgraded from P1: `ley scan` …
 
 - verifier (comment, downgraded P2): Verified: JobsService.swift holds only `let jobs: JobStore` and never touches SessionStore, while presence is only created in streamOpened/touchUnary (SessionStore.swift:217/233), so the clientGoneHook backstop at SessionStore.swift:267 never arms for a job-only client — real gap, worth fixing. Not P1: ScanRunner.swift:189 walks plan.steps once and releases the lease at JobStore.swift:211, so the lockout is bounded by the sweep, not 'forever'; and the suggested touchUnary fix carries a policy …
 
@@ -1174,15 +1174,15 @@ Why it matters: `session.fold` handles the Channel and Sink tombstones by removi
 Suggested fix: Emit the destroy event with `state` left UNSPECIFIED, the same tombstone convention Channel and Sink already use (no proto change needed — CAPTURE_STATE_UNSPECIFIED is free), fold it in `session.fold` with a `withoutCapture`, and mirror both in `fakedaemon`. Document the convention once, next to the Sink comment at control.proto:104.
 
 
-### a-invariants-4 — engine-internals.md, the declared implementation contract, predates the entire Jobs subsystem and states Jobs is UNIMPLEMENTED
+### a-invariants-4 — docs/dev/engine-internals.md, the declared implementation contract, predates the entire Jobs subsystem and states Jobs is UNIMPLEMENTED
 
-`docs/engine-internals.md:30` · P2 · scoped · confirmed
+`docs/dev/engine-internals.md:30` · P2 · scoped · confirmed
 
-CLAUDE.md points at `docs/engine-internals.md` as "the implementation contract (threads, hot path, pipeline math, daemon rules)". Its module map line 30 says `Services/ Control, Telemetry, Bulk (Jobs/Resources return UNIMPLEMENTED in v0)`, which stopped being true at commit 017214a. The map has no `Jobs/` entry at all, and the DSP list omits four files that now exist: SweepPlan.swift, EnergyDetector.swift, SubAudible.swift, Persistence.swift. Grepping the whole doc for sweep, scan, job, detector, sub-audible, persistence or phosphor returns four incidental hits, none about these features.
+CLAUDE.md points at `docs/dev/engine-internals.md` as "the implementation contract (threads, hot path, pipeline math, daemon rules)". Its module map line 30 says `Services/ Control, Telemetry, Bulk (Jobs/Resources return UNIMPLEMENTED in v0)`, which stopped being true at commit 017214a. The map has no `Jobs/` entry at all, and the DSP list omits four files that now exist: SweepPlan.swift, EnergyDetector.swift, SubAudible.swift, Persistence.swift. Grepping the whole doc for sweep, scan, job, detector, sub-audible, persistence or phosphor returns four incidental hits, none about these features.
 
 Why it matters: Three shipped subsystems — daemon-side scan jobs with the capture allocator and lease protocol, sub-audible/CTCSS detection, and the persistence (phosphor) bulk stream — have no entry in the document a maintainer is told to read before structural changes. The doc is not merely incomplete, it actively misdirects: someone reading line 30 concludes the Jobs service is a stub and that the don't-disturb policy is unimplemented, when `SessionCaptureAllocator` already owns it and `refuseIfSwept` already blocks user writes on a swept capture. D.15 (durable jobs, watch jobs, the resource store) lands …
 
-Suggested fix: Update the module map (add `Jobs/`, the four DSP files, `BlockingWork.swift`; correct the Services line to say scan is implemented and only watch/record/Resources are UNIMPLEMENTED) and add three short sections beside the existing Control/Telemetry/Bulk ones: the Jobs service and lease lifecycle, detections on the telemetry plane, and the persistence stream's parameters. docs/design-scan.md already carries the reasoning; this doc needs the contract summary that points at it.
+Suggested fix: Update the module map (add `Jobs/`, the four DSP files, `BlockingWork.swift`; correct the Services line to say scan is implemented and only watch/record/Resources are UNIMPLEMENTED) and add three short sections beside the existing Control/Telemetry/Bulk ones: the Jobs service and lease lifecycle, detections on the telemetry plane, and the persistence stream's parameters. docs/design/scan.md already carries the reasoning; this doc needs the contract summary that points at it.
 
 
 ### a-invariants-5 — JobRunner, JobContext and ResourceStore in CoreProtocols are unreferenced; the shipped jobs subsystem bypassed them
@@ -1195,7 +1195,7 @@ Why it matters: A contract file that mixes live protocols with aspirational ones
 
 Suggested fix: Either delete the three unused declarations now and re-add the shape D.15 actually needs, or (better, if the direction is settled) make `ScanRunner` conform to `JobRunner` and give `JobContext` its real members so the second job type has a pattern to follow. Whichever is chosen, the file should not carry protocols that the only implementation of their concept ignores.
 
-- verifier (comment, downgraded P3): The grep holds — JobRunner/JobContext/ResourceStore/ResourceKind/ResourceHandle/ResourceRecord appear only at their declarations (CoreProtocols.swift:415-425, 491-511) — but they are explicitly labelled forward declarations ("// MARK: - Jobs (Milestone D)", "// MARK: - Store (Milestone C/D)", "filled in with Milestone D") and docs/build-order.md:38 schedules "JobRunner respawn" and the resource store for milestone 15. That is a roadmap placeholder rather than accidental dead code, so P3, not P2.
+- verifier (comment, downgraded P3): The grep holds — JobRunner/JobContext/ResourceStore/ResourceKind/ResourceHandle/ResourceRecord appear only at their declarations (CoreProtocols.swift:415-425, 491-511) — but they are explicitly labelled forward declarations ("// MARK: - Jobs (Milestone D)", "// MARK: - Store (Milestone C/D)", "filled in with Milestone D") and docs/plans/build-order.md:38 schedules "JobRunner respawn" and the resource store for milestone 15. That is a roadmap placeholder rather than accidental dead code, so P3, not P2.
 
 - verifier (comment, downgraded P3): Verified by grep: JobRunner/JobContext/ResourceStore/ResourceHandle/ResourceRecord/ResourceKind appear only at their declarations in CoreProtocols.swift (the go/gen hits are generated proto). But that file is explicitly staged by milestone ('MARK: - Jobs (Milestone D)', '- Store (Milestone C/D)'), so a forward declaration there is house style, not a defect; the only concretely wrong thing is JobContext's 'filled in with Milestone D' comment now that D.13 shipped past it. Worth a minute, not a …
 
@@ -1204,7 +1204,7 @@ Suggested fix: Either delete the three unused declarations now and re-add the sh
 
 `go/internal/cli/fft.go:237` · P2 · scoped · confirmed
 
-Bulk frames are the one part of leyline.v1 with no proto message (docs/interfaces.md calls this out as the documented exception), so their payload encoding is hand-written on both sides: the daemon encodes DB_U8 in StreamSources.swift:11 as `((db + 120) * 2).rounded()`, and Go decodes it in the unexported `decodeBins` at fft.go:237 as `float64(b)/2 - 120`. `pkg/leyline` — the library CLAUDE.md says the MCP adapter shares — offers `SubscribeFFT`, `SubscribePersistence`, `SubscribeAudio` and `SubscribeIQ` (client.go:416-469) and returns raw `Frame`s, with no way to read the bytes it just negotiated.
+Bulk frames are the one part of leyline.v1 with no proto message (docs/reference/cli.md calls this out as the documented exception), so their payload encoding is hand-written on both sides: the daemon encodes DB_U8 in StreamSources.swift:11 as `((db + 120) * 2).rounded()`, and Go decodes it in the unexported `decodeBins` at fft.go:237 as `float64(b)/2 - 120`. `pkg/leyline` — the library CLAUDE.md says the MCP adapter shares — offers `SubscribeFFT`, `SubscribePersistence`, `SubscribeAudio` and `SubscribeIQ` (client.go:416-469) and returns raw `Frame`s, with no way to read the bytes it just negotiated.
 
 Why it matters: Two consequences. First, D.16: an MCP adapter built on pkg/leyline can subscribe to a spectrum but cannot turn a frame into dB without either reaching into `internal/cli` (a Cobra package full of lipgloss styles) or reimplementing the quantization — and a second implementation of `b/2 - 120` is exactly the kind of silent drift that produces a spectrum offset by 120 dB. Second, there is no cross-language test: grepping go/internal/e2e for `u8`/`U8`/`120` returns nothing, so the encoder and decoder are only ever exercised separately, and the five CLI call sites all pass `DB_F32` in their …
 
@@ -1232,7 +1232,7 @@ Why it matters: The URI reads as a durable handle and is not one. An MCP agent (
 
 Suggested fix: Until D.15 gives resources a store, either (a) make `Resources.GetResource` resolve `ley://scans/<id>` against the in-memory table and return a distinct code when the scan has been trimmed, or (b) drop `result_uris` from a v0 scan job and let clients use `Jobs.GetScan(scan_id)` — the field is optional and an empty one promises nothing. Whichever way, say in the Job message's comment that a v0 result URI does not survive `keepFinished` jobs.
 
-- verifier (comment, refuted P3): Refuted by docs/interfaces.md:118-122, which states in prose that result_uris carries ley://scans/<id>, that it "is resolved by Jobs.GetScan", that it is "deliberately not yet a Resource, because an ad-hoc scan is ephemeral and there is no file", and that "the daemon keeps the last sixteen finished jobs in memory and loses them on restart". The convention is documented, not private, and the expiry the finding says nobody records is written down; the remaining gap is the intended D.15 work.
+- verifier (comment, refuted P3): Refuted by docs/reference/cli.md:118-122, which states in prose that result_uris carries ley://scans/<id>, that it "is resolved by Jobs.GetScan", that it is "deliberately not yet a Resource, because an ad-hoc scan is ephemeral and there is no file", and that "the daemon keeps the last sixteen finished jobs in memory and loses them on restart". The convention is documented, not private, and the expiry the finding says nobody records is written down; the remaining gap is the intended D.15 work.
 
 - verifier (comment, confirmed P3): Verified: JobStore.swift:140 mints ley://scans/<id>, all three ResourcesService methods throw unimplemented (JobsService.swift:63-75), trim() at JobStore.swift:327 drops the entry past keepFinished, and scan.go string-strips the prefix to call GetScan. A promise the API cannot keep, but bounded harm and the right fix (resolve it vs drop the field) is a D.15 design call — P3 is the correct weight.
 
@@ -1243,18 +1243,18 @@ Suggested fix: Until D.15 gives resources a store, either (a) make `Resources.Ge
 
 `DeviceRegistry.attachVirtualDevice` hosts any constructed virtual device and is how `RTLTCPDevice`s enter the registry (Server.swift:151, from `--rtltcp`/`LEYLINE_RTLTCP` at startup). No RPC exposes it. On the way out, `SessionStore.detachFileDevice` gates on `isDetachableFileDevice`, which returns false unless the driver is literally `file`, so `Control.DetachFileDevice` refuses every rtl_tcp device. A remote dongle is therefore daemon start-up configuration, not session state — the only object in the system that is.
 
-Why it matters: Everything else about a device's lifecycle is daemon state clients drive over the one protocol; a remote source is the exception, and it is the exception in the direction the remote-access milestone (docs/design-control-plane.md:81) will have to reverse. Concretely today: an operator who typos `--rtltcp` or whose remote host moves must restart the daemon, and the CLI's refusal message for an rtltcp device is wrong — devices.go:73 tells them "is a real radio (...), not a playback file; free it with: ley stop --all", which frees captures and does not remove the remote.
+Why it matters: Everything else about a device's lifecycle is daemon state clients drive over the one protocol; a remote source is the exception, and it is the exception in the direction the remote-access milestone (docs/design/control-plane.md:81) will have to reverse. Concretely today: an operator who typos `--rtltcp` or whose remote host moves must restart the daemon, and the CLI's refusal message for an rtltcp device is wrong — devices.go:73 tells them "is a real radio (...), not a playback file; free it with: ley stop --all", which frees captures and does not remove the remote.
 
-Suggested fix: Either widen the guard so `isDetachableFileDevice` accepts any hosted virtual device (the registry's own `detachFileDevice` already handles them — its comment at line 182 says so) and fix devices.go:73 to allow driver `rtltcp`, or, if remotes are deliberately configuration for now, say so in the error message and in docs/interfaces.md instead of calling an rtl_tcp source "a real radio". The general `AttachDevice`/`DetachDevice` pair belongs to the remote-access milestone, but the misleading refusal is worth fixing today.
+Suggested fix: Either widen the guard so `isDetachableFileDevice` accepts any hosted virtual device (the registry's own `detachFileDevice` already handles them — its comment at line 182 says so) and fix devices.go:73 to allow driver `rtltcp`, or, if remotes are deliberately configuration for now, say so in the error message and in docs/reference/cli.md instead of calling an rtl_tcp source "a real radio". The general `AttachDevice`/`DetachDevice` pair belongs to the remote-access milestone, but the misleading refusal is worth fixing today.
 
-- verifier (comment, refuted P3): Refuted: the exclusion is deliberate and documented at DeviceRegistry.swift:172-175 ("Operator-configured virtual devices (rtl_tcp) are hosted the same way but are not client-detachable") and in docs/engine-internals.md:230-249 / docs/dev-setup.md:47-64. The quoted daemon error is also inaccurate — SessionStore.swift:371 names the driver: "device is not a detachable file device (driver rtltcp)" — and devices.go:73's "free it with: ley stop --all" is true of an rtl_tcp remote, which stop --all …
+- verifier (comment, refuted P3): Refuted: the exclusion is deliberate and documented at DeviceRegistry.swift:172-175 ("Operator-configured virtual devices (rtl_tcp) are hosted the same way but are not client-detachable") and in docs/dev/engine-internals.md:230-249 / docs/dev/setup.md:47-64. The quoted daemon error is also inaccurate — SessionStore.swift:371 names the driver: "device is not a detachable file device (driver rtltcp)" — and devices.go:73's "free it with: ley stop --all" is true of an rtl_tcp remote, which stop --all …
 
 - verifier (comment, confirmed P3): Verified, but narrower than written: DeviceRegistry.swift:173-176 documents the exclusion deliberately ('Operator-configured virtual devices (rtl_tcp) are hosted the same way but are not client-detachable'), and the daemon's own error names the driver correctly (SessionStore.swift:372). Only devices.go:73 is actually wrong — it tells an rtltcp user their remote 'is a real radio, not a playback file; free it with: ley stop --all', which does not remove it. Fix the message; widening …
 
 
-### a-invariants-10 — design-control-plane.md claims the protos reserve auth fields; none do
+### a-invariants-10 — docs/design/control-plane.md claims the protos reserve auth fields; none do
 
-`docs/design-control-plane.md:81` · P3 · mechanical · confirmed
+`docs/design/control-plane.md:81` · P3 · mechanical · confirmed
 
 The remote-access decision entry ends "Proto reserves the auth fields now so the addition is non-breaking." Grepping `proto/` for auth, token or credential returns only the words "authoritative" and "authoritative answer" in bulk.proto comments. The four `reserved` declarations that do exist (control.proto:90, telemetry.proto:95/96/113) are all for retired telemetry and channel fields, none for auth.
 
@@ -1287,7 +1287,7 @@ Suggested fix: Inject the SessionStore into JobsService and call `await store.to
 
 Why it matters: Any consumer that reads the gRPC code rather than the ErrorDetail trailer — a retry interceptor, a non-Go client, grpc-gateway, service-mesh policy — behaves differently against the fake than against leylined, and RESOURCE_EXHAUSTED is retriable in default gRPC retry configs while FAILED_PRECONDITION is not, so a DEVICE_BUSY could be silently retried against one daemon and not the other.
 
-Suggested fix: Write the table once as normative prose in docs/engine-internals.md next to the leyline-error-bin paragraph (line 319), pick a winner per code, and add a test on each side asserting its switch matches that table entry-for-entry.
+Suggested fix: Write the table once as normative prose in docs/dev/engine-internals.md next to the leyline-error-bin paragraph (line 319), pick a winner per code, and add a test on each side asserting its switch matches that table entry-for-entry.
 
 
 ### a-layering-3 — Error-code registry has three partial sources of truth
@@ -1318,11 +1318,11 @@ Suggested fix: Move the CLI's snapGain into go/pkg/leyline beside CheckGain as t
 
 ProtoMapping's header calls itself "the one place the two vocabularies meet" and Package.swift:8 repeats it, but ProtoMapping only implements the engine→proto direction. Every proto→engine conversion, and the daemon's authoritative state itself, lives in SessionStore, JobStore and WriteCoalescer: SessionStore stores and returns proto messages (`func captureProto(_:) -> Leyline_V1_Capture`, `createCapture(...) -> Leyline_V1_Capture`, `attachSink(channelID:request: Leyline_V1_Sink)`, `applyWrite(_ w: Leyline_V1_ParamWrite)`, `createChannel(..., mode: Leyline_V1_DemodMode, ...)`), WriteCoalescer keys and batches `Leyline_V1_ParamWrite` directly, and JobStore builds `Leyline_V1_Job`/`Leyline_V1_Scan` as its records.
 
-Why it matters: The stated module rule is what a maintainer trusts when changing the wire format: today a proto field rename touches the state store's policy code, not one mapping file, and the daemon's own state has no representation independent of leyline.v1 — which is precisely the coupling the TX-as-sibling entry (CLAUDE.md invariant 11, docs/design-control-plane.md) and any second transport will run into. The gap is invisible because the comment says otherwise.
+Why it matters: The stated module rule is what a maintainer trusts when changing the wire format: today a proto field rename touches the state store's policy code, not one mapping file, and the daemon's own state has no representation independent of leyline.v1 — which is precisely the coupling the TX-as-sibling entry (CLAUDE.md invariant 11, docs/design/control-plane.md) and any second transport will run into. The gap is invisible because the comment says otherwise.
 
 Suggested fix: Either add the proto→engine half to ProtoMapping and give SessionStore/JobStore engine-vocabulary signatures with the services doing both translations, or — if storing proto is the deliberate choice — rewrite the ProtoMapping and Package.swift comments to say "engine→proto rendering; the session and job stores hold proto messages as their record type" so the contract matches the code.
 
-- verifier (comment, downgraded P3): The code claim holds (SessionStore holds Leyline_V1_Capture/Channel/Sink and takes Leyline_V1_ParamWrite/DemodMode in its signatures; JobStore stores Leyline_V1_Job/Scan), but the rule the docs actually state is 'EngineCore is proto-free' (docs/engine-internals.md:13, Package.swift:7) and that is intact. The daemon layer holding proto records is a defensible deliberate choice; the restructure half of the fix is a large refactor with no demonstrated failure behind it. What is genuinely wrong is …
+- verifier (comment, downgraded P3): The code claim holds (SessionStore holds Leyline_V1_Capture/Channel/Sink and takes Leyline_V1_ParamWrite/DemodMode in its signatures; JobStore stores Leyline_V1_Job/Scan), but the rule the docs actually state is 'EngineCore is proto-free' (docs/dev/engine-internals.md:13, Package.swift:7) and that is intact. The daemon layer holding proto records is a defensible deliberate choice; the restructure half of the fix is a large refactor with no demonstrated failure behind it. What is genuinely wrong is …
 
 
 ### a-layering-6 — Contract-level client behaviour is locked inside go/internal/cli
@@ -1361,11 +1361,11 @@ The CLI reserves the verb `ley watch` for the Bubble Tea dashboard (build-order 
 
 Why it matters: When D.15 lands, `ley watch 146.52` reads unambiguously as "start a watch job on 146.52" to any user who has read the docs, and the verb is already taken by a no-argument dashboard; whoever implements it has to either rename a shipped verb or invent a second spelling for a first-class job type. The collision is cheap to resolve now (the dashboard verb is still a stub) and expensive after either ships.
 
-Suggested fix: Pick now: either the dashboard becomes `ley dash`/bare `ley` only and `watch` is reserved for the job, or the job verb becomes `ley monitor`. Record the choice in docs/cli-style.md and update the stub table.
+Suggested fix: Pick now: either the dashboard becomes `ley dash`/bare `ley` only and `watch` is reserved for the job, or the job verb becomes `ley monitor`. Record the choice in docs/dev/cli-style.md and update the stub table.
 
-- verifier (comment, downgraded P3): The collision is real — stubs.go:22-28 reserves `watch` for the D.14 dashboard (build-order.md:34) while jobs.proto:37-44 defines WatchConfig as the D.15 job with ley://watches/<id>/transcript (jobs.proto:109). But the dashboard verb has never shipped as a working command (hidden, exit 2), so nothing has to be renamed or deprecated later; this is a naming decision to record, not a defect.
+- verifier (comment, downgraded P3): The collision is real — stubs.go:22-28 reserves `watch` for the D.14 dashboard (docs/plans/build-order.md:34) while jobs.proto:37-44 defines WatchConfig as the D.15 job with ley://watches/<id>/transcript (jobs.proto:109). But the dashboard verb has never shipped as a working command (hidden, exit 2), so nothing has to be renamed or deprecated later; this is a naming decision to record, not a defect.
 
-- verifier (comment, downgraded P3): Collision is real (stubs.go:22-28 reserves `watch` for the dashboard, jobs.proto WatchConfig plus build-order.md:38 make watch a D.15 job), but build-order.md:34 already says the dashboard is bare `ley`, so `ley watch` is a redundant alias rather than a committed verb, and it is hidden and unimplemented. One-line resolution now (drop or rename the stub, reserve `watch` for the job, note it in cli-style.md). Touches the same stub entry as a-layering-13 — fix them together.
+- verifier (comment, downgraded P3): Collision is real (stubs.go:22-28 reserves `watch` for the dashboard, jobs.proto WatchConfig plus docs/plans/build-order.md:38 make watch a D.15 job), but docs/plans/build-order.md:34 already says the dashboard is bare `ley`, so `ley watch` is a redundant alias rather than a committed verb, and it is hidden and unimplemented. One-line resolution now (drop or rename the stub, reserve `watch` for the job, note it in docs/dev/cli-style.md). Touches the same stub entry as a-layering-13 — fix them together.
 
 
 ### a-layering-9 — The cross-language contract's only proof is two opt-in tests
@@ -1396,7 +1396,7 @@ Suggested fix: Move the default to an exported helper in go/pkg/leyline (e.g. `D
 
 `go/internal/cli/scan.go:259` · P3 · scoped · contested
 
-`ley://scans/<id>` is concatenated in the Swift daemon (Jobs/JobStore.swift:140) and in the fake (fakedaemon/jobs.go:85), and taken apart with strings.CutPrefix in the CLI (scan.go:259) and String(uri.dropFirst(...)) in a Swift test. go/pkg/leyline has no URI type, though docs/interfaces.md:19 makes ley:// URIs the MCP adapter's resource identity one-to-one and jobs.proto:109 already lists four kinds (recordings, scans, snapshots, watches/<id>/transcript).
+`ley://scans/<id>` is concatenated in the Swift daemon (Jobs/JobStore.swift:140) and in the fake (fakedaemon/jobs.go:85), and taken apart with strings.CutPrefix in the CLI (scan.go:259) and String(uri.dropFirst(...)) in a Swift test. go/pkg/leyline has no URI type, though docs/reference/cli.md:19 makes ley:// URIs the MCP adapter's resource identity one-to-one and jobs.proto:109 already lists four kinds (recordings, scans, snapshots, watches/<id>/transcript).
 
 Why it matters: D.16 has to parse and mint all four kinds; with no shared helper the adapter becomes a fifth copy, and a plural/singular slip (`ley://scan/` vs `ley://scans/`) is caught by nothing — scanIDOf simply returns "" and the caller reports a scan with no detections rather than an error.
 
@@ -1418,24 +1418,24 @@ Why it matters: Every future ChannelEngine (a TX-side sibling, a test double, a 
 Suggested fix: Delete `telemetry()` from the protocol and the implementation; the four test call sites become `.telemetrySubscription().stream`.
 
 
-### a-layering-13 — Stub roadmap labels do not match build-order.md
+### a-layering-13 — Stub roadmap labels do not match docs/plans/build-order.md
 
 `go/internal/cli/stubs.go:26` · P3 · mechanical · contested
 
-The hidden `watch` stub tells the user its milestone is "V0.5", a label that appears nowhere in docs/build-order.md; the TUI dashboard it describes is item 14 under Milestone D. The sibling `record` stub correctly says "Milestone C.12" (build-order.md:32), so the two entries in the same table use different vocabularies.
+The hidden `watch` stub tells the user its milestone is "V0.5", a label that appears nowhere in docs/plans/build-order.md; the TUI dashboard it describes is item 14 under Milestone D. The sibling `record` stub correctly says "Milestone C.12" (docs/plans/build-order.md:32), so the two entries in the same table use different vocabularies.
 
 Why it matters: The stub message is user-facing (`ley watch` exits 2 with it, and `ley help roadmap` lists it), so a user asking when the dashboard arrives is given a milestone name they cannot find in the repo, and a maintainer reconciling the roadmap has to guess which document is authoritative.
 
-Suggested fix: Change the watch stub's milestone to "Milestone D.14" to match build-order.md:34.
+Suggested fix: Change the watch stub's milestone to "Milestone D.14" to match docs/plans/build-order.md:34.
 
-- verifier (comment, refuted P3): "V0.5" is not an invented label: docs/sdr-user-stories.md:20 heads a section "V0.5 — TUI dashboard (Go, Bubble Tea)", docs/cli-guide.md:36 says "the V0.5 dashboard", and docs/interfaces.md:168 states outright "`record` (Milestone C.12) and `watch` (the V0.5 dashboard) exist as hidden verbs". The stub matches the docs that describe it; a user can find the term in the repo, so the stale-comment claim does not hold.
+- verifier (comment, refuted P3): "V0.5" is not an invented label: docs/plans/user-stories.md:20 heads a section "V0.5 — TUI dashboard (Go, Bubble Tea)", docs/guide/using-ley.md:36 says "the V0.5 dashboard", and docs/reference/cli.md:168 states outright "`record` (Milestone C.12) and `watch` (the V0.5 dashboard) exist as hidden verbs". The stub matches the docs that describe it; a user can find the term in the repo, so the stale-comment claim does not hold.
 
-- verifier (comment, confirmed P3): Verified stubs.go:26 says milestone 'V0.5' while its sibling at :20 says 'Milestone C.12' and build-order.md:34 puts the dashboard at D.14; 'V0.5' appears nowhere in build-order.md. The string is user-facing via stubMessage and `ley help roadmap`. One-word fix; sequence it with a-layering-8, which may delete or rename the same entry.
+- verifier (comment, confirmed P3): Verified stubs.go:26 says milestone 'V0.5' while its sibling at :20 says 'Milestone C.12' and docs/plans/build-order.md:34 puts the dashboard at D.14; 'V0.5' appears nowhere in docs/plans/build-order.md. The string is user-facing via stubMessage and `ley help roadmap`. One-word fix; sequence it with a-layering-8, which may delete or rename the same entry.
 
 
 ## Architecture: how the daemon bends (jobs, concurrency, shutdown, forward-compat)
 
-Coverage: Fully read: engine/Sources/LeylineDaemon/Jobs/JobStore.swift (all 335), Jobs/SessionCaptureAllocator.swift (all 275), Server.swift (all 184), Bulk/StreamRegistry.swift (all ~356), proto/leyline/v1/jobs.proto, proto/leyline/v1/control.proto, go/pkg/leyline/client.go (all 475), docs/design-control-plane.md, docs/design-semantic-tier.md. Read in full except the tail: Jobs/ScanRunner.swift (lines 1-420 of ~500; the SweepPlan-helper tail and any trailing statics after line 372 not read). Read by section: Session/SessionStore.swift — lines 104-560 (state, events/history, presence/reap/clientGone, …
+Coverage: Fully read: engine/Sources/LeylineDaemon/Jobs/JobStore.swift (all 335), Jobs/SessionCaptureAllocator.swift (all 275), Server.swift (all 184), Bulk/StreamRegistry.swift (all ~356), proto/leyline/v1/jobs.proto, proto/leyline/v1/control.proto, go/pkg/leyline/client.go (all 475), docs/design/control-plane.md, docs/design/semantic-tier.md. Read in full except the tail: Jobs/ScanRunner.swift (lines 1-420 of ~500; the SweepPlan-helper tail and any trailing statics after line 372 not read). Read by section: Session/SessionStore.swift — lines 104-560 (state, events/history, presence/reap/clientGone, …
 
 
 ### a-evolution-1 — startScan installs the job's Task after an actor hop, so a cancel in that window cancels nothing
@@ -1532,18 +1532,18 @@ Suggested fix: Leave `config` as the client sent it and report the chosen advanc
 
 ### a-evolution-14 — Design docs still use sdr:// URIs and `sdr` verbs; the contract is ley://
 
-`docs/design-control-plane.md:76` · P3 · mechanical · confirmed
+`docs/design/control-plane.md:76` · P3 · mechanical · confirmed
 
 Both design docs describe resources as `sdr://recordings/<id>`, `sdr://scans/<id>`, `sdr://snapshots/<id>`, `sdr://watches/<id>/transcript`, and the CLI mirror as `sdr devices`, `sdr tune`, …. CLAUDE.md, jobs.proto and the daemon all use `ley://` and the binary is `ley`.
 
 Why it matters: These are the documents the build order says to read before structural changes, and the D.16 MCP adapter maps resource URIs one-to-one off this text. Someone implementing Resources from the doc emits the wrong scheme.
 
-Suggested fix: Search-and-replace `sdr://` → `ley://` and the `sdr ` verb examples → `ley ` in both design docs (docs/design-data-planes.md:66 has the same drift).
+Suggested fix: Search-and-replace `sdr://` → `ley://` and the `sdr ` verb examples → `ley ` in both design docs (docs/design/data-planes.md:66 has the same drift).
 
 
 ### a-evolution-15 — design-control-plane says the proto reserves auth fields for remote access; control.proto reserves none
 
-`docs/design-control-plane.md:81` · P3 · mechanical · confirmed
+`docs/design/control-plane.md:81` · P3 · mechanical · confirmed
 
 The remote-access decision reads "Proto reserves the auth fields now so the addition is non-breaking." Nothing in control.proto reserves anything for auth — there is no reserved range on DaemonInfo, no auth message, no credential field on any request.
 
@@ -1580,7 +1580,7 @@ Suggested fix: Make it `enum ScanRunner {}` (a caseless namespace), which states
 
 - **a-evolution-6** The allocator can only express an exclusive, restore-on-release capture hold — a watch job cannot be built on it (`engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift:22`) — SessionCaptureAllocator.swift:21-24 declines `.channel` with UNIMPLEMENTED and the comment "Watch jobs land here (Milestone D.15). A sweep is the only caller today." The whole finding is about how a job type that does not exist would be built; no current path is wrong. Speculative design work for …
 
-- **a-evolution-10** Any client can create a persistent channel with no job behind it, and nothing ever reaps it (`engine/Sources/LeylineDaemon/Session/SessionStore.swift:591`) — Client-created persistent channels are the documented product feature, not a hole: docs/engine-internals.md:286 "`ley tune --persistent` creates a persistent channel and exits", the flag is shipped at go/internal/cli/tune.go:29, and `ley stop` exists to end them (go/internal/cli/stop.go:21 names …
+- **a-evolution-10** Any client can create a persistent channel with no job behind it, and nothing ever reaps it (`engine/Sources/LeylineDaemon/Session/SessionStore.swift:591`) — Client-created persistent channels are the documented product feature, not a hole: docs/dev/engine-internals.md:286 "`ley tune --persistent` creates a persistent channel and exits", the flag is shipped at go/internal/cli/tune.go:29, and `ley stop` exists to end them (go/internal/cli/stop.go:21 names …
 
 - **a-evolution-11** The Go client has no stream resume, and a dropped WatchEvents stream costs the client its channels and jobs (`go/pkg/leyline/client.go:280`) — The library gap is real (client.go:280-290 opens one stream, pump at :309-336 reports one terminal error, ScopeSince at :266-273 is only used by callers) but the Events doc comment prescribes the resume route and the in-tree consumer uses it: go/internal/cli/session.go:212 already opens with …
 
@@ -1780,7 +1780,7 @@ Suggested fix: Drop the plan id and state the fact plainly, e.g. '...the real da
 
 `go/internal/fakedaemon/writes_test.go:11` · P3 · mechanical · confirmed
 
-TestStoredWritesWhileOutOfCapture's doc comment reads 'mirrors the daemon's FU-2 rule: bandwidth, mode and squelch writes on an OUT_OF_CAPTURE channel are stored, not rejected...'. 'FU-2' is docs/plans/engine-review-fixes.md's internal id for this behaviour and conveys nothing on its own.
+TestStoredWritesWhileOutOfCapture's doc comment reads 'mirrors the daemon's FU-2 rule: bandwidth, mode and squelch writes on an OUT_OF_CAPTURE channel are stored, not rejected...'. 'FU-2' is docs/plans/archive/engine-review-fixes.md's internal id for this behaviour and conveys nothing on its own.
 
 Why it matters: A stranger reading the test has no way to resolve 'FU-2'; the sentence is fully meaningful without it, so the id is pure narrative baggage from the review process.
 
@@ -1922,7 +1922,7 @@ Suggested fix: Drop the '#4:' prefix.
 
 `go/internal/cli/set_fft_test.go:20` · P3 · mechanical · confirmed
 
-Comment explaining WriteAwaitsWatcher cites '(CLI-4 #15 removes the race)', a plan-item id from docs/plans/cli-review-fixes.md.
+Comment explaining WriteAwaitsWatcher cites '(CLI-4 #15 removes the race)', a plan-item id from docs/plans/archive/cli-review-fixes.md.
 
 Why it matters: CLI-4/#15 is only resolvable by opening the plans doc; the mechanism it's explaining (WriteAwaitsWatcher blocking the write until WatchEvents registers) is already stated in the same sentence and doesn't need the id.
 
@@ -1999,7 +1999,7 @@ Suggested fix: Drop the sentence about the replaced line; keep only the explanat
 
 `go/internal/cli/columns_test.go:58` · P3 · mechanical · confirmed
 
-TestScreensSurviveColourOff's doc comment says 'the three screens of VIS-2', a plan-item id that is explained only in docs/plans/cli-visuals.md.
+TestScreensSurviveColourOff's doc comment says 'the three screens of VIS-2', a plan-item id that is explained only in docs/plans/archive/cli-visuals.md.
 
 Why it matters: 'VIS-2' is meaningless outside that plans doc; the three screens (devices, presets, bands) can just be named directly.
 
@@ -2054,7 +2054,7 @@ Suggested fix: Rewrite as a statement of the current rule, e.g. 'A flag's defaul
 
 `go/internal/fakedaemon/writes_test.go:11` · P3 · mechanical · confirmed
 
-TestStoredWritesWhileOutOfCapture's doc comment says it 'mirrors the daemon's FU-2 rule', an id defined only in docs/plans/engine-review-fixes.md.
+TestStoredWritesWhileOutOfCapture's doc comment says it 'mirrors the daemon's FU-2 rule', an id defined only in docs/plans/archive/engine-review-fixes.md.
 
 Why it matters: 'FU-2' resolves to nothing without that plans doc; the rule itself is stated in the same sentence and doesn't need the id.
 
@@ -2098,7 +2098,7 @@ Suggested fix: Rewrite each to state the current rule as a standalone fact (what
 
 ### Refuted
 
-- **c-go-tests-23** Comment narrates a fixed HTTP/2 ping regression in past tense (`go/internal/e2e/stream_test.go:12`) — Read the full comment (stream_test.go:12-16): after the 'Regression:' explanation it ends with 'The library dials with fixed 1 MiB windows, which disables those pings (docs/interfaces.md, "Client requirements")' -- a direct, present-tense statement of current behavior with a doc citation. This is …
+- **c-go-tests-23** Comment narrates a fixed HTTP/2 ping regression in past tense (`go/internal/e2e/stream_test.go:12`) — Read the full comment (stream_test.go:12-16): after the 'Regression:' explanation it ends with 'The library dials with fixed 1 MiB windows, which disables those pings (docs/reference/cli.md, "Client requirements")' -- a direct, present-tense statement of current behavior with a doc citation. This is …
 
 
 ## Comment language: `EngineCore`
@@ -2110,11 +2110,11 @@ Coverage: Read in full (all lines): BlockingWork.swift, Buffers.swift, Rings.swi
 
 `engine/Sources/EngineCore/CoreProtocols.swift:5` · P2 · mechanical · confirmed
 
-The file banner says 'This file is the engine's contract. It was transcribed from the planning-phase signature sketch (docs/sdr-planning-todo.md §5) into compiling Swift', which narrates how the file came to exist rather than describing what it is.
+The file banner says 'This file is the engine's contract. It was transcribed from the planning-phase signature sketch (docs/plans/archive/planning-phase.md §5) into compiling Swift', which narrates how the file came to exist rather than describing what it is.
 
 Why it matters: A stranger reading this 'contract' file (the one review criteria single out as needing to read cleanly with no project history) gets pointed at a planning-todo doc section to understand a file that should stand on its own; the sentence would stop being true/meaningful if the planning history were erased, which is exactly the narrative-comment failure mode.
 
-Suggested fix: Drop the 'transcribed from the planning-phase signature sketch' clause; keep the forward-looking pointers ('concrete model types live in Model.swift...', 'read docs/engine-internals.md before implementing').
+Suggested fix: Drop the 'transcribed from the planning-phase signature sketch' clause; keep the forward-looking pointers ('concrete model types live in Model.swift...', 'read docs/dev/engine-internals.md before implementing').
 
 
 ### c-swift-core-2 — Doc comment on subAudibleTap is actually describing audioSumSquares
@@ -2165,11 +2165,11 @@ Suggested fix: Reword to 'A sink that discards everything it receives... allocat
 
 `engine/Sources/EngineCore/CoreProtocols.swift:393` · P3 · mechanical · confirmed
 
-Four spots tag protocol sections with bare roadmap milestone letters — '(Milestone D.)' on Detector, 'MARK: - Jobs (Milestone D)', 'filled in with Milestone D' in JobContext, and 'MARK: - Store (Milestone C/D)' — which only make sense with docs/build-order.md open alongside the file.
+Four spots tag protocol sections with bare roadmap milestone letters — '(Milestone D.)' on Detector, 'MARK: - Jobs (Milestone D)', 'filled in with Milestone D' in JobContext, and 'MARK: - Store (Milestone C/D)' — which only make sense with docs/plans/build-order.md open alongside the file.
 
 Why it matters: None of the four annotations explain anything about the protocol itself; they're pure roadmap bookkeeping embedded in code comments, which is exactly the 'references to milestones by letter/number that only the planning docs explain' pattern this review flags.
 
-Suggested fix: Drop the milestone parentheticals (or move them to the doc comment above JobRunner/ResourceStore only if truly needed), since build-order.md already tracks what ships in which milestone.
+Suggested fix: Drop the milestone parentheticals (or move them to the doc comment above JobRunner/ResourceStore only if truly needed), since docs/plans/build-order.md already tracks what ships in which milestone.
 
 
 ### Refuted
@@ -2217,11 +2217,11 @@ Suggested fix: Remove or rewrite the second paragraph to state the invariant dir
 
 ### Refuted
 
-- **c-swift-daemon-3** NARRATIVE comment cites internal milestone code (`engine/Sources/LeylineDaemon/Services/JobsService.swift:1`) — docs/build-order.md is checked into this repo and CLAUDE.md explicitly directs every reader to "Follow docs/build-order.md"; it defines Milestone D.13 and D.15 verbatim. The premise that a reader "has no way to resolve" the code is false for anyone reading this source (they have the whole repo). …
+- **c-swift-daemon-3** NARRATIVE comment cites internal milestone code (`engine/Sources/LeylineDaemon/Services/JobsService.swift:1`) — docs/plans/build-order.md is checked into this repo and CLAUDE.md explicitly directs every reader to "Follow docs/plans/build-order.md"; it defines Milestone D.13 and D.15 verbatim. The premise that a reader "has no way to resolve" the code is false for anyone reading this source (they have the whole repo). …
 
-- **c-swift-daemon-4** NARRATIVE comment cites internal milestone code (`engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift:23`) — Same milestone (D.15), same in-repo doc (docs/build-order.md) resolves it, same consistent convention as the other three occurrences in Jobs/. Not a defect.
+- **c-swift-daemon-4** NARRATIVE comment cites internal milestone code (`engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift:23`) — Same milestone (D.15), same in-repo doc (docs/plans/build-order.md) resolves it, same consistent convention as the other three occurrences in Jobs/. Not a defect.
 
-- **c-swift-daemon-5** NARRATIVE comment cites internal milestone code (`engine/Sources/LeylineDaemon/Jobs/JobStore.swift:6`) — Same reasoning as c-swift-daemon-3/4: docs/build-order.md is in-repo, required reading per CLAUDE.md, and defines D.15. Consistent house convention, not stale or opaque narrative.
+- **c-swift-daemon-5** NARRATIVE comment cites internal milestone code (`engine/Sources/LeylineDaemon/Jobs/JobStore.swift:6`) — Same reasoning as c-swift-daemon-3/4: docs/plans/build-order.md is in-repo, required reading per CLAUDE.md, and defines D.15. Consistent house convention, not stale or opaque narrative.
 
 
 ## Comment language: engine tests

@@ -4,7 +4,7 @@ import Foundation
 
 /// v0 energy detection over the FFT ladder: what is actually on this band, with the evidence.
 ///
-/// The design and every number here are in `docs/design-scan.md`; each was measured by Monte
+/// The design and every number here are in `docs/design/scan.md`; each was measured by Monte
 /// Carlo before it was written down, because this repo has twice shipped a detector that quoted
 /// noise as signal. The short version:
 ///

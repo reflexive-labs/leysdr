@@ -66,7 +66,7 @@ type stream struct {
 func (s *stream) close() { s.closeOnce.Do(func() { close(s.closed) }) }
 
 // audioRate is the channel's native audio rate for a capture running at fs,
-// derived from the engine's channelizer plan (engine-internals.md): stage 1
+// derived from the engine's channelizer plan (docs/dev/engine-internals.md): stage 1
 // decimates to r1 = fs/D1 (>= 240 kHz), stage 2 to r2 = r1/D2 (~48 kHz).
 // Every mode (WFM included, whose audio is decimated from r1 to r2) produces
 // r2; exactly 48 000 at 2.4 MSPS.

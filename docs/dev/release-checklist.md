@@ -10,7 +10,7 @@ optional.
 - [ ] `make check` green on the Mac (Accelerate kernels, parity tests, audio sink compile, e2e).
 - [ ] `make check` green on Linux (the Go half, the portable engine core, e2e).
 - [ ] `CHANGELOG.md` has a dated section for this version.
-- [ ] README's status section agrees with `docs/build-order.md`.
+- [ ] README's status section agrees with `docs/plans/build-order.md`.
 - [ ] `docs/decisions/` has a note for any spike or measurement this release relied on.
 
 ## Licence obligations, on every binary release
@@ -43,7 +43,7 @@ Run each with the release binaries (`make go swift-release`, `export PATH=$PWD/g
 - [ ] `ley spectrum` and `ley waterfall` on the same capture draw the station where `tune` says it is.
 - [ ] `ley scan 144M..148M` (or a band you know) finds the carriers you expect; a second run at
       `--dwell 500` reports them at the same frequencies (the settle-constant check in
-      `docs/design-scan.md`).
+      `docs/design/scan.md`).
 - [ ] Two channels on one capture: `ley tune A --persistent`, `ley tune B` in another terminal, both
       audible, `ley stop all` frees the radio.
 - [ ] Ctrl-C in a `tune` session hands the radio back (`ley state` shows no channel); a hard kill of

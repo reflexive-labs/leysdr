@@ -6,7 +6,7 @@
 //	leyfix check DIR|FILE...
 //	leyfix info FILE
 //
-// See docs/fixtures.md for the catalog and sidecar format.
+// See docs/reference/iq-files.md for the catalog and sidecar format.
 package main
 
 import (

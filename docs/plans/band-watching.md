@@ -1,6 +1,6 @@
 # Plan: Band Watching
 
-Implements `docs/design-band-watching.md`. Build order is deliberately the inverse of how
+Implements `docs/design/band-watching.md`. Build order is deliberately the inverse of how
 interesting the items are: BW-1 needs no new plane and works at today's row rates, BW-3 needs a
 retention ring and a detector that does not exist yet.
 

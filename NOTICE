@@ -22,7 +22,7 @@ The daemon, leylined, links:
 
   librtlsdr        GPL-2.0-or-later   third_party/licenses/librtlsdr.txt
                    The RTL-SDR driver. This is the reason the engine is GPL. Binary releases of
-                   the daemon carry a written offer of its source; see docs/release-checklist.md.
+                   the daemon carry a written offer of its source; see docs/dev/release-checklist.md.
   libusb           LGPL-2.1-or-later  third_party/licenses/libusb.txt  (through librtlsdr)
 
 and these Swift packages, all under the Apache License 2.0:

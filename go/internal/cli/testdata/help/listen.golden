@@ -15,7 +15,7 @@ Everything meant for a person goes to stderr; stdout is only the stream.
                {seq, sample_index, sample_rate, format, pcm}
                with pcm base64-encoded. Bulk rows have no proto message, so
                this shape is part of the documented exception to ley's proto3
-               JSON rule; see docs/interfaces.md.
+               JSON rule; see docs/reference/cli.md.
 --format bin:  the raw PCM frames as the daemon delivers them, back to back
                and nothing else (mono, little-endian, the sample rate and
                format named on stderr; S16 in this build).

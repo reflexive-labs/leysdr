@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Daemon assembly and lifecycle (docs/engine-internals.md "Daemon lifecycle").
+// Daemon assembly and lifecycle (docs/dev/engine-internals.md "Daemon lifecycle").
 
 import EngineCore
 import Foundation

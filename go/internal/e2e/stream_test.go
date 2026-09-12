@@ -15,7 +15,7 @@ import (
 // library. Regression: with grpc-go's default dynamic windows the client sends an HTTP/2 PING per
 // data frame for bandwidth estimation, and swift-nio-http2 caps inbound control frames at 200 per
 // 30 s, so every busy stream died with GOAWAY ENHANCE_YOUR_CALM after ~1.3 s. The library dials
-// with fixed 1 MiB windows, which disables those pings (docs/interfaces.md, "Client requirements").
+// with fixed 1 MiB windows, which disables those pings (docs/reference/cli.md, "Client requirements").
 func TestSustainedAudioStream(t *testing.T) {
 	e, _ := setup(t)
 	stopPlay, _ := e.startLive("play", e.fixture, "--no-audio", "--loop", "--json")

@@ -660,7 +660,7 @@ func TestScopeSaysTheSquelchIsClosed(t *testing.T) {
 	}
 }
 
-// cli-style.md section 8: a width-dependent renderer is tested at 40, 80 and
+// docs/dev/cli-style.md section 8: a width-dependent renderer is tested at 40, 80 and
 // 160 columns and never emits a line wider than the width, in both alphabets
 // and under every scale, the way levels and waveform are.
 func TestScopeStaysInsideTheWidth(t *testing.T) {

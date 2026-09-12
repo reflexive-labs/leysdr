@@ -6,7 +6,7 @@
 // A file device cannot do this -- its tuning range is the single point its recording was made at --
 // and making it retunable would need an oversampled source and a mix-filter-decimate chain, because
 // shifting a 2.4 MSPS fixture by 960 kHz aliases its own carriers back into the analysis windows.
-// See docs/design-scan.md. This device synthesises its band at whatever centre it is asked for,
+// See docs/design/scan.md. This device synthesises its band at whatever centre it is asked for,
 // which is the one thing a recording cannot do.
 
 import EngineCore

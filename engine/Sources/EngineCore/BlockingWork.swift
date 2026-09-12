@@ -7,7 +7,7 @@ import Foundation
 /// The Swift concurrency pool has as many threads as cores; a driver call that blocks for hundreds of
 /// milliseconds (`rtlsdr_open` claiming a USB interface, a retry sleep, a long `ioctl`) parks one of
 /// them and starves every actor in the daemon. Wrapping such calls in `BlockingWork.run` moves the
-/// wait onto a fresh `Thread` and suspends the caller until it finishes (docs/engine-internals.md,
+/// wait onto a fresh `Thread` and suspends the caller until it finishes (docs/dev/engine-internals.md,
 /// "Threads").
 ///
 /// Not for the hot path: spawning a thread per call is fine for open/close-class operations and for

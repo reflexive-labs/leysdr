@@ -11,7 +11,7 @@ Client identity on the wire (`leyline-client-id` and friends) is attribution for
 a credential.
 
 The daemon opens no network listener. Remote control is a later milestone and will arrive with
-authentication designed for it (`docs/design-control-plane.md`, "Auth for TCP remote access").
+authentication designed for it (`docs/design/control-plane.md`, "Auth for TCP remote access").
 
 ## What the daemon connects to
 

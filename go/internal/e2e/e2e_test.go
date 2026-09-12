@@ -333,7 +333,7 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 
 	// set squelch -50: confirmed by the daemon's channel event, then visible in state.
 	// The confirmation names the old and new values and the channel by frequency
-	// and row, not by id (docs/cli-style.md: ids the reader is not asked to read
+	// and row, not by id (docs/dev/cli-style.md: ids the reader is not asked to read
 	// are dropped from prose), so assert on what it does print.
 	setOut := e.mustRun("set", "squelch", "-50")
 	if !strings.Contains(setOut, "-50") || !strings.Contains(setOut, "146.620") {
