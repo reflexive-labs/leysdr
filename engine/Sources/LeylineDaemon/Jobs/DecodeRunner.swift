@@ -28,6 +28,12 @@ actor DecodeRunner {
     private let frequencyHz: UInt64
     private let captureRateHz: UInt64
     private let tap: AudioTap
+    /// The daemon-side record filter and where a passing record fires (docs/design/decoders.md,
+    /// "Predicates and delivery"). An empty predicate matches everything; notify nil is delivery
+    /// with no side channel. Both are read off the DecodeConfig in JobStore.startDecode.
+    private let predicate: Leyline_V1_Predicate
+    private let notify: Leyline_V1_NotifyTarget?
+    private let notifier = Notifier()
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
     private let log: Logger
 
@@ -42,7 +48,8 @@ actor DecodeRunner {
 
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any ChannelLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
-         tap: AudioTap, onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void)
+         tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
+         onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void)
     {
         self.jobID = jobID
         self.installed = installed
@@ -53,6 +60,8 @@ actor DecodeRunner {
         self.frequencyHz = frequencyHz
         self.captureRateHz = captureRateHz
         self.tap = tap
+        self.predicate = predicate
+        self.notify = notify
         self.onStatus = onStatus
         log = Logger(label: "leyline.jobs.decode")
     }
@@ -219,6 +228,14 @@ actor DecodeRunner {
     /// levels the engine measured. A plugin's values for these are overwritten.
     private func emit(_ incoming: Leyline_V1_DecodeRecord) async {
         var rec = incoming
+        if rec.protocol.isEmpty { rec.protocol = installed.manifest.name }
+        if rec.time.captureID.isEmpty { rec.time.captureID = lease.captureID.string }
+        // The predicate filters delivery (docs/design/decoders.md, "Predicates and delivery"): a
+        // record that does not match reaches neither the hub nor the store nor the notifier. An
+        // empty predicate matches everything, so `ley decode` delivers all. Judged before the seq
+        // is spent, so a delivered record's seq stays contiguous -- a hole is a lost record, never
+        // a filtered one -- and the promoted fields it tests are the plugin's, set already.
+        guard matches(rec, predicate) else { return }
         seq += 1
         rec.recordID = "rec_" + ULID().string
         rec.jobID = jobID.string
@@ -226,10 +243,15 @@ actor DecodeRunner {
         rec.channelID = lease.channelID.string
         rec.rssiDbfs = rssiDBFS
         rec.snrDb = snrDB
-        if rec.protocol.isEmpty { rec.protocol = installed.manifest.name }
-        if rec.time.captureID.isEmpty { rec.time.captureID = lease.captureID.string }
         await hub.publish(rec)
         await writer?.append(rec)
+        // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
+        // reader, so the notifier runs in its own task with the record it saw (invariant 4 is about
+        // the DSP thread; this is well clear of it, but a stall here would still back the reader up).
+        if let notify {
+            let record = rec
+            Task { [notifier] in await notifier.fire(record, notify) }
+        }
     }
 
     private func noteMeter(power: Double, snr: Double) {

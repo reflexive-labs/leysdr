@@ -369,6 +369,7 @@ actor JobStore {
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
             frequencyHz: frequencyHz, captureRateHz: snapshot?.sampleRate ?? 0,
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
+            predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             })

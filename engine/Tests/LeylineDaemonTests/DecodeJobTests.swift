@@ -25,15 +25,32 @@ final class DecodeJobTests: XCTestCase {
     }
 
     private func startDecode(_ c: DaemonClients, keep: Bool = false, decoder: String = "fake",
-                             frequencyHz: UInt64 = decodeFrequencyHz) async throws -> Leyline_V1_Job
+                             frequencyHz: UInt64 = decodeFrequencyHz,
+                             predicate: Leyline_V1_Predicate? = nil,
+                             notify: Leyline_V1_NotifyTarget? = nil) async throws -> Leyline_V1_Job
     {
         var config = Leyline_V1_DecodeConfig()
         config.decoder = decoder
         config.frequencyHz = frequencyHz
         config.keep = keep
+        if let predicate { config.predicate = predicate }
+        if let notify { config.notify = notify }
         var request = Leyline_V1_StartJobRequest()
         request.decode = config
         return try await c.jobs.startJob(request, metadata: testMetadata)
+    }
+
+    /// A device_id IN [...] predicate, the shape `ley watch --where device_id=...` sends.
+    private func deviceIDIn(_ ids: [String]) -> Leyline_V1_Predicate {
+        var test = Leyline_V1_FieldTest()
+        test.field = "device_id"
+        test.op = .predIn
+        test.values = ids.map { var v = Leyline_V1_FieldValue(); v.text = $0; return v }
+        var clause = Leyline_V1_Clause()
+        clause.field = test
+        var predicate = Leyline_V1_Predicate()
+        predicate.all = [clause]
+        return predicate
     }
 
     /// Reads `count` records off the live stream, replayed from the start of the job's window.
@@ -267,6 +284,64 @@ final class DecodeJobTests: XCTestCase {
             var ref = Leyline_V1_JobRef()
             ref.jobID = started.jobID
             _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+        }
+    }
+
+    func testAPredicateFiltersRecords() async throws {
+        // The fake emits FAKE-1, FAKE-2, FAKE-3, ... one per frame. A predicate that admits only
+        // FAKE-2 must deliver that record and nothing else (docs/design/decoders.md, "Predicates
+        // and delivery"): filtered records never reach the hub, so the seq stays contiguous.
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attachFixture(c)
+            let started = try await self.startDecode(c, predicate: self.deviceIDIn(["FAKE-2"]))
+            let got = try await self.records(c, job: started.jobID, count: 1)
+            XCTAssertEqual(got.count, 1)
+            XCTAssertEqual(got[0].deviceID, "FAKE-2", "only the matching record is delivered")
+            XCTAssertEqual(got[0].seq, 1, "a filtered record does not spend a seq")
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = started.jobID
+            _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+        }
+    }
+
+    func testANotifierFiresOnAMatch() async throws {
+        // A shell notify target appends each matching record's LEYLINE_DEVICE_ID to a file. With a
+        // predicate admitting FAKE-2 and FAKE-4, the file gets exactly those and never a filtered id.
+        let plugins = try makeTempDir("decoders")
+        let work = try makeTempDir("notify")
+        defer {
+            try? FileManager.default.removeItem(atPath: plugins)
+            try? FileManager.default.removeItem(atPath: work)
+        }
+        try writeFakePlugin(in: plugins)
+        let hits = work + "/hits.txt"
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attachFixture(c)
+            var notify = Leyline_V1_NotifyTarget()
+            notify.shell = "printf '%s\\n' \"$LEYLINE_DEVICE_ID\" >> '\(hits)'"
+            let started = try await self.startDecode(
+                c, predicate: self.deviceIDIn(["FAKE-2", "FAKE-4"]), notify: notify)
+            // Both matching records delivered means both notifiers have been dispatched.
+            let got = try await self.records(c, job: started.jobID, count: 2)
+            XCTAssertEqual(Set(got.map(\.deviceID)), ["FAKE-2", "FAKE-4"])
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = started.jobID
+            _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+
+            // The shell hooks fire in their own tasks; give them a moment to finish writing.
+            var lines: [String] = []
+            for _ in 0..<40 {
+                try await Task.sleep(nanoseconds: 100_000_000)
+                let text = (try? String(contentsOfFile: hits, encoding: .utf8)) ?? ""
+                lines = text.split(separator: "\n").map(String.init)
+                if Set(lines) == ["FAKE-2", "FAKE-4"] { break }
+            }
+            XCTAssertEqual(Set(lines), ["FAKE-2", "FAKE-4"], "the notifier fired for the matches only")
+            XCTAssertFalse(lines.contains("FAKE-1"), "a filtered-out record does not notify")
+            XCTAssertFalse(lines.contains("FAKE-3"), "a filtered-out record does not notify")
         }
     }
 
