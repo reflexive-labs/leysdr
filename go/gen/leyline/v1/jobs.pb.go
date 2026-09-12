@@ -94,6 +94,7 @@ const (
 	ResourceKind_SCAN                      ResourceKind = 2
 	ResourceKind_SNAPSHOT                  ResourceKind = 3
 	ResourceKind_TRANSCRIPT                ResourceKind = 4
+	ResourceKind_RECORDS                   ResourceKind = 5 // ley://records/<job_id>, a kept decode job's records (decode.proto)
 )
 
 // Enum value maps for ResourceKind.
@@ -104,6 +105,7 @@ var (
 		2: "SCAN",
 		3: "SNAPSHOT",
 		4: "TRANSCRIPT",
+		5: "RECORDS",
 	}
 	ResourceKind_value = map[string]int32{
 		"RESOURCE_KIND_UNSPECIFIED": 0,
@@ -111,6 +113,7 @@ var (
 		"SCAN":                      2,
 		"SNAPSHOT":                  3,
 		"TRANSCRIPT":                4,
+		"RECORDS":                   5,
 	}
 )
 
@@ -152,6 +155,7 @@ type Job struct {
 	//	*Job_Watch
 	//	*Job_Scan
 	//	*Job_Record
+	//	*Job_Decode
 	Config isJob_Config `protobuf_oneof:"config"`
 	// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
 	// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
@@ -260,6 +264,15 @@ func (x *Job) GetRecord() *RecordConfig {
 	return nil
 }
 
+func (x *Job) GetDecode() *DecodeConfig {
+	if x != nil {
+		if x, ok := x.Config.(*Job_Decode); ok {
+			return x.Decode
+		}
+	}
+	return nil
+}
+
 func (x *Job) GetResultUris() []string {
 	if x != nil {
 		return x.ResultUris
@@ -297,11 +310,17 @@ type Job_Record struct {
 	Record *RecordConfig `protobuf:"bytes,7,opt,name=record,proto3,oneof"`
 }
 
+type Job_Decode struct {
+	Decode *DecodeConfig `protobuf:"bytes,11,opt,name=decode,proto3,oneof"`
+}
+
 func (*Job_Watch) isJob_Config() {}
 
 func (*Job_Scan) isJob_Config() {}
 
 func (*Job_Record) isJob_Config() {}
+
+func (*Job_Decode) isJob_Config() {}
 
 // "Watch 146.52 and log anything heard." Owns a persistent channel; produces a transcript.
 type WatchConfig struct {
@@ -970,6 +989,7 @@ type StartJobRequest struct {
 	//	*StartJobRequest_Watch
 	//	*StartJobRequest_Scan
 	//	*StartJobRequest_Record
+	//	*StartJobRequest_Decode
 	Config        isStartJobRequest_Config `protobuf_oneof:"config"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1039,6 +1059,15 @@ func (x *StartJobRequest) GetRecord() *RecordConfig {
 	return nil
 }
 
+func (x *StartJobRequest) GetDecode() *DecodeConfig {
+	if x != nil {
+		if x, ok := x.Config.(*StartJobRequest_Decode); ok {
+			return x.Decode
+		}
+	}
+	return nil
+}
+
 type isStartJobRequest_Config interface {
 	isStartJobRequest_Config()
 }
@@ -1055,11 +1084,17 @@ type StartJobRequest_Record struct {
 	Record *RecordConfig `protobuf:"bytes,3,opt,name=record,proto3,oneof"`
 }
 
+type StartJobRequest_Decode struct {
+	Decode *DecodeConfig `protobuf:"bytes,4,opt,name=decode,proto3,oneof"`
+}
+
 func (*StartJobRequest_Watch) isStartJobRequest_Config() {}
 
 func (*StartJobRequest_Scan) isStartJobRequest_Config() {}
 
 func (*StartJobRequest_Record) isStartJobRequest_Config() {}
+
+func (*StartJobRequest_Decode) isStartJobRequest_Config() {}
 
 type ListJobsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1478,7 +1513,7 @@ var File_leyline_v1_jobs_proto protoreflect.FileDescriptor
 const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\n" +
 	"\x15leyline/v1/jobs.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x1aleyline/v1/telemetry.proto\"\xb5\x03\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x1aleyline/v1/telemetry.proto\x1a\x17leyline/v1/decode.proto\"\xe9\x03\n" +
 	"\x03Job\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12*\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x14.leyline.v1.JobStateR\x05state\x12\"\n" +
@@ -1487,7 +1522,8 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"created_by\x18\x04 \x01(\v2\x16.leyline.v1.ClientInfoR\tcreatedBy\x12/\n" +
 	"\x05watch\x18\x05 \x01(\v2\x17.leyline.v1.WatchConfigH\x00R\x05watch\x12,\n" +
 	"\x04scan\x18\x06 \x01(\v2\x16.leyline.v1.ScanConfigH\x00R\x04scan\x122\n" +
-	"\x06record\x18\a \x01(\v2\x18.leyline.v1.RecordConfigH\x00R\x06record\x12\x1f\n" +
+	"\x06record\x18\a \x01(\v2\x18.leyline.v1.RecordConfigH\x00R\x06record\x122\n" +
+	"\x06decode\x18\v \x01(\v2\x18.leyline.v1.DecodeConfigH\x00R\x06decode\x12\x1f\n" +
 	"\vresult_uris\x18\b \x03(\tR\n" +
 	"resultUris\x12#\n" +
 	"\rstatus_detail\x18\t \x01(\tR\fstatusDetail\x12-\n" +
@@ -1554,11 +1590,12 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\bmetadata\x18\x06 \x03(\v2\".leyline.v1.Resource.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xae\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe2\x01\n" +
 	"\x0fStartJobRequest\x12/\n" +
 	"\x05watch\x18\x01 \x01(\v2\x17.leyline.v1.WatchConfigH\x00R\x05watch\x12,\n" +
 	"\x04scan\x18\x02 \x01(\v2\x16.leyline.v1.ScanConfigH\x00R\x04scan\x122\n" +
-	"\x06record\x18\x03 \x01(\v2\x18.leyline.v1.RecordConfigH\x00R\x06recordB\b\n" +
+	"\x06record\x18\x03 \x01(\v2\x18.leyline.v1.RecordConfigH\x00R\x06record\x122\n" +
+	"\x06decode\x18\x04 \x01(\v2\x18.leyline.v1.DecodeConfigH\x00R\x06decodeB\b\n" +
 	"\x06config\"?\n" +
 	"\x0fListJobsRequest\x12,\n" +
 	"\x06states\x18\x01 \x03(\x0e2\x14.leyline.v1.JobStateR\x06states\"7\n" +
@@ -1590,14 +1627,15 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\tCOMPLETED\x10\x03\x12\r\n" +
 	"\tCANCELLED\x10\x04\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x05*d\n" +
+	"\x06FAILED\x10\x05*q\n" +
 	"\fResourceKind\x12\x1d\n" +
 	"\x19RESOURCE_KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tRECORDING\x10\x01\x12\b\n" +
 	"\x04SCAN\x10\x02\x12\f\n" +
 	"\bSNAPSHOT\x10\x03\x12\x0e\n" +
 	"\n" +
-	"TRANSCRIPT\x10\x042\xe2\x02\n" +
+	"TRANSCRIPT\x10\x04\x12\v\n" +
+	"\aRECORDS\x10\x052\xe2\x02\n" +
 	"\x04Jobs\x128\n" +
 	"\bStartJob\x12\x1b.leyline.v1.StartJobRequest\x1a\x0f.leyline.v1.Job\x12E\n" +
 	"\bListJobs\x12\x1b.leyline.v1.ListJobsRequest\x1a\x1c.leyline.v1.ListJobsResponse\x12-\n" +
@@ -1649,14 +1687,15 @@ var file_leyline_v1_jobs_proto_goTypes = []any{
 	nil,                           // 21: leyline.v1.Resource.MetadataEntry
 	nil,                           // 22: leyline.v1.ListResourcesRequest.MetadataFilterEntry
 	(*ClientInfo)(nil),            // 23: leyline.v1.ClientInfo
-	(*ErrorDetail)(nil),           // 24: leyline.v1.ErrorDetail
-	(DemodMode)(0),                // 25: leyline.v1.DemodMode
-	(*FrequencyRange)(nil),        // 26: leyline.v1.FrequencyRange
-	(*SampleTime)(nil),            // 27: leyline.v1.SampleTime
-	(*Gap)(nil),                   // 28: leyline.v1.Gap
-	(*Detection)(nil),             // 29: leyline.v1.Detection
-	(*GainState)(nil),             // 30: leyline.v1.GainState
-	(*StreamPosition)(nil),        // 31: leyline.v1.StreamPosition
+	(*DecodeConfig)(nil),          // 24: leyline.v1.DecodeConfig
+	(*ErrorDetail)(nil),           // 25: leyline.v1.ErrorDetail
+	(DemodMode)(0),                // 26: leyline.v1.DemodMode
+	(*FrequencyRange)(nil),        // 27: leyline.v1.FrequencyRange
+	(*SampleTime)(nil),            // 28: leyline.v1.SampleTime
+	(*Gap)(nil),                   // 29: leyline.v1.Gap
+	(*Detection)(nil),             // 30: leyline.v1.Detection
+	(*GainState)(nil),             // 31: leyline.v1.GainState
+	(*StreamPosition)(nil),        // 32: leyline.v1.StreamPosition
 }
 var file_leyline_v1_jobs_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.Job.state:type_name -> leyline.v1.JobState
@@ -1664,54 +1703,56 @@ var file_leyline_v1_jobs_proto_depIdxs = []int32{
 	3,  // 2: leyline.v1.Job.watch:type_name -> leyline.v1.WatchConfig
 	4,  // 3: leyline.v1.Job.scan:type_name -> leyline.v1.ScanConfig
 	5,  // 4: leyline.v1.Job.record:type_name -> leyline.v1.RecordConfig
-	24, // 5: leyline.v1.Job.error:type_name -> leyline.v1.ErrorDetail
-	25, // 6: leyline.v1.WatchConfig.mode:type_name -> leyline.v1.DemodMode
-	26, // 7: leyline.v1.ScanConfig.range:type_name -> leyline.v1.FrequencyRange
-	25, // 8: leyline.v1.RecordConfig.mode:type_name -> leyline.v1.DemodMode
-	27, // 9: leyline.v1.ActivitySegment.start:type_name -> leyline.v1.SampleTime
-	27, // 10: leyline.v1.ActivitySegment.end:type_name -> leyline.v1.SampleTime
-	6,  // 11: leyline.v1.Transcript.segments:type_name -> leyline.v1.ActivitySegment
-	28, // 12: leyline.v1.Transcript.coverage_gaps:type_name -> leyline.v1.Gap
-	4,  // 13: leyline.v1.Scan.config:type_name -> leyline.v1.ScanConfig
-	29, // 14: leyline.v1.Scan.detections:type_name -> leyline.v1.Detection
-	9,  // 15: leyline.v1.Scan.noise_floor:type_name -> leyline.v1.NoiseFloorSegment
-	30, // 16: leyline.v1.Scan.gains:type_name -> leyline.v1.GainState
-	26, // 17: leyline.v1.Scan.covered:type_name -> leyline.v1.FrequencyRange
-	26, // 18: leyline.v1.NoiseFloorSegment.range:type_name -> leyline.v1.FrequencyRange
-	1,  // 19: leyline.v1.Resource.kind:type_name -> leyline.v1.ResourceKind
-	21, // 20: leyline.v1.Resource.metadata:type_name -> leyline.v1.Resource.MetadataEntry
-	3,  // 21: leyline.v1.StartJobRequest.watch:type_name -> leyline.v1.WatchConfig
-	4,  // 22: leyline.v1.StartJobRequest.scan:type_name -> leyline.v1.ScanConfig
-	5,  // 23: leyline.v1.StartJobRequest.record:type_name -> leyline.v1.RecordConfig
-	0,  // 24: leyline.v1.ListJobsRequest.states:type_name -> leyline.v1.JobState
-	2,  // 25: leyline.v1.ListJobsResponse.jobs:type_name -> leyline.v1.Job
-	31, // 26: leyline.v1.TranscriptRequest.from:type_name -> leyline.v1.StreamPosition
-	1,  // 27: leyline.v1.ListResourcesRequest.kind:type_name -> leyline.v1.ResourceKind
-	22, // 28: leyline.v1.ListResourcesRequest.metadata_filter:type_name -> leyline.v1.ListResourcesRequest.MetadataFilterEntry
-	10, // 29: leyline.v1.ListResourcesResponse.resources:type_name -> leyline.v1.Resource
-	11, // 30: leyline.v1.Jobs.StartJob:input_type -> leyline.v1.StartJobRequest
-	12, // 31: leyline.v1.Jobs.ListJobs:input_type -> leyline.v1.ListJobsRequest
-	14, // 32: leyline.v1.Jobs.GetJob:input_type -> leyline.v1.JobRef
-	14, // 33: leyline.v1.Jobs.CancelJob:input_type -> leyline.v1.JobRef
-	15, // 34: leyline.v1.Jobs.GetTranscript:input_type -> leyline.v1.TranscriptRequest
-	16, // 35: leyline.v1.Jobs.GetScan:input_type -> leyline.v1.ScanRef
-	17, // 36: leyline.v1.Resources.ListResources:input_type -> leyline.v1.ListResourcesRequest
-	19, // 37: leyline.v1.Resources.GetResource:input_type -> leyline.v1.ResourceRef
-	19, // 38: leyline.v1.Resources.ResolveLocalPath:input_type -> leyline.v1.ResourceRef
-	2,  // 39: leyline.v1.Jobs.StartJob:output_type -> leyline.v1.Job
-	13, // 40: leyline.v1.Jobs.ListJobs:output_type -> leyline.v1.ListJobsResponse
-	2,  // 41: leyline.v1.Jobs.GetJob:output_type -> leyline.v1.Job
-	2,  // 42: leyline.v1.Jobs.CancelJob:output_type -> leyline.v1.Job
-	7,  // 43: leyline.v1.Jobs.GetTranscript:output_type -> leyline.v1.Transcript
-	8,  // 44: leyline.v1.Jobs.GetScan:output_type -> leyline.v1.Scan
-	18, // 45: leyline.v1.Resources.ListResources:output_type -> leyline.v1.ListResourcesResponse
-	10, // 46: leyline.v1.Resources.GetResource:output_type -> leyline.v1.Resource
-	20, // 47: leyline.v1.Resources.ResolveLocalPath:output_type -> leyline.v1.LocalPath
-	39, // [39:48] is the sub-list for method output_type
-	30, // [30:39] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	24, // 5: leyline.v1.Job.decode:type_name -> leyline.v1.DecodeConfig
+	25, // 6: leyline.v1.Job.error:type_name -> leyline.v1.ErrorDetail
+	26, // 7: leyline.v1.WatchConfig.mode:type_name -> leyline.v1.DemodMode
+	27, // 8: leyline.v1.ScanConfig.range:type_name -> leyline.v1.FrequencyRange
+	26, // 9: leyline.v1.RecordConfig.mode:type_name -> leyline.v1.DemodMode
+	28, // 10: leyline.v1.ActivitySegment.start:type_name -> leyline.v1.SampleTime
+	28, // 11: leyline.v1.ActivitySegment.end:type_name -> leyline.v1.SampleTime
+	6,  // 12: leyline.v1.Transcript.segments:type_name -> leyline.v1.ActivitySegment
+	29, // 13: leyline.v1.Transcript.coverage_gaps:type_name -> leyline.v1.Gap
+	4,  // 14: leyline.v1.Scan.config:type_name -> leyline.v1.ScanConfig
+	30, // 15: leyline.v1.Scan.detections:type_name -> leyline.v1.Detection
+	9,  // 16: leyline.v1.Scan.noise_floor:type_name -> leyline.v1.NoiseFloorSegment
+	31, // 17: leyline.v1.Scan.gains:type_name -> leyline.v1.GainState
+	27, // 18: leyline.v1.Scan.covered:type_name -> leyline.v1.FrequencyRange
+	27, // 19: leyline.v1.NoiseFloorSegment.range:type_name -> leyline.v1.FrequencyRange
+	1,  // 20: leyline.v1.Resource.kind:type_name -> leyline.v1.ResourceKind
+	21, // 21: leyline.v1.Resource.metadata:type_name -> leyline.v1.Resource.MetadataEntry
+	3,  // 22: leyline.v1.StartJobRequest.watch:type_name -> leyline.v1.WatchConfig
+	4,  // 23: leyline.v1.StartJobRequest.scan:type_name -> leyline.v1.ScanConfig
+	5,  // 24: leyline.v1.StartJobRequest.record:type_name -> leyline.v1.RecordConfig
+	24, // 25: leyline.v1.StartJobRequest.decode:type_name -> leyline.v1.DecodeConfig
+	0,  // 26: leyline.v1.ListJobsRequest.states:type_name -> leyline.v1.JobState
+	2,  // 27: leyline.v1.ListJobsResponse.jobs:type_name -> leyline.v1.Job
+	32, // 28: leyline.v1.TranscriptRequest.from:type_name -> leyline.v1.StreamPosition
+	1,  // 29: leyline.v1.ListResourcesRequest.kind:type_name -> leyline.v1.ResourceKind
+	22, // 30: leyline.v1.ListResourcesRequest.metadata_filter:type_name -> leyline.v1.ListResourcesRequest.MetadataFilterEntry
+	10, // 31: leyline.v1.ListResourcesResponse.resources:type_name -> leyline.v1.Resource
+	11, // 32: leyline.v1.Jobs.StartJob:input_type -> leyline.v1.StartJobRequest
+	12, // 33: leyline.v1.Jobs.ListJobs:input_type -> leyline.v1.ListJobsRequest
+	14, // 34: leyline.v1.Jobs.GetJob:input_type -> leyline.v1.JobRef
+	14, // 35: leyline.v1.Jobs.CancelJob:input_type -> leyline.v1.JobRef
+	15, // 36: leyline.v1.Jobs.GetTranscript:input_type -> leyline.v1.TranscriptRequest
+	16, // 37: leyline.v1.Jobs.GetScan:input_type -> leyline.v1.ScanRef
+	17, // 38: leyline.v1.Resources.ListResources:input_type -> leyline.v1.ListResourcesRequest
+	19, // 39: leyline.v1.Resources.GetResource:input_type -> leyline.v1.ResourceRef
+	19, // 40: leyline.v1.Resources.ResolveLocalPath:input_type -> leyline.v1.ResourceRef
+	2,  // 41: leyline.v1.Jobs.StartJob:output_type -> leyline.v1.Job
+	13, // 42: leyline.v1.Jobs.ListJobs:output_type -> leyline.v1.ListJobsResponse
+	2,  // 43: leyline.v1.Jobs.GetJob:output_type -> leyline.v1.Job
+	2,  // 44: leyline.v1.Jobs.CancelJob:output_type -> leyline.v1.Job
+	7,  // 45: leyline.v1.Jobs.GetTranscript:output_type -> leyline.v1.Transcript
+	8,  // 46: leyline.v1.Jobs.GetScan:output_type -> leyline.v1.Scan
+	18, // 47: leyline.v1.Resources.ListResources:output_type -> leyline.v1.ListResourcesResponse
+	10, // 48: leyline.v1.Resources.GetResource:output_type -> leyline.v1.Resource
+	20, // 49: leyline.v1.Resources.ResolveLocalPath:output_type -> leyline.v1.LocalPath
+	41, // [41:50] is the sub-list for method output_type
+	32, // [32:41] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_jobs_proto_init() }
@@ -1721,10 +1762,12 @@ func file_leyline_v1_jobs_proto_init() {
 	}
 	file_leyline_v1_common_proto_init()
 	file_leyline_v1_telemetry_proto_init()
+	file_leyline_v1_decode_proto_init()
 	file_leyline_v1_jobs_proto_msgTypes[0].OneofWrappers = []any{
 		(*Job_Watch)(nil),
 		(*Job_Scan)(nil),
 		(*Job_Record)(nil),
+		(*Job_Decode)(nil),
 	}
 	file_leyline_v1_jobs_proto_msgTypes[2].OneofWrappers = []any{
 		(*ScanConfig_Once)(nil),
@@ -1734,6 +1777,7 @@ func file_leyline_v1_jobs_proto_init() {
 		(*StartJobRequest_Watch)(nil),
 		(*StartJobRequest_Scan)(nil),
 		(*StartJobRequest_Record)(nil),
+		(*StartJobRequest_Decode)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

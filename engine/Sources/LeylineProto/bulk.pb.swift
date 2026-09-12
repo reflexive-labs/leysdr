@@ -245,55 +245,6 @@ public nonisolated enum Leyline_V1_AudioSampleFormat: SwiftProtobuf.Enum, Swift.
 
 }
 
-/// Where in the channel the audio is taken from.
-///
-/// TAP_AUDIO is what a speaker gets -- after the high-pass, de-emphasis, limiter and
-/// AGC -- and is the default, so a subscription that does not mention a tap is served
-/// exactly what it always was.
-///
-/// TAP_DEMOD is the detector's own output before any audio conditioning: the
-/// discriminator for NFM (the samples the sub-audible detector reads, so a CTCSS tone
-/// is still on them) and for WFM (decimated to the audio rate, before de-emphasis and
-/// the 15 kHz low-pass, so the 19 kHz pilot is visible), the envelope including the
-/// carrier as DC for AM, and the product detector before AGC for USB, LSB and CW. It
-/// keeps flowing while the squelch is closed, because what a transmitter is sending
-/// between words is what it is for, where TAP_AUDIO is zeros there as the speaker
-/// hears. A RAW_IQ channel has no detector, so TAP_DEMOD on one is refused with
-/// INVALID_ARGUMENT rather than served silence.
-public nonisolated enum Leyline_V1_AudioTap: SwiftProtobuf.Enum, Swift.CaseIterable {
-  public typealias RawValue = Int
-  case tapAudio // = 0
-  case tapDemod // = 1
-  case UNRECOGNIZED(Int)
-
-  public init() {
-    self = .tapAudio
-  }
-
-  public init?(rawValue: Int) {
-    switch rawValue {
-    case 0: self = .tapAudio
-    case 1: self = .tapDemod
-    default: self = .UNRECOGNIZED(rawValue)
-    }
-  }
-
-  public var rawValue: Int {
-    switch self {
-    case .tapAudio: return 0
-    case .tapDemod: return 1
-    case .UNRECOGNIZED(let i): return i
-    }
-  }
-
-  // The compiler won't synthesize support with the UNRECOGNIZED case.
-  public static let allCases: [Leyline_V1_AudioTap] = [
-    .tapAudio,
-    .tapDemod,
-  ]
-
-}
-
 public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -723,10 +674,6 @@ nonisolated extension Leyline_V1_FftBinFormat: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Leyline_V1_AudioSampleFormat: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0AUDIO_SAMPLE_FORMAT_UNSPECIFIED\0\u{1}S16\0\u{1}F32\0")
-}
-
-nonisolated extension Leyline_V1_AudioTap: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TAP_AUDIO\0\u{1}TAP_DEMOD\0")
 }
 
 nonisolated extension Leyline_V1_SubscribeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

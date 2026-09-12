@@ -55,6 +55,7 @@ changes the doc first.
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | draft; `ley scope` implements it |
 | [Audio meters](design/audio-meters.md) | `ley levels` and `ley waveform` as instruments | implemented |
 | [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | draft; persistence implemented, the rest not |
+| [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | draft; APRS being built (D.17) |
 
 ### Decisions (`decisions/`)
 
@@ -70,7 +71,8 @@ What is being built, in what order, and the record of what each step found.
   [User stories](plans/user-stories.md) are the acceptance tests of record.
 - Live plans, with `[ ]` items still open: [v1 release](plans/v1-release.md) (the gap analysis and
   work list for the first shared release), [signal views](plans/signal-views.md) (DCS and the
-  sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain).
+  sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
+  [decoders](plans/decoders.md) (the plugin contract and APRS first; the other four drivers follow).
 - [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit
   messages cite their item ids. Nothing in there is a work list any more.
 

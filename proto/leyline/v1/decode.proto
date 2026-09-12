@@ -1,0 +1,222 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// leyline.v1 — decoders
+// Turning demodulated signal into typed records (docs/design/decoders.md). A decoder is an
+// out-of-process plugin the daemon spawns: it reads the bulk plane's own frames on stdin and
+// writes DecodeRecords on stdout, both varint-delimited (protobuf's "delimited" convention). The
+// daemon owns the radio, the channel and the job; the plugin sees samples and nothing else.
+syntax = "proto3";
+package leyline.v1;
+
+option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+import "leyline/v1/common.proto";
+
+// ---------- Manifest ----------
+// Static, shipped with the plugin as manifest.json (proto3 JSON) in the plugin's directory.
+// Discovery reads files and executes nothing.
+
+message DecoderManifest {
+  string name = 1;             // registry name and DecodeRecord.protocol: "aprs", "adsb", "rtl433"
+  string version = 2;
+  string description = 3;
+  string attribution = 4;      // upstream project, when the plugin wraps or derives from one
+  string license = 5;          // SPDX identifier of the plugin itself
+  // What to tune. This is what makes `ley decode aprs` need no parameters.
+  DecoderRecipe recipe = 6;
+  DecoderInput input = 7;
+  repeated OutputShape outputs = 8;
+  // Seconds without a record before a client-side entity table ages a device out. 0 = never.
+  uint32 entity_silence_s = 9;
+  // Advisory: names, types and units of the `fields` this decoder emits, for display and query
+  // planning. A field not listed here still passes through.
+  repeated FieldHint fields = 10;
+  bool supports_multi_channel = 11;
+  bool needs_dedicated_capture = 12;
+  bool stateful_predicates_available = 13;
+  // The program to spawn: a path relative to the manifest's directory, or a name on PATH.
+  string executable = 14;
+  repeated string args = 15;
+}
+
+message DecoderRecipe {
+  // Where the protocol lives. One entry for most; several for a protocol with regional
+  // allocations (APRS is 144.39 MHz in North America and 144.8 in Europe). The first is the
+  // default and DecodeConfig.frequency_hz picks another or overrides.
+  repeated uint64 frequencies_hz = 1;
+  uint64 sample_rate = 2;      // 0 = the radio's default
+  uint32 bandwidth_hz = 3;     // 0 = the mode's default
+  DemodMode mode = 4;
+  GainPolicy gain = 5;
+}
+
+enum GainPolicy {
+  GAIN_POLICY_UNSPECIFIED = 0;
+  GAIN_LEAVE = 1;  // whatever the radio is set to; a capture the job borrows keeps its owner's gain
+  GAIN_AUTO = 2;   // ask for AGC on a capture the job creates
+}
+
+message DecoderInput {
+  InputMode mode = 1;
+  // SLOT_ALIGNED only: the slot length and where slot boundaries sit relative to the epoch
+  // (FT8: 15000 ms, 0). The daemon buffers a whole slot, cut against the capture anchor, and
+  // delivers it as one frame. Not implemented in the first build: a manifest asking for it is
+  // listed by ListDecoders and refused by StartJob with UNIMPLEMENTED.
+  uint32 slot_ms = 2;
+  int64 epoch_offset_ms = 3;
+  // Which stage of the channel the plugin reads. TAP_DEMOD is the discriminator before
+  // de-emphasis and the limiter, which a data decoder usually prefers; TAP_AUDIO is what a
+  // listener hears and is the default.
+  AudioTap tap = 4;
+}
+
+enum InputMode { INPUT_MODE_UNSPECIFIED = 0; CONTINUOUS = 1; SLOT_ALIGNED = 2; }
+
+enum OutputShape { OUTPUT_SHAPE_UNSPECIFIED = 0; SHAPE_RECORDS = 1; SHAPE_ENTITIES = 2; SHAPE_REGISTRY = 3; }
+
+message FieldHint {
+  string name = 1;
+  FieldType type = 2;
+  string unit = 3;             // "m", "km/h", "degC", "hPa"; empty for none
+  string description = 4;
+}
+
+enum FieldType { FIELD_TYPE_UNSPECIFIED = 0; TEXT = 1; INTEGER = 2; NUMBER = 3; FLAG = 4; DATA = 5; }
+
+// ---------- Records ----------
+
+// One thing a transmitter said. Promoted fields are present or empty, never invented; everything
+// protocol-specific is in `fields`. Records are immutable: a correction is a new record.
+message DecodeRecord {
+  string record_id = 1;        // rec_<ulid>, assigned by the daemon
+  string protocol = 2;         // the manifest's name
+  // When it was received, on the capture's timeline. The plugin stamps this from the frame it
+  // decoded the packet in, and wall clock comes from the capture's anchor as everywhere else.
+  SampleTime time = 3;
+  // The transmitter as the protocol identifies it: an ICAO hex, an MMSI, "N0CALL-9",
+  // "Acurite-Tower/2937". Empty when the protocol has no identity concept.
+  string device_id = 4;
+  Position position = 5;
+  // Measured by the engine on the channel the packet arrived on, stamped by the daemon when the
+  // record reaches it; a plugin's own values here are overwritten. NaN when not measured.
+  double rssi_dbfs = 6;
+  double snr_db = 7;
+  // Present when the record's meaning expires: a weather alert, a NOTAM. Absent for an
+  // instantaneous observation.
+  Validity validity = 8;
+  map<string, FieldValue> fields = 9;
+  // The payload as decoded, always kept, so a better decoder can reprocess it later. For APRS
+  // this is the AX.25 frame without flags or FCS.
+  bytes raw = 10;
+  // Set by the daemon: the job that produced it, the record's position in that job's stream
+  // (1-based, contiguous per job, so a hole is a drop), and the channel it was decoded on.
+  string job_id = 11;
+  uint64 seq = 12;
+  string channel_id = 13;
+  // The protocol's own record type, when it has more than one: APRS says "position", "weather",
+  // "telemetry", "message", "status", "object". Empty for a protocol with one kind of record.
+  string kind = 14;
+}
+
+message Position {
+  double latitude = 1;         // degrees, north positive
+  double longitude = 2;        // degrees, east positive
+  optional double altitude_m = 3;
+}
+
+// A window on the wall clock, because that is how protocols state one ("until 14:30 UTC"). It is
+// the transmitter's claim about time, not a frame timestamp, so it does not go through the anchor.
+message Validity {
+  int64 start_ns = 1;          // CLOCK_REALTIME; 0 = from receipt
+  int64 end_ns = 2;
+}
+
+message FieldValue {
+  oneof value {
+    string text = 1;
+    int64 integer = 2;
+    double number = 3;
+    bool flag = 4;
+    bytes data = 5;
+  }
+}
+
+// ---------- The job ----------
+
+// Run a decoder on its recipe. The allocator finds a capture that covers the frequency, or makes
+// one on an idle radio, or declines naming who has it (docs/design/decoders.md, "Decisions").
+message DecodeConfig {
+  string decoder = 1;          // a manifest name from ListDecoders
+  uint64 frequency_hz = 2;     // 0 = the recipe's first frequency
+  string device_id = 3;        // empty = the daemon picks
+  bool take_over = 4;          // retune a capture somebody is using; off by default
+  // Persistence follows intent: without this the job belongs to the client that started it and
+  // its records exist only on the live stream. With it the job outlives the client and its
+  // records are the resource ley://records/<job_id>.
+  bool keep = 5;
+}
+
+// ---------- Service ----------
+
+service Decoders {
+  rpc ListDecoders(ListDecodersRequest) returns (ListDecodersResponse);
+  // Live records. Drop-oldest with a per-job `seq`; a retained window of 256 records per job is
+  // replayed for `since_seq`, so "StartJob then Subscribe" misses nothing.
+  rpc SubscribeRecords(RecordSubscription) returns (stream DecodeRecord);
+  // Records from the store: kept jobs only, newest first.
+  rpc QueryRecords(RecordQuery) returns (RecordPage);
+}
+
+message ListDecodersRequest {}
+message ListDecodersResponse {
+  repeated DecoderManifest decoders = 1;
+  // Where the daemon looked, in order, and the retention it applies to kept records.
+  repeated string search_path = 2;
+  string store_path = 3;
+  uint64 store_cap_bytes = 4;
+  uint32 store_age_days = 5;
+}
+
+message RecordSubscription {
+  oneof scope {
+    bool all = 1;
+    string job_id = 2;
+    string protocol = 3;
+  }
+  // job_id scope only: replay retained records with seq > since_seq before going live (0 = from
+  // the start of what is retained). Unset = live only.
+  optional uint64 since_seq = 4;
+}
+
+message RecordQuery {
+  string protocol = 1;         // empty = any
+  string job_id = 2;           // empty = every kept job
+  string device_id = 3;        // exact match; empty = any
+  string kind = 4;             // empty = any
+  // Wall clock bounds, answered through each job's stored anchors. 0 = unbounded.
+  int64 since_ns = 5;
+  int64 until_ns = 6;
+  // Records with a position within radius_m of `near`. Absent = no spatial filter.
+  Position near = 7;
+  double radius_m = 8;
+  // Only records whose validity window contains now.
+  bool in_effect = 9;
+  // Exact-value field filters, all of which must match.
+  repeated FieldMatch fields = 10;
+  uint32 limit = 11;           // 0 = the daemon's default (1000); the page says if it was cut
+}
+
+message FieldMatch { string name = 1; FieldValue equals = 2; }
+
+message RecordPage {
+  repeated DecodeRecord records = 1;
+  // The anchor of every capture the records name, so a client turns `time` into wall clock the
+  // way it does for a live capture. A capture that re-anchored while a job ran appears once per
+  // anchor, and the one that applies is the newest whose sample_index is not past the record's.
+  repeated RecordAnchor anchors = 2;
+  bool truncated = 3;
+}
+
+message RecordAnchor {
+  CaptureAnchor anchor = 1;
+  uint64 from_sample = 2;      // the anchor applies from this sample index on its capture
+}

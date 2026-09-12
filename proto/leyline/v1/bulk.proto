@@ -103,22 +103,8 @@ message AudioParams {
 }
 enum AudioSampleFormat { AUDIO_SAMPLE_FORMAT_UNSPECIFIED = 0; S16 = 1; F32 = 2; }
 
-// Where in the channel the audio is taken from.
-//
-// TAP_AUDIO is what a speaker gets -- after the high-pass, de-emphasis, limiter and
-// AGC -- and is the default, so a subscription that does not mention a tap is served
-// exactly what it always was.
-//
-// TAP_DEMOD is the detector's own output before any audio conditioning: the
-// discriminator for NFM (the samples the sub-audible detector reads, so a CTCSS tone
-// is still on them) and for WFM (decimated to the audio rate, before de-emphasis and
-// the 15 kHz low-pass, so the 19 kHz pilot is visible), the envelope including the
-// carrier as DC for AM, and the product detector before AGC for USB, LSB and CW. It
-// keeps flowing while the squelch is closed, because what a transmitter is sending
-// between words is what it is for, where TAP_AUDIO is zeros there as the speaker
-// hears. A RAW_IQ channel has no detector, so TAP_DEMOD on one is refused with
-// INVALID_ARGUMENT rather than served silence.
-enum AudioTap { TAP_AUDIO = 0; TAP_DEMOD = 1; }
+// AudioTap (where in the channel the audio is taken from) lives in common.proto: decode.proto
+// names it too, and importing bulk.proto from there would close an import cycle.
 
 // A persistence (phosphor) frame: for each frequency bin, how often each level
 // has been seen lately. Bright means usual, faint means rare-but-real. It

@@ -17,5 +17,10 @@ Nothing has been released yet. This file starts with everything that exists on `
   links librtlsdr (`docs/decisions/D2-licensing.md`). `NOTICE`, the vendored third-party texts under
   `third_party/licenses/`, an SPDX line on every source file, `TRADEMARK.md`, and
   `make license-check`, which refuses copyleft outside the engine.
+- Decoders: the daemon runs decoder plugins as separate processes and turns what they decode into
+  typed records. `ley decoders` lists what is installed, `ley decode aprs` decodes APRS packets
+  from 144.39 MHz, `ley records` queries what a kept job (`--job`) stored, and `ley track aprs` is
+  the live station table. The first plugin, `leydec-aprs`, is an AFSK 1200 / AX.25 / APRS decoder
+  written in Go; `docs/design/decoders.md` is the contract for writing another.
 - Not yet: recording to files, watch jobs and transcripts, the TUI dashboard, the Mac app, the MCP
   adapter (`docs/plans/build-order.md` has the order).

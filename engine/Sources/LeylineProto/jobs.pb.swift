@@ -86,6 +86,9 @@ public nonisolated enum Leyline_V1_ResourceKind: SwiftProtobuf.Enum, Swift.CaseI
   case scan // = 2
   case snapshot // = 3
   case transcript // = 4
+
+  /// ley://records/<job_id>, a kept decode job's records (decode.proto)
+  case records // = 5
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -99,6 +102,7 @@ public nonisolated enum Leyline_V1_ResourceKind: SwiftProtobuf.Enum, Swift.CaseI
     case 2: self = .scan
     case 3: self = .snapshot
     case 4: self = .transcript
+    case 5: self = .records
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -110,6 +114,7 @@ public nonisolated enum Leyline_V1_ResourceKind: SwiftProtobuf.Enum, Swift.CaseI
     case .scan: return 2
     case .snapshot: return 3
     case .transcript: return 4
+    case .records: return 5
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -121,6 +126,7 @@ public nonisolated enum Leyline_V1_ResourceKind: SwiftProtobuf.Enum, Swift.CaseI
     .scan,
     .snapshot,
     .transcript,
+    .records,
   ]
 
 }
@@ -183,6 +189,14 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
     set {_uniqueStorage()._config = .record(newValue)}
   }
 
+  public var decode: Leyline_V1_DecodeConfig {
+    get {
+      if case .decode(let v)? = _storage._config {return v}
+      return Leyline_V1_DecodeConfig()
+    }
+    set {_uniqueStorage()._config = .decode(newValue)}
+  }
+
   /// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
   /// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
   /// implemented), and it does not outlive the daemon's memory of its last sixteen finished jobs
@@ -217,6 +231,7 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
     case watch(Leyline_V1_WatchConfig)
     case scan(Leyline_V1_ScanConfig)
     case record(Leyline_V1_RecordConfig)
+    case decode(Leyline_V1_DecodeConfig)
 
   }
 
@@ -517,12 +532,21 @@ public nonisolated struct Leyline_V1_StartJobRequest: Sendable {
     set {config = .record(newValue)}
   }
 
+  public var decode: Leyline_V1_DecodeConfig {
+    get {
+      if case .decode(let v)? = config {return v}
+      return Leyline_V1_DecodeConfig()
+    }
+    set {config = .decode(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Config: Equatable, Sendable {
     case watch(Leyline_V1_WatchConfig)
     case scan(Leyline_V1_ScanConfig)
     case record(Leyline_V1_RecordConfig)
+    case decode(Leyline_V1_DecodeConfig)
 
   }
 
@@ -659,12 +683,12 @@ nonisolated extension Leyline_V1_JobState: SwiftProtobuf._ProtoNameProviding {
 }
 
 nonisolated extension Leyline_V1_ResourceKind: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0RESOURCE_KIND_UNSPECIFIED\0\u{1}RECORDING\0\u{1}SCAN\0\u{1}SNAPSHOT\0\u{1}TRANSCRIPT\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0RESOURCE_KIND_UNSPECIFIED\0\u{1}RECORDING\0\u{1}SCAN\0\u{1}SNAPSHOT\0\u{1}TRANSCRIPT\0\u{1}RECORDS\0")
 }
 
 nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Job"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}job_id\0\u{1}state\0\u{3}created_at_ns\0\u{3}created_by\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{3}result_uris\0\u{3}status_detail\0\u{1}error\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}job_id\0\u{1}state\0\u{3}created_at_ns\0\u{3}created_by\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{3}result_uris\0\u{3}status_detail\0\u{1}error\0\u{1}decode\0")
 
   fileprivate class _StorageClass {
     var _jobID: String = String()
@@ -757,6 +781,19 @@ nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 8: try { try decoder.decodeRepeatedStringField(value: &_storage._resultUris) }()
         case 9: try { try decoder.decodeSingularStringField(value: &_storage._statusDetail) }()
         case 10: try { try decoder.decodeSingularMessageField(value: &_storage._error) }()
+        case 11: try {
+          var v: Leyline_V1_DecodeConfig?
+          var hadOneofValue = false
+          if let current = _storage._config {
+            hadOneofValue = true
+            if case .decode(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._config = .decode(v)
+          }
+        }()
         default: break
         }
       }
@@ -794,7 +831,7 @@ nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._Mess
         guard case .record(let v)? = _storage._config else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
       }()
-      case nil: break
+      default: break
       }
       if !_storage._resultUris.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._resultUris, fieldNumber: 8)
@@ -804,6 +841,9 @@ nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._Mess
       }
       try { if let v = _storage._error {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      } }()
+      try { if case .decode(let v)? = _storage._config {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
       } }()
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -1267,7 +1307,7 @@ nonisolated extension Leyline_V1_Resource: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_StartJobRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartJobRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}watch\0\u{1}scan\0\u{1}record\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{1}decode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1314,6 +1354,19 @@ nonisolated extension Leyline_V1_StartJobRequest: SwiftProtobuf.Message, SwiftPr
           self.config = .record(v)
         }
       }()
+      case 4: try {
+        var v: Leyline_V1_DecodeConfig?
+        var hadOneofValue = false
+        if let current = self.config {
+          hadOneofValue = true
+          if case .decode(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.config = .decode(v)
+        }
+      }()
       default: break
       }
     }
@@ -1336,6 +1389,10 @@ nonisolated extension Leyline_V1_StartJobRequest: SwiftProtobuf.Message, SwiftPr
     case .record?: try {
       guard case .record(let v)? = self.config else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .decode?: try {
+      guard case .decode(let v)? = self.config else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
     }()
     case nil: break
     }

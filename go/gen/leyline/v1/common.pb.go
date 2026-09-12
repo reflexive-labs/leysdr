@@ -141,6 +141,67 @@ func (DemodMode) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
+// Where in the channel the audio is taken from.
+//
+// TAP_AUDIO is what a speaker gets -- after the high-pass, de-emphasis, limiter and
+// AGC -- and is the default, so a subscription that does not mention a tap is served
+// exactly what it always was.
+//
+// TAP_DEMOD is the detector's own output before any audio conditioning: the
+// discriminator for NFM (the samples the sub-audible detector reads, so a CTCSS tone
+// is still on them) and for WFM (decimated to the audio rate, before de-emphasis and
+// the 15 kHz low-pass, so the 19 kHz pilot is visible), the envelope including the
+// carrier as DC for AM, and the product detector before AGC for USB, LSB and CW. It
+// keeps flowing while the squelch is closed, because what a transmitter is sending
+// between words is what it is for, where TAP_AUDIO is zeros there as the speaker
+// hears. A RAW_IQ channel has no detector, so TAP_DEMOD on one is refused with
+// INVALID_ARGUMENT rather than served silence.
+type AudioTap int32
+
+const (
+	AudioTap_TAP_AUDIO AudioTap = 0
+	AudioTap_TAP_DEMOD AudioTap = 1
+)
+
+// Enum value maps for AudioTap.
+var (
+	AudioTap_name = map[int32]string{
+		0: "TAP_AUDIO",
+		1: "TAP_DEMOD",
+	}
+	AudioTap_value = map[string]int32{
+		"TAP_AUDIO": 0,
+		"TAP_DEMOD": 1,
+	}
+)
+
+func (x AudioTap) Enum() *AudioTap {
+	p := new(AudioTap)
+	*p = x
+	return p
+}
+
+func (x AudioTap) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AudioTap) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_common_proto_enumTypes[2].Descriptor()
+}
+
+func (AudioTap) Type() protoreflect.EnumType {
+	return &file_leyline_v1_common_proto_enumTypes[2]
+}
+
+func (x AudioTap) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AudioTap.Descriptor instead.
+func (AudioTap) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
 // Sample-indexed timebase. Wall clock is derived via CaptureAnchor, never carried per-frame.
 // capture_id scopes the timeline; future non-capture timelines (e.g. tx_ transmissions)
 // reuse this field with their own IDs — do not assume it always names a Capture.
@@ -710,7 +771,10 @@ const file_leyline_v1_common_proto_rawDesc = "" +
 	"\x03LSB\x10\x05\x12\x06\n" +
 	"\x02CW\x10\x06\x12\n" +
 	"\n" +
-	"\x06RAW_IQ\x10\aB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\x06RAW_IQ\x10\a*(\n" +
+	"\bAudioTap\x12\r\n" +
+	"\tTAP_AUDIO\x10\x00\x12\r\n" +
+	"\tTAP_DEMOD\x10\x01B4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_common_proto_rawDescOnce sync.Once
@@ -724,22 +788,23 @@ func file_leyline_v1_common_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_common_proto_rawDescData
 }
 
-var file_leyline_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_leyline_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_leyline_v1_common_proto_goTypes = []any{
 	(DeliveryPolicy)(0),    // 0: leyline.v1.DeliveryPolicy
 	(DemodMode)(0),         // 1: leyline.v1.DemodMode
-	(*SampleTime)(nil),     // 2: leyline.v1.SampleTime
-	(*CaptureAnchor)(nil),  // 3: leyline.v1.CaptureAnchor
-	(*FrequencyRange)(nil), // 4: leyline.v1.FrequencyRange
-	(*ClientInfo)(nil),     // 5: leyline.v1.ClientInfo
-	(*Gap)(nil),            // 6: leyline.v1.Gap
-	(*StreamPosition)(nil), // 7: leyline.v1.StreamPosition
-	(*ErrorDetail)(nil),    // 8: leyline.v1.ErrorDetail
-	(*GainState)(nil),      // 9: leyline.v1.GainState
+	(AudioTap)(0),          // 2: leyline.v1.AudioTap
+	(*SampleTime)(nil),     // 3: leyline.v1.SampleTime
+	(*CaptureAnchor)(nil),  // 4: leyline.v1.CaptureAnchor
+	(*FrequencyRange)(nil), // 5: leyline.v1.FrequencyRange
+	(*ClientInfo)(nil),     // 6: leyline.v1.ClientInfo
+	(*Gap)(nil),            // 7: leyline.v1.Gap
+	(*StreamPosition)(nil), // 8: leyline.v1.StreamPosition
+	(*ErrorDetail)(nil),    // 9: leyline.v1.ErrorDetail
+	(*GainState)(nil),      // 10: leyline.v1.GainState
 }
 var file_leyline_v1_common_proto_depIdxs = []int32{
-	2, // 0: leyline.v1.StreamPosition.at_sample:type_name -> leyline.v1.SampleTime
+	3, // 0: leyline.v1.StreamPosition.at_sample:type_name -> leyline.v1.SampleTime
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -762,7 +827,7 @@ func file_leyline_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_common_proto_rawDesc), len(file_leyline_v1_common_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,

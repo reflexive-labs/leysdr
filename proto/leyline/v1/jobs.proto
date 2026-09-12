@@ -10,6 +10,7 @@ package leyline.v1;
 option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
 import "leyline/v1/telemetry.proto";
+import "leyline/v1/decode.proto";
 
 // ---------- Jobs ----------
 
@@ -22,6 +23,7 @@ message Job {
     WatchConfig watch = 5;
     ScanConfig scan = 6;
     RecordConfig record = 7;
+    DecodeConfig decode = 11;
   }
   // ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
   // Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
@@ -138,6 +140,7 @@ enum ResourceKind {
   SCAN = 2;
   SNAPSHOT = 3;
   TRANSCRIPT = 4;
+  RECORDS = 5;      // ley://records/<job_id>, a kept decode job's records (decode.proto)
 }
 
 service Jobs {
@@ -155,7 +158,9 @@ service Resources {
   rpc ResolveLocalPath(ResourceRef) returns (LocalPath); // UDS clients read the file directly
 }
 
-message StartJobRequest { oneof config { WatchConfig watch = 1; ScanConfig scan = 2; RecordConfig record = 3; } }
+message StartJobRequest {
+  oneof config { WatchConfig watch = 1; ScanConfig scan = 2; RecordConfig record = 3; DecodeConfig decode = 4; }
+}
 message ListJobsRequest { repeated JobState states = 1; } // empty = all
 message ListJobsResponse { repeated Job jobs = 1; }
 message JobRef { string job_id = 1; }

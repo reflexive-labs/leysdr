@@ -30,7 +30,9 @@ type env struct {
 	fixture string
 }
 
-func setup(t *testing.T) (*env, *exec.Cmd) {
+// setup starts a daemon on a temp socket; daemonArgs are appended to its command line (a decode
+// test names a temp store and the repository's plugin directory).
+func setup(t *testing.T, daemonArgs ...string) (*env, *exec.Cmd) {
 	t.Helper()
 	daemonBin := os.Getenv("LEYLINED_BIN")
 	leyBin := os.Getenv("LEY_BIN")
@@ -51,7 +53,7 @@ func setup(t *testing.T) (*env, *exec.Cmd) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	e := &env{t: t, ley: leyBin, socket: filepath.Join(dir, "d.sock"), fixture: fixture}
 
-	daemon := exec.Command(daemonBin, "--socket", e.socket, "--log-level", "debug")
+	daemon := exec.Command(daemonBin, append([]string{"--socket", e.socket, "--log-level", "debug"}, daemonArgs...)...)
 	var daemonLog bytes.Buffer
 	daemon.Stderr = &daemonLog
 	daemon.Stdout = &daemonLog

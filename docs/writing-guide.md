@@ -103,11 +103,14 @@ in the sentence where it appears; `ley help glossary` is the reference.
 | **squelch** | the level below which a channel is muted | "gate", "threshold" (a threshold is the detector's) |
 | **preset**, **band** | client-local tables `ley tune` accepts in place of a frequency | |
 | **job**, **resource** | a declared intent the daemon runs, and the durable thing it produces | "task", "file" |
+| **decoder**, **plugin** | a program the daemon runs to turn a channel's audio into records; "decoder" in guide prose, "plugin" when the process itself is meant | "codec", "module" |
+| **record** | one thing a transmitter said, as a decoder reports it (`DecodeRecord`) | "packet" (a packet is what was on the air), "message" |
+| **entity**, **station** | what a client's fold over records shows per transmitter; "station" for APRS | "track", "target" |
 | **fixture** | a generated IQ file with expectations in its sidecar | |
 | **recording** | an IQ file that came from a radio | |
 | **sample time**, **anchor** | the timebase every frame carries, and the one wall-clock mapping per capture | "timestamp" |
 | **invariant** | one of the thirteen rules in `CLAUDE.md` | "principle", "guideline" |
-| **milestone**, **spike**, **decision**, **work item** | A.1 to D.16; S1 to S3; D2; SV-8, R-4 | |
+| **milestone**, **spike**, **decision**, **work item** | A.1 to D.17; S1 to S3; D2; SV-8, R-4, DEC-2 | |
 
 Capitalise Leyline, RTL-SDR, the modes (NFM, WFM, AM, USB, LSB, CW), CTCSS, macOS, Homebrew,
 Xcode, GitHub. Do not capitalise daemon, capture, channel, sink, squelch, spectrum, waterfall,

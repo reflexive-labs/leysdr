@@ -125,8 +125,9 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 - Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.
 - Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done except
   C.12, recording and resources, which is not started.
-- Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.14 (terminal
-  dashboard), D.15 (durable jobs, watch, transcripts) and D.16 (MCP adapter) not started.
+- Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.17 (decoders:
+  the plugin contract, records, `ley decode aprs`) in progress, `docs/plans/decoders.md`; D.14
+  (terminal dashboard), D.15 (durable jobs, watch, transcripts) and D.16 (MCP adapter) not started.
 - Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
   measurement on target hardware yet; S1 (latency chain) waits for the app.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with

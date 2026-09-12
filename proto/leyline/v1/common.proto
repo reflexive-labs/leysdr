@@ -69,3 +69,19 @@ enum DemodMode { DEMOD_MODE_UNSPECIFIED = 0; AM = 1; NFM = 2; WFM = 3; USB = 4; 
 // and a scan carries the ones it pinned for the sweep.
 message GainState { string element = 1; double db = 2; bool auto = 3; }
 
+// Where in the channel the audio is taken from.
+//
+// TAP_AUDIO is what a speaker gets -- after the high-pass, de-emphasis, limiter and
+// AGC -- and is the default, so a subscription that does not mention a tap is served
+// exactly what it always was.
+//
+// TAP_DEMOD is the detector's own output before any audio conditioning: the
+// discriminator for NFM (the samples the sub-audible detector reads, so a CTCSS tone
+// is still on them) and for WFM (decimated to the audio rate, before de-emphasis and
+// the 15 kHz low-pass, so the 19 kHz pilot is visible), the envelope including the
+// carrier as DC for AM, and the product detector before AGC for USB, LSB and CW. It
+// keeps flowing while the squelch is closed, because what a transmitter is sending
+// between words is what it is for, where TAP_AUDIO is zeros there as the speaker
+// hears. A RAW_IQ channel has no detector, so TAP_DEMOD on one is refused with
+// INVALID_ARGUMENT rather than served silence.
+enum AudioTap { TAP_AUDIO = 0; TAP_DEMOD = 1; }

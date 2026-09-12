@@ -84,8 +84,11 @@ fixtures: go
 # -count=1: the test's inputs are the binaries, which the go test cache does not see.
 # --show-bin-path resolves SwiftPM's per-platform directory; the .build/<config> symlink can point
 # at another host's build on a shared checkout.
+# The decode e2e needs the repository's plugin manifests and the plugin binaries `make go` put beside
+# ley: LEYLINE_DECODERS names the manifests and PATH is where the daemon finds `leydec-aprs`.
 e2e: go swift fixtures
 	cd go && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+		LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
 		go test -count=1 -v ./internal/e2e/...
 
 # The daemon under test is the one launchd runs, so a rebuild is only half the loop: the old process

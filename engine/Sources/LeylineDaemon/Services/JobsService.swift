@@ -29,8 +29,10 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
             throw unimplemented("Jobs.StartJob(watch)")
         case .record?:
             throw unimplemented("Jobs.StartJob(record)")
+        case .decode(let config)?:
+            return try await mapErrors { try await jobs.startDecode(config: config, by: client) }
         case nil:
-            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan is the only one in v0", target: ""))
+            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan and decode are the ones in v0", target: ""))
         }
     }
 
