@@ -647,3 +647,45 @@ in-place redraw and ramp normalisation. Consolidate into one package-level toolk
 - `spectrum`'s goldens must be byte-identical after the change (it is the reference the others
   join); the other views' goldens change only where SV-10h intended. `waterfall` and `phosphor`
   adopt the header and axis pieces where they fit without changing their pictures.
+
+## SV-12 `[ ]` Full scale is the channel's own limit
+
+A narrow-mode handheld (`fixtures/ht-narrow.cu8`: PL at 305 Hz, speech to 2.8 kHz) draws at a
+quarter of the trace and plays quietly, because NFM full scale is hard-wired to ±5 kHz while the
+default channel is 12.5 kHz wide and cannot carry more than ±2.5 kHz. Three items, in order.
+
+### SV-12a `[ ]` The full-scale deviation on the wire (cross-language, first)
+
+`proto/leyline/v1/bulk.proto`: `AudioParams` gains `uint32 full_scale_deviation_hz = 4`, set by the
+daemon in the answered descriptor for FM modes (0 for AM, SSB and CW, whose taps are amplitude,
+not deviation): the deviation that ±1.0 on either tap stands for. Comment: it follows the channel's
+bandwidth for NFM (`min(5000, max(2500, bandwidth / 5))`, so 12.5 kHz → 2.5 kHz and 25 kHz →
+5 kHz) and is 75 kHz for WFM; a client converts a DC offset or a peak to hertz with it and never
+hard-codes a number. `make proto`. The fake echoes it by the same rule. `go/pkg/leyline` exposes it
+on the `Subscription`'s descriptor as it does the rest.
+
+### SV-12b `[ ]` The engine scales to the channel (Swift lane)
+
+- `NFMDemodulator.configure(inputRate:bandwidthHz:)` sets `scale` from `fullScaleDeviationHz =
+  min(5000, max(2500, bandwidthHz / 5))` instead of the constant; the sub-audible detector's
+  `deviation_hz` and the tap ring keep reporting hertz correctly (they convert amplitude with the
+  same number); `WFMDemodulator` stays at 75 kHz. The daemon fills `full_scale_deviation_hz`.
+- The audio path inherits the change (a narrow channel now plays 6 dB louder), which is what a
+  radio does; the limiter stays at ±1.
+- Tests: `DemodTapTests` and `AudioSpectrumTests` absolute levels move by +6 dB on the 12.5 kHz
+  fixture channels (the PL band to about −11, the 1 kHz tone to about 0); a test that a 25 kHz
+  channel keeps the old numbers; `SubAudibleTests` still see 700 Hz on `nfm_pl`; fixture
+  round-trips green. `docs/engine-internals.md` Demodulators paragraph states the rule.
+
+### SV-12c `[ ]` The views follow the descriptor, and a burst cannot own the scale (Go lane)
+
+- `scope`, `waveform` and `levels` read `full_scale_deviation_hz` from the descriptor for every
+  hertz readout (tuning error, the header's "full scale ±n kHz" note); the `nfmFullScaleHz` and
+  `wfmFullScaleHz` constants go, with a fallback only for a descriptor that reports 0 on an FM mode.
+- `scope` defaults to `--scale auto`, as `waveform` does; `full` stays available.
+- Auto scale on both is fitted to a high percentile of the recent column or frame peaks (the 90th
+  over the hold window) rather than the maximum, so the squelch tail's burst, one column at 4.8×
+  full scale, no longer sets the scale for the next second; the burst itself still draws, clamped.
+- The e2e meters assertions move with SV-12b (−11 and 0 within a dB on the demod tap). Goldens
+  and the guide's transcripts re-recorded against the fake; the guide's "looking at speech"
+  paragraph says why a narrow radio fills the trace now.
