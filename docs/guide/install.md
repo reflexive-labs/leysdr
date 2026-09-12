@@ -107,6 +107,22 @@ noise floor, a band with four carriers). `ley play fixtures/nfm_tone.cf32 --loop
 the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test suite runs this way.
 [IQ files and fixtures](../reference/iq-files.md) describes the format and lists the catalog.
 
+## Decoders
+
+`ley decode`, `ley records` and `ley watch` need decoder plugins installed where the daemon looks
+for them. `make reload` installs the two that ship (APRS and SAME weather alerts) as part of the
+rebuild; to install them without a full reload:
+
+```sh
+make install-decoders   # copies decoders/*/ into ~/Library/Application Support/Leyline/decoders/
+ley daemon start        # a running daemon picks them up on its next start
+```
+
+`ley decoders` lists what is installed and prints the directory it searched. A fresh daemon with no
+decoders installed answers `ley decode aprs` with `there is no decoder called "aprs"
+[DECODER_NOT_FOUND]`; `make install-decoders` is the fix. Writing your own is
+[Writing a decoder](../reference/writing-a-decoder.md).
+
 ## Where things live
 
 | what | where |
@@ -114,6 +130,8 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 | socket | `~/Library/Application Support/Leyline/leyline.sock` (`ley daemon status` prints it; `--socket` and `LEYLINE_SOCKET` override) |
 | pidfile, `devices.json` (remembered `rtl_tcp` radios) | beside the socket |
 | log | `~/Library/Logs/Leyline/leylined.log` (`ley daemon logs`) |
+| decoders | `~/Library/Application Support/Leyline/decoders/<name>/` (`make install-decoders`; `--decoders` and `LEYLINE_DECODERS` add more) |
+| decode records store | `~/Library/Application Support/Leyline/store/` (kept decode jobs; `--store`, `--store-cap`, `--store-age`) |
 | LaunchAgent | `~/Library/LaunchAgents/com.leyline.daemon.plist` (`ley daemon install` writes it, `uninstall` removes it) |
 
 The daemon opens no network listener, and anything that can open the socket controls the radio.

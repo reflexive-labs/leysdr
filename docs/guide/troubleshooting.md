@@ -48,6 +48,15 @@ enumeration order and a `serial_collision` feature flag; set unique serials with
 moment `tune` starts means the squelch is off (`--squelch off`, a non-voice mode, or no spectrum
 row arrived to measure the floor): `ley set squelch auto`.
 
+## `ley decode` says there is no decoder
+
+`ley: there is no decoder called "aprs". ley decoders lists the ones installed [DECODER_NOT_FOUND]`
+means the daemon found no plugin by that name. Decoders are not built into the daemon; they are
+installed beside it. Run `make install-decoders` (or `make reload`, which does it), then
+`ley decoders` lists what is installed and the directory it searched. If a decoder you wrote is
+missing, check its `manifest.json` parses and names an `executable` the daemon can run;
+[Writing a decoder](../reference/writing-a-decoder.md) has the contract.
+
 ## A remote radio drops
 
 A radio attached over `rtl_tcp` that stops answering goes `DISCONNECTED`, its capture detaches, and

@@ -35,7 +35,7 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e lint check clean
+.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e lint check clean install-decoders
 
 all: go swift
 
@@ -95,7 +95,13 @@ e2e: go swift fixtures
 # keeps serving until it is replaced. `ley daemon stop` ends a launchd job or a bare spawn alike;
 # `install` rewrites the plist, boots out what is loaded and bootstraps the new binary, so this is
 # safe to run whether or not an agent was installed before.
-reload: go swift-release
+# Copies the repo's decoder plugins (manifest + binary together) into the platform default decoder
+# directory the daemon searches, so `ley decode`/`ley watch` find them. Depends on `go` for the
+# leydec-* binaries.
+install-decoders: go
+	GOBIN=$(GOBIN) ./scripts/install-decoders.sh
+
+reload: go swift-release install-decoders
 	@[ "$$(uname -s)" = Darwin ] || { echo "make reload drives launchd; run it on the Mac" >&2; exit 2; }
 	-$(GOBIN)/ley daemon stop
 	$(GOBIN)/ley daemon install --bin $(CURDIR)/engine/.build/release/leylined
