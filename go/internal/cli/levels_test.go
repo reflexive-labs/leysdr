@@ -608,16 +608,39 @@ func TestLevelsRefusedOnRawIQ(t *testing.T) {
 // The terminal's height is the limit, never the choice: a meter taller than
 // the screen cannot be redrawn in place.
 func TestLevelsFitHeight(t *testing.T) {
-	if got := levelsFitHeight(levelsHeight, 0); got != levelsHeight {
+	if got := levelsFitHeight(levelsHeight, 0, false); got != levelsHeight {
 		t.Errorf("an unknown terminal height gave %d rows, want the %d asked for", got, levelsHeight)
 	}
-	if got := levelsFitHeight(levelsHeight, 40); got != levelsHeight {
+	if got := levelsFitHeight(levelsHeight, 40, true); got != levelsHeight {
 		t.Errorf("a tall terminal gave %d rows, want the %d asked for", got, levelsHeight)
 	}
-	if got := levelsFitHeight(levelsHeight, 14); got != 14-levelsChromeRows {
+	if got := levelsFitHeight(levelsHeight, 14, false); got != 14-levelsChromeRows {
 		t.Errorf("a 14-row terminal gave %d rows, want %d", got, 14-levelsChromeRows)
 	}
-	if got := levelsFitHeight(levelsHeight, 6); got != levelsMinRows {
+	if got := levelsFitHeight(levelsHeight, 16, true); got != 16-levelsChromeRows-levelsBorderRows {
+		t.Errorf("a framed 16-row terminal gave %d rows, want %d", got, 16-levelsChromeRows-levelsBorderRows)
+	}
+	if got := levelsFitHeight(levelsHeight, 6, false); got != levelsMinRows {
 		t.Errorf("a tiny terminal gave %d rows, want the %d-row floor", got, levelsMinRows)
+	}
+}
+
+// What the clamp promises is that the whole block --watch redraws — the meter,
+// its frame and the status line under it — still leaves the row of headroom a
+// redraw in place needs.
+func TestLevelsFitHeightLeavesRoomToRedraw(t *testing.T) {
+	for _, framed := range []bool{false, true} {
+		for term := levelsChromeRows + levelsBorderRows + levelsMinRows; term <= 40; term++ {
+			st := ui.Style{Unicode: true, Width: 100, Height: term}
+			v := newLevelsView(st, 100, levelsFitHeight(levelsHeight, term, framed), false, framed)
+			f := levelsTestFrame(v)
+			// The latched overload row is the tallest the meter ever draws.
+			f.peak.over = 1
+			lines := strings.Count(v.render(f), "\n")
+			if lines+2 > term {
+				t.Errorf("framed=%v term=%d: %d rows of meter plus status leave no headroom",
+					framed, term, lines)
+			}
+		}
 	}
 }

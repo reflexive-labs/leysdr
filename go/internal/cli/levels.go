@@ -28,6 +28,9 @@ const (
 	// ladder: the header, the overload line, the axis, two label lines and the
 	// status line, plus the row of headroom a redraw needs.
 	levelsChromeRows = 7
+	// levelsBorderRows is what the chart's frame costs on top of that: the
+	// edge above the ladders and the one under the labels.
+	levelsBorderRows = 2
 )
 
 // LevelsRow is one JSON row of `ley levels`: the daemon's own numbers for one
@@ -181,7 +184,8 @@ octaves, on a terminal at least 100 columns wide.
 			if o.width = app.Style.Width; o.width <= 0 {
 				o.width = ui.DefaultWidth
 			}
-			o.height = levelsFitHeight(o.height, app.Style.Height)
+			o.height = levelsFitHeight(o.height, app.Style.Height,
+				chartFramed(app.Style, o.width, app.IsTTY()))
 			if o.tune != nil {
 				if s.device, err = pickDevice(s.state, o.tune.device); err != nil {
 					return err
@@ -205,12 +209,17 @@ octaves, on a terminal at least 100 columns wide.
 
 // levelsFitHeight is the height a meter is drawn at: what was asked for, less
 // whatever the terminal cannot hold, because a block taller than the screen
-// cannot be redrawn in place at all.
-func levelsFitHeight(want, term int) int {
+// cannot be redrawn in place at all. A framed meter has two rows less to
+// spend, since the border is drawn around everything the chrome already counts.
+func levelsFitHeight(want, term int, framed bool) int {
 	if term <= 0 {
 		return want
 	}
-	return max(min(want, term-levelsChromeRows), levelsMinRows)
+	chrome := levelsChromeRows
+	if framed {
+		chrome += levelsBorderRows
+	}
+	return max(min(want, term-chrome), levelsMinRows)
 }
 
 // runLevels taps the channel's audio spectrum, folds each row into bands and
