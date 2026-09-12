@@ -23,12 +23,6 @@ var Stubs = []stub{
 		milestone: "Milestone C.12",
 		today:     "ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build",
 	},
-	{
-		use:       "watch",
-		short:     "Watch a frequency and log what is heard",
-		milestone: "Milestone D.15",
-		today:     "ley tune <freq> listens live; keeping a log of what is heard is a daemon job and is not in this build",
-	},
 }
 
 // stubMessage is the exit-2 line a stub prints.

@@ -189,6 +189,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newJobsCommand(app),
 		newDecodersCommand(app),
 		newDecodeCommand(app),
+		newWatchCommand(app),
 		newRecordsCommand(app),
 		newTrackCommand(app),
 		newFFTCommand(app),

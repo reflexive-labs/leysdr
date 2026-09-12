@@ -3,13 +3,17 @@ same line as below.
 
   record   Record a channel or the raw capture to a file (Milestone C.12)
            today: ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build
-  watch    Watch a frequency and log what is heard (Milestone D.15)
-           today: ley tune <freq> listens live; keeping a log of what is heard is a daemon job and is not in this build
 
-Decoding is in this build: 'ley decoders' lists the plugins, 'ley decode'
-runs one, 'ley records' searches what kept jobs wrote and 'ley track' draws
-the live table. Still to come there: predicates and notifications, 'ley
-label' and 'ley devices-seen', and 'ley identify'.
+Decoding is in this build:
+
+  ley decoders             the installed decoder plugins
+  ley decode <name>        run one and print what it hears
+  ley records              search what kept jobs wrote
+  ley track <protocol>     the live entity table
+  ley watch <name> ...     filter records, and notify on a match
+
+Still to come there: 'ley label' and 'ley devices-seen', and 'ley
+identify'.
 
 The daemon-side relative squelch (mute at 'noise floor + N dB' measured by
 the daemon rather than by ley) is the recorded follow-up to auto squelch.

@@ -81,6 +81,11 @@ type Daemon struct {
 	// one entry per kept decode job, which is what QueryRecords reads.
 	recordSubs map[*recordSub]struct{}
 	store      []*storedJob
+	// notifyCounts records notifier fires by kind (shell, webhook, macos) so a test can assert
+	// a notifier fired without the Swift daemon; the real daemon logs webhook and macOS
+	// deliveries. Guarded by notifyMu, not mu: a notifier runs off the record path.
+	notifyMu     sync.Mutex
+	notifyCounts map[string]int
 	// sweeping is the device a scan currently owns, so a second scan is declined and a channel
 	// cannot join a capture that is walking a band (the daemon's `swept` set).
 	sweeping string
@@ -160,20 +165,21 @@ func New(opts Options) *Daemon {
 		opts.MeterInterval = 100 * time.Millisecond
 	}
 	d := &Daemon{
-		opts:       opts,
-		startedNs:  time.Now().UnixNano(),
-		devices:    map[string]*leylinev1.DeviceDescriptor{},
-		files:      map[string]fileInfo{},
-		captures:   map[string]*capture{},
-		channels:   map[string]*leylinev1.Channel{},
-		sinks:      map[string]*leylinev1.Sink{},
-		jobs:       map[string]*fakeJob{},
-		streams:    map[string]*stream{},
-		watchers:   map[*watcher]struct{}{},
-		recordSubs: map[*recordSub]struct{}{},
-		presence:   map[string]*presence{},
-		socket:     opts.SocketPath,
-		closing:    make(chan struct{}),
+		opts:         opts,
+		startedNs:    time.Now().UnixNano(),
+		devices:      map[string]*leylinev1.DeviceDescriptor{},
+		files:        map[string]fileInfo{},
+		captures:     map[string]*capture{},
+		channels:     map[string]*leylinev1.Channel{},
+		sinks:        map[string]*leylinev1.Sink{},
+		jobs:         map[string]*fakeJob{},
+		streams:      map[string]*stream{},
+		watchers:     map[*watcher]struct{}{},
+		recordSubs:   map[*recordSub]struct{}{},
+		notifyCounts: map[string]int{},
+		presence:     map[string]*presence{},
+		socket:       opts.SocketPath,
+		closing:      make(chan struct{}),
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()

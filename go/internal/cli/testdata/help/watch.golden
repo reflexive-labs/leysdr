@@ -1,0 +1,58 @@
+watch runs a decoder like 'ley decode', but only shows records that pass a
+filter, and can hand a match to a notifier. It is how you wait for one thing
+on the air: a county's weather alert, a particular station, traffic from a
+place.
+
+By default watch stays attached and streams the matching records, the way
+decode streams every record. --detach leaves the job running in the daemon
+after ley exits, so the notifier fires with nothing connected -- which is the
+point of a watch: an alert must reach you when you are not looking. --detach
+prints the job id and how to stop it ('ley jobs cancel') and exits.
+
+The filter is built from the flags, ANDed together:
+
+  --where field=value   an equality test; also field!=value (not equal),
+                        field~value (contains), and field>value, >=, <, <=
+                        (numeric). Repeat for more tests.
+  --county FIPS         a county's records: a CONTAINS test on the 'fips'
+                        field a SAME alert carries. Repeat for more counties;
+                        a record matches if it names any of them.
+  --near LAT,LON --radius R   records from a place (R is 10km, 500m, 5nm, 3mi).
+
+--notify hands each match to a notifier. Bare --notify is a macOS
+notification; --notify=webhook:URL POSTs the record, --notify=shell:CMD runs
+a command with the record's JSON on stdin (an explicit target takes the '='
+form, so a bare --notify can still mean the macOS one). The daemon runs the
+notifier, so it fires whether or not ley is attached.
+
+--json prints one DecodeRecord per line (NDJSON): the matches and nothing else.
+
+Usage:
+  ley watch <decoder> [flags]
+
+Examples:
+  ley watch same --county 06009 --notify        # a weather alert for your county
+  ley watch aprs --where device_id=LEYTST-1     # one station
+  ley watch aprs --where 'temp_c>25'            # only when it is warm
+  ley watch aprs --near 37.76,-122.42 --radius 10km
+  ley watch same --county 06009 --notify=shell:'say alert' --detach
+
+Flags:
+      --count int                 stop after this many matches, e.g. 5 (default: until Ctrl-C)
+      --county stringArray        a FIPS county code the record must name in its 'fips' field, e.g. 06009 (repeatable)
+      --detach                    leave the job running after ley exits so the notifier fires unattended ('ley jobs cancel' stops it)
+      --device string             which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --freq string               watch somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)
+  -h, --help                      help for watch
+      --job                       alias for --detach
+      --near string               records from around here: LAT,LON, e.g. 37.76,-122.42 (needs --radius)
+      --notify string[="macos"]   hand each match to a notifier: bare (macOS notification), webhook:URL or shell:CMD
+      --radius string             how far around --near to look: 10km, 500m, 5nm, 3mi
+      --take-over                 watch even when somebody is using the radio; it is theirs again afterwards
+      --where stringArray         a field test: field=value, field!=value, field~value, field>value (repeatable)
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

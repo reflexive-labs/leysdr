@@ -308,7 +308,9 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"scan"}, "scan needs a range"},
 		{[]string{"scan", "144M..148M", "--band", "2m"}, "not both"},
 		{[]string{"scan", "144M..148M", "--sort", "sideways"}, "--sort must be freq or snr"},
-		{[]string{"watch"}, "watch is not implemented yet (Milestone D.15)"},
+		{[]string{"record"}, "record is not implemented yet (Milestone C.12)"},
+		// watch is a real verb now: its argument count is a usage error, not a stub message.
+		{[]string{"watch"}, "accepts 1 arg(s), received 0"},
 		// tune's positional and flags are parsed before anything reaches the daemon.
 		{[]string{"tune"}, "tune needs a frequency or preset"},
 		{[]string{"tune", "146,52"}, "frequency"},
@@ -495,7 +497,7 @@ func TestRenderOrientationStates(t *testing.T) {
 
 func TestStubsHiddenAndListed(t *testing.T) {
 	root := NewRootCommand(&App{})
-	for _, name := range []string{"record", "watch"} {
+	for _, name := range []string{"record"} {
 		cmd, _, err := root.Find([]string{name})
 		if err != nil || cmd.Name() != name || !cmd.Hidden {
 			t.Errorf("stub %s: %v hidden=%v", name, err, cmd != nil && cmd.Hidden)
@@ -504,7 +506,7 @@ func TestStubsHiddenAndListed(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetArgs([]string{"--help"})
-	if err := root.Execute(); err != nil || regexp.MustCompile(`(?m)^\s+(record|watch)\s`).MatchString(out.String()) {
+	if err := root.Execute(); err != nil || regexp.MustCompile(`(?m)^\s+(record)\s`).MatchString(out.String()) {
 		t.Errorf("stubs must be hidden from --help: %v\n%s", err, out.String())
 	}
 }

@@ -202,6 +202,10 @@ var fakeStations = []func(now uint64) *leylinev1.DecodeRecord{
 				"symbol":  textField("/>"),
 				"comment": textField("fake station, no radio involved"),
 				"path":    textField("WIDE1-1"),
+				// A delimited FIPS county list, so `ley watch --county` has something to match: it
+				// is the field a SAME alert will populate, carried here on the one fake station
+				// that has a position so the predicate machinery is proven before SAME lands.
+				"fips": textField("006001-006013"),
 			},
 			Raw: []byte("LEYTST-1>APRS,WIDE1-1:!3745.60N/12225.20W>fake"),
 		}
@@ -255,15 +259,27 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		rec.RecordId = newID("rec_")
 		rec.JobId = jobID
 		rec.ChannelId = j.channelID
-		j.seq++
-		rec.Seq = j.seq
 		rec.RssiDbfs, rec.SnrDb = fakeRecordRssiDbfs, fakeRecordSnrDb
 		rec.Time = &leylinev1.SampleTime{CaptureId: j.captureID}
 		if c := d.captures[j.captureID]; c != nil {
 			rec.Time.SampleIndex = c.sampleIndex(time.Now())
 		}
+		// The predicate is a daemon-side filter before delivery: a record that fails it never
+		// reaches a subscriber, the store or the notifier, and never takes a seq, so seq stays
+		// contiguous over the records that were delivered (docs/design/decoders.md).
+		pred := j.proto.GetDecode().GetPredicate()
+		if !matchPredicate(pred, rec) {
+			d.mu.Unlock()
+			continue
+		}
+		j.seq++
+		rec.Seq = j.seq
 		d.publishRecord(j, rec)
+		notify := j.proto.GetDecode().GetNotify()
 		d.mu.Unlock()
+		if notify != nil {
+			go d.fireNotify(notify, rec)
+		}
 	}
 }
 

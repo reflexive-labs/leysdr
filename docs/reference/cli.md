@@ -53,6 +53,11 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # the resource ley://records/<job_id>
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
 │                                    # Decoders.QueryRecords over what kept jobs wrote, newest first
+├── watch <decoder> [--where field=value] [--county FIPS] [--near LAT,LON --radius R] [--notify[=TARGET]] [--freq F] [--device SEL] [--take-over] [--detach|--job] [--count N]
+│                                    # a decode job with a daemon-side predicate and a notifier:
+│                                    # attached it streams only the matching records; --detach leaves
+│                                    # the job running so the notifier (bare=macOS, webhook:URL,
+│                                    # shell:CMD) fires with no client attached
 ├── track <protocol> [--since D] [--rate N] [--count N]
 │                                    # the live entity table: ley's own fold over SubscribeRecords,
 │                                    # redrawn in place, rows aged out after the decoder's entity_silence_s
@@ -66,7 +71,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── daemon [install|uninstall|start|stop|status|logs]
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
-├── record | watch                   # hidden stubs: exit 2 "not implemented yet (Milestone …)"; listed by `ley help roadmap`
+├── record                           # hidden stub: exit 2 "not implemented yet (Milestone …)"; listed by `ley help roadmap`
 └── (planned) jobs, transcript, recordings   # arrive with the durable job store and Resources (Milestones C.12, D.15)
 ```
 
@@ -148,7 +153,14 @@ presets` is the same data in prose, and `ley presets` (the verb) owns the bare n
 found, the directories it looked in, and the store's path, cap and age. `ley decode <name> --json`
 prints one `DecodeRecord` per line (NDJSON) and nothing else on stdout; the banner naming the
 decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
-with. `ley records --json` prints a `RecordPage`: the records newest first plus the
+with. `ley watch <decoder> --json` prints the same NDJSON `DecodeRecord`s as `decode`, but only
+the ones its predicate matched: `--where field=value` (with `!=`, `~` for contains, and `>`, `>=`,
+`<`, `<=` numeric), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable), and
+`--near LAT,LON --radius R` (a `GeoTest`) become a `DecodeConfig.predicate`; `--notify` (bare for a
+macOS notification, `--notify=webhook:URL` or `--notify=shell:CMD`) becomes a
+`DecodeConfig.notify` the daemon fires on each match. Attached it streams and cancels on exit;
+`--detach` (alias `--job`) keeps the job so the notifier fires unattended, printing the id and
+`ley jobs cancel` on stderr. `ley records --json` prints a `RecordPage`: the records newest first plus the
 `RecordAnchor`s that date them, because no record carries a clock of its own and wall time is
 derived from the anchor whose `from_sample` is not past the record's (`docs/design/decoders.md`,
 "Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the
@@ -244,10 +256,10 @@ snapshot, and every client would have to repeat it. The recorded follow-up is an
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 
-**Roadmap stubs.** `record` (Milestone C.12) and `watch` (Milestone D.15) exist as hidden verbs
-so a newcomer who types them learns what is coming and what to use today (`ley play`, `ley tune`);
-they exit 2 and never reach the daemon. `watch` is the CLI mirror of the watch job — watch a
-frequency and log what is heard — not the dashboard, which is bare `ley` on a TTY. `scan` was one
-of them until Milestone D.13.
+**Roadmap stubs.** `record` (Milestone C.12) exists as a hidden verb so a newcomer who types it
+learns what is coming and what to use today (`ley play`); it exits 2 and never reaches the daemon.
+`scan` was one of them until Milestone D.13, and `watch` until D.17: the name went to the
+record-watch verb (a decode job with a predicate and a notifier, DEC-9a), the newer spec; the
+audio-transcript watch that reserved it is D.15's to place.
 
 Deliberate omissions at v0: no remote flags (UDS-only) and no TX verbs.

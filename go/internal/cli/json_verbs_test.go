@@ -87,7 +87,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "stop", args: []string{"stop", "all"}, prep: prepChannel},
 	{path: "tune", args: []string{"tune", "146.52", "--no-audio"}, timeout: 2 * time.Second},
 	{path: "version", args: []string{"version"}},
-	{path: "watch", args: []string{"watch"}, refuse: "not implemented yet"},
+	{path: "watch", args: []string{"watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "2"}},
 	{path: "waveform", args: []string{"waveform", "146.52", "--seconds", "2", "--count", "2"}},
 	{path: "waterfall", args: []string{"waterfall", "146.52", "--count", "2", "--rate", "10"}},
 }
