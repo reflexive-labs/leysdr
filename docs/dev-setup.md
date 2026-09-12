@@ -109,6 +109,13 @@ binary and prints `ley daemon status` so you can see the version it came up with
 - Nooelec dongles often ship with serial `00000001`. Two identical serials get distinct IDs by
   enumeration order and a `serial_collision` feature flag; set unique serials with `rtl_eeprom -s`.
 
+### Previewing a view without a terminal
+
+`ley … --color always` under `COLORTERM=truecolor` and a UTF-8 `LANG` writes the same escapes a
+terminal would get, and `scripts/ansi2html.py` turns a capture into an HTML block with the real
+level-ramp colours, so a picture can be reviewed in a browser or attached to a review. The guide's
+transcripts are plain text; this is for the colour.
+
 ### Regenerating the protos
 
 `make proto` needs only `protoc` from outside the repo (`brew install protobuf`; any current version).

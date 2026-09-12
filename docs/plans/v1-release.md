@@ -508,6 +508,19 @@ steps (VERSION bump, `make check` on both hosts, tag, release notes).
 collection. Add the names and the intervals (the wrappers are already allocation-free and compile to
 nothing off macOS), so the S1/S2 Instruments runs in R-16 can see the whole path.
 
+### R-21 `[ ]` Hardware-derived fixtures, optional and local (S, Opus)
+
+`fixtures/ht-narrow.cu8` (ten seconds of a narrow-mode handheld on 147.435 MHz with a 100 Hz PL,
+recorded with `rtl_sdr`, gitignored) is the first real capture the views were checked against, and
+it pins facts no synthesised fixture carries: the no-carrier noise at 4.8× full scale either side of
+a transmission, a 305 Hz PL deviation, speech peaking at the narrow-mode limit. Give such files a
+home: a `fixtures/hardware/` directory with sidecars whose `description` says radio, distance, gain
+and mode; e2e and engine tests that use one skip with a named reason when it is absent; `docs/
+fixtures.md` says how to record one (`ley daemon stop`, `rtl_sdr -f <100 kHz off the channel> -s
+2400000 -g 0 -n 24000000`, the sidecar, `ley play … --freq`). The first tests: the waveform's
+blank-when-squelched rule over a real key-up, and `levels` reading the PL band within 2 dB of the
+value measured here.
+
 ### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
 
 Today a dongle served by `rtl_tcp` is a daemon flag (`leylined --rtltcp host:port`) or an environment
