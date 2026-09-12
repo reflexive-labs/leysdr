@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // DefaultDeviceRegistry: discovers RTL-SDR dongles by polling, hosts file playback devices, and
 // hands out stable DeviceIDs keyed by USB identity so replugs keep their id.
 

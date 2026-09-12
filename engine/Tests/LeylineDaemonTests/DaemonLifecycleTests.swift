@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The daemon's stop path: what runs after a signal, and in which task.
 
 import Foundation

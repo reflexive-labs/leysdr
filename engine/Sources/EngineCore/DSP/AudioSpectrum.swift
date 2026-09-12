@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The spectrum of what a channel produces, rather than of the radio it came from: a sliding window
 // over one of the channel's audio taps, Hann-windowed and transformed through the same FFT the
 // ladder uses. It rides the sink table so a channel with nobody watching pays nothing for it.

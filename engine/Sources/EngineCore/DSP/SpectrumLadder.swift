@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The shared FFT ladder (docs/engine-internals.md, "Spectrum ladder"). Subscriptions are an
 // immutable table swapped under an NSLock; the DSP thread copies the reference once per block.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Leyline engine — internal protocol surface. Hand-designed and never generated.
 // The wire contract (leyline.v1 protos, target LeylineProto) is a separate artifact; the daemon
 // target maps between the two. EngineCore never imports LeylineProto.

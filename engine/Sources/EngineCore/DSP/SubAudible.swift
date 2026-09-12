@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Sub-audible tone detection (docs/design-signal-views.md, "Sub-audible tones").
 //
 // CTCSS/PL rides under the voice at 67-254 Hz. The NFM chain destroys it one stage after the

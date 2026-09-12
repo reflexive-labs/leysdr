@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // In-process daemon on a temp UDS, driven by the generated Swift client.
 
 import EngineCore

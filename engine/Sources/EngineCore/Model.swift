@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Engine-side model types. The daemon maps these to leyline.v1 messages; EngineCore never imports the protos.
 
 import Foundation

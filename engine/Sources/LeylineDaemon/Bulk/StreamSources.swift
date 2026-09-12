@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Hot-path adapters that feed a FrameRing from the engine: FFT rows (SpectrumSink), channel audio
 // (CallbackSink into a FloatRing) and capture IQ (CaptureTap). None allocate on the write path.
 

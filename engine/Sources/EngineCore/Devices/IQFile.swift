@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // IQ file format: raw samples (`<name>.cf32`, or `.cu8` for rtl_sdr captures) plus a JSON sidecar.
 // See docs/fixtures.md. Everything Leyline writes is cf32; `.cu8` is read-only convenience.
 

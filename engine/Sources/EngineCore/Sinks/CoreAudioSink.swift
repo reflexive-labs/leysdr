@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // System audio output. `CoreAudioSink` is the product (AVAudioEngine + AVAudioSourceNode pulling
 // from an SPSC `FloatRing`); on platforms without AVFoundation `SinkFactory.systemAudio` throws
 // PLATFORM_UNSUPPORTED so the control plane still compiles and runs.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The multi-step sweep, end to end through the daemon: a synthetic radio that really retunes, so
 // hop discard, cross-step merging and the IQ image test are exercised rather than assumed.
 //

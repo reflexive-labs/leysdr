@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ui owns how `ley` looks: the resolved terminal capabilities
 // (colour, unicode, width), the six ink roles, the glyph vocabulary and the
 // visible-width helpers every renderer aligns with. It implements section 7

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // RTLTCPDevice: a virtual RadioDevice that speaks the osmocom rtl_tcp protocol to a dongle served on
 // another machine. BSD sockets only (no Network framework) so it builds and tests on Linux. See
 // docs/engine-internals.md "Devices".

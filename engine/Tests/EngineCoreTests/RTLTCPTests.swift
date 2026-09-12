@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // RTLTCPDevice tests against an in-process fake rtl_tcp server (POSIX sockets on 127.0.0.1).
 
 import Foundation

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Command ley is the Leyline terminal client: CLI verbs over the leyline.v1
 // gRPC contract.
 package main

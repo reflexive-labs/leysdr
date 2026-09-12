@@ -8,6 +8,8 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+// SPDX-License-Identifier: Apache-2.0
+
 /// leyline.v1 — telemetry plane
 /// Low-rate structured observations: what the radio sees, as opposed to state someone changed.
 /// Full protobuf messages (unlike bulk payloads); all carry the sample timebase.

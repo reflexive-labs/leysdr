@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // AttachDevice/DetachDevice for radios served by rtl_tcp, and the list the daemon remembers them in.
 
 import EngineCore

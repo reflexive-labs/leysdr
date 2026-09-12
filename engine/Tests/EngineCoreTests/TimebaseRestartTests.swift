@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Sample timebase across stream restarts: devices restart their index at 0 on every
 // `startStreaming`, the capture timeline must not (docs/engine-internals.md, "Timebase and anchor").
 

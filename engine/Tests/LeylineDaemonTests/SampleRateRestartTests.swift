@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A capture_sample_rate write restarts the device stream (device index back to 0). The FFT bulk
 // stream opened before the write must keep delivering rows with a monotonic SampleTime after it.
 

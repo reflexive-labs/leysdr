@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A sink that hands every audio block to a caller-supplied closure on the DSP thread.
 
 import Foundation

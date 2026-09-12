@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Preallocated SPSC slot ring carrying encoded bulk frames from the DSP/device thread to the
 // Stream RPC reader. Hot path on the writer side: no allocation, no locks (CLAUDE.md invariant 4).
 

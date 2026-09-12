@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // FFT plan and spectrum analyzer. With Kernels.swift, the only file allowed to import Accelerate.
 // Plans allocate at init; `forward`/`analyze` are allocation-free.
 

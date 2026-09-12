@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // leyline.v1 — control plane
 // State and intent. Low-rate except WriteParams, which is coalesced fire-and-forget.
 syntax = "proto3";

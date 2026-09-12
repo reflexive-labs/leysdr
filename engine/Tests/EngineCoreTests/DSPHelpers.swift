@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Shared synthesis helpers for the DSP tests.
 import Foundation
 @testable import EngineCore

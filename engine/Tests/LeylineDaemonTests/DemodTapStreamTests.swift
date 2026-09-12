@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The demod tap on the bulk plane: a channel's detector output, negotiated like any audio stream,
 // echoed in the descriptor, and refused where there is no detector to read.
 

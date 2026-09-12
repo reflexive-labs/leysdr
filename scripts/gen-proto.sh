@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # Regenerates leyline.v1 code for both languages from proto/. The generated code is checked in so
 # the Go module and the Swift package build without protoc; CI runs this script and fails on drift.
 #

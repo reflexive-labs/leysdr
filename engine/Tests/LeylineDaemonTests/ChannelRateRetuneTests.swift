@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A capture_sample_rate write that pushes a channel OUT_OF_CAPTURE re-plans nothing until a retune
 // brings the channel back; at that point its audio rate follows the new capture rate and the
 // daemon reconciles sinks/bulk audio streams exactly as it does for an in-capture rate change.

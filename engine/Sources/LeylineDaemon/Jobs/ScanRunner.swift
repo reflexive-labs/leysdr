@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The sweep. Daemon-side, because a client-driven one cannot work: the write coalescer keeps
 // last-value-per-parameter on a 20 ms tick and would silently eat steps, and the ladder stamps
 // rows with the centre in force when the row was computed, so nothing outside the daemon can tell

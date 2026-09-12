@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package fakedaemon is an in-memory implementation of every leyline.v1 service.
 // It is the reference behaviour of the contract for the Go clients: the same
 // error codes, event attribution, presence rules and stream negotiation as the

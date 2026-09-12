@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // leyline.v1 — shared types
 // IDs are prefixed ULIDs: dev_, cap_, chan_, sink_, job_, scan_, rec_, snap_, strm_
 

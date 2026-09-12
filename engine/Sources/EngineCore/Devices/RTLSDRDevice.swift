@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // RTLSDRDevice: librtlsdr-backed RadioDevice. See docs/engine-internals.md "Devices" and
 // docs/decisions/S3-usb-posture.md. The async read callback is a C function that must not touch
 // Swift concurrency or take locks; it wraps the USB buffer and calls the stored deliver closure.

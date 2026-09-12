@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cli implements the `ley` command tree: Cobra verbs over the
 // leyline.v1 client library. Every verb answers --json (proto3 JSON, NDJSON for
 // streams) or refuses the flag with a usage error when its output is a script,

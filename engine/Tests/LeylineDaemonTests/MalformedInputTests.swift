@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Malformed-input hardening across the gRPC surface: extreme offsets, denormal
 // spectrum rates, non-finite gains and non-regular files must be rejected cleanly, never crash or hang.
 

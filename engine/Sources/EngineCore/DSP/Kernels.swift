@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // DSP primitives on preallocated buffers. This file and FFT.swift are the ONLY places that may
 // import Accelerate (docs/engine-internals.md, "Platform posture"). `AccelerateKernels` is the
 // product; `PortableKernels` is the reference implementation used on Linux and by the macOS

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // leyline.v1.Telemetry: fans channel meters / squelch transitions and capture activity into one
 // sequenced stream per subscriber (sample timebase on every message). Delivery is drop-oldest:
 // records lost before this subscriber drained them -- evicted from the channel's telemetry ring,

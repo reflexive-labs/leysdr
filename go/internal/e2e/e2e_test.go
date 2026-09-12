@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package e2e runs the real leylined daemon against the ley CLI over a temp UDS.
 // It is the living proof of the cross-language contract (CLAUDE.md): skipped
 // unless LEYLINED_BIN and LEY_BIN point at built binaries.

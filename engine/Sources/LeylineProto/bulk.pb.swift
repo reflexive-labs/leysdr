@@ -8,6 +8,8 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+// SPDX-License-Identifier: Apache-2.0
+
 /// leyline.v1 — bulk plane
 /// Sample-bearing streams. Offer/answer negotiation; the answer is authoritative.
 /// Payloads are opaque bytes in the negotiated format — samples are never protobuf-encoded per element.

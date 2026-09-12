@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // leyline.v1.Control (docs/engine-internals.md "Control service").
 
 import EngineCore

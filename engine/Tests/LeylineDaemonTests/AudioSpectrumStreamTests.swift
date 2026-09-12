@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // An FFT stream whose source is a channel: the spectrum of what that channel produces, negotiated
 // on the same params as the band's, echoed in the descriptor, and refused where there is no audio.
 

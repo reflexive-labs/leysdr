@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The job table. A table of watches, not a workflow engine: no retry DAG, no replay.
 //
 // v0 holds jobs and their scans in memory and loses them on restart, because the only job type

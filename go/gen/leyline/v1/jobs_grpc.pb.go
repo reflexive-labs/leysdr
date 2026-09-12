@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // leyline.v1 — jobs and resources
 // A job is a daemon-owned persistent intent. Persistence follows intent: job outputs are
 // durable resources; interactive actions are ephemeral unless explicitly kept.

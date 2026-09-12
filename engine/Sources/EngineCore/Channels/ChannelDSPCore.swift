@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The hot-path half of a channel: channelizer → demodulator → squelch → sinks → meter.
 // Owned by `DefaultChannelEngine`, driven by the capture's DSP thread. Everything in
 // `process(block:at:)` is synchronous and allocation-free; configuration arrives by swapping the

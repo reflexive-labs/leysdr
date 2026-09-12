@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // FilePlaybackDevice: a virtual RadioDevice that replays an IQ file (docs/fixtures.md) through the
 // same delivery path as hardware. Paced to real time by default; `realtime: false` runs flat out.
 

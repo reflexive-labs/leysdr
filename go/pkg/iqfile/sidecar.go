@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package iqfile reads and writes Leyline IQ files: raw interleaved samples
 // (.cf32 little-endian float32 I/Q, or .cu8 offset-binary) plus a JSON
 // sidecar describing the recording. See docs/fixtures.md for the format.

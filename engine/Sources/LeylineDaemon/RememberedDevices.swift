@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The remembered attach list: radios a client asked the daemon to keep (docs/engine-internals.md
 // "Remembered devices").
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Lock-free single-producer / single-consumer rings used on the sample path.
 // - `FloatRing`: audio floats between a sink's `write` and a render callback.
 // - `BlockRing`: N slots of cf32 blocks between the device deliver callback and the DSP thread.

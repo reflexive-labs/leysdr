@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Bulk plane (docs/engine-internals.md "Bulk service"): Subscribe negotiates an authoritative
 // StreamDescriptor, Stream drains frames until the client cancels, Unsubscribe tears down.
 

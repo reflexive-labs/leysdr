@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Renders engine values to leyline.v1 proto messages (and back for the demod-mode enum, the one a request carries).
 // EngineCore never imports the protos; the session and job stores hold proto messages directly
 // as their own record type rather than going through this mapping (docs/engine-internals.md

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A RadioDevice that plays a precomputed tone+noise cf32 loop at a fixed rate on its own thread.
 // Used only by the S2 throughput spike; like FilePlaybackDevice it paces against an absolute
 // start time, so sleep jitter never accumulates.

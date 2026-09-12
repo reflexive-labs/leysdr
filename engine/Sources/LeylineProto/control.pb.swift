@@ -8,6 +8,8 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+// SPDX-License-Identifier: Apache-2.0
+
 /// leyline.v1 — control plane
 /// State and intent. Low-rate except WriteParams, which is coalesced fire-and-forget.
 

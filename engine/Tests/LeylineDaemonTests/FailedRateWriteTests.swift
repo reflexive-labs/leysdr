@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A rejected capture_sample_rate write still moves the engine: the device may refuse the rate and
 // then fail to stream again (capture detached), or come back at the old rate. Either way the store
 // must re-emit the capture and its channels so watchers learn the truth without a GetState.

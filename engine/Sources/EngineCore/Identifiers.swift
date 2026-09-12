@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Prefixed ULIDs: `dev_`, `cap_`, `chan_`, `sink_`, `job_`, `strm_`, `cli_` (CLAUDE.md conventions).
 // Wire form is `<prefix>_<26-char Crockford base32 ULID>`; the same strings appear in proto messages,
 // `ley://` URIs and log lines.

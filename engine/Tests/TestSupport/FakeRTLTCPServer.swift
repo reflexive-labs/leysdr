@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A fake rtl_tcp server, shared by the device tests in EngineCoreTests and the attach/detach tests
 // in LeylineDaemonTests. Not part of the product: this target exists only so both suites can drive
 // the same impersonator.

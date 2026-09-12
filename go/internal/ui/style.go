@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package ui
 
 // Style is the resolved look of one output stream. It is resolved once per

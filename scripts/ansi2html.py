@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Render captured `ley` output as an HTML block, colours and all, for reviewing a view without a terminal.
 
     COLORTERM=truecolor LANG=C.UTF-8 ley levels 146.52 --color always --width 100 > levels.txt

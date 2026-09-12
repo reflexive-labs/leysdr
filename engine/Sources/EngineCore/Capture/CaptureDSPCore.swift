@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The hot-path half of a capture: device delivery → block ring → DSP thread → channels,
 // spectrum ladder and taps. Owned by `DefaultCaptureEngine`; nothing here is async.
 

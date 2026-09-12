@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // leyline.v1.Jobs — scan is implemented (Milestone D.13); watch, record and Resources arrive with
 // the durable job store at D.15.
 

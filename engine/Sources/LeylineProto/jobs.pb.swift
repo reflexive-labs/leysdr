@@ -8,6 +8,8 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+// SPDX-License-Identifier: Apache-2.0
+
 /// leyline.v1 — jobs and resources
 /// A job is a daemon-owned persistent intent. Persistence follows intent: job outputs are
 /// durable resources; interactive actions are ephemeral unless explicitly kept.

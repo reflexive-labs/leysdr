@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Command leyfix generates, checks and inspects Leyline IQ fixtures.
 //
 //	leyfix generate --out DIR [--rate 2400000] [--duration 1] [--seed 1] [--only a,b]

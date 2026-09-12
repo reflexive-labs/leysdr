@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package leyline is the Go client library for the Leyline daemon. It wraps the
 // generated leyline.v1 gRPC stubs with connection setup, client identity
 // metadata, error mapping, and small helpers shared by the ley CLI/TUI and the

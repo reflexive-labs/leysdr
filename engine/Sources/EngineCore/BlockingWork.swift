@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import Foundation
 
 /// Runs blocking, non-cancellable work on a dedicated thread instead of the cooperative pool.

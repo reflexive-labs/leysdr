@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Device loss / rebind through the daemon: a hosted virtual device drops its link, the capture
 // goes CAPTURE_DETACHED, and a re-arrival with the same identity rebinds it and resumes streaming.
 

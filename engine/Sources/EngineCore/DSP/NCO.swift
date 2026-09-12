@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Numerically controlled oscillator: phase accumulator feeding a vectorised sincos.
 // Phase is continuous across blocks and across `retune`. Allocation-free after init.
 

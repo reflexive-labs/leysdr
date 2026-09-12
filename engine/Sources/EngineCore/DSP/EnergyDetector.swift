@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import Foundation
 
 /// v0 energy detection over the FFT ladder: what is actually on this band, with the evidence.

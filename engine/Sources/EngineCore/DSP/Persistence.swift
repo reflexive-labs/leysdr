@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Persistence (phosphor) accumulation: docs/design-band-watching.md.
 //
 // A 2D histogram of the spectrum -- for each frequency bin, how often each level has been seen

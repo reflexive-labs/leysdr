@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 @testable import EngineCore
 import Foundation
 import GRPCCore

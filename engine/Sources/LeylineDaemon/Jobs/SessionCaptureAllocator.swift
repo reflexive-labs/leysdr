@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The don't-disturb policy (invariant 9). Jobs never touch captures; they ask for what they need
 // and get a lease or a reason.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Control-plane half of a capture. Owns the device session, the `CaptureDSPCore` and the channel
 // engines; every configuration change ends in a table swap on the core.
 

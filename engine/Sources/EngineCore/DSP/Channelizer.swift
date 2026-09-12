@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Channelizer: NCO mix → FIR↓D1 → (narrow modes) anti-alias FIR↓D2 → selectivity FIR at r2.
 // See docs/engine-internals.md, "Channelizer plan". Configure-time allocation only; `process` is the hot path.
 

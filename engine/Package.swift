@@ -1,4 +1,5 @@
 // swift-tools-version: 6.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Leyline engine — SwiftPM package. See docs/engine-internals.md for the module map.
 //
 // Targets:

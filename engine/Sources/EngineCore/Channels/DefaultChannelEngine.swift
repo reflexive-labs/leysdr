@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Control-plane half of a channel. Owns the `ChannelDSPCore`, swaps it atomically on structural
 // changes, and fans telemetry out to subscribers.
 

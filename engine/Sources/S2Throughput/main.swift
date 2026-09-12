@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // S2 throughput spike: synthetic 20 MSPS source → DefaultCaptureEngine → one NFM channel → NullSink.
 // Prints blocks, achieved sample rate, overruns and CPU time. See docs/build-order.md (S2).
 

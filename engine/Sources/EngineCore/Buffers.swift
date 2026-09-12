@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Sample buffers: borrowed views over engine-owned memory. Never allocated on the hot path.
 
 import Foundation
