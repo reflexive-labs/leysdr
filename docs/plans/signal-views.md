@@ -648,11 +648,15 @@ in-place redraw and ramp normalisation. Consolidate into one package-level toolk
   join); the other views' goldens change only where SV-10h intended. `waterfall` and `phosphor`
   adopt the header and axis pieces where they fit without changing their pictures.
 
-## SV-12 `[ ]` Full scale is the channel's own limit
+## SV-12 `[x]` Full scale is the channel's own limit
 
 A narrow-mode handheld (`fixtures/ht-narrow.cu8`: PL at 305 Hz, speech to 2.8 kHz) draws at a
 quarter of the trace and plays quietly, because NFM full scale is hard-wired to ±5 kHz while the
 default channel is 12.5 kHz wide and cannot carry more than ±2.5 kHz. Three items, in order.
+
+Closed 2026-09-12 (d87c5b8, e860a98, 347b009): the owner confirmed on the real handheld that
+scope, waveform and levels all fill the trace now. Measured on the narrow take, speech p90 moved
+from −10.0 to −4.1 dBFS and the PL band from −24.3 to −18.3 dBFS.
 
 ### SV-12a `[x]` The full-scale deviation on the wire (cross-language, first)
 
