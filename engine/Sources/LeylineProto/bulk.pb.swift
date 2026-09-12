@@ -475,6 +475,14 @@ public nonisolated struct Leyline_V1_AudioParams: Sendable {
   /// tap it serves in the descriptor.
   public var tap: Leyline_V1_AudioTap = .tapAudio
 
+  /// What +/-1.0 on a sample stands for, in hertz of deviation, answered by the daemon
+  /// for the FM modes and 0 for AM, SSB and CW, whose samples are amplitude rather than
+  /// frequency. It follows the channel for NFM -- min(5000, max(2500, bandwidth / 5)),
+  /// so a 12.5 kHz channel reads 2.5 kHz and a 25 kHz one 5 kHz -- and is 75 kHz for
+  /// WFM. A client turns a DC offset or a peak into hertz with this number and never
+  /// hard-codes one of its own.
+  public var fullScaleDeviationHz: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -958,7 +966,7 @@ nonisolated extension Leyline_V1_FftParams: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AudioParams"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sample_rate\0\u{1}format\0\u{1}tap\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sample_rate\0\u{1}format\0\u{1}tap\0\u{3}full_scale_deviation_hz\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -969,6 +977,7 @@ nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtob
       case 1: try { try decoder.decodeSingularUInt32Field(value: &self.sampleRate) }()
       case 2: try { try decoder.decodeSingularEnumField(value: &self.format) }()
       case 3: try { try decoder.decodeSingularEnumField(value: &self.tap) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.fullScaleDeviationHz) }()
       default: break
       }
     }
@@ -984,6 +993,9 @@ nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtob
     if self.tap != .tapAudio {
       try visitor.visitSingularEnumField(value: self.tap, fieldNumber: 3)
     }
+    if self.fullScaleDeviationHz != 0 {
+      try visitor.visitSingularUInt32Field(value: self.fullScaleDeviationHz, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -991,6 +1003,7 @@ nonisolated extension Leyline_V1_AudioParams: SwiftProtobuf.Message, SwiftProtob
     if lhs.sampleRate != rhs.sampleRate {return false}
     if lhs.format != rhs.format {return false}
     if lhs.tap != rhs.tap {return false}
+    if lhs.fullScaleDeviationHz != rhs.fullScaleDeviationHz {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

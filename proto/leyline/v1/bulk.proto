@@ -89,6 +89,13 @@ message AudioParams {
   // Which stage of the channel's chain this stream carries; the daemon echoes the
   // tap it serves in the descriptor.
   AudioTap tap = 3;
+  // What +/-1.0 on a sample stands for, in hertz of deviation, answered by the daemon
+  // for the FM modes and 0 for AM, SSB and CW, whose samples are amplitude rather than
+  // frequency. It follows the channel for NFM -- min(5000, max(2500, bandwidth / 5)),
+  // so a 12.5 kHz channel reads 2.5 kHz and a 25 kHz one 5 kHz -- and is 75 kHz for
+  // WFM. A client turns a DC offset or a peak into hertz with this number and never
+  // hard-codes one of its own.
+  uint32 full_scale_deviation_hz = 4;
 }
 enum AudioSampleFormat { AUDIO_SAMPLE_FORMAT_UNSPECIFIED = 0; S16 = 1; F32 = 2; }
 

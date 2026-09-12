@@ -127,6 +127,26 @@ func DefaultBandwidth(m leylinev1.DemodMode) uint32 {
 	}
 }
 
+// FullScaleDeviationHz returns the deviation that +/-1.0 on an FM detector's
+// output stands for, mirroring the engine's demodulators: an NFM channel scales
+// to its own bandwidth, clamped to the deviations narrowband radios actually
+// use, and WFM is broadcast's 75 kHz. 0 for the amplitude modes, whose samples
+// are not frequency at all. The daemon answers this in the audio descriptor;
+// this is the same rule for a client left without one.
+func FullScaleDeviationHz(m leylinev1.DemodMode, bandwidthHz uint32) uint32 {
+	switch m {
+	case leylinev1.DemodMode_NFM:
+		if bandwidthHz == 0 {
+			bandwidthHz = DefaultBandwidth(m)
+		}
+		return min(5_000, max(2_500, bandwidthHz/5))
+	case leylinev1.DemodMode_WFM:
+		return 75_000
+	default:
+		return 0
+	}
+}
+
 // ParseUserFrequency parses a frequency the way a person at a radio would
 // write it. Units are honoured as in ParseFrequency ("146.52M", "7040k",
 // "1.2G", "146.52e6", "146520000Hz"); a bare number is read as MHz when it is

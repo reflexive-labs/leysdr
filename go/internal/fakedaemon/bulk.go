@@ -192,7 +192,10 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
 					fmt.Sprintf("unknown AudioTap %d", tap)))
 			}
-			desc.Params = &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{SampleRate: rate, Format: format, Tap: tap}}
+			desc.Params = &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{
+				SampleRate: rate, Format: format, Tap: tap,
+				FullScaleDeviationHz: leyline.FullScaleDeviationHz(ch.Mode, ch.BandwidthHz),
+			}}
 		}
 	default:
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "source is required"))

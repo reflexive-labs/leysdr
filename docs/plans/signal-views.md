@@ -654,7 +654,7 @@ A narrow-mode handheld (`fixtures/ht-narrow.cu8`: PL at 305 Hz, speech to 2.8 kH
 quarter of the trace and plays quietly, because NFM full scale is hard-wired to ±5 kHz while the
 default channel is 12.5 kHz wide and cannot carry more than ±2.5 kHz. Three items, in order.
 
-### SV-12a `[ ]` The full-scale deviation on the wire (cross-language, first)
+### SV-12a `[x]` The full-scale deviation on the wire (cross-language, first)
 
 `proto/leyline/v1/bulk.proto`: `AudioParams` gains `uint32 full_scale_deviation_hz = 4`, set by the
 daemon in the answered descriptor for FM modes (0 for AM, SSB and CW, whose taps are amplitude,

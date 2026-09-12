@@ -714,9 +714,16 @@ type AudioParams struct {
 	Format     AudioSampleFormat      `protobuf:"varint,2,opt,name=format,proto3,enum=leyline.v1.AudioSampleFormat" json:"format,omitempty"`
 	// Which stage of the channel's chain this stream carries; the daemon echoes the
 	// tap it serves in the descriptor.
-	Tap           AudioTap `protobuf:"varint,3,opt,name=tap,proto3,enum=leyline.v1.AudioTap" json:"tap,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Tap AudioTap `protobuf:"varint,3,opt,name=tap,proto3,enum=leyline.v1.AudioTap" json:"tap,omitempty"`
+	// What +/-1.0 on a sample stands for, in hertz of deviation, answered by the daemon
+	// for the FM modes and 0 for AM, SSB and CW, whose samples are amplitude rather than
+	// frequency. It follows the channel for NFM -- min(5000, max(2500, bandwidth / 5)),
+	// so a 12.5 kHz channel reads 2.5 kHz and a 25 kHz one 5 kHz -- and is 75 kHz for
+	// WFM. A client turns a DC offset or a peak into hertz with this number and never
+	// hard-codes one of its own.
+	FullScaleDeviationHz uint32 `protobuf:"varint,4,opt,name=full_scale_deviation_hz,json=fullScaleDeviationHz,proto3" json:"full_scale_deviation_hz,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *AudioParams) Reset() {
@@ -768,6 +775,13 @@ func (x *AudioParams) GetTap() AudioTap {
 		return x.Tap
 	}
 	return AudioTap_TAP_AUDIO
+}
+
+func (x *AudioParams) GetFullScaleDeviationHz() uint32 {
+	if x != nil {
+		return x.FullScaleDeviationHz
+	}
+	return 0
 }
 
 // A persistence (phosphor) frame: for each frequency bin, how often each level
@@ -1293,12 +1307,13 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\x0frows_per_second\x18\x03 \x01(\x01R\rrowsPerSecond\x12?\n" +
 	"\faccumulation\x18\x04 \x01(\x0e2\x1b.leyline.v1.FftAccumulationR\faccumulation\x12\"\n" +
 	"\rlooks_per_row\x18\x05 \x01(\rR\vlooksPerRow\x12&\n" +
-	"\x03tap\x18\x06 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\"\x8d\x01\n" +
+	"\x03tap\x18\x06 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\"\xc4\x01\n" +
 	"\vAudioParams\x12\x1f\n" +
 	"\vsample_rate\x18\x01 \x01(\rR\n" +
 	"sampleRate\x125\n" +
 	"\x06format\x18\x02 \x01(\x0e2\x1d.leyline.v1.AudioSampleFormatR\x06format\x12&\n" +
-	"\x03tap\x18\x03 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\"\xc9\x01\n" +
+	"\x03tap\x18\x03 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\x125\n" +
+	"\x17full_scale_deviation_hz\x18\x04 \x01(\rR\x14fullScaleDeviationHz\"\xc9\x01\n" +
 	"\x11PersistenceParams\x12\x12\n" +
 	"\x04bins\x18\x01 \x01(\rR\x04bins\x12\x16\n" +
 	"\x06levels\x18\x02 \x01(\rR\x06levels\x12\x19\n" +

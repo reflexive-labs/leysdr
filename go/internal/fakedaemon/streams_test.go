@@ -1026,3 +1026,46 @@ func TestAudioSpectrumRefusals(t *testing.T) {
 		t.Errorf("want INVALID_ARGUMENT for persistence on a channel, got %v", err)
 	}
 }
+
+// The audio descriptor tells a client what full scale is worth in hertz, so no
+// view has to hard-code a deviation: it follows an NFM channel's bandwidth, is
+// broadcast's 75 kHz on WFM, and is 0 where the samples are amplitude.
+func TestAudioDescriptorFullScaleDeviation(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		mode leylinev1.DemodMode
+		bw   uint32
+		want uint32
+	}{
+		{leylinev1.DemodMode_NFM, 12_500, 2_500},
+		{leylinev1.DemodMode_NFM, 25_000, 5_000},
+		{leylinev1.DemodMode_NFM, 10_000, 2_500},
+		{leylinev1.DemodMode_WFM, 200_000, 75_000},
+		{leylinev1.DemodMode_AM, 10_000, 0},
+		{leylinev1.DemodMode_USB, 2_800, 0},
+	}
+	for _, tc := range cases {
+		ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
+			CaptureId: cap.CaptureId, OffsetHz: 940_000, Mode: tc.mode, BandwidthHz: tc.bw,
+		})
+		if err != nil {
+			t.Fatalf("%v %d Hz: %v", tc.mode, tc.bw, err)
+		}
+		sub, err := c.SubscribeAudio(ctx, ch.ChannelId, 0, leylinev1.AudioSampleFormat_F32)
+		if err != nil {
+			t.Fatalf("subscribe %v: %v", tc.mode, err)
+		}
+		if got := sub.Descriptor.GetAudio().GetFullScaleDeviationHz(); got != tc.want {
+			t.Errorf("%v %d Hz: full scale %d Hz, want %d", tc.mode, tc.bw, got, tc.want)
+		}
+		if err := sub.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}
+}

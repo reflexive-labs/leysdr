@@ -146,3 +146,26 @@ func TestNearestRate(t *testing.T) {
 		t.Errorf("empty rates should pass through, got %d", got)
 	}
 }
+
+func TestFullScaleDeviationHz(t *testing.T) {
+	cases := []struct {
+		mode leylinev1.DemodMode
+		bw   uint32
+		want uint32
+	}{
+		{leylinev1.DemodMode_NFM, 12_500, 2_500},
+		{leylinev1.DemodMode_NFM, 25_000, 5_000},
+		{leylinev1.DemodMode_NFM, 6_000, 2_500},  // clamped up: nothing deviates less
+		{leylinev1.DemodMode_NFM, 40_000, 5_000}, // clamped down at narrowband's widest
+		{leylinev1.DemodMode_NFM, 0, 2_500},      // an unset bandwidth reads as the default channel
+		{leylinev1.DemodMode_WFM, 200_000, 75_000},
+		{leylinev1.DemodMode_AM, 10_000, 0},
+		{leylinev1.DemodMode_LSB, 2_800, 0},
+		{leylinev1.DemodMode_CW, 500, 0},
+	}
+	for _, tc := range cases {
+		if got := FullScaleDeviationHz(tc.mode, tc.bw); got != tc.want {
+			t.Errorf("FullScaleDeviationHz(%v, %d) = %d, want %d", tc.mode, tc.bw, got, tc.want)
+		}
+	}
+}
