@@ -238,6 +238,31 @@ var catalog = []fixture{
 		minDurationS: 1,
 	},
 	{
+		// The SAME decoder fixture. A Required Weekly Test on the 162.400 MHz
+		// NWR channel, carrier at the capture centre so `ley decode same` with
+		// no arguments finds the capture `ley play` makes for it. It carries a
+		// single header copy: three copies at 520.83 baud run past four seconds
+		// and one is all the decoder needs, so the file states records: 1.
+		name: "same_alert", centerHz: 162_400_000,
+		description: "a SAME Required Weekly Test as NFM AFSK at 520.83 baud at the centre frequency, 3.5 kHz deviation, -20 dBFS",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(162_400_000)},
+		build: func(rate float64) []source {
+			return []source{sameSource(rate)}
+		},
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{{
+				Mode: "NFM", OffsetHz: 0, BandwidthHz: 15_000,
+				Meter: &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
+				Decode: &iqfile.DecodeExpect{
+					Protocol: "same", Records: 1, DeviceIDs: sameSource(rate).deviceIDs(),
+				},
+			}}
+		},
+		// One header copy is about one second of AFSK; a shorter file would
+		// clip it. 1.5 s leaves room and lets a --duration 0.5 run skip it.
+		minDurationS: 1.5,
+	},
+	{
 		name: "noise_floor", centerHz: 146_520_000,
 		description: "complex white noise only, -60 dBFS",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},

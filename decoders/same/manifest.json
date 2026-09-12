@@ -1,0 +1,70 @@
+{
+  "name": "same",
+  "version": "0.1.0",
+  "description": "SAME/EAS alert headers on NOAA weather radio, AFSK at 520.83 baud",
+  "license": "Apache-2.0",
+  "recipe": {
+    "frequenciesHz": [
+      "162400000",
+      "162425000",
+      "162450000",
+      "162475000",
+      "162500000",
+      "162525000",
+      "162550000"
+    ],
+    "bandwidthHz": 15000,
+    "mode": "NFM",
+    "gain": "GAIN_LEAVE"
+  },
+  "input": {
+    "mode": "CONTINUOUS",
+    "tap": "TAP_AUDIO"
+  },
+  "outputs": [
+    "SHAPE_RECORDS"
+  ],
+  "fields": [
+    {
+      "name": "org",
+      "type": "TEXT",
+      "description": "originator: EAS, WXR, CIV or PEP"
+    },
+    {
+      "name": "event",
+      "type": "TEXT",
+      "description": "three-letter SAME event code, e.g. TOR, RWT"
+    },
+    {
+      "name": "event_name",
+      "type": "TEXT",
+      "description": "human name for the event code"
+    },
+    {
+      "name": "fips",
+      "type": "TEXT",
+      "description": "affected counties as five-digit FIPS codes, comma-separated"
+    },
+    {
+      "name": "fips_raw",
+      "type": "TEXT",
+      "description": "location codes as the raw six-digit PSSCCC, comma-separated"
+    },
+    {
+      "name": "callsign",
+      "type": "TEXT",
+      "description": "the sending station's id, same as device_id"
+    },
+    {
+      "name": "purge",
+      "type": "TEXT",
+      "description": "how long the alert is valid, HHMM"
+    },
+    {
+      "name": "issued",
+      "type": "TEXT",
+      "description": "issue time as day-of-year and UTC time, JJJHHMM"
+    }
+  ],
+  "executable": "leydec-same"
+}
