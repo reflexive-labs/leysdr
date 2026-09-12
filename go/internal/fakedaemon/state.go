@@ -226,8 +226,11 @@ func (d *Daemon) reap(clientID string) {
 	// same. A hard-killed `ley scan` must not leave the fake sweeping for ever either. The flag is
 	// all it takes: the sweep ends itself at its next step, writing what it found before the
 	// terminal event goes out, exactly as a CancelJob does.
+	//
+	// A kept decode job is the exception the design doc states: persistence follows intent, so
+	// `ley decode --job` outlives the terminal that started it and its records stay a resource.
 	for _, j := range d.jobs {
-		if j.owner == clientID && j.proto.State == leylinev1.JobState_RUNNING {
+		if j.owner == clientID && j.proto.State == leylinev1.JobState_RUNNING && !j.keep {
 			j.cancelled = true
 		}
 	}

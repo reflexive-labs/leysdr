@@ -1,0 +1,29 @@
+decoders lists the plugins the daemon found, with what each one tunes and
+what it produces. A decoder is a program the daemon spawns: it reads the
+audio of a channel and writes records back, so 'ley decode aprs' needs no
+frequency, mode or bandwidth -- the decoder's recipe says where its protocol
+lives and how to demodulate it.
+
+The daemon reads manifests and runs nothing to build this list, so a broken
+plugin is missing from it rather than breaking the verb; the directories it
+looked in are printed under the table.
+
+--json prints a ListDecodersResponse: the manifests, the search path and the
+retention applied to kept records.
+
+Usage:
+  ley decoders [flags]
+
+Examples:
+  ley decoders                   # what can this daemon decode?
+  ley decoders --json | jq -r '.decoders[].name'
+  ley decode aprs                # run the first one
+
+Flags:
+  -h, --help   help for decoders
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

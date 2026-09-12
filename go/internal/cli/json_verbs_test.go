@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/testutil"
 	"github.com/dpup/leysdr/go/pkg/leyline"
@@ -55,6 +56,8 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "daemon install", args: []string{"daemon", "install"}, refuse: jsonNoOutput},
 	{path: "daemon logs", args: []string{"daemon", "logs"}, refuse: jsonNoOutput},
 	{path: "daemon uninstall", args: []string{"daemon", "uninstall"}, refuse: jsonNoOutput},
+	{path: "decode", args: []string{"decode", "aprs", "--count", "2"}},
+	{path: "decoders", args: []string{"decoders"}},
 	// start against a daemon already answering reports it rather than
 	// spawning a second one; stop is the one verb that must not find one,
 	// because the pid the fake reports is this test process.
@@ -74,6 +77,8 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "play", args: []string{"play"}, prep: prepIQFile, timeout: 2 * time.Second},
 	{path: "presets", args: []string{"presets"}},
 	{path: "record", args: []string{"record"}, refuse: "not implemented yet"},
+	{path: "records", args: []string{"records"}, prep: prepKeptDecode},
+	{path: "track", args: []string{"track", "aprs", "--count", "1"}},
 	{path: "scan", args: []string{"scan", "145M..147M"}},
 	{path: "scope", args: []string{"scope", "146.52", "--count", "2"}},
 	{path: "set", args: []string{"set"}, prep: prepChannel},
@@ -105,6 +110,21 @@ func prepSweep(t *testing.T, _ string, c *leyline.Client) []string {
 func prepSweepOnly(t *testing.T, sock string, c *leyline.Client) []string {
 	t.Helper()
 	prepSweep(t, sock, c)
+	return nil
+}
+
+// prepKeptDecode leaves a kept decode job running, so the store has something for `ley records`
+// to answer with. The harness client starts it: a kept job outlives its client either way.
+func prepKeptDecode(t *testing.T, _ string, c *leyline.Client) []string {
+	t.Helper()
+	job, err := c.StartDecode(t.Context(), &leylinev1.DecodeConfig{Decoder: "aprs", Keep: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId})
+	})
+	time.Sleep(2 * fakedaemon.RecordInterval)
 	return nil
 }
 

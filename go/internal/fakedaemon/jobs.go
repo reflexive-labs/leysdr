@@ -30,6 +30,16 @@ type fakeJob struct {
 	proto *leylinev1.Job
 	scan  *leylinev1.Scan
 	owner string
+	// The decode job's own state: what it is decoding, the channel and capture it holds, the
+	// records it has emitted (the last retainedRecords of them, for since_seq replay) and the
+	// seq it has reached.
+	protocol       string
+	channelID      string
+	captureID      string
+	createdCapture bool
+	keep           bool
+	seq            uint64
+	records        []*leylinev1.DecodeRecord
 	// cancelled is CancelJob's request to stop. The sweep is what ends the job, so the partial
 	// results are stored before the terminal event goes out.
 	cancelled bool
@@ -54,10 +64,13 @@ func (d *Daemon) publishDetection(det *leylinev1.Detection) {
 
 // StartJob implements Jobs.
 func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (*leylinev1.Job, error) {
+	if dec, isDecode := req.Config.(*leylinev1.StartJobRequest_Decode); isDecode && dec.Decode != nil {
+		return d.startDecode(ctx, dec.Decode)
+	}
 	cfg, ok := req.Config.(*leylinev1.StartJobRequest_Scan)
 	if !ok || cfg.Scan == nil {
 		if req.Config == nil {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "StartJob needs a config: scan is the only one in v0"))
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "StartJob needs a config: scan and decode are the ones in v0"))
 		}
 		return nil, unimplemented(ctx, "Jobs.StartJob(watch/record)")
 	}

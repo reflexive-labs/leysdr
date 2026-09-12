@@ -55,11 +55,12 @@ type Options struct {
 	RejectWrites func(w *leylinev1.ParamWrite) *leyline.Error
 }
 
-// Daemon is the in-memory state store plus all five service implementations.
+// Daemon is the in-memory state store plus all six service implementations.
 type Daemon struct {
 	leylinev1.UnimplementedControlServer
 	leylinev1.UnimplementedJobsServer
 	leylinev1.UnimplementedResourcesServer
+	leylinev1.UnimplementedDecodersServer
 
 	opts      Options
 	startedNs int64
@@ -76,6 +77,10 @@ type Daemon struct {
 	presence map[string]*presence // by client id
 	jobs     map[string]*fakeJob
 	jobOrder []string
+	// recordSubs are the open SubscribeRecords streams, and store is the fake's record store:
+	// one entry per kept decode job, which is what QueryRecords reads.
+	recordSubs map[*recordSub]struct{}
+	store      []*storedJob
 	// sweeping is the device a scan currently owns, so a second scan is declined and a channel
 	// cannot join a capture that is walking a band (the daemon's `swept` set).
 	sweeping string
@@ -155,19 +160,20 @@ func New(opts Options) *Daemon {
 		opts.MeterInterval = 100 * time.Millisecond
 	}
 	d := &Daemon{
-		opts:      opts,
-		startedNs: time.Now().UnixNano(),
-		devices:   map[string]*leylinev1.DeviceDescriptor{},
-		files:     map[string]fileInfo{},
-		captures:  map[string]*capture{},
-		channels:  map[string]*leylinev1.Channel{},
-		sinks:     map[string]*leylinev1.Sink{},
-		jobs:      map[string]*fakeJob{},
-		streams:   map[string]*stream{},
-		watchers:  map[*watcher]struct{}{},
-		presence:  map[string]*presence{},
-		socket:    opts.SocketPath,
-		closing:   make(chan struct{}),
+		opts:       opts,
+		startedNs:  time.Now().UnixNano(),
+		devices:    map[string]*leylinev1.DeviceDescriptor{},
+		files:      map[string]fileInfo{},
+		captures:   map[string]*capture{},
+		channels:   map[string]*leylinev1.Channel{},
+		sinks:      map[string]*leylinev1.Sink{},
+		jobs:       map[string]*fakeJob{},
+		streams:    map[string]*stream{},
+		watchers:   map[*watcher]struct{}{},
+		recordSubs: map[*recordSub]struct{}{},
+		presence:   map[string]*presence{},
+		socket:     opts.SocketPath,
+		closing:    make(chan struct{}),
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()
@@ -179,13 +185,14 @@ func New(opts Options) *Daemon {
 	return d
 }
 
-// Register registers all five services on s.
+// Register registers all six services on s.
 func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterControlServer(s, d)
 	leylinev1.RegisterTelemetryServer(s, telemetrySvc{d: d})
 	leylinev1.RegisterBulkServer(s, bulkSvc{d: d})
 	leylinev1.RegisterJobsServer(s, d)
 	leylinev1.RegisterResourcesServer(s, d)
+	leylinev1.RegisterDecodersServer(s, d)
 }
 
 // Serve listens on the UDS at socketPath until ctx is cancelled. A stale socket

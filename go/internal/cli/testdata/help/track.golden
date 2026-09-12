@@ -1,0 +1,38 @@
+track folds a protocol's records into one row per transmitter and redraws
+the table as packets arrive: who is out there, how long ago each one was
+heard, how many times, where it said it was, and what it last said.
+
+The fold is ley's own, over the records the daemon streams -- no decoding
+moves client-side. A station silent for longer than the decoder's own
+timeout ('entity_silence_s' in 'ley decoders --json') drops off the table,
+because a row that never ages says a transmitter is still there when it left
+hours ago.
+
+track shows what is being decoded now: it needs a decode job running, which
+'ley decode <protocol>' or 'ley decode <protocol> --job' starts. --since
+seeds the table from the records kept jobs have already written.
+
+On a terminal the table is redrawn in place; piped, one table is printed per
+tick. --json prints one {"entities": [...]} object per tick as NDJSON -- a
+client-side shape with no proto message, documented in docs/reference/cli.md.
+
+Usage:
+  ley track <protocol> [flags]
+
+Examples:
+  ley decode aprs --job        # in one terminal: keep decoding
+  ley track aprs               # in another: who is out there?
+  ley track aprs --since 1h    # seed from what was kept, then follow
+  ley track aprs --json --count 1 | jq '.entities | length'
+
+Flags:
+      --count int      stop after this many redraws, e.g. 1 (default: until Ctrl-C)
+  -h, --help           help for track
+      --rate float     redraws a second, e.g. 4 (at most 20) (default 2)
+      --since string   seed the table from kept records this recent, e.g. 1h, 2d
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

@@ -45,6 +45,17 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── scan <lo>..<hi> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--take-over] [--device SEL]
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
+├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version
+├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N]
+│                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
+│                                    # adds the channel the job owns and spawns the plugin; records arrive
+│                                    # on Decoders.SubscribeRecords, one line each; --job keeps them as
+│                                    # the resource ley://records/<job_id>
+├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
+│                                    # Decoders.QueryRecords over what kept jobs wrote, newest first
+├── track <protocol> [--since D] [--rate N] [--count N]
+│                                    # the live entity table: ley's own fold over SubscribeRecords,
+│                                    # redrawn in place, rows aged out after the decoder's entity_silence_s
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
 ├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
@@ -79,7 +90,7 @@ to stderr, so stdout is parseable. Every verb either answers the flag or refuses
 output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
 `ley daemon install|uninstall|logs` — exits 2 with `<verb> has no --json output; drop the flag
 (<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
-pipeline unparseable text and exit 0. **Three documented exceptions.** The first sits beside the
+pipeline unparseable text and exit 0. **Four documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, floor_db}` (snake_case,
 numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
@@ -129,7 +140,24 @@ follows the frequency; `aliases` are what `--band` accepts). `ley bands <frequen
 is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`
 does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script asking "what would
 tune do here" came for, and they are always present. Neither verb dials the daemon; `ley help
-presets` is the same data in prose, and `ley presets` (the verb) owns the bare name.
+presets` is the same data in prose, and `ley presets` (the verb) owns the bare name. The fourth is
+`ley track --json`, the entity table: a client-side fold with no proto message, described under
+"Decoders" below.
+
+**Decoders.** `ley decoders --json` prints a `ListDecodersResponse`: the manifests the daemon
+found, the directories it looked in, and the store's path, cap and age. `ley decode <name> --json`
+prints one `DecodeRecord` per line (NDJSON) and nothing else on stdout; the banner naming the
+decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
+with. `ley records --json` prints a `RecordPage`: the records newest first plus the
+`RecordAnchor`s that date them, because no record carries a clock of its own and wall time is
+derived from the anchor whose `from_sample` is not past the record's (`docs/design/decoders.md`,
+"Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the
+bulk rows: the entity table is a client-side fold with no proto message, so it prints one
+`{"entities": [...]}` object per redraw as NDJSON, each entity
+`{device_id, protocol, kind, summary, seen, age_s, last_sample_index, position}` (snake_case,
+`position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that row was last
+heard). A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a
+decoder whose program could not be started is `DECODER_FAILED`.
 
 **`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
 it: the answer is the whole scan, not the steps it took to get there, and progress belongs on
@@ -222,4 +250,4 @@ they exit 2 and never reach the daemon. `watch` is the CLI mirror of the watch j
 frequency and log what is heard — not the dashboard, which is bare `ley` on a TTY. `scan` was one
 of them until Milestone D.13.
 
-Deliberate omissions at v0: no remote flags (UDS-only), no TX verbs, no decode verbs (arrive with digital modes).
+Deliberate omissions at v0: no remote flags (UDS-only) and no TX verbs.

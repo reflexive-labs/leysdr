@@ -426,6 +426,7 @@ func topicRoadmap() string {
 	for _, s := range Stubs {
 		fmt.Fprintf(&b, "  %-8s %s (%s)\n           today: %s\n", s.use, s.short, s.milestone, s.today)
 	}
+	b.WriteString("\nDecoding is in this build: 'ley decoders' lists the plugins, 'ley decode'\nruns one, 'ley records' searches what kept jobs wrote and 'ley track' draws\nthe live table. Still to come there: predicates and notifications, 'ley\nlabel' and 'ley devices-seen', and 'ley identify'.\n")
 	b.WriteString("\nThe daemon-side relative squelch (mute at 'noise floor + N dB' measured by\nthe daemon rather than by ley) is the recorded follow-up to auto squelch.")
 	return b.String()
 }

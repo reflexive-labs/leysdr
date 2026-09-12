@@ -6,5 +6,10 @@ same line as below.
   watch    Watch a frequency and log what is heard (Milestone D.15)
            today: ley tune <freq> listens live; keeping a log of what is heard is a daemon job and is not in this build
 
+Decoding is in this build: 'ley decoders' lists the plugins, 'ley decode'
+runs one, 'ley records' searches what kept jobs wrote and 'ley track' draws
+the live table. Still to come there: predicates and notifications, 'ley
+label' and 'ley devices-seen', and 'ley identify'.
+
 The daemon-side relative squelch (mute at 'noise floor + N dB' measured by
 the daemon rather than by ley) is the recorded follow-up to auto squelch.

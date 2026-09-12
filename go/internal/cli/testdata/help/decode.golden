@@ -1,0 +1,43 @@
+decode runs one of the daemon's decoders ('ley decoders' lists them) and
+prints a line for every packet it decodes: the time, who sent it, what kind
+of record it is, and what it said.
+
+The decoder's recipe carries the frequency, the mode and the bandwidth, so
+decode needs no tune flags: 'ley decode aprs' tunes 144.390 MHz NFM because
+that is where APRS lives in North America. --freq puts it somewhere else,
+which is what a region with another allocation needs.
+
+The daemon finds a capture that already covers the frequency, or makes one on
+an idle radio, or says who has the radio instead; --take-over insists. All of
+the decoding happens in the daemon, so an agent or a script reading --json
+sees exactly what the terminal shows.
+
+Ctrl-C stops the job and hands the radio back. With --job the job stays
+running after ley exits and its records become a resource 'ley records'
+reads; 'ley jobs cancel' is how to stop one.
+
+--json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.
+
+Usage:
+  ley decode <decoder> [flags]
+
+Examples:
+  ley decode aprs                     # what is on 144.390 MHz?
+  ley decode aprs --count 5           # five packets, then stop
+  ley decode aprs --freq 144.8        # the European allocation
+  ley decode aprs --job               # keep decoding after ley exits
+  ley decode aprs --json | jq -r .deviceId
+
+Flags:
+      --count int       stop after this many records, e.g. 5 (default: until Ctrl-C)
+      --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --freq string     decode somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)
+  -h, --help            help for decode
+      --job             keep the job and its records after ley exits ('ley jobs cancel' stops it)
+      --take-over       decode even when somebody is using the radio; it is theirs again afterwards
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

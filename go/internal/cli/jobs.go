@@ -19,13 +19,15 @@ func newJobsCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "jobs",
 		Short: "List the work the daemon is doing in the background",
-		Long: `jobs lists the daemon's background work -- today that is sweeps started by
-'ley scan' -- with what each one is doing and how far it has got. The
-daemon keeps the last sixteen finished jobs and forgets them on restart.
+		Long: `jobs lists the daemon's background work -- sweeps started by 'ley scan'
+and decoders started by 'ley decode' -- with what each one is doing and how
+far it has got. The daemon keeps the last sixteen finished jobs and forgets
+them on restart.
 
-A sweep belongs to the terminal that started it, so a Ctrl-C there stops
-it. 'ley jobs cancel' is how to stop one from somewhere else: another
-terminal, or a script that started a scan with --json and moved on. A job
+A sweep, and a decode job without --job, belongs to the terminal that
+started it, so a Ctrl-C there stops it. 'ley jobs cancel' is how to stop one
+from somewhere else: another terminal, a script that started a scan with
+--json and moved on, or a 'ley decode --job' that is still running. A job
 can be named by its id, an unambiguous id prefix, or its row number here.
 
 --json prints a ListJobsResponse; 'ley jobs cancel --json' prints the Job
@@ -168,6 +170,8 @@ func jobKind(j *leylinev1.Job) string {
 		return "watch"
 	case *leylinev1.Job_Record:
 		return "record"
+	case *leylinev1.Job_Decode:
+		return "decode"
 	}
 	return "job"
 }
@@ -176,6 +180,14 @@ func jobKind(j *leylinev1.Job) string {
 func jobRange(j *leylinev1.Job) string {
 	if sc, ok := j.GetConfig().(*leylinev1.Job_Scan); ok && sc.Scan.GetRange() != nil {
 		return rangesPhrase([]*leylinev1.FrequencyRange{sc.Scan.GetRange()})
+	}
+	// A decode job listens on one frequency, not a range; a job on the decoder's own recipe has
+	// no frequency of its own, and saying "recipe" is honest where a number would be invented.
+	if dec, ok := j.GetConfig().(*leylinev1.Job_Decode); ok {
+		if hz := dec.Decode.GetFrequencyHz(); hz > 0 {
+			return leyline.FormatFrequency(hz)
+		}
+		return "recipe"
 	}
 	return ""
 }

@@ -1,0 +1,41 @@
+records reads the daemon's store: what the decoders heard while a kept job
+was running ('ley decode <name> --job' starts one). A job without --job keeps
+nothing, so an empty table usually means no kept job has run.
+
+Rows are newest first. TIME is wall clock derived from the capture's anchor,
+the way every time in ley is; a record whose capture the daemon no longer has
+an anchor for shows no time rather than a guessed one.
+
+--since takes a duration: 90s, 30m, 1h, 2d. --near takes a latitude and a
+longitude ('37.76,-122.42') and --radius a distance with its unit (10km, 500m,
+5nm, 3mi); together they ask for records from a place.
+
+--json prints a RecordPage: the records and the anchors that date them.
+
+Usage:
+  ley records [flags]
+
+Examples:
+  ley records                              # everything kept, newest first
+  ley records --protocol aprs --since 1h   # the last hour of APRS
+  ley records --device-id LEYTST-1         # one transmitter
+  ley records --near 37.76,-122.42 --radius 10km
+  ley records --json | jq -r '.records[].deviceId'
+
+Flags:
+      --device-id string   only this transmitter, e.g. LEYTST-1 (the id the protocol gives it, not a radio)
+  -h, --help               help for records
+      --in-effect          only records whose validity window covers now (alerts, warnings)
+      --job-id string      only this job's records: a job id from 'ley jobs --wide'
+      --kind string        only this kind of record, e.g. position, weather, status
+      --limit uint32       at most this many rows, e.g. 50 (default: the daemon's 1000)
+      --near string        only records from around here: LAT,LON, e.g. 37.76,-122.42 (needs --radius)
+      --protocol string    only this protocol, e.g. aprs ('ley decoders' lists them)
+      --radius string      how far around --near to look: 10km, 500m, 5nm, 3mi
+      --since string       only records newer than this, e.g. 1h, 30m, 2d
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

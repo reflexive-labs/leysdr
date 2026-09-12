@@ -147,13 +147,23 @@ func (d *Daemon) DestroyCapture(ctx context.Context, req *leylinev1.DestroyCaptu
 	d.touchUnary(ci)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	c := d.captures[req.CaptureId]
-	if c == nil {
+	if d.captures[req.CaptureId] == nil {
 		return nil, fail(ctx, errorf(leyline.CodeCaptureNotFound, req.CaptureId, "no such capture"))
 	}
-	for id, ch := range d.channels {
+	d.destroyCaptureLocked(req.CaptureId, ci)
+	return &leylinev1.Empty{}, nil
+}
+
+// destroyCaptureLocked removes a capture, the channels and streams riding on it, and frees the
+// radio, emitting a terminal event for each. Call with d.mu held.
+func (d *Daemon) destroyCaptureLocked(id string, ci *leylinev1.ClientInfo) {
+	c := d.captures[id]
+	if c == nil {
+		return
+	}
+	for chID, ch := range d.channels {
 		if ch.CaptureId == c.CaptureId {
-			d.destroyChannelLocked(id, ci)
+			d.destroyChannelLocked(chID, ci)
 		}
 	}
 	for sid, s := range d.streams {
@@ -173,7 +183,6 @@ func (d *Daemon) DestroyCapture(ctx context.Context, req *leylinev1.DestroyCaptu
 		dev.State = leylinev1.DeviceState_AVAILABLE
 		d.emit(ci, dev)
 	}
-	return &leylinev1.Empty{}, nil
 }
 
 // channelFits reports whether |offset| + bw/2 <= Fs/2.

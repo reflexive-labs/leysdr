@@ -81,6 +81,7 @@ type Client struct {
 	Bulk      leylinev1.BulkClient
 	Jobs      leylinev1.JobsClient
 	Resources leylinev1.ResourcesClient
+	Decoders  leylinev1.DecodersClient
 
 	conn     *grpc.ClientConn
 	path     string
@@ -128,6 +129,7 @@ func Dial(ctx context.Context, socketPath string, opts ...Option) (*Client, erro
 	c.Bulk = leylinev1.NewBulkClient(conn)
 	c.Jobs = leylinev1.NewJobsClient(conn)
 	c.Resources = leylinev1.NewResourcesClient(conn)
+	c.Decoders = leylinev1.NewDecodersClient(conn)
 	return c, nil
 }
 

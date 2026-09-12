@@ -1,10 +1,12 @@
-jobs lists the daemon's background work -- today that is sweeps started by
-'ley scan' -- with what each one is doing and how far it has got. The
-daemon keeps the last sixteen finished jobs and forgets them on restart.
+jobs lists the daemon's background work -- sweeps started by 'ley scan'
+and decoders started by 'ley decode' -- with what each one is doing and how
+far it has got. The daemon keeps the last sixteen finished jobs and forgets
+them on restart.
 
-A sweep belongs to the terminal that started it, so a Ctrl-C there stops
-it. 'ley jobs cancel' is how to stop one from somewhere else: another
-terminal, or a script that started a scan with --json and moved on. A job
+A sweep, and a decode job without --job, belongs to the terminal that
+started it, so a Ctrl-C there stops it. 'ley jobs cancel' is how to stop one
+from somewhere else: another terminal, a script that started a scan with
+--json and moved on, or a 'ley decode --job' that is still running. A job
 can be named by its id, an unambiguous id prefix, or its row number here.
 
 --json prints a ListJobsResponse; 'ley jobs cancel --json' prints the Job
