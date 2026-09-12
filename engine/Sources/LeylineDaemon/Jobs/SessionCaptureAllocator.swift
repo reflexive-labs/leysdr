@@ -67,7 +67,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
             guard let deviceID = DeviceID(string: device.deviceID) else { continue }
             sawDevice = true
-            let rate = bestRate(device)
+            let rate = defaultRate(device)
             guard let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: rate) else {
                 lastReason = "\(device.model) cannot tune \(fmt(frequencyHz))"
                 continue
@@ -287,6 +287,17 @@ actor SessionCaptureAllocator: CaptureAllocator {
     /// The fastest rate the device offers: fewer steps, and the detector's resolution comes from
     /// the bin count rather than the span.
     private func bestRate(_ d: Leyline_V1_DeviceDescriptor) -> UInt64 { d.sampleRates.max() ?? 0 }
+
+    /// The rate a capture for one channel opens at: what `CreateCapture` picks for `sample_rate
+    /// == 0`, the recording's own rate for a file and 2.4 MSPS for a dongle. Not the fastest the
+    /// device offers, which a sweep wants: an RTL-SDR at 3.2 MSPS drops samples over USB, and the
+    /// channel's audio rate follows the capture rate (49.2 kHz at 3.2 MSPS against the 48 kHz a
+    /// decoder written for the default expects).
+    private func defaultRate(_ d: Leyline_V1_DeviceDescriptor) -> UInt64 {
+        if d.driver == "file" { return d.sampleRates.first ?? SessionStore.defaultSampleRate }
+        if d.sampleRates.isEmpty || d.sampleRates.contains(SessionStore.defaultSampleRate) { return SessionStore.defaultSampleRate }
+        return bestRate(d)
+    }
 
     /// Where to point the radio when the allocator creates the capture. The sweep retunes from
     /// here immediately, so this only has to be somewhere the device accepts; aiming at the middle

@@ -278,6 +278,10 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// Keep the event stream flowing (and the mirror current) while frames are
 	// drawn; the drain owns the mirror, so it starts after the last read of it
 	// and stops before teardown.
+	// The full scale is read from the channel before the drain starts: the drain owns the mirror
+	// from then on, and a channel event folding in while this read ran was the one data race the
+	// detector found in the verb.
+	fullScaleHz := scopeFullScaleHz(nil, s.channel)
 	stopDrain := s.drainEvents()
 	defer stopDrain()
 
@@ -299,7 +303,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		// mode full scale is a deviation. The FFT descriptor carries no such
 		// field, so the meter answers it from the channel by the rule the
 		// daemon states in the audio descriptor.
-		fullScaleHz: scopeFullScaleHz(nil, s.channel),
+		fullScaleHz: fullScaleHz,
 	}
 	for i := range frame.bands {
 		frame.bands[i] = newLevelsBar()

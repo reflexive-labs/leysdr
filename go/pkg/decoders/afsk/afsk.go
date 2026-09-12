@@ -119,13 +119,15 @@ type Demodulator struct {
 	index int64 // absolute sample index, for stamping bits
 }
 
-// New builds a demodulator for an audio rate between 8 kHz and 48 kHz.
+// New builds a demodulator for an audio rate between 8 kHz and 96 kHz. The daemon's channel rate
+// is about 48 kHz and depends on the capture rate (49.2 kHz at 3.2 MSPS), so the bound is a sanity
+// check on the descriptor, not a promise about which rates were measured.
 func New(rate float64) *Demodulator { return NewWith(rate, DefaultOptions()) }
 
 // NewWith builds a demodulator with explicit options.
 func NewWith(rate float64, o Options) *Demodulator {
-	if rate < 8000 || rate > 48000 {
-		panic("afsk: rate outside 8 kHz to 48 kHz")
+	if rate < 8000 || rate > 96000 {
+		panic("afsk: rate outside 8 kHz to 96 kHz")
 	}
 	n := int(math.Round(rate / BaudHz * o.WindowBits))
 	d := &Demodulator{
