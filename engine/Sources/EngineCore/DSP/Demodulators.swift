@@ -65,14 +65,23 @@ func emitRaw(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, coun
 /// Default scratch size: one full capture block, which is the most any channel can hand a demodulator.
 let demodulatorMaxBlock = 16384
 
-/// Narrow-band FM: discriminator (±5 kHz → ±1.0, full scale), 300 Hz two-pole high-pass (removes
+/// Narrow-band FM: discriminator (full-scale deviation → ±1.0), 300 Hz two-pole high-pass (removes
 /// CTCSS/PL tones and any DC offset), 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, the TIA-603
 /// voice response; transmitters pre-emphasize) with ×2 make-up gain, 1-pole LPF ≈ 4 kHz, output clipped to ±1.
 public final class NFMDemodulator: Demodulator, SubAudibleSource {
     public let mode: DemodMode = .nfm
     public private(set) var outputRate: UInt32 = 0
-    /// ±5 kHz is full scale for NFM: `discriminate` is scaled to put that at ±1.0.
-    public let fullScaleDeviationHz: Double = 5000
+    /// Full scale is what the channel itself can carry, not one fixed number: a 12.5 kHz channel
+    /// holds ±2.5 kHz of deviation and a 25 kHz one the ±5 kHz a wide NFM transmitter sends, so a
+    /// narrow radio fills the trace and plays as loudly as a wide one instead of sitting at a
+    /// quarter scale. Clamped either side because a channel narrower or wider than the pair of
+    /// standard spacings is still listened to as one of them.
+    public static func fullScaleDeviation(bandwidthHz: UInt32) -> Double {
+        Swift.min(5000, Swift.max(2500, Double(bandwidthHz) / 5))
+    }
+
+    /// The deviation `discriminate` puts at ±1.0. Set from the channel's bandwidth by `configure`.
+    public private(set) var fullScaleDeviationHz: Double = 5000
     /// Set once when the channel is built, before any block is processed.
     public var subAudibleTap: FloatRing?
     public private(set) var subAudibleRate: Double = 0
@@ -108,7 +117,8 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
     public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         outputRate = inputRate
-        scale = Float(1.0 * Double(inputRate) / (2 * Double.pi * 5_000))
+        fullScaleDeviationHz = Self.fullScaleDeviation(bandwidthHz: bandwidthHz)
+        scale = Float(1.0 * Double(inputRate) / (2 * Double.pi * fullScaleDeviationHz))
         lpfCoefficient = Kernels.onePoleCoefficient(cutoffHz: 4_000, rate: Double(inputRate))
         let rc = 1 / (2 * Double.pi * 300)
         hpfCoefficient = Float(rc / (rc + 1 / Double(inputRate)))
@@ -223,6 +233,9 @@ public final class WFMDemodulator: Demodulator {
     public let maxBlock = demodulatorMaxBlock
     /// Audio decimation factor chosen at configure time.
     public private(set) var decimation = 1
+    /// Broadcast FM is ±75 kHz by regulation, so full scale does not follow the channel the way
+    /// NFM's does.
+    public static let fullScaleDeviationHz: Double = 75_000
     private var scratch: DemodScratch?
     private var audioFilter: RealFIRDecimator?
     /// Decimation for the raw tap, which keeps everything the audio filter throws away above
@@ -242,7 +255,7 @@ public final class WFMDemodulator: Demodulator {
         let rate = Double(inputRate)
         decimation = max(1, Int((rate / 48_000).rounded()))
         outputRate = UInt32((rate / Double(decimation)).rounded())
-        scale = Float(0.5 * rate / (2 * Double.pi * 75_000))
+        scale = Float(0.5 * rate / (2 * Double.pi * Self.fullScaleDeviationHz))
         deemphasisCoefficient = Float(1 - exp(-1 / (rate * 75e-6)))
         let audioRate = rate / Double(decimation)
         let cutoff = min(15_000, 0.45 * audioRate)
@@ -483,6 +496,18 @@ public final class RawIQDemodulator: Demodulator {
 
 /// Builds the demodulator for a mode. Every `DemodMode` is available.
 public enum DemodulatorFactory {
+    /// What ±1.0 on a demodulated sample stands for, in hertz of deviation, for the FM modes;
+    /// 0 for the amplitude modes, whose samples are a level rather than a frequency. The daemon
+    /// answers this in the audio descriptor so a client reads hertz off a tap without hard-coding
+    /// a full scale of its own.
+    public static func fullScaleDeviationHz(mode: DemodMode, bandwidthHz: UInt32) -> Double {
+        switch mode {
+        case .nfm: return NFMDemodulator.fullScaleDeviation(bandwidthHz: bandwidthHz)
+        case .wfm: return WFMDemodulator.fullScaleDeviationHz
+        case .am, .usb, .lsb, .cw, .rawIQ: return 0
+        }
+    }
+
     public static func make(mode: DemodMode) -> any Demodulator {
         switch mode {
         case .nfm: return NFMDemodulator()

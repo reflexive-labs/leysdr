@@ -73,6 +73,12 @@ final class DemodTapTests: XCTestCase {
         let above = tonePowerDB(demod, rate: rate, frequency: 120, size: size)
         XCTAssertGreaterThan(tone, below + 20, "100 Hz \(tone) dB against 80 Hz \(below) dB")
         XCTAssertGreaterThan(tone, above + 20, "100 Hz \(tone) dB against 120 Hz \(above) dB")
+        // Full scale is the ±2.5 kHz a 12.5 kHz channel carries, so the fixture's ±2.5 kHz voice
+        // tone reads full scale and its ±700 Hz PL sits 20·log10(700/2500) under it. These are the
+        // numbers a client turns back into hertz with the descriptor's full-scale deviation.
+        let voice = tonePowerDB(demod, rate: rate, frequency: 1_000, size: size)
+        XCTAssertEqual(voice, 0, accuracy: 1, "1 kHz reads \(voice) dBFS on the demod tap")
+        XCTAssertEqual(tone, -11, accuracy: 1, "100 Hz reads \(tone) dBFS on the demod tap")
         let heard = tonePowerDB(audio, rate: rate, frequency: 100, size: size)
         // Two cascaded 300 Hz poles put 100 Hz about 20 dB down and the de-emphasis make-up gain
         // hands some 6 dB of that back, so the listener gets the tone about 14 dB under the tap:

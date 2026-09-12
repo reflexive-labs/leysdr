@@ -259,6 +259,11 @@ actor StreamRegistry {
             p.sampleRate = ch.audioRate
             p.format = format
             p.tap = req.audio.tap
+            // Both taps carry the same units, so the descriptor answers the channel's full-scale
+            // deviation whichever one was asked for.
+            let chConfig = await ch.config
+            p.fullScaleDeviationHz = UInt32(DemodulatorFactory.fullScaleDeviationHz(
+                mode: chConfig.mode, bandwidthHz: chConfig.bandwidthHz).rounded())
             desc.audio = p
             source = .audio(audio, ch)
         case .iq:

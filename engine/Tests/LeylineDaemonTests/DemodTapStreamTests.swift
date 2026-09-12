@@ -87,6 +87,8 @@ final class DemodTapStreamDaemonTests: XCTestCase {
             let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
             XCTAssertEqual(desc.audio.tap, .tapDemod, "the descriptor names the tap it serves")
             XCTAssertEqual(desc.audio.sampleRate, 48_000, "the demod tap runs at the channel's audio rate")
+            XCTAssertEqual(desc.audio.fullScaleDeviationHz, 2_500,
+                           "a 12.5 kHz NFM channel carries ±2.5 kHz, and the descriptor says so")
             var ref = Leyline_V1_StreamRef()
             ref.streamID = desc.streamID
             let frames = try await self.withDeadline(seconds: 20) {
@@ -124,6 +126,40 @@ final class DemodTapStreamDaemonTests: XCTestCase {
             var ref = Leyline_V1_StreamRef()
             ref.streamID = desc.streamID
             _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+        }
+    }
+
+    /// Full scale is the channel's own limit, so the descriptor answers a wide NFM channel with the
+    /// ±5 kHz it can carry, both taps of one channel with the same number, and an amplitude mode
+    /// with nothing: a client reads hertz off a tap without a full scale of its own.
+    func testDescriptorCarriesTheChannelsFullScaleDeviation() async throws {
+        guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
+        try await withDaemon { c in
+            let (capture, narrow) = try await self.fixtureChannel(c, mode: .nfm)
+            for tap in [Leyline_V1_AudioTap.tapDemod, .tapAudio] {
+                let req = self.audioRequest(capture: capture.captureID, channel: narrow.channelID, tap: tap)
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                XCTAssertEqual(desc.audio.fullScaleDeviationHz, 2_500, "\(tap) on a 12.5 kHz channel")
+                var ref = Leyline_V1_StreamRef()
+                ref.streamID = desc.streamID
+                _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+            }
+            for (mode, bandwidth, want) in [(Leyline_V1_DemodMode.nfm, UInt32(25_000), UInt32(5_000)),
+                                            (.am, 12_500, 0)]
+            {
+                var cch = Leyline_V1_CreateChannelRequest()
+                cch.captureID = capture.captureID
+                cch.offsetHz = 100_000
+                cch.mode = mode
+                cch.bandwidthHz = bandwidth
+                let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+                let req = self.audioRequest(capture: capture.captureID, channel: channel.channelID, tap: .tapAudio)
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                XCTAssertEqual(desc.audio.fullScaleDeviationHz, want, "\(mode) at \(bandwidth) Hz")
+                var ref = Leyline_V1_StreamRef()
+                ref.streamID = desc.streamID
+                _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+            }
         }
     }
 

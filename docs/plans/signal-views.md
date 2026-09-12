@@ -664,7 +664,7 @@ bandwidth for NFM (`min(5000, max(2500, bandwidth / 5))`, so 12.5 kHz → 2.5 kH
 hard-codes a number. `make proto`. The fake echoes it by the same rule. `go/pkg/leyline` exposes it
 on the `Subscription`'s descriptor as it does the rest.
 
-### SV-12b `[ ]` The engine scales to the channel (Swift lane)
+### SV-12b `[x]` The engine scales to the channel (Swift lane)
 
 - `NFMDemodulator.configure(inputRate:bandwidthHz:)` sets `scale` from `fullScaleDeviationHz =
   min(5000, max(2500, bandwidthHz / 5))` instead of the constant; the sub-audible detector's

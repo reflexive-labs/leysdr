@@ -165,7 +165,10 @@ Given capture rate `Fs` and mode:
 ### Demodulators (all vDSP-backed on macOS; see `DSP/Kernels.swift`)
 
 - **NFM**: quadrature discriminator `arg(x[n]·conj(x[n−1]))` (`vDSP_zvmul` conjugate + `vvatan2f`),
-  scaled so ±5 kHz deviation ≈ ±1.0 (full scale); a 300 Hz two-pole high-pass pushes CTCSS/PL tones under the voice (about 20 dB at 100 Hz, of which the make-up gain below returns some 6 dB), then 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, matching transmitter pre-emphasis) with ×2 make-up gain, then a 1-pole LPF ≈ 4 kHz; output hard-limited
+  scaled so the channel's own full-scale deviation ≈ ±1.0 — `min(5 kHz, max(2.5 kHz, bw/5))`, so a
+  12.5 kHz channel reads ±2.5 kHz and a 25 kHz one ±5 kHz, because a narrow-mode radio cannot send
+  more than its channel carries and should be as loud on the trace and in the speaker as a wide one;
+  a 300 Hz two-pole high-pass pushes CTCSS/PL tones under the voice (about 20 dB at 100 Hz, of which the make-up gain below returns some 6 dB), then 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, matching transmitter pre-emphasis) with ×2 make-up gain, then a 1-pole LPF ≈ 4 kHz; output hard-limited
   to ±1 (unsquelched noise otherwise reaches ±2.4).
 - **WFM**: same discriminator at `r1`, ±75 kHz deviation, 75 µs de-emphasis, FIR LPF 15 kHz +
   decimate by `D2`, output hard-limited to ±1. Mono in v0.
@@ -185,9 +188,11 @@ before any audio conditioning: the discriminator ahead of the 300 Hz high-pass f
 samples the sub-audible tap reads, so a CTCSS tone is still on them) and, decimated to the audio
 rate ahead of de-emphasis and the 15 kHz low-pass, for WFM (so the 19 kHz pilot survives); the
 envelope with the carrier still in it as DC for AM; the product detector before AGC for USB, LSB
-and CW; nothing for raw IQ. Both FM stages are scaled so full-scale deviation reads ±1.0 — 5 kHz
-for NFM, 75 kHz for WFM — which makes the block's mean the tuning error in units of full-scale
-deviation, which a client turns into hertz by scaling by 5 000 or 75 000. The callee sets
+and CW; nothing for raw IQ. Both FM stages are scaled so full-scale deviation reads ±1.0 — the
+channel's limit for NFM, 75 kHz for WFM — which makes the block's mean the tuning error in units of
+full-scale deviation. The daemon answers that deviation in the audio descriptor's
+`full_scale_deviation_hz` (0 for the amplitude modes), which is what a client multiplies by; no
+client carries a full scale of its own. The callee sets
 `rawOut.count`, because WFM decimates the tap through a filter of its own and answers for its own
 alignment; every buffer either needs is sized in `configure`, so a block nobody is tapping costs a
 nil check.

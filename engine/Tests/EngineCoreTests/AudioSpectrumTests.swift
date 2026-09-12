@@ -120,6 +120,12 @@ final class AudioSpectrumTests: XCTestCase {
         let pl = Int((100 / binHz).rounded())
         XCTAssertLessThan(audio[pl], demod[pl] - 12,
                           "100 Hz reads \(audio[pl]) dB on the audio tap against \(demod[pl]) dB on the demod tap")
+        // Full scale is the ±2.5 kHz a 12.5 kHz channel carries, so the fixture's ±2.5 kHz voice
+        // tone reads about full scale here and its ±700 Hz PL about 11 dB under. Neither tone sits
+        // on a bin centre, so the window's scalloping loss is what the tolerance leaves room for.
+        let voice = Int((1_000 / binHz).rounded())
+        XCTAssertEqual(demod[voice], 0, accuracy: 2, "1 kHz reads \(demod[voice]) dBFS on the demod tap")
+        XCTAssertEqual(demod[pl], -11, accuracy: 2, "100 Hz reads \(demod[pl]) dBFS on the demod tap")
     }
 
     /// The AM fixture's tone lands on its own bin, which is the whole claim a level meter makes.

@@ -86,9 +86,26 @@ final class DSPDemodTests: XCTestCase {
         XCTAssertEqual(rate, 48_000)
         let (snr, amp) = DSPTest.toneSNR(audio, toneHz: 1_000, rate: rate, skip: Int(rate * 0.05))
         XCTAssertGreaterThan(snr, 30)
-        // ±3 kHz of ±5 kHz → 0.6 full-scale, times 1-pole LPF droop (0.97), the 300 Hz two-pole
-        // high-pass at 1 kHz (0.917), 300 Hz de-emphasis at 1 kHz (0.287) and ×2 make-up gain.
+        // ±3 kHz of the ±2.5 kHz a 12.5 kHz channel carries → 1.2 full-scale, times 1-pole LPF
+        // droop (0.97), the 300 Hz two-pole high-pass at 1 kHz (0.917), 300 Hz de-emphasis at
+        // 1 kHz (0.287) and ×2 make-up gain.
+        XCTAssertEqual(amp, 1.2 * 0.97 * 0.917 * 0.287 * 2, accuracy: 0.06)
+    }
+
+    /// Full scale follows the channel, so the same transmission is 6 dB quieter on a 25 kHz channel
+    /// than on a 12.5 kHz one: ±5 kHz is what a wide NFM radio sends and what ±1.0 stands for there.
+    func testNFMFullScaleFollowsChannelBandwidth() throws {
+        let iq = DSPTest.fmTone(carrierHz: 100_000, audioHz: 1_000, deviationHz: 3_000, rate: fs, count: count)
+        let (audio, rate) = try run(mode: .nfm, offsetHz: 100_000, bandwidthHz: 25_000, iq: iq)
+        let (_, amp) = DSPTest.toneSNR(audio, toneHz: 1_000, rate: rate, skip: Int(rate * 0.05))
         XCTAssertEqual(amp, 0.6 * 0.97 * 0.917 * 0.287 * 2, accuracy: 0.03)
+        XCTAssertEqual(NFMDemodulator.fullScaleDeviation(bandwidthHz: 12_500), 2_500)
+        XCTAssertEqual(NFMDemodulator.fullScaleDeviation(bandwidthHz: 25_000), 5_000)
+        // Either side of the two standard spacings the rule clamps rather than extrapolates.
+        XCTAssertEqual(NFMDemodulator.fullScaleDeviation(bandwidthHz: 6_250), 2_500)
+        XCTAssertEqual(NFMDemodulator.fullScaleDeviation(bandwidthHz: 50_000), 5_000)
+        XCTAssertEqual(DemodulatorFactory.fullScaleDeviationHz(mode: .wfm, bandwidthHz: 200_000), 75_000)
+        XCTAssertEqual(DemodulatorFactory.fullScaleDeviationHz(mode: .am, bandwidthHz: 12_500), 0)
     }
 
     /// An HT-style signal: voice at ±3 kHz plus a 100 Hz CTCSS tone at ±0.7 kHz. The high-pass must
@@ -106,10 +123,10 @@ final class DSPDemodTests: XCTestCase {
         let skip = Int(rate * 0.2)
         let (_, voiceAmp) = DSPTest.toneSNR(audio, toneHz: 1_000, rate: rate, skip: skip)
         let (_, toneAmp) = DSPTest.toneSNR(audio, toneHz: 100, rate: rate, skip: skip)
-        XCTAssertEqual(voiceAmp, 0.6 * 0.97 * 0.917 * 0.287 * 2, accuracy: 0.04)
-        // Raw CTCSS would be 0.7/5 = 0.14; two one-pole high-pass stages at f/fc = 1/3 leave ≈ 0.1
-        // of it, de-emphasis passes 0.95 at 100 Hz, make-up gain doubles: ≈ 0.027.
-        XCTAssertLessThan(toneAmp, 0.04, "CTCSS at 100 Hz should be ≈ 20 dB down (got \(toneAmp))")
+        XCTAssertEqual(voiceAmp, 1.2 * 0.97 * 0.917 * 0.287 * 2, accuracy: 0.08)
+        // Raw CTCSS would be 0.7/2.5 = 0.28; two one-pole high-pass stages at f/fc = 1/3 leave
+        // ≈ 0.1 of it, de-emphasis passes 0.95 at 100 Hz, make-up gain doubles: ≈ 0.053.
+        XCTAssertLessThan(toneAmp, 0.08, "CTCSS at 100 Hz should be ≈ 20 dB down (got \(toneAmp))")
         XCTAssertGreaterThan(20 * log10(voiceAmp / max(toneAmp, 1e-9)), 18, "voice must dominate the PL tone")
     }
 
