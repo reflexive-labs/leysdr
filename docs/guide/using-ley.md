@@ -685,9 +685,42 @@ LEYTST-1  now         2     37.7600N 122.4167W  37.7600N 122.4167W /> test posit
 LEYTST-3  now         1     -                   test status
 ```
 
-Only APRS is built. The contract every decoder speaks is in `docs/design/decoders.md`, and the
-plan for the others (ADS-B aircraft, 433 MHz sensors, weather alerts, FT8) is
-`docs/plans/decoders.md`; `ley help roadmap` names what is next.
+### Wait for one thing: `ley watch`
+
+`ley decode` shows everything a decoder hears. `ley watch` shows only what you are waiting for and
+can hand a match to a notifier, so an alert reaches you when you are not looking. It is a decode job
+with a filter and, optionally, a place for the matches to go. The second decoder is SAME, the
+weather-radio alert format on the NOAA channels (162.400 to 162.550 MHz); this transcript was
+recorded against the real daemon playing the `same_alert` fixture, a Required Weekly Test for two
+Kansas counties.
+
+```console
+$ ley watch same --county 20103 --notify=shell:'echo alert | mail -s "wx" me'
+watching same on 162.400 MHz, chan_01M2BR7DBPJBBHYJ6NRJ4E93P8
+  filter: fips names one of 20103
+  notify: shell: echo alert | mail -s "wx" me
+Ctrl-C stops
+21:26:27  KEAX/NWS      alert      ZCZC-WXR-RWT-020103-020209+0030-1051700-KEAX/NWS-
+```
+
+`--county` matches the alert's FIPS county codes, so a county the alert does not name sees nothing
+and the notifier stays silent. `--where field=value` filters on any field a decoder emits (with
+`!=`, `~` for "contains", and numeric `>`, `>=`, `<`, `<=`), and `--near LAT,LON --radius 10km`
+filters on position. `--notify` hands each match to a macOS notification (bare `--notify`), a
+webhook (`--notify=webhook:URL`), or a shell command (`--notify=shell:CMD`) with the record's JSON
+on its input.
+
+`ley watch` stays attached and streams the matches, like `decode`. The point of a watch, though, is
+that it keeps working with nobody watching: `--detach` leaves the job running in the daemon after
+`ley` exits, so the notifier fires headless. Stop it with `ley jobs cancel`.
+
+A SAME record carries a validity window, the span the alert is in effect, so `ley records
+--in-effect` lists only alerts that have not expired.
+
+Two decoders are built, APRS and SAME. The contract every decoder speaks is in
+`docs/design/decoders.md` and [writing a decoder](../reference/writing-a-decoder.md); the plan for
+the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
+roadmap` names what is next.
 
 ## 12. For scripts and agents
 

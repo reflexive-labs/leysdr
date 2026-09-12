@@ -126,8 +126,8 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 - Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done except
   C.12, recording and resources, which is not started.
 - Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.17 (decoders:
-  the plugin contract, the record store, `ley decode aprs`, `ley records`, `ley track`) done for
-  APRS, the other four drivers listed in `docs/plans/decoders.md`; D.14
+  the plugin contract, the record store, `ley decode`, `ley records`, `ley track`, `ley watch` with
+  predicates and notifiers) done for APRS and SAME weather alerts, the other four drivers listed in `docs/plans/decoders.md`; D.14
   (terminal dashboard), D.15 (durable jobs, watch, transcripts) and D.16 (MCP adapter) not started.
 - Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
   measurement on target hardware yet; S1 (latency chain) waits for the app.

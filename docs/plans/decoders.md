@@ -200,7 +200,7 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
 
 ## Later
 
-- DEC-9a `[ ]` Predicates and the notification sink, on the record plane: `DecodeConfig.predicate`
+- DEC-9a `[x]` Predicates and the notification sink, on the record plane: `DecodeConfig.predicate`
   (stateless clauses -- field test and geo test) and `DecodeConfig.notify` (webhook, shell hook,
   macOS notification). The daemon evaluates the predicate on every stamped record before it reaches
   the hub, the store and the notifier; an unset predicate matches everything. `ley watch <decoder>
@@ -211,7 +211,7 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   newer spec, so the record-watch verb takes the name; the audio-transcript watch, still unbuilt, is
   D.15's to place. Built and tested against the existing decoders (a `--where device_id=...` watch on
   aprs, a shell notifier that writes a file), so the machinery is proven before the SAME DSP lands.
-- DEC-9b `[ ]` The SAME/EAS decoder (driver C): a decoder plugin that demodulates the AFSK header
+- DEC-9b `[x]` The SAME/EAS decoder (driver C): a decoder plugin that demodulates the AFSK header
   burst on NOAA weather radio (162.400--162.550 MHz NFM), parses ORG/EEE/FIPS/duration, emits a
   record whose `validity` is the alert window and whose `fields` carry the event code and the FIPS
   county list, with a fixture. Then `ley watch same --county <FIPS> --notify` is driver C end to end.
