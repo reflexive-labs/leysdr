@@ -26,7 +26,7 @@ of the frame the packet ended in plus the sample offset within it, scaled to the
 (`frame.time.sample_index + offset * capture_rate / audio_rate`; the descriptor's `center_hz`
 and `span_hz` name the capture rate as `span_hz`).
 
-## DEC-2 `[ ]` The APRS decoder and the plugin SDK (Go lane)
+## DEC-2 `[x]` The APRS decoder and the plugin SDK (Go lane)
 
 Packages, all Apache-2.0:
 
@@ -68,7 +68,7 @@ Real-audio check, not in the gate: `go test ./pkg/decoders/... -run Real` decode
 gitignored) when the file exists, and its log line says how many frames passed CRC. The count is
 recorded in the closing section of this plan.
 
-## DEC-3 `[ ]` The fixture (Go lane, after DEC-2)
+## DEC-3 `[x]` The fixture (Go lane, after DEC-2)
 
 `leyfix` gains `aprs_afsk`: an NFM carrier at 2.4 MSPS, −20 dBFS, 3.5 kHz deviation, carrying
 three AX.25 UI frames (a position, a weather report, a status) as AFSK 1200 with 200 ms of
@@ -77,7 +77,7 @@ duration. The sidecar's `expect` block gains `decode: {protocol: "aprs", records
 device_ids: [...]}`. `FixtureTests` in the engine reads it like every other expectation once
 DEC-5 can run a decoder in-process (a `FilePlaybackDevice` capture, the channel, the plugin).
 
-## DEC-4 `[ ]` Registry, plugin process and record store (Swift lane, first half)
+## DEC-4 `[x]` Registry, plugin process and record store (Swift lane, first half)
 
 All in `engine/Sources/LeylineDaemon/Decoders/`, GPL-3.0-or-later, proto types allowed (the
 daemon target already holds proto messages as its record type).
@@ -112,7 +112,7 @@ daemon target already holds proto messages as its record type).
   is empty, so the restart path is testable; a store round trip with two anchors and every query
   filter.
 
-## DEC-5 `[ ]` The decode job and the service (Swift lane, second half)
+## DEC-5 `[x]` The decode job and the service (Swift lane, second half)
 
 - `AllocationRequest.channel` grows to `channel(frequencyHz:bandwidthHz:mode:deviceID:takeOver:)`
   and `AllocationResult.channel` carries a `ChannelLease` (`channelID`, `captureID`, `engine`,
@@ -154,7 +154,7 @@ daemon target already holds proto messages as its record type).
   the channel and the capture; a plugin that exits is restarted and the job says so; a channel
   moved out of capture degrades the job and recovers), `DecodersServiceTests` over the socket.
 
-## DEC-6 `[ ]` `ley` and the fake (Go lane)
+## DEC-6 `[x]` `ley` and the fake (Go lane)
 
 - Fake daemon: `ListDecoders` serves one manifest (`aprs`, the real one's shape), `StartJob
   (decode)` runs a fake job that emits a position, a weather and a status record every 200 ms
@@ -181,7 +181,7 @@ daemon target already holds proto messages as its record type).
 - Tests against the fake for every verb and every flag; `TestDecodeStopsAnEphemeralJob`,
   `TestDecodeJobOutlivesTheClient`, `TestTrackAgesOutASilentStation`, `TestRecordsSinceUsesAnchors`.
 
-## DEC-7 `[ ]` End to end
+## DEC-7 `[x]` End to end
 
 `TestDecodeAgainstRealDaemon` in `go/internal/e2e`: `ley play fixtures/aprs_afsk.cf32 --loop`,
 then `ley decode aprs --json --count 3` with `LEYLINE_DECODERS` pointing at the repository's
@@ -191,7 +191,7 @@ ids, positions within 1e-4 degrees, `rssi_dbfs` near −20 and a `time` inside t
 real-radio run: `ley decode aprs` against the owner's dongle over rtl_tcp on 144.39 MHz, the
 transcript recorded in `docs/guide/using-ley.md`.
 
-## DEC-8 `[ ]` Documentation
+## DEC-8 `[x]` Documentation
 
 `docs/guide/using-ley.md` gains "Decode what is being said" (APRS, with the recorded transcript);
 `docs/reference/cli.md` the verbs and shapes; `docs/README.md` the design doc; `README.md` "Where
@@ -207,3 +207,41 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side).
 - DEC-14 `[ ]` The MCP families and `ley identify`.
 - DEC-15 `[ ]` A SQLite index under `QueryRecords`, when a query is measured slow.
+- DEC-16 `[ ]` A plugin that stops reading stalls the drain: `PluginProcess.write` is a blocking
+  `write(2)` on the pipe, on a cooperative thread. A plugin that hangs without exiting holds that
+  thread and is never restarted. A non-blocking pipe with a drop-and-gap on `EAGAIN`, plus a
+  no-records-for-N-seconds health check that respawns, closes both holes.
+- DEC-17 `[ ]` A "Writing a decoder" reference page: the wire, the manifest fields, the stamps the
+  daemon overwrites, and the fake decoder as the smallest example.
+
+## Closing
+
+What the second look found, 2026-09-12.
+
+- **The lanes met on the first try.** `TestDecodeAgainstRealDaemon` (the real daemon, the real
+  `leydec-aprs`, the fixture through `ley play`) passed on its first run: three records with the
+  daemon's stamps, `rssi_dbfs` within 0.02 dB of the fixture's −20 dBFS, a kept job that outlived
+  its client and a store with one record file. The whole e2e suite runs in 14 s here.
+- **The real radio found one bug the fixture could not.** On the owner's dongle over rtl_tcp the
+  allocator opened the decode capture at 3.2 MSPS, the fastest rate the device lists (the sweep's
+  rule), and the channel's audio rate followed it to 49.2 kHz, which the AFSK demodulator refused
+  and the daemon spent the run respawning. A channel's capture now opens at the default rate and
+  the demodulator accepts up to 96 kHz (commit e789f34).
+- **144.39 MHz is quiet where the owner sits.** Two three-minute captures (auto gain and 40 dB;
+  `rf-captures/`, gitignored) held one decodable packet between them, `N0CALL-1` at 27.6 s of the
+  first, and `leydec-aprs` recovered it; a tone-energy scan of the same file found the same
+  burst and no other of packet length. A live `ley decode aprs` on the dongle ran for the
+  duration of the work without a packet. The guide's transcripts are therefore recorded against
+  the fixture, and say so.
+- **Measured.** The AFSK demodulator decodes 100/100 synthetic frames clean at 48 kHz and 12 kHz,
+  99/100 at 0 dB SNR over the 24 kHz audio band and 12/100 at −4 dB (the curve is in
+  `go/pkg/decoders/afsk`'s doc comment). The −10 dB gate the plan asked for is 3 dB of Eb/N0
+  and no non-coherent FSK demodulator holds a 500-bit frame there; the gate is 0 dB.
+- **Two deviations from the plan's text.** `BinaryDelimited` takes Foundation streams, not file
+  descriptors, so both the daemon and the fake decoder frame the delimited protobuf by hand
+  (same bytes on the wire). `ley records` filters a job with `--job-id`, because `--job` on
+  `decode` is the boolean that keeps one.
+- **One flake fixed.** The restart test raced the respawned fake decoder's second exit through a
+  170 ms `RUNNING` window; the fake now dies once, by a marker file in its directory.
+- **One pre-existing race fixed.** `ley levels` read the channel's full scale after the event
+  drain owned the mirror; `-race` had not been run since that verb landed.

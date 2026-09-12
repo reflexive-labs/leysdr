@@ -30,10 +30,13 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   ├── Server.swift          GRPCServer + UDS lifecycle + signals
 │   ├── ClientContext.swift   per-RPC client identity (interceptor -> task-local)
 │   ├── Session/              SessionStore actor (devices/captures/channels/sinks tables, events, attribution)
-│   ├── Jobs/                 JobStore (durable job table), ScanRunner (sweep execution), SessionCaptureAllocator
-│   │                         (don't-disturb capture leasing for jobs)
-│   ├── Services/             Control, Telemetry, Bulk, Jobs (scan implemented; watch/record UNIMPLEMENTED),
-│   │                         Resources (UNIMPLEMENTED in v0)
+│   ├── Jobs/                 JobStore (durable job table), ScanRunner (sweep execution), DecodeRunner
+│   │                         (a decode job's plugin and its records), SessionCaptureAllocator
+│   │                         (don't-disturb capture and channel leasing for jobs)
+│   ├── Decoders/             DecoderRegistry (manifests on disk), PluginProcess (the stdio wire),
+│   │                         RecordHub (the live plane), RecordStore/RecordWriter (kept records)
+│   ├── Services/             Control, Telemetry, Bulk, Jobs (scan and decode implemented; watch/record
+│   │                         UNIMPLEMENTED), Decoders, Resources (UNIMPLEMENTED in v0)
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
 │   ├── RememberedDevices.swift  devices.json beside the socket: the rtl_tcp endpoints to re-attach
@@ -542,8 +545,9 @@ tears the subscription down; a subscription with no `Stream` reader for 10 s is 
 
 ### Jobs service and lease lifecycle
 
-`StartJob(ScanConfig{once})` is implemented (Milestone D.13); `watch` and `record` configs, and the
-whole Resources service, still return `UNIMPLEMENTED`. A scan job never touches a capture directly
+`StartJob(ScanConfig{once})` is implemented (Milestone D.13) and so is `StartJob(DecodeConfig)`
+("Decoders" below); `watch` and `record` configs, and the whole Resources service, still return
+`UNIMPLEMENTED`. A scan job never touches a capture directly
 (invariant 9): it asks `SessionCaptureAllocator` for a range, and the allocator either hands back a
 `CaptureLease` or a declined result with a reason. Allocation prefers a device with no capture at all
 over borrowing one that has one — creating and destroying disturbs nobody. Borrowing an existing
@@ -555,6 +559,61 @@ when deciding whether it can hear a request, which is how a `FilePlaybackDevice`
 the single frequency its fixture was recorded at — can still serve a sweep. Releasing a lease that
 created its capture destroys it; releasing one that borrowed an existing capture retunes and re-gains
 it back to what it found and clears swept.
+
+### Decoders
+
+A decoder is an out-of-process plugin the daemon spawns (`docs/design/decoders.md`, "Decisions").
+Nothing about it runs on the DSP thread (invariant 4): the channel's existing `AudioFrameSource`
+callback is the only hot-path code, and every byte that reaches a plugin is written by a task
+draining its ring.
+
+`DecoderRegistry` reads `manifest.json` — the proto3 JSON form of `DecoderManifest` — from every
+directory on the search path and executes nothing, so a plugin whose binary is broken still lists
+and a manifest that does not parse costs a log line. The search path is `--decoders` (repeatable),
+then `LEYLINE_DECODERS` (colon-separated), then the platform default
+(`~/Library/Application Support/Leyline/decoders` on macOS, `$XDG_DATA_HOME/leyline/decoders`
+elsewhere). Names are unique and the first directory wins. `executable` resolves against the
+plugin's directory first and `PATH` second.
+
+`PluginProcess` is one spawned child: stdin carries one varint-delimited `StreamDescriptor` then
+varint-delimited `Frame`s (`AUDIO`, `F32`, mono, the channel's rate, `GAP_MARKED`, the tap the
+manifest asked for), stdout carries varint-delimited `DecodeRecord`s, and stderr is prose logged
+under `leyline.decoder.<name>`. The framing is protobuf's own delimited convention, coded by hand
+because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. `stop()`
+closes stdin, waits 2 s, then `SIGTERM`, then `SIGKILL`; a write to a dead pipe is an error return,
+never a signal.
+
+`JobStore.startDecode` looks the decoder up (`DECODER_NOT_FOUND`), refuses `SLOT_ALIGNED` with
+`UNIMPLEMENTED`, and asks `SessionCaptureAllocator` for `AllocationRequest.channel`. That path takes
+a capture that already covers the frequency on any device, else a device with no capture (creating
+one centred `frequency − Fs/8`, so the channel sits clear of the tuner's DC spike and inside the
+flat part of the passband), else a capture the don't-disturb test calls free (retuned), else it
+declines with the reason a sweep would give unless `take_over`. The channel is persistent with
+`required_hz` set and is owned by the job, not by the client. Releasing the `ChannelLease` destroys
+the channel, and the capture too when the lease created it and nothing else is listening on it.
+
+`DecodeRunner` then holds one drain task (ring to plugin, with a `Gap` on every frame that follows a
+drop), one reader task (plugin to `RecordHub` and the store writer), a meter subscription and a
+channel-state watch. The daemon stamps `record_id` (`rec_<ulid>`), `job_id`, `seq` (1-based and
+contiguous per job), `channel_id` and `rssi_dbfs`/`snr_db` from the channel's latest meter; a
+plugin's own values for those are overwritten. A plugin that exits is spawned again after 1 s,
+doubling to 30 s, with the job in `DEGRADED` and `status_detail` saying so; the drain outlives the
+restart, because `AudioFrameSource.poke` has one iterator and a second one would feed the new plugin
+nothing. A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
+capture. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
+writer and releases the lease.
+
+`RecordHub` is the live plane: drop-oldest, 256 deep, scoped to everything, one job or one protocol,
+with the last 256 records per job replayed for `since_seq` — replay and live delivery both happen on
+the actor, so a subscriber cannot see them interleaved. `RecordStore` is the kept plane: a kept job
+writes `<store>/records/<job_id>.records` (varint-delimited records, flushed every 32 records or
+second) beside `<job_id>.json` holding the config, the decoder's name and version, every
+`CaptureAnchor` that was in force and the count. A query scans the sidecars, skips the files whose
+protocol or wall-clock span cannot match, filters the rest in memory, sorts newest first and cuts at
+`limit` (default 1000). There is no index, and there will be a SQLite one when a query is measured
+to be slow, not before. Retention (`--store-cap`, default 2 GiB; `--store-age`, default 90 days)
+runs at daemon start and whenever a kept job starts: age first, then the oldest until the store
+fits.
 
 ### Detections on the telemetry plane
 

@@ -10,7 +10,7 @@ You have an RTL-SDR (or an IQ recording) and a Mac.
 | read | when |
 |---|---|
 | [Installing Leyline](guide/install.md) | building the daemon and `ley`, starting at login, a radio on another machine, uninstalling |
-| [Using `ley`](guide/using-ley.md) | the tasks in the order a newcomer meets them: see the radio, hear a station, adjust it, see the band, scan, watch, the waveform, two channels, a recording, scripts |
+| [Using `ley`](guide/using-ley.md) | the tasks in the order a newcomer meets them: see the radio, hear a station, adjust it, see the band, scan, watch, the waveform, two channels, a recording, decode packets, scripts |
 | [Troubleshooting](guide/troubleshooting.md) | the daemon is not running, no radio listed, a busy dongle, no audio, and every message `ley` prints |
 | [`ley` reference](reference/cli.md) | the command tree, input conventions, every `--json` shape, exit status |
 | [IQ files and fixtures](reference/iq-files.md) | the `.cf32` + sidecar format `ley play` reads, and the generated signals |

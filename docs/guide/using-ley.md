@@ -616,7 +616,80 @@ channels.
 Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12;
 `ley help roadmap`).
 
-## 11. For scripts and agents
+## 11. Decode what is being said
+
+`ley decode` answers *what are the packets on this frequency saying*. The daemon runs a decoder,
+a separate program that turns a channel's audio into typed records, and `decode` prints one
+line per record. `ley decoders` lists what is installed and where each one listens:
+
+```console
+$ ley decoders
+NAME  FREQUENCY         MODE        OUTPUTS            VERSION
+aprs  144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0
+looked in /workspace/decoders, /home/dpup/.local/share/leyline/decoders
+kept records in /home/dpup/.local/share/leyline/store, 2 GiB or 90 days, whichever comes first
+```
+
+A decoder carries its own recipe (the frequency, the mode, the bandwidth), so `decode` takes no
+tune flags. APRS is the first one: position, weather, telemetry, status and message packets that
+amateur stations send on 144.390 MHz in North America (`--freq 144.8` is the European
+allocation). The transcripts in this section were recorded against the real daemon playing the
+`aprs_afsk` fixture, three packets from three test stations, because 144.39 MHz was quiet where
+the author sat; on the air the stations are real and the lines look the same.
+
+```console
+$ ley decode aprs --count 3
+decoding aprs on 144.390 MHz, chan_01M2BEV2YV9AZ3EWN8RJ51ZYWF on cap_01M2BEV016C9Q19GP9HZ1G9MK3. Ctrl-C stops
+18:42:25  LEYTST-1      position   37.7600N 122.4167W /> test position
+18:42:26  LEYTST-2      weather    25.0 °C wind 6 km/h @ 220°
+18:42:26  LEYTST-3      status     test status
+```
+
+The daemon found a capture already covering 144.39 MHz (the one `play` made; on a radio it would
+make one, or say who has the radio and offer `--take-over`). Each line is the time the packet was
+received, the station's callsign and SSID, the kind of record, and a summary of what it carried.
+`--json` prints the whole record instead, one `DecodeRecord` per line, with every field the
+decoder extracted and the raw bytes it decoded them from.
+
+Ctrl-C stops decoding and hands the radio back. `--job` keeps the decoder running after `ley`
+exits and stores what it hears, which is how "what passed overnight" gets answered:
+
+```console
+$ ley decode aprs --job --count 1
+decoding aprs on 144.390 MHz, chan_01M2BEV3ZGXTDG3EF1NQDCNTMP on cap_01M2BEV016C9Q19GP9HZ1G9MK3. kept: it runs on after ley exits
+18:42:26  LEYTST-1      position   37.7600N 122.4167W /> test position
+left running; ley jobs cancel 2 stops it
+$ ley records --device-id LEYTST-2 --limit 2
+TIME      PROTOCOL  DEVICE    KIND     SUMMARY
+18:43:10  aprs      LEYTST-2  weather  25.0 °C wind 6 km/h @ 220°
+18:43:09  aprs      LEYTST-2  weather  25.0 °C wind 6 km/h @ 220°
+more records matched than were returned; --limit asks for more
+```
+
+`ley records` searches everything kept jobs have stored: `--protocol`, `--since 1h`,
+`--device-id`, `--kind`, `--near 37.76,-122.42 --radius 10km`, and `--in-effect` for records
+whose validity window contains now. The store lives in a plain directory `ley decoders` names,
+and it is trimmed to a size and an age the daemon was started with.
+
+`ley track` is the other view of the same records: a table with one row per station, kept up to
+date as packets arrive and dropped after the decoder's silence timeout, the way an aircraft
+display works. It is computed in `ley` from the record stream, so a second terminal running it
+sees exactly the same table; the daemon keeps no station list of its own.
+
+```console
+$ ley track aprs
+tracking aprs. a row drops off after 30 m of silence
+DEVICE    LAST HEARD  SEEN  POSITION            LAST
+LEYTST-2  now         2     -                   25.0 °C wind 6 km/h @ 220°
+LEYTST-1  now         2     37.7600N 122.4167W  37.7600N 122.4167W /> test position
+LEYTST-3  now         1     -                   test status
+```
+
+Only APRS is built. The contract every decoder speaks is in `docs/design/decoders.md`, and the
+plan for the others (ADS-B aircraft, 433 MHz sensors, weather alerts, FT8) is
+`docs/plans/decoders.md`; `ley help roadmap` names what is next.
+
+## 12. For scripts and agents
 
 `ley help scripting` is the authoritative short version; every `--json` shape and exit code is
 in the [`ley` reference](../reference/cli.md), and [Writing a client](../reference/clients.md) is
@@ -673,7 +746,7 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
-## 12. When things go wrong
+## 13. When things go wrong
 
 Every error is one line that says what happened and what to run next, and the exit status says
 which kind of failure it was. [Troubleshooting](troubleshooting.md) lists the messages a newcomer
