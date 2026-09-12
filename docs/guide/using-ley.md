@@ -673,8 +673,11 @@ and it is trimmed to a size and an age the daemon was started with.
 
 `ley track` is the other view of the same records: a table with one row per station, kept up to
 date as packets arrive and dropped after the decoder's silence timeout, the way an aircraft
-display works. It is computed in `ley` from the record stream, so a second terminal running it
-sees exactly the same table; the daemon keeps no station list of its own.
+display works. It starts the decoder for you, so `ley track aprs` is one command; if a decoder is
+already running for the protocol it renders that one rather than starting a second on the radio,
+and `ley track aprs --attach` only folds an existing one without touching the radio. The table is
+computed in `ley` from the record stream, so a second terminal running it sees exactly the same
+table; the daemon keeps no station list of its own.
 
 ```console
 $ ley track aprs

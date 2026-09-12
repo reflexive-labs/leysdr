@@ -2,15 +2,18 @@ track folds a protocol's records into one row per transmitter and redraws
 the table as packets arrive: who is out there, how long ago each one was
 heard, how many times, where it said it was, and what it last said.
 
-The fold is ley's own, over the records the daemon streams -- no decoding
-moves client-side. A station silent for longer than the decoder's own
-timeout ('entity_silence_s' in 'ley decoders --json') drops off the table,
-because a row that never ages says a transmitter is still there when it left
-hours ago.
+track runs the decoder itself: it starts one for the protocol (the same job
+'ley decode' would, ended when track exits) unless one is already running for
+it, in which case it renders that one rather than starting a second on the
+radio. --attach never starts a decoder; it only folds what is already being
+decoded, and shows an empty table until something is.
 
-track shows what is being decoded now: it needs a decode job running, which
-'ley decode <protocol>' or 'ley decode <protocol> --job' starts. --since
-seeds the table from the records kept jobs have already written.
+The fold is ley's own, over the records the daemon streams -- the entity table
+is never daemon state, so a second 'ley track' sees the same picture from the
+same records. A station silent for longer than the decoder's own timeout
+('entity_silence_s' in 'ley decoders --json') drops off the table, because a
+row that never ages says a transmitter is still there when it left hours ago.
+--since seeds the table from the records kept jobs have already written.
 
 On a terminal the table is redrawn in place; piped, one table is printed per
 tick. --json prints one {"entities": [...]} object per tick as NDJSON -- a
@@ -20,16 +23,20 @@ Usage:
   ley track <protocol> [flags]
 
 Examples:
-  ley decode aprs --job        # in one terminal: keep decoding
-  ley track aprs               # in another: who is out there?
+  ley track aprs               # start decoding and show who is out there
+  ley track aircraft           # (once an ADS-B decoder is installed)
   ley track aprs --since 1h    # seed from what was kept, then follow
+  ley track aprs --attach      # only fold a decoder someone already started
   ley track aprs --json --count 1 | jq '.entities | length'
 
 Flags:
-      --count int      stop after this many redraws, e.g. 1 (default: until Ctrl-C)
-  -h, --help           help for track
-      --rate float     redraws a second, e.g. 4 (at most 20) (default 2)
-      --since string   seed the table from kept records this recent, e.g. 1h, 2d
+      --attach          do not start a decoder; only fold one that is already running
+      --count int       stop after this many redraws, e.g. 1 (default: until Ctrl-C)
+      --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+  -h, --help            help for track
+      --rate float      redraws a second, e.g. 4 (at most 20) (default 2)
+      --since string    seed the table from kept records this recent, e.g. 1h, 2d
+      --take-over       start the decoder even when somebody is using the radio; it is theirs again afterwards
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

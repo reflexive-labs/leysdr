@@ -225,3 +225,91 @@ func TestTrackAgesOutASilentStation(t *testing.T) {
 		t.Errorf("the station still talking must stay:\n%s", out)
 	}
 }
+
+// track now runs the decoder itself: with nothing decoding, `ley track aprs` starts a decode job,
+// so the table fills without a second terminal (docs/plans/decoders.md, DEC-9 follow-up).
+func TestTrackStartsADecoder(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, errOut, err := run(t, ctx, sock, "track", "aprs", "--rate", "4", "--count", "5")
+	if err != nil {
+		t.Fatalf("ley track: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(out, "LEYTST-1") {
+		t.Fatalf("track did not start a decoder: the table is empty\n%s", out)
+	}
+	// The decoder it started is ephemeral: it is gone once track exits, so it never leaves a job
+	// or a channel holding the radio.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		jobs, lerr := c.ListJobs(context.Background())
+		if lerr != nil {
+			t.Fatalf("list jobs: %v", lerr)
+		}
+		running := 0
+		for _, j := range jobs {
+			if _, ok := j.GetConfig().(*leylinev1.Job_Decode); ok && j.GetState() == leylinev1.JobState_RUNNING {
+				running++
+			}
+		}
+		if running == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("track left %d decode job(s) running after it exited", running)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// A decoder already running for the protocol is rendered, not duplicated: two viewers do not mean
+// two demods on the radio.
+func TestTrackAttachesToARunningDecoder(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	keptJob(t, sock, c, 0) // one kept decode job for aprs
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, errOut, err := run(t, ctx, sock, "track", "aprs", "--count", "2"); err != nil {
+		t.Fatalf("ley track: %v\n%s", err, errOut)
+	}
+	jobs, err := c.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	decodeJobs := 0
+	for _, j := range jobs {
+		if _, ok := j.GetConfig().(*leylinev1.Job_Decode); ok {
+			decodeJobs++
+		}
+	}
+	if decodeJobs != 1 {
+		t.Fatalf("track started a second decoder instead of attaching: %d decode jobs", decodeJobs)
+	}
+}
+
+// --attach never starts a decoder: with nothing decoding, the table is empty and no job is left.
+func TestTrackAttachDoesNotStart(t *testing.T) {
+	sock, c := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, errOut, err := run(t, ctx, sock, "track", "aprs", "--attach", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley track --attach: %v\n%s", err, errOut)
+	}
+	if strings.Contains(out, "LEYTST-1") {
+		t.Errorf("--attach must not start a decoder, so the table stays empty:\n%s", out)
+	}
+	if !strings.Contains(errOut, "folding what is already being decoded") {
+		t.Errorf("--attach must say it is only folding: %q", errOut)
+	}
+	jobs, err := c.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	for _, j := range jobs {
+		if _, ok := j.GetConfig().(*leylinev1.Job_Decode); ok {
+			t.Errorf("--attach started a decode job: %v", j.GetJobId())
+		}
+	}
+}

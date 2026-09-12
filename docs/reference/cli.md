@@ -58,7 +58,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # attached it streams only the matching records; --detach leaves
 │                                    # the job running so the notifier (bare=macOS, webhook:URL,
 │                                    # shell:CMD) fires with no client attached
-├── track <protocol> [--since D] [--rate N] [--count N]
+├── track <protocol> [--attach] [--device SEL] [--take-over] [--since D] [--rate N] [--count N]
+│                                    # starts (or attaches to) a decoder and folds its records into a live per-station table; --attach only folds one already running
 │                                    # the live entity table: ley's own fold over SubscribeRecords,
 │                                    # redrawn in place, rows aged out after the decoder's entity_silence_s
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose

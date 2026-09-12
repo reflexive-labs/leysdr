@@ -48,6 +48,12 @@ type trackOptions struct {
 	since    time.Duration
 	rate     float64
 	count    int
+	// attach subscribes to an existing decoder's records without starting one, for the case
+	// where a decode job is already running and track should only render it.
+	attach   bool
+	device   string
+	deviceID string
+	takeOver bool
 }
 
 func newTrackCommand(app *App) *cobra.Command {
@@ -62,22 +68,26 @@ func newTrackCommand(app *App) *cobra.Command {
 the table as packets arrive: who is out there, how long ago each one was
 heard, how many times, where it said it was, and what it last said.
 
-The fold is ley's own, over the records the daemon streams -- no decoding
-moves client-side. A station silent for longer than the decoder's own
-timeout ('entity_silence_s' in 'ley decoders --json') drops off the table,
-because a row that never ages says a transmitter is still there when it left
-hours ago.
+track runs the decoder itself: it starts one for the protocol (the same job
+'ley decode' would, ended when track exits) unless one is already running for
+it, in which case it renders that one rather than starting a second on the
+radio. --attach never starts a decoder; it only folds what is already being
+decoded, and shows an empty table until something is.
 
-track shows what is being decoded now: it needs a decode job running, which
-'ley decode <protocol>' or 'ley decode <protocol> --job' starts. --since
-seeds the table from the records kept jobs have already written.
+The fold is ley's own, over the records the daemon streams -- the entity table
+is never daemon state, so a second 'ley track' sees the same picture from the
+same records. A station silent for longer than the decoder's own timeout
+('entity_silence_s' in 'ley decoders --json') drops off the table, because a
+row that never ages says a transmitter is still there when it left hours ago.
+--since seeds the table from the records kept jobs have already written.
 
 On a terminal the table is redrawn in place; piped, one table is printed per
 tick. --json prints one {"entities": [...]} object per tick as NDJSON -- a
 client-side shape with no proto message, documented in docs/reference/cli.md.`,
-		Example: `  ley decode aprs --job        # in one terminal: keep decoding
-  ley track aprs               # in another: who is out there?
+		Example: `  ley track aprs               # start decoding and show who is out there
+  ley track aircraft           # (once an ADS-B decoder is installed)
   ley track aprs --since 1h    # seed from what was kept, then follow
+  ley track aprs --attach      # only fold a decoder someone already started
   ley track aprs --json --count 1 | jq '.entities | length'`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
@@ -104,6 +114,9 @@ client-side shape with no proto message, documented in docs/reference/cli.md.`,
 	cmd.Flags().StringVar(&since, "since", "", "seed the table from kept records this recent, e.g. 1h, 2d")
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "redraws a second, e.g. 4 (at most 20)")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many redraws, e.g. 1 (default: until Ctrl-C)")
+	cmd.Flags().BoolVar(&o.attach, "attach", false, "do not start a decoder; only fold one that is already running")
+	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
+	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "start the decoder even when somebody is using the radio; it is theirs again afterwards")
 	return cmd
 }
 
@@ -113,7 +126,36 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		return app.notRunning(err)
 	}
 	defer c.Close()
+	if o.device != "" {
+		st, serr := c.State(ctx)
+		if serr != nil {
+			return app.notRunning(serr)
+		}
+		d, derr := pickDevice(st, o.device)
+		if derr != nil {
+			return derr
+		}
+		o.deviceID = d.GetDeviceId()
+	}
 	silence := trackSilence(ctx, c, o.protocol)
+	// Unless --attach, track runs the decoder itself, so `ley track aprs` is one command. A decoder
+	// already running for the protocol is rendered rather than duplicated: two viewers do not mean
+	// two demods on the radio (docs/design/decoders.md, the state boundary -- the fold is still
+	// ours; only the decode job is shared).
+	if !o.attach {
+		id, serr := ensureDecoder(ctx, app, c, o)
+		if serr != nil {
+			return serr
+		}
+		if id != "" {
+			// Free the radio as soon as track exits rather than waiting out the presence grace.
+			defer func() {
+				cctx, ccl := context.WithTimeout(context.Background(), 2*time.Second)
+				defer ccl()
+				_, _ = c.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: id})
+			}()
+		}
+	}
 	table := records.NewTable()
 	if err := seedTrack(ctx, c, table, o); err != nil {
 		return err
@@ -124,8 +166,11 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 	if err != nil {
 		return app.notRunning(err)
 	}
-	fmt.Fprintf(app.Stderr, "tracking %s. %s\n", o.protocol,
-		app.ErrStyle.Muted("a row drops off after "+ageWord(silence)+" of silence"))
+	how := "a row drops off after " + ageWord(silence) + " of silence"
+	if o.attach {
+		how = "folding what is already being decoded; " + how
+	}
+	fmt.Fprintf(app.Stderr, "tracking %s. %s\n", o.protocol, app.ErrStyle.Muted(how))
 
 	out := bufio.NewWriter(app.Stdout)
 	defer out.Flush()
@@ -165,6 +210,59 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 			}
 		}
 	}
+}
+
+// ensureDecoder makes sure a decoder is producing the protocol's records, and returns the id of a
+// job track started (empty when it attached to one already running, which is not track's to stop).
+func ensureDecoder(ctx context.Context, app *App, c *leyline.Client, o trackOptions) (string, error) {
+	if runningDecodeJob(ctx, c, o.protocol) != nil {
+		return "", nil
+	}
+	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{
+		Decoder:  o.protocol,
+		DeviceId: o.deviceID,
+		TakeOver: o.takeOver,
+	})
+	if err != nil {
+		return "", trackDecodeFailure(app, o, err)
+	}
+	return job.GetJobId(), nil
+}
+
+// runningDecodeJob is a decode job already producing this protocol, so track renders it rather
+// than starting a second demod on the radio. A best-effort read: on any error track starts its own.
+func runningDecodeJob(ctx context.Context, c *leyline.Client, protocol string) *leylinev1.Job {
+	jobs, err := c.ListJobs(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, j := range jobs {
+		d, ok := j.GetConfig().(*leylinev1.Job_Decode)
+		if !ok || d.Decode.GetDecoder() != protocol {
+			continue
+		}
+		if s := j.GetState(); s == leylinev1.JobState_RUNNING || s == leylinev1.JobState_DEGRADED {
+			return j
+		}
+	}
+	return nil
+}
+
+// trackDecodeFailure turns the daemon's refusal to start a decoder into the sentence to act on,
+// the way decode does, but pointing back at track.
+func trackDecodeFailure(app *App, o trackOptions, err error) error {
+	st := app.ErrStyle
+	switch leyline.Code(err) {
+	case leyline.CodeDecoderNotFound:
+		return &friendlyError{msg: fmt.Sprintf("there is no decoder called %q. %s lists the ones installed", o.protocol, st.Cmd("ley decoders")), cause: err}
+	case leyline.CodeDeviceBusy:
+		msg := leylineMessage(err, "the radio is busy")
+		return &friendlyError{msg: msg + ". " + st.Cmd("ley track "+o.protocol+" --take-over") + " starts anyway, or " + st.Cmd("ley track "+o.protocol+" --attach") + " folds a decoder already running", cause: err}
+	case leyline.CodeDecoderFailed:
+		msg := leylineMessage(err, "the decoder would not start")
+		return &friendlyError{msg: msg + ". " + st.Cmd("ley daemon logs") + " carries what the plugin wrote", cause: err}
+	}
+	return err
 }
 
 // trackSilence is the decoder's own entity timeout, which is the only honest answer to "when
@@ -226,19 +324,9 @@ func renderTrack(app *App, table *records.Table) string {
 	var b strings.Builder
 	_, _ = printColumns(&b, s, cols, nil)
 	if len(rows) == 0 {
-		b.WriteString(s.Muted("(nothing heard yet; ley decode " + firstProtocol(table) + " must be running)\n"))
+		b.WriteString(s.Muted("(nothing heard yet)\n"))
 	}
 	return b.String()
-}
-
-// firstProtocol names the protocol for the empty table's hint, from whatever the fold has seen.
-func firstProtocol(table *records.Table) string {
-	for _, e := range table.Rows() {
-		if e.Protocol != "" {
-			return e.Protocol
-		}
-	}
-	return "<protocol>"
 }
 
 // ageWord is how long ago, coarsened the way a person says it.
