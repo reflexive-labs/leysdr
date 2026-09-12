@@ -162,9 +162,21 @@ actor DecodeRunner {
     private nonisolated func drain(audio: AudioFrameSource) async {
         var seq: UInt64 = 0
         var lastEnd: UInt64 = 0
+        // The earliest sample the plugin has not seen, held open across dropped frames so the next
+        // frame that lands reports the whole gap at once (invariant 3). nil when nothing is owed.
+        var lostFrom: UInt64?
         for await _ in audio.poke {
             if Task.isCancelled { return }
             while let f = audio.next(s16: false) {
+                // The ring dropped samples ahead of this frame: a hole from the last frame's end.
+                if f.droppedSamples > 0, lostFrom == nil { lostFrom = lastEnd }
+                let end = f.sampleStart + f.sampleCount
+                defer { lastEnd = end }
+                guard let process = currentPlugin.withLock({ $0 }) else {
+                    // No plugin up (a restart is in flight): the frame is lost and the gap stays open.
+                    if lostFrom == nil { lostFrom = f.sampleStart }
+                    continue
+                }
                 seq += 1
                 var frame = Leyline_V1_Frame()
                 frame.streamID = streamID
@@ -172,19 +184,29 @@ actor DecodeRunner {
                 frame.time.captureID = lease.captureID.string
                 frame.time.sampleIndex = f.sampleStart
                 frame.payload = f.payload
-                // GAP_MARKED: what the ring dropped is stated rather than hidden, so a decoder
-                // knows its bit clock has a hole in it (invariant 3).
-                if f.droppedSamples > 0 {
-                    frame.gap.fromSample = lastEnd
+                if let from = lostFrom {
+                    frame.gap.fromSample = from
                     frame.gap.toSample = f.sampleStart
                 }
-                lastEnd = f.sampleStart + f.sampleCount
-                guard let process = currentPlugin.withLock({ $0 }) else { continue }
                 do {
-                    try process.write(frame)
+                    switch try process.write(frame) {
+                    case .written:
+                        lostFrom = nil
+                    case .droppedFull:
+                        // The plugin has stopped reading. Drop the frame, keep the gap open, and
+                        // leave the health of the plugin to whether it ever reads again -- silence
+                        // is not failure here, a decoder can legitimately want none of this audio.
+                        if lostFrom == nil { lostFrom = f.sampleStart }
+                    }
+                } catch is PluginStalled {
+                    // A frame stalled half-written: the stream is unsalvageable, so replace the
+                    // plugin. The restart loop is what respawns; stopping it makes runPlugin return.
+                    if lostFrom == nil { lostFrom = f.sampleStart }
+                    await process.stop()
+                    continue
                 } catch {
-                    // The plugin died between the check and the write; the restart loop is already
-                    // on it and this frame is part of the gap it costs.
+                    // The plugin died between the check and the write; the restart loop is on it.
+                    if lostFrom == nil { lostFrom = f.sampleStart }
                     continue
                 }
             }

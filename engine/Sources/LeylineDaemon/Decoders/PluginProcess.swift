@@ -14,6 +14,11 @@
 
 import EngineCore
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 import LeylineProto
 import Logging
 import SwiftProtobuf
@@ -86,21 +91,49 @@ func delimitedBytes(_ message: any Message) throws -> [UInt8] {
     return out
 }
 
-/// Writes varint-delimited messages to a file descriptor.
-func writeDelimited(_ message: any Message, to fd: Int32) throws {
+/// The result of trying to hand one frame to a plugin over a non-blocking pipe.
+enum PluginWrite {
+    /// Every byte reached the plugin.
+    case written
+    /// The pipe was full at the first byte -- the plugin has stopped reading -- so nothing was
+    /// written and the frame is dropped. The next frame that lands carries the gap (invariant 3).
+    case droppedFull
+}
+
+/// A plugin whose pipe stalled with a frame half-written. The stream cannot be resynchronised, so
+/// the runner tears the plugin down and the restart loop spawns a fresh one.
+struct PluginStalled: Error {}
+
+/// Writes a varint-delimited message to a non-blocking file descriptor, giving up rather than
+/// blocking the caller for ever on a plugin that has wedged (docs/plans/decoders.md, DEC-16).
+///
+/// The frame is atomic on the wire or it is dropped: if the pipe cannot take its first byte the
+/// whole frame is dropped and reported (`droppedFull`); once a byte has gone the frame must finish
+/// or the length prefix and the body it promised part company, so a stall past `deadlineSeconds`
+/// mid-frame throws `PluginStalled` and the plugin is replaced rather than fed a torn stream.
+@discardableResult
+func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Double = 2.0) throws -> PluginWrite {
     let out = try delimitedBytes(message)
     var offset = 0
+    let deadline = ContinuousClock.now.advanced(by: .seconds(deadlineSeconds))
     while offset < out.count {
         let written = out.withUnsafeBytes { raw -> Int in
             write(fd, raw.baseAddress!.advanced(by: offset), out.count - offset)
         }
+        if written > 0 { offset += written; continue }
         if written < 0 && errno == EINTR { continue }
-        guard written > 0 else {
-            throw EngineError(code: EngineError.Code.decoderFailed,
-                              message: "the plugin is not reading its input (\(String(cString: strerror(errno))))", target: "")
+        if written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+            if offset == 0 { return .droppedFull }
+            // Mid-frame: wait for the reader to make room, but not for ever.
+            if ContinuousClock.now >= deadline { throw PluginStalled() }
+            var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            _ = poll(&pfd, 1, 50)
+            continue
         }
-        offset += written
+        throw EngineError(code: EngineError.Code.decoderFailed,
+                          message: "the plugin is not reading its input (\(String(cString: strerror(errno))))", target: "")
     }
+    return .written
 }
 
 /// A spawned decoder. One instance runs one child; a restart makes a new one.
@@ -156,11 +189,23 @@ final class PluginProcess: @unchecked Sendable {
                               message: "\(name) could not be started: \(error)", target: name)
         }
         startReaders()
-        try writeDelimited(descriptor, to: inPipe.fileHandleForWriting.fileDescriptor)
+        // The write end is non-blocking so a plugin that stops reading cannot wedge the runner's
+        // drain task (DEC-16). The descriptor is small and read at once, so a drop there is the
+        // plugin refusing its own input -- treat it as a failure to start.
+        let wfd = inPipe.fileHandleForWriting.fileDescriptor
+        let flags = fcntl(wfd, F_GETFL, 0)
+        if flags >= 0 { _ = fcntl(wfd, F_SETFL, flags | O_NONBLOCK) }
+        if try writeDelimited(descriptor, to: wfd, deadlineSeconds: 5) == .droppedFull {
+            throw EngineError(code: EngineError.Code.decoderFailed,
+                              message: "\(name) did not read its stream descriptor", target: name)
+        }
     }
 
-    /// One frame to the plugin. Called from the runner's drain task.
-    func write(_ frame: Leyline_V1_Frame) throws {
+    /// One frame to the plugin, without blocking the caller. Returns whether the frame reached the
+    /// plugin or was dropped because the plugin has stopped reading; throws `PluginStalled` if a
+    /// frame stalled half-written, which the runner answers by replacing the plugin.
+    @discardableResult
+    func write(_ frame: Leyline_V1_Frame) throws -> PluginWrite {
         try writeDelimited(frame, to: inPipe.fileHandleForWriting.fileDescriptor)
     }
 

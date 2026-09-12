@@ -87,12 +87,36 @@ let dieAfter: UInt64 = {
     return 0
 }()
 
+/// `--deaf-after=N` reads and answers N frames, then stops reading its input, the way a plugin
+/// that has wedged does. The daemon's non-blocking write must drop-and-gap rather than stall
+/// (docs/plans/decoders.md, DEC-16).
+let deafAfter: UInt64 = {
+    for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--deaf-after=") {
+        return UInt64(arg.dropFirst("--deaf-after=".count)) ?? 0
+    }
+    return 0
+}()
+
+func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
+    var rec = Leyline_V1_DecodeRecord()
+    rec.protocol = "fake"
+    rec.deviceID = "FAKE-\(seq)"
+    rec.kind = "position"
+    rec.time = frame.time
+    writeDelimited(rec)
+    while true { sleep(3600) }
+}
+
 var seq: UInt64 = 0
 while let bytes = readDelimited() {
     guard let frame = try? Leyline_V1_Frame(serializedBytes: bytes) else { exit(2) }
     // The restart path: a frame with nothing in it is the test's way of killing the plugin.
     if frame.payload.isEmpty { exit(3) }
     seq += 1
+    if deafAfter > 0, seq >= deafAfter {
+        // Answer this last frame, then never read again: sit forever while the daemon's pipe fills.
+        writeLastAndSleep(frame: frame, seq: seq)
+    }
     var rec = Leyline_V1_DecodeRecord()
     rec.protocol = "fake"
     rec.deviceID = "FAKE-\(seq)"

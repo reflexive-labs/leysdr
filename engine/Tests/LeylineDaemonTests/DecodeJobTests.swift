@@ -201,6 +201,31 @@ final class DecodeJobTests: XCTestCase {
         }
     }
 
+    func testAPluginThatStopsReadingDoesNotWedgeTheDrain() async throws {
+        // A decoder that reads three frames then stops reading is the DEC-16 hang: the daemon's
+        // write is non-blocking, so the drain drops and gaps rather than parking on a full pipe,
+        // the job stays RUNNING (silence is not failure -- the plugin never exited), and cancel
+        // still hands the radio back promptly rather than blocking on a wedged writer.
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins, args: ["--deaf-after=3"])
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attachFixture(c)
+            let started = try await self.startDecode(c)
+            let got = try await self.records(c, job: started.jobID, count: 3)
+            XCTAssertEqual(got.count, 3, "the frames before the plugin went deaf still decoded")
+            // Give the looping fixture time to overrun the wedged plugin's pipe several times over.
+            try await Task.sleep(nanoseconds: 1_500_000_000)
+            let still = try await self.job(c, started.jobID)
+            XCTAssertEqual(still.state, .running, "a plugin that reads nothing is not a failed job")
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = started.jobID
+            let deadline = ContinuousClock.now.advanced(by: .seconds(8))
+            _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+            XCTAssertLessThan(ContinuousClock.now, deadline, "cancel returned rather than blocking on the wedged pipe")
+        }
+    }
+
     func testAChannelOutOfCaptureDegradesTheJobAndComingBackRestoresIt() async throws {
         let plugins = try makeTempDir("decoders")
         defer { try? FileManager.default.removeItem(atPath: plugins) }
