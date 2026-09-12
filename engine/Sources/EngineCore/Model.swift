@@ -177,6 +177,10 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
         public static let modeUnsupported = "MODE_UNSUPPORTED"
         public static let unimplemented = "UNIMPLEMENTED"
         public static let platformUnsupported = "PLATFORM_UNSUPPORTED"
+        /// Decoders (docs/design/decoders.md, "Decisions"): the registry has no manifest by that
+        /// name, and the plugin's program could not be started.
+        public static let decoderNotFound = "DECODER_NOT_FOUND"
+        public static let decoderFailed = "DECODER_FAILED"
         public static let failedPrecondition = "FAILED_PRECONDITION"
         public static let invalidArgument = "INVALID_ARGUMENT"
         public static let internalError = "INTERNAL"
@@ -191,7 +195,7 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
             freqOutOfRange, rateUnsupported, offsetOutOfCapture, blindSpot, gainElementUnknown,
             captureNotFound, channelNotFound, sinkNotFound, streamNotFound, jobNotFound, scanNotFound,
             modeUnsupported, unimplemented, platformUnsupported, failedPrecondition, invalidArgument,
-            internalError,
+            internalError, decoderNotFound, decoderFailed,
         ]
     }
 
@@ -216,6 +220,8 @@ public struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
     public static func unimplemented(_ what: String) -> EngineError { .init(code: Code.unimplemented, message: "\(what) is not implemented in v0", target: "") }
     public static func invalidArgument(_ msg: String, target: String = "") -> EngineError { .init(code: Code.invalidArgument, message: msg, target: target) }
     public static func platformUnsupported(_ what: String) -> EngineError { .init(code: Code.platformUnsupported, message: "\(what) requires macOS", target: "") }
+    public static func decoderNotFound(_ name: String) -> EngineError { .init(code: Code.decoderNotFound, message: "no decoder named \(name) is installed", target: name) }
+    public static func decoderFailed(_ msg: String, target: String = "") -> EngineError { .init(code: Code.decoderFailed, message: msg, target: target) }
     /// A precondition the caller can see and fix, where no more specific code fits.
     public static func failedPrecondition(_ msg: String, target: String = "") -> EngineError { .init(code: Code.failedPrecondition, message: msg, target: target) }
     /// A fault the caller did not cause and cannot act on; the prose is whatever went wrong.

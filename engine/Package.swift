@@ -23,6 +23,8 @@ let package = Package(
     products: [
         .executable(name: "leylined", targets: ["LeylineDaemon"]),
         .executable(name: "s2-throughput", targets: ["S2Throughput"]),
+        // A decoder plugin that decodes nothing, for the daemon's decode-job tests (DEC-4).
+        .executable(name: "leyline-fake-decoder", targets: ["FakeDecoder"]),
         .library(name: "EngineCore", targets: ["EngineCore"]),
         .library(name: "LeylineProto", targets: ["LeylineProto"]),
     ],
@@ -70,6 +72,14 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/LeylineDaemon"
+        ),
+        .executableTarget(
+            name: "FakeDecoder",
+            dependencies: [
+                "LeylineProto",
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
+            path: "Sources/FakeDecoder"
         ),
         .executableTarget(
             name: "S2Throughput",

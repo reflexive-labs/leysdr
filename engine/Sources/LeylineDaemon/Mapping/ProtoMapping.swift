@@ -205,10 +205,10 @@ enum ProtoMapping {
         switch code {
         case EngineError.Code.deviceNotFound, EngineError.Code.captureNotFound, EngineError.Code.channelNotFound,
              EngineError.Code.sinkNotFound, EngineError.Code.streamNotFound, EngineError.Code.jobNotFound,
-             EngineError.Code.scanNotFound:
+             EngineError.Code.scanNotFound, EngineError.Code.decoderNotFound:
             return .notFound
         case EngineError.Code.deviceBusy, EngineError.Code.deviceSweeping, EngineError.Code.noDevice,
-             EngineError.Code.failedPrecondition:
+             EngineError.Code.failedPrecondition, EngineError.Code.decoderFailed:
             return .failedPrecondition
         case EngineError.Code.deviceDetached, EngineError.Code.deviceIO:
             return .unavailable

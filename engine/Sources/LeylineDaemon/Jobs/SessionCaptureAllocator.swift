@@ -21,11 +21,140 @@ actor SessionCaptureAllocator: CaptureAllocator {
 
     func allocate(_ request: AllocationRequest, for job: JobID) async -> AllocationResult {
         switch request {
-        case .channel:
-            // Watch jobs land here (Milestone D.15). A sweep is the only caller today.
-            return .declined(code: EngineError.Code.unimplemented, reason: "channel allocation arrives with watch jobs")
+        case .channel(let frequencyHz, let bandwidthHz, let mode, let deviceID, let takeOver):
+            return await allocateChannel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz, mode: mode,
+                                         deviceID: deviceID, takeOver: takeOver, job: job)
         case .exclusiveCapture(let range, let deviceID, let takeOver):
             return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, job: job)
+        }
+    }
+
+    // MARK: One channel (decode jobs, and watch jobs from D.15)
+
+    /// The order and the reasons are the design doc's (docs/design/decoders.md, "Decisions": "A
+    /// decode job is a job"): a capture that already covers the frequency on any device, else a
+    /// device with no capture, else a capture the don't-disturb test calls free, else a decline
+    /// naming who has the radio.
+    private func allocateChannel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode,
+                                 deviceID wanted: DeviceID?, takeOver: Bool, job: JobID) async -> AllocationResult
+    {
+        let state = await store.snapshot(scope: .daemon)
+        let bw = bandwidthHz == 0 ? mode.defaultBandwidthHz : bandwidthHz
+        let owner = ClientContext.job(job)
+        var sawDevice = false
+        var lastReason = "no radio here can hear \(fmt(frequencyHz))"
+
+        // 1. A capture that already covers the frequency. This disturbs nobody: the channel sits
+        //    inside a span somebody is already listening to.
+        for cap in state.captures {
+            if let want = wanted, cap.deviceID != want.string { continue }
+            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            sawDevice = true
+            let offset = Int64(frequencyHz) - Int64(cap.centerHz)
+            guard SessionStore.fits(offsetHz: offset, bandwidthHz: bw, sampleRate: cap.sampleRate) else { continue }
+            if let lease = await open(captureID: id, offsetHz: offset, bandwidthHz: bw, mode: mode,
+                                      frequencyHz: frequencyHz, owner: owner, createdCapture: false,
+                                      restoreCenterHz: nil) {
+                return .channel(lease)
+            }
+        }
+
+        // 2. A radio with nothing on it. The capture is centred a quarter-span below the channel,
+        //    so the channel sits clear of the tuner's own DC spike and inside the flat part of the
+        //    passband.
+        for device in state.devices where device.state != .disconnected {
+            if let want = wanted, device.deviceID != want.string { continue }
+            guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
+            guard let deviceID = DeviceID(string: device.deviceID) else { continue }
+            sawDevice = true
+            let rate = bestRate(device)
+            guard let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: rate) else {
+                lastReason = "\(device.model) cannot tune \(fmt(frequencyHz))"
+                continue
+            }
+            do {
+                let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
+                                          mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: true,
+                                          restoreCenterHz: nil) {
+                    return .channel(lease)
+                }
+                await store.destroyCapture(id: id, by: .daemon)
+            } catch {
+                lastReason = (error as? EngineError)?.message ?? "\(error)"
+                log.debug("decode job could not open \(device.deviceID): \(lastReason)")
+            }
+        }
+
+        // 3. A capture nobody is using, retuned. This is the first step that disturbs anything, so
+        //    it is the last one tried.
+        for cap in state.captures {
+            if let want = wanted, cap.deviceID != want.string { continue }
+            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            if !takeOver, let why = inUse(cap, state: state) {
+                lastReason = why
+                continue
+            }
+            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
+                  let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: cap.sampleRate),
+                  let engine = await store.captureEngine(id) else { continue }
+            let before = cap.centerHz
+            do {
+                try await engine.retune(centerHz: centre)
+            } catch {
+                lastReason = (error as? EngineError)?.message ?? "\(error)"
+                continue
+            }
+            await store.publishCapture(id)
+            if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
+                                      mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: false,
+                                      restoreCenterHz: before) {
+                return .channel(lease)
+            }
+            try? await engine.retune(centerHz: before)
+            await store.publishCapture(id)
+        }
+        return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
+    }
+
+    /// Where to point a capture so the channel lands a quarter-span off centre, clamped to what the
+    /// device can tune -- a file device's range is the single point its recording was made at, and
+    /// the channel still fits inside the span. nil when the channel would fall outside it.
+    private func channelCentre(frequencyHz: UInt64, bandwidthHz: UInt32,
+                               device: Leyline_V1_DeviceDescriptor, rate: UInt64) -> UInt64?
+    {
+        let quarter = rate / 8
+        let desired = frequencyHz > quarter ? frequencyHz - quarter : frequencyHz
+        var best: UInt64?
+        var bestDistance = UInt64.max
+        for r in device.tuningRanges {
+            let clamped = Swift.min(Swift.max(desired, r.minHz), Swift.max(r.minHz, r.maxHz))
+            let d = clamped > desired ? clamped - desired : desired - clamped
+            if d < bestDistance {
+                bestDistance = d
+                best = clamped
+            }
+        }
+        guard let centre = best else { return nil }
+        guard SessionStore.fits(offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bandwidthHz, sampleRate: rate) else { return nil }
+        return centre
+    }
+
+    private func open(captureID: CaptureID, offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode,
+                      frequencyHz: UInt64, owner: ClientContext, createdCapture: Bool,
+                      restoreCenterHz: UInt64?) async -> SessionChannelLease?
+    {
+        do {
+            let proto = try await store.createChannel(captureID: captureID, offsetHz: offsetHz, bandwidthHz: bandwidthHz,
+                                                      mode: ProtoMapping.demodMode(mode), persistent: true,
+                                                      requiredHz: frequencyHz, by: owner)
+            guard let channelID = ChannelID(string: proto.channelID),
+                  let engine = await store.channelEngine(channelID) else { return nil }
+            return SessionChannelLease(channelID: channelID, captureID: captureID, engine: engine, store: store,
+                                       createdCapture: createdCapture, restoreCenterHz: restoreCenterHz, owner: owner)
+        } catch {
+            log.debug("decode job could not open a channel on \(captureID.string): \(error)")
+            return nil
         }
     }
 
@@ -278,5 +407,47 @@ actor SessionCaptureLease: CaptureLease {
             await store.publishCapture(captureID)
         }
         await onRelease()
+    }
+}
+
+/// One job's hold on one channel. Release destroys the channel, and whatever the allocator had to
+/// build under it: a capture it created, or the centre frequency it retuned away from.
+actor SessionChannelLease: ChannelLease {
+    nonisolated let channelID: ChannelID
+    nonisolated let captureID: CaptureID
+    nonisolated let engine: any ChannelEngine
+
+    private let store: SessionStore
+    private let createdCapture: Bool
+    private let restoreCenterHz: UInt64?
+    private let owner: ClientContext
+    private var released = false
+
+    init(channelID: ChannelID, captureID: CaptureID, engine: any ChannelEngine, store: SessionStore,
+         createdCapture: Bool, restoreCenterHz: UInt64?, owner: ClientContext)
+    {
+        self.channelID = channelID
+        self.captureID = captureID
+        self.engine = engine
+        self.store = store
+        self.createdCapture = createdCapture
+        self.restoreCenterHz = restoreCenterHz
+        self.owner = owner
+    }
+
+    func release() async {
+        guard !released else { return }
+        released = true
+        try? await store.destroyChannelChecked(id: channelID, by: owner)
+        // Only when nothing else is listening on it. Another job may have put its own channel in
+        // the capture this one opened, and a radio taken out from under it would be worse than a
+        // capture that outlives its maker by a moment.
+        guard await store.channelEngines(captureID: captureID).isEmpty else { return }
+        if createdCapture {
+            await store.destroyCapture(id: captureID, by: .daemon)
+        } else if let centre = restoreCenterHz, let capture = await store.captureEngine(captureID) {
+            try? await capture.retune(centerHz: centre)
+            await store.publishCapture(captureID)
+        }
     }
 }

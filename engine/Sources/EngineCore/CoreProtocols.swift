@@ -523,8 +523,11 @@ public protocol CaptureAllocator: Sendable {
 }
 
 public enum AllocationRequest: Sendable {
-    /// One demod chain at a frequency, inside any capture that covers it.
-    case channel(frequencyHz: UInt64, bandwidthHz: UInt32)
+    /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, from
+    /// D.15, a watch job) asks for this: it wants to hear one channel and does not care which
+    /// radio serves it. `deviceID` nil means the allocator picks; `takeOver` retunes a capture
+    /// somebody is using.
+    case channel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode, deviceID: DeviceID?, takeOver: Bool)
     /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the politeness
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
@@ -533,10 +536,21 @@ public enum AllocationRequest: Sendable {
 }
 
 public enum AllocationResult: Sendable {
-    case channel(ChannelID)
+    case channel(any ChannelLease)
     case capture(any CaptureLease)
     /// `code` is a stable machine string; `reason` names what is using the radio, in prose.
     case declined(code: String, reason: String)
+}
+
+/// A job's hold on one channel, and on whatever the allocator had to build under it. Releasing
+/// destroys the channel, and the capture too when the lease created it -- a job that borrowed
+/// somebody's radio leaves it as it found it (docs/design/decoders.md, "Decisions": "A decode job
+/// is a job").
+public protocol ChannelLease: AnyObject, Sendable {
+    var channelID: ChannelID { get }
+    var captureID: CaptureID { get }
+    var engine: any ChannelEngine { get }
+    func release() async
 }
 
 /// A job's exclusive hold on one capture. Retuning through the lease bypasses the write coalescer

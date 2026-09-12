@@ -25,6 +25,14 @@ final class Daemon: @unchecked Sendable {
         var rtltcp: [RTLTCPEndpoint] = []
         /// The remembered attach list; nil puts `devices.json` beside the socket.
         var devicesPath: String? = nil
+        /// Where to look for decoder plugins, in order: the `--decoders` flags and
+        /// `LEYLINE_DECODERS`, then the platform default (docs/design/decoders.md, "Decisions":
+        /// "Manifest: a file, not a flag"). A test names one directory of its own.
+        var decoderSearchPath: [String] = [defaultDecodersPath()]
+        /// Where kept records live, and the retention applied to them.
+        var storePath: String = defaultStorePath()
+        var storeCapBytes: UInt64 = 2 << 30
+        var storeAgeDays: UInt32 = 90
     }
 
     /// A parsed `--rtltcp host:port`.
@@ -66,7 +74,9 @@ final class Daemon: @unchecked Sendable {
         store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs, remembered: remembered)
         streams = StreamRegistry(store: store)
         let allocator = SessionCaptureAllocator(store: store)
-        jobs = JobStore(store: store, allocator: allocator)
+        let decoders = DecoderRegistry(searchPath: config.decoderSearchPath)
+        let recordStore = RecordStore(directory: config.storePath, capBytes: config.storeCapBytes, ageDays: config.storeAgeDays)
+        jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore)
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
@@ -81,6 +91,7 @@ final class Daemon: @unchecked Sendable {
                 TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
                 JobsService(jobs: jobs, store: store),
+                DecodersService(jobs: jobs, store: store),
                 ResourcesService(),
             ],
             interceptors: [ClientContextInterceptor()]
@@ -136,6 +147,9 @@ final class Daemon: @unchecked Sendable {
             try "\(getpid())\n".write(toFile: pid, atomically: true, encoding: .utf8)
         }
         await registry.start()
+        // Retention at start, as the design doc says: a store over its cap or its age is trimmed
+        // before anything new is written to it.
+        await jobs.records.retain()
         await attachRemoteDongles()
         await store.startDeviceMirror()
         await streams.install()

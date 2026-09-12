@@ -31,10 +31,24 @@ actor JobStore {
         /// The connection that asked for it. When that connection goes, so does the job: a sweep
         /// nobody is reading is just a radio nobody can use.
         var ownerClientID: String
+        /// A decode job's plugin, channel lease and store writer. Nil for every other kind.
+        var decode: DecodeRunner?
+        /// `keep`: persistence follows intent (invariant 8). A kept job outlives its client.
+        var keep = false
+    }
+
+    /// Live states. A decode job sits in DEGRADED while its capture has moved away from it, and is
+    /// no more finished there than it is while RUNNING.
+    private static func isLive(_ state: Leyline_V1_JobState) -> Bool {
+        state == .running || state == .degraded
     }
 
     private let store: SessionStore
     private let allocator: SessionCaptureAllocator
+    /// Decoders as installed on disk, and the kept-records store (docs/design/decoders.md).
+    let decoders: DecoderRegistry
+    let records: RecordStore
+    let hub = RecordHub()
     private let log = Logger(label: "leyline.jobs")
     private var entries: [JobID: Entry] = [:]
     private var order: [JobID] = []
@@ -42,9 +56,11 @@ actor JobStore {
                                         continuation: AsyncStream<(Leyline_V1_Detection, SampleTime)>.Continuation,
                                         subscription: DetectionSubscription)] = [:]
 
-    init(store: SessionStore, allocator: SessionCaptureAllocator) {
+    init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry, records: RecordStore) {
         self.store = store
         self.allocator = allocator
+        self.decoders = decoders
+        self.records = records
     }
 
     // MARK: Detections on the telemetry plane
@@ -87,6 +103,13 @@ actor JobStore {
     func cancel(_ id: JobID) async -> Leyline_V1_Job? {
         guard let e = entries[id] else { return nil }
         e.task?.cancel()
+        // A decode job's teardown is the runner's: the plugin goes, the store writer is closed and
+        // the channel and any capture it built go back.
+        if let runner = e.decode {
+            await runner.stop()
+            await finish(id, state: .cancelled, detail: "cancelled")
+            return entries[id]?.proto
+        }
         // Wait for the sweep to put down what it found before answering. Without this the caller
         // reads the Scan while the sweep is still writing it, and an interrupted scan looks empty
         // rather than partial. Awaiting here is safe: an actor is re-entrant at an await, so the
@@ -103,10 +126,10 @@ actor JobStore {
         // six seconds of uncancellable work returned after six. This loop is bounded by
         // construction.
         let deadline = ContinuousClock.now.advanced(by: .seconds(Self.cancelWaitSeconds))
-        while entries[id]?.proto.state == .running, ContinuousClock.now < deadline, !Task.isCancelled {
+        while entries[id].map({ Self.isLive($0.proto.state) }) == true, ContinuousClock.now < deadline, !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        if entries[id]?.proto.state == .running {
+        if entries[id].map({ Self.isLive($0.proto.state) }) == true {
             await finish(id, state: .cancelled, detail: "cancelled")
         }
         return entries[id]?.proto
@@ -115,7 +138,8 @@ actor JobStore {
     /// Ends every job a departing client owned. A sweep outliving its reader would hold the radio
     /// with nobody to hand the answer to.
     func clientGone(_ clientID: String) async {
-        for (id, e) in entries where e.ownerClientID == clientID && e.proto.state == .running {
+        // A kept decode job is exactly the one that outlives its client (invariant 8).
+        for (id, e) in entries where e.ownerClientID == clientID && Self.isLive(e.proto.state) && !e.keep {
             _ = await cancel(id)
         }
     }
@@ -123,10 +147,11 @@ actor JobStore {
     func cancelAll() async {
         // Cancel every task first, then wait: a shutdown with several sweeps running should not
         // serialise their teardowns.
-        for e in entries.values where e.proto.state == .running { e.task?.cancel() }
-        for id in entries.keys where entries[id]?.proto.state == .running {
+        for e in entries.values where Self.isLive(e.proto.state) { e.task?.cancel() }
+        for id in entries.keys where entries[id].map({ Self.isLive($0.proto.state) }) == true {
             _ = await cancel(id)
         }
+        await hub.finishAll()
     }
 
     // MARK: Starting a scan
@@ -257,6 +282,114 @@ actor JobStore {
         }
     }
 
+    // MARK: Starting a decode
+
+    /// Runs a decoder on its recipe (docs/design/decoders.md, "Decisions": "A decode job is a job").
+    /// The lookup and the refusals happen here, where the caller can be told; everything that can
+    /// take a radio's time happens in the task.
+    func startDecode(config: Leyline_V1_DecodeConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
+        guard let installed = decoders.find(config.decoder) else {
+            throw EngineError.decoderNotFound(config.decoder)
+        }
+        if installed.manifest.input.mode == .slotAligned {
+            throw EngineError.unimplemented("slot-aligned decoder input")
+        }
+        let frequencyHz = config.frequencyHz != 0 ? config.frequencyHz : (installed.manifest.recipe.frequenciesHz.first ?? 0)
+        guard frequencyHz > 0 else {
+            throw EngineError.invalidArgument("\(config.decoder) names no frequency of its own; say which with --freq", target: config.decoder)
+        }
+        let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
+        if !config.deviceID.isEmpty, deviceID == nil {
+            throw EngineError.deviceNotFound(config.deviceID)
+        }
+
+        let id = JobID()
+        var job = Leyline_V1_Job()
+        job.jobID = id.string
+        job.state = .running
+        job.createdAtNs = realtimeNs()
+        job.createdBy = client.proto
+        job.config = .decode(config)
+        job.statusDetail = "starting"
+        // Persistence follows intent (invariant 8): only a kept job has a resource.
+        if config.keep { job.resultUris = ["ley://records/\(id.string)"] }
+
+        // The task goes in before the first suspension, for the same reason a scan's does: a cancel
+        // arriving while `publishJob` runs must find something to cancel.
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
+        }
+        entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil, keep: config.keep)
+        order.append(id)
+        trim()
+        await store.publishJob(job)
+        return job
+    }
+
+    private func runDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                           frequencyHz: UInt64, deviceID: DeviceID?) async
+    {
+        guard entries[id]?.proto.state == .running else { return }
+        let mode = ProtoMapping.demodMode(installed.manifest.recipe.mode == .unspecified ? .nfm : installed.manifest.recipe.mode) ?? .nfm
+        let allocation = await allocator.allocate(
+            .channel(frequencyHz: frequencyHz, bandwidthHz: installed.manifest.recipe.bandwidthHz,
+                     mode: mode, deviceID: deviceID, takeOver: config.takeOver), for: id)
+        guard case .channel(let lease) = allocation else {
+            if case .declined(let code, let reason) = allocation {
+                await finish(id, state: .failed, detail: reason, code: code)
+            } else {
+                await finish(id, state: .failed, detail: "no radio could be allocated", code: EngineError.Code.noDevice)
+            }
+            return
+        }
+        // Allocating suspends, and a cancel in that window has already answered. Hand the radio
+        // back rather than decoding for a job nobody is waiting on.
+        guard entries[id]?.proto.state == .running else {
+            await lease.release()
+            return
+        }
+        let snapshot = await store.captureEngine(lease.captureID)?.snapshot
+        var writer: RecordWriter?
+        if config.keep {
+            // Retention runs when a kept job starts, as the design doc says, so the store is inside
+            // its cap before it is written to rather than after.
+            await records.retain()
+            do {
+                writer = try await records.open(job: id, config: config, manifest: installed.manifest,
+                                                capture: lease.captureID, anchor: snapshot?.anchor)
+            } catch {
+                await lease.release()
+                await finish(id, state: .failed, detail: "the record store would not open: \(error)",
+                             code: EngineError.Code.internalError)
+                return
+            }
+        }
+        let runner = DecodeRunner(
+            jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
+            frequencyHz: frequencyHz, captureRateHz: snapshot?.sampleRate ?? 0,
+            tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
+            onStatus: { [weak self] state, detail in
+                await self?.setDecodeStatus(id, state: state, detail: detail)
+            })
+        entries[id]?.decode = runner
+        await runner.start()
+    }
+
+    /// What the runner reports. FAILED is terminal and carries the decoder's code; RUNNING and
+    /// DEGRADED are the job moving between having its capture and waiting for it back.
+    private func setDecodeStatus(_ id: JobID, state: Leyline_V1_JobState, detail: String) async {
+        guard var e = entries[id], Self.isLive(e.proto.state) else { return }
+        if state == .failed {
+            await finish(id, state: .failed, detail: detail, code: EngineError.Code.decoderFailed)
+            return
+        }
+        e.proto.state = state
+        e.proto.statusDetail = detail
+        entries[id] = e
+        await store.publishJob(e.proto)
+    }
+
     private func detected(_ hit: ScanHit, captureID: CaptureID) {
         publish(proto(hit, captureID: captureID), at: hit.lastSeen, captureID: captureID)
     }
@@ -275,7 +408,7 @@ actor JobStore {
     }
 
     private func setDetail(_ id: JobID, _ detail: String) async {
-        guard var e = entries[id], e.proto.state == .running else { return }
+        guard var e = entries[id], Self.isLive(e.proto.state) else { return }
         e.proto.statusDetail = detail
         entries[id] = e
         await store.publishJob(e.proto)
@@ -306,7 +439,7 @@ actor JobStore {
 
     private func finish(_ id: JobID, state: Leyline_V1_JobState, detail: String, code: String? = nil) async {
         guard var e = entries[id] else { return }
-        guard e.proto.state == .running else { return }
+        guard Self.isLive(e.proto.state) else { return }
         e.proto.state = state
         // The prose and the machine code go to different fields: `status_detail` is the sentence a
         // person reads, `error` the code a client branches on.

@@ -71,3 +71,13 @@ struct ClientContextInterceptor: ServerInterceptor {
         return response
     }
 }
+
+extension ClientContext {
+    /// A job's own identity. A channel a decode job owns is attributed to the job rather than to
+    /// the client that asked for it, so the don't-disturb test reads "another job is listening"
+    /// and a client going away does not reap a channel the daemon still needs
+    /// (docs/design/decoders.md, "Decisions": "A decode job is a job").
+    static func job(_ id: JobID) -> ClientContext {
+        ClientContext(id: id.string, kind: "job", label: id.string)
+    }
+}

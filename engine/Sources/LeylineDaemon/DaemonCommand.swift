@@ -19,6 +19,31 @@ func defaultSocketPath() -> String {
     #endif
 }
 
+/// Where decoder plugins live when nothing says otherwise: `~/Library/Application
+/// Support/Leyline/decoders` on macOS, `$XDG_DATA_HOME/leyline/decoders` (or
+/// `~/.local/share/leyline/decoders`) elsewhere (docs/design/decoders.md, "Decisions").
+func defaultDecodersPath() -> String { defaultDataPath("decoders") }
+
+/// Where kept records live when nothing says otherwise, by the same rule.
+func defaultStorePath() -> String { defaultDataPath("store") }
+
+private func defaultDataPath(_ leaf: String) -> String {
+    #if os(macOS)
+    return NSHomeDirectory() + "/Library/Application Support/Leyline/" + leaf
+    #else
+    if let dir = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !dir.isEmpty {
+        return dir + "/leyline/" + leaf
+    }
+    return NSHomeDirectory() + "/.local/share/leyline/" + leaf
+    #endif
+}
+
+/// `LEYLINE_DECODERS=dir[:dir...]` — appended to the `--decoders` flags, ahead of the default.
+func decoderPathsFromEnvironment() -> [String] {
+    guard let env = ProcessInfo.processInfo.environment["LEYLINE_DECODERS"], !env.isEmpty else { return [] }
+    return env.split(separator: ":").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+}
+
 @main
 struct DaemonCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -42,6 +67,18 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port, for foreground runs (repeatable; env LEYLINE_RTLTCP, comma-separated). A radio the daemon should keep is attached over the protocol instead, with `ley devices attach`.")
     var rtltcp: [String] = []
 
+    @Option(help: "Directory of decoder plugins (repeatable; env LEYLINE_DECODERS, colon-separated). The platform default is searched last.")
+    var decoders: [String] = []
+
+    @Option(help: "Where kept decode records are written (platform default otherwise).")
+    var store: String = defaultStorePath()
+
+    @Option(name: .customLong("store-cap"), help: "Record store size cap in bytes; the oldest jobs go when it is exceeded.")
+    var storeCap: UInt64 = 2 << 30
+
+    @Option(name: .customLong("store-age"), help: "Days a kept job's records are held before they are dropped.")
+    var storeAge: UInt32 = 90
+
     func run() async throws {
         let level = Logger.Level(rawValue: logLevel) ?? .info
         LoggingSystem.bootstrap { label in
@@ -51,7 +88,10 @@ struct DaemonCommand: AsyncParsableCommand {
         }
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
         let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
-        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, rtltcp: remotes))
+        let searchPath = decoders + decoderPathsFromEnvironment() + [defaultDecodersPath()]
+        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, rtltcp: remotes,
+                                          decoderSearchPath: searchPath, storePath: store,
+                                          storeCapBytes: storeCap, storeAgeDays: storeAge))
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.
         signal(SIGPIPE, SIG_IGN)

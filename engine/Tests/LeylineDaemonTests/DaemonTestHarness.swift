@@ -27,6 +27,7 @@ func fixturePath(_ name: String) -> String {
 
 struct DaemonClients {
     let control: Leyline_V1_Control.Client<HTTP2ClientTransport.Posix>
+    let decoders: Leyline_V1_Decoders.Client<HTTP2ClientTransport.Posix>
     let telemetry: Leyline_V1_Telemetry.Client<HTTP2ClientTransport.Posix>
     let bulk: Leyline_V1_Bulk.Client<HTTP2ClientTransport.Posix>
     let jobs: Leyline_V1_Jobs.Client<HTTP2ClientTransport.Posix>
@@ -43,14 +44,19 @@ struct DaemonClients {
 /// daemon's own `--rtltcp` command line.
 func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shutdownDeadlineNs: UInt64? = nil,
                 rtltcp: [Daemon.RTLTCPEndpoint] = [],
+                decoderSearchPath: [String]? = nil, storePath: String? = nil,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
     let caller = dir
     let dir = caller ?? (NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))")
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     defer { if caller == nil { try? FileManager.default.removeItem(atPath: dir) } }
     let socket = dir + "/d.sock"
+    // A test never looks at the station's own plugin directory or writes to its store: both
+    // default to somewhere inside the temp directory the daemon is running in.
     let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
-                                      presenceGraceNs: presenceGraceNs, rtltcp: rtltcp))
+                                      presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
+                                      decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
+                                      storePath: storePath ?? (dir + "/store")))
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
     XCTAssertTrue(listening, "daemon did not start listening")
@@ -61,7 +67,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
             transport: try .http2NIOPosix(target: .unixDomainSocket(path: socket), transportSecurity: .plaintext)
         ) { client in
             let clients = DaemonClients(
-                control: .init(wrapping: client), telemetry: .init(wrapping: client),
+                control: .init(wrapping: client), decoders: .init(wrapping: client), telemetry: .init(wrapping: client),
                 bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client), daemon: daemon, socketPath: socket
             )
             do { try await body(clients) } catch { bodyError = error }
@@ -162,4 +168,61 @@ func testDevices(_ devices: [Leyline_V1_DeviceDescriptor]) -> [Leyline_V1_Device
 
 func testDevices(_ devices: [DeviceDescriptor]) -> [DeviceDescriptor] {
     devices.filter { $0.driver != "rtlsdr" }
+}
+
+// MARK: Decoders
+
+/// Where SwiftPM put the test bundle, which is also where it puts the package's executables.
+var productsDirectory: URL {
+    #if os(macOS)
+    for bundle in Bundle.allBundles where bundle.bundlePath.hasSuffix(".xctest") {
+        return bundle.bundleURL.deletingLastPathComponent()
+    }
+    #endif
+    return URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+}
+
+/// The fake decoder built by the `leyline-fake-decoder` product (DEC-4).
+func fakeDecoderPath() -> String {
+    productsDirectory.appendingPathComponent("leyline-fake-decoder").path
+}
+
+/// Writes a plugin directory: `<dir>/<name>/manifest.json` naming the fake decoder by absolute
+/// path, so the registry resolves it without a PATH of our own.
+@discardableResult
+func writeFakePlugin(in dir: String, name: String = "fake", executable: String? = nil,
+                     recipe: (frequencyHz: UInt64, bandwidthHz: UInt32)? = (146_000_000, 15_000),
+                     args: [String] = [], json: String? = nil) throws -> String
+{
+    let pluginDir = dir + "/" + name
+    try FileManager.default.createDirectory(atPath: pluginDir, withIntermediateDirectories: true)
+    let body: String
+    if let json {
+        body = json
+    } else {
+        let freq = recipe?.frequencyHz ?? 146_000_000
+        let bw = recipe?.bandwidthHz ?? 15_000
+        body = """
+        {
+          "name": "\(name)",
+          "version": "0.1.0",
+          "description": "decodes nothing, for tests",
+          "recipe": {"frequenciesHz": ["\(freq)"], "bandwidthHz": \(bw), "mode": "NFM", "gain": "GAIN_LEAVE"},
+          "input": {"mode": "CONTINUOUS", "tap": "TAP_AUDIO"},
+          "outputs": ["SHAPE_RECORDS"],
+          "entitySilenceS": 1800,
+          "executable": "\(executable ?? fakeDecoderPath())",
+          "args": [\(args.map { "\"\($0)\"" }.joined(separator: ", "))]
+        }
+        """
+    }
+    try body.write(toFile: pluginDir + "/manifest.json", atomically: true, encoding: .utf8)
+    return pluginDir
+}
+
+/// A temp directory the caller owns for the length of one test.
+func makeTempDir(_ tag: String) throws -> String {
+    let dir = NSTemporaryDirectory() + "leyline-\(tag)-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    return dir
 }
