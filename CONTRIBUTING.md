@@ -47,7 +47,8 @@ One change per commit, with its tests. Subject line `area: what changed` in the 
 72 characters (`engine:`, `ley:`, `proto:`, `docs:`, `fix(scan):` are all in use); the body says why,
 in plain prose. Sign off every commit (`git commit -s`), which adds a `Signed-off-by:` line and says,
 in the sense of the Developer Certificate of Origin (developercertificate.org), that you wrote the
-change or have the right to submit it under the terms below. Larger work starts from a plan in
+change or have the right to submit it under the terms below; `git config core.hooksPath
+scripts/git-hooks` makes the line automatic for this clone. Larger work starts from a plan in
 `docs/plans/` with `[ ]` work items, and a design decision starts from a `docs/design-*.md` change.
 
 ## The licence of your contribution
