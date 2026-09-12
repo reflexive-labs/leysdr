@@ -1,0 +1,53 @@
+Leyline
+Copyright 2026 Daniel Pupius
+
+Leyline is licensed under the Apache License, Version 2.0 (LICENSE), with one exception: the
+engine under engine/ (the leylined daemon and its EngineCore library) is licensed under the GNU
+General Public License, version 3 or, at your option, any later version (engine/LICENSE), because
+it links librtlsdr. engine/Sources/LeylineProto is generated from the Apache-2.0 protocol
+definitions in proto/ and stays Apache-2.0. Every source file names its licence on an
+SPDX-License-Identifier line; docs/decisions/D2-licensing.md is the decision and its reasoning.
+
+"Leyline" is a trademark of Daniel Pupius. The licences above do not grant trademark rights;
+TRADEMARK.md says what use of the name is fine without asking.
+
+Third-party software
+====================
+
+The licence text of everything below is vendored under third_party/licenses/ (the file named in
+third_party/licenses/MANIFEST.txt), and scripts/check-licenses.sh keeps that table equal to what
+the build pulls in.
+
+The daemon, leylined, links:
+
+  librtlsdr        GPL-2.0-or-later   third_party/licenses/librtlsdr.txt
+                   The RTL-SDR driver. This is the reason the engine is GPL. Binary releases of
+                   the daemon carry a written offer of its source; see docs/release-checklist.md.
+  libusb           LGPL-2.1-or-later  third_party/licenses/libusb.txt  (through librtlsdr)
+
+and these Swift packages, all under the Apache License 2.0:
+
+  grpc-swift-2, grpc-swift-nio-transport, grpc-swift-protobuf, swift-algorithms,
+  swift-argument-parser, swift-asn1, swift-async-algorithms, swift-atomics, swift-certificates,
+  swift-collections, swift-crypto, swift-http-structured-headers, swift-http-types, swift-log,
+  swift-nio, swift-nio-extras, swift-nio-http2, swift-nio-ssl, swift-nio-transport-services,
+  swift-numerics, swift-protobuf, swift-service-lifecycle, swift-system
+
+  The NOTICE files those packages distribute are reproduced as
+  third_party/licenses/swift_<package>.NOTICE.txt, as their licence requires.
+
+The Go clients (ley and the github.com/dpup/leysdr/go/pkg/leyline library) import:
+
+  Apache-2.0    github.com/oklog/ulid/v2, github.com/spf13/cobra,
+                google.golang.org/genproto/googleapis/rpc, google.golang.org/grpc
+  BSD-3-Clause  github.com/spf13/pflag, golang.org/x/net, golang.org/x/sys, golang.org/x/text,
+                google.golang.org/protobuf
+  MIT           github.com/aymanbagabas/go-osc52/v2, github.com/charmbracelet/colorprofile,
+                github.com/charmbracelet/lipgloss, github.com/charmbracelet/x/ansi,
+                github.com/charmbracelet/x/cellbuf, github.com/charmbracelet/x/term,
+                github.com/lucasb-eyer/go-colorful, github.com/mattn/go-isatty,
+                github.com/mattn/go-runewidth, github.com/muesli/termenv, github.com/rivo/uniseg,
+                github.com/xo/terminfo
+
+Nothing outside engine/ imports copyleft code, and the licence check refuses a dependency that
+would change that.

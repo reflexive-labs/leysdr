@@ -1,0 +1,52 @@
+# Third-party code Leyline links or imports, one row each: kind, name, SPDX licence, vendored text.
+# scripts/check-licenses.sh keeps this table equal to what the build actually pulls in (go.mod's
+# dependency graph, engine/Package.resolved) and refuses copyleft outside engine/. Add a row, with
+# the licence text copied beside it, when you add a dependency; the NOTICE file names each row.
+#
+# kind    name                                              licence               file
+system    librtlsdr                                         GPL-2.0-or-later      librtlsdr.txt
+system    libusb                                            LGPL-2.1-or-later     libusb.txt
+go        github.com/aymanbagabas/go-osc52/v2               MIT                   go_github.com_aymanbagabas_go-osc52_v2.txt
+go        github.com/charmbracelet/colorprofile             MIT                   go_github.com_charmbracelet_colorprofile.txt
+go        github.com/charmbracelet/lipgloss                 MIT                   go_github.com_charmbracelet_lipgloss.txt
+go        github.com/charmbracelet/x/ansi                   MIT                   go_github.com_charmbracelet_x_ansi.txt
+go        github.com/charmbracelet/x/cellbuf                MIT                   go_github.com_charmbracelet_x_cellbuf.txt
+go        github.com/charmbracelet/x/term                   MIT                   go_github.com_charmbracelet_x_term.txt
+go        github.com/lucasb-eyer/go-colorful                MIT                   go_github.com_lucasb-eyer_go-colorful.txt
+go        github.com/mattn/go-isatty                        MIT                   go_github.com_mattn_go-isatty.txt
+go        github.com/mattn/go-runewidth                     MIT                   go_github.com_mattn_go-runewidth.txt
+go        github.com/muesli/termenv                         MIT                   go_github.com_muesli_termenv.txt
+go        github.com/oklog/ulid/v2                          Apache-2.0            go_github.com_oklog_ulid_v2.txt
+go        github.com/rivo/uniseg                            MIT                   go_github.com_rivo_uniseg.txt
+go        github.com/spf13/cobra                            Apache-2.0            go_github.com_spf13_cobra.txt
+go        github.com/spf13/pflag                            BSD-3-Clause          go_github.com_spf13_pflag.txt
+go        github.com/xo/terminfo                            MIT                   go_github.com_xo_terminfo.txt
+go        golang.org/x/net                                  BSD-3-Clause          go_golang.org_x_net.txt
+go        golang.org/x/sys                                  BSD-3-Clause          go_golang.org_x_sys.txt
+go        golang.org/x/text                                 BSD-3-Clause          go_golang.org_x_text.txt
+go        google.golang.org/genproto/googleapis/rpc         Apache-2.0            go_google.golang.org_genproto_googleapis_rpc.txt
+go        google.golang.org/grpc                            Apache-2.0            go_google.golang.org_grpc.txt
+go        google.golang.org/protobuf                        BSD-3-Clause          go_google.golang.org_protobuf.txt
+swift     grpc-swift-2                                      Apache-2.0            swift_grpc-swift-2.txt
+swift     grpc-swift-nio-transport                          Apache-2.0            swift_grpc-swift-nio-transport.txt
+swift     grpc-swift-protobuf                               Apache-2.0            swift_grpc-swift-protobuf.txt
+swift     swift-algorithms                                  Apache-2.0            swift_swift-algorithms.txt
+swift     swift-argument-parser                             Apache-2.0            swift_swift-argument-parser.txt
+swift     swift-asn1                                        Apache-2.0            swift_swift-asn1.txt
+swift     swift-async-algorithms                            Apache-2.0            swift_swift-async-algorithms.txt
+swift     swift-atomics                                     Apache-2.0            swift_swift-atomics.txt
+swift     swift-certificates                                Apache-2.0            swift_swift-certificates.txt
+swift     swift-collections                                 Apache-2.0            swift_swift-collections.txt
+swift     swift-crypto                                      Apache-2.0            swift_swift-crypto.txt
+swift     swift-http-structured-headers                     Apache-2.0            swift_swift-http-structured-headers.txt
+swift     swift-http-types                                  Apache-2.0            swift_swift-http-types.txt
+swift     swift-log                                         Apache-2.0            swift_swift-log.txt
+swift     swift-nio                                         Apache-2.0            swift_swift-nio.txt
+swift     swift-nio-extras                                  Apache-2.0            swift_swift-nio-extras.txt
+swift     swift-nio-http2                                   Apache-2.0            swift_swift-nio-http2.txt
+swift     swift-nio-ssl                                     Apache-2.0            swift_swift-nio-ssl.txt
+swift     swift-nio-transport-services                      Apache-2.0            swift_swift-nio-transport-services.txt
+swift     swift-numerics                                    Apache-2.0            swift_swift-numerics.txt
+swift     swift-protobuf                                    Apache-2.0            swift_swift-protobuf.txt
+swift     swift-service-lifecycle                           Apache-2.0            swift_swift-service-lifecycle.txt
+swift     swift-system                                      Apache-2.0            swift_swift-system.txt
