@@ -68,18 +68,27 @@ func niceStep(raw float64) float64 {
 // frequency, a marker under the frequency the user asked for, and the labels
 // themselves.
 func (v *spectrumView) axis(b *strings.Builder, cols int, centerHz, spanHz uint64) {
-	g := v.st.Glyphs()
 	lo, hi := spectrumEdges(centerHz, spanHz)
-	ticks := spectrumTicks(lo, hi, cols)
-	rule := []rune(strings.Repeat(string(g.Rule), cols+1))
-	for _, t := range ticks {
-		rule[t.col+1] = []rune(g.TreeTrunk)[0]
-	}
-	b.WriteString(v.gutter(fmtDb(v.bottom), false) + v.st.Muted(string(rule)) + "\n")
+	marks := spectrumMarks(spectrumTicks(lo, hi, cols))
+	b.WriteString(v.gutter(fmtDb(v.bottom), false) + axisRule(v.st, cols, marks) + "\n")
 	if line := v.markerRow(cols, lo, hi); line != "" {
 		b.WriteString(line + "\n")
 	}
-	b.WriteString(v.labelRow(cols, ticks) + "\n")
+	// The label row is measured against inner() rather than the gutter plus
+	// cols: a narrow terminal floors the chart at spectrumMinCols, so the plot
+	// can run wider than the screen and a label pulled back to the screen's
+	// edge is the one that still reads.
+	b.WriteString(v.st.Muted(axisLabelRow(spectrumGutter, v.inner(), marks)) + "\n")
+}
+
+// spectrumMarks names each tick with the frequency it falls on, in the form a
+// person reads off a dial.
+func spectrumMarks(ticks []spectrumTick) []axisTick {
+	marks := make([]axisTick, len(ticks))
+	for i, t := range ticks {
+		marks[i] = axisTick{col: t.col, text: leyline.FormatFrequency(t.hz)}
+	}
+	return marks
 }
 
 // markerRow points at the frequency the user typed, so `ley spectrum 146.62`
@@ -102,28 +111,6 @@ func (v *spectrumView) markerRow(cols int, lo, hi uint64) string {
 		return line + label
 	}
 	return line
-}
-
-// labelRow writes each tick's frequency under its tick, dropping any label the
-// width cannot fit beside its neighbour.
-func (v *spectrumView) labelRow(cols int, ticks []spectrumTick) string {
-	row := make([]byte, 0, v.inner())
-	for _, t := range ticks {
-		text := leyline.FormatFrequency(t.hz)
-		at := spectrumGutter + t.col - len(text)/2
-		if at < spectrumGutter {
-			at = spectrumGutter
-		}
-		if at+len(text) > v.inner() {
-			at = v.inner() - len(text)
-		}
-		if at < len(row)+1 || at < spectrumGutter {
-			continue
-		}
-		row = append(row, strings.Repeat(" ", at-len(row))...)
-		row = append(row, text...)
-	}
-	return v.st.Muted(string(row))
 }
 
 // peakBlock names the loudest bins as a label block: the strongest first, with
