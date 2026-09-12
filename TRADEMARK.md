@@ -1,11 +1,12 @@
 # Trademark policy
 
-"Leyline" and the `ley` command name are trademarks of Daniel Pupius, used for this project since
-2026. Registration is planned before the first public release; an unregistered mark is still a mark.
+Daniel Pupius claims "Leyline" and the `ley` command name as trademarks for this project. They are
+unregistered: use ™ with them if you need a symbol, never ® until a registration issues. A
+clearance search and an application are planned before the first public release.
 
 The code is open source (see `LICENSE` and `engine/LICENSE`), and open code does not open the name.
-Neither licence grants trademark rights: Apache-2.0 says so in section 6, and the GPL-3.0 engine
-declines them under section 7(e). This page says what you can do with the name without asking.
+Neither licence grants trademark rights: Apache-2.0 says so in section 6, and the GPL is a copyright
+licence that grants none. This page says what you can do with the name without asking.
 
 ## Fine without asking
 
