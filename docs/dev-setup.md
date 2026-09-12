@@ -137,7 +137,20 @@ of CI) fails if the generated constant or the Go fallback literal has drifted.
 
 To release: bump `VERSION`, edit `defaultVersion` in `go/internal/cli/root.go` to match, run `make
 version`, commit the three files, then tag `v<VERSION>`. Builds from that commit print the bare
-number.
+number. `docs/release-checklist.md` has the rest, including what a binary release must carry under
+the licences.
+
+### Licences
+
+`make license-check` (part of `make check` and of CI) runs `scripts/check-licenses.sh`: every source
+file carries an `SPDX-License-Identifier` line matching its directory (GPL-3.0-or-later under
+`engine/`, Apache-2.0 everywhere else, the generated `LeylineProto` included because it inherits the
+line from the `.proto`), `third_party/licenses/MANIFEST.txt` equals what `go.mod` and
+`engine/Package.resolved` pull in, each vendored text still matches the module's own, `NOTICE`
+names every row, and nothing outside `engine/` imports copyleft code. `scripts/check-licenses.sh
+--fix` adds a missing header to a new file. Adding a dependency means adding its manifest row,
+copying its licence text (and NOTICE, if it ships one) beside it, and naming it in `NOTICE`; the
+check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is the decision.
 
 ## Linux / the moat container (Go clients, contract tests, engine compile checks)
 

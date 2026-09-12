@@ -117,6 +117,9 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 
 Against [`docs/build-order.md`](docs/build-order.md):
 
+- Device backends: an RTL-SDR on USB (librtlsdr) and an RTL-SDR another machine serves with
+  `rtl_tcp`. Both are supported, not experiments: the engine tests drive a fake `rtl_tcp` server and
+  the e2e attaches one to the real daemon, on both CI hosts.
 - Milestone A (scaffold, daemon lifecycle, fixtures and file playback): done.
 - Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.
 - Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done except
@@ -142,6 +145,12 @@ grpc-python do by default, and the fix is one dial option.
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) has the gate and the rules; `CLAUDE.md` is the invariant list
 that doubles as the review checklist. [`SECURITY.md`](SECURITY.md) describes what the daemon trusts
-(a local socket, your user, no authentication) and how to report a problem. Licence: not yet chosen
-for the first release — the engine links GPL-2.0 `librtlsdr`, so it will be GPL-compatible; see
-`docs/plans/v1-release.md` D2. Problems and questions: open an issue on the repository.
+(a local socket, your user, no authentication) and how to report a problem.
+
+Everything here is open source. The engine under `engine/` (`leylined`) is GPL-3.0-or-later because
+it links librtlsdr; everything else, the `leyline.v1` contract, the generated code, the client
+library and `ley` included, is Apache-2.0, so a program that talks to the daemon can be licensed
+however you like. [`NOTICE`](NOTICE) lists what the binaries carry,
+[`docs/decisions/D2-licensing.md`](docs/decisions/D2-licensing.md) explains the split, and
+[`TRADEMARK.md`](TRADEMARK.md) covers the name. Problems and questions: open an issue on the
+repository.

@@ -334,6 +334,11 @@ virtual device by driver and address alone — an endpoint hosted before it answ
 tuner, and the model it would carry must not make it a second radio. A server that cannot be reached
 at startup is hosted `DISCONNECTED` for the reconnect poll to pick up, never fatal.
 
+This is a supported backend, not a contingency (`docs/decisions/D2-licensing.md` keeps it that way
+on purpose: it is the standing escape hatch should a proprietary daemon ever be required). Its
+coverage: `RTLTCPTests` and `RemoteDeviceTests` against `TestSupport`'s fake server, and
+`TestRemoteRadioAgainstRealDaemon` in the e2e, all part of `make check` on both CI hosts.
+
 - Transport: BSD sockets (no Network framework, so it builds and tests on Linux). `open()` connects
   with a 5 s timeout, reads the 12-byte header (`"RTL0"`, u32be tuner type, u32be gain count), sends
   the initial sample rate (`0x02`) and frequency (`0x01`), then starts one reader `Thread`

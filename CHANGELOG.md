@@ -13,5 +13,9 @@ Nothing has been released yet. This file starts with everything that exists on `
   with `--json` on every verb that has an answer to give.
 - `leyfix`: the IQ fixture generator and analyser that lets the whole pipeline be tested without a
   radio.
+- Licences: Apache-2.0 for the repository, GPL-3.0-or-later for the engine under `engine/`, which
+  links librtlsdr (`docs/decisions/D2-licensing.md`). `NOTICE`, the vendored third-party texts under
+  `third_party/licenses/`, an SPDX line on every source file, `TRADEMARK.md`, and
+  `make license-check`, which refuses copyleft outside the engine.
 - Not yet: recording to files, watch jobs and transcripts, the TUI dashboard, the Mac app, the MCP
   adapter (`docs/build-order.md` has the order).

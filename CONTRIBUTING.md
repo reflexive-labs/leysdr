@@ -45,8 +45,28 @@ add the test that proves `ley` handles it, then confirm against the real daemon 
 
 One change per commit, with its tests. Subject line `area: what changed` in the imperative and under
 72 characters (`engine:`, `ley:`, `proto:`, `docs:`, `fix(scan):` are all in use); the body says why,
-in plain prose. Larger work starts from a plan in `docs/plans/` with `[ ]` work items, and a design
-decision starts from a `docs/design-*.md` change.
+in plain prose. Sign off every commit (`git commit -s`), which adds a `Signed-off-by:` line and says,
+in the sense of the Developer Certificate of Origin (developercertificate.org), that you wrote the
+change or have the right to submit it under the terms below. Larger work starts from a plan in
+`docs/plans/` with `[ ]` work items, and a design decision starts from a `docs/design-*.md` change.
+
+## The licence of your contribution
+
+By opening a pull request you license your contribution to the project under the Apache License
+2.0, whichever directory it lands in. The project then distributes it under the licence of that
+directory: Apache-2.0 for the contract, the generated code, the client library, `ley` and
+everything else; GPL-3.0-or-later for the engine under `engine/`, which links librtlsdr
+(`docs/decisions/D2-licensing.md` says why the engine is GPL and nothing else is). Inbound
+permissive, outbound copyleft is deliberate: it asks nothing of you beyond the terms your code
+would carry anywhere outside the engine, and it leaves the engine's licence the owner's to change
+later (a commercial licence for a partnership, say) without finding every contributor first. You
+keep your copyright; nothing is assigned.
+
+New source files carry `SPDX-License-Identifier: Apache-2.0`, or `GPL-3.0-or-later` under `engine/`.
+`scripts/check-licenses.sh --fix` adds the line; `make license-check` (part of `make check` and CI)
+refuses a file without one, a dependency missing from `third_party/licenses/MANIFEST.txt`, and any
+copyleft dependency outside the engine. When you add a dependency, add its row to the manifest with
+its licence text beside it and name it in `NOTICE`.
 
 ## Where to ask
 
