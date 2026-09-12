@@ -369,3 +369,5 @@ side by side.
 `ley identify`, and daemon-restart respawn of kept jobs are the later items of
 `docs/plans/decoders.md`; the manifest fields that carry them exist now so a plugin written today
 declares them.
+
+The reference for writing one is [`docs/reference/writing-a-decoder.md`](../reference/writing-a-decoder.md).

@@ -15,6 +15,7 @@ You have an RTL-SDR (or an IQ recording) and a Mac.
 | [`ley` reference](reference/cli.md) | the command tree, input conventions, every `--json` shape, exit status |
 | [IQ files and fixtures](reference/iq-files.md) | the `.cf32` + sidecar format `ley play` reads, and the generated signals |
 | [Writing a client](reference/clients.md) | a script, agent or program that speaks the contract without `ley` |
+| [Writing a decoder](reference/writing-a-decoder.md) | a plugin that turns a channel's audio into typed records |
 
 `ley help <topic>` carries the same facts at the prompt: `squelch`, `frequencies`, `modes`, `gain`,
 `presets`, `glossary`, `scripting`, `roadmap`. What works today and what is next is the "Where

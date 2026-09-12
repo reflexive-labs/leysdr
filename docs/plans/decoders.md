@@ -207,12 +207,20 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side).
 - DEC-14 `[ ]` The MCP families and `ley identify`.
 - DEC-15 `[ ]` A SQLite index under `QueryRecords`, when a query is measured slow.
-- DEC-16 `[ ]` A plugin that stops reading stalls the drain: `PluginProcess.write` is a blocking
-  `write(2)` on the pipe, on a cooperative thread. A plugin that hangs without exiting holds that
-  thread and is never restarted. A non-blocking pipe with a drop-and-gap on `EAGAIN`, plus a
-  no-records-for-N-seconds health check that respawns, closes both holes.
-- DEC-17 `[ ]` A "Writing a decoder" reference page: the wire, the manifest fields, the stamps the
-  daemon overwrites, and the fake decoder as the smallest example.
+- DEC-16 `[x]` A plugin that stops reading no longer stalls the drain: the daemon's write end is
+  non-blocking, so a full pipe drops the frame and holds the gap open for the next one that lands
+  (`PluginProcess.writeDelimited` returns `droppedFull`), and a frame that stalls half-written
+  replaces the plugin (`PluginStalled`). The plan's second half -- a no-records health check that
+  respawns -- was **dropped on purpose**: a decoder that emits nothing is indistinguishable from a
+  quiet band, and driver C (SAME) is silent by design, so killing a plugin for silence would kill
+  the ones working correctly. Silence is not failure; a plugin that has stopped *reading* is the
+  only hang, and the non-blocking write is what catches it.
+  Tests: `DecodeJobTests.testAPluginThatStopsReadingDoesNotWedgeTheDrain` (a `--deaf-after=3` fake
+  reads three frames then stops; the job stays RUNNING and cancel returns promptly), the existing
+  `PluginProcessTests`.
+- DEC-17 `[x]` `docs/reference/writing-a-decoder.md`: the daemon/decoder division, the manifest, the
+  stdio wire, the Go SDK, wrapping an existing tool, and the boundaries. Linked from `docs/README.md`
+  and the design doc.
 
 ## Closing
 
