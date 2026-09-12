@@ -317,10 +317,13 @@ func TestCLIAgainstRealDaemon(t *testing.T) {
 		}
 	}
 	u8Peak, u8PeakDB := peakBin(u8Bins)
-	// Half a step for the quantisation itself, and a dB for the two rows covering
-	// different samples of the fixture.
-	if diff := u8Peak - f32Peak; diff < -1 || diff > 1 {
-		t.Fatalf("u8 peak bin %d (%.1f dB), f32 peak bin %d (%.1f dB)", u8Peak, u8PeakDB, f32Peak, f32PeakDB)
+	// The two rows are different moments of a tone frequency-modulated at
+	// ±2.5 kHz, and a 2.34 kHz bin sees that sweep as the peak wandering a bin
+	// either side of its centre. Two rows can therefore sit two bins apart when
+	// one catches the low extreme and the other the high; the quantisation itself
+	// moves nothing. Half a step for the quantisation, and a dB for the two moments.
+	if diff := u8Peak - f32Peak; diff < -2 || diff > 2 {
+		t.Fatalf("u8 peak bin %d (%.1f dB), f32 peak bin %d (%.1f dB): further apart than the tone's sweep", u8Peak, u8PeakDB, f32Peak, f32PeakDB)
 	}
 	if math.Abs(u8PeakDB-f32PeakDB) > leyline.DBU8Step/2+1 {
 		t.Fatalf("u8 peak %.2f dB, f32 peak %.2f dB: further apart than the quantisation", u8PeakDB, f32PeakDB)

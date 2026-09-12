@@ -365,7 +365,13 @@ the listener is closed and joined, or whether the device's reconnect path has a 
 harness or the device accordingly, and prove it with ten consecutive full runs. If the fix is in
 `RTLTCPDevice`, add the regression test.
 
-### R-4a `[ ]` Two intermittent failures to catch with their names on (owner, Mac)
+### R-4a `[ ]` One intermittent failure still to catch with its name on (owner, Mac)
+
+The e2e half of this item is closed: `TestCLIAgainstRealDaemon`'s 0.42 s failure was caught with
+its message on the fourth logged run — the DB_U8 and DB_F32 spectrum rows' peak bins two apart —
+and it was the assertion, not the daemon: the fixture's tone is frequency-modulated at ±2.5 kHz, so
+its peak wanders a bin either side between two rows taken at different moments, and the tolerance
+was one bin. It is now the sweep's reach. The Swift failure below is the one still unnamed.
 
 Seen on the Linux box after R-4 and never reproduced: one Swift test failed once in a full
 `swift test` run that overlapped a `make race` (six later runs, four of them under the same load,
