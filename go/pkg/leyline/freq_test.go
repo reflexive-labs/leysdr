@@ -160,6 +160,9 @@ func TestFullScaleDeviationHz(t *testing.T) {
 		{leylinev1.DemodMode_NFM, 6_000, 2_500},  // clamped up: nothing deviates less
 		{leylinev1.DemodMode_NFM, 40_000, 5_000}, // clamped down at narrowband's widest
 		{leylinev1.DemodMode_NFM, 0, 2_500},      // an unset bandwidth reads as the default channel
+		{leylinev1.DemodMode_NFM, 12_502, 2_500}, // rounded as the engine rounds, not truncated:
+		{leylinev1.DemodMode_NFM, 12_503, 2_501}, // 2500.6 is 2501 on the wire
+		{leylinev1.DemodMode_NFM, 13_333, 2_667}, // 2666.6 is 2667
 		{leylinev1.DemodMode_WFM, 200_000, 75_000},
 		{leylinev1.DemodMode_AM, 10_000, 0},
 		{leylinev1.DemodMode_LSB, 2_800, 0},

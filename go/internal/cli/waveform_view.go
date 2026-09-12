@@ -55,6 +55,12 @@ type waveformFrame struct {
 	squelchKnown bool
 }
 
+// forgetTelemetry is what the frame does when the meter stream ends under it:
+// the squelch goes back to unknown, so new slices count as open the way the
+// first ones did, and the header stops naming a state the daemon no longer
+// reports.
+func (f *waveformFrame) forgetTelemetry() { f.squelchOpen, f.squelchKnown = true, false }
+
 // waveformView draws the clip: a header of facts, the envelope under a
 // playhead, and the seconds the picture runs back through.
 type waveformView struct {

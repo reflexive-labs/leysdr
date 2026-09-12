@@ -15,14 +15,17 @@ struct RowsNeverArrived: Error, CustomStringConvertible {
 final class SpectrumCollector: SpectrumSink, @unchecked Sendable {
     private let lock = NSLock()
     private var rows: [[Float]] = []
+    private var stamps: [UInt64] = []
 
-    func write(row: UnsafeBufferPointer<Float>, at _: SampleTime, centerHz _: UInt64, spanHz _: UInt64, looks _: Int) {
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz _: UInt64, spanHz _: UInt64, looks _: Int) {
         let copy = Array(row)
-        lock.lock(); rows.append(copy); lock.unlock()
+        lock.lock(); rows.append(copy); stamps.append(time.sampleIndex); lock.unlock()
     }
 
     var count: Int { lock.lock(); defer { lock.unlock() }; return rows.count }
     var all: [[Float]] { lock.lock(); defer { lock.unlock() }; return rows }
+    /// The sample index each row was stamped with, in the order they came.
+    var times: [UInt64] { lock.lock(); defer { lock.unlock() }; return stamps }
 
     /// Power mean of every row collected, back in dB: the rows are independent looks at the same
     /// tones, and averaging them puts the noise between the peaks where it belongs.
@@ -72,6 +75,36 @@ final class AudioSpectrumTests: XCTestCase {
         let top = try XCTUnwrap(peaks(row, rate: Double(rate)).first)
         XCTAssertEqual(top.hz, toneHz, accuracy: binHz, "peak at \(top.hz) Hz, tone at \(toneHz) Hz")
         XCTAssertEqual(top.db, 0, accuracy: 0.5, "full scale reads \(top.db) dBFS")
+    }
+
+    /// Invariant 5, on a stream where one block holds several rows: each row is stamped with the
+    /// index of the sample that completed it, so rows from one block name different moments and
+    /// advance by exactly the hop. Rows that all carried the block's first sample would be the
+    /// same instant on the wire.
+    func testRowsFromOneBlockAdvanceByTheHop() throws {
+        let rate: UInt32 = 48000
+        let bins = 1024
+        let collector = SpectrumCollector()
+        // 20 rows a second at 48 kHz is a hop of 2400 samples over a 2048-sample window.
+        let spectrum = AudioSpectrumSink(tap: .audio, bins: bins, rowsPerSecond: 20,
+                                         audioRate: rate, sink: collector)
+        var block = [Float](repeating: 0.25, count: 9600)
+        block.withUnsafeMutableBufferPointer { buf in
+            let time = SampleTime(captureID: CaptureID(), sampleIndex: 100_000)
+            spectrum.write(SampleBuffer(base: UnsafeMutableRawPointer(buf.baseAddress!), count: buf.count, format: .f32), at: time)
+        }
+        let hop: UInt64 = 2400
+        XCTAssertEqual(collector.times, [100_000 + hop - 1, 100_000 + 2 * hop - 1, 100_000 + 3 * hop - 1, 100_000 + 4 * hop - 1],
+                       "four rows from one block, each named by the sample that closed its window")
+        // And a block that ends mid-hop stamps the next row where that hop ends, not where the
+        // block began.
+        block.withUnsafeMutableBufferPointer { buf in
+            let time = SampleTime(captureID: CaptureID(), sampleIndex: 109_600)
+            spectrum.write(SampleBuffer(base: UnsafeMutableRawPointer(buf.baseAddress!), count: 1000, format: .f32), at: time)
+            spectrum.write(SampleBuffer(base: UnsafeMutableRawPointer(buf.baseAddress!), count: 2000, format: .f32), at: SampleTime(captureID: time.captureID, sampleIndex: 110_600))
+        }
+        XCTAssertEqual(collector.times.last, 100_000 + 5 * hop - 1, "the fifth row closed 1400 samples into the second block")
+        XCTAssertEqual(collector.count, 5)
     }
 
     /// Both taps of one fixture channel, as spectra: the same air through the same window, so the

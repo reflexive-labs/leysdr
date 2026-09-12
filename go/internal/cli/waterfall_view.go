@@ -188,37 +188,14 @@ func (v *waterfallView) gapRow(rows uint64) string {
 func (v *waterfallView) axis(cols int) []string {
 	g := v.st.Glyphs()
 	lo, hi := spectrumEdges(v.centerHz, v.spanHz)
-	ticks := spectrumTicks(lo, hi, cols)
-	rule := []rune(strings.Repeat(string(g.Rule), cols))
-	for _, t := range ticks {
-		if t.col >= 0 && t.col < cols {
-			rule[t.col] = []rune(g.TreeTrunk)[0]
-		}
-	}
-	pad := strings.Repeat(" ", waterfallGutter)
-	out := []string{pad + v.st.Muted(string(rule))}
-
-	// Labels, centred under their tick and never overlapping.
-	row := make([]byte, 0, v.width)
-	for _, t := range ticks {
-		text := leyline.FormatFrequency(t.hz)
-		at := waterfallGutter + t.col - len(text)/2
-		if at < waterfallGutter {
-			at = waterfallGutter
-		}
-		if at+len(text) > v.width {
-			continue
-		}
-		if at < len(row) {
-			continue // would collide with the label already placed
-		}
-		for len(row) < at {
-			row = append(row, ' ')
-		}
-		row = append(row, text...)
-	}
-	if len(row) > 0 {
-		out = append(out, v.st.Muted(string(row)))
+	// The rule and its labels are the toolkit's: the rule starts in the axis
+	// column the gutter ends in, so it meets the time column at the corner,
+	// and a label at the right edge is pulled in to fit rather than dropped,
+	// exactly as under `ley spectrum` and `ley phosphor`.
+	marks := spectrumMarks(spectrumTicks(lo, hi, cols))
+	out := []string{strings.Repeat(" ", waterfallGutter-1) + axisRule(v.st, cols, marks)}
+	if row := axisLabelRow(waterfallGutter, v.width, marks); row != "" {
+		out = append(out, v.st.Muted(row))
 	}
 	// The marker points at the frequency the user typed, so `ley waterfall
 	// 146.62` does not draw the same picture as a bare `ley waterfall`.

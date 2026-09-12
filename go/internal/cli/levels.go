@@ -386,18 +386,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	}
 }
 
-// levelsEnd turns the end of the spectrum stream into what to do next: nothing
-// on Ctrl-C, the daemon's error where there is one, and a sentence where the
-// stream ended before a single row arrived.
+// levelsEnd turns the end of the spectrum stream into what to do next, by the
+// one rule the live views share.
 func levelsEnd(ctx context.Context, err error, rows int) error {
-	if ctx.Err() != nil {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return fmt.Errorf("the audio spectrum ended before a row could be drawn. Check the channel is still running with: ley state")
-	}
-	return nil
+	return liveStreamEnd(ctx, err, rows, "audio spectrum", "row")
 }

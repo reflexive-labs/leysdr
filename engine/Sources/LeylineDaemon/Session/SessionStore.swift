@@ -37,9 +37,11 @@ enum EventScopeFilter: Sendable, Hashable {
 enum TeardownScope: Sendable {
     case capture(CaptureID)
     case channel(ChannelID)
-    /// The channel's audio rate changed (a capture-rate write, a retune that re-plans the chain, or
-    /// a mode/bandwidth/offset write): audio streams negotiated at the old rate end; the client
-    /// re-subscribes for a fresh descriptor.
+    /// The channel's audio descriptor stopped being true: its audio rate changed (a capture-rate
+    /// write, a retune that re-plans the chain, or a mode/bandwidth/offset write), or the rate held
+    /// while the mode or the full-scale deviation it answered moved (a bandwidth or mode write).
+    /// Audio streams negotiated under the old descriptor end; the client re-subscribes for a fresh
+    /// one.
     case channelAudioRate(ChannelID)
     /// The capture's sample rate changed. Audio streams derive their frame spans from it, and two
     /// capture rates can plan to the same audio rate, so they end on the capture rate itself rather
@@ -814,6 +816,15 @@ actor SessionStore {
         await teardownHook?(.channelAudioRate(chanID))
     }
 
+    /// Whether a channel write left the audio descriptor a client holds untrue with the audio rate
+    /// unchanged: the mode moved, or the full-scale deviation the descriptor answered for it did.
+    /// A squelch or offset write moves neither.
+    static func audioDescriptorMoved(from before: ChannelConfig, to after: ChannelConfig) -> Bool {
+        before.mode != after.mode
+            || DemodulatorFactory.fullScaleDeviationHz(mode: before.mode, bandwidthHz: before.bandwidthHz)
+            != DemodulatorFactory.fullScaleDeviationHz(mode: after.mode, bandwidthHz: after.bandwidthHz)
+    }
+
     /// Snapshot of every channel's audio rate on a capture, taken before a write that may re-plan chains.
     private func audioRates(captureID: CaptureID) -> [ChannelID: UInt32] {
         channels.filter { $0.value.captureID == captureID }.mapValues { $0.engine.audioRate }
@@ -919,6 +930,7 @@ actor SessionStore {
                     throw EngineError.channelNotFound(w.targetID)
                 }
                 var config = await entry.engine.config
+                let before = config
                 let rate = await captures[entry.captureID]?.engine.snapshot.sampleRate ?? 0
                 // A channel the capture has moved away from is already outside: non-offset writes
                 // are stored for the rebuild on re-entry, so they skip the offset-vs-bandwidth check.
@@ -956,7 +968,16 @@ actor SessionStore {
                 // stream negotiated at the old one then describes something untrue, so reconcile
                 // exactly as a capture-rate change does: system-audio sinks are rebuilt and bulk
                 // streams -- both taps -- end for a fresh subscription.
-                if entry.engine.audioRate != audioRateBefore { await audioRateChanged(chanID, by: by) }
+                if entry.engine.audioRate != audioRateBefore {
+                    await audioRateChanged(chanID, by: by)
+                } else if Self.audioDescriptorMoved(from: before, to: config) {
+                    // The rate held, but the descriptor did not: a bandwidth write rescales an NFM
+                    // detector to the channel it now has, and a mode write changes what the taps
+                    // carry and what full scale is worth. A stream negotiated before it would read
+                    // hertz off a number the daemon has already replaced, so it ends the same way,
+                    // and only the bulk streams: system-audio sinks play at the rate they have.
+                    await teardownHook?(.channelAudioRate(chanID))
+                }
                 touchActivity(entry.captureID, by: by)
                 await emitCapture(entry.captureID, by: by)
                 await emitChannel(chanID, by: by)

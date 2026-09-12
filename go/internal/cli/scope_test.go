@@ -659,3 +659,29 @@ func TestScopeSaysTheSquelchIsClosed(t *testing.T) {
 		})
 	}
 }
+
+// cli-style.md section 8: a width-dependent renderer is tested at 40, 80 and
+// 160 columns and never emits a line wider than the width, in both alphabets
+// and under every scale, the way levels and waveform are.
+func TestScopeStaysInsideTheWidth(t *testing.T) {
+	for _, width := range []int{40, 50, 80, 100, 160} {
+		for _, uni := range []bool{false, true} {
+			for _, sc := range []scopeScale{scopeFull, {auto: true}, {fixed: 0.05}} {
+				for _, framed := range []bool{false, true} {
+					v := newScopeView(ui.Style{Unicode: uni, Width: width}, width, sc, framed)
+					f := scopeTestFrame()
+					if sc.fixed > 0 {
+						f.scale = sc.fixed
+					} else if sc.auto {
+						f.scale = 0.5
+					}
+					for _, line := range strings.Split(v.render(f), "\n") {
+						if w := ui.Visible(line); w > width {
+							t.Errorf("width %d unicode %v scale %+v framed %v: a line is %d wide: %q", width, uni, sc, framed, w, line)
+						}
+					}
+				}
+			}
+		}
+	}
+}

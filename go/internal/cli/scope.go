@@ -496,20 +496,10 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	}
 }
 
-// scopeEnd turns the end of the audio stream into what to do next: nothing on
-// Ctrl-C, the daemon's error where there is one, and a sentence where the
-// stream ended before a single window could be drawn.
+// scopeEnd turns the end of the audio stream into what to do next, by the one
+// rule the live views share.
 func scopeEnd(ctx context.Context, err error, frames int) error {
-	if ctx.Err() != nil {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if frames == 0 {
-		return fmt.Errorf("the audio stream ended before a window could be drawn. Check the channel is still running with: ley state")
-	}
-	return nil
+	return liveStreamEnd(ctx, err, frames, "audio stream", "window")
 }
 
 // scopeStats measures the window the frame draws: how far it swings, how much

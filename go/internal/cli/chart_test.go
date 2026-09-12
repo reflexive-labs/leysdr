@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -107,5 +109,54 @@ func TestAxisLabelRowKeepsLabelsApart(t *testing.T) {
 	}
 	if !strings.HasSuffix(row, "-0 s") || len(row) > 24 {
 		t.Errorf("the last label is not pulled inside the row: %q", row)
+	}
+}
+
+// A stream the daemon ends on its own is never a finished job: Ctrl-C is
+// silent, the daemon's own error is passed through, and a clean close is
+// reported whether or not anything was drawn -- a reader must never be left
+// with a frozen picture and a zero exit.
+func TestLiveStreamEndIsNeverSilent(t *testing.T) {
+	live := context.Background()
+	stopped, cancel := context.WithCancel(live)
+	cancel()
+	daemon := errors.New("CHANNEL_NOT_FOUND")
+	cases := []struct {
+		name  string
+		ctx   context.Context
+		err   error
+		drawn int
+		want  string
+	}{
+		{"Ctrl-C", stopped, nil, 3, ""},
+		{"Ctrl-C with the daemon's error", stopped, daemon, 3, ""},
+		{"the daemon's error", live, daemon, 3, "CHANNEL_NOT_FOUND"},
+		{"nothing drawn", live, nil, 0, "before a window could be drawn"},
+		{"ended by the daemon", live, nil, 12, "the daemon ended the audio stream after 12 windows"},
+		{"ended after one", live, nil, 1, "after 1 window:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := liveStreamEnd(tc.ctx, tc.err, tc.drawn, "audio stream", "window")
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("got %v, want a silent end", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want it to say %q", err, tc.want)
+			}
+		})
+	}
+	// The three views share the rule, each naming its own picture.
+	if err := scopeEnd(live, nil, 2); err == nil || !strings.Contains(err.Error(), "2 windows") {
+		t.Errorf("scope: %v", err)
+	}
+	if err := levelsEnd(live, nil, 2); err == nil || !strings.Contains(err.Error(), "audio spectrum after 2 rows") {
+		t.Errorf("levels: %v", err)
+	}
+	if err := waveformEnd(live, nil, 2); err == nil || !strings.Contains(err.Error(), "2 columns") {
+		t.Errorf("waveform: %v", err)
 	}
 }

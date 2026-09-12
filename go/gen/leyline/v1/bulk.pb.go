@@ -722,7 +722,9 @@ type AudioParams struct {
 	// frequency. It follows the channel for NFM -- min(5000, max(2500, bandwidth / 5)),
 	// so a 12.5 kHz channel reads 2.5 kHz and a 25 kHz one 5 kHz -- and is 75 kHz for
 	// WFM. A client turns a DC offset or a peak into hertz with this number and never
-	// hard-codes one of its own.
+	// hard-codes one of its own. It is true for the life of the stream: a write that
+	// changes it (a bandwidth or mode write on the channel) ends the stream exactly as a
+	// change of audio rate does, and the client subscribes again for a fresh descriptor.
 	FullScaleDeviationHz uint32 `protobuf:"varint,4,opt,name=full_scale_deviation_hz,json=fullScaleDeviationHz,proto3" json:"full_scale_deviation_hz,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache

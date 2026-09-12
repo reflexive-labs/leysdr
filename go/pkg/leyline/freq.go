@@ -134,14 +134,18 @@ func DefaultBandwidth(m leylinev1.DemodMode) uint32 {
 // to its own bandwidth, clamped to the deviations narrowband radios actually
 // use, and WFM is broadcast's 75 kHz. 0 for the amplitude modes, whose samples
 // are not frequency at all. The daemon answers this in the audio descriptor;
-// this is the same rule for a client left without one.
+// this is the same rule for a client left without one, and the fake daemon
+// answers the wire field with it, so it must round exactly as the engine does:
+// bandwidth / 5 to the nearest hertz, not truncated.
 func FullScaleDeviationHz(m leylinev1.DemodMode, bandwidthHz uint32) uint32 {
 	switch m {
 	case leylinev1.DemodMode_NFM:
 		if bandwidthHz == 0 {
 			bandwidthHz = DefaultBandwidth(m)
 		}
-		return min(5_000, max(2_500, bandwidthHz/5))
+		// (bw + 2) / 5 is bw / 5 rounded to nearest: a fifth never lands on
+		// a half, so there is no tie to break.
+		return min(5_000, max(2_500, (bandwidthHz+2)/5))
 	case leylinev1.DemodMode_WFM:
 		return 75_000
 	default:

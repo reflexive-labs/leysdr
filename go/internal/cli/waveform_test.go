@@ -456,3 +456,23 @@ func TestWaveformInkFollowsTheScaleOnScreen(t *testing.T) {
 		t.Errorf("a closed slice inks %d, want the blank it draws", shut[0])
 	}
 }
+
+// When the meter telemetry ends under the clip, the frame forgets the squelch
+// the way scope and levels do: the header stops naming a state the daemon no
+// longer reports, and new slices count as open, as the first ones did before
+// any meter arrived.
+func TestWaveformForgetsTheSquelchWhenTelemetryEnds(t *testing.T) {
+	v := waveformTestView(ui.Style{Unicode: true})
+	f := waveformTestFrame(v.cols())
+	f.squelchOpen, f.squelchKnown = false, true
+	if got := strings.Join(v.header(f, waveformTestScale), "\n"); !strings.Contains(got, "squelch closed") {
+		t.Fatalf("the header does not name the closed squelch it was told about:\n%s", got)
+	}
+	f.forgetTelemetry()
+	if f.squelchKnown || !f.squelchOpen {
+		t.Errorf("after telemetry ends the squelch is unknown and counts as open, got known=%v open=%v", f.squelchKnown, f.squelchOpen)
+	}
+	if got := strings.Join(v.header(f, waveformTestScale), "\n"); strings.Contains(got, "squelch") {
+		t.Errorf("the header still names a squelch nobody is reporting:\n%s", got)
+	}
+}

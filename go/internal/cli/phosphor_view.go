@@ -182,11 +182,7 @@ func (v *phosphorView) gutter(label string, unit bool) string {
 func (v *phosphorView) axis(b *strings.Builder, cols int) {
 	g := v.st.Glyphs()
 	lo, hi := spectrumEdges(v.centerHz, v.spanHz)
-	ticks := spectrumTicks(lo, hi, cols)
-	marks := make([]axisTick, 0, len(ticks))
-	for _, t := range ticks {
-		marks = append(marks, axisTick{col: t.col})
-	}
+	marks := spectrumMarks(spectrumTicks(lo, hi, cols))
 	b.WriteString(v.gutter(fmtDb(v.floorDb), false) + axisRule(v.st, cols, marks) + "\n")
 	if v.mark != 0 && v.mark >= lo && v.mark <= hi && hi > lo {
 		col := int(float64(v.mark-lo) / float64(hi-lo) * float64(cols))
@@ -199,23 +195,10 @@ func (v *phosphorView) axis(b *strings.Builder, cols int) {
 			b.WriteString(strings.Repeat(" ", at) + text + "\n")
 		}
 	}
-	row := make([]byte, 0, v.width)
-	for _, t := range ticks {
-		text := leyline.FormatFrequency(t.hz)
-		at := phosphorGutter + t.col - len(text)/2
-		if at < phosphorGutter {
-			at = phosphorGutter
-		}
-		if at+len(text) > v.width || at < len(row) {
-			continue
-		}
-		for len(row) < at {
-			row = append(row, ' ')
-		}
-		row = append(row, text...)
-	}
-	if len(row) > 0 {
-		b.WriteString(v.st.Muted(string(row)) + "\n")
+	// The labels are the toolkit's, so a label at the right edge is pulled in
+	// to fit here exactly as it is under `ley spectrum`.
+	if row := axisLabelRow(phosphorGutter, v.width, marks); row != "" {
+		b.WriteString(v.st.Muted(row) + "\n")
 	}
 	// The legend earns its line only where it fits; a wrapped one would be the
 	// widest thing on screen and say the least.

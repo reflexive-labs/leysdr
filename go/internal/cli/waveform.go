@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"slices"
 	"time"
@@ -307,7 +306,12 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 			}
 		case m, ok := <-msgs:
 			if !ok {
+				// The daemon stopped saying: a header that kept naming the
+				// squelch, and columns kept blank on its account, would be
+				// drawn from a reading nobody is confirming (scope and levels
+				// forget theirs the same way).
 				msgs = nil
+				frame.forgetTelemetry()
 				continue
 			}
 			if b, is := m.Body.(*leylinev1.TelemetryMsg_Meter); is {
@@ -364,20 +368,10 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	}
 }
 
-// waveformEnd turns the end of the audio stream into what to do next: nothing
-// on Ctrl-C, the daemon's error where there is one, and a sentence where the
-// stream ended before a single column could be drawn.
+// waveformEnd turns the end of the audio stream into what to do next, by the
+// one rule the live views share.
 func waveformEnd(ctx context.Context, err error, cols int) error {
-	if ctx.Err() != nil {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if cols == 0 {
-		return fmt.Errorf("the audio stream ended before a column could be drawn. Check the channel is still running with: ley state")
-	}
-	return nil
+	return liveStreamEnd(ctx, err, cols, "audio stream", "column")
 }
 
 // waveformPeak is how loud the window is, which is what the auto scale fits

@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -283,6 +284,28 @@ func axisLabelRow(gutterW, width int, ticks []axisTick) string {
 		row = append(row, t.text...)
 	}
 	return string(row)
+}
+
+// liveStreamEnd is what a live view does when its bulk stream closes: nothing
+// on Ctrl-C, the daemon's error where there is one, and otherwise a sentence
+// -- because a stream the daemon ends on its own is never a finished job. The
+// daemon closes a stream when its descriptor stops being true (a rate, mode or
+// bandwidth write re-planned the channel) or when the channel or its capture
+// goes away, and a view that answered that with a clean exit would leave a
+// reader with a frozen picture and no reason. A run that reaches --count
+// returns before the stream closes, so it never lands here. `stream` names the
+// stream and `unit` what one picture of it is called.
+func liveStreamEnd(ctx context.Context, err error, drawn int, stream, unit string) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if drawn == 0 {
+		return fmt.Errorf("the %s ended before a %s could be drawn. Check the channel is still running with: ley state", stream, unit)
+	}
+	return fmt.Errorf("the daemon ended the %s after %s: the channel it read was changed, stopped or destroyed. Check it with: ley state, then run the command again", stream, plural(drawn, unit))
 }
 
 // chartAxis is the timebase under a trace or a clip: the rule, then the

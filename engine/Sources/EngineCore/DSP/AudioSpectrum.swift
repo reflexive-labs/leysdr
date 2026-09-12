@@ -106,6 +106,11 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
 
     /// Hot path (DSP thread). Copies the block into the sliding window in at most two runs and
     /// transforms whenever a row comes due; no allocation, nothing held across the sink call.
+    ///
+    /// A row carries the index of the sample that completed it -- the newest sample in its
+    /// window -- not the start of the block it was emitted from: one block can hold several
+    /// hops, and rows that all named the block's first sample would be the same moment on the
+    /// wire, which is not a timebase.
     public func write(_ audio: SampleBuffer, at time: SampleTime) {
         guard !closed.load(ordering: .relaxed), audio.format == .f32, audio.count > 0 else { return }
         let sp = Signpost.begin(.audioWrite)
@@ -123,7 +128,9 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
                 sinceRow = 0
                 // A row built from a part-filled window would carry the zeros it was born with as
                 // a wideband smear, so the first one waits for a whole window.
-                if filled >= size { emit(at: time) }
+                if filled >= size {
+                    emit(at: SampleTime(captureID: time.captureID, sampleIndex: time.sampleIndex &+ UInt64(i - 1)))
+                }
             }
         }
     }

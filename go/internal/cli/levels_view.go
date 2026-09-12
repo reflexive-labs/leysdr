@@ -311,10 +311,9 @@ func (v *levelsView) cell(b levelsBar, top, bottom float64) (string, int) {
 }
 
 // levelsInk is a height on the meter as a step of the chart's level ramp, so
-// the ladders and `ley spectrum` say the same level in the same colour.
-func levelsInk(frac float64) int {
-	return max(0, min(chartLevelSteps-1, int(math.Round(frac*float64(chartLevelSteps-1)))))
-}
+// the ladders and `ley spectrum` say the same level in the same colour: the
+// one quantiser every chart uses, not a rounding of its own.
+func levelsInk(frac float64) int { return rampBand(frac) }
 
 // markRow is the row a level falls in, top row first.
 func (v *levelsView) markRow(db float64) int {

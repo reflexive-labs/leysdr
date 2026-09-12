@@ -208,4 +208,83 @@ final class ChannelRateRetuneDaemonTests: XCTestCase {
             _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
         }
     }
+
+    /// The descriptor is true for the life of the stream, not just its rate. A squelch write moves
+    /// nothing a client holds, so `ley listen` and `ley scope` stay open through it; a bandwidth
+    /// write rescales the NFM detector without moving the audio rate, and every stream that
+    /// answered the old `full_scale_deviation_hz` ends so a client reads hertz off the new one.
+    func testBandwidthWriteThatMovesFullScaleEndsAudioStreams() async throws {
+        try await withDaemon { c in
+            let device = RebindableDevice()
+            let d = try await c.daemon.registry.attachVirtualDevice(device).descriptor
+            var cc = Leyline_V1_CreateCaptureRequest()
+            cc.deviceID = d.id.string
+            cc.centerHz = 146_520_000
+            let capture = try await c.control.createCapture(cc, metadata: testMetadata)
+            var cch = Leyline_V1_CreateChannelRequest()
+            cch.captureID = capture.captureID
+            cch.offsetHz = 0
+            cch.mode = .nfm
+            cch.bandwidthHz = 12_500
+            let channel = try await c.control.createChannel(cch, metadata: testMetadata)
+            let chanID = try XCTUnwrap(ChannelID(string: channel.channelID))
+            let maybeEngine = await c.daemon.store.channelEngine(chanID)
+            let engine = try XCTUnwrap(maybeEngine)
+            let rateBefore = engine.audioRate
+
+            func subscribe(_ tap: Leyline_V1_AudioTap) async throws -> (Leyline_V1_StreamDescriptor, LockedValue<Bool>, Task<Void, Never>) {
+                var req = Leyline_V1_SubscribeRequest()
+                req.captureID = capture.captureID
+                req.channelID = channel.channelID
+                req.kind = .audio
+                req.policy = .latestWins
+                req.transport = .grpc
+                req.audio.tap = tap
+                let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
+                var ref = Leyline_V1_StreamRef()
+                ref.streamID = desc.streamID
+                let ended = LockedValue(false)
+                let reader = Task {
+                    do {
+                        try await c.bulk.stream(ref, metadata: testMetadata) { response in
+                            for try await _ in response.messages {}
+                        }
+                    } catch {}
+                    ended.value = true
+                }
+                return (desc, ended, reader)
+            }
+            let (heardDesc, heardEnded, heardReader) = try await subscribe(.tapAudio)
+            let (scopeDesc, scopeEnded, scopeReader) = try await subscribe(.tapDemod)
+            XCTAssertEqual(heardDesc.audio.fullScaleDeviationHz, 2_500, "a 12.5 kHz channel answers +/-2.5 kHz")
+            XCTAssertEqual(scopeDesc.audio.fullScaleDeviationHz, 2_500)
+
+            // A squelch write leaves the descriptor true, so nothing ends.
+            try await self.write(c, tag: 1, target: channel.channelID) { $0.squelchDb = -40 }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            XCTAssertFalse(heardEnded.value, "a squelch write does not end the audio stream")
+            XCTAssertFalse(scopeEnded.value, "a squelch write does not end the demod tap")
+
+            // A bandwidth write keeps the audio rate and moves the full scale: both taps end.
+            try await self.write(c, tag: 2, target: channel.channelID) { $0.bandwidthHz = 25_000 }
+            XCTAssertEqual(engine.audioRate, rateBefore, "the audio rate is the capture's business, not the bandwidth's")
+            let heardClosed = await self.eventually { heardEnded.value }
+            XCTAssertTrue(heardClosed, "the audio stream negotiated at 2.5 kHz full scale ends")
+            let scopeClosed = await self.eventually { scopeEnded.value }
+            XCTAssertTrue(scopeClosed, "the demod tap ends with it")
+            heardReader.cancel()
+            scopeReader.cancel()
+            _ = await heardReader.value
+            _ = await scopeReader.value
+
+            let (fresh, _, freshReader) = try await subscribe(.tapDemod)
+            XCTAssertEqual(fresh.audio.fullScaleDeviationHz, 5_000, "a fresh subscription answers the 25 kHz channel's full scale")
+            XCTAssertEqual(fresh.audio.sampleRate, rateBefore)
+            freshReader.cancel()
+            _ = await freshReader.value
+            var ref = Leyline_V1_StreamRef()
+            ref.streamID = fresh.streamID
+            _ = try await c.bulk.unsubscribe(ref, metadata: testMetadata)
+        }
+    }
 }

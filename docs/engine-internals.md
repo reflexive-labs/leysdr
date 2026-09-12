@@ -238,7 +238,9 @@ with a `channel_id` source; the descriptor answers `center_hz = rate/4` and `spa
 `ROW_SNAPSHOT` with one look, and the tap it serves. A raw-IQ channel has no audio and refuses with
 `INVALID_ARGUMENT`, as does an unknown tap, an unknown `accumulation`, or a channel with no audio
 rate yet. Because the stream reads a channel tap, it ends exactly as a bulk audio stream does when
-the audio rate under it can move.
+the audio rate under it can move. Each row is stamped with the index of the sample that completed
+its window, so the rows one block yields name different moments and advance by exactly the hop;
+a row stamped with its block's first sample would be the same instant as the row before it.
 
 Two things the row is honest about rather than fixed. Bin 0 is DC, and the window puts a DC offset
 there about 6 dB above a tone of the same amplitude, with no mirrored copy of it further up the
@@ -526,7 +528,11 @@ requested `sample_rate` that is neither 0 nor the channel's rate is `INVALID_ARG
 resampling in v0, and the daemon never upgrades). Any write that re-plans a channel at a new audio
 rate — a capture-rate write, a retune that brings the channel back into capture, a mode, bandwidth
 or offset write — rebuilds that channel's system-audio sinks under their existing ids and ends its
-bulk audio streams, both taps. A capture-rate write ends every bulk audio stream on the capture even
+bulk audio streams, both taps. A write that leaves the audio rate alone but moves what the
+descriptor answered — a bandwidth write that rescales the NFM detector's `full_scale_deviation_hz`,
+or a mode write — ends the bulk audio streams too (the system-audio sinks keep playing at the rate
+they have), because a client converting to hertz with the old number would be wrong by the ratio
+for as long as it stayed subscribed. A capture-rate write ends every bulk audio stream on the capture even
 when no audio rate moved: audio frames scale their sample spans by the capture rate, and two capture
 rates can plan to the same audio rate. Re-subscribe for a fresh descriptor. IQ: capture rate only,
 `CF32` only (no resampling in v0). `Stream` writes frames until the client cancels; `Unsubscribe`
