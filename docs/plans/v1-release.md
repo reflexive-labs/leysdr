@@ -67,15 +67,19 @@ reference client, so every tool needs a `ley` mirror. The dashboard shares its o
 adapter is the positioning. Every cut carries the same fixed cost — R-1 to R-5, the fake-daemon
 parity in R-14, and an owner's Mac run of the audio story, which no test proves. Recording is in
 every cut because it is a V0 story and the MCP "hand a recording to another tool" story depends on
-it, so it does not wait on this decision.
+it, so it does not wait on this decision. D2 removed one cost every cut used to carry: with nothing
+closed there is no public/private split to build, and the adapter and the app land in this repository
+under Apache-2.0 beside `ley`.
 
-**D2 — Licence.** `docs/sdr-planning-todo.md:14` decided "engine is open source — GPL question
-dissolves; link librtlsdr directly". That settles GPL-compatible, not which licence. `leylined` links
-librtlsdr (GPL-2.0-or-later), so a distributed daemon binary is a GPL combined work whatever the repo
-says; the Go clients link only Apache-2.0 and MIT code. Simplest: one licence for the repo,
-GPL-3.0-or-later or GPL-2.0-or-later, plus a `NOTICE` for the Apache-2.0 Go dependencies (cobra,
-grpc-go, protobuf, oklog/ulid). A split (permissive clients, GPL engine) is possible but is a second
-thing to explain. Blocks REL-1/REL-2 below.
+**D2 — Licence.** Decided 2026-09-12, `docs/decisions/D2-licensing.md`: everything ships open
+source. The engine under `engine/` is GPL-3.0-or-later because it links librtlsdr (GPL-2.0-or-later)
+and Apache-2.0 Swift packages, which rules out GPLv2-only; the contract, the generated code, the
+client library, `ley`, the adapter and the app are Apache-2.0, so the GPL reaches exactly what links
+librtlsdr and every client stays a separate work. Revenue is the notarized build plus a curated
+content layer (R-22), not withheld source; no licence keys, no private repo. Contributions are inbound
+Apache-2.0 with DCO sign-off (`CONTRIBUTING.md`); the name is the moat (`TRADEMARK.md`, D3). Landed:
+`LICENSE`, `engine/LICENSE`, `NOTICE`, `third_party/licenses/`, SPDX headers everywhere,
+`make license-check` in the gate and CI. REL-1 and REL-2 are closed by it.
 
 **D3 — The name.** `docs/sdr-planning-todo.md:32`: "USPTO check on 'Leyline' before first public
 release." Not recorded as done. The name is now in the proto package, the launchd label
@@ -241,8 +245,8 @@ CLI behaviour proven against the wrong answer:
 
 | id | finding | blocker |
 |---|---|---|
-| REL-1 | no LICENSE | yes |
-| REL-2 | no NOTICE for librtlsdr (GPL-2.0) and Apache-2.0 Go deps | yes, for binary distribution |
+| REL-1 | no LICENSE — **fixed** (D2: `LICENSE` Apache-2.0, `engine/LICENSE` GPL-3.0, SPDX headers, `make license-check`) | — |
+| REL-2 | no NOTICE for librtlsdr (GPL-2.0) and Apache-2.0 Go deps — **fixed** (`NOTICE`, `third_party/licenses/`, release-checklist obligations) | — |
 | REL-3 | version hard-coded `0.1.0-dev` in Go and Swift; no ldflags, no tag, no remote | yes |
 | REL-4 | no install story beyond clone-and-build; `scripts/bootstrap-mac.sh` is referenced by nothing | yes |
 | REL-5 | README quickstart fails from a clean clone (PATH, `--bin`, fixtures) — **fixed** (`aa88c59`) | — |
@@ -526,6 +530,16 @@ fixtures.md` says how to record one (`ley daemon stop`, `rtl_sdr -f <100 kHz off
 2400000 -g 0 -n 24000000`, the sidecar, `ley play … --freq`). The first tests: the waveform's
 blank-when-squelched rule over a real key-up, and `levels` reading the PL band within 2 dB of the
 value measured here.
+
+### R-22 `[ ]` The content layer needs a specification before pricing (M, owner + Opus)
+
+D2 makes a curated content layer half of the revenue model and nothing describes it. Write
+`docs/requirements-content-layer.md` before v1 pricing is announced: what a pack is (band plans,
+decoder recipe bundles, listening presets, CHIRP mappings, regional frequency databases), how it is
+versioned and updated (in-app fetch versus git), which packs are free and which paid, how the
+community submits and who curates, and the licence per pack (data, not code: CC-BY-SA or similar,
+decided per source). The daemon-side home for the data is D6 (bookmarks live in the daemon), so the
+document also says which pack contents become daemon state and which stay files.
 
 ### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
 

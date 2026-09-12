@@ -12,7 +12,7 @@ Goal for this phase: resolve the open architectural questions and land interface
 - [x] **Engine language:** All-Swift. Engine as a Swift package (SwiftNIO daemon, swift-argument-parser CLI), vDSP/Accelerate directly in-process — no cgo boundary, no C core to maintain. GC concern replaced by ARC/copy discipline in the sample path (still spike-gated, see §6).
 - [x] **DSP placement:** daemon-side end-to-end (capture → channelize → demod → FFT); clients render only. Forced by V0 stories — CLI/agent parity.
 - [x] **Process model:** launchd daemon owning hardware; app/CLI/MCP as peer clients. Lifecycle + arbitration details land with the session schema (§2).
-- [x] **Licensing strategy:** engine is open source — GPL question dissolves; link librtlsdr directly. Distribution: direct + notarized only, no App Store. Paid app vs. sponsorship deferred.
+- [x] **Licensing strategy:** engine is open source — GPL question dissolves; link librtlsdr directly. Distribution: direct + notarized only, no App Store. Paid app vs. sponsorship deferred. → Decided in full 2026-09-12: everything open (engine GPL-3.0-or-later, all else Apache-2.0), revenue from the notarized build and a content layer; `docs/decisions/D2-licensing.md`.
 
 ## 2. Control plane
 - [x] Define the self-describing device/capability model (borrow SoapySDR's introspection shape). → `design-control-plane.md`
