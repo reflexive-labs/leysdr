@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Leyline — top-level developer entry points. See docs/dev-setup.md.
 #
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
@@ -102,10 +104,15 @@ $(TOOLS)/golangci-lint:
 $(TOOLS)/gofumpt:
 	cd go && GOBIN=$(TOOLS) go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 
+# Every source file names its licence and every dependency is in third_party/licenses/MANIFEST.txt
+# with terms the code that pulls it in may use (docs/decisions/D2-licensing.md). `--fix` adds headers.
+license-check:
+	./scripts/check-licenses.sh
+
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 
-check: proto-check version-check go-test race lint swift swift-test e2e
+check: proto-check version-check license-check go-test race lint swift swift-test e2e
 
 clean:
 	rm -rf go/bin engine/.build

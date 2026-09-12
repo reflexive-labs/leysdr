@@ -28,6 +28,10 @@ jobs:
       # Swift has no link-time -X, so the engine's version constant is generated and checked in.
       - name: the version is one number in three places
         run: make version-check
+      # SPDX headers on every source file, the dependency manifest equal to go.mod's graph and
+      # engine/Package.resolved, and no copyleft imported outside engine/ (docs/decisions/D2-licensing.md).
+      - name: licences
+        run: make license-check
       - name: go.mod / go.sum are tidy
         working-directory: go
         run: |
