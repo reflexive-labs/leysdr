@@ -24,6 +24,7 @@ message Job {
     ScanConfig scan = 6;
     RecordConfig record = 7;
     DecodeConfig decode = 11;
+    MonitorConfig monitor = 12;
   }
   // ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
   // Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
@@ -78,6 +79,22 @@ message RecordConfig {
   DemodMode mode = 2;       // RAW_IQ records IQ
   int64 start_at_ns = 3;    // 0 = now
   int64 duration_ms = 4;
+}
+
+// Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
+// go, in time order. Unlike a scan it does not sweep: it parks one capture on the band and runs the
+// detector continuously, so it never time-shares and cannot miss a transmission that starts while it
+// is looking elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
+// the client folds them into a transmission log. A band wider than one capture can analyse is
+// refused with INVALID_ARGUMENT (use scan, which sweeps). This is the band-watching design's
+// occupancy/burst view (docs/design/band-watching.md), the stationary sibling of ley scan.
+message MonitorConfig {
+  FrequencyRange range = 1;   // the band to watch; must fit one capture
+  int64 duration_ms = 2;      // how long to watch; 0 = until cancelled
+  // Which radio. Empty means the daemon picks, as a scan does.
+  string device_id = 3;
+  // Watch even when somebody is using the radio; off by default, same don't-disturb rule as a scan.
+  bool take_over = 4;
 }
 
 // ---------- Derived products ----------
@@ -159,7 +176,7 @@ service Resources {
 }
 
 message StartJobRequest {
-  oneof config { WatchConfig watch = 1; ScanConfig scan = 2; RecordConfig record = 3; DecodeConfig decode = 4; }
+  oneof config { WatchConfig watch = 1; ScanConfig scan = 2; RecordConfig record = 3; DecodeConfig decode = 4; MonitorConfig monitor = 5; }
 }
 message ListJobsRequest { repeated JobState states = 1; } // empty = all
 message ListJobsResponse { repeated Job jobs = 1; }

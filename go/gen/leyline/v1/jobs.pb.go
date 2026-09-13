@@ -156,6 +156,7 @@ type Job struct {
 	//	*Job_Scan
 	//	*Job_Record
 	//	*Job_Decode
+	//	*Job_Monitor
 	Config isJob_Config `protobuf_oneof:"config"`
 	// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
 	// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
@@ -273,6 +274,15 @@ func (x *Job) GetDecode() *DecodeConfig {
 	return nil
 }
 
+func (x *Job) GetMonitor() *MonitorConfig {
+	if x != nil {
+		if x, ok := x.Config.(*Job_Monitor); ok {
+			return x.Monitor
+		}
+	}
+	return nil
+}
+
 func (x *Job) GetResultUris() []string {
 	if x != nil {
 		return x.ResultUris
@@ -314,6 +324,10 @@ type Job_Decode struct {
 	Decode *DecodeConfig `protobuf:"bytes,11,opt,name=decode,proto3,oneof"`
 }
 
+type Job_Monitor struct {
+	Monitor *MonitorConfig `protobuf:"bytes,12,opt,name=monitor,proto3,oneof"`
+}
+
 func (*Job_Watch) isJob_Config() {}
 
 func (*Job_Scan) isJob_Config() {}
@@ -321,6 +335,8 @@ func (*Job_Scan) isJob_Config() {}
 func (*Job_Record) isJob_Config() {}
 
 func (*Job_Decode) isJob_Config() {}
+
+func (*Job_Monitor) isJob_Config() {}
 
 // "Watch 146.52 and log anything heard." Owns a persistent channel; produces a transcript.
 type WatchConfig struct {
@@ -590,6 +606,83 @@ func (x *RecordConfig) GetDurationMs() int64 {
 	return 0
 }
 
+// Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
+// go, in time order. Unlike a scan it does not sweep: it parks one capture on the band and runs the
+// detector continuously, so it never time-shares and cannot miss a transmission that starts while it
+// is looking elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
+// the client folds them into a transmission log. A band wider than one capture can analyse is
+// refused with INVALID_ARGUMENT (use scan, which sweeps). This is the band-watching design's
+// occupancy/burst view (docs/design/band-watching.md), the stationary sibling of ley scan.
+type MonitorConfig struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Range      *FrequencyRange        `protobuf:"bytes,1,opt,name=range,proto3" json:"range,omitempty"`                              // the band to watch; must fit one capture
+	DurationMs int64                  `protobuf:"varint,2,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"` // how long to watch; 0 = until cancelled
+	// Which radio. Empty means the daemon picks, as a scan does.
+	DeviceId string `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	// Watch even when somebody is using the radio; off by default, same don't-disturb rule as a scan.
+	TakeOver      bool `protobuf:"varint,4,opt,name=take_over,json=takeOver,proto3" json:"take_over,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MonitorConfig) Reset() {
+	*x = MonitorConfig{}
+	mi := &file_leyline_v1_jobs_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MonitorConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MonitorConfig) ProtoMessage() {}
+
+func (x *MonitorConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_jobs_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MonitorConfig.ProtoReflect.Descriptor instead.
+func (*MonitorConfig) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MonitorConfig) GetRange() *FrequencyRange {
+	if x != nil {
+		return x.Range
+	}
+	return nil
+}
+
+func (x *MonitorConfig) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *MonitorConfig) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *MonitorConfig) GetTakeOver() bool {
+	if x != nil {
+		return x.TakeOver
+	}
+	return false
+}
+
 // Contiguous squelch-open interval on a watched channel. The building block of transcripts.
 type ActivitySegment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -604,7 +697,7 @@ type ActivitySegment struct {
 
 func (x *ActivitySegment) Reset() {
 	*x = ActivitySegment{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[4]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +709,7 @@ func (x *ActivitySegment) String() string {
 func (*ActivitySegment) ProtoMessage() {}
 
 func (x *ActivitySegment) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[4]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +722,7 @@ func (x *ActivitySegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivitySegment.ProtoReflect.Descriptor instead.
 func (*ActivitySegment) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ActivitySegment) GetStart() *SampleTime {
@@ -678,7 +771,7 @@ type Transcript struct {
 
 func (x *Transcript) Reset() {
 	*x = Transcript{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[5]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -690,7 +783,7 @@ func (x *Transcript) String() string {
 func (*Transcript) ProtoMessage() {}
 
 func (x *Transcript) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[5]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -703,7 +796,7 @@ func (x *Transcript) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Transcript.ProtoReflect.Descriptor instead.
 func (*Transcript) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Transcript) GetJobId() string {
@@ -755,7 +848,7 @@ type Scan struct {
 
 func (x *Scan) Reset() {
 	*x = Scan{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[6]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -767,7 +860,7 @@ func (x *Scan) String() string {
 func (*Scan) ProtoMessage() {}
 
 func (x *Scan) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[6]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -780,7 +873,7 @@ func (x *Scan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Scan.ProtoReflect.Descriptor instead.
 func (*Scan) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Scan) GetScanId() string {
@@ -856,7 +949,7 @@ type NoiseFloorSegment struct {
 
 func (x *NoiseFloorSegment) Reset() {
 	*x = NoiseFloorSegment{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[7]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -868,7 +961,7 @@ func (x *NoiseFloorSegment) String() string {
 func (*NoiseFloorSegment) ProtoMessage() {}
 
 func (x *NoiseFloorSegment) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[7]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -881,7 +974,7 @@ func (x *NoiseFloorSegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NoiseFloorSegment.ProtoReflect.Descriptor instead.
 func (*NoiseFloorSegment) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *NoiseFloorSegment) GetRange() *FrequencyRange {
@@ -912,7 +1005,7 @@ type Resource struct {
 
 func (x *Resource) Reset() {
 	*x = Resource{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[8]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -924,7 +1017,7 @@ func (x *Resource) String() string {
 func (*Resource) ProtoMessage() {}
 
 func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[8]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -937,7 +1030,7 @@ func (x *Resource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resource.ProtoReflect.Descriptor instead.
 func (*Resource) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{8}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Resource) GetUri() string {
@@ -990,6 +1083,7 @@ type StartJobRequest struct {
 	//	*StartJobRequest_Scan
 	//	*StartJobRequest_Record
 	//	*StartJobRequest_Decode
+	//	*StartJobRequest_Monitor
 	Config        isStartJobRequest_Config `protobuf_oneof:"config"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -997,7 +1091,7 @@ type StartJobRequest struct {
 
 func (x *StartJobRequest) Reset() {
 	*x = StartJobRequest{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[9]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1009,7 +1103,7 @@ func (x *StartJobRequest) String() string {
 func (*StartJobRequest) ProtoMessage() {}
 
 func (x *StartJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[9]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1022,7 +1116,7 @@ func (x *StartJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartJobRequest.ProtoReflect.Descriptor instead.
 func (*StartJobRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{9}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StartJobRequest) GetConfig() isStartJobRequest_Config {
@@ -1068,6 +1162,15 @@ func (x *StartJobRequest) GetDecode() *DecodeConfig {
 	return nil
 }
 
+func (x *StartJobRequest) GetMonitor() *MonitorConfig {
+	if x != nil {
+		if x, ok := x.Config.(*StartJobRequest_Monitor); ok {
+			return x.Monitor
+		}
+	}
+	return nil
+}
+
 type isStartJobRequest_Config interface {
 	isStartJobRequest_Config()
 }
@@ -1088,6 +1191,10 @@ type StartJobRequest_Decode struct {
 	Decode *DecodeConfig `protobuf:"bytes,4,opt,name=decode,proto3,oneof"`
 }
 
+type StartJobRequest_Monitor struct {
+	Monitor *MonitorConfig `protobuf:"bytes,5,opt,name=monitor,proto3,oneof"`
+}
+
 func (*StartJobRequest_Watch) isStartJobRequest_Config() {}
 
 func (*StartJobRequest_Scan) isStartJobRequest_Config() {}
@@ -1095,6 +1202,8 @@ func (*StartJobRequest_Scan) isStartJobRequest_Config() {}
 func (*StartJobRequest_Record) isStartJobRequest_Config() {}
 
 func (*StartJobRequest_Decode) isStartJobRequest_Config() {}
+
+func (*StartJobRequest_Monitor) isStartJobRequest_Config() {}
 
 type ListJobsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1105,7 +1214,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[10]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1117,7 +1226,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[10]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1130,7 +1239,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{10}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListJobsRequest) GetStates() []JobState {
@@ -1149,7 +1258,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[11]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1161,7 +1270,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[11]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1174,7 +1283,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{11}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListJobsResponse) GetJobs() []*Job {
@@ -1193,7 +1302,7 @@ type JobRef struct {
 
 func (x *JobRef) Reset() {
 	*x = JobRef{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[12]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1205,7 +1314,7 @@ func (x *JobRef) String() string {
 func (*JobRef) ProtoMessage() {}
 
 func (x *JobRef) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[12]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1218,7 +1327,7 @@ func (x *JobRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobRef.ProtoReflect.Descriptor instead.
 func (*JobRef) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{12}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *JobRef) GetJobId() string {
@@ -1238,7 +1347,7 @@ type TranscriptRequest struct {
 
 func (x *TranscriptRequest) Reset() {
 	*x = TranscriptRequest{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[13]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1250,7 +1359,7 @@ func (x *TranscriptRequest) String() string {
 func (*TranscriptRequest) ProtoMessage() {}
 
 func (x *TranscriptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[13]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1263,7 +1372,7 @@ func (x *TranscriptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscriptRequest.ProtoReflect.Descriptor instead.
 func (*TranscriptRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{13}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TranscriptRequest) GetJobId() string {
@@ -1289,7 +1398,7 @@ type ScanRef struct {
 
 func (x *ScanRef) Reset() {
 	*x = ScanRef{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[14]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1301,7 +1410,7 @@ func (x *ScanRef) String() string {
 func (*ScanRef) ProtoMessage() {}
 
 func (x *ScanRef) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[14]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,7 +1423,7 @@ func (x *ScanRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanRef.ProtoReflect.Descriptor instead.
 func (*ScanRef) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{14}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ScanRef) GetScanId() string {
@@ -1334,7 +1443,7 @@ type ListResourcesRequest struct {
 
 func (x *ListResourcesRequest) Reset() {
 	*x = ListResourcesRequest{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[15]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1346,7 +1455,7 @@ func (x *ListResourcesRequest) String() string {
 func (*ListResourcesRequest) ProtoMessage() {}
 
 func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[15]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1359,7 +1468,7 @@ func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{15}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListResourcesRequest) GetKind() ResourceKind {
@@ -1385,7 +1494,7 @@ type ListResourcesResponse struct {
 
 func (x *ListResourcesResponse) Reset() {
 	*x = ListResourcesResponse{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[16]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1397,7 +1506,7 @@ func (x *ListResourcesResponse) String() string {
 func (*ListResourcesResponse) ProtoMessage() {}
 
 func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[16]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1410,7 +1519,7 @@ func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesResponse.ProtoReflect.Descriptor instead.
 func (*ListResourcesResponse) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{16}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListResourcesResponse) GetResources() []*Resource {
@@ -1429,7 +1538,7 @@ type ResourceRef struct {
 
 func (x *ResourceRef) Reset() {
 	*x = ResourceRef{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[17]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1441,7 +1550,7 @@ func (x *ResourceRef) String() string {
 func (*ResourceRef) ProtoMessage() {}
 
 func (x *ResourceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[17]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1454,7 +1563,7 @@ func (x *ResourceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceRef.ProtoReflect.Descriptor instead.
 func (*ResourceRef) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{17}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ResourceRef) GetUri() string {
@@ -1473,7 +1582,7 @@ type LocalPath struct {
 
 func (x *LocalPath) Reset() {
 	*x = LocalPath{}
-	mi := &file_leyline_v1_jobs_proto_msgTypes[18]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1485,7 +1594,7 @@ func (x *LocalPath) String() string {
 func (*LocalPath) ProtoMessage() {}
 
 func (x *LocalPath) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_jobs_proto_msgTypes[18]
+	mi := &file_leyline_v1_jobs_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1498,7 +1607,7 @@ func (x *LocalPath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LocalPath.ProtoReflect.Descriptor instead.
 func (*LocalPath) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{18}
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *LocalPath) GetPath() string {
@@ -1513,7 +1622,7 @@ var File_leyline_v1_jobs_proto protoreflect.FileDescriptor
 const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\n" +
 	"\x15leyline/v1/jobs.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x1aleyline/v1/telemetry.proto\x1a\x17leyline/v1/decode.proto\"\xe9\x03\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x1aleyline/v1/telemetry.proto\x1a\x17leyline/v1/decode.proto\"\xa0\x04\n" +
 	"\x03Job\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12*\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x14.leyline.v1.JobStateR\x05state\x12\"\n" +
@@ -1523,7 +1632,8 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\x05watch\x18\x05 \x01(\v2\x17.leyline.v1.WatchConfigH\x00R\x05watch\x12,\n" +
 	"\x04scan\x18\x06 \x01(\v2\x16.leyline.v1.ScanConfigH\x00R\x04scan\x122\n" +
 	"\x06record\x18\a \x01(\v2\x18.leyline.v1.RecordConfigH\x00R\x06record\x122\n" +
-	"\x06decode\x18\v \x01(\v2\x18.leyline.v1.DecodeConfigH\x00R\x06decode\x12\x1f\n" +
+	"\x06decode\x18\v \x01(\v2\x18.leyline.v1.DecodeConfigH\x00R\x06decode\x125\n" +
+	"\amonitor\x18\f \x01(\v2\x19.leyline.v1.MonitorConfigH\x00R\amonitor\x12\x1f\n" +
 	"\vresult_uris\x18\b \x03(\tR\n" +
 	"resultUris\x12#\n" +
 	"\rstatus_detail\x18\t \x01(\tR\fstatusDetail\x12-\n" +
@@ -1551,7 +1661,13 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\x04mode\x18\x02 \x01(\x0e2\x15.leyline.v1.DemodModeR\x04mode\x12\x1e\n" +
 	"\vstart_at_ns\x18\x03 \x01(\x03R\tstartAtNs\x12\x1f\n" +
 	"\vduration_ms\x18\x04 \x01(\x03R\n" +
-	"durationMs\"\xbe\x01\n" +
+	"durationMs\"\x9c\x01\n" +
+	"\rMonitorConfig\x120\n" +
+	"\x05range\x18\x01 \x01(\v2\x1a.leyline.v1.FrequencyRangeR\x05range\x12\x1f\n" +
+	"\vduration_ms\x18\x02 \x01(\x03R\n" +
+	"durationMs\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x1b\n" +
+	"\ttake_over\x18\x04 \x01(\bR\btakeOver\"\xbe\x01\n" +
 	"\x0fActivitySegment\x12,\n" +
 	"\x05start\x18\x01 \x01(\v2\x16.leyline.v1.SampleTimeR\x05start\x12(\n" +
 	"\x03end\x18\x02 \x01(\v2\x16.leyline.v1.SampleTimeR\x03end\x12\x1b\n" +
@@ -1590,12 +1706,13 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\bmetadata\x18\x06 \x03(\v2\".leyline.v1.Resource.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe2\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x99\x02\n" +
 	"\x0fStartJobRequest\x12/\n" +
 	"\x05watch\x18\x01 \x01(\v2\x17.leyline.v1.WatchConfigH\x00R\x05watch\x12,\n" +
 	"\x04scan\x18\x02 \x01(\v2\x16.leyline.v1.ScanConfigH\x00R\x04scan\x122\n" +
 	"\x06record\x18\x03 \x01(\v2\x18.leyline.v1.RecordConfigH\x00R\x06record\x122\n" +
-	"\x06decode\x18\x04 \x01(\v2\x18.leyline.v1.DecodeConfigH\x00R\x06decodeB\b\n" +
+	"\x06decode\x18\x04 \x01(\v2\x18.leyline.v1.DecodeConfigH\x00R\x06decode\x125\n" +
+	"\amonitor\x18\x05 \x01(\v2\x19.leyline.v1.MonitorConfigH\x00R\amonitorB\b\n" +
 	"\x06config\"?\n" +
 	"\x0fListJobsRequest\x12,\n" +
 	"\x06states\x18\x01 \x03(\x0e2\x14.leyline.v1.JobStateR\x06states\"7\n" +
@@ -1661,7 +1778,7 @@ func file_leyline_v1_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_leyline_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_leyline_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_leyline_v1_jobs_proto_goTypes = []any{
 	(JobState)(0),                 // 0: leyline.v1.JobState
 	(ResourceKind)(0),             // 1: leyline.v1.ResourceKind
@@ -1669,90 +1786,94 @@ var file_leyline_v1_jobs_proto_goTypes = []any{
 	(*WatchConfig)(nil),           // 3: leyline.v1.WatchConfig
 	(*ScanConfig)(nil),            // 4: leyline.v1.ScanConfig
 	(*RecordConfig)(nil),          // 5: leyline.v1.RecordConfig
-	(*ActivitySegment)(nil),       // 6: leyline.v1.ActivitySegment
-	(*Transcript)(nil),            // 7: leyline.v1.Transcript
-	(*Scan)(nil),                  // 8: leyline.v1.Scan
-	(*NoiseFloorSegment)(nil),     // 9: leyline.v1.NoiseFloorSegment
-	(*Resource)(nil),              // 10: leyline.v1.Resource
-	(*StartJobRequest)(nil),       // 11: leyline.v1.StartJobRequest
-	(*ListJobsRequest)(nil),       // 12: leyline.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),      // 13: leyline.v1.ListJobsResponse
-	(*JobRef)(nil),                // 14: leyline.v1.JobRef
-	(*TranscriptRequest)(nil),     // 15: leyline.v1.TranscriptRequest
-	(*ScanRef)(nil),               // 16: leyline.v1.ScanRef
-	(*ListResourcesRequest)(nil),  // 17: leyline.v1.ListResourcesRequest
-	(*ListResourcesResponse)(nil), // 18: leyline.v1.ListResourcesResponse
-	(*ResourceRef)(nil),           // 19: leyline.v1.ResourceRef
-	(*LocalPath)(nil),             // 20: leyline.v1.LocalPath
-	nil,                           // 21: leyline.v1.Resource.MetadataEntry
-	nil,                           // 22: leyline.v1.ListResourcesRequest.MetadataFilterEntry
-	(*ClientInfo)(nil),            // 23: leyline.v1.ClientInfo
-	(*DecodeConfig)(nil),          // 24: leyline.v1.DecodeConfig
-	(*ErrorDetail)(nil),           // 25: leyline.v1.ErrorDetail
-	(DemodMode)(0),                // 26: leyline.v1.DemodMode
-	(*FrequencyRange)(nil),        // 27: leyline.v1.FrequencyRange
-	(*SampleTime)(nil),            // 28: leyline.v1.SampleTime
-	(*Gap)(nil),                   // 29: leyline.v1.Gap
-	(*Detection)(nil),             // 30: leyline.v1.Detection
-	(*GainState)(nil),             // 31: leyline.v1.GainState
-	(*StreamPosition)(nil),        // 32: leyline.v1.StreamPosition
+	(*MonitorConfig)(nil),         // 6: leyline.v1.MonitorConfig
+	(*ActivitySegment)(nil),       // 7: leyline.v1.ActivitySegment
+	(*Transcript)(nil),            // 8: leyline.v1.Transcript
+	(*Scan)(nil),                  // 9: leyline.v1.Scan
+	(*NoiseFloorSegment)(nil),     // 10: leyline.v1.NoiseFloorSegment
+	(*Resource)(nil),              // 11: leyline.v1.Resource
+	(*StartJobRequest)(nil),       // 12: leyline.v1.StartJobRequest
+	(*ListJobsRequest)(nil),       // 13: leyline.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),      // 14: leyline.v1.ListJobsResponse
+	(*JobRef)(nil),                // 15: leyline.v1.JobRef
+	(*TranscriptRequest)(nil),     // 16: leyline.v1.TranscriptRequest
+	(*ScanRef)(nil),               // 17: leyline.v1.ScanRef
+	(*ListResourcesRequest)(nil),  // 18: leyline.v1.ListResourcesRequest
+	(*ListResourcesResponse)(nil), // 19: leyline.v1.ListResourcesResponse
+	(*ResourceRef)(nil),           // 20: leyline.v1.ResourceRef
+	(*LocalPath)(nil),             // 21: leyline.v1.LocalPath
+	nil,                           // 22: leyline.v1.Resource.MetadataEntry
+	nil,                           // 23: leyline.v1.ListResourcesRequest.MetadataFilterEntry
+	(*ClientInfo)(nil),            // 24: leyline.v1.ClientInfo
+	(*DecodeConfig)(nil),          // 25: leyline.v1.DecodeConfig
+	(*ErrorDetail)(nil),           // 26: leyline.v1.ErrorDetail
+	(DemodMode)(0),                // 27: leyline.v1.DemodMode
+	(*FrequencyRange)(nil),        // 28: leyline.v1.FrequencyRange
+	(*SampleTime)(nil),            // 29: leyline.v1.SampleTime
+	(*Gap)(nil),                   // 30: leyline.v1.Gap
+	(*Detection)(nil),             // 31: leyline.v1.Detection
+	(*GainState)(nil),             // 32: leyline.v1.GainState
+	(*StreamPosition)(nil),        // 33: leyline.v1.StreamPosition
 }
 var file_leyline_v1_jobs_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.Job.state:type_name -> leyline.v1.JobState
-	23, // 1: leyline.v1.Job.created_by:type_name -> leyline.v1.ClientInfo
+	24, // 1: leyline.v1.Job.created_by:type_name -> leyline.v1.ClientInfo
 	3,  // 2: leyline.v1.Job.watch:type_name -> leyline.v1.WatchConfig
 	4,  // 3: leyline.v1.Job.scan:type_name -> leyline.v1.ScanConfig
 	5,  // 4: leyline.v1.Job.record:type_name -> leyline.v1.RecordConfig
-	24, // 5: leyline.v1.Job.decode:type_name -> leyline.v1.DecodeConfig
-	25, // 6: leyline.v1.Job.error:type_name -> leyline.v1.ErrorDetail
-	26, // 7: leyline.v1.WatchConfig.mode:type_name -> leyline.v1.DemodMode
-	27, // 8: leyline.v1.ScanConfig.range:type_name -> leyline.v1.FrequencyRange
-	26, // 9: leyline.v1.RecordConfig.mode:type_name -> leyline.v1.DemodMode
-	28, // 10: leyline.v1.ActivitySegment.start:type_name -> leyline.v1.SampleTime
-	28, // 11: leyline.v1.ActivitySegment.end:type_name -> leyline.v1.SampleTime
-	6,  // 12: leyline.v1.Transcript.segments:type_name -> leyline.v1.ActivitySegment
-	29, // 13: leyline.v1.Transcript.coverage_gaps:type_name -> leyline.v1.Gap
-	4,  // 14: leyline.v1.Scan.config:type_name -> leyline.v1.ScanConfig
-	30, // 15: leyline.v1.Scan.detections:type_name -> leyline.v1.Detection
-	9,  // 16: leyline.v1.Scan.noise_floor:type_name -> leyline.v1.NoiseFloorSegment
-	31, // 17: leyline.v1.Scan.gains:type_name -> leyline.v1.GainState
-	27, // 18: leyline.v1.Scan.covered:type_name -> leyline.v1.FrequencyRange
-	27, // 19: leyline.v1.NoiseFloorSegment.range:type_name -> leyline.v1.FrequencyRange
-	1,  // 20: leyline.v1.Resource.kind:type_name -> leyline.v1.ResourceKind
-	21, // 21: leyline.v1.Resource.metadata:type_name -> leyline.v1.Resource.MetadataEntry
-	3,  // 22: leyline.v1.StartJobRequest.watch:type_name -> leyline.v1.WatchConfig
-	4,  // 23: leyline.v1.StartJobRequest.scan:type_name -> leyline.v1.ScanConfig
-	5,  // 24: leyline.v1.StartJobRequest.record:type_name -> leyline.v1.RecordConfig
-	24, // 25: leyline.v1.StartJobRequest.decode:type_name -> leyline.v1.DecodeConfig
-	0,  // 26: leyline.v1.ListJobsRequest.states:type_name -> leyline.v1.JobState
-	2,  // 27: leyline.v1.ListJobsResponse.jobs:type_name -> leyline.v1.Job
-	32, // 28: leyline.v1.TranscriptRequest.from:type_name -> leyline.v1.StreamPosition
-	1,  // 29: leyline.v1.ListResourcesRequest.kind:type_name -> leyline.v1.ResourceKind
-	22, // 30: leyline.v1.ListResourcesRequest.metadata_filter:type_name -> leyline.v1.ListResourcesRequest.MetadataFilterEntry
-	10, // 31: leyline.v1.ListResourcesResponse.resources:type_name -> leyline.v1.Resource
-	11, // 32: leyline.v1.Jobs.StartJob:input_type -> leyline.v1.StartJobRequest
-	12, // 33: leyline.v1.Jobs.ListJobs:input_type -> leyline.v1.ListJobsRequest
-	14, // 34: leyline.v1.Jobs.GetJob:input_type -> leyline.v1.JobRef
-	14, // 35: leyline.v1.Jobs.CancelJob:input_type -> leyline.v1.JobRef
-	15, // 36: leyline.v1.Jobs.GetTranscript:input_type -> leyline.v1.TranscriptRequest
-	16, // 37: leyline.v1.Jobs.GetScan:input_type -> leyline.v1.ScanRef
-	17, // 38: leyline.v1.Resources.ListResources:input_type -> leyline.v1.ListResourcesRequest
-	19, // 39: leyline.v1.Resources.GetResource:input_type -> leyline.v1.ResourceRef
-	19, // 40: leyline.v1.Resources.ResolveLocalPath:input_type -> leyline.v1.ResourceRef
-	2,  // 41: leyline.v1.Jobs.StartJob:output_type -> leyline.v1.Job
-	13, // 42: leyline.v1.Jobs.ListJobs:output_type -> leyline.v1.ListJobsResponse
-	2,  // 43: leyline.v1.Jobs.GetJob:output_type -> leyline.v1.Job
-	2,  // 44: leyline.v1.Jobs.CancelJob:output_type -> leyline.v1.Job
-	7,  // 45: leyline.v1.Jobs.GetTranscript:output_type -> leyline.v1.Transcript
-	8,  // 46: leyline.v1.Jobs.GetScan:output_type -> leyline.v1.Scan
-	18, // 47: leyline.v1.Resources.ListResources:output_type -> leyline.v1.ListResourcesResponse
-	10, // 48: leyline.v1.Resources.GetResource:output_type -> leyline.v1.Resource
-	20, // 49: leyline.v1.Resources.ResolveLocalPath:output_type -> leyline.v1.LocalPath
-	41, // [41:50] is the sub-list for method output_type
-	32, // [32:41] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	25, // 5: leyline.v1.Job.decode:type_name -> leyline.v1.DecodeConfig
+	6,  // 6: leyline.v1.Job.monitor:type_name -> leyline.v1.MonitorConfig
+	26, // 7: leyline.v1.Job.error:type_name -> leyline.v1.ErrorDetail
+	27, // 8: leyline.v1.WatchConfig.mode:type_name -> leyline.v1.DemodMode
+	28, // 9: leyline.v1.ScanConfig.range:type_name -> leyline.v1.FrequencyRange
+	27, // 10: leyline.v1.RecordConfig.mode:type_name -> leyline.v1.DemodMode
+	28, // 11: leyline.v1.MonitorConfig.range:type_name -> leyline.v1.FrequencyRange
+	29, // 12: leyline.v1.ActivitySegment.start:type_name -> leyline.v1.SampleTime
+	29, // 13: leyline.v1.ActivitySegment.end:type_name -> leyline.v1.SampleTime
+	7,  // 14: leyline.v1.Transcript.segments:type_name -> leyline.v1.ActivitySegment
+	30, // 15: leyline.v1.Transcript.coverage_gaps:type_name -> leyline.v1.Gap
+	4,  // 16: leyline.v1.Scan.config:type_name -> leyline.v1.ScanConfig
+	31, // 17: leyline.v1.Scan.detections:type_name -> leyline.v1.Detection
+	10, // 18: leyline.v1.Scan.noise_floor:type_name -> leyline.v1.NoiseFloorSegment
+	32, // 19: leyline.v1.Scan.gains:type_name -> leyline.v1.GainState
+	28, // 20: leyline.v1.Scan.covered:type_name -> leyline.v1.FrequencyRange
+	28, // 21: leyline.v1.NoiseFloorSegment.range:type_name -> leyline.v1.FrequencyRange
+	1,  // 22: leyline.v1.Resource.kind:type_name -> leyline.v1.ResourceKind
+	22, // 23: leyline.v1.Resource.metadata:type_name -> leyline.v1.Resource.MetadataEntry
+	3,  // 24: leyline.v1.StartJobRequest.watch:type_name -> leyline.v1.WatchConfig
+	4,  // 25: leyline.v1.StartJobRequest.scan:type_name -> leyline.v1.ScanConfig
+	5,  // 26: leyline.v1.StartJobRequest.record:type_name -> leyline.v1.RecordConfig
+	25, // 27: leyline.v1.StartJobRequest.decode:type_name -> leyline.v1.DecodeConfig
+	6,  // 28: leyline.v1.StartJobRequest.monitor:type_name -> leyline.v1.MonitorConfig
+	0,  // 29: leyline.v1.ListJobsRequest.states:type_name -> leyline.v1.JobState
+	2,  // 30: leyline.v1.ListJobsResponse.jobs:type_name -> leyline.v1.Job
+	33, // 31: leyline.v1.TranscriptRequest.from:type_name -> leyline.v1.StreamPosition
+	1,  // 32: leyline.v1.ListResourcesRequest.kind:type_name -> leyline.v1.ResourceKind
+	23, // 33: leyline.v1.ListResourcesRequest.metadata_filter:type_name -> leyline.v1.ListResourcesRequest.MetadataFilterEntry
+	11, // 34: leyline.v1.ListResourcesResponse.resources:type_name -> leyline.v1.Resource
+	12, // 35: leyline.v1.Jobs.StartJob:input_type -> leyline.v1.StartJobRequest
+	13, // 36: leyline.v1.Jobs.ListJobs:input_type -> leyline.v1.ListJobsRequest
+	15, // 37: leyline.v1.Jobs.GetJob:input_type -> leyline.v1.JobRef
+	15, // 38: leyline.v1.Jobs.CancelJob:input_type -> leyline.v1.JobRef
+	16, // 39: leyline.v1.Jobs.GetTranscript:input_type -> leyline.v1.TranscriptRequest
+	17, // 40: leyline.v1.Jobs.GetScan:input_type -> leyline.v1.ScanRef
+	18, // 41: leyline.v1.Resources.ListResources:input_type -> leyline.v1.ListResourcesRequest
+	20, // 42: leyline.v1.Resources.GetResource:input_type -> leyline.v1.ResourceRef
+	20, // 43: leyline.v1.Resources.ResolveLocalPath:input_type -> leyline.v1.ResourceRef
+	2,  // 44: leyline.v1.Jobs.StartJob:output_type -> leyline.v1.Job
+	14, // 45: leyline.v1.Jobs.ListJobs:output_type -> leyline.v1.ListJobsResponse
+	2,  // 46: leyline.v1.Jobs.GetJob:output_type -> leyline.v1.Job
+	2,  // 47: leyline.v1.Jobs.CancelJob:output_type -> leyline.v1.Job
+	8,  // 48: leyline.v1.Jobs.GetTranscript:output_type -> leyline.v1.Transcript
+	9,  // 49: leyline.v1.Jobs.GetScan:output_type -> leyline.v1.Scan
+	19, // 50: leyline.v1.Resources.ListResources:output_type -> leyline.v1.ListResourcesResponse
+	11, // 51: leyline.v1.Resources.GetResource:output_type -> leyline.v1.Resource
+	21, // 52: leyline.v1.Resources.ResolveLocalPath:output_type -> leyline.v1.LocalPath
+	44, // [44:53] is the sub-list for method output_type
+	35, // [35:44] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_jobs_proto_init() }
@@ -1768,16 +1889,18 @@ func file_leyline_v1_jobs_proto_init() {
 		(*Job_Scan)(nil),
 		(*Job_Record)(nil),
 		(*Job_Decode)(nil),
+		(*Job_Monitor)(nil),
 	}
 	file_leyline_v1_jobs_proto_msgTypes[2].OneofWrappers = []any{
 		(*ScanConfig_Once)(nil),
 		(*ScanConfig_Recurring)(nil),
 	}
-	file_leyline_v1_jobs_proto_msgTypes[9].OneofWrappers = []any{
+	file_leyline_v1_jobs_proto_msgTypes[10].OneofWrappers = []any{
 		(*StartJobRequest_Watch)(nil),
 		(*StartJobRequest_Scan)(nil),
 		(*StartJobRequest_Record)(nil),
 		(*StartJobRequest_Decode)(nil),
+		(*StartJobRequest_Monitor)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1785,7 +1908,7 @@ func file_leyline_v1_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_jobs_proto_rawDesc), len(file_leyline_v1_jobs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

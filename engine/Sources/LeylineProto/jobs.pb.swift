@@ -197,6 +197,14 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
     set {_uniqueStorage()._config = .decode(newValue)}
   }
 
+  public var monitor: Leyline_V1_MonitorConfig {
+    get {
+      if case .monitor(let v)? = _storage._config {return v}
+      return Leyline_V1_MonitorConfig()
+    }
+    set {_uniqueStorage()._config = .monitor(newValue)}
+  }
+
   /// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
   /// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
   /// implemented), and it does not outlive the daemon's memory of its last sixteen finished jobs
@@ -232,6 +240,7 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
     case scan(Leyline_V1_ScanConfig)
     case record(Leyline_V1_RecordConfig)
     case decode(Leyline_V1_DecodeConfig)
+    case monitor(Leyline_V1_MonitorConfig)
 
   }
 
@@ -340,6 +349,44 @@ public nonisolated struct Leyline_V1_RecordConfig: Sendable {
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+/// Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
+/// go, in time order. Unlike a scan it does not sweep: it parks one capture on the band and runs the
+/// detector continuously, so it never time-shares and cannot miss a transmission that starts while it
+/// is looking elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
+/// the client folds them into a transmission log. A band wider than one capture can analyse is
+/// refused with INVALID_ARGUMENT (use scan, which sweeps). This is the band-watching design's
+/// occupancy/burst view (docs/design/band-watching.md), the stationary sibling of ley scan.
+public nonisolated struct Leyline_V1_MonitorConfig: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// the band to watch; must fit one capture
+  public var range: Leyline_V1_FrequencyRange {
+    get {_range ?? Leyline_V1_FrequencyRange()}
+    set {_range = newValue}
+  }
+  /// Returns true if `range` has been explicitly set.
+  public var hasRange: Bool {self._range != nil}
+  /// Clears the value of `range`. Subsequent reads from it will return its default value.
+  public mutating func clearRange() {self._range = nil}
+
+  /// how long to watch; 0 = until cancelled
+  public var durationMs: Int64 = 0
+
+  /// Which radio. Empty means the daemon picks, as a scan does.
+  public var deviceID: String = String()
+
+  /// Watch even when somebody is using the radio; off by default, same don't-disturb rule as a scan.
+  public var takeOver: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _range: Leyline_V1_FrequencyRange? = nil
 }
 
 /// Contiguous squelch-open interval on a watched channel. The building block of transcripts.
@@ -540,6 +587,14 @@ public nonisolated struct Leyline_V1_StartJobRequest: Sendable {
     set {config = .decode(newValue)}
   }
 
+  public var monitor: Leyline_V1_MonitorConfig {
+    get {
+      if case .monitor(let v)? = config {return v}
+      return Leyline_V1_MonitorConfig()
+    }
+    set {config = .monitor(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Config: Equatable, Sendable {
@@ -547,6 +602,7 @@ public nonisolated struct Leyline_V1_StartJobRequest: Sendable {
     case scan(Leyline_V1_ScanConfig)
     case record(Leyline_V1_RecordConfig)
     case decode(Leyline_V1_DecodeConfig)
+    case monitor(Leyline_V1_MonitorConfig)
 
   }
 
@@ -688,7 +744,7 @@ nonisolated extension Leyline_V1_ResourceKind: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Job"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}job_id\0\u{1}state\0\u{3}created_at_ns\0\u{3}created_by\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{3}result_uris\0\u{3}status_detail\0\u{1}error\0\u{1}decode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}job_id\0\u{1}state\0\u{3}created_at_ns\0\u{3}created_by\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{3}result_uris\0\u{3}status_detail\0\u{1}error\0\u{1}decode\0\u{1}monitor\0")
 
   fileprivate class _StorageClass {
     var _jobID: String = String()
@@ -794,6 +850,19 @@ nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._Mess
             _storage._config = .decode(v)
           }
         }()
+        case 12: try {
+          var v: Leyline_V1_MonitorConfig?
+          var hadOneofValue = false
+          if let current = _storage._config {
+            hadOneofValue = true
+            if case .monitor(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._config = .monitor(v)
+          }
+        }()
         default: break
         }
       }
@@ -842,9 +911,17 @@ nonisolated extension Leyline_V1_Job: SwiftProtobuf.Message, SwiftProtobuf._Mess
       try { if let v = _storage._error {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
       } }()
-      try { if case .decode(let v)? = _storage._config {
+      switch _storage._config {
+      case .decode?: try {
+        guard case .decode(let v)? = _storage._config else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
-      } }()
+      }()
+      case .monitor?: try {
+        guard case .monitor(let v)? = _storage._config else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+      }()
+      default: break
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1038,6 +1115,55 @@ nonisolated extension Leyline_V1_RecordConfig: SwiftProtobuf.Message, SwiftProto
     if lhs.mode != rhs.mode {return false}
     if lhs.startAtNs != rhs.startAtNs {return false}
     if lhs.durationMs != rhs.durationMs {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_MonitorConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MonitorConfig"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}duration_ms\0\u{3}device_id\0\u{3}take_over\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._range) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.durationMs) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._range {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if self.durationMs != 0 {
+      try visitor.visitSingularInt64Field(value: self.durationMs, fieldNumber: 2)
+    }
+    if !self.deviceID.isEmpty {
+      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 3)
+    }
+    if self.takeOver != false {
+      try visitor.visitSingularBoolField(value: self.takeOver, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_MonitorConfig, rhs: Leyline_V1_MonitorConfig) -> Bool {
+    if lhs._range != rhs._range {return false}
+    if lhs.durationMs != rhs.durationMs {return false}
+    if lhs.deviceID != rhs.deviceID {return false}
+    if lhs.takeOver != rhs.takeOver {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1307,7 +1433,7 @@ nonisolated extension Leyline_V1_Resource: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_StartJobRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartJobRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{1}decode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}watch\0\u{1}scan\0\u{1}record\0\u{1}decode\0\u{1}monitor\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1367,6 +1493,19 @@ nonisolated extension Leyline_V1_StartJobRequest: SwiftProtobuf.Message, SwiftPr
           self.config = .decode(v)
         }
       }()
+      case 5: try {
+        var v: Leyline_V1_MonitorConfig?
+        var hadOneofValue = false
+        if let current = self.config {
+          hadOneofValue = true
+          if case .monitor(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.config = .monitor(v)
+        }
+      }()
       default: break
       }
     }
@@ -1393,6 +1532,10 @@ nonisolated extension Leyline_V1_StartJobRequest: SwiftProtobuf.Message, SwiftPr
     case .decode?: try {
       guard case .decode(let v)? = self.config else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .monitor?: try {
+      guard case .monitor(let v)? = self.config else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
     }()
     case nil: break
     }
