@@ -42,7 +42,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
-├── scan <lo>..<hi> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--take-over] [--device SEL]
+├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--take-over] [--device SEL]
+│                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
 ├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version
@@ -92,8 +93,9 @@ explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Mo
 (`fm` → WFM on 87.5–108 MHz else NFM; `ssb` → USB at and above 10 MHz else LSB). **Selectors**:
 `--channel`, `--capture`, `--device` and `devices detach` accept a full id, an id prefix, the
 1-based row number from the printed list, or a frequency. **Presets** (`noaa`, `noaa1..7`,
-`calling`, `marine16`, `guard`, with aliases) and **bands** (name, default mode, default
-bandwidth) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
+`calling`, `marine16`, `guard`, and the GMRS repeater outputs `rpt1..rpt8` by their Baofeng names,
+with aliases) and **bands** (name, default mode, default bandwidth; includes `gmrs` and
+`gmrs-in`) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
 prose by `ley help presets`; resolution is number/unit form first, then preset name, never probing. These are presentation over the same RPCs: the CLI
 adds no capability the protocol lacks.
 

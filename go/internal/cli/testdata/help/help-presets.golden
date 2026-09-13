@@ -12,26 +12,36 @@ fixed frequency and mode; ley does not probe or scan for the best channel
   calling   146.520 MHz  nfm  2 m amateur national simplex calling frequency  also: 2m-calling, simplex
   marine16  156.800 MHz  nfm  marine VHF channel 16, distress and calling     also: ch16, marine
   guard     121.500 MHz  am   aviation emergency guard frequency              also: aircraft-guard, 121.5
+  rpt1      462.550 MHz  nfm  GMRS repeater 1 output, 462.550 MHz             also: rpt01
+  rpt2      462.575 MHz  nfm  GMRS repeater 2 output, 462.575 MHz             also: rpt02
+  rpt3      462.600 MHz  nfm  GMRS repeater 3 output, 462.600 MHz             also: rpt03
+  rpt4      462.625 MHz  nfm  GMRS repeater 4 output, 462.625 MHz             also: rpt04
+  rpt5      462.650 MHz  nfm  GMRS repeater 5 output, 462.650 MHz             also: rpt05
+  rpt6      462.675 MHz  nfm  GMRS repeater 6 output, 462.675 MHz             also: rpt06
+  rpt7      462.700 MHz  nfm  GMRS repeater 7 output, 462.700 MHz             also: rpt07
+  rpt8      462.725 MHz  nfm  GMRS repeater 8 output, 462.725 MHz             also: rpt08
 
 Bands ley recognises. Without --mode, tune uses the band's mode and
 bandwidth; outside every band it uses NFM and says "no band recognised".
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
-  AM broadcast   530.000 kHz to 1.700 MHz    am       10 kHz    medium-wave broadcast stations
-  160 m amateur  1.800 MHz to 2.000 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
-  80 m amateur   3.500 MHz to 4.000 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
-  40 m amateur   7.000 MHz to 7.300 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
-  20 m amateur   14.000 MHz to 14.350 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
-  15 m amateur   21.000 MHz to 21.450 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
-  CB             26.965 MHz to 27.405 MHz    am       10 kHz    citizens band, channel 1 to 40
-  10 m amateur   28.000 MHz to 29.700 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
-  FM broadcast   87.500 MHz to 108.000 MHz   wfm      200 kHz   wideband FM radio stations
-  airband        118.000 MHz to 137.000 MHz  am       10 kHz    aircraft and towers, AM voice
-  2 m amateur    144.000 MHz to 148.000 MHz  nfm      12.5 kHz  amateur radio, FM voice and repeaters
-  marine VHF     156.000 MHz to 162.025 MHz  nfm      12.5 kHz  ship and coast stations; channel 16 is 156.800
-  NOAA weather   162.400 MHz to 162.550 MHz  nfm      12.5 kHz  continuous weather broadcasts, WX1 to WX7
-  70 cm amateur  420.000 MHz to 450.000 MHz  nfm      12.5 kHz  amateur radio, FM voice and repeaters
+  AM broadcast          530.000 kHz to 1.700 MHz    am       10 kHz    medium-wave broadcast stations
+  160 m amateur         1.800 MHz to 2.000 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
+  80 m amateur          3.500 MHz to 4.000 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
+  40 m amateur          7.000 MHz to 7.300 MHz      usb/lsb  2.8 kHz   amateur radio, LSB voice
+  20 m amateur          14.000 MHz to 14.350 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
+  15 m amateur          21.000 MHz to 21.450 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
+  CB                    26.965 MHz to 27.405 MHz    am       10 kHz    citizens band, channel 1 to 40
+  10 m amateur          28.000 MHz to 29.700 MHz    usb/lsb  2.8 kHz   amateur radio, USB voice
+  FM broadcast          87.500 MHz to 108.000 MHz   wfm      200 kHz   wideband FM radio stations
+  airband               118.000 MHz to 137.000 MHz  am       10 kHz    aircraft and towers, AM voice
+  2 m amateur           144.000 MHz to 148.000 MHz  nfm      12.5 kHz  amateur radio, FM voice and repeaters
+  marine VHF            156.000 MHz to 162.025 MHz  nfm      12.5 kHz  ship and coast stations; channel 16 is 156.800
+  NOAA weather          162.400 MHz to 162.550 MHz  nfm      12.5 kHz  continuous weather broadcasts, WX1 to WX7
+  70 cm amateur         420.000 MHz to 450.000 MHz  nfm      12.5 kHz  amateur radio, FM voice and repeaters
+  GMRS                  462.500 MHz to 462.750 MHz  nfm      20 kHz    GMRS/FRS 462 MHz channels: repeater outputs and simplex -- scan here to find a repeater's transmit
+  GMRS repeater inputs  467.500 MHz to 467.750 MHz  nfm      20 kHz    GMRS repeater inputs, the uplink a radio transmits to a repeater
 
   ley tune noaa                noaa is an alias of noaa1, 162.550 MHz
   ley tune calling             146.520 MHz, 2 m simplex calling

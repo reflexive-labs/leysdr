@@ -65,6 +65,8 @@ var bands = []Band{
 	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_025_000, mNFM, 12_500, "ship and coast stations; channel 16 is 156.800"},
 	{"NOAA weather", []string{"noaa", "weather", "wx"}, 162_400_000, 162_550_000, mNFM, 12_500, "continuous weather broadcasts, WX1 to WX7"},
 	{"70 cm amateur", []string{"70cm"}, 420_000_000, 450_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters"},
+	{"GMRS", []string{"gmrs"}, 462_500_000, 462_750_000, mNFM, 20_000, "GMRS/FRS 462 MHz channels: repeater outputs and simplex -- scan here to find a repeater's transmit"},
+	{"GMRS repeater inputs", []string{"gmrs-in", "gmrs-inputs"}, 467_500_000, 467_750_000, mNFM, 20_000, "GMRS repeater inputs, the uplink a radio transmits to a repeater"},
 }
 
 // Bands returns the band table in frequency order (a copy).

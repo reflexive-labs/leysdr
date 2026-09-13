@@ -33,6 +33,10 @@ func TestBandFor(t *testing.T) {
 		{21_300_000, "15 m amateur", leylinev1.DemodMode_USB, 2_800},
 		{28_400_000, "10 m amateur", leylinev1.DemodMode_USB, 2_800},
 		{433_000_000, "70 cm amateur", leylinev1.DemodMode_NFM, 12_500},
+		{462_600_000, "GMRS", leylinev1.DemodMode_NFM, 20_000},
+		{462_550_000, "GMRS", leylinev1.DemodMode_NFM, 20_000},
+		{462_725_000, "GMRS", leylinev1.DemodMode_NFM, 20_000},
+		{467_600_000, "GMRS repeater inputs", leylinev1.DemodMode_NFM, 20_000},
 	}
 	for _, c := range cases {
 		b := BandFor(c.hz)
@@ -77,5 +81,18 @@ func TestBandsOrderedAndDisjoint(t *testing.T) {
 		if b.BandwidthHz == 0 {
 			t.Errorf("band %q has no bandwidth", b.Name)
 		}
+	}
+}
+
+func TestResolveBandGMRS(t *testing.T) {
+	for _, name := range []string{"gmrs", "GMRS"} {
+		b, err := ResolveBand(name)
+		if err != nil || b.MinHz != 462_500_000 || b.MaxHz != 462_750_000 {
+			t.Errorf("ResolveBand(%q) = %+v, %v; want the 462 MHz GMRS band", name, b, err)
+		}
+	}
+	b, err := ResolveBand("gmrs-in")
+	if err != nil || b.MinHz != 467_500_000 {
+		t.Errorf("ResolveBand(gmrs-in) = %+v, %v; want the 467 MHz inputs band", b, err)
 	}
 }

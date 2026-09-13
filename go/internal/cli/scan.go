@@ -73,11 +73,15 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 			case len(args) == 1 && o.bandName != "":
 				return usageErrorf("give a range or --band, not both: a range and a band name say two different things about where to look")
 			case len(args) == 1:
-				var err error
-				if o.minHz, o.maxHz, err = leyline.ParseUserRange(args[0]); err != nil {
-					return usageErrorf("%v", err)
+				// A range (144M..148M) first; then a band name (gmrs, 2m), so `ley scan gmrs`
+				// works. A bare frequency is neither and stays an error -- a scan needs a span.
+				if lo, hi, rerr := leyline.ParseUserRange(args[0]); rerr == nil {
+					o.minHz, o.maxHz, o.rangeInput = lo, hi, args[0]
+				} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
+					o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
+				} else {
+					return usageErrorf("%v, and no band called %q (ley bands lists them)", rerr, args[0])
 				}
-				o.rangeInput = args[0]
 			case o.bandName != "":
 				b, err := leyline.ResolveBand(o.bandName)
 				if err != nil {
