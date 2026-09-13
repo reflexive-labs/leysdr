@@ -209,3 +209,91 @@ func TestWatchSameCountyAgainstRealDaemon(t *testing.T) {
 		t.Errorf("the notifier fired for a county the alert does not name: %q", string(b))
 	}
 }
+
+// The AIS decoder end to end (docs/plans/decoders.md): the real daemon decodes the marine GMSK
+// fixture into vessel records keyed by MMSI, with positions.
+func TestDecodeAISAgainstRealDaemon(t *testing.T) {
+	decoders := os.Getenv("LEYLINE_DECODERS")
+	if decoders == "" {
+		t.Skip("set LEYLINE_DECODERS to the repository's decoders/ directory (make e2e does)")
+	}
+	fixture, err := filepath.Abs("../../../fixtures/ais_burst.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e, _ := setup(t, "--store", filepath.Join(t.TempDir(), "store"), "--decoders", decoders)
+	stopPlay, _ := e.startLive("play", fixture, "--no-audio", "--loop", "--json")
+	defer func() { _ = stopPlay() }()
+	e.waitChannels(1)
+
+	out, err := e.run("decode", "ais", "--json", "--count", "2")
+	if err != nil {
+		t.Fatalf("ley decode ais: %v\nstdout: %s", err, out)
+	}
+	recs := ndjson(t, out)
+	if len(recs) != 2 {
+		t.Fatalf("want 2 vessel records, got %d: %s", len(recs), out)
+	}
+	for _, r := range recs {
+		if r["protocol"] != "ais" {
+			t.Errorf("not an AIS record: %v", r)
+		}
+		if id, _ := r["deviceId"].(string); id == "" {
+			t.Errorf("an AIS record must carry the MMSI as device_id: %v", r)
+		}
+		pos, _ := r["position"].(map[string]any)
+		if pos == nil || pos["latitude"] == nil || pos["longitude"] == nil {
+			t.Errorf("a position report must carry a position: %v", r)
+		}
+	}
+}
+
+// The IQ input path end to end: a decoder whose manifest declares signal IQ receives the capture's
+// raw baseband. leydec-iqstat reports the block power, which on the -20 dBFS nfm_tone fixture must
+// read near -20; the record carries no channel and NaN rssi/snr, as an IQ record does.
+func TestIQDecoderAgainstRealDaemon(t *testing.T) {
+	decoders := os.Getenv("LEYLINE_DECODERS")
+	if decoders == "" {
+		t.Skip("set LEYLINE_DECODERS to the repository's decoders/ directory (make e2e does)")
+	}
+	fixture, err := filepath.Abs("../../../fixtures/nfm_tone.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e, _ := setup(t, "--store", filepath.Join(t.TempDir(), "store"), "--decoders", decoders)
+	stopPlay, _ := e.startLive("play", fixture, "--no-audio", "--loop", "--json")
+	defer func() { _ = stopPlay() }()
+	e.waitChannels(1)
+
+	// The fixture plays at 146.62 MHz; iqstat runs on that capture's raw IQ regardless of its own
+	// recipe frequency.
+	out, err := e.run("decode", "iqstat", "--freq", "146.62", "--json", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley decode iqstat: %v\nstdout: %s", err, out)
+	}
+	recs := ndjson(t, out)
+	if len(recs) != 1 {
+		t.Fatalf("want 1 iqstat record, got %d: %s", len(recs), out)
+	}
+	r := recs[0]
+	if r["protocol"] != "iqstat" {
+		t.Fatalf("not an iqstat record: %v", r)
+	}
+	if r["channelId"] != nil && r["channelId"] != "" {
+		t.Errorf("an IQ record has no channel: %v", r["channelId"])
+	}
+	fields, _ := r["fields"].(map[string]any)
+	pw, _ := fields["power_dbfs"].(map[string]any)
+	if pw == nil {
+		t.Fatalf("iqstat must report power_dbfs: %v", r)
+	}
+	if v, ok := pw["number"].(float64); !ok || math.Abs(v+20) > 3 {
+		t.Errorf("power_dbfs %v is not near the fixture's -20 dBFS", pw["number"])
+	}
+}
