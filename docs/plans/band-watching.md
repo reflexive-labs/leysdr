@@ -47,6 +47,42 @@ rather than wrap, out-of-range levels clamp instead of dropping.
 Verified on the real daemon against `two_nfm.cf32`: both carriers rise clear of a noise floor whose
 distribution is visible as a gradient, and the columns the carriers occupy show the noise displaced.
 
+## BW-1b `[x]` Transmission log (`ley monitor`)
+
+Point one capture at a band, hold it stationary for a fixed spell, and print a time-ordered log of
+what keyed up: when each carrier first appeared, how long it was held, its centre and its peak SNR.
+The radio-check view -- run it, do a round of transmissions, read the report -- and the smallest
+useful piece of BW-2, built first because it needs no new plane.
+
+- **Wire.** New `MonitorConfig { FrequencyRange range; int64 duration_ms; string device_id; bool
+  take_over }` in the `Job.config` oneof, a `MONITOR` job that publishes on the same `DETECTION`
+  telemetry a scan already emits. No new stream kind: a detection carries first/last seen, looks and
+  peak SNR, which is the whole report.
+- **Daemon.** `MonitorRunner` reuses the scan detector standing still -- `RowCollector` feeding
+  `SpectrumDetect` (CFAR), then `ScanRunner.fold`/`near` to merge a wobbling carrier into one row.
+  It centres the capture at `range_lo - 0.10 * Fs` to keep the band off the DC hole, and refuses a
+  span wider than `0.35 * Fs` (`INVALID_ARGUMENT`) rather than analyse past the usable window.
+- **CLI.** `ley monitor <band> [--for D] [--min-snr] [--device] [--take-over] [--json]`, its own
+  verb rather than a `ley scan` flag: scan sweeps and folds by frequency, monitor sits still and
+  folds by time, and the report is a log with a HELD column a scan has no place for. Band-name
+  positionals (`ley monitor gmrs`) resolve the same way `ley scan` learned to. The live feed prints
+  to stderr; `--json` emits NDJSON `{detection_id, center_hz, channel, first_s, held_s, peak_snr_db,
+  bandwidth_hz}`.
+
+**The report folds by proximity, and the first cut did not.** A carrier whose centre wobbles a bin
+between looks arrived under several `detection_id`s and drew several rows for one transmission. The
+CLI now folds by `nearestCarrier`/`mergeTol` with the same tolerance scan uses -- `max(5000,
+min(aBw,bBw)/2)` -- and keeps the strongest reading's centre, so one transmission is one row.
+
+Tests: `TestMonitorAgainstRealDaemon` plays `scan_band`, monitors 146.24--146.9 MHz and asserts one
+folded carrier near 146.400 in at most four rows; the monitor CLI unit tests cover the fold and the
+NDJSON shape. Verified on the real daemon: `ley monitor 146.24M..146.9M --for 4s` reports
+`146.400 MHz` and `146.795 MHz` as single rows.
+
+This delivers the radio-check use the owner asked for and the event-log half of BW-2. The
+per-channel **occupancy table** below is still open: monitor logs transmissions it detects, it does
+not hold a busy-fraction against a given channel grid over an hour.
+
 ## BW-2 `[ ]` Channel occupancy
 
 Same accumulator plus a **given** channel grid (`--channels 902.3M:200k:64` or a named band plan).
