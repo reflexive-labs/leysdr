@@ -1,0 +1,45 @@
+{
+  "name": "iqstat",
+  "version": "0.1.0",
+  "description": "IQ path test decoder: block power over the capture's complex baseband",
+  "license": "Apache-2.0",
+  "recipe": {
+    "frequenciesHz": [
+      "100000000"
+    ],
+    "mode": "NFM"
+  },
+  "input": {
+    "mode": "CONTINUOUS",
+    "signal": "SIGNAL_IQ"
+  },
+  "outputs": [
+    "SHAPE_RECORDS"
+  ],
+  "fields": [
+    {
+      "name": "power_dbfs",
+      "type": "NUMBER",
+      "unit": "dBFS",
+      "description": "mean power of the block, 10*log10(mean |x|^2)"
+    },
+    {
+      "name": "sample_rate",
+      "type": "INTEGER",
+      "unit": "Hz",
+      "description": "the capture's IQ sample rate"
+    },
+    {
+      "name": "samples",
+      "type": "INTEGER",
+      "description": "samples counted since the last record"
+    },
+    {
+      "name": "center_hz",
+      "type": "INTEGER",
+      "unit": "Hz",
+      "description": "the capture's center frequency"
+    }
+  ],
+  "executable": "leydec-iqstat"
+}

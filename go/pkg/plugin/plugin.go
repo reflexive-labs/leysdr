@@ -54,15 +54,98 @@ type Starter interface {
 // built before the daemon has said what it is.
 type Factory func(audioRateHz uint32) Decoder
 
+// IQDecoder is the IQ sibling of Decoder, for a plugin that declares
+// SIGNAL_IQ (decode.proto, DecoderSignal): it reads the capture's raw complex
+// baseband instead of a channel's demodulated audio, because a wideband digital
+// mode is gone by the time it is demodulated (decode.proto, DecoderInput.signal).
+// FeedIQ is called once per frame, in order, on a single goroutine; the emit
+// and gap rules are Decoder's, and a decoder holding state across frames resets
+// it when a gap arrives.
+type IQDecoder interface {
+	FeedIQ(iq []complex64, at *leylinev1.SampleTime, gap *leylinev1.Gap, emit func(*leylinev1.DecodeRecord))
+}
+
+// IQFactory builds the IQ decoder once the descriptor has named the capture's
+// sample rate. An IQ decoder that stamps records also needs center_hz and
+// span_hz, which it reads by also implementing Starter -- the same descriptor
+// hook the audio path uses (Starter takes the whole StreamDescriptor, so it
+// serves IQ unchanged).
+type IQFactory func(sampleRateHz uint32) IQDecoder
+
 // Run reads the descriptor and frames from stdin and writes records to stdout.
 func Run(ctx context.Context, newDecoder Factory) error {
 	return RunStreams(ctx, os.Stdin, os.Stdout, newDecoder)
 }
 
+// RunIQ is Run for an IQ plugin: it reads the same stdio wire but hands each
+// frame's complex baseband to an IQDecoder (decode.proto, SIGNAL_IQ).
+func RunIQ(ctx context.Context, newDecoder IQFactory) error {
+	return RunIQStreams(ctx, os.Stdin, os.Stdout, newDecoder)
+}
+
 // RunStreams is Run against explicit streams, which is what the tests use.
 // It returns nil at end of input: the daemon closing stdin is how a decode job
-// stops, not a failure.
+// stops, not a failure. It handles an AUDIO descriptor; an IQ plugin calls
+// RunIQStreams. The descriptor's span_hz is the capture's rate, which is what
+// SampleTime counts in (DEC-1: "the descriptor's center_hz and span_hz name the
+// capture rate as span_hz").
 func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factory) error {
+	return runFramed(ctx, r, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
+		audio := desc.GetAudio()
+		if audio == nil || audio.GetSampleRate() == 0 {
+			return nil, errors.New("plugin: descriptor carries no audio params")
+		}
+		dec := newDecoder(audio.GetSampleRate())
+		if st, ok := dec.(Starter); ok {
+			st.Start(desc)
+		}
+		var samples []float32
+		return func(frame *leylinev1.Frame) error {
+			var err error
+			samples, err = decodePayload(samples[:0], frame.GetPayload(), audio.GetFormat())
+			if err != nil {
+				return err
+			}
+			dec.Feed(samples, frame.GetTime(), frame.GetGap(), emit)
+			return nil
+		}, nil
+	})
+}
+
+// RunIQStreams is RunIQ against explicit streams. It requires an IQ descriptor
+// (kind IQ, cf32 IQ params per bulk.proto), builds the IQDecoder for the
+// capture's sample rate, then converts each frame's cf32 payload to []complex64
+// and feeds it. EOF ends the job cleanly, as for the audio path.
+func RunIQStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder IQFactory) error {
+	return runFramed(ctx, r, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
+		iq := desc.GetIq()
+		if desc.GetKind() != leylinev1.StreamKind_IQ || iq == nil || iq.GetSampleRate() == 0 {
+			return nil, errors.New("plugin: descriptor carries no IQ params")
+		}
+		// For capture IQ the IQ sample rate and the capture rate (span_hz) are
+		// equal, so a within-frame offset maps 1:1; a decoder still stamps via
+		// SampleTimeAt for consistency with the audio path (DEC-1).
+		dec := newDecoder(uint32(iq.GetSampleRate()))
+		if st, ok := dec.(Starter); ok {
+			st.Start(desc)
+		}
+		var iqbuf []complex64
+		return func(frame *leylinev1.Frame) error {
+			iqbuf = decodeIQPayload(iqbuf[:0], frame.GetPayload())
+			dec.FeedIQ(iqbuf, frame.GetTime(), frame.GetGap(), emit)
+			return nil
+		}, nil
+	})
+}
+
+// runFramed is the stdio wire both paths share (docs/design/decoders.md,
+// "Transport: stdio"): read one delimited StreamDescriptor, let setup validate
+// its kind and build the per-frame handler, then read delimited Frames until
+// EOF, flushing records after each frame. Keeping it in one place means the
+// framing, the emit sink and the clean-EOF rule are written once.
+func runFramed(ctx context.Context, r io.Reader, w io.Writer,
+	setup func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error),
+) error {
 	in := bufio.NewReaderSize(r, 1<<16)
 	out := bufio.NewWriterSize(w, 1<<16)
 
@@ -73,18 +156,6 @@ func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factor
 		}
 		return fmt.Errorf("plugin: read descriptor: %w", err)
 	}
-	audio := desc.GetAudio()
-	if audio == nil || audio.GetSampleRate() == 0 {
-		return errors.New("plugin: descriptor carries no audio params")
-	}
-	// The descriptor's span_hz is the capture's rate, which is what SampleTime
-	// counts in (DEC-1: "the descriptor's center_hz and span_hz name the
-	// capture rate as span_hz").
-
-	dec := newDecoder(audio.GetSampleRate())
-	if st, ok := dec.(Starter); ok {
-		st.Start(&desc)
-	}
 	emit := func(rec *leylinev1.DecodeRecord) {
 		if rec == nil {
 			return
@@ -94,8 +165,10 @@ func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factor
 			fmt.Fprintf(os.Stderr, "write record: %v\n", err)
 		}
 	}
-
-	var samples []float32
+	onFrame, err := setup(&desc, emit)
+	if err != nil {
+		return err
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return out.Flush()
@@ -108,12 +181,10 @@ func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factor
 			_ = out.Flush()
 			return fmt.Errorf("plugin: read frame: %w", err)
 		}
-		var err error
-		samples, err = decodePayload(samples[:0], frame.GetPayload(), audio.GetFormat())
-		if err != nil {
+		if err := onFrame(&frame); err != nil {
+			_ = out.Flush()
 			return err
 		}
-		dec.Feed(samples, frame.GetTime(), frame.GetGap(), emit)
 		// Flush per frame: a record is a thing that was said, and a client
 		// waiting on the live stream should not wait on the next packet too.
 		if err := out.Flush(); err != nil {
@@ -149,6 +220,27 @@ func decodePayload(dst []float32, payload []byte, format leylinev1.AudioSampleFo
 	}
 }
 
+// decodeIQPayload turns a frame's bytes into complex64 IQ. The bulk plane's IQ
+// frames are interleaved little-endian float32 I,Q pairs (cf32) at the capture
+// rate (bulk.proto: IqParams, SampleFormat CF32). Bytes past the last whole
+// 8-byte sample -- a ragged packet -- are dropped with a note on stderr rather
+// than failing the job, because one truncated frame should not stop a decode
+// that the next frame recovers; it mirrors decodePayload's little-endian float32
+// reads but does not error on a short tail.
+func decodeIQPayload(dst []complex64, payload []byte) []complex64 {
+	n := len(payload) / 8
+	if len(payload)%8 != 0 {
+		fmt.Fprintf(os.Stderr, "plugin: IQ payload of %d bytes is not a whole number of cf32 samples; truncating to %d\n", len(payload), n)
+	}
+	for i := 0; i < n; i++ {
+		off := i * 8
+		re := math.Float32frombits(binary.LittleEndian.Uint32(payload[off:]))
+		im := math.Float32frombits(binary.LittleEndian.Uint32(payload[off+4:]))
+		dst = append(dst, complex(re, im))
+	}
+	return dst
+}
+
 // SampleTimeAt places an audio-sample offset inside a frame on the capture's
 // timeline. The formula is DEC-1's: sample_index + offset·capture_rate/audio_rate,
 // because SampleTime counts capture samples everywhere (invariant 5) and the
@@ -169,6 +261,28 @@ func SampleTimeAt(frameTime *leylinev1.SampleTime, offsetSamples int, audioRate,
 // and the registry's own tests read; with anything else it runs the decoder
 // against stdin and stdout.
 func Main(manifest *leylinev1.DecoderManifest, newDecoder Factory) {
+	handleManifestFlag(manifest)
+	if err := Run(context.Background(), newDecoder); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// MainIQ is Main for an IQ plugin: same --manifest behavior, but it runs an
+// IQDecoder over stdin and stdout (decode.proto, SIGNAL_IQ).
+func MainIQ(manifest *leylinev1.DecoderManifest, newDecoder IQFactory) {
+	handleManifestFlag(manifest)
+	if err := RunIQ(context.Background(), newDecoder); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// handleManifestFlag prints the manifest as proto3 JSON and exits 0 when
+// --manifest is given, so discovery reads a file and executes nothing else
+// (docs/reference/writing-a-decoder.md, "The manifest"). It returns to the
+// caller when no such flag is present.
+func handleManifestFlag(manifest *leylinev1.DecoderManifest) {
 	for _, arg := range os.Args[1:] {
 		if arg == "--manifest" || arg == "-manifest" {
 			out, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(manifest)
@@ -179,9 +293,5 @@ func Main(manifest *leylinev1.DecoderManifest, newDecoder Factory) {
 			fmt.Printf("%s\n", out)
 			os.Exit(0)
 		}
-	}
-	if err := Run(context.Background(), newDecoder); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
 	}
 }
