@@ -306,7 +306,10 @@ enum ScanRunner {
     ///
     /// One look per row, not per run: a wide signal with a notch wider than the join gap arrives
     /// as two runs from the same row, and counting both would put `looks` above `looks_possible`.
-    private static func fold(_ h: SpectrumDetect.Hit, at time: SampleTime, into list: inout [ScanHit]) {
+    ///
+    /// Internal, not private: MonitorRunner folds hits within its single stationary step exactly
+    /// as a sweep folds them within one, and reuses this rather than a copy that could drift.
+    static func fold(_ h: SpectrumDetect.Hit, at time: SampleTime, into list: inout [ScanHit]) {
         if let i = list.firstIndex(where: { near($0.centerHz, h.centerHz, $0.bandwidthHz) }) {
             if list[i].lastSeen.sampleIndex != time.sampleIndex { list[i].looks += 1 }
             list[i].lastSeen = time
@@ -347,7 +350,10 @@ enum ScanRunner {
     /// Using the wider bandwidth would let a wide broadcast carrier swallow a legitimately
     /// separate neighbouring station within normal international channel spacing; the narrower
     /// bandwidth avoids that.
-    private static func near(_ a: UInt64, _ b: UInt64, _ bandwidthHz: UInt32) -> Bool {
+    ///
+    /// Internal, not private: MonitorRunner uses the same identity test when it locates the folded
+    /// carrier to re-publish.
+    static func near(_ a: UInt64, _ b: UInt64, _ bandwidthHz: UInt32) -> Bool {
         let tol = Swift.max(mergeToleranceHz, UInt64(bandwidthHz) / 2)
         return a > b ? a - b <= tol : b - a <= tol
     }

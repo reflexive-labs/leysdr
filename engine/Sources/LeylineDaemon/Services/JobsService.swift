@@ -31,12 +31,10 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
             throw unimplemented("Jobs.StartJob(record)")
         case .decode(let config)?:
             return try await mapErrors { try await jobs.startDecode(config: config, by: client) }
-        case .monitor?:
-            // Implemented by the band-monitor work (docs/plans/band-watching.md); stubbed so the
-            // switch stays exhaustive until then.
-            throw unimplemented("Jobs.StartJob(monitor)")
+        case .monitor(let config)?:
+            return try await mapErrors { try await jobs.startMonitor(config: config, by: client) }
         case nil:
-            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan and decode are the ones in v0", target: ""))
+            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan, monitor and decode are the ones in v0", target: ""))
         }
     }
 
