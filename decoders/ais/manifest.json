@@ -1,0 +1,81 @@
+{
+  "name":  "ais",
+  "version":  "0.1.0",
+  "description":  "AIS marine vessel tracking, GMSK 9600 on the two 25 kHz channels at 161.975 and 162.025 MHz",
+  "license":  "Apache-2.0",
+  "recipe":  {
+    "frequenciesHz":  [
+      "161975000",
+      "162025000"
+    ],
+    "bandwidthHz":  25000,
+    "mode":  "NFM",
+    "gain":  "GAIN_LEAVE"
+  },
+  "input":  {
+    "mode":  "CONTINUOUS",
+    "tap":  "TAP_DEMOD",
+    "signal":  "SIGNAL_AUDIO"
+  },
+  "outputs":  [
+    "SHAPE_RECORDS",
+    "SHAPE_ENTITIES"
+  ],
+  "entitySilenceS":  600,
+  "fields":  [
+    {
+      "name":  "mmsi",
+      "type":  "NUMBER",
+      "description":  "Maritime Mobile Service Identity, the vessel's numeric id"
+    },
+    {
+      "name":  "msg_type",
+      "type":  "NUMBER",
+      "description":  "AIS message type number"
+    },
+    {
+      "name":  "sog_kn",
+      "type":  "NUMBER",
+      "unit":  "kn",
+      "description":  "speed over ground"
+    },
+    {
+      "name":  "cog_deg",
+      "type":  "NUMBER",
+      "unit":  "deg",
+      "description":  "course over ground, degrees true"
+    },
+    {
+      "name":  "heading_deg",
+      "type":  "NUMBER",
+      "unit":  "deg",
+      "description":  "true heading, degrees"
+    },
+    {
+      "name":  "nav_status",
+      "type":  "NUMBER",
+      "description":  "navigational status code (0 under way, 1 at anchor, 5 moored)"
+    },
+    {
+      "name":  "name",
+      "type":  "TEXT",
+      "description":  "vessel name"
+    },
+    {
+      "name":  "callsign",
+      "type":  "TEXT",
+      "description":  "radio callsign"
+    },
+    {
+      "name":  "ship_type",
+      "type":  "NUMBER",
+      "description":  "ship and cargo type code"
+    },
+    {
+      "name":  "destination",
+      "type":  "TEXT",
+      "description":  "voyage destination"
+    }
+  ],
+  "executable":  "leydec-ais"
+}

@@ -263,6 +263,31 @@ var catalog = []fixture{
 		minDurationS: 1.5,
 	},
 	{
+		// The AIS decoder fixture. Two Type 1 position reports as NFM GMSK 9600
+		// on AIS 1 (161.975 MHz), carrier at the capture centre so `ley decode
+		// ais` with no arguments finds the capture `ley play` makes for it, the
+		// same placement aprs_afsk and same_alert use.
+		name: "ais_burst", centerHz: 161_975_000,
+		description: "two AIS Type 1 position reports as NFM GMSK 9600 at the centre frequency, 2.4 kHz deviation, -20 dBFS",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(161_975_000)},
+		build: func(rate float64) []source {
+			return []source{aisSource(rate)}
+		},
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{{
+				Mode: "NFM", OffsetHz: 0, BandwidthHz: 25_000,
+				Meter: &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
+				Decode: &iqfile.DecodeExpect{
+					Protocol: "ais", Records: 2, DeviceIDs: aisSource(rate).deviceIDs(),
+				},
+			}}
+		},
+		// The two bursts are a few tens of ms of a one-second pattern, but the
+		// pattern is a second long; 1 s holds each report once and lets a
+		// --duration 0.5 run skip it.
+		minDurationS: 1,
+	},
+	{
 		name: "noise_floor", centerHz: 146_520_000,
 		description: "complex white noise only, -60 dBFS",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
