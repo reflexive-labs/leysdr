@@ -31,8 +31,9 @@ actor JobStore {
         /// The connection that asked for it. When that connection goes, so does the job: a sweep
         /// nobody is reading is just a radio nobody can use.
         var ownerClientID: String
-        /// A decode job's plugin, channel lease and store writer. Nil for every other kind.
-        var decode: DecodeRunner?
+        /// A decode job's runner (audio or IQ), holding its plugin, lease and store writer. Nil for
+        /// every other kind.
+        var decode: (any DecodeRunning)?
         /// `keep`: persistence follows intent (invariant 8). A kept job outlives its client.
         var keep = false
     }
@@ -331,16 +332,25 @@ actor JobStore {
                            frequencyHz: UInt64, deviceID: DeviceID?) async
     {
         guard entries[id]?.proto.state == .running else { return }
+        // The signal the manifest declares picks the input the daemon streams (docs/design/
+        // decoders.md, "Multiplexing"; DecoderSignal): SIGNAL_IQ taps the whole capture band as
+        // cf32, everything else is a channel's demodulated audio.
+        if installed.manifest.input.signal == .signalIq {
+            await runIQDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
+        } else {
+            await runAudioDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
+        }
+    }
+
+    private func runAudioDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                                frequencyHz: UInt64, deviceID: DeviceID?) async
+    {
         let mode = ProtoMapping.demodMode(installed.manifest.recipe.mode == .unspecified ? .nfm : installed.manifest.recipe.mode) ?? .nfm
         let allocation = await allocator.allocate(
             .channel(frequencyHz: frequencyHz, bandwidthHz: installed.manifest.recipe.bandwidthHz,
                      mode: mode, deviceID: deviceID, takeOver: config.takeOver), for: id)
         guard case .channel(let lease) = allocation else {
-            if case .declined(let code, let reason) = allocation {
-                await finish(id, state: .failed, detail: reason, code: code)
-            } else {
-                await finish(id, state: .failed, detail: "no radio could be allocated", code: EngineError.Code.noDevice)
-            }
+            await declineDecode(id, allocation)
             return
         }
         // Allocating suspends, and a cancel in that window has already answered. Hand the radio
@@ -350,20 +360,15 @@ actor JobStore {
             return
         }
         let snapshot = await store.captureEngine(lease.captureID)?.snapshot
-        var writer: RecordWriter?
-        if config.keep {
-            // Retention runs when a kept job starts, as the design doc says, so the store is inside
-            // its cap before it is written to rather than after.
-            await records.retain()
-            do {
-                writer = try await records.open(job: id, config: config, manifest: installed.manifest,
+        let writer: RecordWriter?
+        do {
+            writer = try await openWriterIfKept(id, config: config, installed: installed,
                                                 capture: lease.captureID, anchor: snapshot?.anchor)
-            } catch {
-                await lease.release()
-                await finish(id, state: .failed, detail: "the record store would not open: \(error)",
-                             code: EngineError.Code.internalError)
-                return
-            }
+        } catch {
+            await lease.release()
+            await finish(id, state: .failed, detail: "the record store would not open: \(error)",
+                         code: EngineError.Code.internalError)
+            return
         }
         let runner = DecodeRunner(
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
@@ -375,6 +380,64 @@ actor JobStore {
             })
         entries[id]?.decode = runner
         await runner.start()
+    }
+
+    private func runIQDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                             frequencyHz: UInt64, deviceID: DeviceID?) async
+    {
+        // The recipe's sample rate when it names one, else the device's default (allocator's choice).
+        let allocation = await allocator.allocate(
+            .captureIQ(frequencyHz: frequencyHz, sampleRateHz: installed.manifest.recipe.sampleRate,
+                       deviceID: deviceID, takeOver: config.takeOver), for: id)
+        guard case .captureIQ(let lease) = allocation else {
+            await declineDecode(id, allocation)
+            return
+        }
+        guard entries[id]?.proto.state == .running else {
+            await lease.release()
+            return
+        }
+        let snapshot = await store.captureEngine(lease.captureID)?.snapshot
+        let writer: RecordWriter?
+        do {
+            writer = try await openWriterIfKept(id, config: config, installed: installed,
+                                                capture: lease.captureID, anchor: snapshot?.anchor)
+        } catch {
+            await lease.release()
+            await finish(id, state: .failed, detail: "the record store would not open: \(error)",
+                         code: EngineError.Code.internalError)
+            return
+        }
+        let runner = IQDecodeRunner(
+            jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
+            predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
+            onStatus: { [weak self] state, detail in
+                await self?.setDecodeStatus(id, state: state, detail: detail)
+            })
+        entries[id]?.decode = runner
+        await runner.start()
+    }
+
+    /// Fails the job with the allocator's decline reason and code (or a fallback when it declined
+    /// without one).
+    private func declineDecode(_ id: JobID, _ allocation: AllocationResult) async {
+        if case .declined(let code, let reason) = allocation {
+            await finish(id, state: .failed, detail: reason, code: code)
+        } else {
+            await finish(id, state: .failed, detail: "no radio could be allocated", code: EngineError.Code.noDevice)
+        }
+    }
+
+    /// Opens the record store writer when the job is kept, else nil. Retention runs when a kept job
+    /// starts, as the design doc says, so the store is inside its cap before it is written to.
+    private func openWriterIfKept(_ id: JobID, config: Leyline_V1_DecodeConfig,
+                                  installed: DecoderRegistry.Installed, capture: CaptureID,
+                                  anchor: CaptureAnchor?) async throws -> RecordWriter?
+    {
+        guard config.keep else { return nil }
+        await records.retain()
+        return try await records.open(job: id, config: config, manifest: installed.manifest,
+                                      capture: capture, anchor: anchor)
     }
 
     /// What the runner reports. FAILED is terminal and carries the decoder's code; RUNNING and

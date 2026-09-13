@@ -192,6 +192,7 @@ func fakeDecoderPath() -> String {
 @discardableResult
 func writeFakePlugin(in dir: String, name: String = "fake", executable: String? = nil,
                      recipe: (frequencyHz: UInt64, bandwidthHz: UInt32)? = (146_000_000, 15_000),
+                     signal: Leyline_V1_DecoderSignal = .signalAudio,
                      args: [String] = [], json: String? = nil) throws -> String
 {
     let pluginDir = dir + "/" + name
@@ -202,13 +203,17 @@ func writeFakePlugin(in dir: String, name: String = "fake", executable: String? 
     } else {
         let freq = recipe?.frequencyHz ?? 146_000_000
         let bw = recipe?.bandwidthHz ?? 15_000
+        // SIGNAL_IQ makes the daemon stream the capture's raw cf32 rather than a channel's audio
+        // (docs/design/decoders.md, "Multiplexing"). The fake decoder is signal-agnostic: it emits
+        // one record per frame either way.
+        let signalName = signal == .signalIq ? "SIGNAL_IQ" : "SIGNAL_AUDIO"
         body = """
         {
           "name": "\(name)",
           "version": "0.1.0",
           "description": "decodes nothing, for tests",
           "recipe": {"frequenciesHz": ["\(freq)"], "bandwidthHz": \(bw), "mode": "NFM", "gain": "GAIN_LEAVE"},
-          "input": {"mode": "CONTINUOUS", "tap": "TAP_AUDIO"},
+          "input": {"mode": "CONTINUOUS", "tap": "TAP_AUDIO", "signal": "\(signalName)"},
           "outputs": ["SHAPE_RECORDS"],
           "entitySilenceS": 1800,
           "executable": "\(executable ?? fakeDecoderPath())",

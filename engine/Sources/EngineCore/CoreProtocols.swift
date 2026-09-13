@@ -528,6 +528,13 @@ public enum AllocationRequest: Sendable {
     /// radio serves it. `deviceID` nil means the allocator picks; `takeOver` retunes a capture
     /// somebody is using.
     case channel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode, deviceID: DeviceID?, takeOver: Bool)
+    /// The whole capture band around a frequency, as cf32, for an IQ decoder that needs the signal
+    /// before it is demodulated (docs/design/decoders.md, "Multiplexing"; DecoderSignal SIGNAL_IQ).
+    /// Unlike `.channel`, the decoder receives the entire span, so "covers the frequency" is the
+    /// capture-span test and the created capture is centred on the frequency. `sampleRateHz` 0 means
+    /// the device's default; `deviceID` nil lets the allocator pick; `takeOver` retunes a capture
+    /// somebody is using.
+    case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool)
     /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the politeness
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
@@ -538,6 +545,7 @@ public enum AllocationRequest: Sendable {
 public enum AllocationResult: Sendable {
     case channel(any ChannelLease)
     case capture(any CaptureLease)
+    case captureIQ(any CaptureIQLease)
     /// `code` is a stable machine string; `reason` names what is using the radio, in prose.
     case declined(code: String, reason: String)
 }
@@ -550,6 +558,18 @@ public protocol ChannelLease: AnyObject, Sendable {
     var channelID: ChannelID { get }
     var captureID: CaptureID { get }
     var engine: any ChannelEngine { get }
+    func release() async
+}
+
+/// A job's hold on one capture read as raw IQ, for an IQ decoder (docs/design/decoders.md,
+/// "Multiplexing"; DecoderSignal SIGNAL_IQ). Unlike `ChannelLease` there is no channel: the decoder
+/// taps the whole capture band. Releasing destroys the capture only when the lease created it, so a
+/// job that borrowed a capture leaves it as it found it.
+public protocol CaptureIQLease: AnyObject, Sendable {
+    var captureID: CaptureID { get }
+    var sampleRateHz: UInt64 { get }
+    var centerHz: UInt64 { get async }
+    var capture: any CaptureEngine { get }
     func release() async
 }
 

@@ -24,6 +24,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
         case .channel(let frequencyHz, let bandwidthHz, let mode, let deviceID, let takeOver):
             return await allocateChannel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz, mode: mode,
                                          deviceID: deviceID, takeOver: takeOver, job: job)
+        case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver):
+            return await allocateCaptureIQ(frequencyHz: frequencyHz, sampleRateHz: sampleRateHz,
+                                           deviceID: deviceID, takeOver: takeOver, job: job)
         case .exclusiveCapture(let range, let deviceID, let takeOver):
             return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, job: job)
         }
@@ -115,6 +118,118 @@ actor SessionCaptureAllocator: CaptureAllocator {
             await store.publishCapture(id)
         }
         return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
+    }
+
+    // MARK: One capture read as IQ (an IQ decode job, DecoderSignal SIGNAL_IQ)
+
+    /// The same order and reasons as `allocateChannel` (docs/design/decoders.md, "Multiplexing"),
+    /// but an IQ decoder receives the whole capture band, so "covers the frequency" is the capture
+    /// span rather than a channel fit, and a created capture is centred on the frequency. The
+    /// don't-disturb `inUse` check, the `take_over` semantics and the NO_DEVICE / DEVICE_BUSY
+    /// declines are unchanged. IQ captures are shareable in principle, so a reused one is never
+    /// added to the exclusive `leased` set; a sweep's capture (which is) is still left alone.
+    private func allocateCaptureIQ(frequencyHz: UInt64, sampleRateHz wantedRate: UInt64,
+                                   deviceID wanted: DeviceID?, takeOver: Bool, job: JobID) async -> AllocationResult
+    {
+        let state = await store.snapshot(scope: .daemon)
+        var sawDevice = false
+        var lastReason = "no radio here can hear \(fmt(frequencyHz))"
+
+        // 1. A capture whose span already covers the frequency. This disturbs nobody: the decoder
+        //    reads a band somebody is already listening to.
+        for cap in state.captures {
+            if let want = wanted, cap.deviceID != want.string { continue }
+            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            sawDevice = true
+            guard spanCovers(centerHz: cap.centerHz, rate: cap.sampleRate, frequencyHz: frequencyHz),
+                  let engine = await store.captureEngine(id) else { continue }
+            return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: cap.sampleRate,
+                                                    createdCapture: false, store: store))
+        }
+
+        // 2. A radio with nothing on it. The capture is centred on the frequency (clamped to a
+        //    tunable point) so the whole band the decoder wants sits inside the span.
+        for device in state.devices where device.state != .disconnected {
+            if let want = wanted, device.deviceID != want.string { continue }
+            guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
+            guard let deviceID = DeviceID(string: device.deviceID) else { continue }
+            sawDevice = true
+            let rate = iqRate(wantedRate, device: device)
+            guard let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate) else {
+                lastReason = "\(device.model) cannot tune \(fmt(frequencyHz))"
+                continue
+            }
+            do {
+                let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                guard let engine = await store.captureEngine(id) else {
+                    await store.destroyCapture(id: id, by: .daemon)
+                    continue
+                }
+                return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate,
+                                                        createdCapture: true, store: store))
+            } catch {
+                lastReason = (error as? EngineError)?.message ?? "\(error)"
+                log.debug("iq decode job could not open \(device.deviceID): \(lastReason)")
+            }
+        }
+
+        // 3. A capture nobody is using, retuned onto the frequency. The first step that disturbs
+        //    anything, so it is last. It is reused, not created, so the lease leaves it on release.
+        for cap in state.captures {
+            if let want = wanted, cap.deviceID != want.string { continue }
+            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            if !takeOver, let why = inUse(cap, state: state) {
+                lastReason = why
+                continue
+            }
+            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
+                  let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: cap.sampleRate),
+                  let engine = await store.captureEngine(id) else { continue }
+            do {
+                try await engine.retune(centerHz: centre)
+            } catch {
+                lastReason = (error as? EngineError)?.message ?? "\(error)"
+                continue
+            }
+            await store.publishCapture(id)
+            return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: cap.sampleRate,
+                                                    createdCapture: false, store: store))
+        }
+        return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
+    }
+
+    /// Whether a capture centred at `centerHz` running at `rate` hears `frequencyHz` at all: the
+    /// frequency inside [centre - rate/2, centre + rate/2]. An IQ decoder takes the whole span, so
+    /// this is the reuse test rather than the channel-fit `SessionStore.fits`.
+    private func spanCovers(centerHz: UInt64, rate: UInt64, frequencyHz: UInt64) -> Bool {
+        let half = Int64(rate / 2)
+        let f = Int64(frequencyHz)
+        return f >= Int64(centerHz) - half && f <= Int64(centerHz) + half
+    }
+
+    /// The rate for a created IQ capture: what the recipe asked for when the device offers it, else
+    /// the device's default (`defaultRate`), matching what a channel job opens at.
+    private func iqRate(_ wanted: UInt64, device: Leyline_V1_DeviceDescriptor) -> UInt64 {
+        if wanted != 0, device.sampleRates.isEmpty || device.sampleRates.contains(wanted) { return wanted }
+        return defaultRate(device)
+    }
+
+    /// Where to point an IQ capture: on the frequency, clamped to the nearest tunable point. A file
+    /// device's range is the single point its recording was made at, and the frequency still falls
+    /// inside the span there. nil when the frequency would fall outside the span even so.
+    private func iqCentre(frequencyHz: UInt64, device: Leyline_V1_DeviceDescriptor, rate: UInt64) -> UInt64? {
+        var best: UInt64?
+        var bestDistance = UInt64.max
+        for r in device.tuningRanges {
+            let clamped = Swift.min(Swift.max(frequencyHz, r.minHz), Swift.max(r.minHz, r.maxHz))
+            let d = clamped > frequencyHz ? clamped - frequencyHz : frequencyHz - clamped
+            if d < bestDistance {
+                bestDistance = d
+                best = clamped
+            }
+        }
+        guard let centre = best, spanCovers(centerHz: centre, rate: rate, frequencyHz: frequencyHz) else { return nil }
+        return centre
     }
 
     /// Where to point a capture so the channel lands a quarter-span off centre, clamped to what the
@@ -459,6 +574,43 @@ actor SessionChannelLease: ChannelLease {
         } else if let centre = restoreCenterHz, let capture = await store.captureEngine(captureID) {
             try? await capture.retune(centerHz: centre)
             await store.publishCapture(captureID)
+        }
+    }
+}
+
+/// One IQ decode job's hold on one capture, read as raw IQ with no channel under it
+/// (docs/design/decoders.md, "Multiplexing"; DecoderSignal SIGNAL_IQ). Release destroys the capture
+/// only when the lease created it; a borrowed one is left as it was found.
+actor SessionCaptureIQLease: CaptureIQLease {
+    nonisolated let captureID: CaptureID
+    nonisolated let sampleRateHz: UInt64
+    nonisolated let capture: any CaptureEngine
+
+    private let store: SessionStore
+    private let createdCapture: Bool
+    private var released = false
+
+    init(captureID: CaptureID, capture: any CaptureEngine, sampleRateHz: UInt64,
+         createdCapture: Bool, store: SessionStore)
+    {
+        self.captureID = captureID
+        self.capture = capture
+        self.sampleRateHz = sampleRateHz
+        self.createdCapture = createdCapture
+        self.store = store
+    }
+
+    var centerHz: UInt64 { get async { await capture.snapshot.centerHz } }
+
+    func release() async {
+        guard !released else { return }
+        released = true
+        // A capture this lease created is destroyed; one it reused is left for its owner. Running two
+        // IQ decoders that would share one created capture is not yet safe -- it needs capture
+        // refcounting -- and is a follow-up (docs/design/decoders.md, "Multiplexing"); today the
+        // creator destroys on release.
+        if createdCapture {
+            await store.destroyCapture(id: captureID, by: .daemon)
         }
     }
 }
