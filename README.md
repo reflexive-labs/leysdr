@@ -127,7 +127,8 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   C.12, recording and resources, which is not started.
 - Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.17 (decoders:
   the plugin contract, the record store, `ley decode`, `ley records`, `ley track`, `ley watch` with
-  predicates and notifiers) done for APRS and SAME weather alerts, the other four drivers listed in `docs/plans/decoders.md`; D.14
+  predicates and notifiers, `ley devices-seen`/`ley label`, and an IQ input mode) done for APRS,
+  SAME weather alerts and marine AIS, the other four drivers listed in `docs/plans/decoders.md`; D.14
   (terminal dashboard), D.15 (durable jobs, watch, transcripts) and D.16 (MCP adapter) not started.
 - Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
   measurement on target hardware yet; S1 (latency chain) waits for the app.

@@ -227,7 +227,27 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   work over any decoder that carries a `device_id`.
 - DEC-11 `[ ]` Kept decode jobs respawn after a daemon restart (needs the durable job store, D.15).
 - DEC-12 `[ ]` Slot-aligned input (driver E, FT8).
-- DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side).
+- DEC-18 `[x]` IQ input to decoders: `DecoderInput.signal` (AUDIO default, or IQ) and the daemon
+  path for it. A decoder that declares IQ gets the capture's raw cf32 baseband over the bulk IQ
+  frame contract instead of a channel's audio, via `allocateCaptureIQ` (a capture, not a channel)
+  and `IQDecodeRunner`; the Go SDK grew `RunIQ`/`MainIQ`/`IQDecoder`, and `leydec-iqstat` proves it
+  end to end (it read -20 dBFS off the -20 dBFS `nfm_tone` fixture). This is the enabler the
+  wideband drivers need. Correct for one decoder per capture; sharing a daemon-created capture
+  across IQ decoders needs capture refcounting -- DEC-19.
+- DEC-19 `[ ]` Capture refcounting so several IQ decoders share one daemon-created wide capture
+  (the multiplexing story: twenty rtl_433 decoders on one 433 MHz capture). Today the IQ lease's
+  creator destroys the capture on release, which is wrong if another decoder still taps it.
+- DEC-20 `[x]` AIS, a marine vessel decoder (`leydec-ais`): 9600-baud GMSK on 161.975/162.025 MHz
+  decoded from the NFM discriminator (no IQ input needed), parsing the Class A/B position and static
+  messages into records keyed by MMSI, checked against the gpsd reference vectors. It is not one of
+  the five reference drivers but a real third decoder, and it gives `ley track ais` a vessel table.
+- DEC-21 `[ ]` Friendly decoder aliases: the design's `ley track aircraft | vessels | aprs` names
+  the protocol by a common word, but the decoders are `adsb`, `ais`, `aprs`; `ley track vessels`
+  today answers `DECODER_NOT_FOUND`. A manifest `aliases` field the registry resolves (and
+  completion offers) makes the friendly names work without hardcoding a map. Small, but proto +
+  daemon + CLI, so it waits until the decoders are unpaused.
+- DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side), on
+  the IQ input DEC-18 built.
 - DEC-14 `[ ]` The MCP families and `ley identify`.
 - DEC-15 `[ ]` A SQLite index under `QueryRecords`, when a query is measured slow.
 - DEC-16 `[x]` A plugin that stops reading no longer stalls the drain: the daemon's write end is

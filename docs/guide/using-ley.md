@@ -745,7 +745,9 @@ that it keeps working with nobody watching: `--detach` leaves the job running in
 A SAME record carries a validity window, the span the alert is in effect, so `ley records
 --in-effect` lists only alerts that have not expired.
 
-Two decoders are built, APRS and SAME. The contract every decoder speaks is in
+Three decoders are built: APRS, SAME, and AIS (marine vessels -- `ley decode ais`, `ley track
+ais` for a vessel table). Name a decoder by what `ley decoders` lists; the design's friendly names
+like `ley track vessels` are a later convenience. The contract every decoder speaks is in
 `docs/design/decoders.md` and [writing a decoder](../reference/writing-a-decoder.md); the plan for
 the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
 roadmap` names what is next.

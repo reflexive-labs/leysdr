@@ -20,11 +20,14 @@ Nothing has been released yet. This file starts with everything that exists on `
 - Decoders: the daemon runs decoder plugins as separate processes and turns what they decode into
   typed records. `ley decoders` lists what is installed, `ley decode aprs` decodes APRS packets
   from 144.39 MHz, `ley records` queries what a kept job (`--job`) stored, and `ley track aprs` is
-  the live station table. Two plugins ship, both written in Go: `leydec-aprs` (AFSK 1200, AX.25,
-  APRS) and `leydec-same` (SAME/EAS weather alerts). `ley watch <decoder>` filters a decoder's
-  records with a daemon-side predicate and fires a notifier (a macOS notification, a webhook or a
-  shell hook) on a match, so `ley watch same --county 06009 --notify` raises a weather alert for
-  your county with nothing connected. `docs/design/decoders.md` and
-  `docs/reference/writing-a-decoder.md` are the contract for writing another.
+  the live station table. Three plugins ship, all written in Go: `leydec-aprs` (APRS over AFSK
+  1200/AX.25), `leydec-same` (SAME/EAS weather alerts), and `leydec-ais` (marine AIS over 9600-baud
+  GMSK). `ley watch <decoder>` filters a decoder's records with a daemon-side predicate and fires a
+  notifier (a macOS notification, a webhook or a shell hook) on a match, so `ley watch same --county
+  06009 --notify` raises a weather alert for your county with nothing connected. `ley devices-seen`
+  lists the transmitters heard and, with `--quiet-since`, the ones that went quiet; `ley label`
+  names a discovered id. A decoder can read a channel's audio or, declaring so, the capture's raw
+  IQ (for wideband modes). `make install-decoders` puts the plugins where the daemon finds them.
+  `docs/design/decoders.md` and `docs/reference/writing-a-decoder.md` are the contract for another.
 - Not yet: recording to files, watch jobs and transcripts, the TUI dashboard, the Mac app, the MCP
   adapter (`docs/plans/build-order.md` has the order).
