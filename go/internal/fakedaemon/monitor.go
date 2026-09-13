@@ -5,6 +5,7 @@ package fakedaemon
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -21,15 +22,19 @@ import (
 // monitorCarriers is the synthetic band a watch hears: carriers on GMRS channels so the channel
 // labels show, one weak enough for --min-snr to hide. Deliberately not derived from any FFT --
 // the CLI test is about the transmission log, not the detector.
-var monitorCarriers = []struct {
-	hz  uint64
-	bw  uint32
-	snr float64
-}{
-	{462_562_500, 12_500, 12.0}, // ch1, weak but isolated: --min-snr 20 hides it, the default keeps it
-	{462_600_000, 12_500, 21.0}, // ch17, a real adjacent carrier: only 19 dB below ch18, so not a skirt
-	{462_625_000, 12_500, 40.0}, // ch18, the strongest
-	{462_650_000, 12_500, 12.0}, // ch19, a skirt of ch18: 28 dB below, one channel over, folds into it
+type monitorSig struct {
+	hz   uint64
+	bw   uint32
+	snr  float64
+	busy float64 // the fraction of looks the carrier is detected in: its ON AIR share of the watch
+}
+
+var monitorCarriers = []monitorSig{
+	{462_562_500, 12_500, 12.0, 1.00}, // ch1, weak but isolated: --min-snr 20 hides it, the default keeps it
+	{462_600_000, 12_500, 21.0, 1.00}, // ch17, a real adjacent carrier: only 19 dB below ch18, so not a skirt
+	{462_625_000, 12_500, 40.0, 1.00}, // ch18, the strongest, on air the whole watch
+	{462_650_000, 12_500, 12.0, 1.00}, // ch19, a skirt of ch18: 28 dB below, one channel over, folds into it
+	{462_662_500, 12_500, 14.0, 0.25}, // ch5, isolated but intermittent: a wide HELD, a small ON AIR
 }
 
 // monitorEmitInterval is how often the fake re-reports a carrier that is still up, so the client
@@ -121,11 +126,15 @@ func (d *Daemon) runMonitor(jobID string, mc *leylinev1.MonitorConfig, dev *leyl
 	if interval < 10*time.Millisecond {
 		interval = 10 * time.Millisecond
 	}
+	looksPossible := uint32(0)
 	for {
 		if d.jobCancelled(jobID) {
 			d.cancelMonitor(jobID)
 			return
 		}
+		// Every cycle is a look every carrier's frequency had; a carrier is "detected" in its busy
+		// fraction of them, so looks/looksPossible is its ON AIR share, exactly as the daemon reports.
+		looksPossible++
 		for _, sig := range carriers {
 			d.publishMonitorDetection(&leylinev1.Detection{
 				DetectionId:   fmt.Sprintf("det_%d", sig.hz),
@@ -134,8 +143,8 @@ func (d *Daemon) runMonitor(jobID string, mc *leylinev1.MonitorConfig, dev *leyl
 				BandwidthHz:   sig.bw,
 				SnrDb:         sig.snr,
 				FloorDbfs:     fakeFloorDbfs,
-				Looks:         1,
-				LooksPossible: 1,
+				Looks:         uint32(math.Round(float64(looksPossible) * sig.busy)),
+				LooksPossible: looksPossible,
 			})
 		}
 		if mc.DurationMs > 0 && !time.Now().Before(deadline) {
@@ -147,16 +156,8 @@ func (d *Daemon) runMonitor(jobID string, mc *leylinev1.MonitorConfig, dev *leyl
 }
 
 // monitorCarriersIn keeps the synthetic carriers that fall inside the watched range.
-func monitorCarriersIn(r *leylinev1.FrequencyRange) []struct {
-	hz  uint64
-	bw  uint32
-	snr float64
-} {
-	var out []struct {
-		hz  uint64
-		bw  uint32
-		snr float64
-	}
+func monitorCarriersIn(r *leylinev1.FrequencyRange) []monitorSig {
+	var out []monitorSig
 	for _, sig := range monitorCarriers {
 		if sig.hz >= r.MinHz && sig.hz <= r.MaxHz {
 			out = append(out, sig)

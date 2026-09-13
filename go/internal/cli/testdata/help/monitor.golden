@@ -1,6 +1,14 @@
 monitor parks the radio on one band and watches it, then prints a
 time-ordered log of the carriers that came and went: when each first
-appeared, how long it held the channel, and how strong it was at its peak.
+appeared, the span it bracketed (HELD) and how much of that span it was
+actually transmitting (ON AIR), and how strong it was at its peak.
+
+HELD and ON AIR are different questions, and the gap between them is the
+point. HELD is first-sighting to last, so a carrier seen at the start and
+again at the end reads a long HELD even if it was silent between. ON AIR is
+the detector's own count of the rows it truly saw the carrier in, so a
+strong signal's intermittent intermod reads a wide HELD but a tiny ON AIR,
+and a repeater held down reads the two nearly equal.
 
 Unlike scan it does not sweep. It holds one capture on the band and runs
 the detector without moving, so it never time-shares and cannot miss a

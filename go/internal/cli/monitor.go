@@ -39,7 +39,15 @@ func newMonitorCommand(app *App) *cobra.Command {
 		Short: "Park on a band and log the transmissions on it",
 		Long: `monitor parks the radio on one band and watches it, then prints a
 time-ordered log of the carriers that came and went: when each first
-appeared, how long it held the channel, and how strong it was at its peak.
+appeared, the span it bracketed (HELD) and how much of that span it was
+actually transmitting (ON AIR), and how strong it was at its peak.
+
+HELD and ON AIR are different questions, and the gap between them is the
+point. HELD is first-sighting to last, so a carrier seen at the start and
+again at the end reads a long HELD even if it was silent between. ON AIR is
+the detector's own count of the rows it truly saw the carrier in, so a
+strong signal's intermittent intermod reads a wide HELD but a tiny ON AIR,
+and a repeater held down reads the two nearly equal.
 
 Unlike scan it does not sweep. It holds one capture on the band and runs
 the detector without moving, so it never time-shares and cannot miss a
@@ -123,6 +131,21 @@ type monitorCarrier struct {
 	firstS   float64 // seconds after the watch began that this id first arrived
 	lastS    float64 // seconds after the watch began that it was last updated
 	peakSNR  float64
+	// looks is the rows the detector actually saw this carrier in; looksPossible is the rows that
+	// covered its frequency. Both are cumulative and grow with every update, so the carrier keeps
+	// the largest of each: looks/looksPossible is the fraction of the watch it was truly on air,
+	// which HELD (a first-to-last span) is not.
+	looks         uint32
+	looksPossible uint32
+}
+
+// onAirFrac is the fraction of the watch the carrier was actually transmitting: the detector's
+// looks over the rows that could have held it. It is 0 when the daemon sent no look counts.
+func (c *monitorCarrier) onAirFrac() float64 {
+	if c.looksPossible == 0 {
+		return 0
+	}
+	return float64(c.looks) / float64(c.looksPossible)
 }
 
 // monitorDrain is how long the report waits after the job completes for detections still in
@@ -175,13 +198,20 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 				c.centerHz = d.CenterHz
 				c.bwHz = d.BandwidthHz
 			}
+			// The look counts are cumulative, so the latest update carries the largest of each.
+			if d.Looks > c.looks {
+				c.looks = d.Looks
+			}
+			if d.LooksPossible > c.looksPossible {
+				c.looksPossible = d.LooksPossible
+			}
 			return
 		}
 		id := d.DetectionId
 		if id == "" {
 			id = fmt.Sprintf("carrier-%d", len(order))
 		}
-		c := &monitorCarrier{id: id, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb}
+		c := &monitorCarrier{id: id, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb, looks: d.Looks, looksPossible: d.LooksPossible}
 		carriers[id] = c
 		order = append(order, id)
 		// The live feed is running commentary, so it respects the SNR floor a debut is judged
@@ -287,7 +317,7 @@ follow:
 		watched = time.Since(start)
 	}
 	if s.app.JSON {
-		return printMonitorJSON(s.app, o, order, carriers)
+		return printMonitorJSON(s.app, o, order, carriers, watched)
 	}
 	printMonitorReport(s.app, o, order, carriers, watched)
 	return nil
@@ -462,6 +492,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
 		{head: "CHANNEL", cells: mapCarrier(rows, func(c *monitorCarrier) string { return monitorChannel(c.centerHz) })},
 		{head: "HELD", cells: mapCarrier(rows, heldCell)},
+		{head: "ON AIR", cells: mapCarrier(rows, func(c *monitorCarrier) string { return onAirCell(c, watched) })},
 		{head: "PEAK SNR", cells: mapCarrier(rows, func(c *monitorCarrier) string { return fmt.Sprintf("%.0f dB", c.peakSNR) })},
 	}
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
@@ -502,14 +533,30 @@ func hiddenReasons(h monitorHidden, o monitorOptions) string {
 	return strings.Join(parts, ", ")
 }
 
-// heldCell is how long the carrier held the channel, observed by the client. A single sighting
-// has no measurable span, so it reads "under 1 s" rather than "0 s".
+// heldCell is the span from first to last sighting: how long the carrier bracketed the watch, not
+// how long it transmitted (that is ON AIR). A single sighting has no measurable span, so it reads
+// "under 1 s" rather than "0 s".
 func heldCell(c *monitorCarrier) string {
-	held := c.lastS - c.firstS
-	if held < 1 {
+	return secsCell(c.lastS - c.firstS)
+}
+
+// onAirCell is how long the carrier was actually transmitting: its on-air fraction of the watch
+// times the watch's length. Beside HELD it separates a carrier that occupied the channel from one
+// that only flickered across a long span -- a strong signal's intermod reads a wide HELD but a
+// tiny ON AIR. It is "?" when the daemon sent no look counts, since 0 s would be a false claim.
+func onAirCell(c *monitorCarrier, watched time.Duration) string {
+	if c.looksPossible == 0 {
+		return "?"
+	}
+	return secsCell(c.onAirFrac() * watched.Seconds())
+}
+
+// secsCell renders a span of seconds for a table cell, reading "under 1 s" below a second.
+func secsCell(s float64) string {
+	if s < 1 {
 		return "under 1 s"
 	}
-	return fmt.Sprintf("%.0f s", held)
+	return fmt.Sprintf("%.0f s", s)
 }
 
 func mapCarrier(rows []*monitorCarrier, f func(*monitorCarrier) string) []string {
@@ -523,17 +570,20 @@ func mapCarrier(rows []*monitorCarrier, f func(*monitorCarrier) string) []string
 // monitorCarrierJSON is one line of `ley monitor --json`: a client-side fold with no proto
 // message, so the shape is snake_case and documented in docs/reference/cli.md, like track's.
 type monitorCarrierJSON struct {
-	DetectionID string  `json:"detection_id"`
-	CenterHz    uint64  `json:"center_hz"`
-	Channel     string  `json:"channel"`
-	FirstS      float64 `json:"first_s"`
-	HeldS       float64 `json:"held_s"`
-	PeakSnrDb   float64 `json:"peak_snr_db"`
-	BandwidthHz uint32  `json:"bandwidth_hz"`
+	DetectionID   string  `json:"detection_id"`
+	CenterHz      uint64  `json:"center_hz"`
+	Channel       string  `json:"channel"`
+	FirstS        float64 `json:"first_s"`
+	HeldS         float64 `json:"held_s"`
+	OnAirS        float64 `json:"on_air_s"`
+	Looks         uint32  `json:"looks"`
+	LooksPossible uint32  `json:"looks_possible"`
+	PeakSnrDb     float64 `json:"peak_snr_db"`
+	BandwidthHz   uint32  `json:"bandwidth_hz"`
 }
 
 // printMonitorJSON writes one NDJSON object per carrier, in first-appearance order, at the end.
-func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier) error {
+func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier, watched time.Duration) error {
 	round := func(x float64) float64 { return math.Round(x*10) / 10 }
 	rows, _ := filterMonitorCarriers(order, carriers, o)
 	for _, c := range rows {
@@ -543,7 +593,9 @@ func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[s
 		}
 		if err := app.printArray(monitorCarrierJSON{
 			DetectionID: c.id, CenterHz: c.centerHz, Channel: ch,
-			FirstS: round(c.firstS), HeldS: round(c.lastS - c.firstS), PeakSnrDb: c.peakSNR, BandwidthHz: c.bwHz,
+			FirstS: round(c.firstS), HeldS: round(c.lastS - c.firstS),
+			OnAirS: round(c.onAirFrac() * watched.Seconds()), Looks: c.looks, LooksPossible: c.looksPossible,
+			PeakSnrDb: c.peakSNR, BandwidthHz: c.bwHz,
 		}); err != nil {
 			return err
 		}

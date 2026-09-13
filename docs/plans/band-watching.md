@@ -69,6 +69,14 @@ useful piece of BW-2, built first because it needs no new plane.
   to stderr; `--json` emits NDJSON `{detection_id, center_hz, channel, first_s, held_s, peak_snr_db,
   bandwidth_hz}`.
 
+The log carries the occupancy metric BW-2 is built around, one column ahead of it: **ON AIR** is
+the detector's `looks/looks_possible` -- the rows it saw the carrier in, over the rows that could
+have held it -- so it is the fraction of the watch the carrier was truly transmitting. Beside HELD
+(a first-to-last span) it separates a channel held down from one a strong signal only flickered
+across: an intermod that brackets the whole watch reads a wide HELD and a near-zero ON AIR. This is
+the same per-carrier, never-band-relative measure BW-2 wants, delivered as an event log rather than
+a channel grid.
+
 Three filters keep the log readable, each disabled with a `0`: `--min-snr` (default 8) drops a
 carrier that never cleared a few dB over the floor, `--min-hold` (default off) drops one held too
 briefly, and `--skirt-db` (default 25) folds a much weaker carrier one channel from a strong one

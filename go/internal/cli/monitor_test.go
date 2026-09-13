@@ -32,7 +32,7 @@ func TestMonitorReportsTransmissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley monitor: %v\n%s\n%s", err, out, errOut)
 	}
-	for _, want := range []string{"TIME", "FREQUENCY", "CHANNEL", "HELD", "PEAK SNR", monMedium, monStrong, "ch17", "ch18"} {
+	for _, want := range []string{"TIME", "FREQUENCY", "CHANNEL", "HELD", "ON AIR", "PEAK SNR", monMedium, monStrong, "ch17", "ch18"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}
@@ -67,7 +67,7 @@ func TestMonitorJSON(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &c); err != nil {
 			t.Fatalf("%v\n%s", err, line)
 		}
-		for _, k := range []string{"detection_id", "center_hz", "channel", "first_s", "held_s", "peak_snr_db", "bandwidth_hz"} {
+		for _, k := range []string{"detection_id", "center_hz", "channel", "first_s", "held_s", "on_air_s", "looks", "looks_possible", "peak_snr_db", "bandwidth_hz"} {
 			if _, ok := c[k]; !ok {
 				t.Errorf("carrier lacks %q: %s", k, line)
 			}
@@ -158,6 +158,35 @@ func TestFilterMonitorCarriers(t *testing.T) {
 	all, none := filterMonitorCarriers(order, carriers, monitorOptions{minSNR: 0, skirtDb: 0, minHold: 0})
 	if len(all) != len(order) || none.any() {
 		t.Errorf("with no filters all %d carriers should show, none hidden; got %d rows, %+v", len(order), len(all), none)
+	}
+}
+
+// ON AIR is looks/looks_possible, the fraction of the watch a carrier was truly transmitting, which
+// HELD (a first-to-last span) is not. A carrier held down reads a high ON AIR; an intermittent one
+// reads low even when its span is wide.
+func TestMonitorOnAir(t *testing.T) {
+	sock, _ := harness(t, monitorOpts())
+	out := mustRun(t, sock, "--json", "monitor", "gmrs", "--for", "1s")
+	frac := map[string]float64{} // channel -> looks/looks_possible
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var c map[string]any
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			t.Fatalf("%v\n%s", err, line)
+		}
+		looks, _ := c["looks"].(float64)
+		possible, _ := c["looks_possible"].(float64)
+		if possible <= 0 {
+			t.Errorf("looks_possible should be positive: %s", line)
+			continue
+		}
+		frac[c["channel"].(string)] = looks / possible
+	}
+	// ch18 is on air the whole watch; ch5 only a quarter of it.
+	if got := frac["ch18"]; got < 0.9 {
+		t.Errorf("ch18 should be on air nearly the whole watch, got %.2f", got)
+	}
+	if got, ok := frac["ch5"]; !ok || got > 0.5 {
+		t.Errorf("ch5 should be on air well under half the watch, got %.2f (present=%v)", got, ok)
 	}
 }
 

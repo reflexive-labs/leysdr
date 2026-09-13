@@ -204,10 +204,13 @@ store is `~/Library/Application Support/Leyline/labels.json` on macOS and
 overrides it. `ley monitor --json` is the seventh, the transmission log beside the entity table: a
 client-side fold over the detections on the telemetry plane, so it has no proto message and prints
 one object per carrier as NDJSON when the watch ends, in first-appearance order, each `{detection_id,
-center_hz, channel, first_s, held_s, peak_snr_db, bandwidth_hz}` (snake_case; `channel` the GMRS or
-preset channel on the frequency or `""` when none; `first_s` and `held_s` seconds on the client's own
-clock, since telemetry latency is sub-second and a radio-check log needs no anchor arithmetic;
-`peak_snr_db` the strongest the carrier was seen). The same three filters that clean the table
+center_hz, channel, first_s, held_s, on_air_s, looks, looks_possible, peak_snr_db, bandwidth_hz}`
+(snake_case; `channel` the GMRS or preset channel on the frequency or `""` when none; `first_s` and
+`held_s` seconds on the client's own clock, since telemetry latency is sub-second and a radio-check
+log needs no anchor arithmetic; `held_s` is first-to-last span while `on_air_s` is the time actually
+transmitting, `looks`/`looks_possible` being the detector's rows-seen over rows-that-could, so a
+flickering intermod reads a wide `held_s` and a tiny `on_air_s`; `peak_snr_db` the strongest the
+carrier was seen). The same three filters that clean the table
 clean the NDJSON: `--min-snr`, `--min-hold` and `--skirt-db` (below) all drop their carriers from
 both, so a tool wanting everything passes `--min-snr 0 --skirt-db 0`.
 
@@ -221,7 +224,8 @@ scan's; the client folds them into the log. It runs daemon-side and owns the rad
 declining a radio somebody is using with the same don't-disturb rule as a scan (`--take-over`
 overrides). A band wider than one capture can watch is refused with `INVALID_ARGUMENT`; `scan` sweeps
 a span that wide. There is no `--gain`, as there is none on `scan`: the daemon sets the gain. The log
-table (TIME, FREQUENCY, CHANNEL, HELD, PEAK SNR) is stdout; the live feed of each carrier as it is
+table (TIME, FREQUENCY, CHANNEL, HELD, ON AIR, PEAK SNR -- HELD the first-to-last span, ON AIR the
+time truly transmitting from the detector's look counts) is stdout; the live feed of each carrier as it is
 first heard, and the summary, are stderr. Three filters keep the log readable, each disabled with a
 `0`: `--min-snr` (default 8) drops a carrier whose peak never cleared that many dB over the noise
 floor; `--min-hold` (default 0, off) drops one held for less than a set span; and `--skirt-db`
