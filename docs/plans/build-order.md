@@ -37,6 +37,7 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `docs/plans/user-
 14. TUI dashboard: bare `ley` opens a Bubble Tea dashboard — shaded-cell waterfall from a negotiated low-rate FFT stream, tuning controls, channel list, meters from telemetry. First real exercise of stream negotiation by a constrained consumer.
 15. Jobs: store, JobRunner respawn, CaptureAllocator with don't-disturb; watch job → ActivitySegments → transcript.
 16. MCP adapter (Go, sharing the `ley` client library); tools from `docs/reference/cli.md`; snapshot PNG rendering.
+    The plan, with the where-the-server-lives decision and the tool order: `docs/plans/mcp.md`.
 17. Decoders: the out-of-process plugin contract, the record envelope and store, decode jobs, and
     APRS as the first decoder (`ley decoders`, `ley decode aprs`, `ley records`, `ley track aprs`).
     Design and the build plan: `docs/design/decoders.md`, `docs/plans/decoders.md`. Started ahead

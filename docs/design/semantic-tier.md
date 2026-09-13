@@ -44,7 +44,8 @@ Results flow twice: live as telemetry/events while running, and durable as resou
 
 ## MCP surface
 
-This is the design for Milestone D.16; nothing in it is implemented yet. Tools map one-to-one onto
+This is the design for Milestone D.16; nothing in it is implemented yet, and the build plan --
+where the MCP server runs and the order the tools land -- is `docs/plans/mcp.md`. Tools map one-to-one onto
 RPCs (names indicative):
 
 | Tool | Maps to | Notes |

@@ -73,7 +73,8 @@ What is being built, in what order, and the record of what each step found.
 - Live plans, with `[ ]` items still open: [v1 release](plans/v1-release.md) (the gap analysis and
   work list for the first shared release), [signal views](plans/signal-views.md) (DCS and the
   sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
-  [decoders](plans/decoders.md) (the plugin contract and APRS first; the other four drivers follow).
+  [decoders](plans/decoders.md) (the plugin contract and APRS first; the other four drivers follow),
+  [MCP adapter](plans/mcp.md) (where the server lives and the order the tools land).
 - [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit
   messages cite their item ids. Nothing in there is a work list any more.
 
