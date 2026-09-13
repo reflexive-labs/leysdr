@@ -63,10 +63,23 @@ message DecoderInput {
   // listed by ListDecoders and refused by StartJob with UNIMPLEMENTED.
   uint32 slot_ms = 2;
   int64 epoch_offset_ms = 3;
-  // Which stage of the channel the plugin reads. TAP_DEMOD is the discriminator before
-  // de-emphasis and the limiter, which a data decoder usually prefers; TAP_AUDIO is what a
-  // listener hears and is the default.
+  // Which stage of the channel the plugin reads, when the signal is AUDIO. TAP_DEMOD is the
+  // discriminator before de-emphasis and the limiter, which a data decoder usually prefers;
+  // TAP_AUDIO is what a listener hears and is the default. Ignored when signal is IQ.
   AudioTap tap = 4;
+  // What the plugin receives. AUDIO (the default) is a channel's demodulated output, an f32 mono
+  // stream at the channel's audio rate -- what APRS, SAME and AIS decode. IQ is the capture's raw
+  // complex baseband, cf32 at the capture's sample rate, which a decoder of a wideband digital
+  // mode (ADS-B, the 433 MHz soup) needs because the signal is gone by the time it is
+  // demodulated. Many IQ decoders share one wide capture (docs/design/decoders.md,
+  // "Multiplexing"); an IQ frame carries the whole band around the recipe's frequency.
+  DecoderSignal signal = 5;
+}
+
+enum DecoderSignal {
+  DECODER_SIGNAL_UNSPECIFIED = 0;  // AUDIO
+  SIGNAL_AUDIO = 1;
+  SIGNAL_IQ = 2;
 }
 
 enum InputMode { INPUT_MODE_UNSPECIFIED = 0; CONTINUOUS = 1; SLOT_ALIGNED = 2; }

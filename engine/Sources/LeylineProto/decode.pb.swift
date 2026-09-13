@@ -75,6 +75,46 @@ public nonisolated enum Leyline_V1_GainPolicy: SwiftProtobuf.Enum, Swift.CaseIte
 
 }
 
+public nonisolated enum Leyline_V1_DecoderSignal: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+
+  /// AUDIO
+  case unspecified // = 0
+  case signalAudio // = 1
+  case signalIq // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .signalAudio
+    case 2: self = .signalIq
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .signalAudio: return 1
+    case .signalIq: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_DecoderSignal] = [
+    .unspecified,
+    .signalAudio,
+    .signalIq,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_InputMode: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -422,10 +462,18 @@ public nonisolated struct Leyline_V1_DecoderInput: Sendable {
 
   public var epochOffsetMs: Int64 = 0
 
-  /// Which stage of the channel the plugin reads. TAP_DEMOD is the discriminator before
-  /// de-emphasis and the limiter, which a data decoder usually prefers; TAP_AUDIO is what a
-  /// listener hears and is the default.
+  /// Which stage of the channel the plugin reads, when the signal is AUDIO. TAP_DEMOD is the
+  /// discriminator before de-emphasis and the limiter, which a data decoder usually prefers;
+  /// TAP_AUDIO is what a listener hears and is the default. Ignored when signal is IQ.
   public var tap: Leyline_V1_AudioTap = .tapAudio
+
+  /// What the plugin receives. AUDIO (the default) is a channel's demodulated output, an f32 mono
+  /// stream at the channel's audio rate -- what APRS, SAME and AIS decode. IQ is the capture's raw
+  /// complex baseband, cf32 at the capture's sample rate, which a decoder of a wideband digital
+  /// mode (ADS-B, the 433 MHz soup) needs because the signal is gone by the time it is
+  /// demodulated. Many IQ decoders share one wide capture (docs/design/decoders.md,
+  /// "Multiplexing"); an IQ frame carries the whole band around the recipe's frequency.
+  public var signal: Leyline_V1_DecoderSignal = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1085,6 +1133,10 @@ nonisolated extension Leyline_V1_GainPolicy: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GAIN_POLICY_UNSPECIFIED\0\u{1}GAIN_LEAVE\0\u{1}GAIN_AUTO\0")
 }
 
+nonisolated extension Leyline_V1_DecoderSignal: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DECODER_SIGNAL_UNSPECIFIED\0\u{1}SIGNAL_AUDIO\0\u{1}SIGNAL_IQ\0")
+}
+
 nonisolated extension Leyline_V1_InputMode: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0INPUT_MODE_UNSPECIFIED\0\u{1}CONTINUOUS\0\u{1}SLOT_ALIGNED\0")
 }
@@ -1321,7 +1373,7 @@ nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderInput"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{3}slot_ms\0\u{3}epoch_offset_ms\0\u{1}tap\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{3}slot_ms\0\u{3}epoch_offset_ms\0\u{1}tap\0\u{1}signal\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1333,6 +1385,7 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
       case 2: try { try decoder.decodeSingularUInt32Field(value: &self.slotMs) }()
       case 3: try { try decoder.decodeSingularInt64Field(value: &self.epochOffsetMs) }()
       case 4: try { try decoder.decodeSingularEnumField(value: &self.tap) }()
+      case 5: try { try decoder.decodeSingularEnumField(value: &self.signal) }()
       default: break
       }
     }
@@ -1351,6 +1404,9 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
     if self.tap != .tapAudio {
       try visitor.visitSingularEnumField(value: self.tap, fieldNumber: 4)
     }
+    if self.signal != .unspecified {
+      try visitor.visitSingularEnumField(value: self.signal, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1359,6 +1415,7 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
     if lhs.slotMs != rhs.slotMs {return false}
     if lhs.epochOffsetMs != rhs.epochOffsetMs {return false}
     if lhs.tap != rhs.tap {return false}
+    if lhs.signal != rhs.signal {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

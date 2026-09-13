@@ -78,6 +78,55 @@ func (GainPolicy) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{0}
 }
 
+type DecoderSignal int32
+
+const (
+	DecoderSignal_DECODER_SIGNAL_UNSPECIFIED DecoderSignal = 0 // AUDIO
+	DecoderSignal_SIGNAL_AUDIO               DecoderSignal = 1
+	DecoderSignal_SIGNAL_IQ                  DecoderSignal = 2
+)
+
+// Enum value maps for DecoderSignal.
+var (
+	DecoderSignal_name = map[int32]string{
+		0: "DECODER_SIGNAL_UNSPECIFIED",
+		1: "SIGNAL_AUDIO",
+		2: "SIGNAL_IQ",
+	}
+	DecoderSignal_value = map[string]int32{
+		"DECODER_SIGNAL_UNSPECIFIED": 0,
+		"SIGNAL_AUDIO":               1,
+		"SIGNAL_IQ":                  2,
+	}
+)
+
+func (x DecoderSignal) Enum() *DecoderSignal {
+	p := new(DecoderSignal)
+	*p = x
+	return p
+}
+
+func (x DecoderSignal) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DecoderSignal) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_decode_proto_enumTypes[1].Descriptor()
+}
+
+func (DecoderSignal) Type() protoreflect.EnumType {
+	return &file_leyline_v1_decode_proto_enumTypes[1]
+}
+
+func (x DecoderSignal) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DecoderSignal.Descriptor instead.
+func (DecoderSignal) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{1}
+}
+
 type InputMode int32
 
 const (
@@ -111,11 +160,11 @@ func (x InputMode) String() string {
 }
 
 func (InputMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_decode_proto_enumTypes[1].Descriptor()
+	return file_leyline_v1_decode_proto_enumTypes[2].Descriptor()
 }
 
 func (InputMode) Type() protoreflect.EnumType {
-	return &file_leyline_v1_decode_proto_enumTypes[1]
+	return &file_leyline_v1_decode_proto_enumTypes[2]
 }
 
 func (x InputMode) Number() protoreflect.EnumNumber {
@@ -124,7 +173,7 @@ func (x InputMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use InputMode.Descriptor instead.
 func (InputMode) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{1}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{2}
 }
 
 type OutputShape int32
@@ -163,11 +212,11 @@ func (x OutputShape) String() string {
 }
 
 func (OutputShape) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_decode_proto_enumTypes[2].Descriptor()
+	return file_leyline_v1_decode_proto_enumTypes[3].Descriptor()
 }
 
 func (OutputShape) Type() protoreflect.EnumType {
-	return &file_leyline_v1_decode_proto_enumTypes[2]
+	return &file_leyline_v1_decode_proto_enumTypes[3]
 }
 
 func (x OutputShape) Number() protoreflect.EnumNumber {
@@ -176,7 +225,7 @@ func (x OutputShape) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OutputShape.Descriptor instead.
 func (OutputShape) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{3}
 }
 
 type FieldType int32
@@ -221,11 +270,11 @@ func (x FieldType) String() string {
 }
 
 func (FieldType) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_decode_proto_enumTypes[3].Descriptor()
+	return file_leyline_v1_decode_proto_enumTypes[4].Descriptor()
 }
 
 func (FieldType) Type() protoreflect.EnumType {
-	return &file_leyline_v1_decode_proto_enumTypes[3]
+	return &file_leyline_v1_decode_proto_enumTypes[4]
 }
 
 func (x FieldType) Number() protoreflect.EnumNumber {
@@ -234,7 +283,7 @@ func (x FieldType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FieldType.Descriptor instead.
 func (FieldType) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{3}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{4}
 }
 
 type PredicateOp int32
@@ -296,11 +345,11 @@ func (x PredicateOp) String() string {
 }
 
 func (PredicateOp) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_decode_proto_enumTypes[4].Descriptor()
+	return file_leyline_v1_decode_proto_enumTypes[5].Descriptor()
 }
 
 func (PredicateOp) Type() protoreflect.EnumType {
-	return &file_leyline_v1_decode_proto_enumTypes[4]
+	return &file_leyline_v1_decode_proto_enumTypes[5]
 }
 
 func (x PredicateOp) Number() protoreflect.EnumNumber {
@@ -309,7 +358,7 @@ func (x PredicateOp) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PredicateOp.Descriptor instead.
 func (PredicateOp) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{5}
 }
 
 type DecoderManifest struct {
@@ -561,10 +610,17 @@ type DecoderInput struct {
 	// listed by ListDecoders and refused by StartJob with UNIMPLEMENTED.
 	SlotMs        uint32 `protobuf:"varint,2,opt,name=slot_ms,json=slotMs,proto3" json:"slot_ms,omitempty"`
 	EpochOffsetMs int64  `protobuf:"varint,3,opt,name=epoch_offset_ms,json=epochOffsetMs,proto3" json:"epoch_offset_ms,omitempty"`
-	// Which stage of the channel the plugin reads. TAP_DEMOD is the discriminator before
-	// de-emphasis and the limiter, which a data decoder usually prefers; TAP_AUDIO is what a
-	// listener hears and is the default.
-	Tap           AudioTap `protobuf:"varint,4,opt,name=tap,proto3,enum=leyline.v1.AudioTap" json:"tap,omitempty"`
+	// Which stage of the channel the plugin reads, when the signal is AUDIO. TAP_DEMOD is the
+	// discriminator before de-emphasis and the limiter, which a data decoder usually prefers;
+	// TAP_AUDIO is what a listener hears and is the default. Ignored when signal is IQ.
+	Tap AudioTap `protobuf:"varint,4,opt,name=tap,proto3,enum=leyline.v1.AudioTap" json:"tap,omitempty"`
+	// What the plugin receives. AUDIO (the default) is a channel's demodulated output, an f32 mono
+	// stream at the channel's audio rate -- what APRS, SAME and AIS decode. IQ is the capture's raw
+	// complex baseband, cf32 at the capture's sample rate, which a decoder of a wideband digital
+	// mode (ADS-B, the 433 MHz soup) needs because the signal is gone by the time it is
+	// demodulated. Many IQ decoders share one wide capture (docs/design/decoders.md,
+	// "Multiplexing"); an IQ frame carries the whole band around the recipe's frequency.
+	Signal        DecoderSignal `protobuf:"varint,5,opt,name=signal,proto3,enum=leyline.v1.DecoderSignal" json:"signal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -625,6 +681,13 @@ func (x *DecoderInput) GetTap() AudioTap {
 		return x.Tap
 	}
 	return AudioTap_TAP_AUDIO
+}
+
+func (x *DecoderInput) GetSignal() DecoderSignal {
+	if x != nil {
+		return x.Signal
+	}
+	return DecoderSignal_DECODER_SIGNAL_UNSPECIFIED
 }
 
 type FieldHint struct {
@@ -2105,12 +2168,13 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"sampleRate\x12!\n" +
 	"\fbandwidth_hz\x18\x03 \x01(\rR\vbandwidthHz\x12)\n" +
 	"\x04mode\x18\x04 \x01(\x0e2\x15.leyline.v1.DemodModeR\x04mode\x12*\n" +
-	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\"\xa2\x01\n" +
+	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\"\xd5\x01\n" +
 	"\fDecoderInput\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.leyline.v1.InputModeR\x04mode\x12\x17\n" +
 	"\aslot_ms\x18\x02 \x01(\rR\x06slotMs\x12&\n" +
 	"\x0fepoch_offset_ms\x18\x03 \x01(\x03R\repochOffsetMs\x12&\n" +
-	"\x03tap\x18\x04 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\"\x80\x01\n" +
+	"\x03tap\x18\x04 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\x121\n" +
+	"\x06signal\x18\x05 \x01(\x0e2\x19.leyline.v1.DecoderSignalR\x06signal\"\x80\x01\n" +
 	"\tFieldHint\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12)\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x15.leyline.v1.FieldTypeR\x04type\x12\x12\n" +
@@ -2227,7 +2291,11 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x17GAIN_POLICY_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"GAIN_LEAVE\x10\x01\x12\r\n" +
-	"\tGAIN_AUTO\x10\x02*I\n" +
+	"\tGAIN_AUTO\x10\x02*P\n" +
+	"\rDecoderSignal\x12\x1e\n" +
+	"\x1aDECODER_SIGNAL_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fSIGNAL_AUDIO\x10\x01\x12\r\n" +
+	"\tSIGNAL_IQ\x10\x02*I\n" +
 	"\tInputMode\x12\x1a\n" +
 	"\x16INPUT_MODE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -2276,82 +2344,84 @@ func file_leyline_v1_decode_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_decode_proto_rawDescData
 }
 
-var file_leyline_v1_decode_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_leyline_v1_decode_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_leyline_v1_decode_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_leyline_v1_decode_proto_goTypes = []any{
 	(GainPolicy)(0),              // 0: leyline.v1.GainPolicy
-	(InputMode)(0),               // 1: leyline.v1.InputMode
-	(OutputShape)(0),             // 2: leyline.v1.OutputShape
-	(FieldType)(0),               // 3: leyline.v1.FieldType
-	(PredicateOp)(0),             // 4: leyline.v1.PredicateOp
-	(*DecoderManifest)(nil),      // 5: leyline.v1.DecoderManifest
-	(*DecoderRecipe)(nil),        // 6: leyline.v1.DecoderRecipe
-	(*DecoderInput)(nil),         // 7: leyline.v1.DecoderInput
-	(*FieldHint)(nil),            // 8: leyline.v1.FieldHint
-	(*DecodeRecord)(nil),         // 9: leyline.v1.DecodeRecord
-	(*Position)(nil),             // 10: leyline.v1.Position
-	(*Validity)(nil),             // 11: leyline.v1.Validity
-	(*FieldValue)(nil),           // 12: leyline.v1.FieldValue
-	(*DecodeConfig)(nil),         // 13: leyline.v1.DecodeConfig
-	(*Predicate)(nil),            // 14: leyline.v1.Predicate
-	(*Clause)(nil),               // 15: leyline.v1.Clause
-	(*FieldTest)(nil),            // 16: leyline.v1.FieldTest
-	(*GeoTest)(nil),              // 17: leyline.v1.GeoTest
-	(*NotifyTarget)(nil),         // 18: leyline.v1.NotifyTarget
-	(*ListDecodersRequest)(nil),  // 19: leyline.v1.ListDecodersRequest
-	(*ListDecodersResponse)(nil), // 20: leyline.v1.ListDecodersResponse
-	(*RecordSubscription)(nil),   // 21: leyline.v1.RecordSubscription
-	(*RecordQuery)(nil),          // 22: leyline.v1.RecordQuery
-	(*FieldMatch)(nil),           // 23: leyline.v1.FieldMatch
-	(*RecordPage)(nil),           // 24: leyline.v1.RecordPage
-	(*RecordAnchor)(nil),         // 25: leyline.v1.RecordAnchor
-	nil,                          // 26: leyline.v1.DecodeRecord.FieldsEntry
-	(DemodMode)(0),               // 27: leyline.v1.DemodMode
-	(AudioTap)(0),                // 28: leyline.v1.AudioTap
-	(*SampleTime)(nil),           // 29: leyline.v1.SampleTime
-	(*CaptureAnchor)(nil),        // 30: leyline.v1.CaptureAnchor
+	(DecoderSignal)(0),           // 1: leyline.v1.DecoderSignal
+	(InputMode)(0),               // 2: leyline.v1.InputMode
+	(OutputShape)(0),             // 3: leyline.v1.OutputShape
+	(FieldType)(0),               // 4: leyline.v1.FieldType
+	(PredicateOp)(0),             // 5: leyline.v1.PredicateOp
+	(*DecoderManifest)(nil),      // 6: leyline.v1.DecoderManifest
+	(*DecoderRecipe)(nil),        // 7: leyline.v1.DecoderRecipe
+	(*DecoderInput)(nil),         // 8: leyline.v1.DecoderInput
+	(*FieldHint)(nil),            // 9: leyline.v1.FieldHint
+	(*DecodeRecord)(nil),         // 10: leyline.v1.DecodeRecord
+	(*Position)(nil),             // 11: leyline.v1.Position
+	(*Validity)(nil),             // 12: leyline.v1.Validity
+	(*FieldValue)(nil),           // 13: leyline.v1.FieldValue
+	(*DecodeConfig)(nil),         // 14: leyline.v1.DecodeConfig
+	(*Predicate)(nil),            // 15: leyline.v1.Predicate
+	(*Clause)(nil),               // 16: leyline.v1.Clause
+	(*FieldTest)(nil),            // 17: leyline.v1.FieldTest
+	(*GeoTest)(nil),              // 18: leyline.v1.GeoTest
+	(*NotifyTarget)(nil),         // 19: leyline.v1.NotifyTarget
+	(*ListDecodersRequest)(nil),  // 20: leyline.v1.ListDecodersRequest
+	(*ListDecodersResponse)(nil), // 21: leyline.v1.ListDecodersResponse
+	(*RecordSubscription)(nil),   // 22: leyline.v1.RecordSubscription
+	(*RecordQuery)(nil),          // 23: leyline.v1.RecordQuery
+	(*FieldMatch)(nil),           // 24: leyline.v1.FieldMatch
+	(*RecordPage)(nil),           // 25: leyline.v1.RecordPage
+	(*RecordAnchor)(nil),         // 26: leyline.v1.RecordAnchor
+	nil,                          // 27: leyline.v1.DecodeRecord.FieldsEntry
+	(DemodMode)(0),               // 28: leyline.v1.DemodMode
+	(AudioTap)(0),                // 29: leyline.v1.AudioTap
+	(*SampleTime)(nil),           // 30: leyline.v1.SampleTime
+	(*CaptureAnchor)(nil),        // 31: leyline.v1.CaptureAnchor
 }
 var file_leyline_v1_decode_proto_depIdxs = []int32{
-	6,  // 0: leyline.v1.DecoderManifest.recipe:type_name -> leyline.v1.DecoderRecipe
-	7,  // 1: leyline.v1.DecoderManifest.input:type_name -> leyline.v1.DecoderInput
-	2,  // 2: leyline.v1.DecoderManifest.outputs:type_name -> leyline.v1.OutputShape
-	8,  // 3: leyline.v1.DecoderManifest.fields:type_name -> leyline.v1.FieldHint
-	27, // 4: leyline.v1.DecoderRecipe.mode:type_name -> leyline.v1.DemodMode
+	7,  // 0: leyline.v1.DecoderManifest.recipe:type_name -> leyline.v1.DecoderRecipe
+	8,  // 1: leyline.v1.DecoderManifest.input:type_name -> leyline.v1.DecoderInput
+	3,  // 2: leyline.v1.DecoderManifest.outputs:type_name -> leyline.v1.OutputShape
+	9,  // 3: leyline.v1.DecoderManifest.fields:type_name -> leyline.v1.FieldHint
+	28, // 4: leyline.v1.DecoderRecipe.mode:type_name -> leyline.v1.DemodMode
 	0,  // 5: leyline.v1.DecoderRecipe.gain:type_name -> leyline.v1.GainPolicy
-	1,  // 6: leyline.v1.DecoderInput.mode:type_name -> leyline.v1.InputMode
-	28, // 7: leyline.v1.DecoderInput.tap:type_name -> leyline.v1.AudioTap
-	3,  // 8: leyline.v1.FieldHint.type:type_name -> leyline.v1.FieldType
-	29, // 9: leyline.v1.DecodeRecord.time:type_name -> leyline.v1.SampleTime
-	10, // 10: leyline.v1.DecodeRecord.position:type_name -> leyline.v1.Position
-	11, // 11: leyline.v1.DecodeRecord.validity:type_name -> leyline.v1.Validity
-	26, // 12: leyline.v1.DecodeRecord.fields:type_name -> leyline.v1.DecodeRecord.FieldsEntry
-	14, // 13: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
-	18, // 14: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
-	15, // 15: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
-	16, // 16: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
-	17, // 17: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
-	4,  // 18: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
-	12, // 19: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
-	10, // 20: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
-	5,  // 21: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
-	10, // 22: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
-	23, // 23: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
-	12, // 24: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
-	9,  // 25: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
-	25, // 26: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
-	30, // 27: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
-	12, // 28: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
-	19, // 29: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
-	21, // 30: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
-	22, // 31: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
-	20, // 32: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
-	9,  // 33: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
-	24, // 34: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
-	32, // [32:35] is the sub-list for method output_type
-	29, // [29:32] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	2,  // 6: leyline.v1.DecoderInput.mode:type_name -> leyline.v1.InputMode
+	29, // 7: leyline.v1.DecoderInput.tap:type_name -> leyline.v1.AudioTap
+	1,  // 8: leyline.v1.DecoderInput.signal:type_name -> leyline.v1.DecoderSignal
+	4,  // 9: leyline.v1.FieldHint.type:type_name -> leyline.v1.FieldType
+	30, // 10: leyline.v1.DecodeRecord.time:type_name -> leyline.v1.SampleTime
+	11, // 11: leyline.v1.DecodeRecord.position:type_name -> leyline.v1.Position
+	12, // 12: leyline.v1.DecodeRecord.validity:type_name -> leyline.v1.Validity
+	27, // 13: leyline.v1.DecodeRecord.fields:type_name -> leyline.v1.DecodeRecord.FieldsEntry
+	15, // 14: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
+	19, // 15: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
+	16, // 16: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
+	17, // 17: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
+	18, // 18: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
+	5,  // 19: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
+	13, // 20: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
+	11, // 21: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
+	6,  // 22: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
+	11, // 23: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
+	24, // 24: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
+	13, // 25: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
+	10, // 26: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
+	26, // 27: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
+	31, // 28: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
+	13, // 29: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
+	20, // 30: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
+	22, // 31: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
+	23, // 32: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
+	21, // 33: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
+	10, // 34: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
+	25, // 35: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
+	33, // [33:36] is the sub-list for method output_type
+	30, // [30:33] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_decode_proto_init() }
@@ -2387,7 +2457,7 @@ func file_leyline_v1_decode_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_decode_proto_rawDesc), len(file_leyline_v1_decode_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
