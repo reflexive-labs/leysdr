@@ -139,13 +139,32 @@ type monitorCarrier struct {
 	looksPossible uint32
 }
 
-// onAirFrac is the fraction of the watch the carrier was actually transmitting: the detector's
-// looks over the rows that could have held it. It is 0 when the daemon sent no look counts.
+// onAirFrac is the share of the rows up to its last sighting that the detector actually saw the
+// carrier in: looks over looks_possible. It is 0 when the daemon sent no look counts. The daemon
+// stamps looks_possible at each detection, so it counts rows from the watch's start to the
+// carrier's last sighting, NOT to the end of the watch -- which is why onAirSeconds multiplies by
+// lastS, not the watch length.
 func (c *monitorCarrier) onAirFrac() float64 {
 	if c.looksPossible == 0 {
 		return 0
 	}
 	return float64(c.looks) / float64(c.looksPossible)
+}
+
+// onAirSeconds is how long the carrier was actually transmitting: its on-air share of the rows up
+// to its last sighting, times the seconds to that sighting. Since looks_possible is counted over
+// [start, lastS] and no row before the first sighting is in looks, this is at most the first-to-last
+// span (HELD); the cap guards only against settle-window and telemetry-latency rounding. Returns -1
+// when the daemon sent no look counts, so the cell can say so rather than claim 0.
+func (c *monitorCarrier) onAirSeconds() float64 {
+	if c.looksPossible == 0 {
+		return -1
+	}
+	s := c.onAirFrac() * c.lastS
+	if held := c.lastS - c.firstS; s > held {
+		s = held
+	}
+	return s
 }
 
 // monitorDrain is how long the report waits after the job completes for detections still in
@@ -317,7 +336,7 @@ follow:
 		watched = time.Since(start)
 	}
 	if s.app.JSON {
-		return printMonitorJSON(s.app, o, order, carriers, watched)
+		return printMonitorJSON(s.app, o, order, carriers)
 	}
 	printMonitorReport(s.app, o, order, carriers, watched)
 	return nil
@@ -492,7 +511,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
 		{head: "CHANNEL", cells: mapCarrier(rows, func(c *monitorCarrier) string { return monitorChannel(c.centerHz) })},
 		{head: "HELD", cells: mapCarrier(rows, heldCell)},
-		{head: "ON AIR", cells: mapCarrier(rows, func(c *monitorCarrier) string { return onAirCell(c, watched) })},
+		{head: "ON AIR", cells: mapCarrier(rows, onAirCell)},
 		{head: "PEAK SNR", cells: mapCarrier(rows, func(c *monitorCarrier) string { return fmt.Sprintf("%.0f dB", c.peakSNR) })},
 	}
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
@@ -540,15 +559,15 @@ func heldCell(c *monitorCarrier) string {
 	return secsCell(c.lastS - c.firstS)
 }
 
-// onAirCell is how long the carrier was actually transmitting: its on-air fraction of the watch
-// times the watch's length. Beside HELD it separates a carrier that occupied the channel from one
-// that only flickered across a long span -- a strong signal's intermod reads a wide HELD but a
-// tiny ON AIR. It is "?" when the daemon sent no look counts, since 0 s would be a false claim.
-func onAirCell(c *monitorCarrier, watched time.Duration) string {
-	if c.looksPossible == 0 {
-		return "?"
+// onAirCell is how long the carrier was actually transmitting. Beside HELD it separates a carrier
+// that occupied the channel from one that only flickered across a long span -- a strong signal's
+// intermod reads a wide HELD but a tiny ON AIR. It is "?" when the daemon sent no look counts,
+// since 0 s would be a false claim.
+func onAirCell(c *monitorCarrier) string {
+	if s := c.onAirSeconds(); s >= 0 {
+		return secsCell(s)
 	}
-	return secsCell(c.onAirFrac() * watched.Seconds())
+	return "?"
 }
 
 // secsCell renders a span of seconds for a table cell, reading "under 1 s" below a second.
@@ -583,7 +602,7 @@ type monitorCarrierJSON struct {
 }
 
 // printMonitorJSON writes one NDJSON object per carrier, in first-appearance order, at the end.
-func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier, watched time.Duration) error {
+func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier) error {
 	round := func(x float64) float64 { return math.Round(x*10) / 10 }
 	rows, _ := filterMonitorCarriers(order, carriers, o)
 	for _, c := range rows {
@@ -591,10 +610,14 @@ func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[s
 		if ch == "-" {
 			ch = ""
 		}
+		onAir := c.onAirSeconds()
+		if onAir < 0 {
+			onAir = 0
+		}
 		if err := app.printArray(monitorCarrierJSON{
 			DetectionID: c.id, CenterHz: c.centerHz, Channel: ch,
 			FirstS: round(c.firstS), HeldS: round(c.lastS - c.firstS),
-			OnAirS: round(c.onAirFrac() * watched.Seconds()), Looks: c.looks, LooksPossible: c.looksPossible,
+			OnAirS: round(onAir), Looks: c.looks, LooksPossible: c.looksPossible,
 			PeakSnrDb: c.peakSNR, BandwidthHz: c.bwHz,
 		}); err != nil {
 			return err

@@ -190,6 +190,35 @@ func TestMonitorOnAir(t *testing.T) {
 	}
 }
 
+// ON AIR is the on-air time, which can never be more than HELD (the first-to-last span). The daemon
+// stamps looks_possible only up to a carrier's last sighting, so on-air is measured against lastS,
+// not the whole watch; this pins that a carrier keyed for 6 s of a 20 s watch reads at most 6 s.
+func TestMonitorOnAirNeverExceedsHeld(t *testing.T) {
+	cases := []struct {
+		name          string
+		firstS, lastS float64
+		looks, poss   uint32
+		wantMax       float64 // on-air must not exceed this (the span)
+	}{
+		{"keyed once, near-continuous", 1, 7, 95, 100, 6}, // 0.95*7=6.65, capped to the 6 s span
+		{"intermittent", 1, 7, 20, 100, 6},                // 0.2*7=1.4, well under the span
+		{"no look counts", 1, 7, 0, 0, 6},                 // unknown, not a false 0
+	}
+	for _, tc := range cases {
+		c := &monitorCarrier{firstS: tc.firstS, lastS: tc.lastS, looks: tc.looks, looksPossible: tc.poss}
+		got := c.onAirSeconds()
+		if tc.poss == 0 {
+			if got != -1 {
+				t.Errorf("%s: onAirSeconds = %v, want -1 (unknown)", tc.name, got)
+			}
+			continue
+		}
+		if got < 0 || got > tc.wantMax+1e-9 {
+			t.Errorf("%s: onAirSeconds = %v, want in [0, %v]", tc.name, got, tc.wantMax)
+		}
+	}
+}
+
 // A band name in the positional resolves like scan's, so `ley monitor gmrs` watches the GMRS band.
 func TestMonitorBandName(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
