@@ -26,9 +26,10 @@ var monitorCarriers = []struct {
 	bw  uint32
 	snr float64
 }{
-	{462_562_500, 12_500, 12.0}, // ch1, weak: --min-snr hides it
-	{462_600_000, 12_500, 21.0}, // ch17
-	{462_625_000, 12_500, 34.0}, // ch18, the strongest
+	{462_562_500, 12_500, 12.0}, // ch1, weak but isolated: --min-snr 20 hides it, the default keeps it
+	{462_600_000, 12_500, 21.0}, // ch17, a real adjacent carrier: only 19 dB below ch18, so not a skirt
+	{462_625_000, 12_500, 40.0}, // ch18, the strongest
+	{462_650_000, 12_500, 12.0}, // ch19, a skirt of ch18: 28 dB below, one channel over, folds into it
 }
 
 // monitorEmitInterval is how often the fake re-reports a carrier that is still up, so the client

@@ -69,6 +69,14 @@ useful piece of BW-2, built first because it needs no new plane.
   to stderr; `--json` emits NDJSON `{detection_id, center_hz, channel, first_s, held_s, peak_snr_db,
   bandwidth_hz}`.
 
+Three filters keep the log readable, each disabled with a `0`: `--min-snr` (default 8) drops a
+carrier that never cleared a few dB over the floor, `--min-hold` (default off) drops one held too
+briefly, and `--skirt-db` (default 25) folds a much weaker carrier one channel from a strong one
+into it -- a strong transmitter spills into the slots either side, and those are not separate
+transmissions. This is the same class of ambiguity BW-2's occupancy metric guards against, met
+here as adjacent-channel spill rather than a max-versus-median artefact. What each filter hid is
+tallied on stderr, so a hidden carrier never reads as a quiet band.
+
 **The report folds by proximity, and the first cut did not.** A carrier whose centre wobbles a bin
 between looks arrived under several `detection_id`s and drew several rows for one transmission. The
 CLI now folds by `nearestCarrier`/`mergeTol` with the same tolerance scan uses -- `max(5000,

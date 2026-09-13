@@ -13,9 +13,10 @@ import (
 
 // The fake monitor's synthetic GMRS carriers, from internal/fakedaemon/monitor.go.
 const (
-	monWeak   = "462.562 MHz" // ch1, 12 dB: --min-snr hides it
-	monMedium = "462.600 MHz" // ch17
-	monStrong = "462.625 MHz" // ch18, the strongest
+	monWeak   = "462.562 MHz" // ch1, 12 dB, isolated: --min-snr 20 hides it, the default keeps it
+	monMedium = "462.600 MHz" // ch17, 21 dB, a real adjacent carrier
+	monStrong = "462.625 MHz" // ch18, 40 dB, the strongest
+	monSkirt  = "462.650 MHz" // ch19, 12 dB: a skirt of ch18, folded by default
 )
 
 func monitorOpts() fakedaemon.Options {
@@ -97,7 +98,66 @@ func TestMonitorMinSNR(t *testing.T) {
 		t.Errorf("--min-snr 20 should have hidden the 12 dB carrier:\n%s", filtered)
 	}
 	if !strings.Contains(filtered, monStrong) {
-		t.Errorf("--min-snr 20 should have kept the 34 dB carrier:\n%s", filtered)
+		t.Errorf("--min-snr 20 should have kept the 40 dB carrier:\n%s", filtered)
+	}
+}
+
+// A carrier that sits one channel over from a much stronger one is that carrier's adjacent-channel
+// spill, not its own transmission. By default it is folded into the strong carrier and left off the
+// log; --skirt-db 0 lists it again.
+func TestMonitorSkirtFold(t *testing.T) {
+	sock, _ := harness(t, monitorOpts())
+	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs", "--for", "1s")
+	if err != nil {
+		t.Fatalf("ley monitor: %v\n%s\n%s", err, out, errOut)
+	}
+	if strings.Contains(out, monSkirt) {
+		t.Errorf("the ch19 skirt should have folded into ch18, not shown:\n%s", out)
+	}
+	if !strings.Contains(out, monStrong) {
+		t.Errorf("the strong ch18 carrier must still be in the log:\n%s", out)
+	}
+	if !strings.Contains(errOut, "skirt") {
+		t.Errorf("stderr should say a skirt was folded:\n%s", errOut)
+	}
+	// --skirt-db 0 turns the fold off, so the skirt is a row again.
+	shown := mustRun(t, sock, "monitor", "gmrs", "--for", "1s", "--skirt-db", "0")
+	if !strings.Contains(shown, monSkirt) {
+		t.Errorf("--skirt-db 0 should have listed the ch19 skirt:\n%s", shown)
+	}
+}
+
+// filterMonitorCarriers applies the two absolute floors and then skirt suppression. This exercises
+// the reasons directly, including the hold-time floor the fake's steady carriers do not produce.
+func TestFilterMonitorCarriers(t *testing.T) {
+	carriers := map[string]*monitorCarrier{
+		"strong":   {id: "strong", centerHz: 462_625_000, bwHz: 12_500, firstS: 0, lastS: 30, peakSNR: 40},
+		"adjacent": {id: "adjacent", centerHz: 462_600_000, bwHz: 12_500, firstS: 0, lastS: 30, peakSNR: 21},
+		"skirt":    {id: "skirt", centerHz: 462_650_000, bwHz: 12_500, firstS: 0, lastS: 30, peakSNR: 12},
+		"faint":    {id: "faint", centerHz: 462_712_500, bwHz: 12_500, firstS: 0, lastS: 30, peakSNR: 5},
+		"blip":     {id: "blip", centerHz: 462_550_000, bwHz: 12_500, firstS: 10, lastS: 10.4, peakSNR: 25},
+	}
+	order := []string{"strong", "adjacent", "skirt", "faint", "blip"}
+
+	rows, hidden := filterMonitorCarriers(order, carriers, monitorOptions{minSNR: 8, skirtDb: 25, minHold: 2 * time.Second})
+	got := map[string]bool{}
+	for _, c := range rows {
+		got[c.id] = true
+	}
+	if !got["strong"] || !got["adjacent"] {
+		t.Errorf("strong and adjacent carriers should survive: %v", got)
+	}
+	if got["skirt"] || got["faint"] || got["blip"] {
+		t.Errorf("skirt, faint and blip should be filtered out: %v", got)
+	}
+	if hidden.weak != 1 || hidden.brief != 1 || hidden.skirt != 1 {
+		t.Errorf("hidden = %+v, want weak 1, brief 1, skirt 1", hidden)
+	}
+
+	// Floors and fold off: everything heard is a row again.
+	all, none := filterMonitorCarriers(order, carriers, monitorOptions{minSNR: 0, skirtDb: 0, minHold: 0})
+	if len(all) != len(order) || none.any() {
+		t.Errorf("with no filters all %d carriers should show, none hidden; got %d rows, %+v", len(order), len(all), none)
 	}
 }
 

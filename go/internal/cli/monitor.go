@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -23,6 +24,8 @@ type monitorOptions struct {
 	maxHz      uint64
 	forDur     time.Duration
 	minSNR     float64
+	minHold    time.Duration
+	skirtDb    float64
 	takeOver   bool
 	device     string
 	deviceID   string
@@ -54,7 +57,16 @@ that wide. The radio's gain is the daemon's to set, as it is for a scan.
 While it watches, each new carrier prints a line on stderr as it is first
 heard. The log table is printed on stdout at the end, so a pipe gets the
 report and a person gets the running commentary. --json prints one object
-per carrier, newest columns and all, when the watch ends.`,
+per carrier, newest columns and all, when the watch ends.
+
+The log is kept clean by three filters, each off with a 0. --min-snr drops
+a carrier whose peak never cleared a few dB over the noise floor, so a
+detector's marginal hits do not become rows. --min-hold drops a carrier
+held for less than a set time, for when only sustained traffic matters. And
+a strong transmitter spills into the channels either side of it: --skirt-db
+folds a much weaker carrier one channel over into the strong one it belongs
+to, rather than listing the same transmission three times. What each filter
+hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 		Example: `  ley monitor gmrs               # watch the GMRS band for a minute
   ley monitor 462.5M..462.75M    # the same range, spelled out
   ley monitor gmrs --for 5m      # a longer radio check
@@ -94,7 +106,9 @@ per carrier, newest columns and all, when the watch ends.`,
 		},
 	}
 	cmd.Flags().StringVar(&forStr, "for", "60s", "how long to watch before reporting, e.g. 30s, 2m; 0 watches until Ctrl-C")
-	cmd.Flags().Float64Var(&o.minSNR, "min-snr", 0, "hide carriers whose peak was weaker than this many dB over the noise floor (default: show every carrier heard)")
+	cmd.Flags().Float64Var(&o.minSNR, "min-snr", 8, "hide carriers whose peak was weaker than this many dB over the noise floor; --min-snr 0 shows every carrier heard")
+	cmd.Flags().DurationVar(&o.minHold, "min-hold", 0, "hide carriers held for less than this, e.g. 2s (default 0: keep even a brief key-up)")
+	cmd.Flags().Float64Var(&o.skirtDb, "skirt-db", 25, "fold a carrier this many dB below a stronger neighbour in an adjacent channel into it as a skirt; --skirt-db 0 lists them")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "watch even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	return cmd
@@ -170,7 +184,9 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 		c := &monitorCarrier{id: id, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb}
 		carriers[id] = c
 		order = append(order, id)
-		if !s.app.JSON {
+		// The live feed is running commentary, so it respects the SNR floor a debut is judged
+		// against; the skirt fold needs the whole run and is applied to the report at the end.
+		if !s.app.JSON && (o.minSNR <= 0 || d.SnrDb >= o.minSNR) {
 			// The live feed is stderr, so stdout stays the report a pipe reads.
 			fmt.Fprintf(s.app.Stderr, "  %s  %s  %s  %.0f dB\n", mmss(now), leyline.FormatFrequency(d.CenterHz), monitorChannel(d.CenterHz), d.SnrDb)
 		}
@@ -353,26 +369,89 @@ func absDiff(a, b uint64) uint64 {
 	return b - a
 }
 
-// printMonitorReport draws the transmission log on stdout, sorted by first appearance, and the
-// summary sentence on stderr. --min-snr hides a carrier whose peak never cleared the threshold.
-func printMonitorReport(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier, watched time.Duration) {
-	st := app.ErrStyle
-	rows := make([]*monitorCarrier, 0, len(order))
-	hidden := 0
+// monitorHidden counts, by reason, the carriers a filter left out of the log, so the report can
+// say what it dropped and how to see it. Hiding what was heard is a different answer from an empty
+// band, and each reason has its own remedy.
+type monitorHidden struct {
+	weak  int // peak never cleared --min-snr
+	brief int // held for less than --min-hold
+	skirt int // an adjacent channel's spill from a much stronger carrier
+}
+
+func (h monitorHidden) any() bool { return h.weak+h.brief+h.skirt > 0 }
+
+// skirtSpanHz is how far an adjacent-channel skirt can sit from the carrier it belongs to: the
+// carrier's own width, but at least one channel over, so a strong signal's spill into the next slot
+// folds while a genuine carrier two channels away does not.
+func skirtSpanHz(aBw uint32) uint64 {
+	span := uint64(aBw)
+	if span < 30_000 {
+		span = 30_000
+	}
+	return span
+}
+
+// filterMonitorCarriers picks the carriers the log shows and tallies why the rest were left out.
+// Two absolute floors first -- a carrier must clear --min-snr and have been held at least
+// --min-hold -- then skirt suppression against the survivors: a carrier that sits in an adjacent
+// channel to one at least --skirt-db stronger is that carrier's spill, not a transmission of its
+// own. It is dropped, not merged, because its span already matches the carrier it belongs to.
+func filterMonitorCarriers(order []string, carriers map[string]*monitorCarrier, o monitorOptions) ([]*monitorCarrier, monitorHidden) {
+	var hidden monitorHidden
+	survivors := make([]*monitorCarrier, 0, len(order))
 	for _, id := range order {
 		c := carriers[id]
 		if o.minSNR > 0 && c.peakSNR < o.minSNR {
-			hidden++
+			hidden.weak++
+			continue
+		}
+		if o.minHold > 0 && (c.lastS-c.firstS) < o.minHold.Seconds() {
+			hidden.brief++
+			continue
+		}
+		survivors = append(survivors, c)
+	}
+	if o.skirtDb <= 0 {
+		return survivors, hidden
+	}
+	rows := make([]*monitorCarrier, 0, len(survivors))
+	for _, c := range survivors {
+		if isSkirtOf(c, survivors, o.skirtDb) {
+			hidden.skirt++
 			continue
 		}
 		rows = append(rows, c)
 	}
+	return rows, hidden
+}
+
+// isSkirtOf reports whether c is an adjacent-channel skirt of a stronger carrier among peers: one
+// at least skirtDb stronger whose centre is within a skirt's reach of c's. Only a weaker carrier is
+// ever a skirt, so this never drops the real signal.
+func isSkirtOf(c *monitorCarrier, peers []*monitorCarrier, skirtDb float64) bool {
+	for _, a := range peers {
+		if a == c {
+			continue
+		}
+		if a.peakSNR-c.peakSNR >= skirtDb && absDiff(a.centerHz, c.centerHz) <= skirtSpanHz(a.bwHz) {
+			return true
+		}
+	}
+	return false
+}
+
+// printMonitorReport draws the transmission log on stdout, sorted by first appearance, and the
+// summary sentence on stderr. The filters (weak, brief and skirt) leave carriers off the log and
+// are tallied on stderr, so hiding what was heard never reads as an empty band.
+func printMonitorReport(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier, watched time.Duration) {
+	st := app.ErrStyle
+	rows, hidden := filterMonitorCarriers(order, carriers, o)
 	if len(rows) == 0 {
-		if hidden > 0 {
+		if hidden.any() {
 			// Hiding what was heard is not the same answer as hearing nothing, and the remedy
-			// differs: a longer watch will not bring back a carrier --min-snr filtered out.
-			fmt.Fprintf(app.Stderr, "%s below %.0f dB, so nothing to show\n", plural(hidden, "carrier"), o.minSNR)
-			fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley monitor "+monitorArg(o)))
+			// differs: a longer watch will not bring back a carrier a filter left out.
+			fmt.Fprintf(app.Stderr, "%s heard, all filtered out (%s)\n", plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o))
+			fmt.Fprintf(app.Stderr, "drop the filters to see them: %s\n", st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
 			return
 		}
 		fmt.Fprintf(app.Stderr, "nothing heard on %s in %s\n", monitorArg(o), forPhrase(watched))
@@ -398,6 +477,29 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 	}
 	fmt.Fprintf(app.Stderr, "%s over %s; strongest %s (%s) at %.0f dB\n",
 		plural(len(rows), "carrier"), forPhrase(watched), label, trimZeros(float64(best.centerHz)/1e6), best.peakSNR)
+	if hidden.any() {
+		fmt.Fprintf(app.Stderr, "%s not shown (%s); %s\n",
+			plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o), st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
+	}
+}
+
+func hiddenTotal(h monitorHidden) int { return h.weak + h.brief + h.skirt }
+
+// hiddenReasons spells the filter drops in plain words, naming the flag that controls each so the
+// remedy is obvious: a weak carrier and a skirt are hidden for different reasons and come back
+// different ways.
+func hiddenReasons(h monitorHidden, o monitorOptions) string {
+	var parts []string
+	if h.weak > 0 {
+		parts = append(parts, fmt.Sprintf("%d below %.0f dB", h.weak, o.minSNR))
+	}
+	if h.brief > 0 {
+		parts = append(parts, fmt.Sprintf("%d held under %s", h.brief, forPhrase(o.minHold)))
+	}
+	if h.skirt > 0 {
+		parts = append(parts, fmt.Sprintf("%s of a stronger carrier", plural(h.skirt, "skirt")))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // heldCell is how long the carrier held the channel, observed by the client. A single sighting
@@ -433,11 +535,8 @@ type monitorCarrierJSON struct {
 // printMonitorJSON writes one NDJSON object per carrier, in first-appearance order, at the end.
 func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier) error {
 	round := func(x float64) float64 { return math.Round(x*10) / 10 }
-	for _, id := range order {
-		c := carriers[id]
-		if o.minSNR > 0 && c.peakSNR < o.minSNR {
-			continue
-		}
+	rows, _ := filterMonitorCarriers(order, carriers, o)
+	for _, c := range rows {
 		ch := monitorChannel(c.centerHz)
 		if ch == "-" {
 			ch = ""

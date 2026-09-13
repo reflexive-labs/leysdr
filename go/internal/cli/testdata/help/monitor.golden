@@ -20,6 +20,15 @@ heard. The log table is printed on stdout at the end, so a pipe gets the
 report and a person gets the running commentary. --json prints one object
 per carrier, newest columns and all, when the watch ends.
 
+The log is kept clean by three filters, each off with a 0. --min-snr drops
+a carrier whose peak never cleared a few dB over the noise floor, so a
+detector's marginal hits do not become rows. --min-hold drops a carrier
+held for less than a set time, for when only sustained traffic matters. And
+a strong transmitter spills into the channels either side of it: --skirt-db
+folds a much weaker carrier one channel over into the strong one it belongs
+to, rather than listing the same transmission three times. What each filter
+hid is tallied on stderr, because a hidden carrier is not a quiet band.
+
 Usage:
   ley monitor <band|range> [flags]
 
@@ -30,11 +39,13 @@ Examples:
   ley monitor gmrs --json        # the carriers, for tools
 
 Flags:
-      --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
-      --for string      how long to watch before reporting, e.g. 30s, 2m; 0 watches until Ctrl-C (default "60s")
-  -h, --help            help for monitor
-      --min-snr float   hide carriers whose peak was weaker than this many dB over the noise floor (default: show every carrier heard)
-      --take-over       watch even when somebody is using the radio; it is theirs again afterwards
+      --device string       which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --for string          how long to watch before reporting, e.g. 30s, 2m; 0 watches until Ctrl-C (default "60s")
+  -h, --help                help for monitor
+      --min-hold duration   hide carriers held for less than this, e.g. 2s (default 0: keep even a brief key-up)
+      --min-snr float       hide carriers whose peak was weaker than this many dB over the noise floor; --min-snr 0 shows every carrier heard (default 8)
+      --skirt-db float      fold a carrier this many dB below a stronger neighbour in an adjacent channel into it as a skirt; --skirt-db 0 lists them (default 25)
+      --take-over           watch even when somebody is using the radio; it is theirs again afterwards
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

@@ -46,7 +46,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
-├── monitor <band|range> [--for D] [--min-snr DB] [--take-over] [--device SEL]
+├── monitor <band|range> [--for D] [--min-snr DB] [--min-hold D] [--skirt-db DB] [--take-over] [--device SEL]
 │                                    # scan's stationary sibling: parks one capture on a band for --for and prints a
 │                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
 ├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version
@@ -207,10 +207,11 @@ one object per carrier as NDJSON when the watch ends, in first-appearance order,
 center_hz, channel, first_s, held_s, peak_snr_db, bandwidth_hz}` (snake_case; `channel` the GMRS or
 preset channel on the frequency or `""` when none; `first_s` and `held_s` seconds on the client's own
 clock, since telemetry latency is sub-second and a radio-check log needs no anchor arithmetic;
-`peak_snr_db` the strongest the carrier was seen). `--min-snr` drops a carrier whose peak never
-cleared it from the log, as it does from the table.
+`peak_snr_db` the strongest the carrier was seen). The same three filters that clean the table
+clean the NDJSON: `--min-snr`, `--min-hold` and `--skirt-db` (below) all drop their carriers from
+both, so a tool wanting everything passes `--min-snr 0 --skirt-db 0`.
 
-**`ley monitor <band|range> [--for D] [--min-snr DB] [--device SEL] [--take-over] [--json]`** parks
+**`ley monitor <band|range> [--for D] [--min-snr DB] [--min-hold D] [--skirt-db DB] [--device SEL] [--take-over] [--json]`** parks
 one capture on a band and watches it, then prints a time-ordered log of the carriers that came and
 went. A range positional (`462.5M..462.75M`) or a band name (`gmrs`, `2m`) resolves exactly as
 `scan`'s does: range first, then the band. `--for` sets how long to watch (`30s`, `2m`; `0` watches
@@ -221,8 +222,14 @@ declining a radio somebody is using with the same don't-disturb rule as a scan (
 overrides). A band wider than one capture can watch is refused with `INVALID_ARGUMENT`; `scan` sweeps
 a span that wide. There is no `--gain`, as there is none on `scan`: the daemon sets the gain. The log
 table (TIME, FREQUENCY, CHANNEL, HELD, PEAK SNR) is stdout; the live feed of each carrier as it is
-first heard, and the summary, are stderr. Full design: `docs/design/band-watching.md`, the occupancy
-view of which this is the first cut.
+first heard, and the summary, are stderr. Three filters keep the log readable, each disabled with a
+`0`: `--min-snr` (default 8) drops a carrier whose peak never cleared that many dB over the noise
+floor; `--min-hold` (default 0, off) drops one held for less than a set span; and `--skirt-db`
+(default 25) folds a carrier at least that many dB below a stronger one within an adjacent channel
+(its own width, at least 30 kHz) into that carrier, since a strong transmitter spills into the slots
+either side and those are not separate transmissions. What each filter hid is tallied on stderr, so a
+hidden carrier never reads as a quiet band. Full design: `docs/design/band-watching.md`, the
+occupancy view of which this is the first cut.
 
 **`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
 it: the answer is the whole scan, not the steps it took to get there, and progress belongs on
