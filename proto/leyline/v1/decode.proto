@@ -18,6 +18,11 @@ import "leyline/v1/common.proto";
 message DecoderManifest {
   string name = 1;             // registry name and DecodeRecord.protocol: "aprs", "adsb", "rtl433"
   string version = 2;
+  // Friendly names a client accepts for this decoder besides `name`: the AIS decoder answers to
+  // "vessels", an ADS-B one to "aircraft", so `ley track vessels` reads well. Records still carry
+  // the canonical `name` in `protocol`; a client resolves an alias to the name before it starts or
+  // subscribes. Purely a client convenience -- the daemon neither requires nor resolves them.
+  repeated string aliases = 16;
   string description = 3;
   string attribution = 4;      // upstream project, when the plugin wraps or derives from one
   string license = 5;          // SPDX identifier of the plugin itself

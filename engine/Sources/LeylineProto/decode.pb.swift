@@ -335,6 +335,15 @@ public nonisolated struct Leyline_V1_DecoderManifest: @unchecked Sendable {
     set {_uniqueStorage()._version = newValue}
   }
 
+  /// Friendly names a client accepts for this decoder besides `name`: the AIS decoder answers to
+  /// "vessels", an ADS-B one to "aircraft", so `ley track vessels` reads well. Records still carry
+  /// the canonical `name` in `protocol`; a client resolves an alias to the name before it starts or
+  /// subscribes. Purely a client convenience -- the daemon neither requires nor resolves them.
+  public var aliases: [String] {
+    get {_storage._aliases}
+    set {_uniqueStorage()._aliases = newValue}
+  }
+
   public var description_p: String {
     get {_storage._description_p}
     set {_uniqueStorage()._description_p = newValue}
@@ -1155,11 +1164,12 @@ nonisolated extension Leyline_V1_PredicateOp: SwiftProtobuf._ProtoNameProviding 
 
 nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderManifest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0")
 
   fileprivate class _StorageClass {
     var _name: String = String()
     var _version: String = String()
+    var _aliases: [String] = []
     var _description_p: String = String()
     var _attribution: String = String()
     var _license: String = String()
@@ -1185,6 +1195,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
     init(copying source: _StorageClass) {
       _name = source._name
       _version = source._version
+      _aliases = source._aliases
       _description_p = source._description_p
       _attribution = source._attribution
       _license = source._license
@@ -1231,6 +1242,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         case 13: try { try decoder.decodeSingularBoolField(value: &_storage._statefulPredicatesAvailable) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._executable) }()
         case 15: try { try decoder.decodeRepeatedStringField(value: &_storage._args) }()
+        case 16: try { try decoder.decodeRepeatedStringField(value: &_storage._aliases) }()
         default: break
         }
       }
@@ -1288,6 +1300,9 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       if !_storage._args.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._args, fieldNumber: 15)
       }
+      if !_storage._aliases.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._aliases, fieldNumber: 16)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1299,6 +1314,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         let rhs_storage = _args.1
         if _storage._name != rhs_storage._name {return false}
         if _storage._version != rhs_storage._version {return false}
+        if _storage._aliases != rhs_storage._aliases {return false}
         if _storage._description_p != rhs_storage._description_p {return false}
         if _storage._attribution != rhs_storage._attribution {return false}
         if _storage._license != rhs_storage._license {return false}

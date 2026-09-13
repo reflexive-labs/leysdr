@@ -362,12 +362,17 @@ func (PredicateOp) EnumDescriptor() ([]byte, []int) {
 }
 
 type DecoderManifest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // registry name and DecodeRecord.protocol: "aprs", "adsb", "rtl433"
-	Version     string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
-	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Attribution string                 `protobuf:"bytes,4,opt,name=attribution,proto3" json:"attribution,omitempty"` // upstream project, when the plugin wraps or derives from one
-	License     string                 `protobuf:"bytes,5,opt,name=license,proto3" json:"license,omitempty"`         // SPDX identifier of the plugin itself
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // registry name and DecodeRecord.protocol: "aprs", "adsb", "rtl433"
+	Version string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	// Friendly names a client accepts for this decoder besides `name`: the AIS decoder answers to
+	// "vessels", an ADS-B one to "aircraft", so `ley track vessels` reads well. Records still carry
+	// the canonical `name` in `protocol`; a client resolves an alias to the name before it starts or
+	// subscribes. Purely a client convenience -- the daemon neither requires nor resolves them.
+	Aliases     []string `protobuf:"bytes,16,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	Description string   `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Attribution string   `protobuf:"bytes,4,opt,name=attribution,proto3" json:"attribution,omitempty"` // upstream project, when the plugin wraps or derives from one
+	License     string   `protobuf:"bytes,5,opt,name=license,proto3" json:"license,omitempty"`         // SPDX identifier of the plugin itself
 	// What to tune. This is what makes `ley decode aprs` need no parameters.
 	Recipe  *DecoderRecipe `protobuf:"bytes,6,opt,name=recipe,proto3" json:"recipe,omitempty"`
 	Input   *DecoderInput  `protobuf:"bytes,7,opt,name=input,proto3" json:"input,omitempty"`
@@ -429,6 +434,13 @@ func (x *DecoderManifest) GetVersion() string {
 		return x.Version
 	}
 	return ""
+}
+
+func (x *DecoderManifest) GetAliases() []string {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
 }
 
 func (x *DecoderManifest) GetDescription() string {
@@ -2142,10 +2154,11 @@ var File_leyline_v1_decode_proto protoreflect.FileDescriptor
 const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\n" +
 	"\x17leyline/v1/decode.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\"\xf2\x04\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\"\x8c\x05\n" +
 	"\x0fDecoderManifest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\x12 \n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
+	"\aaliases\x18\x10 \x03(\tR\aaliases\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12 \n" +
 	"\vattribution\x18\x04 \x01(\tR\vattribution\x12\x18\n" +
 	"\alicense\x18\x05 \x01(\tR\alicense\x121\n" +
