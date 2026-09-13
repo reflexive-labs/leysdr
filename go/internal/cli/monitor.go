@@ -148,26 +148,31 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 	var order []string
 	start := time.Now()
 	record := func(d *leylinev1.Detection) {
-		if d.DetectionId == "" {
-			return
-		}
 		now := time.Since(start).Seconds()
-		c, seen := carriers[d.DetectionId]
-		if !seen {
-			c = &monitorCarrier{id: d.DetectionId, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb}
-			carriers[d.DetectionId] = c
-			order = append(order, d.DetectionId)
-			if !s.app.JSON {
-				// The live feed is stderr, so stdout stays the report a pipe reads.
-				fmt.Fprintf(s.app.Stderr, "  %s  %s  %s  %.0f dB\n", mmss(now), leyline.FormatFrequency(d.CenterHz), monitorChannel(d.CenterHz), d.SnrDb)
+		// Match by frequency, not by detection id: the detector's per-row centre estimate wobbles,
+		// so one carrier arrives under several ids, and a wide FM carrier's centre wanders tens of
+		// kHz. Fold nearby readings into one carrier the way scan does (within the narrower
+		// bandwidth, or a few kHz), so a single transmission is one row, not a smear.
+		if c := nearestCarrier(carriers, order, d); c != nil {
+			c.lastS = now
+			// Keep the strongest reading's centre and width, as scan's fold does.
+			if d.SnrDb > c.peakSNR {
+				c.peakSNR = d.SnrDb
+				c.centerHz = d.CenterHz
+				c.bwHz = d.BandwidthHz
 			}
 			return
 		}
-		c.lastS = now
-		c.centerHz = d.CenterHz
-		c.bwHz = d.BandwidthHz
-		if d.SnrDb > c.peakSNR {
-			c.peakSNR = d.SnrDb
+		id := d.DetectionId
+		if id == "" {
+			id = fmt.Sprintf("carrier-%d", len(order))
+		}
+		c := &monitorCarrier{id: id, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb}
+		carriers[id] = c
+		order = append(order, id)
+		if !s.app.JSON {
+			// The live feed is stderr, so stdout stays the report a pipe reads.
+			fmt.Fprintf(s.app.Stderr, "  %s  %s  %s  %.0f dB\n", mmss(now), leyline.FormatFrequency(d.CenterHz), monitorChannel(d.CenterHz), d.SnrDb)
 		}
 	}
 
@@ -308,6 +313,44 @@ func monitorArg(o monitorOptions) string {
 		return o.rangeInput
 	}
 	return trimZeros(float64(o.minHz)/1e6) + ".." + trimZeros(float64(o.maxHz)/1e6)
+}
+
+// nearestCarrier returns the tracked carrier closest to a detection within the merge tolerance, or
+// nil for a genuinely new one. Nearest rather than first, so a detection between two channels folds
+// into the closer.
+func nearestCarrier(carriers map[string]*monitorCarrier, order []string, d *leylinev1.Detection) *monitorCarrier {
+	var best *monitorCarrier
+	var bestDiff uint64
+	for _, id := range order {
+		c := carriers[id]
+		diff := absDiff(c.centerHz, d.CenterHz)
+		if diff <= mergeTol(c.bwHz, d.BandwidthHz) && (best == nil || diff < bestDiff) {
+			best, bestDiff = c, diff
+		}
+	}
+	return best
+}
+
+// mergeTol is scan's rule: two readings are the same carrier when their centres are within the
+// narrower one's half-width, or a few kHz for anything narrow -- so channels 12.5 kHz apart stay
+// distinct while a wide carrier's wandering centre folds together.
+func mergeTol(aBw, bBw uint32) uint64 {
+	narrow := aBw
+	if bBw < narrow {
+		narrow = bBw
+	}
+	tol := uint64(5_000)
+	if half := uint64(narrow) / 2; half > tol {
+		tol = half
+	}
+	return tol
+}
+
+func absDiff(a, b uint64) uint64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
 
 // printMonitorReport draws the transmission log on stdout, sorted by first appearance, and the

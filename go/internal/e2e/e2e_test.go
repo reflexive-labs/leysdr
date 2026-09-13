@@ -605,3 +605,54 @@ func (e *env) waitJob(state string) map[string]any {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// ley monitor parks on a band and reports the carriers over a window, as a time-ordered log rather
+// than a swept census. Against the real daemon it must catch the fixture's carriers without
+// sweeping, and fold each into a single row despite the detector's per-row centre wobble.
+func TestMonitorAgainstRealDaemon(t *testing.T) {
+	e, _ := setup(t)
+	band, err := filepath.Abs("../../../fixtures/scan_band.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(band); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e.mustRun("play", band, "--no-audio", "--loop", "--persistent", "--json")
+	e.mustRun("stop", "--all")
+
+	// The band is chosen so the monitor's off-DC centre (range_lo - 0.10*Fs) lands on the file's
+	// own tuning point (146.0 MHz), the only frequency a file device accepts.
+	out := e.mustRun("--json", "monitor", "146.24M..146.9M", "--for", "4s")
+	carriers := ndjson(t, out)
+	if len(carriers) == 0 {
+		t.Fatalf("monitor heard nothing:\n%s", out)
+	}
+	// scan_band's strong carrier at 146.4 MHz is in the watched band and reliable over the window
+	// (the 146.8 one is weaker and intermittent, so it is not required). It must be caught, and
+	// folded to one row despite the detector's per-row centre wobble -- not a smear of duplicates.
+	near146_4 := 0
+	for _, c := range carriers {
+		hz := uint64(c["center_hz"].(float64))
+		if diffU(hz, 146_400_000) <= 60_000 {
+			near146_4++
+		}
+		if c["detection_id"] == nil || c["peak_snr_db"] == nil {
+			t.Errorf("carrier row is missing fields: %v", c)
+		}
+	}
+	if near146_4 != 1 {
+		t.Errorf("want exactly one folded carrier near 146.400 MHz, got %d:\n%s", near146_4, out)
+	}
+	// A handful of in-band carriers at most, never a smear of near-duplicate rows.
+	if len(carriers) > 4 {
+		t.Errorf("expected the carriers folded to a few rows, got %d:\n%s", len(carriers), out)
+	}
+}
+
+func diffU(a, b uint64) uint64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
