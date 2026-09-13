@@ -26,14 +26,14 @@ fixed frequency and mode; ley does not probe or scan for the best channel
   ch12      467.663 MHz  nfm  GMRS/FRS channel 12, 467.6625 MHz               
   ch13      467.688 MHz  nfm  GMRS/FRS channel 13, 467.6875 MHz               
   ch14      467.712 MHz  nfm  GMRS/FRS channel 14, 467.7125 MHz               
-  ch15      462.550 MHz  nfm  GMRS channel 15, 462.550 MHz                    also: rpt1
-  ch16      462.575 MHz  nfm  GMRS channel 16, 462.575 MHz                    also: rpt2
-  ch17      462.600 MHz  nfm  GMRS channel 17, 462.600 MHz                    also: rpt3
-  ch18      462.625 MHz  nfm  GMRS channel 18, 462.625 MHz                    also: rpt4
-  ch19      462.650 MHz  nfm  GMRS channel 19, 462.650 MHz                    also: rpt5
-  ch20      462.675 MHz  nfm  GMRS channel 20, 462.675 MHz                    also: rpt6
-  ch21      462.700 MHz  nfm  GMRS channel 21, 462.700 MHz                    also: rpt7
-  ch22      462.725 MHz  nfm  GMRS channel 22, 462.725 MHz                    also: rpt8
+  ch15      462.550 MHz  nfm  GMRS channel 15, 462.550 MHz                    also: rpt1, 15rp, ch23
+  ch16      462.575 MHz  nfm  GMRS channel 16, 462.575 MHz                    also: rpt2, 16rp, ch24
+  ch17      462.600 MHz  nfm  GMRS channel 17, 462.600 MHz                    also: rpt3, 17rp, ch25
+  ch18      462.625 MHz  nfm  GMRS channel 18, 462.625 MHz                    also: rpt4, 18rp, ch26
+  ch19      462.650 MHz  nfm  GMRS channel 19, 462.650 MHz                    also: rpt5, 19rp, ch27
+  ch20      462.675 MHz  nfm  GMRS channel 20, 462.675 MHz                    also: rpt6, 20rp, ch28
+  ch21      462.700 MHz  nfm  GMRS channel 21, 462.700 MHz                    also: rpt7, 21rp, ch29
+  ch22      462.725 MHz  nfm  GMRS channel 22, 462.725 MHz                    also: rpt8, 22rp, ch30
 
 Bands ley recognises. Without --mode, tune uses the band's mode and
 bandwidth; outside every band it uses NFM and says "no band recognised".
