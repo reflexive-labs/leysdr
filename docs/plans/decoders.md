@@ -241,11 +241,13 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   decoded from the NFM discriminator (no IQ input needed), parsing the Class A/B position and static
   messages into records keyed by MMSI, checked against the gpsd reference vectors. It is not one of
   the five reference drivers but a real third decoder, and it gives `ley track ais` a vessel table.
-- DEC-21 `[ ]` Friendly decoder aliases: the design's `ley track aircraft | vessels | aprs` names
-  the protocol by a common word, but the decoders are `adsb`, `ais`, `aprs`; `ley track vessels`
-  today answers `DECODER_NOT_FOUND`. A manifest `aliases` field the registry resolves (and
-  completion offers) makes the friendly names work without hardcoding a map. Small, but proto +
-  daemon + CLI, so it waits until the decoders are unpaused.
+- DEC-21 `[x]` Friendly decoder aliases: `DecoderManifest.aliases` (repeated string), a client-side
+  resolver `leyline.ResolveDecoder` that maps a typed name to the decoder that claims it, and
+  `ley decode`/`ley track`/`ley watch` resolving an alias to the canonical name before they start
+  or subscribe (records carry the canonical `protocol`, so the subscription must too). AIS carries
+  `vessels`; an ADS-B decoder would carry `aircraft`. The daemon does not resolve aliases -- they
+  are a client convenience, and the resolver reads them from `ListDecoders`; completion offers them
+  and `ley decoders` shows them beside the name. `ley track vessels` now works.
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side), on
   the IQ input DEC-18 built.
 - DEC-14 `[ ]` The MCP families and `ley identify`.

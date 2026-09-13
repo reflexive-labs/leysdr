@@ -1,6 +1,9 @@
 {
   "name":  "ais",
   "version":  "0.1.0",
+  "aliases":  [
+    "vessels"
+  ],
   "description":  "AIS marine vessel tracking, GMSK 9600 on the two 25 kHz channels at 161.975 and 162.025 MHz",
   "license":  "Apache-2.0",
   "recipe":  {

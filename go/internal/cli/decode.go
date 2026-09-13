@@ -103,6 +103,11 @@ reads; 'ley jobs cancel' is how to stop one.
 // runDecode starts the job, subscribes from the beginning of its records and prints them until
 // --count, Ctrl-C or the end of the stream.
 func runDecode(ctx context.Context, s *session, o decodeOptions) error {
+	// A friendly name (vessels -> ais) becomes the canonical decoder before anything starts, so the
+	// job, the records and the banner all speak the real name.
+	if name, _, err := s.client.ResolveDecoder(ctx, o.decoder); err == nil {
+		o.decoder = name
+	}
 	cfg := &leylinev1.DecodeConfig{
 		Decoder:     o.decoder,
 		FrequencyHz: o.freqHz,

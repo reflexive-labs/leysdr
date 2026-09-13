@@ -69,7 +69,13 @@ func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 		{head: "VERSION", drop: 1},
 	}
 	for _, m := range resp.GetDecoders() {
-		add(cols, m.GetName(), decoderFrequencies(m), decoderMode(m),
+		name := m.GetName()
+		// The friendly names sit beside the canonical one, so a reader learns that `ley track
+		// vessels` reaches `ais` without leaving the table.
+		if a := m.GetAliases(); len(a) > 0 {
+			name += " " + s.Muted("("+strings.Join(a, ", ")+")")
+		}
+		add(cols, name, decoderFrequencies(m), decoderMode(m),
 			absentIfEmpty(s, decoderOutputs(m)), absentIfEmpty(s, m.GetVersion()))
 	}
 	_, _ = printColumns(app.Stdout, s, cols, nil)
@@ -161,6 +167,13 @@ func completeDecoders(app *App, toComplete string) ([]cobra.Completion, cobra.Sh
 	for _, m := range resp.GetDecoders() {
 		if strings.HasPrefix(m.GetName(), toComplete) {
 			out = append(out, cobra.CompletionWithDesc(m.GetName(), m.GetDescription()))
+		}
+		// Offer the friendly names too, so `ley track ves<TAB>` completes to vessels; the verb
+		// resolves it back to the canonical decoder.
+		for _, a := range m.GetAliases() {
+			if strings.HasPrefix(a, toComplete) {
+				out = append(out, cobra.CompletionWithDesc(a, m.GetName()))
+			}
 		}
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp

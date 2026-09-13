@@ -16,6 +16,31 @@ func (c *Client) ListDecoders(ctx context.Context) (*leylinev1.ListDecodersRespo
 	return c.Decoders.ListDecoders(ctx, &leylinev1.ListDecodersRequest{})
 }
 
+// ResolveDecoder maps a name the user typed to a decoder's canonical name: the name itself, or a
+// decoder that lists it in `aliases` ("vessels" -> "ais", "aircraft" -> "adsb"), so a friendly
+// name reads well on the command line while records still carry the canonical `protocol`. An
+// unknown name is returned unchanged, so the caller's StartDecode reports DECODER_NOT_FOUND
+// naming what the user actually typed. `matched` says whether an install claimed it.
+func (c *Client) ResolveDecoder(ctx context.Context, name string) (canonical string, matched bool, err error) {
+	resp, err := c.ListDecoders(ctx)
+	if err != nil {
+		return name, false, err
+	}
+	for _, m := range resp.GetDecoders() {
+		if m.GetName() == name {
+			return name, true, nil
+		}
+	}
+	for _, m := range resp.GetDecoders() {
+		for _, a := range m.GetAliases() {
+			if a == name {
+				return m.GetName(), true, nil
+			}
+		}
+	}
+	return name, false, nil
+}
+
 // StartDecode starts a decode job: the daemon finds or makes a capture for the recipe's
 // frequency, adds the channel the job owns and spawns the plugin. The records arrive on
 // SubscribeRecords, not here.

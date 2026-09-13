@@ -126,6 +126,11 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		return app.notRunning(err)
 	}
 	defer c.Close()
+	// A friendly name (vessels -> ais) becomes the canonical protocol before track starts or
+	// subscribes: records carry the canonical name, so a subscription on the alias would see none.
+	if name, _, rerr := c.ResolveDecoder(ctx, o.protocol); rerr == nil {
+		o.protocol = name
+	}
 	if o.device != "" {
 		st, serr := c.State(ctx)
 		if serr != nil {

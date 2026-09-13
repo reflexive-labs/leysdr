@@ -12,6 +12,7 @@ func manifest() *leylinev1.DecoderManifest {
 	return &leylinev1.DecoderManifest{
 		Name:        "ais",
 		Version:     "0.1.0",
+		Aliases:     []string{"vessels"},
 		Description: "AIS marine vessel tracking, GMSK 9600 on the two 25 kHz channels at 161.975 and 162.025 MHz",
 		License:     "Apache-2.0",
 		Recipe: &leylinev1.DecoderRecipe{

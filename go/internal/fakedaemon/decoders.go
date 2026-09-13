@@ -39,6 +39,7 @@ const (
 func AprsManifest() *leylinev1.DecoderManifest {
 	return &leylinev1.DecoderManifest{
 		Name:        "aprs",
+		Aliases:     []string{"packets"},
 		Version:     "0.1.0",
 		Description: "APRS over AX.25, AFSK 1200 baud",
 		Attribution: "APRS is a trademark of Bob Bruninga, WB4APR",

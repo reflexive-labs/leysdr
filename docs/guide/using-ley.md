@@ -746,8 +746,9 @@ A SAME record carries a validity window, the span the alert is in effect, so `le
 --in-effect` lists only alerts that have not expired.
 
 Three decoders are built: APRS, SAME, and AIS (marine vessels -- `ley decode ais`, `ley track
-ais` for a vessel table). Name a decoder by what `ley decoders` lists; the design's friendly names
-like `ley track vessels` are a later convenience. The contract every decoder speaks is in
+ais`, or `ley track vessels` -- a decoder can carry friendly aliases, which `ley decoders` shows in
+parentheses beside its name and which `ley decode`, `ley track` and `ley watch` all accept. The
+contract every decoder speaks is in
 `docs/design/decoders.md` and [writing a decoder](../reference/writing-a-decoder.md); the plan for
 the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
 roadmap` names what is next.

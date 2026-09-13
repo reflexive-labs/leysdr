@@ -144,6 +144,9 @@ notifier, so it fires whether or not ley is attached.
 // streams the matching records the way decode streams every record; detached it leaves the job
 // running for the notifier and prints how to stop it.
 func runWatch(ctx context.Context, s *session, o watchOptions) error {
+	if name, _, err := s.client.ResolveDecoder(ctx, o.decoder); err == nil {
+		o.decoder = name
+	}
 	cfg := &leylinev1.DecodeConfig{
 		Decoder:     o.decoder,
 		FrequencyHz: o.freqHz,

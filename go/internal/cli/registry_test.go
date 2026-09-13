@@ -169,3 +169,49 @@ func devicesSeenJSONArgs(t *testing.T, sock, path string, args ...string) Device
 	}
 	return snap
 }
+
+// A friendly alias resolves to the decoder that claims it: the fake's aprs decoder answers to
+// "packets", so `ley decode packets` and `ley track packets` reach it and its records.
+func TestDecodeResolvesAnAlias(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, errOut, err := run(t, ctx, sock, "decode", "packets", "--json", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley decode packets: %v\n%s", err, errOut)
+	}
+	var rec map[string]any
+	if uerr := json.Unmarshal([]byte(strings.TrimSpace(out)), &rec); uerr != nil {
+		t.Fatalf("NDJSON is not JSON (%v): %s", uerr, out)
+	}
+	if rec["protocol"] != "aprs" {
+		t.Fatalf("the alias did not resolve to aprs: %s", out)
+	}
+}
+
+func TestTrackResolvesAnAlias(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, errOut, err := run(t, ctx, sock, "track", "packets", "--count", "3")
+	if err != nil {
+		t.Fatalf("ley track packets: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(out, "LEYTST-1") {
+		t.Fatalf("track via the alias saw no records:\n%s", out)
+	}
+	// The banner names the decoder actually running (the canonical name), which is how a reader
+	// learns the alias resolved: `ley track packets` says "tracking aprs".
+	if !strings.Contains(errOut, "tracking aprs") {
+		t.Errorf("the banner should name the resolved decoder:\n%s", errOut)
+	}
+}
+
+// The decoders table shows the friendly names beside the canonical one, so an alias is discoverable.
+func TestDecodersTableShowsAliases(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "decoders")
+	if !strings.Contains(out, "aprs") || !strings.Contains(out, "packets") {
+		t.Errorf("the table should show the alias beside the name:\n%s", out)
+	}
+}
