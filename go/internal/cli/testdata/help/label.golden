@@ -1,0 +1,31 @@
+label puts a human name on a transmitter id, so 'that soil probe'
+becomes 'greenhouse' in 'ley devices-seen'. The id is the one the protocol
+gives a transmitter -- an ICAO hex, an MMSI, a callsign-SSID, an rtl_433
+model/id -- and a name is yours to choose.
+
+Labels are your data, not the daemon's: they live in a small JSON file
+($LEYLINE_LABELS overrides its path) and outlive any decode job, because the
+device registry is a fold over the records and the one thing a fold cannot
+work out is what you decided a device is.
+
+With a name, label sets it; with no name, label prints the current one; with
+an empty name or --clear, label removes it. --json prints the label record.
+
+Usage:
+  ley label <device-id> [name] [flags]
+
+Examples:
+  ley label LEYTST-1 greenhouse    # name a transmitter
+  ley label LEYTST-1               # what is it named?
+  ley label LEYTST-1 --clear       # forget the name
+  ley label LEYTST-1 --json | jq -r .name
+
+Flags:
+      --clear   remove the name from this transmitter
+  -h, --help    help for label
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

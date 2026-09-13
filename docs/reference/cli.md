@@ -62,6 +62,13 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # starts (or attaches to) a decoder and folds its records into a live per-station table; --attach only folds one already running
 │                                    # the live entity table: ley's own fold over SubscribeRecords,
 │                                    # redrawn in place, rows aged out after the decoder's entity_silence_s
+├── devices-seen [--protocol P] [--since D] [--quiet-since D]
+│                                    # the registry: one row per transmitter the kept records heard,
+│                                    # a client-side fold over QueryRecords joined with the labels
+│                                    # store; --quiet-since D shows only those silent longer than D
+├── label <device-id> [name] [--clear]
+│                                    # name a transmitter (or read/clear its name); labels are user
+│                                    # data in a client-side JSON store ($LEYLINE_LABELS), not daemon state
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
 ├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
@@ -96,7 +103,7 @@ to stderr, so stdout is parseable. Every verb either answers the flag or refuses
 output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
 `ley daemon install|uninstall|logs` — exits 2 with `<verb> has no --json output; drop the flag
 (<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
-pipeline unparseable text and exit 0. **Four documented exceptions.** The first sits beside the
+pipeline unparseable text and exit 0. **Six documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, floor_db}` (snake_case,
 numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
@@ -171,6 +178,22 @@ bulk rows: the entity table is a client-side fold with no proto message, so it p
 `position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that row was last
 heard). A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a
 decoder whose program could not be started is `DECODER_FAILED`.
+
+`ley devices-seen --json` is the fifth documented exception, the registry beside the entity table:
+a client-side fold over `QueryRecords` joined with the labels store, so it has no proto message
+and prints one `{"devices": [...]}` object, each device `{device_id, label, protocol, kind, seen,
+first_ns, last_ns, quiet_s, summary}` (snake_case). `first_ns` and `last_ns` are wall clock in
+nanoseconds derived through the page's anchors, `0` when no anchor dates the record; `quiet_s` is
+the seconds since the device was last heard; `label` is the user-given name or `""`. `--quiet-since
+D` keeps only devices silent longer than `D` (a device with no datable last-seen is dropped,
+because absence cannot be proven for a record off the timeline); by default the whole store is
+scanned so absence can reach back, and `--since` bounds the scan. `ley label --json` is the sixth:
+a label is user data in a client-side JSON store, not daemon state (`docs/design/decoders.md`, "The
+state boundary"), so it prints one `{device_id, name, protocol, updated_ns}` object -- the record
+set, read or (with `--clear` or an empty name) cleared, `name` empty when the device has none. The
+store is `~/Library/Application Support/Leyline/labels.json` on macOS and
+`$XDG_DATA_HOME/leyline/labels.json` (or `~/.local/share/...`) elsewhere; `$LEYLINE_LABELS`
+overrides it.
 
 **`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
 it: the answer is the whole scan, not the steps it took to get there, and progress belongs on

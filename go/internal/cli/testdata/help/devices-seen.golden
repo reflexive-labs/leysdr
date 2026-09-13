@@ -1,0 +1,36 @@
+devices-seen is the registry: one row per transmitter the kept records
+have ever heard, with the name you gave it, how many times it was heard, and
+when it was first and last on the air. It is a fold over what 'ley decode
+<name> --job' stored, joined with your labels, computed in ley -- the daemon
+keeps no device table (docs/design/decoders.md, "The state boundary").
+
+Rows are newest first. FIRST and LAST are ages derived from the capture's
+anchors, the way every time in ley is. By default every kept record is
+scanned, so absence reaches as far back as the store goes; --since bounds the
+scan to a window.
+
+--quiet-since D is the absence question -- which sensors went quiet -- and
+shows only transmitters not heard within the last D. --json prints a
+{"devices": [...]} object, a client-side shape with no proto message
+(docs/reference/cli.md).
+
+Usage:
+  ley devices-seen [flags]
+
+Examples:
+  ley devices-seen                     # everyone heard, newest first
+  ley devices-seen --protocol aprs     # one protocol
+  ley devices-seen --quiet-since 48h   # which ones went quiet
+  ley devices-seen --json | jq -r '.devices[].device_id'
+
+Flags:
+  -h, --help                 help for devices-seen
+      --protocol string      only this protocol, e.g. aprs ('ley decoders' lists them)
+      --quiet-since string   only transmitters not heard within this, e.g. 48h (absence)
+      --since string         only scan records newer than this, e.g. 24h, 2d (default: all kept)
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

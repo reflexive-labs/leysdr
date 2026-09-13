@@ -79,6 +79,8 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "record", args: []string{"record"}, refuse: "not implemented yet"},
 	{path: "records", args: []string{"records"}, prep: prepKeptDecode},
 	{path: "track", args: []string{"track", "aprs", "--count", "1"}},
+	{path: "devices-seen", args: []string{"devices-seen"}, prep: prepKeptDecode},
+	{path: "label", args: []string{"label", "LEYTST-1"}},
 	{path: "scan", args: []string{"scan", "145M..147M"}},
 	{path: "scope", args: []string{"scope", "146.52", "--count", "2"}},
 	{path: "set", args: []string{"set"}, prep: prepChannel},

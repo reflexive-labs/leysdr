@@ -192,6 +192,8 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newWatchCommand(app),
 		newRecordsCommand(app),
 		newTrackCommand(app),
+		newDevicesSeenCommand(app),
+		newLabelCommand(app),
 		newFFTCommand(app),
 		newListenCommand(app),
 		newPresetsCommand(app),

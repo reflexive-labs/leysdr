@@ -128,3 +128,65 @@ func TestTableRowOrderAndExpiry(t *testing.T) {
 		t.Errorf("the station still talking must survive")
 	}
 }
+
+// anchorFor is the RecordAnchor the registry dates records by, one capture at a known rate.
+func anchorFor(captureID string, hostNs int64, rate uint64) *leylinev1.RecordAnchor {
+	return &leylinev1.RecordAnchor{
+		Anchor: &leylinev1.CaptureAnchor{CaptureId: captureID, HostTimeNs: hostNs, SampleRate: rate},
+	}
+}
+
+// The registry keeps one row per device: first and last seen by wall time, an observation count,
+// and the newest record's kind and summary. It is a fold over the kept log, which arrives newest
+// first, so order of application must not change the result (docs/design/decoders.md, section 5).
+func TestRegistryFoldsPerDevice(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	reg := NewRegistry()
+	reg.Anchor(anchorFor("cap_1", base.UnixNano(), 1_000_000))
+
+	// Applied newest first, as QueryRecords returns them: sample 3_000_000 is 3 s after the anchor.
+	reg.Apply(rec("LEYTST-2", "weather", 3_000_000, map[string]*leylinev1.FieldValue{"temp_c": number(25)}))
+	reg.Apply(rec("LEYTST-2", "weather", 0, map[string]*leylinev1.FieldValue{"temp_c": number(21)}))
+	reg.Apply(rec("LEYTST-1", "status", 1_000_000, map[string]*leylinev1.FieldValue{"text": text("hi")}))
+
+	d := deviceByID(reg, "LEYTST-2")
+	if d == nil || d.Count != 2 {
+		t.Fatalf("LEYTST-2 count: %+v", d)
+	}
+	if got := d.LastWall.Sub(d.FirstWall); got != 3*time.Second {
+		t.Errorf("first..last span = %v, want 3s", got)
+	}
+	// The newest record (25 °C) wins the summary, though it was applied first.
+	if d.Summary != "25.0 °C" {
+		t.Errorf("summary is not the newest record's: %q", d.Summary)
+	}
+	// Rows are last-heard first: LEYTST-2 (3 s) before LEYTST-1 (1 s).
+	rows := reg.Rows()
+	if len(rows) != 2 || rows[0].DeviceID != "LEYTST-2" || rows[1].DeviceID != "LEYTST-1" {
+		t.Errorf("rows are not last-heard first: %v", rows)
+	}
+	// A record with no device_id makes no row.
+	if reg.Apply(rec("", "status", 0, nil)) != nil || reg.Len() != 2 {
+		t.Errorf("a record with no device_id must not register")
+	}
+}
+
+// A record no anchor covers cannot be dated, so it counts but sets no wall time and cannot claim
+// to be the most recent (CLAUDE.md invariant 5).
+func TestRegistryUndatedRecord(t *testing.T) {
+	reg := NewRegistry() // no anchors
+	reg.Apply(rec("LEYTST-3", "status", 0, map[string]*leylinev1.FieldValue{"text": text("undated")}))
+	d := reg.Rows()[0]
+	if d.Count != 1 || !d.LastWall.IsZero() || !d.FirstWall.IsZero() {
+		t.Errorf("an undated record must count but carry no wall time: %+v", d)
+	}
+}
+
+func deviceByID(reg *Registry, id string) *Device {
+	for _, d := range reg.Rows() {
+		if d.DeviceID == id {
+			return d
+		}
+	}
+	return nil
+}

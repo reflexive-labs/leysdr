@@ -68,7 +68,7 @@ func TestHelpInkTargets(t *testing.T) {
 	}
 	for _, want := range []string{
 		"\x1b[1mListening:\x1b[0m",             // a group heading
-		"  \x1b[1mtune\x1b[0m        Listen",   // a verb name
+		"  \x1b[1mtune\x1b[0m         Listen",  // a verb name
 		"  \x1b[1msquelch\x1b[0m      Muting",  // a topic name
 		"\x1b[2mUsage:\x1b[0m",                 // Cobra's scaffolding
 		"\x1b[2m  ley [flags]\x1b[0m",          // ... and its body

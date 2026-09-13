@@ -688,6 +688,31 @@ LEYTST-1  now         2     37.7600N 122.4167W  37.7600N 122.4167W /> test posit
 LEYTST-3  now         1     -                   test status
 ```
 
+`ley devices-seen` is the longer memory: one row per transmitter the kept records have ever heard,
+with how many times, and how long ago it was first and last on the air. Where `ley track` is the
+live table for one protocol, `devices-seen` is the registry across everything that was stored, and
+it is where a discovered device gets a name you will recognise.
+
+```console
+$ ley label LEYTST-1 greenhouse
+LEYTST-1  greenhouse
+$ ley devices-seen
+DEVICE    LABEL       PROTOCOL  KIND     SEEN  FIRST  LAST  SUMMARY
+LEYTST-2              aprs      weather  4     3 s    now   21.0 °C wind 12 km/h @ 270°
+LEYTST-1  greenhouse  aprs      position  4     3 s    now   37.7600N 122.4200W /> fake station
+LEYTST-3              aprs      status   3     2 s    now   fake daemon, monitoring nothing
+```
+
+`ley label <device-id> <name>` gives a transmitter a human name, `ley label <device-id>` reads it
+back, and `--clear` removes it. Labels are your data, so they live in a small JSON file in your
+config directory (`$LEYLINE_LABELS` overrides the path) and outlive any job -- the registry is a
+fold over the records, and the one thing a fold cannot work out is what you decided a device is.
+`--quiet-since 48h` is the absence question: it shows only the transmitters *not* heard within the
+last two days, which is how you notice a soil probe whose battery died rather than a soil probe that
+is merely quiet right now. By default `devices-seen` scans the whole store so absence can reach as
+far back as it goes; `--since` bounds the scan to a window and `--protocol` narrows it to one
+decoder.
+
 ### Wait for one thing: `ley watch`
 
 `ley decode` shows everything a decoder hears. `ley watch` shows only what you are waiting for and

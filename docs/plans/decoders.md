@@ -215,7 +215,16 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   burst on NOAA weather radio (162.400--162.550 MHz NFM), parses ORG/EEE/FIPS/duration, emits a
   record whose `validity` is the alert window and whose `fields` carry the event code and the FIPS
   county list, with a fixture. Then `ley watch same --county <FIPS> --notify` is driver C end to end.
-- DEC-10 `[ ]` The registry fold, `ley label`, `ley devices-seen` (driver B, an `rtl_433` adapter).
+- DEC-10 `[x]` The registry fold, `ley label`, `ley devices-seen`, built client-side over records
+  that already exist and tested against the existing decoders. A `records.Registry` folds the kept
+  record log into one row per transmitter (first and last seen by wall time through the page's
+  anchors, an observation count); `ley devices-seen` renders it with `--protocol`, `--since` and
+  `--quiet-since` (the absence question -- which sensors went quiet); `ley label` keeps the
+  user-given names in a client-side JSON store (`go/pkg/labels`, `$LEYLINE_LABELS`), which
+  `devices-seen` joins in. The state boundary keeps the fold deterministic and the labels in the
+  client (`docs/design/decoders.md`, "The state boundary" and section 5). Driver B's own traffic
+  waits on an `rtl_433` adapter, a plugin like DEC-13's `dump1090` one; the surfaces above already
+  work over any decoder that carries a `device_id`.
 - DEC-11 `[ ]` Kept decode jobs respawn after a daemon restart (needs the durable job store, D.15).
 - DEC-12 `[ ]` Slot-aligned input (driver E, FT8).
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side).
