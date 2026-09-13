@@ -93,8 +93,9 @@ explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Mo
 (`fm` → WFM on 87.5–108 MHz else NFM; `ssb` → USB at and above 10 MHz else LSB). **Selectors**:
 `--channel`, `--capture`, `--device` and `devices detach` accept a full id, an id prefix, the
 1-based row number from the printed list, or a frequency. **Presets** (`noaa`, `noaa1..7`,
-`calling`, `marine16`, `guard`, and the GMRS repeater outputs `rpt1..rpt8` by their Baofeng names,
-with aliases) and **bands** (name, default mode, default bandwidth; includes `gmrs` and
+`calling`, `marine16`, `guard`, and the 22 GMRS channels by number `ch1..ch22` -- the repeater
+outputs `ch15..ch22` also answer to their Baofeng `rpt1..rpt8` names -- with aliases) and **bands**
+(name, default mode, default bandwidth; includes `gmrs` and
 `gmrs-in`) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
 prose by `ley help presets`; resolution is number/unit form first, then preset name, never probing. These are presentation over the same RPCs: the CLI
 adds no capability the protocol lacks.

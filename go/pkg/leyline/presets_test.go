@@ -30,10 +30,12 @@ func TestResolvePreset(t *testing.T) {
 		{"Marine16", "marine16", 156_800_000, leylinev1.DemodMode_NFM},
 		{"guard", "guard", 121_500_000, leylinev1.DemodMode_AM},
 		{" guard ", "guard", 121_500_000, leylinev1.DemodMode_AM},
-		{"rpt3", "rpt3", 462_600_000, leylinev1.DemodMode_NFM},
-		{"RPT3", "rpt3", 462_600_000, leylinev1.DemodMode_NFM},
-		{"rpt08", "rpt8", 462_725_000, leylinev1.DemodMode_NFM},
-		{"rpt1", "rpt1", 462_550_000, leylinev1.DemodMode_NFM},
+		{"rpt3", "ch17", 462_600_000, leylinev1.DemodMode_NFM},
+		{"RPT3", "ch17", 462_600_000, leylinev1.DemodMode_NFM},
+		{"rpt4", "ch18", 462_625_000, leylinev1.DemodMode_NFM},
+		{"ch18", "ch18", 462_625_000, leylinev1.DemodMode_NFM},
+		{"ch1", "ch1", 462_562_500, leylinev1.DemodMode_NFM},
+		{"ch8", "ch8", 467_562_500, leylinev1.DemodMode_NFM},
 	}
 	for _, c := range cases {
 		p, err := ResolvePreset(c.in)

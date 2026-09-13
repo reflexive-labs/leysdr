@@ -450,18 +450,23 @@ func bandCell(d *leylinev1.Detection) string {
 	return strings.Join(parts, " ")
 }
 
-// presetAt names a preset within half a channel of the frequency.
+// presetAt names the nearest preset within half a channel of the frequency. Nearest, not first,
+// because the GMRS channels are only 12.5 kHz apart, so a detection can sit inside the tolerance of
+// two of them and must take the closer.
 func presetAt(hz uint64) string {
+	best := ""
+	bestDiff := int64(6_000)
 	for _, p := range leyline.Presets() {
 		diff := int64(p.Hz) - int64(hz)
 		if diff < 0 {
 			diff = -diff
 		}
-		if diff <= 6_000 {
-			return p.Name
+		if diff <= bestDiff {
+			bestDiff = diff
+			best = p.Name
 		}
 	}
-	return ""
+	return best
 }
 
 func strongest(rows []*leylinev1.Detection) *leylinev1.Detection {

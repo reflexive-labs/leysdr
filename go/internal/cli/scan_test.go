@@ -541,3 +541,31 @@ func TestScanResolvesABandName(t *testing.T) {
 		t.Errorf("scan did not sweep the GMRS band:\n%s", errOut)
 	}
 }
+
+// The scan labels every GMRS detection with its channel number (ch1..ch22), the numbering every
+// GMRS radio shares, so a row is unambiguous. The eight repeater outputs are ch15..ch22 (rpt1..8
+// still tune them). presetAt takes the nearest, since the channels are only 12.5 kHz apart.
+func TestScanLabelsGMRSChannels(t *testing.T) {
+	cases := []struct {
+		hz    uint64
+		label string
+	}{
+		{462_625_000, "ch18"}, // the repeater output the owner found
+		{462_562_500, "ch1"},  // a 462 interstitial
+		{462_600_000, "ch17"}, // RPT3's frequency, labelled by channel number
+		{467_562_500, "ch8"},  // a 467 interstitial (the inputs band)
+		{462_628_000, "ch18"}, // 3 kHz off ch18: nearest wins
+	}
+	for _, c := range cases {
+		if got := presetAt(c.hz); got != c.label {
+			t.Errorf("presetAt(%d) = %q, want %q", c.hz, got, c.label)
+		}
+	}
+	// Marine channel 16 keeps its own name after ceding the bare "ch16" alias to GMRS.
+	if p, err := leyline.ResolvePreset("ch16"); err != nil || p.Hz != 462_575_000 {
+		t.Errorf("ch16 should now be GMRS channel 16: %+v %v", p, err)
+	}
+	if p, err := leyline.ResolvePreset("marine16"); err != nil || p.Hz != 156_800_000 {
+		t.Errorf("marine16 must still resolve: %+v %v", p, err)
+	}
+}

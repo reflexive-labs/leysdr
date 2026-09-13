@@ -32,20 +32,36 @@ var presets = []Preset{
 	{"noaa6", []string{"wx6"}, 162_500_000, mNFM, "NOAA weather WX6 (162.500 MHz)"},
 	{"noaa7", []string{"wx7"}, 162_525_000, mNFM, "NOAA weather WX7 (162.525 MHz)"},
 	{"calling", []string{"2m-calling", "simplex"}, 146_520_000, mNFM, "2 m amateur national simplex calling frequency (146.520 MHz)"},
-	{"marine16", []string{"ch16", "marine"}, 156_800_000, mNFM, "marine VHF channel 16, distress and calling (156.800 MHz)"},
+	{"marine16", []string{"marine"}, 156_800_000, mNFM, "marine VHF channel 16, distress and calling (156.800 MHz)"},
 	{"guard", []string{"aircraft-guard", "121.5"}, 121_500_000, mAM, "aviation emergency guard frequency (121.500 MHz)"},
-	// GMRS repeater channels by their Baofeng RPT names. A preset is what you tune to LISTEN, so
-	// these are the repeater OUTPUTS (462 MHz); the standard input is 5 MHz above, but a repeater
-	// built from two independent radios can transmit anywhere in the band -- `ley scan gmrs`
-	// confirms where it actually is.
-	{"rpt1", []string{"rpt01"}, 462_550_000, mNFM, "GMRS repeater 1 output, 462.550 MHz (listen; standard input 467.550)"},
-	{"rpt2", []string{"rpt02"}, 462_575_000, mNFM, "GMRS repeater 2 output, 462.575 MHz (listen; standard input 467.575)"},
-	{"rpt3", []string{"rpt03"}, 462_600_000, mNFM, "GMRS repeater 3 output, 462.600 MHz (listen; standard input 467.600)"},
-	{"rpt4", []string{"rpt04"}, 462_625_000, mNFM, "GMRS repeater 4 output, 462.625 MHz (listen; standard input 467.625)"},
-	{"rpt5", []string{"rpt05"}, 462_650_000, mNFM, "GMRS repeater 5 output, 462.650 MHz (listen; standard input 467.650)"},
-	{"rpt6", []string{"rpt06"}, 462_675_000, mNFM, "GMRS repeater 6 output, 462.675 MHz (listen; standard input 467.675)"},
-	{"rpt7", []string{"rpt07"}, 462_700_000, mNFM, "GMRS repeater 7 output, 462.700 MHz (listen; standard input 467.700)"},
-	{"rpt8", []string{"rpt08"}, 462_725_000, mNFM, "GMRS repeater 8 output, 462.725 MHz (listen; standard input 467.725)"},
+	// GMRS by channel number, the labelling every GMRS radio shares. Channels 1-7 and 15-22 are the
+	// 462 MHz band (1-7 the low-power interstitials, 15-22 the main channels); 8-14 are the 467 MHz
+	// interstitials. A preset is what you tune to LISTEN. Channels 15-22 are also the repeater
+	// outputs, so they carry their Baofeng RPT names as aliases (`ley tune rpt3` == `ley tune ch17`);
+	// a repeater built from two independent radios can transmit on any of these, not just the one
+	// paired +5 MHz with its input, so `ley scan gmrs` is how you find where it actually is.
+	{"ch1", nil, 462_562_500, mNFM, "GMRS/FRS channel 1, 462.5625 MHz (simplex, shared with FRS)"},
+	{"ch2", nil, 462_587_500, mNFM, "GMRS/FRS channel 2, 462.5875 MHz (simplex, shared with FRS)"},
+	{"ch3", nil, 462_612_500, mNFM, "GMRS/FRS channel 3, 462.6125 MHz (simplex, shared with FRS)"},
+	{"ch4", nil, 462_637_500, mNFM, "GMRS/FRS channel 4, 462.6375 MHz (simplex, shared with FRS)"},
+	{"ch5", nil, 462_662_500, mNFM, "GMRS/FRS channel 5, 462.6625 MHz (simplex, shared with FRS)"},
+	{"ch6", nil, 462_687_500, mNFM, "GMRS/FRS channel 6, 462.6875 MHz (simplex, shared with FRS)"},
+	{"ch7", nil, 462_712_500, mNFM, "GMRS/FRS channel 7, 462.7125 MHz (simplex, shared with FRS)"},
+	{"ch8", nil, 467_562_500, mNFM, "GMRS/FRS channel 8, 467.5625 MHz (simplex, low power)"},
+	{"ch9", nil, 467_587_500, mNFM, "GMRS/FRS channel 9, 467.5875 MHz (simplex, low power)"},
+	{"ch10", nil, 467_612_500, mNFM, "GMRS/FRS channel 10, 467.6125 MHz (simplex, low power)"},
+	{"ch11", nil, 467_637_500, mNFM, "GMRS/FRS channel 11, 467.6375 MHz (simplex, low power)"},
+	{"ch12", nil, 467_662_500, mNFM, "GMRS/FRS channel 12, 467.6625 MHz (simplex, low power)"},
+	{"ch13", nil, 467_687_500, mNFM, "GMRS/FRS channel 13, 467.6875 MHz (simplex, low power)"},
+	{"ch14", nil, 467_712_500, mNFM, "GMRS/FRS channel 14, 467.7125 MHz (simplex, low power)"},
+	{"ch15", []string{"rpt1"}, 462_550_000, mNFM, "GMRS channel 15, 462.550 MHz (simplex, or repeater output RPT1)"},
+	{"ch16", []string{"rpt2"}, 462_575_000, mNFM, "GMRS channel 16, 462.575 MHz (simplex, or repeater output RPT2)"},
+	{"ch17", []string{"rpt3"}, 462_600_000, mNFM, "GMRS channel 17, 462.600 MHz (simplex, or repeater output RPT3)"},
+	{"ch18", []string{"rpt4"}, 462_625_000, mNFM, "GMRS channel 18, 462.625 MHz (simplex, or repeater output RPT4)"},
+	{"ch19", []string{"rpt5"}, 462_650_000, mNFM, "GMRS channel 19, 462.650 MHz (simplex, or repeater output RPT5)"},
+	{"ch20", []string{"rpt6"}, 462_675_000, mNFM, "GMRS channel 20, 462.675 MHz (simplex, or repeater output RPT6)"},
+	{"ch21", []string{"rpt7"}, 462_700_000, mNFM, "GMRS channel 21, 462.700 MHz (simplex, or repeater output RPT7)"},
+	{"ch22", []string{"rpt8"}, 462_725_000, mNFM, "GMRS channel 22, 462.725 MHz (simplex, or repeater output RPT8)"},
 }
 
 // Presets returns the preset table in help order (a copy).

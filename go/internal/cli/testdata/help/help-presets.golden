@@ -10,16 +10,30 @@ fixed frequency and mode; ley does not probe or scan for the best channel
   noaa6     162.500 MHz  nfm  NOAA weather WX6                                also: wx6
   noaa7     162.525 MHz  nfm  NOAA weather WX7                                also: wx7
   calling   146.520 MHz  nfm  2 m amateur national simplex calling frequency  also: 2m-calling, simplex
-  marine16  156.800 MHz  nfm  marine VHF channel 16, distress and calling     also: ch16, marine
+  marine16  156.800 MHz  nfm  marine VHF channel 16, distress and calling     also: marine
   guard     121.500 MHz  am   aviation emergency guard frequency              also: aircraft-guard, 121.5
-  rpt1      462.550 MHz  nfm  GMRS repeater 1 output, 462.550 MHz             also: rpt01
-  rpt2      462.575 MHz  nfm  GMRS repeater 2 output, 462.575 MHz             also: rpt02
-  rpt3      462.600 MHz  nfm  GMRS repeater 3 output, 462.600 MHz             also: rpt03
-  rpt4      462.625 MHz  nfm  GMRS repeater 4 output, 462.625 MHz             also: rpt04
-  rpt5      462.650 MHz  nfm  GMRS repeater 5 output, 462.650 MHz             also: rpt05
-  rpt6      462.675 MHz  nfm  GMRS repeater 6 output, 462.675 MHz             also: rpt06
-  rpt7      462.700 MHz  nfm  GMRS repeater 7 output, 462.700 MHz             also: rpt07
-  rpt8      462.725 MHz  nfm  GMRS repeater 8 output, 462.725 MHz             also: rpt08
+  ch1       462.562 MHz  nfm  GMRS/FRS channel 1, 462.5625 MHz                
+  ch2       462.587 MHz  nfm  GMRS/FRS channel 2, 462.5875 MHz                
+  ch3       462.613 MHz  nfm  GMRS/FRS channel 3, 462.6125 MHz                
+  ch4       462.637 MHz  nfm  GMRS/FRS channel 4, 462.6375 MHz                
+  ch5       462.663 MHz  nfm  GMRS/FRS channel 5, 462.6625 MHz                
+  ch6       462.688 MHz  nfm  GMRS/FRS channel 6, 462.6875 MHz                
+  ch7       462.712 MHz  nfm  GMRS/FRS channel 7, 462.7125 MHz                
+  ch8       467.562 MHz  nfm  GMRS/FRS channel 8, 467.5625 MHz                
+  ch9       467.587 MHz  nfm  GMRS/FRS channel 9, 467.5875 MHz                
+  ch10      467.613 MHz  nfm  GMRS/FRS channel 10, 467.6125 MHz               
+  ch11      467.637 MHz  nfm  GMRS/FRS channel 11, 467.6375 MHz               
+  ch12      467.663 MHz  nfm  GMRS/FRS channel 12, 467.6625 MHz               
+  ch13      467.688 MHz  nfm  GMRS/FRS channel 13, 467.6875 MHz               
+  ch14      467.712 MHz  nfm  GMRS/FRS channel 14, 467.7125 MHz               
+  ch15      462.550 MHz  nfm  GMRS channel 15, 462.550 MHz                    also: rpt1
+  ch16      462.575 MHz  nfm  GMRS channel 16, 462.575 MHz                    also: rpt2
+  ch17      462.600 MHz  nfm  GMRS channel 17, 462.600 MHz                    also: rpt3
+  ch18      462.625 MHz  nfm  GMRS channel 18, 462.625 MHz                    also: rpt4
+  ch19      462.650 MHz  nfm  GMRS channel 19, 462.650 MHz                    also: rpt5
+  ch20      462.675 MHz  nfm  GMRS channel 20, 462.675 MHz                    also: rpt6
+  ch21      462.700 MHz  nfm  GMRS channel 21, 462.700 MHz                    also: rpt7
+  ch22      462.725 MHz  nfm  GMRS channel 22, 462.725 MHz                    also: rpt8
 
 Bands ley recognises. Without --mode, tune uses the band's mode and
 bandwidth; outside every band it uses NFM and says "no band recognised".
