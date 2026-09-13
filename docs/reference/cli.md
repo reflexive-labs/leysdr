@@ -46,6 +46,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
+├── monitor <band|range> [--for D] [--min-snr DB] [--take-over] [--device SEL]
+│                                    # scan's stationary sibling: parks one capture on a band for --for and prints a
+│                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
 ├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version
 ├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N]
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
@@ -106,7 +109,7 @@ to stderr, so stdout is parseable. Every verb either answers the flag or refuses
 output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
 `ley daemon install|uninstall|logs` — exits 2 with `<verb> has no --json output; drop the flag
 (<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
-pipeline unparseable text and exit 0. **Six documented exceptions.** The first sits beside the
+pipeline unparseable text and exit 0. **Seven documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, floor_db}` (snake_case,
 numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
@@ -196,7 +199,28 @@ state boundary"), so it prints one `{device_id, name, protocol, updated_ns}` obj
 set, read or (with `--clear` or an empty name) cleared, `name` empty when the device has none. The
 store is `~/Library/Application Support/Leyline/labels.json` on macOS and
 `$XDG_DATA_HOME/leyline/labels.json` (or `~/.local/share/...`) elsewhere; `$LEYLINE_LABELS`
-overrides it.
+overrides it. `ley monitor --json` is the seventh, the transmission log beside the entity table: a
+client-side fold over the detections on the telemetry plane, so it has no proto message and prints
+one object per carrier as NDJSON when the watch ends, in first-appearance order, each `{detection_id,
+center_hz, channel, first_s, held_s, peak_snr_db, bandwidth_hz}` (snake_case; `channel` the GMRS or
+preset channel on the frequency or `""` when none; `first_s` and `held_s` seconds on the client's own
+clock, since telemetry latency is sub-second and a radio-check log needs no anchor arithmetic;
+`peak_snr_db` the strongest the carrier was seen). `--min-snr` drops a carrier whose peak never
+cleared it from the log, as it does from the table.
+
+**`ley monitor <band|range> [--for D] [--min-snr DB] [--device SEL] [--take-over] [--json]`** parks
+one capture on a band and watches it, then prints a time-ordered log of the carriers that came and
+went. A range positional (`462.5M..462.75M`) or a band name (`gmrs`, `2m`) resolves exactly as
+`scan`'s does: range first, then the band. `--for` sets how long to watch (`30s`, `2m`; `0` watches
+until Ctrl-C); it becomes `MonitorConfig.duration_ms`. The watch is `Jobs.StartJob(MonitorConfig)`
+and its detections stream on the telemetry plane (type `DETECTION`, daemon-wide) the same as a
+scan's; the client folds them into the log. It runs daemon-side and owns the radio for the duration,
+declining a radio somebody is using with the same don't-disturb rule as a scan (`--take-over`
+overrides). A band wider than one capture can watch is refused with `INVALID_ARGUMENT`; `scan` sweeps
+a span that wide. There is no `--gain`, as there is none on `scan`: the daemon sets the gain. The log
+table (TIME, FREQUENCY, CHANNEL, HELD, PEAK SNR) is stdout; the live feed of each carrier as it is
+first heard, and the summary, are stderr. Full design: `docs/design/band-watching.md`, the occupancy
+view of which this is the first cut.
 
 **`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
 it: the answer is the whole scan, not the steps it took to get there, and progress belongs on

@@ -32,6 +32,7 @@ Looking around:
   jobs         List the work the daemon is doing in the background
   label        Give a transmitter a name you will recognise
   levels       Watch the audio level band by band
+  monitor      Park on a band and log the transmissions on it
   phosphor     Show what is usually on a band, not just what is on it now
   presets      List the named frequencies tune accepts
   records      Search the records kept decode jobs have written

@@ -67,6 +67,9 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	if dec, isDecode := req.Config.(*leylinev1.StartJobRequest_Decode); isDecode && dec.Decode != nil {
 		return d.startDecode(ctx, dec.Decode)
 	}
+	if mon, isMon := req.Config.(*leylinev1.StartJobRequest_Monitor); isMon && mon.Monitor != nil {
+		return d.startMonitor(ctx, mon.Monitor)
+	}
 	cfg, ok := req.Config.(*leylinev1.StartJobRequest_Scan)
 	if !ok || cfg.Scan == nil {
 		if req.Config == nil {

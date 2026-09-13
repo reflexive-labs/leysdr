@@ -1,0 +1,43 @@
+monitor parks the radio on one band and watches it, then prints a
+time-ordered log of the carriers that came and went: when each first
+appeared, how long it held the channel, and how strong it was at its peak.
+
+Unlike scan it does not sweep. It holds one capture on the band and runs
+the detector without moving, so it never time-shares and cannot miss a
+transmission that starts while it is looking elsewhere. It is the
+stationary, report-producing sibling of scan: scan asks what is on a band
+right now, monitor asks what came and went over the minutes you watched.
+
+The watch runs in the daemon, which owns the radio for the duration -- so
+monitor will not interrupt someone who is listening. It says who has the
+radio instead, and --take-over is the way to insist.
+
+A band wider than one capture can watch is refused; scan sweeps a span
+that wide. The radio's gain is the daemon's to set, as it is for a scan.
+
+While it watches, each new carrier prints a line on stderr as it is first
+heard. The log table is printed on stdout at the end, so a pipe gets the
+report and a person gets the running commentary. --json prints one object
+per carrier, newest columns and all, when the watch ends.
+
+Usage:
+  ley monitor <band|range> [flags]
+
+Examples:
+  ley monitor gmrs               # watch the GMRS band for a minute
+  ley monitor 462.5M..462.75M    # the same range, spelled out
+  ley monitor gmrs --for 5m      # a longer radio check
+  ley monitor gmrs --json        # the carriers, for tools
+
+Flags:
+      --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --for string      how long to watch before reporting, e.g. 30s, 2m; 0 watches until Ctrl-C (default "60s")
+  -h, --help            help for monitor
+      --min-snr float   hide carriers whose peak was weaker than this many dB over the noise floor (default: show every carrier heard)
+      --take-over       watch even when somebody is using the radio; it is theirs again afterwards
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
