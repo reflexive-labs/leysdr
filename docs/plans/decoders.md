@@ -257,6 +257,13 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   before closing, so a late frame is a drop, the same answer as a plugin that stopped reading, and
   a second `stop` closes nothing. `PluginProcessTests` writes after a stop and races writes against
   one. A kept job still does not survive the restart this caused (DEC-11).
+- DEC-23 `[ ]` Liveness in the job. A decode job says "decoding with aprs" and nothing more for as
+  long as it runs, so a client cannot tell a decoder that has produced records from one that has
+  not without subscribing to them; an agent testing `ley mcp` fell back to `ps` to check the plugin
+  was alive, which the job could have told it. `Job.status_detail` is the place -- the proto's own
+  example is "3 gaps logged" -- carrying records so far and how long since the last one, updated on a
+  timer rather than per record so the event stream is not flooded. Silence stays RUNNING (DEC-16); it
+  just stops being invisible.
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side), on
   the IQ input DEC-18 built.
 - DEC-14 `[ ]` The MCP families and `ley identify`.

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"image/png"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -26,7 +28,7 @@ import (
 // in the order it is registered. The reference page (docs/reference/mcp.md)
 // lists the same names; a tool added here is added there.
 var mcpToolNames = []string{
-	"list_devices", "get_state", "tune", "scan", "listen_summary", "snapshot",
+	"list_devices", "get_state", "daemon_logs", "tune", "scan", "listen_summary", "snapshot",
 	"list_decoders", "query_records", "list_entities", "start_decode_job",
 	"list_jobs", "get_job", "cancel_job",
 }
@@ -488,6 +490,76 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	}
 	if r := h.call(t, "get_job", map[string]any{"job": "job_nope"}); !r.IsError || !strings.Contains(resultText(r), "list_jobs") {
 		t.Errorf("an unknown job must point at list_jobs: %s", resultText(r))
+	}
+}
+
+// daemon_logs is `ley daemon logs` with the daemon's pid and start time in
+// front, which is how an agent learns that the daemon it is talking to is
+// not the one it started with.
+func TestMCPDaemonLogs(t *testing.T) {
+	h := newMCPHarness(t)
+	log := filepath.Join(t.TempDir(), "leylined.log")
+	if err := os.WriteFile(log, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.app.logFile = log
+	res := h.must(t, "daemon_logs", map[string]any{"lines": 2})
+	text := resultText(res)
+	for _, want := range []string{"pid", "up since", "last 2 of 3 lines", "two\nthree"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("daemon_logs lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "one\n") {
+		t.Errorf("the first line was not asked for:\n%s", text)
+	}
+	var info leylinev1.DaemonInfo
+	structuredField(t, res, "daemon", &info)
+	if info.GetPid() == 0 || info.GetStartedAtNs() == 0 {
+		t.Errorf("no pid or start time in the structured result: %v", &info)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(raw), `"lines":["two","three"]`) {
+		t.Errorf("structured lines: %s", raw)
+	}
+	h.srv.app.logFile = filepath.Join(t.TempDir(), "missing.log")
+	if r := h.call(t, "daemon_logs", nil); !r.IsError || !strings.Contains(resultText(r), "there is no file at") {
+		t.Errorf("a missing log must be refused with its path: %s", resultText(r))
+	}
+	if r := h.call(t, "daemon_logs", map[string]any{"lines": 9999}); !r.IsError {
+		t.Error("a whole-file read must be refused")
+	}
+}
+
+// An empty page cannot tell a quiet band from a decoder that never stored, so
+// the text says which it was from the job list.
+func TestMCPQueryRecordsExplainsAnEmptyPage(t *testing.T) {
+	h := newMCPHarness(t)
+	text := resultText(h.must(t, "query_records", map[string]any{"protocol": "aprs"}))
+	if !strings.Contains(text, "no kept decode job for aprs has run") {
+		t.Errorf("with no jobs:\n%s", text)
+	}
+	var job leylinev1.Job
+	structured(t, h.must(t, "start_decode_job", map[string]any{"decoder": "aprs"}), &job)
+	text = resultText(h.must(t, "query_records", map[string]any{"protocol": "aprs"}))
+	if !strings.Contains(text, "started without keep") || !strings.Contains(text, job.JobId) {
+		t.Errorf("with an unkept job:\n%s", text)
+	}
+	text = resultText(h.must(t, "query_records", map[string]any{"job_id": job.JobId}))
+	if !strings.Contains(text, "job "+job.JobId+" was started without keep") {
+		t.Errorf("by job id:\n%s", text)
+	}
+	text = resultText(h.must(t, "query_records", map[string]any{"job_id": "job_nothing"}))
+	if !strings.Contains(text, "lists no job job_nothing") {
+		t.Errorf("unknown job:\n%s", text)
+	}
+	structured(t, h.must(t, "cancel_job", map[string]any{"job": job.JobId}), &job)
+	var kept leylinev1.Job
+	structured(t, h.must(t, "start_decode_job", map[string]any{"decoder": "aprs", "keep": true}), &kept)
+	// Before the fake's first record lands, the kept job is the quiet-band case.
+	text = resultText(h.must(t, "query_records", map[string]any{"job_id": kept.JobId, "device_id": "NOBODY"}))
+	if !strings.Contains(text, "the kept job "+kept.JobId) || !strings.Contains(text, "filters excluded") || !strings.Contains(text, "listen_summary") {
+		t.Errorf("kept job, filtered to nothing:\n%s", text)
 	}
 }
 

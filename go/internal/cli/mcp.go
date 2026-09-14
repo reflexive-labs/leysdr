@@ -40,9 +40,9 @@ verb does. Each tool is a ley verb seen from an agent -- list_devices is
 'ley records' -- and returns the same proto3 JSON '--json' prints, plus a
 short text summary so the agent spends its context on reasoning.
 
-Tools: list_devices, get_state, tune, scan, listen_summary, snapshot,
-list_decoders, query_records, list_entities, start_decode_job, list_jobs,
-get_job, cancel_job. The resource ley://records/<job_id> reads a kept decode
+Tools: list_devices, get_state, daemon_logs, tune, scan, listen_summary,
+snapshot, list_decoders, query_records, list_entities, start_decode_job,
+list_jobs, get_job, cancel_job. The resource ley://records/<job_id> reads a kept decode
 job's records. Anything an agent starts here (a channel from tune, a decode
 job without keep) ends when the agent disconnects, the way a ley verb's ends
 at Ctrl-C; keep: true on a tool leaves it running.
@@ -105,6 +105,8 @@ type mcpServer struct {
 // mcpInstructions is what the agent reads about the server before its first
 // call: the shape of the answers, what is not here yet, and the honesty rule.
 const mcpInstructions = `Leyline is a software-defined radio: one daemon owns the radio, and these tools drive it the way the ley command does. Every tool's structured result is the proto3 JSON mapping of the leyline.v1 messages (the same shapes 'ley <verb> --json' prints), and the text is a short summary of the same thing. A bare frequency number is MHz (146.52); add a unit to be exact (1010k, 146520000); presets such as noaa and calling are accepted where a frequency is.
+
+A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it.
 
 Only one thing can use the radio at a time. tune, scan, snapshot and start_decode_job refuse to move a radio somebody is listening on and say who; take_over: true insists. A channel tune makes, or a decode job started without keep, ends when this server exits.
 
@@ -189,7 +191,7 @@ func (srv *mcpServer) toolApp() (*App, *bytes.Buffer, *bytes.Buffer) {
 		IsTTY: func() bool { return false }, IsErrTTY: func() bool { return false },
 		TermWidth: func() int { return 0 }, TermHeight: func() int { return 0 }, ErrTermWidth: func() int { return 0 },
 		Style: ui.Style{}, ErrStyle: ui.Style{}, styled: true,
-		clientKind: srv.app.clientKind, clientLabel: srv.app.clientLabel,
+		clientKind: srv.app.clientKind, clientLabel: srv.app.clientLabel, logFile: srv.app.logFile,
 	}
 	return app, &out, &errb
 }

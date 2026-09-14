@@ -123,6 +123,9 @@ func (a *App) logPath(f *daemonFlags) string {
 	if f.log != "" {
 		return f.log
 	}
+	if a.logFile != "" {
+		return a.logFile
+	}
 	return leyline.DefaultLogPath()
 }
 

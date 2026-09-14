@@ -6,9 +6,9 @@ verb does. Each tool is a ley verb seen from an agent -- list_devices is
 'ley records' -- and returns the same proto3 JSON '--json' prints, plus a
 short text summary so the agent spends its context on reasoning.
 
-Tools: list_devices, get_state, tune, scan, listen_summary, snapshot,
-list_decoders, query_records, list_entities, start_decode_job, list_jobs,
-get_job, cancel_job. The resource ley://records/<job_id> reads a kept decode
+Tools: list_devices, get_state, daemon_logs, tune, scan, listen_summary,
+snapshot, list_decoders, query_records, list_entities, start_decode_job,
+list_jobs, get_job, cancel_job. The resource ley://records/<job_id> reads a kept decode
 job's records. Anything an agent starts here (a channel from tune, a decode
 job without keep) ends when the agent disconnects, the way a ley verb's ends
 at Ctrl-C; keep: true on a tool leaves it running.

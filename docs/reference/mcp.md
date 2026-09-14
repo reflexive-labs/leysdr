@@ -85,6 +85,7 @@ are optional in the schema; the defaults are the mirror verb's.
 |---|---|---|---|---|
 | `list_devices` | `ley devices` | `Control.ListDevices` | none | `ListDevicesResponse` |
 | `get_state` | `ley state` | `Control.GetState` | none | `GetStateResponse` |
+| `daemon_logs` | `ley daemon logs` | the log file on the host | `lines` (default 50, at most 500) | `{daemon: DaemonInfo, path, lines: […]}` |
 | `tune` | `ley tune` | `CreateCapture`, `CreateChannel`, `WriteParams` | `frequency`; `mode`, `bandwidth`, `squelch`, `gain`, `device`, `audio`, `keep`, `take_over` | `{capture, channel, sink}` |
 | `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `device`, `take_over` | `Scan` |
 | `listen_summary` | `ley tune`, `ley listen` | `Telemetry.Subscribe`, bounded | `target` (frequency, preset or `chan_…`); `duration_s` (default 10, at most 300), `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | `{channel, transcript, meter, tone}` |
@@ -98,6 +99,14 @@ are optional in the schema; the defaults are the mirror verb's.
 | `cancel_job` | `ley jobs cancel` | `Jobs.CancelJob` | `job` | `Job` |
 
 Notes a table cell cannot hold:
+
+- **`daemon_logs`** is the one tool that reads the host rather than the daemon: the last lines of
+  the log file `ley daemon logs` prints, headed by the daemon's pid and start time from
+  `get_state`. Nothing on the socket says why a daemon went away; the log does. A restart also
+  shows in `get_state` on its own: `DaemonInfo.pid` and `startedAtNs` change and the event
+  sequence starts over, and a job started before the restart is gone with it (the durable job
+  store is Milestone D.15). The path is the default log unless `ley daemon start` was given
+  `--log`, in which case the tool says which file it read and the agent can tell they differ.
 
 - **`tune`** makes the same decisions `ley tune` makes and lists them in the text: the mode from
   the band unless `mode` is given, the squelch measured from the noise floor for NFM and AM unless
@@ -132,10 +141,24 @@ Notes a table cell cannot hold:
   listening for `duration_s`; with none running it starts one for the call and stops it after.
   Rows age out after the decoder's own `entity_silence_s`, and `since_s` seeds the table from kept
   records, as `ley track --since` does.
+- **`query_records`** says why a page is empty, because an empty page reads the same for a quiet
+  band and for a decoder that was never storing. The daemon cannot tell the two apart; the job
+  list can. The text names which it was: the job (or every decode job for the protocol) was
+  started without `keep`, so its records stayed on the live stream; no kept decode job for the
+  protocol has run, so there was nothing to search; or a kept job exists and wrote nothing, in
+  which case the band may be quiet or the decoder may hear nothing, and `listen_summary` on the
+  job's channel is how to tell, since it reports whether audio is flowing without any decoder in
+  the way.
 - **`start_decode_job`** without `keep` runs while the server does and its records reach
   `list_entities` only; with `keep` the job runs on, its records are stored, and `query_records`
   (or the resource below) reads them. An alias a manifest lists (`vessels` for `ais`) resolves to
   the canonical decoder before the job starts, as `ley decode vessels` does.
+
+What the job list does not say: a decode job reads `RUNNING` whether the decoder is producing
+records or not, by design (`docs/plans/decoders.md`, DEC-16: a silent decoder is indistinguishable
+from a quiet band, and SAME is silent by design), and a decoder that exits is restarted with the
+job saying so in `statusDetail`. Evidence of liveness in the job itself, records so far and when
+the last one came, is DEC-23 and not built.
 
 Not registered, because the daemon cannot back them yet: `find_recordings` (the Resources service
 and the recording store, Milestone C.12), `get_transcript` (audio-transcript watch jobs, D.15),

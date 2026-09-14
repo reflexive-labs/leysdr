@@ -30,9 +30,9 @@ Nothing has been released yet. This file starts with everything that exists on `
   IQ (for wideband modes). `make install-decoders` puts the plugins where the daemon finds them.
   `docs/design/decoders.md` and `docs/reference/writing-a-decoder.md` are the contract for another.
 - `ley mcp`: a Model Context Protocol server an agent's client starts on stdin and stdout, serving the
-  daemon's verbs as tools -- `list_devices`, `get_state`, `tune`, `scan`, `listen_summary`, `snapshot`
-  (a spectrum PNG and the row), `list_decoders`, `query_records`, `list_entities`, `start_decode_job`,
-  `list_jobs`, `get_job`, `cancel_job` -- and a kept job's records as the resource
+  daemon's verbs as tools -- `list_devices`, `get_state`, `daemon_logs`, `tune`, `scan`,
+  `listen_summary`, `snapshot` (a spectrum PNG and the row), `list_decoders`, `query_records`,
+  `list_entities`, `start_decode_job`, `list_jobs`, `get_job`, `cancel_job` -- and a kept job's records as the resource
   `ley://records/<job_id>`. Every tool returns the proto3 JSON its `ley` mirror prints and a short
   summary; what an agent starts ends with its conversation unless it asks to keep it
   (`docs/reference/mcp.md`).

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -42,6 +43,12 @@ func (srv *mcpServer) registerTools() {
 		Description: "Everything the daemon holds right now: devices, captures (a radio tuned to a band), channels (a station picked out of a capture), sinks and jobs (Control.GetState; ley state). Read this to orient before tuning or scanning. Returns a GetStateResponse.",
 		Annotations: readOnly,
 	}, srv.getState)
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "daemon_logs",
+		Description: "The last lines of the daemon's log file, with the daemon's pid and start time (ley daemon logs). This is where a crash, a restart, a plugin that would not start or a radio that failed to open is explained; nothing on the socket says why a daemon went away. " +
+			"Returns {daemon: DaemonInfo, path, lines: [...]}.",
+		Annotations: readOnly,
+	}, srv.daemonLogs)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "tune",
 		Description: "Tune a radio to a frequency or preset and open a channel there, the way 'ley tune' does: the mode is chosen from the band unless given, and the squelch is measured from the noise floor for voice modes. " +
@@ -145,6 +152,69 @@ func (srv *mcpServer) getState(ctx context.Context, _ *mcp.CallToolRequest, _ mc
 	app, out, _ := srv.toolApp()
 	printState(app, st, false)
 	return protoResult(st, out.String())
+}
+
+type daemonLogsArgs struct {
+	Lines int `json:"lines,omitempty" jsonschema:"how many lines from the end of the log to return (default 50, at most 500)"`
+}
+
+// daemonLogsMax bounds a read: a log is megabytes after a week, and an agent
+// reading it whole has spent its context on the radios found at every boot.
+const daemonLogsMax = 500
+
+func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in daemonLogsArgs) (*mcp.CallToolResult, any, error) {
+	n := in.Lines
+	if n <= 0 {
+		n = 50
+	}
+	if n > daemonLogsMax {
+		return nil, nil, fmt.Errorf("lines is at most %d; 'ley daemon logs' on the host prints the whole file", daemonLogsMax)
+	}
+	path := srv.app.logPath(&daemonFlags{})
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, fileMissing(path, "the daemon writes it once started with 'ley daemon start'; a daemon started by hand with another --log writes elsewhere")
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot read the log %s: %v", path, err)
+	}
+	all := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if len(all) == 1 && all[0] == "" {
+		all = nil
+	}
+	lines := all
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	var b strings.Builder
+	var info *leylinev1.DaemonInfo
+	if st, serr := srv.client.State(ctx); serr == nil && st.GetDaemon() != nil {
+		info = st.GetDaemon()
+		started := time.Unix(0, info.GetStartedAtNs())
+		fmt.Fprintf(&b, "daemon %s pid %d, up since %s (%s ago).\n", info.GetVersion(), info.GetPid(),
+			started.Format(time.RFC3339), time.Since(started).Truncate(time.Second))
+	} else {
+		b.WriteString("the daemon is not answering on the socket; the log below is what it last wrote.\n")
+	}
+	fmt.Fprintf(&b, "%s, last %d of %d lines:\n", path, len(lines), len(all))
+	for _, l := range lines {
+		b.WriteString(l + "\n")
+	}
+	if lines == nil {
+		lines = []string{}
+	}
+	rawOut, err := composite(map[string]any{"daemon": daemonOrNil(info), "path": path, "lines": lines})
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(b.String()), rawOut, nil
+}
+
+func daemonOrNil(d *leylinev1.DaemonInfo) any {
+	if d == nil {
+		return nil
+	}
+	return d
 }
 
 // ---------- control ----------
@@ -788,7 +858,88 @@ func (srv *mcpServer) queryRecords(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 	app, out, errb := srv.toolApp()
 	printRecordTable(app, page)
-	return protoResult(page, out.String()+errb.String())
+	text := out.String() + errb.String()
+	if len(page.GetRecords()) == 0 {
+		text += srv.emptyPageReason(ctx, q) + "\n"
+	}
+	return protoResult(page, text)
+}
+
+// emptyPageReason says why a query found nothing, because an empty page reads
+// the same for a quiet band and for a decoder that was never storing. The
+// daemon cannot tell the two apart in the page, but the job list can: a job
+// started without keep never wrote to the store, and no kept job at all means
+// there was nothing to search. Only with a kept job in the list is silence
+// the band's, and then listen_summary on its channel is the next question.
+func (srv *mcpServer) emptyPageReason(ctx context.Context, q *leylinev1.RecordQuery) string {
+	jobs, err := srv.client.ListJobs(ctx)
+	if err != nil {
+		return "no records matched."
+	}
+	filtered := q.GetDeviceId() != "" || q.GetKind() != "" || q.GetSinceNs() != 0 || q.GetNear() != nil || q.GetInEffect() || len(q.GetFields()) > 0
+	narrowed := ""
+	if filtered {
+		narrowed = ", or the filters excluded them"
+	}
+	if id := q.GetJobId(); id != "" {
+		for _, j := range jobs {
+			if j.GetJobId() != id {
+				continue
+			}
+			if !j.GetDecode().GetKeep() {
+				return fmt.Sprintf("no records: job %s was started without keep, so its records were on the live stream only and nothing reached the store. list_entities folds a running job's records; start_decode_job with keep: true stores them.", id)
+			}
+			return fmt.Sprintf("no records: the kept job %s (%s) has written none%s. The band may be quiet, or the decoder may hear nothing: listen_summary on the job's channel says whether audio is flowing, and get_job whether the decoder is still up.", id, jobStateWord(j), narrowed)
+		}
+		return fmt.Sprintf("no records: the daemon lists no job %s (it keeps the last sixteen finished jobs and forgets them on restart), and the store holds nothing under that id.", id)
+	}
+	var kept, unkept []string
+	for _, j := range jobs {
+		d := j.GetDecode()
+		if d == nil || (q.GetProtocol() != "" && d.GetDecoder() != q.GetProtocol()) {
+			continue
+		}
+		if d.GetKeep() {
+			kept = append(kept, j.GetJobId())
+		} else {
+			unkept = append(unkept, j.GetJobId())
+		}
+	}
+	what := "any decoder"
+	if q.GetProtocol() != "" {
+		what = q.GetProtocol()
+	}
+	switch {
+	case len(kept) > 0:
+		return fmt.Sprintf("no records: the kept %s for %s (%s) %s written none%s. The band may be quiet, or the decoder may hear nothing: listen_summary on the job's channel says whether audio is flowing, and get_job whether the decoder is still up.",
+			noun(len(kept), "job"), what, strings.Join(kept, ", "), hasOrHave(len(kept)), narrowed)
+	case len(unkept) > 0:
+		return fmt.Sprintf("no records: the %s for %s (%s) %s started without keep, so records stay on the live stream and never reach the store. list_entities folds a running job's records; start_decode_job with keep: true stores them.",
+			noun(len(unkept), "decode job"), what, strings.Join(unkept, ", "), wasOrWere(len(unkept)))
+	}
+	return fmt.Sprintf("no records: no kept decode job for %s has run, so the store has nothing to search (the daemon lists the last sixteen finished jobs; a restart forgets them). start_decode_job with keep: true stores what it hears.", what)
+}
+
+// noun is the word alone, pluralised: "job", "jobs".
+func noun(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
+}
+
+func hasOrHave(n int) string {
+	if n == 1 {
+		return "has"
+	}
+	return "have"
+}
+
+func wasOrWere(n int) string {
+	if n == 1 {
+		return "was"
+	}
+	return "were"
 }
 
 type listEntitiesArgs struct {

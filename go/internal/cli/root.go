@@ -110,6 +110,10 @@ type App struct {
 	// Empty means the CLI's own ("cli", "ley"); `ley mcp` sets them so a
 	// channel an agent made is attributed to the adapter, not to a shell.
 	clientKind, clientLabel string
+	// logFile, when set, is the daemon log `ley daemon logs` and the MCP
+	// daemon_logs tool read in place of the default path; tests point it at
+	// a file they wrote.
+	logFile string
 }
 
 // NewRootCommand builds the full `ley` command tree bound to app.
