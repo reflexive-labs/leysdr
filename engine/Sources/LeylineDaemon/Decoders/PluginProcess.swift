@@ -22,6 +22,7 @@ import Darwin
 import LeylineProto
 import Logging
 import SwiftProtobuf
+import Synchronization
 
 /// Reads varint-delimited messages from a file descriptor, blocking. Owned by one thread.
 final class DelimitedReader {
@@ -149,6 +150,14 @@ final class PluginProcess: @unchecked Sendable {
     private let log: Logger
     private let recordsContinuation: AsyncStream<Leyline_V1_DecodeRecord>.Continuation
     private let exitContinuation: AsyncStream<Int32>.Continuation
+    /// The write end of the plugin's stdin as a raw descriptor: nil before `start` and after
+    /// `stop`. A write holds the lock for its duration, so `stop` cannot close the descriptor
+    /// under a frame in flight, and `stop` empties it first, so a frame that arrives afterwards
+    /// is a drop rather than a call on the closed handle. The descriptor is cached because
+    /// NSFileHandle raises an Objective-C exception for `fileDescriptor` once it is closed, which
+    /// Swift cannot catch: the runner's drain asking for it a moment after cancel closed the pipe
+    /// took the whole daemon down (docs/plans/decoders.md, DEC-22).
+    private let writeFD = Mutex<Int32?>(nil)
 
     /// Records the plugin wrote, in order. Finishes when its stdout closes.
     let records: AsyncStream<Leyline_V1_DecodeRecord>
@@ -195,6 +204,7 @@ final class PluginProcess: @unchecked Sendable {
         let wfd = inPipe.fileHandleForWriting.fileDescriptor
         let flags = fcntl(wfd, F_GETFL, 0)
         if flags >= 0 { _ = fcntl(wfd, F_SETFL, flags | O_NONBLOCK) }
+        writeFD.withLock { $0 = wfd }
         if try writeDelimited(descriptor, to: wfd, deadlineSeconds: 5) == .droppedFull {
             throw EngineError(code: EngineError.Code.decoderFailed,
                               message: "\(name) did not read its stream descriptor", target: name)
@@ -202,11 +212,15 @@ final class PluginProcess: @unchecked Sendable {
     }
 
     /// One frame to the plugin, without blocking the caller. Returns whether the frame reached the
-    /// plugin or was dropped because the plugin has stopped reading; throws `PluginStalled` if a
-    /// frame stalled half-written, which the runner answers by replacing the plugin.
+    /// plugin or was dropped because the plugin has stopped reading, or because `stop` has already
+    /// closed its input; throws `PluginStalled` if a frame stalled half-written, which the runner
+    /// answers by replacing the plugin.
     @discardableResult
     func write(_ frame: Leyline_V1_Frame) throws -> PluginWrite {
-        try writeDelimited(frame, to: inPipe.fileHandleForWriting.fileDescriptor)
+        try writeFD.withLock { fd in
+            guard let fd else { return .droppedFull }
+            return try writeDelimited(frame, to: fd)
+        }
     }
 
     private func startReaders() {
@@ -243,9 +257,15 @@ final class PluginProcess: @unchecked Sendable {
     }
 
     /// Closes stdin and waits, then escalates. A decoder with buffered state gets the chance to
-    /// flush what it has before it is killed.
+    /// flush what it has before it is killed. Idempotent: the drain stops a stalled plugin and
+    /// the runner's teardown stops it again, and the input is closed once.
     func stop() async {
-        try? inPipe.fileHandleForWriting.close()
+        let open = writeFD.withLock { fd -> Bool in
+            let was = fd != nil
+            fd = nil
+            return was
+        }
+        if open { try? inPipe.fileHandleForWriting.close() }
         if await waitForExit(seconds: 2) { return }
         if process.isRunning { process.terminate() }
         if await waitForExit(seconds: 1) { return }

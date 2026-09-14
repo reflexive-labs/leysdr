@@ -76,6 +76,47 @@ final class PluginProcessTests: XCTestCase {
         }
     }
 
+    func testAFrameAfterStopIsDroppedNotACrash() async throws {
+        // Cancelling a decode job closes the plugin's stdin while the drain may still be handing
+        // it a frame. The write used to ask the closed NSFileHandle for its descriptor, which
+        // raises an Objective-C exception Swift cannot catch and took the daemon down (DEC-22).
+        // Now a frame after stop is a drop, the same answer as a plugin that stopped reading,
+        // and a second stop is a no-op rather than a second close.
+        let plugin = PluginProcess(name: "fake", executable: fakeDecoderPath(), args: [],
+                                   directory: NSTemporaryDirectory())
+        try plugin.start(descriptor: descriptor())
+        try plugin.write(frame(1, payload: Data([1, 2, 3, 4])))
+        await plugin.stop()
+        guard case .droppedFull = try plugin.write(frame(2, payload: Data([1, 2, 3, 4]))) else {
+            return XCTFail("a frame written after stop must be dropped, not written to a closed pipe")
+        }
+        await plugin.stop()
+    }
+
+    func testWritesRacingStopNeverTouchTheClosedHandle() async throws {
+        // The race itself: frames written from one task while stop runs on another. Every write
+        // must come back as a PluginWrite or a thrown error; the process must still be here. On
+        // Darwin the old code raised out of the closed NSFileHandle and this test process died with
+        // it; swift-corelibs-foundation returns -1 instead, so on Linux the first test is the one
+        // that tells the old code from the new.
+        let plugin = PluginProcess(name: "fake", executable: fakeDecoderPath(), args: [],
+                                   directory: NSTemporaryDirectory())
+        try plugin.start(descriptor: descriptor())
+        let writer = Task.detached {
+            var dropped = 0
+            for i in 1...2000 {
+                if case .droppedFull? = try? plugin.write(self.frame(UInt64(i), payload: Data([1, 2, 3, 4]))) {
+                    dropped += 1
+                }
+            }
+            return dropped
+        }
+        try await Task.sleep(nanoseconds: 5_000_000)
+        await plugin.stop()
+        let dropped = await writer.value
+        XCTAssertGreaterThan(dropped, 0, "the writes after stop were dropped, not written to a closed pipe")
+    }
+
     func testStopClosesStdinAndWaits() async throws {
         let plugin = PluginProcess(name: "fake", executable: fakeDecoderPath(), args: [],
                                    directory: NSTemporaryDirectory())

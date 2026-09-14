@@ -248,6 +248,15 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   `vessels`; an ADS-B decoder would carry `aircraft`. The daemon does not resolve aliases -- they
   are a client convenience, and the resolver reads them from `ListDecoders`; completion offers them
   and `ley decoders` shows them beside the name. `ley track vessels` now works.
+- DEC-22 `[x]` Cancelling a decode job could kill the daemon. `PluginProcess.write` asked the
+  pipe's `NSFileHandle` for its descriptor on every frame, and `stop` closes that handle; a frame
+  the drain handed over a moment after cancel asked a closed handle, which raises an Objective-C
+  exception Swift cannot catch, so launchd restarted `leylined` (seen twice in the log on
+  2026-09-13, found through `ley mcp`, whose `list_entities` cancels the decoder it started). The
+  descriptor is now cached at spawn under a lock a write holds for its duration; `stop` empties it
+  before closing, so a late frame is a drop, the same answer as a plugin that stopped reading, and
+  a second `stop` closes nothing. `PluginProcessTests` writes after a stop and races writes against
+  one. A kept job still does not survive the restart this caused (DEC-11).
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side), on
   the IQ input DEC-18 built.
 - DEC-14 `[ ]` The MCP families and `ley identify`.
