@@ -90,7 +90,7 @@ func bandKey(s string) string {
 func ResolveBand(name string) (Band, error) {
 	key := bandKey(name)
 	if key == "" {
-		return Band{}, fmt.Errorf("band: no name given; try one of %s", strings.Join(BandAliases(), ", "))
+		return Band{}, fmt.Errorf("no band name given; try one of %s", strings.Join(BandAliases(), ", "))
 	}
 	for _, b := range bands {
 		if key == bandKey(b.Name) {
@@ -103,9 +103,9 @@ func ResolveBand(name string) (Band, error) {
 		}
 	}
 	if near := NearestBandNames(name); len(near) > 0 {
-		return Band{}, fmt.Errorf("band: unknown name %q; did you mean %s? (ley bands lists them all)", name, strings.Join(near, ", "))
+		return Band{}, fmt.Errorf("no band called %q; did you mean %s? Check with: ley bands", name, strings.Join(near, ", "))
 	}
-	return Band{}, fmt.Errorf("band: unknown name %q; try one of %s (ley bands lists them all)", name, strings.Join(BandAliases(), ", "))
+	return Band{}, fmt.Errorf("no band called %q; try one of %s, or check with: ley bands", name, strings.Join(BandAliases(), ", "))
 }
 
 // BandAliases is every band's first alias, in frequency order: the short list

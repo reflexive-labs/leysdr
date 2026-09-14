@@ -301,7 +301,7 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"state", "extra"}, "unknown command \"extra\""},
 		{[]string{"devices", "--bogus"}, "unknown flag: --bogus"},
 		{[]string{"fft", "--format", "xml"}, "--format must be json or bin"},
-		{[]string{"spectrum", "146,52"}, "frequency:"},
+		{[]string{"spectrum", "146,52"}, "is not a frequency"},
 		{[]string{"record"}, "record is not implemented yet (Milestone C.12). Today:"},
 		{[]string{"record", "--audio", "--duration", "10"}, "record is not implemented yet (Milestone C.12). Today:"},
 		{[]string{"scan", "146.52"}, "is not a range; two frequencies with .. between them"},
@@ -315,8 +315,8 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"tune"}, "tune needs a frequency or preset"},
 		{[]string{"tune", "146,52"}, "frequency"},
 		{[]string{"tune", "nooa"}, "or give a frequency such as 146.52 (MHz)"},
-		{[]string{"tune", "146.52", "--mode", "morse"}, "--mode:"},
-		{[]string{"play", iq, "--freq", "1,1"}, "--freq:"},
+		{[]string{"tune", "146.52", "--mode", "morse"}, "--mode "},
+		{[]string{"play", iq, "--freq", "1,1"}, "--freq "},
 		// A recording that is not there is a usage error said in plain words.
 		{[]string{"play", missing}, "there is no file at " + missing},
 	}

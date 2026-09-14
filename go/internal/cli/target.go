@@ -32,7 +32,7 @@ type dialTarget struct {
 // argument did not parse and needs to see what one looks like.
 func resolveDialTarget(arg, verb, usage, example string) (dialTarget, error) {
 	if arg == "" {
-		return dialTarget{}, usageErrorf("%s needs a frequency or preset: %s (ley help presets lists them)", verb, usage)
+		return dialTarget{}, usageErrorf("%s needs a frequency or preset: %s; check with: ley help presets", verb, usage)
 	}
 	t, err := resolveDial(arg, example)
 	if err == nil {

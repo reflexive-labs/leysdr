@@ -184,16 +184,16 @@ func TestDecodeScreensSurviveColourOff(t *testing.T) {
 	table.Apply(page.Records[0])
 	table.Apply(page.Records[1])
 
+	// Colour is compared at a fixed glyph set: the alphabet is the reader's
+	// terminal, not the emphasis, and the track table now draws ramp glyphs.
 	render := func(styled bool) string {
 		var out, errb bytes.Buffer
 		app := &App{Stdout: &out, Stderr: &errb, IsTTY: func() bool { return false }}
-		if styled {
-			app.Style = ui.Style{Color: true, Unicode: true}
-			app.ErrStyle = app.Style
-		}
+		app.Style = ui.Style{Color: styled, Unicode: true}
+		app.ErrStyle = app.Style
 		printDecoderTable(app, list)
 		printRecordTable(app, page)
-		out.WriteString(renderTrack(app, table))
+		out.WriteString(renderTrack(app, table, trackDefaultWindow))
 		s := &session{app: app}
 		for _, rec := range page.Records {
 			if err := printRecord(s, rec); err != nil {

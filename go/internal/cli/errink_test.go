@@ -21,7 +21,7 @@ func TestErrorLinePlainAndStyled(t *testing.T) {
 		"cannot run the daemon binary /nope/leylined: no such file or directory. Pass --bin, set $LEYLINE_DAEMON_BIN, or put leylined on PATH",
 		"the daemon (pid 4242) has not exited yet; it may be finishing a write. Check with: ley daemon status",
 		"leylined exited during startup (exit status 1). Look at its log: ley daemon logs (/tmp/leylined.log)",
-		"--mode: unknown demodulator \"FOO\" (am, nfm, wfm, usb, lsb, cw, raw_iq); also accepted: fm, ssb",
+		"--squelch \"loud\" is not a squelch level (examples: -40, -40dB, off, auto)",
 		"interrupted",
 		"",
 	}
@@ -60,8 +60,8 @@ func TestErrorLineInkTargets(t *testing.T) {
 		{
 			// A parenthetical that lists accepted values is not a path and
 			// keeps its weight: the reader is meant to read it.
-			"--mode: unknown demodulator \"FOO\" (am, nfm, wfm)",
-			[]string{"(am, nfm, wfm)"},
+			"--squelch \"loud\" is not a squelch level (examples: -40, -40dB, off, auto)",
+			[]string{"(examples: -40, -40dB, off, auto)"},
 		},
 	}
 	for _, tc := range tests {

@@ -37,7 +37,14 @@ type Entity struct {
 	// age out of a live table.
 	FirstHeard, LastHeard time.Time
 	Count                 int
+	// Heard is when each record reached this client, oldest first, on the same clock: the
+	// series behind a row's activity sparkline. Expire trims it to the silence window, and a
+	// table that never expires keeps the newest heardCap, so an all-night watch stays bounded.
+	Heard []time.Time
 }
+
+// heardCap bounds Entity.Heard when no silence window trims it.
+const heardCap = 1024
 
 // Table is the entity fold: records in, one row per device_id out. It is not safe for concurrent
 // use; the verb that owns it applies records and reads rows on one goroutine.
@@ -104,7 +111,20 @@ func (t *Table) Apply(rec *leylinev1.DecodeRecord) *Entity {
 	}
 	e.LastHeard = now
 	e.Count++
+	e.Heard = append(e.Heard, now)
+	if len(e.Heard) > heardCap {
+		e.Heard = e.Heard[len(e.Heard)-heardCap:]
+	}
 	return e
+}
+
+// HeardSince returns the entity's arrival times at or after cutoff, oldest first.
+func (e *Entity) HeardSince(cutoff time.Time) []time.Time {
+	i := 0
+	for i < len(e.Heard) && e.Heard[i].Before(cutoff) {
+		i++
+	}
+	return e.Heard[i:]
 }
 
 // wall derives a record's wall clock from the anchor of the capture it was decoded on.
@@ -124,11 +144,14 @@ func (t *Table) Expire(now time.Time, silence time.Duration) int {
 		return 0
 	}
 	gone := 0
+	cutoff := now.Add(-silence)
 	for id, e := range t.entities {
 		if now.Sub(e.LastHeard) > silence {
 			delete(t.entities, id)
 			gone++
+			continue
 		}
+		e.Heard = e.HeardSince(cutoff)
 	}
 	return gone
 }

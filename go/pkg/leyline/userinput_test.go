@@ -31,7 +31,7 @@ func TestParseUserFrequency(t *testing.T) {
 		{"146.52e6", 146_520_000, ""},
 		{"500Hz", 500, ""},
 		{"146,520", 0, "comma"},
-		{"", 0, "empty"},
+		{"", 0, "no frequency given"},
 		{"abc", 0, "cannot read"},
 		{"-5", 0, "cannot read"},
 	}

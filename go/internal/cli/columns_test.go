@@ -240,3 +240,27 @@ func checkWidth(t *testing.T, name, out string, width int) {
 		}
 	}
 }
+
+// A numeric column is right-aligned under its header, so digits line up and a
+// short value does not sit at the far left of a wide header.
+func TestColumnsRightAlign(t *testing.T) {
+	cols := []column{
+		{head: "NAME", cells: []string{"a", "bb"}},
+		{head: "PEAK SNR (dB)", cells: []string{"22", "9"}, right: true},
+		{head: "NOTE", cells: []string{"x", "y"}},
+	}
+	var b strings.Builder
+	if _, err := printColumns(&b, ui.Style{}, cols, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := "NAME  PEAK SNR (dB)  NOTE\na                22  x\nbb                9  y\n"
+	if b.String() != want {
+		t.Errorf("got:\n%s\nwant:\n%s", b.String(), want)
+	}
+	// Right-aligned as the last column too, with no trailing spaces.
+	var c strings.Builder
+	_, _ = printColumns(&c, ui.Style{}, cols[:2], nil)
+	if got := c.String(); got != "NAME  PEAK SNR (dB)\na                22\nbb                9\n" {
+		t.Errorf("last column: %q", got)
+	}
+}

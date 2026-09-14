@@ -35,6 +35,17 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `docs/plans/user-
 
 13. **Done.** Detector (energy detection, noise floor, persistence tracking); telemetry plane; `ley scan`. *(Story: scan with detections.)* Design and measured numbers: `docs/design/scan.md`.
 14. TUI dashboard: bare `ley` opens a Bubble Tea dashboard — shaded-cell waterfall from a negotiated low-rate FFT stream, tuning controls, channel list, meters from telemetry. First real exercise of stream negotiation by a constrained consumer.
+    Layout, decided 2026-09-13 with the design-system handoff so it is not re-argued when this starts:
+    the dashboard owns its viewport, so its waterfall puts the newest row directly under the spectrum
+    with the frequency axis between them, and time flows down the screen. That is the opposite of
+    `ley waterfall`, which prints to a scrolling terminal, where newest-at-bottom is the only order
+    that does not fight the scrollback and the axis is reprinted every 20 rows (`waterfallAxisEvery`)
+    because the top of the screen is gone by the time a reader wants it. Two surfaces, two rules;
+    neither is a precedent for the other. Everything else in `docs/dev/cli-style.md` holds here as it
+    does in the scrolling views: the four-step `Shade` ramp rather than half-blocks (a half-block map
+    is a blank rectangle with colour off), the six ink roles, and the level ramp, which since
+    2026-09-14 is the brand's terminal palette (teal to salmon red, tuned for a dark ground) and is
+    the same five stops the scrolling views draw with.
 15. Jobs: store, JobRunner respawn, CaptureAllocator with don't-disturb; watch job → ActivitySegments → transcript.
 16. MCP adapter (Go, sharing the `ley` client library); tools from `docs/reference/cli.md`; snapshot PNG rendering.
     The plan, with the where-the-server-lives decision and the tool order: `docs/plans/mcp.md`.

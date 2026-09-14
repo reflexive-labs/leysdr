@@ -74,10 +74,10 @@ The ones a newcomer meets first:
 | `no radio found. Check, in order:` under an empty `ley devices` table | the daemon runs but sees no radio | the checklist above |
 | `ley: 1.800 GHz is outside what Generic RTL2832U (R820T) can tune (24.000 MHz – 1.766 GHz); did you mean 1.800 MHz (160 m amateur)? write 1800k [FREQ_OUT_OF_RANGE]` | a bare number is MHz, so `1800` was 1800 MHz | type the unit: `ley tune 1800k` |
 | `... this device cannot tune below 24.000 MHz; HF needs an upconverter or a device with direct sampling` | the frequency is real, the radio just cannot reach it | an upconverter, or a radio that can |
-| `ley: frequency: "146,52" contains a comma; use a dot for decimals (146.52) or a unit (146520k)` | commas are refused | `ley tune 146.52` |
-| `ley: preset: unknown name "noa"; did you mean noaa1, noaa2, noaa3? (ley help presets lists them all); or give a frequency such as 146.52 (MHz)` | not a preset | `ley tune noaa`, or the frequency |
+| `ley: "146,52" is not a frequency; use a dot for decimals (146.52) or a unit (146520k), not a comma` | commas are refused | `ley tune 146.52` |
+| `ley: no preset called "noa"; did you mean noaa1, noaa2, noaa3? Check with: ley help presets; or give a frequency such as 146.52 (MHz)` | not a preset | `ley tune noaa`, or the frequency |
 | `ley: "foo" is not a setting. Settings: ...` | `set` got a parameter it does not know; the list follows | pick one from the list |
-| `ley: squelch: "5" is above full scale; levels are dBFS, 0 is loudest; try -40 or auto` | squelch levels are negative numbers | `ley set squelch -40` or `auto` |
+| `ley: squelch "5" is above full scale; levels are dBFS, 0 is loudest; try -40 or auto` | squelch levels are negative numbers | `ley set squelch -40` or `auto` |
 | `ley: 2 channels are playing; pick one with --channel: ...` | several channels, none clearly yours | `ley set squelch -40 --channel 2` |
 | `ley: no channel matches "3" (a full id, id prefix, row number or frequency); pick one:` then rows `1  chan_…  146.520 MHz NFM` | the selector fit nothing; the rows are what exists | pick a row number or id from the list |
 | `ley: the radio is on 146.520 MHz with 1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway, or free it with: ley stop --all` | another channel rides on the capture and your frequency is outside its band | `ley tune 101.1 --retune`, or `ley stop all` first |

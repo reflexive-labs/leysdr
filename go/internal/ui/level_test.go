@@ -54,13 +54,16 @@ func TestLevelMonotoneInHue(t *testing.T) {
 	for i := 0; i <= steps; i++ {
 		f := float64(i) / steps
 		h := hue(rampRGB(t, f))
-		if h > prev+1e-9 {
+		// The mix is rounded to 8-bit channels, which wobbles the hue by a
+		// fraction of a degree between samples. A fold-back the eye could see
+		// is degrees, not tenths.
+		if h > prev+0.5 {
 			t.Fatalf("hue rose at frac %.3f: %.2f after %.2f, want cold to hot without fold-back", f, h, prev)
 		}
 		prev = h
 	}
-	if h := hue(rampRGB(t, 0)); h < 200 || h > 260 {
-		t.Errorf("floor hue = %.1f, want deep blue (near 240)", h)
+	if h := hue(rampRGB(t, 0)); h < 150 || h > 190 {
+		t.Errorf("floor hue = %.1f, want teal (near 170)", h)
 	}
 	if h := hue(rampRGB(t, 1)); h > 20 && h < 340 {
 		t.Errorf("full-scale hue = %.1f, want red (near 0)", h)
@@ -106,13 +109,12 @@ func TestLevelDegradesByProfile(t *testing.T) {
 		}
 		named[sgr] = true
 	}
-	// Bright blue at the cold end, not blue: plain ANSI blue renders
-	// near-black in most dark themes, and the cold end is where most of a
-	// spectrum's ink lands.
-	want := map[string]bool{"94": true, "36": true, "32": true, "33": true, "31": true}
+	// Cyan at the cold end for teal; bright red for the orange stop, so the
+	// top two stops stay distinct at sixteen colours.
+	want := map[string]bool{"36": true, "32": true, "33": true, "91": true, "31": true}
 	for sgr := range named {
 		if !want[sgr] {
-			t.Errorf("16-colour ramp emitted %q; want only bright blue, cyan, green, yellow, red", "\x1b["+sgr+"m")
+			t.Errorf("16-colour ramp emitted %q; want only cyan, green, yellow, bright red, red", "\x1b["+sgr+"m")
 		}
 	}
 	if len(named) != len(want) {

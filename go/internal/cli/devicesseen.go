@@ -77,12 +77,12 @@ shows only transmitters not heard within the last D. --json prints a
 			var err error
 			if since != "" {
 				if o.since, err = parseAge(since); err != nil {
-					return usageErrorf("--since: %v", err)
+					return usageErrorf("--since %v", err)
 				}
 			}
 			if quietSince != "" {
 				if o.quietSince, err = parseAge(quietSince); err != nil {
-					return usageErrorf("--quiet-since: %v", err)
+					return usageErrorf("--quiet-since %v", err)
 				}
 			}
 			return runDevicesSeen(cmd.Context(), app, o)
@@ -156,10 +156,10 @@ func printDevicesTable(app *App, devices []*records.Device, store *labels.Store,
 	s := tableStyle(app)
 	cols := []column{
 		{head: "DEVICE", min: 8},
-		{head: "LABEL", min: 6, drop: 2},
+		{head: "LABEL", min: 6, drop: 2, hideEmpty: true},
 		{head: "PROTOCOL", drop: 3},
 		{head: "KIND", drop: 1},
-		{head: "SEEN"},
+		{head: "SEEN", right: true},
 		{head: "FIRST"},
 		{head: "LAST"},
 		{head: "SUMMARY", min: 12, drop: 1},

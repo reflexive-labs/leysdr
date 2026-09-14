@@ -137,7 +137,9 @@ func TestSetParams(t *testing.T) {
 	if st := state(); st.Channels[0].SquelchDb != -43 {
 		t.Fatalf("prefix selector: %v", st.Channels)
 	}
-	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40", "--channel", "9"); err == nil || !strings.Contains(err.Error(), "--channel") {
+	// The resolver's sentence is the error line: it names what it could not
+	// find rather than the flag it came in on.
+	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40", "--channel", "9"); err == nil || !strings.Contains(err.Error(), "no channel matches \"9\"") {
 		t.Fatalf("bad selector: %v", err)
 	}
 	// A frequency that matches no channel lists rows a person can pick from.
@@ -271,7 +273,7 @@ func TestSetParameterErrors(t *testing.T) {
 	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	cases := map[string][]string{
-		"squelch: ":                     {"squelch", "5"},
+		"squelch ":                      {"squelch", "5"},
 		"accepted: -40, -40dB, off":     {"squelch", "loud"},
 		"accepted: 30, 30dB, auto":      {"gain", "-5"},
 		"accepted: 12.5 (kHz), 200k":    {"bw", "wide"},
@@ -296,7 +298,7 @@ func TestSetParameterErrors(t *testing.T) {
 			t.Errorf("ley %v: exit %d (%v), want %d", args, exitCode(err), err, ExitUsage)
 		}
 	}
-	if _, _, err := run(t, context.Background(), sock, "set", "gain", "-5"); err == nil || !strings.Contains(err.Error(), "gain: \"-5\" is negative") {
+	if _, _, err := run(t, context.Background(), sock, "set", "gain", "-5"); err == nil || !strings.Contains(err.Error(), "gain \"-5\" is negative") {
 		t.Errorf("gain prefix once: %v", err)
 	}
 	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "5"); err == nil || !strings.Contains(err.Error(), "dBFS") {

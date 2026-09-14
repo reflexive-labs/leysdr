@@ -24,34 +24,44 @@ func contrast(a, b float64) float64 {
 	return (hi + 0.05) / (lo + 0.05)
 }
 
-// The ramp has to be legible on the terminal the reader actually has, and we
-// are forbidden from asking which one that is (no OSC background query, no
-// HasDarkBackground). So every stop must clear the same bar against a black
-// ground and a white one. The cold end needs this most: since most of a
-// spectrum is noise floor and the noise floor is the cold end, a cold end
-// that fails the bar makes most of the chart invisible.
+// The ramp is tuned for a dark terminal by decision (2026-09-14, the design
+// system's palette adopted with both renders side by side), and ley is
+// forbidden from asking which ground the reader has (no OSC background
+// query, no HasDarkBackground). So the test holds two bars, not one: every
+// stop clears WCAG AA for graphical objects against a black ground and
+// against #1e1e1e, and no stop falls under a lower floor against white, so a
+// light terminal reads faint rather than blank. The cold end matters most:
+// most of a spectrum is noise floor and the noise floor is the cold end, so
+// a cold end that vanishes hides most of the chart. An early {0,0,160} did
+// exactly that on a dark ground at 1.2:1.
 func TestLevelRampIsLegibleOnBothGrounds(t *testing.T) {
-	const min = 3.0 // WCAG AA for graphical objects
-	black := relLuminance(0, 0, 0)
-	white := relLuminance(255, 255, 255)
-	dark := relLuminance(30, 30, 30) // #1e1e1e, a common terminal ground
-	light := relLuminance(250, 250, 250)
+	const minDark = 3.0  // WCAG AA for graphical objects
+	const minLight = 2.4 // faint, never invisible; the accepted cost
+	grounds := []struct {
+		name string
+		lum  float64
+		min  float64
+	}{
+		{"#000000", relLuminance(0, 0, 0), minDark},
+		{"#1e1e1e", relLuminance(30, 30, 30), minDark}, // a common terminal ground
+		{"#ffffff", relLuminance(255, 255, 255), minLight},
+		{"#fafafa", relLuminance(250, 250, 250), minLight},
+	}
 	for i, c := range levelStops {
 		l := relLuminance(c[0], c[1], c[2])
-		for _, g := range []struct {
-			name string
-			lum  float64
-		}{{"#000000", black}, {"#1e1e1e", dark}, {"#ffffff", white}, {"#fafafa", light}} {
-			if got := contrast(l, g.lum); got < min {
+		for _, g := range grounds {
+			got := contrast(l, g.lum)
+			t.Logf("stop %d %v against %s: %.2f:1", i, c, g.name, got)
+			if got < g.min {
 				t.Errorf("ramp stop %d (%v) is %.2f:1 against %s, want at least %.1f:1",
-					i, c, got, g.name, min)
+					i, c, got, g.name, g.min)
 			}
 		}
 	}
 }
 
-// The ramp must still read cold to hot: hue sweeps even though luminance is
-// held flat, so the blue end must be bluer than the red end and vice versa.
+// The ramp must read cold to hot: the teal end must be bluer than the red
+// end and vice versa.
 func TestLevelRampSweepsColdToHot(t *testing.T) {
 	cold, hot := levelStops[0], levelStops[len(levelStops)-1]
 	if cold[2] <= cold[0] {

@@ -78,7 +78,7 @@ func (f *bandFlags) parse(app *App, args []string, span string, u bandUsage) err
 	if span != "" {
 		v, err := leyline.ParseUserFrequency(span)
 		if err != nil {
-			return usageErrorf("--span: %v. Example: %s", err, u.spanHint)
+			return usageErrorf("--span %v; for example %s", err, u.spanHint)
 		}
 		f.span = v
 	}

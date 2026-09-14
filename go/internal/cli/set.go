@@ -163,13 +163,15 @@ func resolveTarget(s *session, channelSel, captureSel string, hint targetHint) (
 	var cap *leylinev1.Capture
 	var err error
 	if captureSel != "" {
+		// The resolver's own sentence names what it could not find ("no capture
+		// matches ..."), so it is the error line as it stands.
 		if cap, err = leyline.ResolveCapture(st, captureSel); err != nil {
-			return nil, nil, fmt.Errorf("--capture: %w", err)
+			return nil, nil, err
 		}
 	}
 	if channelSel != "" {
 		if ch, err = leyline.ResolveChannel(st, channelSel); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", hint.flag, err)
+			return nil, nil, err
 		}
 		if cap != nil && ch.CaptureId != cap.CaptureId {
 			return nil, nil, usageErrorf("channel %s is on capture %s, not --capture %s; drop one selector or pick a channel on that capture", ch.ChannelId, ch.CaptureId, cap.CaptureId)
@@ -304,7 +306,7 @@ func settingRow(app *App, label, value string, live bool) {
 // a usage error (exit 2): nothing was sent to the daemon.
 func paramErr(name string, err error) error {
 	p := setParamByName(name)
-	return usageError(fmt.Errorf("%s: %w; accepted: %s", name, err, p.forms))
+	return usageError(fmt.Errorf("%s %w; accepted: %s", name, err, p.forms))
 }
 
 // buildWrites turns (param, value) into the ParamWrites and a predicate that

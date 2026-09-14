@@ -35,6 +35,16 @@ const (
 // no marker. With a plain style this is meterLine plus the bar, and with a
 // zero-width style it is meterLine alone.
 func meterRender(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, squelchDb float64) string {
+	return meterRenderHistory(st, freq, mode, m, squelchDb, nil)
+}
+
+// meterRenderHistory is meterRender with the signal row's sparkline: history
+// is the loudest level of each of the last sparkCells seconds as a fraction
+// of the meter's own scale (meterHistory.fracs), oldest first, or nil for a
+// meter with no past yet. It is drawn on the signal detail row, so it needs
+// the width and the audio level that row needs; a narrow terminal keeps the
+// contractual line alone.
+func meterRenderHistory(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, squelchDb float64, history []float64) string {
 	line := meterLine(freq, mode, m)
 	gate := "muted, waiting for a signal"
 	ink := st.Warn
@@ -44,7 +54,7 @@ func meterRender(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev
 	line = strings.TrimSuffix(line, gate) + ink(gate)
 	// The detail rows carry their own signal bar, so the inline one would say
 	// the same thing twice; the words keep the first line on their own.
-	if rows := meterDetail(st, m, squelchDb); rows != "" {
+	if rows := meterDetail(st, m, squelchDb, history); rows != "" {
 		return line + "\n" + rows
 	}
 	bar := meterBar(st, m.GetPowerDbfs(), squelchDb, m.GetSquelchOpen(), meterBarSize(st, ui.Visible(line)))
@@ -67,7 +77,7 @@ const meterDetailMinWidth = 60
 // "not measured" -- a raw-IQ channel has no audio, and neither does a channel
 // whose first block has not landed -- and a row that invents 0.0 dBFS for it
 // would be reporting a very loud signal.
-func meterDetail(st ui.Style, m *leylinev1.Meter, squelchDb float64) string {
+func meterDetail(st ui.Style, m *leylinev1.Meter, squelchDb float64, history []float64) string {
 	if st.Width < meterDetailMinWidth {
 		return ""
 	}
@@ -89,6 +99,12 @@ func meterDetail(st ui.Style, m *leylinev1.Meter, squelchDb float64) string {
 	b.WriteString("  " + fmtMeterDb(m.GetPowerDbfs()))
 	if snr := m.GetSnrDb(); !math.IsNaN(snr) {
 		b.WriteString("  " + st.Muted("snr ") + fmt.Sprintf("%.0f", snr) + st.Muted(" dB"))
+	}
+	// The last eight seconds, one cell each, so a reader arriving mid-session
+	// can see whether the channel has been quiet or is only quiet now. It takes
+	// the room left on the row and never wraps it.
+	if len(history) > 0 && ui.Visible(b.String())+2+len(history) <= st.Width {
+		b.WriteString("  " + levelSparkline(st, history))
 	}
 	b.WriteString("\n")
 	b.WriteString("  " + st.Pad(st.Label("audio"), label-2) + " ")
@@ -169,6 +185,56 @@ func meterBar(st ui.Style, powerDb, squelchDb float64, open bool, width int) str
 	return b.String()
 }
 
+// meterHistorySpan is how far back the signal row's sparkline reaches: one
+// cell per second, sparkCells of them.
+const meterHistorySpan = sparkCells * time.Second
+
+// meterHistory is the meter's recent past: every level the daemon reported
+// in the last meterHistorySpan, so the sparkline is drawn from measurements
+// rather than from a decay the terminal invented.
+type meterHistory struct {
+	at []time.Time
+	db []float64
+}
+
+// add records one reported level and forgets everything older than the span.
+func (h *meterHistory) add(db float64, now time.Time) {
+	h.at = append(h.at, now)
+	h.db = append(h.db, db)
+	cutoff := now.Add(-meterHistorySpan)
+	i := 0
+	for i < len(h.at) && h.at[i].Before(cutoff) {
+		i++
+	}
+	h.at, h.db = h.at[i:], h.db[i:]
+}
+
+// fracs is the loudest level in each of the last sparkCells one-second
+// slices ending now, on the meter's floor-to-0 dBFS scale, oldest first. A
+// second with no report is 0: nothing was measured, so nothing is drawn.
+// It is nil until the first level lands, so a meter with no past draws none.
+func (h *meterHistory) fracs(now time.Time) []float64 {
+	if len(h.at) == 0 {
+		return nil
+	}
+	out := make([]float64, sparkCells)
+	set := make([]bool, sparkCells)
+	start := now.Add(-meterHistorySpan)
+	for i, t := range h.at {
+		s := int(t.Sub(start) / time.Second)
+		if s < 0 {
+			continue
+		}
+		if s >= sparkCells {
+			s = sparkCells - 1
+		}
+		if f := meterFrac(h.db[i]); !set[s] || f > out[s] {
+			out[s], set[s] = f, true
+		}
+	}
+	return out
+}
+
 // meterPipeInterval is how often the meter is repeated when its stream is
 // not a terminal: enough to see the level move in a log, few enough that a
 // long session does not fill a disk with it.
@@ -189,6 +255,10 @@ type meterSink struct {
 	lastLens []int
 	// last is when a line was last written (pipe only).
 	last time.Time
+	// history is the levels of the last few seconds, for the signal row's
+	// sparkline; now is the clock it is timed on, nil for time.Now.
+	history meterHistory
+	now     func() time.Time
 }
 
 // line renders one meter for this sink. The bar belongs to the terminal:
@@ -199,7 +269,12 @@ func (m *meterSink) line(freq uint64, mode leylinev1.DemodMode, mt *leylinev1.Me
 	if !m.tty {
 		st.Width = 0
 	}
-	return meterRender(st, freq, mode, mt, squelchDb)
+	now := time.Now()
+	if m.now != nil {
+		now = m.now()
+	}
+	m.history.add(mt.GetPowerDbfs(), now)
+	return meterRenderHistory(st, freq, mode, mt, squelchDb, m.history.fracs(now))
 }
 
 // write shows one rendered meter, which may be several lines. The first line

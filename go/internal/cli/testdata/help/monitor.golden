@@ -1,7 +1,9 @@
 monitor parks the radio on one band and watches it, then prints a
 time-ordered log of the carriers that came and went: when each first
-appeared, the span it bracketed (HELD) and how much of that span it was
-actually transmitting (ON AIR), and how strong it was at its peak.
+appeared, the span it bracketed (HELD), how much of that span it was
+actually transmitting (ON AIR), when during the watch it was heard
+(ACTIVITY, an eighth of the watch per cell), and how strong it was at its
+peak.
 
 HELD and ON AIR are different questions, and the gap between them is the
 point. HELD is first-sighting to last, so a carrier seen at the start and

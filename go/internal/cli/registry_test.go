@@ -91,10 +91,15 @@ func TestDevicesSeenListsAndCounts(t *testing.T) {
 	if head := strings.Fields(out)[0]; head != "DEVICE" {
 		t.Fatalf("unexpected table:\n%s", out)
 	}
-	for _, want := range []string{"LABEL", "PROTOCOL", "SEEN", "FIRST", "LAST", "LEYTST-1", "LEYTST-2", "LEYTST-3", "aprs"} {
+	for _, want := range []string{"PROTOCOL", "SEEN", "FIRST", "LAST", "LEYTST-1", "LEYTST-2", "LEYTST-3", "aprs"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the table lacks %q:\n%s", want, out)
 		}
+	}
+	// Nothing is labelled yet, so the LABEL column, which would read "-" on
+	// every row, is left out (docs/dev/cli-style.md section 5).
+	if strings.Contains(out, "LABEL") {
+		t.Errorf("an all-absent LABEL column should be left out:\n%s", out)
 	}
 	// One protocol only, and counts are at least one each.
 	page := devicesSeenJSON(t, sock, path)

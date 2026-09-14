@@ -96,7 +96,10 @@ Rules:
 
 `ui.Style.Level(frac, text)` inks text with the colour a normalised level maps to, and is
 the only place depth above sixteen colours is used. The ramp runs cold to hot so height and hue agree:
-blue at the noise floor, then cyan, green, amber, red at full scale. **The cold end is the
+teal at the noise floor, then green, amber, orange, and a salmon red at full scale. These are
+the brand's terminal colours, sampled from the design system's dashboard mock; what the terminal
+ramp shares with the app's is hue order and nothing else, because the app's runs from near-black
+to cream and assumes the dark ground it owns. **The cold end is the
 noise line, not the bottom of the chart**, so hue answers the question a reader actually
 has: how far over the floor is this.
 
@@ -108,21 +111,26 @@ has seen; `levels` from −60 dBFS to full scale, a held scale a meter can be re
 colour in it; `waterfall` from the noise floor over its fixed 40 dB range. One colour, one answer
 in every view: this far above what this chart calls nothing.
 
-**Hue sweeps; luminance does not.** Every stop is held between 0.18 and 0.26 relative
-luminance, which is the only band clearing 3.2:1 contrast against a black terminal *and* a
-white one. We are forbidden from asking which the reader has (no OSC query, no
-`HasDarkBackground`), so the ramp has to work on both. The cold end was once a saturated
-`#0000A0`, which is 1.2:1 on a dark terminal: since most of a spectrum is noise floor and the
-noise floor is the cold end, most of the chart was invisible. Level is carried by height as
-well as by hue, so spending luminance on legibility costs nothing. `TestLevelRampIsLegibleOnBothGrounds`
-holds the line.
+**The ramp is tuned for a dark terminal, by decision.** We are forbidden from asking which
+ground the reader has (no OSC query, no `HasDarkBackground`), so a ramp cannot adapt; it can only
+choose. The stops adopted on 2026-09-14 clear 3.9:1 or better against black and `#1e1e1e`, and
+between 2.5:1 and 4.2:1 against white and `#fafafa`, with the teal cold end at the low end of
+that. On a light terminal the noise floor, which is the cold end and most of any chart, reads
+faint. That is the accepted cost, taken with both ramps rendered side by side: the ramp before
+this one held every stop between 0.18 and 0.26 relative luminance, the one band that clears
+3.2:1 on both grounds, and it read as thin on the dark terminal nearly every reader has. Level is
+carried by height and by texture as well as by hue, which is what keeps a light-terminal chart
+readable. `TestLevelRampIsLegibleOnBothGrounds` holds two bars so no stop can drift to invisible
+on either ground: 3.0:1 on black and `#1e1e1e`, 2.4:1 on white and `#fafafa`. The cold end was
+once a saturated `#0000A0`, 1.2:1 on a dark terminal, and most of every chart vanished; the
+lower bar exists so that cannot happen again in either direction.
 
 **A quiet band is held to the cold third of the ramp, not to a single ink.** Forcing every
 column to one colour when nothing is detected is honest and unreadable: the chart becomes a
 flat field with no shape, and the flatness of the floor, which is what a reader checks a quiet
 band for, cannot be seen. Cap the ramp instead: the texture shows, the heat does not. It degrades by
 profile, not by branch: truecolor renders the gradient, 256 renders the nearest cube
-colour, 16 collapses to blue/cyan/green/yellow/red, and none returns the string
+colour, 16 collapses to cyan/green/yellow/bright red/red, and none returns the string
 unchanged. A reader with colour off still has the eight-level block ramp, so level
 survives as height.
 
@@ -151,11 +159,16 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **Tables** keep ALL-CAPS headers, two-space gutters and `tabwriter`. Headers are
   `Label`. Columns carry units in the header (`OFFSET (kHz)`), never per cell.
 - **The answer leads.** The first column is what the verb was asked about (model,
-  frequency, name), not the id. Ids move right or behind `--wide`.
+  frequency, name), not the id. Ids move right or behind `--wide`. A column that would read
+  the absent glyph on every row is left out (`hideEmpty` on the column): eight dashes are width
+  spent on nothing. An empty table keeps every header, so it still says what a row carries.
 - **Label blocks** align on a padded left column of `Label` ink, with the value plain
   and any diagnostic (`pid`, `socket`, serial) `Muted` on the same line.
 - **Hierarchy is indentation**, not repeated ids. `ley state` shows device to capture to
   channel to sink as a tree; each level names only what is new.
+- **Numeric columns are right-aligned**, header and all (`right` on the column), so the digits
+  line up and a two-digit value does not sit at the far left of a `PEAK SNR (dB)` header with air
+  after it. Text, frequencies and sparklines stay left-aligned.
 - **Numbers** are formatted by the existing helpers in `format.go` and
   `pkg/leyline`, which stay pure and unstyled: they return the semantic string and the
   caller decides the ink. Frequencies keep three decimals and an SI unit; levels are
@@ -185,6 +198,20 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   50 dB, a 5 dB row -- and an empty band collapses to one line with seven rows of honest
   headroom above it. The reserved sky is not waste: it is what makes two bands comparable,
   because a column of a given height means the same dB on both.
+- **A sparkline is eight cells of a real series, on the row it describes.** Drawn with the
+  column ramp, oldest on the left, one line and never a chart; `sparkline` and `levelSparkline`
+  in `internal/cli/spark.go` are the only renderers. A cell with anything in it is never blank,
+  because the picture exists to show the carrier that keyed once. It is allowed only where every
+  cell is a measurement the daemon actually made in that slice: `ley monitor`'s ACTIVITY column
+  (the share of each eighth of the watch the detector saw the carrier in, from the updates it
+  re-publishes each row a carrier is found), the live meter's signal row (the loudest level the
+  daemon reported in each of the last eight seconds), and `ley track`'s HEARD column (records per
+  eighth of the table's window, one ramp step each, full at eight, so a packet reads the same on
+  every row). `ley scan` has none: a sweep reports counts, and a ramp drawn from a count is
+  invented history (invariant 12). Occupancy takes `Muted` ink, since it is not a level and eight
+  full blocks in the foreground would outshine the numbers beside them; the meter's history takes
+  level ink, because it is one. The same series goes out under `--json`
+  as numbers (`on_air_slices`, `heard_slices`), the glyphs being the rendering, not the data.
 
 ## 6. Frozen contracts
 

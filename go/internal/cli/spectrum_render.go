@@ -24,8 +24,8 @@ const (
 // keying the ramp to that span unmodified would paint noise texture red and
 // dress an empty band up as a busy one. Forcing every column to the single
 // coldest ink instead would be honest but unreadable: the chart would become
-// one flat field of blue with no shape in it. Capping the ramp keeps both --
-// the texture is visible as blue through cyan, and nothing is ever warm.
+// one flat field of teal with no shape in it. Capping the ramp keeps both --
+// the texture is visible as teal through green, and nothing is ever warm.
 const spectrumQuietRampCap = 0.34
 
 // How the scale is chosen, and how the max-hold trace behaves. The top tracks

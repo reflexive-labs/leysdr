@@ -39,8 +39,10 @@ func newMonitorCommand(app *App) *cobra.Command {
 		Short: "Park on a band and log the transmissions on it",
 		Long: `monitor parks the radio on one band and watches it, then prints a
 time-ordered log of the carriers that came and went: when each first
-appeared, the span it bracketed (HELD) and how much of that span it was
-actually transmitting (ON AIR), and how strong it was at its peak.
+appeared, the span it bracketed (HELD), how much of that span it was
+actually transmitting (ON AIR), when during the watch it was heard
+(ACTIVITY, an eighth of the watch per cell), and how strong it was at its
+peak.
 
 HELD and ON AIR are different questions, and the gap between them is the
 point. HELD is first-sighting to last, so a carrier seen at the start and
@@ -89,11 +91,11 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 			} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
 				o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
 			} else {
-				return usageErrorf("%v, and no band called %q (ley bands lists them)", rerr, args[0])
+				return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
 			}
 			d, err := parseAge(forStr)
 			if err != nil {
-				return usageErrorf("--for: %v", err)
+				return usageErrorf("--for %v", err)
 			}
 			o.forDur = d
 			s, err := openSession(cmd.Context(), app)
@@ -137,6 +139,50 @@ type monitorCarrier struct {
 	// which HELD (a first-to-last span) is not.
 	looks         uint32
 	looksPossible uint32
+	// hits is when each update for this carrier arrived, seconds after the watch began. The
+	// daemon re-publishes a carrier only in the rows it actually found it, so the arrivals are
+	// the carrier's on-air pattern over the watch: the series behind the ACTIVITY column.
+	hits []float64
+	// announced is whether the live feed has printed this carrier, and announcedHz the centre it
+	// printed: a carrier is announced the first time it clears --min-snr, which may be an update
+	// rather than its debut, so the feed and the report list the same carriers.
+	announced   bool
+	announcedHz uint64
+}
+
+// activity is the carrier's on-air share of each of sparkCells equal slices of the watch: the
+// updates that arrived in the slice over the rows the detector produced in it. rowsPerSec is
+// the detector's row rate (monitorRowRate); with no look counts to derive it from, a slice
+// with any update reads full rather than claiming a share nobody measured.
+func (c *monitorCarrier) activity(watched, rowsPerSec float64) []float64 {
+	counts := sliceCounts(c.hits, watched, sparkCells)
+	expected := rowsPerSec * watched / sparkCells
+	out := make([]float64, sparkCells)
+	for i, n := range counts {
+		switch {
+		case n == 0:
+		case expected <= 0:
+			out[i] = 1
+		default:
+			out[i] = math.Min(1, float64(n)/expected)
+		}
+	}
+	return out
+}
+
+// monitorRowRate is the detector's rows per second, read off the carriers: looks_possible is
+// stamped with the believed-row count at each update, so the carrier with the most rows up to
+// its last sighting gives the rate the whole watch ran at. 0 when no update carried counts.
+func monitorRowRate(carriers map[string]*monitorCarrier) float64 {
+	best := 0.0
+	for _, c := range carriers {
+		if c.lastS > 0 && c.looksPossible > 0 {
+			if r := float64(c.looksPossible) / c.lastS; r > best {
+				best = r
+			}
+		}
+	}
+	return best
 }
 
 // onAirFrac is the share of the rows up to its last sighting that the detector actually saw the
@@ -209,8 +255,10 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 		// so one carrier arrives under several ids, and a wide FM carrier's centre wanders tens of
 		// kHz. Fold nearby readings into one carrier the way scan does (within the narrower
 		// bandwidth, or a few kHz), so a single transmission is one row, not a smear.
-		if c := nearestCarrier(carriers, order, d); c != nil {
+		c := nearestCarrier(carriers, order, d)
+		if c != nil {
 			c.lastS = now
+			c.hits = append(c.hits, now)
 			// Keep the strongest reading's centre and width, as scan's fold does.
 			if d.SnrDb > c.peakSNR {
 				c.peakSNR = d.SnrDb
@@ -224,20 +272,22 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 			if d.LooksPossible > c.looksPossible {
 				c.looksPossible = d.LooksPossible
 			}
-			return
+		} else {
+			id := d.DetectionId
+			if id == "" {
+				id = fmt.Sprintf("carrier-%d", len(order))
+			}
+			c = &monitorCarrier{id: id, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb, looks: d.Looks, looksPossible: d.LooksPossible, hits: []float64{now}}
+			carriers[id] = c
+			order = append(order, id)
 		}
-		id := d.DetectionId
-		if id == "" {
-			id = fmt.Sprintf("carrier-%d", len(order))
-		}
-		c := &monitorCarrier{id: id, centerHz: d.CenterHz, bwHz: d.BandwidthHz, firstS: now, lastS: now, peakSNR: d.SnrDb, looks: d.Looks, looksPossible: d.LooksPossible}
-		carriers[id] = c
-		order = append(order, id)
-		// The live feed is running commentary, so it respects the SNR floor a debut is judged
-		// against; the skirt fold needs the whole run and is applied to the report at the end.
-		if !s.app.JSON && (o.minSNR <= 0 || d.SnrDb >= o.minSNR) {
+		// The live feed is running commentary, so it respects the SNR floor, and a carrier that
+		// debuts weak and clears it later is announced then rather than never; the skirt fold
+		// needs the whole run and is applied to the report at the end.
+		if !c.announced && !s.app.JSON && (o.minSNR <= 0 || c.peakSNR >= o.minSNR) {
+			c.announced, c.announcedHz = true, c.centerHz
 			// The live feed is stderr, so stdout stays the report a pipe reads.
-			fmt.Fprintf(s.app.Stderr, "  %s  %s  %s  %.0f dB\n", mmss(now), leyline.FormatFrequency(d.CenterHz), monitorChannel(d.CenterHz), d.SnrDb)
+			fmt.Fprintln(s.app.Stderr, liveLine(s.app.ErrStyle, o, now, c))
 		}
 	}
 
@@ -336,7 +386,7 @@ follow:
 		watched = time.Since(start)
 	}
 	if s.app.JSON {
-		return printMonitorJSON(s.app, o, order, carriers)
+		return printMonitorJSON(s.app, o, order, carriers, watched)
 	}
 	printMonitorReport(s.app, o, order, carriers, watched)
 	return nil
@@ -506,27 +556,57 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		fmt.Fprintf(app.Stderr, "nothing heard on %s in %s\n", monitorArg(o), forPhrase(watched))
 		return
 	}
-	cols := []column{
-		{head: "TIME", cells: mapCarrier(rows, func(c *monitorCarrier) string { return mmss(c.firstS) })},
-		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
-		{head: "CHANNEL", cells: mapCarrier(rows, func(c *monitorCarrier) string { return monitorChannel(c.centerHz) })},
-		{head: "HELD", cells: mapCarrier(rows, heldCell)},
-		{head: "ON AIR", cells: mapCarrier(rows, onAirCell)},
-		{head: "PEAK SNR", cells: mapCarrier(rows, func(c *monitorCarrier) string { return fmt.Sprintf("%.0f dB", c.peakSNR) })},
+	rate := monitorRowRate(carriers)
+	ts := tableStyle(app)
+	// The live feed ends where the report begins; a blank line keeps the two
+	// from reading as one block on a terminal that shows both streams.
+	for _, c := range rows {
+		if c.announced {
+			fmt.Fprintln(app.Stderr)
+			break
+		}
 	}
-	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
+	// TIME is a gutter, not the answer: Muted, and stamped only when it changes from the row
+	// above, since the rows are in first-appearance order and six identical stamps in a row say
+	// nothing the first did not. Units live in the headers (section 5), so the cells are numbers.
+	cols := []column{
+		{head: "TIME", cells: timeGutter(ts, rows)},
+		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
+	}
+	cols = append(cols,
+		// A band with no named channels, which is most of them, does without the column.
+		column{head: "CHANNEL", cells: mapCarrier(rows, func(c *monitorCarrier) string { return monitorChannel(c.centerHz) }), hideEmpty: true},
+		column{head: "HELD (s)", cells: mapCarrier(rows, heldCell), right: true},
+		column{head: "ON AIR (s)", cells: mapCarrier(rows, onAirCell), right: true},
+		// ACTIVITY is when during the watch the carrier was heard, an eighth of the watch per
+		// cell: a repeater held down reads eight full cells, a burst one cell. The header says
+		// the span the eight cells cover. It is the one column the table can spare on a narrow
+		// terminal, since HELD and ON AIR carry the totals it breaks down.
+		column{head: "ACTIVITY (" + fmtSeconds(watched.Seconds()) + ")", cells: mapCarrier(rows, func(c *monitorCarrier) string {
+			return sparkline(ts, c.activity(watched.Seconds(), rate))
+		}), drop: 1},
+		column{head: "PEAK SNR (dB)", cells: mapCarrier(rows, func(c *monitorCarrier) string {
+			return snrInk(ts, o.minSNR, c.peakSNR, fmt.Sprintf("%.0f", c.peakSNR))
+		}), right: true},
+	)
+	_, _ = printColumns(app.Stdout, ts, cols, nil)
 	best := rows[0]
 	for _, c := range rows {
 		if c.peakSNR > best.peakSNR {
 			best = c
 		}
 	}
-	label := monitorChannel(best.centerHz)
-	if label == "-" {
-		label = leyline.FormatFrequency(best.centerHz)
+	// A channel label gets the frequency beside it, since the label is what a radio shows and
+	// the number is what ley tune takes; a carrier with no label is named once.
+	label := leyline.FormatFrequency(best.centerHz)
+	if ch := monitorChannel(best.centerHz); ch != "-" {
+		label = ch + " (" + trimZeros(float64(best.centerHz)/1e6) + ")"
 	}
-	fmt.Fprintf(app.Stderr, "%s over %s; strongest %s (%s) at %.0f dB\n",
-		plural(len(rows), "carrier"), forPhrase(watched), label, trimZeros(float64(best.centerHz)/1e6), best.peakSNR)
+	fmt.Fprintf(app.Stderr, "%s over %s; strongest %s at %s\n",
+		plural(len(rows), "carrier"), forPhrase(watched), label, snrInk(st, o.minSNR, best.peakSNR, fmt.Sprintf("%.0f dB", best.peakSNR)))
+	if note := refinedNote(rows); note != "" {
+		fmt.Fprintln(app.Stderr, st.Muted(note))
+	}
 	if hidden.any() {
 		fmt.Fprintf(app.Stderr, "%s not shown (%s); %s\n",
 			plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o), st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
@@ -552,9 +632,59 @@ func hiddenReasons(h monitorHidden, o monitorOptions) string {
 	return strings.Join(parts, ", ")
 }
 
+// liveLine is one row of the running commentary: when, where, the channel when the frequency has
+// a name, and how strong. The absent glyph is left out rather than printed, since "-" sitting
+// immediately left of a level reads as its sign.
+func liveLine(st ui.Style, o monitorOptions, now float64, c *monitorCarrier) string {
+	parts := []string{"  " + mmss(now), leyline.FormatFrequency(c.centerHz)}
+	if ch := monitorChannel(c.centerHz); ch != "-" {
+		parts = append(parts, ch)
+	}
+	parts = append(parts, snrInk(st, o.minSNR, c.peakSNR, fmt.Sprintf("%.0f dB", c.peakSNR)))
+	return strings.Join(parts, "  ")
+}
+
+// refinedNote says once when the report's frequencies are not the ones the live feed printed: a
+// carrier's centre is its strongest reading, and the feed printed the reading it had when the
+// carrier was announced. Without this a reader counting the two lists gets two answers.
+func refinedNote(rows []*monitorCarrier) string {
+	for _, c := range rows {
+		if c.announced && absDiff(c.centerHz, c.announcedHz) > 1_000 {
+			return "frequencies are each carrier's strongest reading; the live feed printed its first"
+		}
+	}
+	return ""
+}
+
+// monitorRampDb is how far above the cold end the SNR ramp reaches. The cold end is --min-snr,
+// the line between shown and hidden, so hue answers how far over that line a carrier stands; 40 dB
+// above it is the waterfall's range and full scale here too.
+const monitorRampDb = 40
+
+// snrInk gives an SNR the level ramp's ink, keyed from a verb's --min-snr (or 0 dB with the
+// filter off); scan and monitor share it so their tables agree. A single line has no height to
+// carry level, so hue is the only channel it has; with colour off the number still carries it.
+func snrInk(st ui.Style, minSNR, snr float64, text string) string {
+	cold := math.Max(0, minSNR)
+	return st.Level(rampFrac(snr, cold, cold+monitorRampDb), text)
+}
+
+// timeGutter is the TIME column: each carrier's first sighting, Muted, and blank when it reads
+// the same as the row above.
+func timeGutter(st ui.Style, rows []*monitorCarrier) []string {
+	out := make([]string, len(rows))
+	last := ""
+	for i, c := range rows {
+		if t := mmss(c.firstS); t != last {
+			out[i], last = st.Muted(t), t
+		}
+	}
+	return out
+}
+
 // heldCell is the span from first to last sighting: how long the carrier bracketed the watch, not
 // how long it transmitted (that is ON AIR). A single sighting has no measurable span, so it reads
-// "under 1 s" rather than "0 s".
+// "<1" rather than "0".
 func heldCell(c *monitorCarrier) string {
 	return secsCell(c.lastS - c.firstS)
 }
@@ -570,12 +700,13 @@ func onAirCell(c *monitorCarrier) string {
 	return "?"
 }
 
-// secsCell renders a span of seconds for a table cell, reading "under 1 s" below a second.
+// secsCell renders a span of seconds for a table cell whose header carries the unit, reading "<1"
+// below a second so a number is never rounded to a claim of nothing.
 func secsCell(s float64) string {
 	if s < 1 {
-		return "under 1 s"
+		return "<1"
 	}
-	return fmt.Sprintf("%.0f s", s)
+	return fmt.Sprintf("%.0f", s)
 }
 
 func mapCarrier(rows []*monitorCarrier, f func(*monitorCarrier) string) []string {
@@ -599,13 +730,21 @@ type monitorCarrierJSON struct {
 	LooksPossible uint32  `json:"looks_possible"`
 	PeakSnrDb     float64 `json:"peak_snr_db"`
 	BandwidthHz   uint32  `json:"bandwidth_hz"`
+	// OnAirSlices is the ACTIVITY column's series: the carrier's on-air share of each of eight
+	// equal slices of the watch, oldest first.
+	OnAirSlices []float64 `json:"on_air_slices"`
 }
 
 // printMonitorJSON writes one NDJSON object per carrier, in first-appearance order, at the end.
-func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier) error {
+func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier, watched time.Duration) error {
 	round := func(x float64) float64 { return math.Round(x*10) / 10 }
 	rows, _ := filterMonitorCarriers(order, carriers, o)
+	rate := monitorRowRate(carriers)
 	for _, c := range rows {
+		slices := c.activity(watched.Seconds(), rate)
+		for i, f := range slices {
+			slices[i] = math.Round(f*100) / 100
+		}
 		ch := monitorChannel(c.centerHz)
 		if ch == "-" {
 			ch = ""
@@ -618,7 +757,7 @@ func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[s
 			DetectionID: c.id, CenterHz: c.centerHz, Channel: ch,
 			FirstS: round(c.firstS), HeldS: round(c.lastS - c.firstS),
 			OnAirS: round(onAir), Looks: c.looks, LooksPossible: c.looksPossible,
-			PeakSnrDb: c.peakSNR, BandwidthHz: c.bwHz,
+			PeakSnrDb: c.peakSNR, BandwidthHz: c.bwHz, OnAirSlices: slices,
 		}); err != nil {
 			return err
 		}
@@ -641,6 +780,11 @@ func monitorFailure(job *leylinev1.Job, st ui.Style) string {
 	case leyline.CodeDeviceBusy:
 		return detail + ". " + st.Cmd("ley monitor --take-over") + " watches anyway, and hands the radio back afterwards"
 	case leyline.CodeInvalidArgument:
+		// The daemon's own sentence names the remedy ("use ley scan, which sweeps"); saying it
+		// again in other words reads as a second error leaking in beside the first.
+		if strings.Contains(detail, "ley scan") {
+			return detail
+		}
 		return detail + ". " + st.Cmd("ley scan") + " sweeps a span too wide for one capture"
 	case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
 		return detail + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune"

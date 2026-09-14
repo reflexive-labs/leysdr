@@ -71,7 +71,7 @@ reads; 'ley jobs cancel' is how to stop one.
 			if freq != "" {
 				hz, err := leyline.ParseUserFrequency(freq)
 				if err != nil {
-					return usageErrorf("--freq: %v", err)
+					return usageErrorf("--freq %v", err)
 				}
 				o.freqHz = hz
 			}

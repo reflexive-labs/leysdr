@@ -94,7 +94,7 @@ notifier, so it fires whether or not ley is attached.
 			if freq != "" {
 				hz, err := leyline.ParseUserFrequency(freq)
 				if err != nil {
-					return usageErrorf("--freq: %v", err)
+					return usageErrorf("--freq %v", err)
 				}
 				o.freqHz = hz
 			}
@@ -265,11 +265,11 @@ func buildPredicate(where, counties []string, near, radius string) (*leylinev1.P
 	case near != "":
 		pos, err := parseLatLon(near)
 		if err != nil {
-			return nil, "", usageErrorf("--near: %v", err)
+			return nil, "", usageErrorf("--near %v", err)
 		}
 		r, err := parseDistance(radius)
 		if err != nil {
-			return nil, "", usageErrorf("--radius: %v", err)
+			return nil, "", usageErrorf("--radius %v", err)
 		}
 		clauses = append(clauses, &leylinev1.Clause{Test: &leylinev1.Clause_Geo{Geo: &leylinev1.GeoTest{Center: pos, RadiusM: r}}})
 		words = append(words, fmt.Sprintf("within %s of %s", radius, near))

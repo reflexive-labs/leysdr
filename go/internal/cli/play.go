@@ -38,7 +38,7 @@ func readSidecar(path string) (*fileSidecar, error) {
 		}
 		var sc fileSidecar
 		if err := json.Unmarshal(b, &sc); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
+			return nil, fmt.Errorf("cannot read the sidecar %s: %w", p, err)
 		}
 		return &sc, nil
 	}
@@ -104,7 +104,7 @@ needed.`,
 			if freq != "" {
 				t, terr := resolveDial(freq, "146.52 (MHz)")
 				if terr != nil {
-					return usageErrorf("--freq: %v", terr)
+					return usageErrorf("--freq %v", terr)
 				}
 				freqHz = t.Hz
 			}

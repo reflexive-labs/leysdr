@@ -20,6 +20,8 @@ import (
 var remedyLeads = []string{
 	"Start it with: ", "start it with: ", "Check with: ", "check with: ",
 	"Run: ", "run: ", "Look at its log: ", "adjust with: ", "change one with: ",
+	// "use ley scan, which sweeps": the daemon's own remedies lead this way.
+	"use ",
 }
 
 // ErrorLine renders one "ley: <message>" line for stderr with the resolved
@@ -117,7 +119,7 @@ func inkRemedy(st ui.Style, line string) string {
 	// The clause ends at the sentence, not at the line: a following aside
 	// ("(...)"), a new clause (";") or ink another rule already applied is
 	// not part of the command.
-	if i := strings.IndexAny(rest, ";(\x1b"); i > 0 {
+	if i := strings.IndexAny(rest, ";,(\x1b"); i > 0 {
 		end = i
 	}
 	cmd := strings.TrimRight(rest[:end], " .")

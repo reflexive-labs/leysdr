@@ -62,17 +62,17 @@ longitude ('37.76,-122.42') and --radius a distance with its unit (10km, 500m,
 			var err error
 			if since != "" {
 				if o.since, err = parseAge(since); err != nil {
-					return usageErrorf("--since: %v", err)
+					return usageErrorf("--since %v", err)
 				}
 			}
 			if near != "" {
 				if o.near, err = parseLatLon(near); err != nil {
-					return usageErrorf("--near: %v", err)
+					return usageErrorf("--near %v", err)
 				}
 			}
 			if radius != "" {
 				if o.radiusM, err = parseDistance(radius); err != nil {
-					return usageErrorf("--radius: %v", err)
+					return usageErrorf("--radius %v", err)
 				}
 			}
 			switch {

@@ -130,7 +130,7 @@ here; with --format bin it is a usage error.`,
 func tapTarget(cmd *cobra.Command, f *tuneFlags, verb, arg string, tuneFlagNames []string) (channelID string, o *tuneOptions, err error) {
 	switch {
 	case arg == "":
-		return "", nil, usageErrorf("%s needs a frequency, preset or channel id: ley %s 146.52, ley %s noaa, ley %s chan_01J... (ley help presets lists the presets)", verb, verb, verb, verb)
+		return "", nil, usageErrorf("%s needs a frequency, preset or channel id: ley %s 146.52, ley %s noaa, ley %s chan_01J...; check with: ley help presets", verb, verb, verb, verb)
 	case strings.HasPrefix(arg, tapChannelPrefix):
 		for _, name := range tuneFlagNames {
 			if cmd.Flags().Changed(name) {

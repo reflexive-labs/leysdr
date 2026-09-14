@@ -6,12 +6,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 	"github.com/dpup/leysdr/go/pkg/records"
 )
@@ -35,6 +37,9 @@ type EntityRow struct {
 	AgeS            float64      `json:"age_s"`
 	LastSampleIndex uint64       `json:"last_sample_index"`
 	Position        *EntityPoint `json:"position"`
+	// HeardSlices is the HEARD column's series: records from this station in each of eight
+	// equal slices of the table's window (the decoder's silence timeout), oldest first.
+	HeardSlices []int `json:"heard_slices"`
 }
 
 // EntityPoint is a row's last known position, null when the protocol never carried one.
@@ -102,7 +107,7 @@ client-side shape with no proto message, documented in docs/reference/cli.md.`,
 			if since != "" {
 				var err error
 				if o.since, err = parseAge(since); err != nil {
-					return usageErrorf("--since: %v", err)
+					return usageErrorf("--since %v", err)
 				}
 			}
 			if o.rate <= 0 || o.rate > 20 {
@@ -143,6 +148,7 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		o.deviceID = d.GetDeviceId()
 	}
 	silence := trackSilence(ctx, c, o.protocol)
+	window := trackWindow(silence)
 	// Unless --attach, track runs the decoder itself, so `ley track aprs` is one command. A decoder
 	// already running for the protocol is rendered rather than duplicated: two viewers do not mean
 	// two demods on the radio (docs/design/decoders.md, the state boundary -- the fold is still
@@ -172,6 +178,9 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		return app.notRunning(err)
 	}
 	how := "a row drops off after " + ageWord(silence) + " of silence"
+	if silence <= 0 {
+		how = "rows never drop off; HEARD covers the last " + ageWord(window)
+	}
 	if o.attach {
 		how = "folding what is already being decoded; " + how
 	}
@@ -201,12 +210,12 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		case <-tick.C:
 			table.Expire(time.Now(), silence)
 			if app.JSON {
-				if err := printEntitySnapshot(app, table); err != nil {
+				if err := printEntitySnapshot(app, table, window); err != nil {
 					return err
 				}
 				w.row()
 			} else {
-				w.frame(renderTrack(app, table), "")
+				w.frame(renderTrack(app, table, window), "")
 			}
 			out.Flush()
 			draws++
@@ -310,20 +319,69 @@ func seedTrack(ctx context.Context, c *leyline.Client, table *records.Table, o t
 	return nil
 }
 
-// renderTrack draws the entity table: who, how long ago, how often, where, and what they said.
-func renderTrack(app *App, table *records.Table) string {
+// tableNow is the clock the table's ages and HEARD cells are measured on: the table's own when a
+// test holds it still, the wall clock otherwise, so a row's age and its sparkline agree.
+func tableNow(table *records.Table) time.Time {
+	if table.Now != nil {
+		return table.Now()
+	}
+	return time.Now()
+}
+
+// trackDefaultWindow is the span the HEARD column covers when the decoder's manifest declares
+// no silence timeout, so rows never expire and there is no window to inherit. Ten minutes: a
+// beaconing APRS station lands in it a few times and a one-off packet is still one cell.
+const trackDefaultWindow = 10 * time.Minute
+
+// trackWindow is the span the HEARD sparkline covers: the decoder's silence timeout, which is
+// exactly the memory the table keeps, or the default when it keeps everything.
+func trackWindow(silence time.Duration) time.Duration {
+	if silence > 0 {
+		return silence
+	}
+	return trackDefaultWindow
+}
+
+// heardSlices counts a station's records in each of sparkCells equal slices of the window
+// ending now, oldest first: the HEARD column's series, and the JSON's heard_slices.
+func heardSlices(e *records.Entity, now time.Time, window time.Duration) []int {
+	times := make([]float64, 0, len(e.Heard))
+	for _, t := range e.HeardSince(now.Add(-window)) {
+		times = append(times, (window - now.Sub(t)).Seconds())
+	}
+	return sliceCounts(times, window.Seconds(), sparkCells)
+}
+
+// heardCell draws heardSlices: one ramp step per record, full at sparkCells, so the scale is
+// held and one packet reads the same on every row and every redraw.
+func heardCell(st ui.Style, counts []int) string {
+	fracs := make([]float64, len(counts))
+	for i, n := range counts {
+		fracs[i] = math.Min(1, float64(n)/sparkCells)
+	}
+	return sparkline(st, fracs)
+}
+
+// renderTrack draws the entity table: who, how long ago, how often, when across the window,
+// where, and what they said.
+func renderTrack(app *App, table *records.Table, window time.Duration) string {
 	s := tableStyle(app)
 	cols := []column{
 		{head: "DEVICE", min: 8},
 		{head: "LAST HEARD"},
-		{head: "SEEN"},
-		{head: "POSITION", min: 10, drop: 2},
+		{head: "SEEN", right: true},
+		// HEARD is SEEN spread across the window, an eighth per cell, so a station that
+		// beacons every minute and one that spoke once read differently at a glance. The
+		// header carries the window so a piped table still says what a cell covers.
+		{head: "HEARD (" + ageWord(window) + ")", drop: 3},
+		{head: "POSITION", min: 10, drop: 2, hideEmpty: true},
 		{head: "LAST", min: 16, drop: 1},
 	}
-	now := time.Now()
+	now := tableNow(table)
 	rows := table.Rows()
 	for _, e := range rows {
 		add(cols, e.DeviceID, ageWord(now.Sub(e.LastHeard)), fmt.Sprint(e.Count),
+			heardCell(s, heardSlices(e, now, window)),
 			absentIfEmpty(s, records.FormatPosition(e.Position)), absentIfEmpty(s, e.Summary))
 	}
 	var b strings.Builder
@@ -349,14 +407,15 @@ func ageWord(d time.Duration) string {
 }
 
 // printEntitySnapshot writes one NDJSON line per redraw: the table as it stands.
-func printEntitySnapshot(app *App, table *records.Table) error {
-	now := time.Now()
+func printEntitySnapshot(app *App, table *records.Table, window time.Duration) error {
+	now := tableNow(table)
 	snap := EntitySnapshot{Entities: []EntityRow{}}
 	for _, e := range table.Rows() {
 		row := EntityRow{
 			DeviceID: e.DeviceID, Protocol: e.Protocol, Kind: e.Kind, Summary: e.Summary,
 			Seen: e.Count, AgeS: now.Sub(e.LastHeard).Seconds(),
 			LastSampleIndex: e.LastSeen.GetSampleIndex(),
+			HeardSlices:     heardSlices(e, now, window),
 		}
 		if e.Position != nil {
 			row.Position = &EntityPoint{Latitude: e.Position.GetLatitude(), Longitude: e.Position.GetLongitude()}

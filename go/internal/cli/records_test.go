@@ -217,7 +217,7 @@ func TestTrackAgesOutASilentStation(t *testing.T) {
 	// The manifest's entity_silence_s, which is what the verb reads from ley decoders.
 	silence := time.Duration(fakedaemon.AprsManifest().GetEntitySilenceS()) * time.Second
 	table.Expire(now, silence)
-	out := renderTrack(app, table)
+	out := renderTrack(app, table, silence)
 	if strings.Contains(out, "LEYTST-1") {
 		t.Errorf("a station silent for over %s must leave the table:\n%s", silence, out)
 	}

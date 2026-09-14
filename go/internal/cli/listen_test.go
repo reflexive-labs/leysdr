@@ -119,7 +119,7 @@ func TestListenUsage(t *testing.T) {
 	}{
 		{[]string{"listen"}, "listen needs a frequency, preset or channel id"},
 		{[]string{"listen", "146.52", "--format", "wav"}, "--format must be json or bin"},
-		{[]string{"listen", "nonsuch"}, "unknown name"},
+		{[]string{"listen", "nonsuch"}, "no preset called"},
 	} {
 		out, _, err := run(t, context.Background(), sock, tc.args...)
 		if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), tc.want) {

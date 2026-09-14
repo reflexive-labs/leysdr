@@ -94,9 +94,9 @@ func ResolvePreset(name string) (Preset, error) {
 	}
 	near := NearestPresetNames(name)
 	if len(near) > 0 {
-		return Preset{}, fmt.Errorf("preset: unknown name %q; did you mean %s? (ley help presets lists them all)", name, strings.Join(near, ", "))
+		return Preset{}, fmt.Errorf("no preset called %q; did you mean %s? Check with: ley help presets", name, strings.Join(near, ", "))
 	}
-	return Preset{}, fmt.Errorf("preset: unknown name %q; ley help presets lists them all", name)
+	return Preset{}, fmt.Errorf("no preset called %q; check with: ley help presets", name)
 }
 
 // NearestPresetNames returns up to three preset names (or aliases, whichever

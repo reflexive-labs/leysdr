@@ -190,3 +190,35 @@ func deviceByID(reg *Registry, id string) *Device {
 	}
 	return nil
 }
+
+// Heard is the arrival series behind a row's activity sparkline: Expire trims it to the silence
+// window, and a table that never expires keeps the newest heardCap so it stays bounded.
+func TestTableHeardSeries(t *testing.T) {
+	t0 := time.Unix(1_700_000_000, 0)
+	clock := t0
+	table := NewTable()
+	table.Now = func() time.Time { return clock }
+	rec := &leylinev1.DecodeRecord{Protocol: "aprs", DeviceId: "LEYTST-1", Kind: "status"}
+	for _, m := range []int{0, 10, 20} {
+		clock = t0.Add(time.Duration(m) * time.Minute)
+		table.Apply(rec)
+	}
+	e := table.Rows()[0]
+	if len(e.Heard) != 3 || !e.Heard[0].Equal(t0) || !e.Heard[2].Equal(t0.Add(20*time.Minute)) {
+		t.Fatalf("Heard = %v, want the three arrival times oldest first", e.Heard)
+	}
+	if got := e.HeardSince(t0.Add(5 * time.Minute)); len(got) != 2 || !got[0].Equal(t0.Add(10*time.Minute)) {
+		t.Errorf("HeardSince(+5m) = %v, want the two later arrivals", got)
+	}
+	table.Expire(t0.Add(25*time.Minute), 12*time.Minute)
+	if e := table.Rows()[0]; len(e.Heard) != 1 || !e.Heard[0].Equal(t0.Add(20*time.Minute)) {
+		t.Errorf("after Expire with a 12 m window, Heard = %v, want only the arrival inside it", e.Heard)
+	}
+	for i := 0; i < heardCap+10; i++ {
+		clock = clock.Add(time.Second)
+		table.Apply(rec)
+	}
+	if e := table.Rows()[0]; len(e.Heard) != heardCap {
+		t.Errorf("Heard should be capped at %d, got %d", heardCap, len(e.Heard))
+	}
+}

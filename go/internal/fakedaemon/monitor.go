@@ -136,6 +136,13 @@ func (d *Daemon) runMonitor(jobID string, mc *leylinev1.MonitorConfig, dev *leyl
 		// fraction of them, so looks/looksPossible is its ON AIR share, exactly as the daemon reports.
 		looksPossible++
 		for _, sig := range carriers {
+			// The daemon re-publishes a carrier only in the rows it actually found it, so
+			// this cycle publishes only when the carrier's look count grows: a client
+			// timing the arrivals sees the same on-air pattern it would from leylined.
+			looks := uint32(math.Round(float64(looksPossible) * sig.busy))
+			if before := uint32(math.Round(float64(looksPossible-1) * sig.busy)); looks == before {
+				continue
+			}
 			d.publishMonitorDetection(&leylinev1.Detection{
 				DetectionId:   fmt.Sprintf("det_%d", sig.hz),
 				CaptureId:     watchCapture,
@@ -143,7 +150,7 @@ func (d *Daemon) runMonitor(jobID string, mc *leylinev1.MonitorConfig, dev *leyl
 				BandwidthHz:   sig.bw,
 				SnrDb:         sig.snr,
 				FloorDbfs:     fakeFloorDbfs,
-				Looks:         uint32(math.Round(float64(looksPossible) * sig.busy)),
+				Looks:         looks,
 				LooksPossible: looksPossible,
 			})
 		}

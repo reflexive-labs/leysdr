@@ -113,7 +113,7 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 	if deviceSel != "" {
 		d, err := leyline.ResolveDevice(st, deviceSel)
 		if err != nil {
-			return fmt.Errorf("--device: %w. Run: ley devices", err)
+			return fmt.Errorf("--device %w. Run: ley devices", err)
 		}
 		dev = d
 	} else {

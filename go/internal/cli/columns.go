@@ -25,6 +25,38 @@ type column struct {
 	// over its width budget: the highest rank goes first. A column with no
 	// rank is information the screen exists to carry and always survives.
 	drop int
+	// hideEmpty leaves the column out when every row holds the absent
+	// glyph: a column reading "-" eight times out of eight is width spent on
+	// nothing (docs/dev/cli-style.md section 5). An empty table keeps it, so
+	// the header still says what a row would carry.
+	hideEmpty bool
+	// right aligns the column, header included, on its right edge: a numeric
+	// column, whose header carries the unit, so the digits line up and a
+	// short number does not sit at the far left of a wide header with air
+	// after it.
+	right bool
+}
+
+// withoutEmpty applies hideEmpty.
+func withoutEmpty(cols []column) []column {
+	out := make([]column, 0, len(cols))
+	for _, c := range cols {
+		if c.hideEmpty && len(c.cells) > 0 && !anyPresent(c.cells) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// anyPresent reports whether any cell holds a value rather than the absent glyph.
+func anyPresent(cells []string) bool {
+	for _, c := range cells {
+		if c != "-" && c != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // gutter is the two spaces between columns; docs/dev/cli-style.md section 5.
@@ -53,6 +85,7 @@ func tableStyle(a *App) ui.Style {
 // It returns the heads of the columns it had to drop, so a caller can tell
 // the reader what is missing and how to get it back.
 func printColumns(w io.Writer, s ui.Style, cols []column, groups []string) ([]string, error) {
+	cols = withoutEmpty(cols)
 	indent := ""
 	if groups != nil {
 		indent = "  "
@@ -67,6 +100,9 @@ func printColumns(w io.Writer, s ui.Style, cols []column, groups []string) ([]st
 				continue
 			}
 			c = s.Truncate(c, widths[i])
+			if cols[i].right {
+				c = strings.Repeat(" ", widths[i]-ui.Visible(c)) + c
+			}
 			if i == last {
 				b.WriteString(c)
 				break

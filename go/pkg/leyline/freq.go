@@ -23,12 +23,12 @@ func ParseFrequency(s string) (uint64, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, " ", "")
 	if s == "" {
-		return 0, fmt.Errorf("frequency: empty string")
+		return 0, fmt.Errorf("no frequency given")
 	}
 	if strings.ContainsAny(s, ",_") {
 		// strconv.ParseFloat honours Go's digit separators ("146_520"), so
 		// spell the rule out instead of leaving it to the number syntax.
-		return 0, fmt.Errorf("frequency: cannot parse %q: digit separators are not accepted", orig)
+		return 0, fmt.Errorf("cannot read %q as a frequency; digit separators are not accepted", orig)
 	}
 	mult := 1.0
 	s = strings.TrimSuffix(s, "hz")
@@ -44,11 +44,11 @@ func ParseFrequency(s string) (uint64, error) {
 	}
 	v, err := strconv.ParseFloat(s, 64)
 	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
-		return 0, fmt.Errorf("frequency: cannot parse %q", orig)
+		return 0, fmt.Errorf("cannot read %q as a frequency", orig)
 	}
 	hz := v * mult
 	if hz < 0 || hz > math.MaxUint64/2 {
-		return 0, fmt.Errorf("frequency: %q out of range", orig)
+		return 0, fmt.Errorf("%q is out of the range a frequency can be", orig)
 	}
 	return uint64(math.Round(hz)), nil
 }
@@ -95,7 +95,7 @@ func ParseMode(s string) (leylinev1.DemodMode, error) {
 	if m, ok := modeNames[t]; ok {
 		return m, nil
 	}
-	return leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED, fmt.Errorf("mode: unknown demodulator %q (am, nfm, wfm, usb, lsb, cw, raw_iq)", s)
+	return leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED, fmt.Errorf("%q is not a mode; one of am, nfm, wfm, usb, lsb, cw, raw_iq", s)
 }
 
 // ModeName returns the lower-case CLI name of a demod mode ("nfm", "raw_iq").
@@ -164,10 +164,10 @@ func ParseUserFrequency(s string) (uint64, error) {
 	orig := s
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, fmt.Errorf("frequency: empty string; try 146.52 (MHz) or 146.52M")
+		return 0, fmt.Errorf("no frequency given; try 146.52 (MHz) or 146.52M")
 	}
 	if strings.Contains(s, ",") {
-		return 0, fmt.Errorf("frequency: %q contains a comma; use a dot for decimals (146.52) or a unit (146520k)", orig)
+		return 0, fmt.Errorf("%q is not a frequency; use a dot for decimals (146.52) or a unit (146520k), not a comma", orig)
 	}
 	if v, ok := bareNumber(s); ok {
 		if v < 100_000 {
@@ -177,7 +177,7 @@ func ParseUserFrequency(s string) (uint64, error) {
 	}
 	hz, err := ParseFrequency(s)
 	if err != nil {
-		return 0, fmt.Errorf("frequency: cannot read %q; try 146.52 (MHz), 7040k or 146520000", orig)
+		return 0, fmt.Errorf("cannot read %q as a frequency; try 146.52 (MHz), 7040k or 146520000", orig)
 	}
 	return hz, nil
 }
@@ -307,19 +307,19 @@ func ParseUserRange(s string) (minHz, maxHz uint64, err error) {
 	lo, hi, found := strings.Cut(orig, "..")
 	if !found {
 		if _, err := ResolveBand(orig); err == nil {
-			return 0, 0, fmt.Errorf("range: %q is a band, not a range; say --band %s", orig, orig)
+			return 0, 0, fmt.Errorf("%q is a band, not a range; say --band %s", orig, orig)
 		}
-		return 0, 0, fmt.Errorf("range: %q is not a range; two frequencies with .. between them, as in 144M..148M", orig)
+		return 0, 0, fmt.Errorf("%q is not a range; two frequencies with .. between them, as in 144M..148M", orig)
 	}
 	lo, hi = strings.TrimSpace(lo), strings.TrimSpace(hi)
 	if minHz, err = ParseUserFrequency(lo); err != nil {
-		return 0, 0, fmt.Errorf("range: the low end of %q: %w", orig, err)
+		return 0, 0, fmt.Errorf("the low end of %q: %w", orig, err)
 	}
 	if maxHz, err = ParseUserFrequency(hi); err != nil {
-		return 0, 0, fmt.Errorf("range: the high end of %q: %w", orig, err)
+		return 0, 0, fmt.Errorf("the high end of %q: %w", orig, err)
 	}
 	if minHz >= maxHz {
-		return 0, 0, fmt.Errorf("range: %s is not below %s; a range runs low..high", FormatFrequency(minHz), FormatFrequency(maxHz))
+		return 0, 0, fmt.Errorf("%s is not below %s; a range runs low..high", FormatFrequency(minHz), FormatFrequency(maxHz))
 	}
 	return minHz, maxHz, nil
 }

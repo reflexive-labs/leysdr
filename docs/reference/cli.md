@@ -182,9 +182,11 @@ derived from the anchor whose `from_sample` is not past the record's (`docs/desi
 "Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the
 bulk rows: the entity table is a client-side fold with no proto message, so it prints one
 `{"entities": [...]}` object per redraw as NDJSON, each entity
-`{device_id, protocol, kind, summary, seen, age_s, last_sample_index, position}` (snake_case,
-`position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that row was last
-heard). A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a
+`{device_id, protocol, kind, summary, seen, age_s, last_sample_index, position, heard_slices}`
+(snake_case, `position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that
+row was last heard, `heard_slices` eight integers counting the station's records in each eighth of
+the table's window oldest first -- the window is the decoder's silence timeout, or ten minutes when
+it declares none -- which is the HEARD column as numbers). A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a
 decoder whose program could not be started is `DECODER_FAILED`.
 
 `ley devices-seen --json` is the fifth documented exception, the registry beside the entity table:
@@ -204,13 +206,15 @@ store is `~/Library/Application Support/Leyline/labels.json` on macOS and
 overrides it. `ley monitor --json` is the seventh, the transmission log beside the entity table: a
 client-side fold over the detections on the telemetry plane, so it has no proto message and prints
 one object per carrier as NDJSON when the watch ends, in first-appearance order, each `{detection_id,
-center_hz, channel, first_s, held_s, on_air_s, looks, looks_possible, peak_snr_db, bandwidth_hz}`
-(snake_case; `channel` the GMRS or preset channel on the frequency or `""` when none; `first_s` and
+center_hz, channel, first_s, held_s, on_air_s, looks, looks_possible, peak_snr_db, bandwidth_hz,
+on_air_slices}` (snake_case; `channel` the GMRS or preset channel on the frequency or `""` when none; `first_s` and
 `held_s` seconds on the client's own clock, since telemetry latency is sub-second and a radio-check
 log needs no anchor arithmetic; `held_s` is first-to-last span while `on_air_s` is the time actually
 transmitting, `looks`/`looks_possible` being the detector's rows-seen over rows-that-could, so a
 flickering intermod reads a wide `held_s` and a tiny `on_air_s`; `peak_snr_db` the strongest the
-carrier was seen). The same three filters that clean the table
+carrier was seen; `on_air_slices` eight shares in `[0, 1]`, the carrier's on-air fraction of each
+eighth of the watch oldest first, from the arrival times of the daemon's per-row re-publishes
+against its row rate -- the ACTIVITY column as numbers). The same three filters that clean the table
 clean the NDJSON: `--min-snr`, `--min-hold` and `--skirt-db` (below) all drop their carriers from
 both, so a tool wanting everything passes `--min-snr 0 --skirt-db 0`.
 
@@ -224,8 +228,14 @@ scan's; the client folds them into the log. It runs daemon-side and owns the rad
 declining a radio somebody is using with the same don't-disturb rule as a scan (`--take-over`
 overrides). A band wider than one capture can watch is refused with `INVALID_ARGUMENT`; `scan` sweeps
 a span that wide. There is no `--gain`, as there is none on `scan`: the daemon sets the gain. The log
-table (TIME, FREQUENCY, CHANNEL, HELD, ON AIR, PEAK SNR -- HELD the first-to-last span, ON AIR the
-time truly transmitting from the detector's look counts) is stdout; the live feed of each carrier as it is
+table (TIME, FREQUENCY, CHANNEL, HELD (s), ON AIR (s), ACTIVITY, PEAK SNR (dB) -- TIME a dimmed
+gutter of first sightings stamped when it changes, CHANNEL present only on a band with named
+channels, HELD the first-to-last span, ON AIR the time truly transmitting from the detector's look
+counts, ACTIVITY an eight-cell sparkline of when during the watch it was heard with the span it
+covers in the header, the first column dropped on a terminal too narrow for the table, and PEAK SNR
+inked by the level ramp from `--min-snr` upward) is stdout; the live feed announces a carrier the
+first time it clears `--min-snr`, and the summary says once when a carrier's reported frequency,
+its strongest reading, differs from the one the feed printed. the live feed of each carrier as it is
 first heard, and the summary, are stderr. Three filters keep the log readable, each disabled with a
 `0`: `--min-snr` (default 8) drops a carrier whose peak never cleared that many dB over the noise
 floor; `--min-hold` (default 0, off) drops one held for less than a set span; and `--skirt-db`
