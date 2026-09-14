@@ -15,6 +15,7 @@ You have an RTL-SDR (or an IQ recording) and a Mac.
 | [`ley` reference](reference/cli.md) | the command tree, input conventions, every `--json` shape, exit status |
 | [IQ files and fixtures](reference/iq-files.md) | the `.cf32` + sidecar format `ley play` reads, and the generated signals |
 | [Writing a client](reference/clients.md) | a script, agent or program that speaks the contract without `ley` |
+| [MCP adapter](reference/mcp.md) | letting an agent drive the radio through `ley mcp`: the tools, their shapes, the trust it hands over, client configuration |
 | [Writing a decoder](reference/writing-a-decoder.md) | a plugin that turns a channel's audio into typed records |
 
 `ley help <topic>` carries the same facts at the prompt: `squelch`, `frequencies`, `modes`, `gain`,
@@ -50,7 +51,7 @@ changes the doc first.
 |---|---|---|
 | [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | draft; v0 implements it |
 | [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | draft; v0 implements it |
-| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the planned MCP surface | draft; scan implemented, jobs and MCP not |
+| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | draft; scan and the MCP adapter (`ley mcp`) implemented, durable jobs and transcripts not |
 | [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | decided, implemented (D.13) |
 | [Signal views](design/signal-views.md) | the waterfall, the channel view, sub-audible (CTCSS) tones, and what honest means | draft; implemented except DCS and the sonogram |
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | draft; `ley scope` implements it |
@@ -74,7 +75,8 @@ What is being built, in what order, and the record of what each step found.
   work list for the first shared release), [signal views](plans/signal-views.md) (DCS and the
   sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
   [decoders](plans/decoders.md) (the plugin contract and APRS first; the other four drivers follow),
-  [MCP adapter](plans/mcp.md) (where the server lives and the order the tools land).
+  [MCP adapter](plans/mcp.md) (where the server lives and the order the tools land; the tools the
+  daemon can back landed as `ley mcp`, the rest wait on their milestones).
 - [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit
   messages cite their item ids. Nothing in there is a work list any more.
 

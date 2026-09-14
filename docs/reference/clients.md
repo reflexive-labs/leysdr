@@ -48,7 +48,7 @@ capture's anchor, never carried per frame ([data planes](../design/data-planes.m
 
 ## The Go client library
 
-`go/pkg/leyline` (Apache-2.0) is what `ley` is built on and what the MCP adapter will share: the
+`go/pkg/leyline` (Apache-2.0) is what `ley` is built on and what the MCP adapter (`ley mcp`) shares: the
 dial with the right windows, the error-code registry, and the input tables the CLI uses (frequency
 and level parsing, presets, bands, selectors). A Go client should start there rather than at the
 generated stubs in `go/gen`.
@@ -71,6 +71,7 @@ the client-local tables).
 
 ## Not yet
 
-The MCP adapter is Milestone D.16 and does not exist; its planned tool surface is in the
-[semantic tier design](../design/semantic-tier.md). There is no TCP listener and no remote
-access; that milestone arrives with authentication designed for it.
+There is no TCP listener and no remote access; that milestone arrives with authentication designed
+for it, and `ley mcp` ([MCP adapter reference](mcp.md)) serves stdin and stdout only until then. The
+tools the daemon cannot back yet -- recordings, transcripts, signal identification, identity
+lookups -- are listed there with the milestone each waits on.

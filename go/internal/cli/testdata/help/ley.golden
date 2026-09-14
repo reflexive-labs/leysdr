@@ -49,6 +49,7 @@ Data for tools:
   completion   Generate the autocompletion script for the specified shell
   fft          Stream spectrum rows as numbers, for tools
   listen       Stream a channel's decoded audio, for tools
+  mcp          Serve the radio to an agent over MCP (stdin and stdout)
 
 Daemon:
   daemon       Start, stop and check the process that owns the radio

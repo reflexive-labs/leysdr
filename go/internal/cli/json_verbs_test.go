@@ -73,6 +73,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "jobs cancel", args: []string{"jobs", "cancel"}, prep: prepSweep},
 	{path: "levels", args: []string{"levels", "146.52", "--count", "2"}},
 	{path: "listen", args: []string{"listen", "146.52", "--count", "2"}},
+	{path: "mcp", args: []string{"mcp"}, refuse: jsonNoOutput},
 	{path: "monitor", args: []string{"monitor", "gmrs", "--for", "1s"}},
 	{path: "phosphor", args: []string{"phosphor", "146.52", "--count", "1", "--bins", "32", "--levels", "8"}},
 	{path: "play", args: []string{"play"}, prep: prepIQFile, timeout: 2 * time.Second},

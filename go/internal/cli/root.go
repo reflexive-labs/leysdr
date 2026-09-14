@@ -105,6 +105,11 @@ type App struct {
 	// styled records that resolveStyles has run: the help path never reaches
 	// the pre-run hook, so it resolves the styles itself, once.
 	styled bool
+	// clientKind and clientLabel are what dial sends as leyline-client-kind
+	// and leyline-client-label, so the daemon's event log names who did what.
+	// Empty means the CLI's own ("cli", "ley"); `ley mcp` sets them so a
+	// channel an agent made is attributed to the adapter, not to a shell.
+	clientKind, clientLabel string
 }
 
 // NewRootCommand builds the full `ley` command tree bound to app.
@@ -197,6 +202,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newLabelCommand(app),
 		newFFTCommand(app),
 		newListenCommand(app),
+		newMCPCommand(app),
 		newPresetsCommand(app),
 		newBandsCommand(app),
 		newPlayCommand(app),
@@ -342,9 +348,17 @@ func (a *App) socketPath() string {
 	return leyline.DefaultSocketPath()
 }
 
-// dial connects to the daemon with the CLI identity.
+// dial connects to the daemon with the CLI identity (or the one clientKind
+// and clientLabel name).
 func (a *App) dial(ctx context.Context) (*leyline.Client, error) {
-	c, err := leyline.Dial(ctx, a.socketPath(), leyline.WithKind("cli"), leyline.WithLabel("ley"))
+	kind, label := a.clientKind, a.clientLabel
+	if kind == "" {
+		kind = "cli"
+	}
+	if label == "" {
+		label = "ley"
+	}
+	c, err := leyline.Dial(ctx, a.socketPath(), leyline.WithKind(kind), leyline.WithLabel(label))
 	if err != nil {
 		return nil, err
 	}

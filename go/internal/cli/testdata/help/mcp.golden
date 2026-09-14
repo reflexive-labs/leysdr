@@ -1,0 +1,40 @@
+mcp runs a Model Context Protocol server for a coding agent or an assistant:
+the agent's MCP client starts 'ley mcp' as a subprocess and speaks MCP over
+its stdin and stdout, and mcp speaks to the daemon the way every other ley
+verb does. Each tool is a ley verb seen from an agent -- list_devices is
+'ley devices', tune is 'ley tune', scan is 'ley scan', query_records is
+'ley records' -- and returns the same proto3 JSON '--json' prints, plus a
+short text summary so the agent spends its context on reasoning.
+
+Tools: list_devices, get_state, tune, scan, listen_summary, snapshot,
+list_decoders, query_records, list_entities, start_decode_job, list_jobs,
+get_job, cancel_job. The resource ley://records/<job_id> reads a kept decode
+job's records. Anything an agent starts here (a channel from tune, a decode
+job without keep) ends when the agent disconnects, the way a ley verb's ends
+at Ctrl-C; keep: true on a tool leaves it running.
+
+The socket has no authentication, so an agent that can start 'ley mcp' can
+do anything a shell running ley can: tune, take a radio over, cancel jobs.
+That is the same trust a local shell already has. There is no network
+transport; a remote agent waits on the remote-access milestone.
+
+Configure it in an MCP client as the command 'ley' with the argument 'mcp'
+(and '--socket PATH' when the daemon is not on the default socket).
+--json is refused: the whole conversation is JSON already.
+
+Usage:
+  ley mcp [flags]
+
+Examples:
+  ley mcp                     # what an MCP client runs; not for typing at a prompt
+  claude mcp add leyline -- ley mcp
+  {"mcpServers": {"leyline": {"command": "ley", "args": ["mcp"]}}}
+
+Flags:
+  -h, --help   help for mcp
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

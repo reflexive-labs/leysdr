@@ -84,6 +84,10 @@ type session struct {
 	// freedRadio records that teardown destroyed the capture this session
 	// created, so the closing line can say the radio is free.
 	freedRadio bool
+	// takeOverHint replaces the remedy a retune refusal ends with. Empty
+	// means the verb's own ("Add --retune ..."); the MCP adapter names the
+	// argument an agent has instead of a flag.
+	takeOverHint string
 }
 
 // noDeviceChecklist is what to try when the daemon lists no radios.
@@ -166,7 +170,7 @@ func (s *session) friendly(err error, input string, hz uint64) error {
 		return &friendlyError{msg: daemonMessage(err), cause: err}
 	case leyline.CodeDeviceBusy:
 		if s.device != nil && heldExternally(s.device) {
-			return &friendlyError{msg: fmt.Sprintf("%s is held by another program (rtl_tcp, SDR++, GQRX?): quit it, or pick another radio with --device (ley devices lists them)", s.device.Model), cause: err}
+			return &friendlyError{msg: fmt.Sprintf("%s is held by another program (rtl_tcp, SDR++, GQRX?): quit it, or pick another radio with --device; check with: ley devices", s.device.Model), cause: err}
 		}
 		return &friendlyError{msg: "the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits", cause: err}
 	case leyline.CodeFreqOutOfRange:
@@ -450,8 +454,12 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 			return err
 		}
 		if n := s.activeChannels(cap.CaptureId); n > 0 && !o.retune {
-			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. Add --retune to move it anyway, or free %s with: ley stop --all",
-				leyline.FormatFrequency(cap.CenterHz), plural(n, "channel"), leyline.FormatFrequency(o.freq), themOrIt(n), themOrIt(n))
+			hint := s.takeOverHint
+			if hint == "" {
+				hint = fmt.Sprintf("Add --retune to move it anyway, or free %s with: ley stop --all", themOrIt(n))
+			}
+			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. %s",
+				leyline.FormatFrequency(cap.CenterHz), plural(n, "channel"), leyline.FormatFrequency(o.freq), themOrIt(n), hint)
 		}
 		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
@@ -566,16 +574,16 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 	}
 	db, auto, err := leyline.ParseGain(o.gain)
 	if err != nil {
-		return fmt.Errorf("--gain: %w", err)
+		return fmt.Errorf("--gain %w", err)
 	}
 	if len(s.device.GainElements) == 0 {
-		return fmt.Errorf("--gain: %s reports no gain stages; leave --gain off", deviceName(s.device))
+		return fmt.Errorf("%s reports no gain stages, so --gain has nothing to set; leave it off", deviceName(s.device))
 	}
 	el := s.device.GainElements[0]
 	tol := 1.0
 	if !auto {
 		if err := leyline.CheckGain(db, el); err != nil {
-			return fmt.Errorf("--gain: %w", err)
+			return fmt.Errorf("--gain %w", err)
 		}
 		db, tol = leyline.SnapGain(el, db), leyline.GainTolerance(el)
 	}
@@ -587,7 +595,7 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 	}
 	w := &leylinev1.ParamWrite{Tag: 3, TargetId: s.capture.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: g}}
 	if _, err := s.client.WriteParams(ctx, w); err != nil {
-		return fmt.Errorf("--gain: %w", err)
+		return fmt.Errorf("--gain was not applied: %w", err)
 	}
 	ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
 		switch b := ev.Body.(type) {
@@ -606,10 +614,10 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 		return false
 	})
 	if err != nil {
-		return fmt.Errorf("--gain: %w", err)
+		return fmt.Errorf("--gain was not applied: %w", err)
 	}
 	if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
-		return fmt.Errorf("--gain: %w", rejectedError(r.WriteRejected))
+		return fmt.Errorf("--gain was not applied: %w", rejectedError(r.WriteRejected))
 	}
 	return nil
 }
@@ -660,7 +668,7 @@ func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 		w := &leylinev1.ParamWrite{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: o.squelch}}
 		sum, err := s.client.WriteParams(ctx, w)
 		if err != nil {
-			return fmt.Errorf("--squelch: %w", err)
+			return fmt.Errorf("--squelch was not applied: %w", err)
 		}
 		rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
 		ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
@@ -674,12 +682,12 @@ func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 		})
 		if err != nil {
 			if rejected {
-				return fmt.Errorf("--squelch: %.0f dBFS rejected by the daemon (no reason observed)", o.squelch)
+				return fmt.Errorf("--squelch %.0f dBFS was rejected by the daemon (no reason observed)", o.squelch)
 			}
-			return fmt.Errorf("--squelch: %w", err)
+			return fmt.Errorf("--squelch was not applied: %w", err)
 		}
 		if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
-			return fmt.Errorf("--squelch: %w", rejectedError(r.WriteRejected))
+			return fmt.Errorf("--squelch was not applied: %w", rejectedError(r.WriteRejected))
 		}
 	}
 	return nil

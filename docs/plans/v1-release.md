@@ -150,7 +150,7 @@ Decisions taken here without waiting, because there is one reasonable answer and
 | D.13 detector + telemetry + `ley scan` | done | `docs/design/scan.md` |
 | D.14 TUI dashboard | partial | three live views exist (`spectrum --watch`, `waterfall`, `phosphor`) and negotiate low-rate streams; no dashboard, no event loop, no bubbletea dependency. README, CLAUDE.md and `docs/reference/cli.md` all still say "Bubble Tea TUI" |
 | D.15 jobs | one of five pieces | `CaptureAllocator` with don't-disturb landed with scan; the store is in-memory (`JobStore.swift:3`), no respawn, no watch job (`JobsService.swift:22`), no transcript (`:51`) |
-| D.16 MCP adapter | missing | |
+| D.16 MCP adapter | done for the tools the daemon can back | `ley mcp`, 2026-09-14 (R-12; `docs/plans/mcp.md` has the blocked remainder) |
 
 Undocumented extras the plan never mentions: `RTLTCPDevice` (a remote dongle over `rtl_tcp`, 504 lines,
 tested — it is what made the Linux real-RF verification possible), `ley phosphor`, `ley waterfall`,
@@ -450,7 +450,13 @@ resource store directory (`~/Library/Application Support/Leyline/recordings`) an
 `ley play` accepting a `ley://` URI. Design note first (`docs/design/recording.md`, short: what the
 sidecar carries, where files go, retention) because the store shape outlives v1.0.
 
-### R-12 `[d]` MCP adapter (L, Opus; after D1 and R-13)
+### R-12 `[x]` MCP adapter (L, Opus; after D1 and R-13)
+
+Landed 2026-09-14 as `ley mcp`, a subcommand rather than a `leymcp` binary, per the decision in
+`docs/plans/mcp.md` (which superseded this item's shape); the tools the daemon can back are in
+`docs/reference/mcp.md`, the blocked ones are named there with their milestones rather than
+registered as refusing stubs, and the client-library promotion R-13 asks for was not needed: the
+adapter runs the verbs' own session logic in `go/internal/cli`.
 
 Milestone D.16. Go binary `leymcp` (stdio transport) sharing `go/pkg/leyline`; the six tools the daemon
 can back today (`list_devices`, `get_state`, `tune`, `listen_summary`, `scan`, `snapshot` as PNG

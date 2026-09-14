@@ -80,7 +80,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
 					o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
 				} else {
-					return usageErrorf("%v, and no band called %q (ley bands lists them)", rerr, args[0])
+					return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
 				}
 			case o.bandName != "":
 				b, err := leyline.ResolveBand(o.bandName)
@@ -89,7 +89,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				}
 				o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
 			default:
-				return usageErrorf("scan needs a range: ley scan 144M..148M, or ley scan --band 2m (ley bands lists them)")
+				return usageErrorf("scan needs a range: ley scan 144M..148M, or ley scan --band 2m; check with: ley bands")
 			}
 			switch sortBy {
 			case "freq", "":
@@ -129,6 +129,29 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 
 // runScan starts the sweep, follows it on the event stream, and prints what it found.
 func runScan(ctx context.Context, s *session, o scanOptions) error {
+	scan, final, err := s.sweep(ctx, o)
+	if err != nil {
+		return err
+	}
+	if scan == nil {
+		// sweep already said why there is nothing to show.
+		return nil
+	}
+	if final.State == leylinev1.JobState_CANCELLED && !s.app.JSON {
+		s.say("stopped early: %s\n", final.StatusDetail)
+	}
+	if s.app.JSON {
+		return s.app.printJSON(scan)
+	}
+	printScan(s.app, scan, o)
+	return nil
+}
+
+// sweep starts a once-scan job, follows it to its end and fetches the Scan it produced. A nil
+// Scan with a nil error means the sweep ended with nothing to fetch and the reason was already
+// said on stderr: an interrupted sweep the daemon could not report on in time, or a job that
+// named no scan. `ley scan` prints what comes back; the MCP adapter's scan tool returns it.
+func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
 	cfg := &leylinev1.ScanConfig{
 		Range:    &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
 		DwellMs:  o.dwellMs,
@@ -138,7 +161,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	}
 	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	st := s.app.ErrStyle
 	s.say("sweeping %s to %s\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
@@ -147,7 +170,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	final, err := s.followJob(ctx, job, progress)
 	progress.clear()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	// Interrupted: stop the sweep now rather than waiting for the presence grace -- the next thing
 	// somebody does after Ctrl-C is usually tune -- and then print what it found before it stopped.
@@ -162,17 +185,17 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 		}
 	}
 	if final.State == leylinev1.JobState_FAILED {
-		return &ExitError{Code: 1, Message: scanFailure(final, st)}
+		return nil, final, &ExitError{Code: 1, Message: scanFailure(final, st)}
 	}
 	id, idErr := scanIDOf(final)
 	if idErr != nil {
 		// A job that named no scan has nothing to show. Under --json that is a failure, not an
 		// empty success: a consumer reading nothing on stdout and exit 0 concludes an empty band.
 		if s.app.JSON {
-			return &ExitError{Code: 1, Message: idErr.Error() + ": " + final.StatusDetail}
+			return nil, final, &ExitError{Code: 1, Message: idErr.Error() + ": " + final.StatusDetail}
 		}
 		s.say("%s (%s)\n", final.StatusDetail, idErr)
-		return nil
+		return nil, final, nil
 	}
 	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
 	if err != nil {
@@ -181,18 +204,11 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 		if ctx.Err() != nil && !s.app.JSON {
 			s.say("stopped before the daemon could report what it found (%s says whether the scan is still running)\n",
 				st.Cmd("ley state"))
-			return nil
+			return nil, final, nil
 		}
-		return err
+		return nil, final, err
 	}
-	if final.State == leylinev1.JobState_CANCELLED && !s.app.JSON {
-		s.say("stopped early: %s\n", final.StatusDetail)
-	}
-	if s.app.JSON {
-		return s.app.printJSON(scan)
-	}
-	printScan(s.app, scan, o)
-	return nil
+	return scan, final, nil
 }
 
 // followJob renders progress until the job leaves RUNNING, and returns its last state. Job state
@@ -368,9 +384,13 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 	cols := []column{
 		{head: "FREQUENCY", cells: mapDet(rows, func(d *leylinev1.Detection) string { return leyline.FormatFrequency(d.CenterHz) })},
 		{head: "WIDTH", cells: mapDet(rows, func(d *leylinev1.Detection) string { return widthCell(d, scan) })},
-		{head: "SNR", cells: mapDet(rows, func(d *leylinev1.Detection) string { return fmt.Sprintf("%.0f dB", d.SnrDb) })},
-		{head: "SEEN", cells: mapDet(rows, seenCell), min: 4},
-		{head: "BAND", cells: mapDet(rows, bandCell), min: 8, drop: 1},
+		// The unit sits in the header (section 5) and the number takes the level ramp from
+		// --min-snr upward, as the peak list under ley spectrum does, so chart and table agree.
+		{head: "SNR (dB)", cells: mapDet(rows, func(d *leylinev1.Detection) string {
+			return snrInk(tableStyle(app), o.minSNR, d.SnrDb, fmt.Sprintf("%.0f", d.SnrDb))
+		}), right: true},
+		{head: "SEEN", cells: mapDet(rows, seenCell), min: 4, right: true},
+		{head: "BAND", cells: mapDet(rows, bandCell), min: 8, drop: 1, hideEmpty: true},
 	}
 	// tableStyle, not app.Style: off a terminal the width is unknown rather than 80, and fitting
 	// to 80 would silently drop the BAND column out of a piped table.

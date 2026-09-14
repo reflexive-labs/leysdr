@@ -11,10 +11,10 @@ IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW dem
 squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
 views in the terminal; band-level meters and a seconds-wide clip of the waveform over what a
 channel is hearing; a band scan with an honest energy detector; two channels on one radio; a
-second terminal adjusting what the first is hearing; `--json` for scripts and agents.
+second terminal adjusting what the first is hearing; `--json` for scripts and `ley mcp` for agents,
+which serves the same verbs as MCP tools.
 
-**Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app, the
-MCP adapter for agents. `docs/plans/build-order.md` is the order they arrive in and
+**Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app. `docs/plans/build-order.md` is the order they arrive in and
 `docs/plans/v1-release.md` is the gap analysis for the first shared release.
 
 ## Requirements
@@ -128,8 +128,10 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 - Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.17 (decoders:
   the plugin contract, the record store, `ley decode`, `ley records`, `ley track`, `ley watch` with
   predicates and notifiers, `ley devices-seen`/`ley label`, and an IQ input mode) done for APRS,
-  SAME weather alerts and marine AIS, the other four drivers listed in `docs/plans/decoders.md`; D.14
-  (terminal dashboard), D.15 (durable jobs, watch, transcripts) and D.16 (MCP adapter) not started.
+  SAME weather alerts and marine AIS, the other four drivers listed in `docs/plans/decoders.md`; D.16
+  (MCP adapter, `ley mcp`) done for the tools the daemon can back, the rest waiting on the milestones
+  `docs/plans/mcp.md` names; D.14 (terminal dashboard) and D.15 (durable jobs, watch, transcripts)
+  not started.
 - Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
   measurement on target hardware yet; S1 (latency chain) waits for the app.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with

@@ -150,17 +150,28 @@ func (s Style) Level(frac float64, text string) string {
 // frac falls between. lipgloss downsamples it to whatever the profile can
 // draw.
 func levelHex(frac float64) string {
+	r, g, b := LevelRGB(frac)
+	return fmt.Sprintf("#%02X%02X%02X", r, g, b)
+}
+
+// LevelRGB is the level ramp of section 3a as a colour: the same five stops
+// Level inks a terminal with, interpolated for frac in [0, 1] (clamped; a
+// NaN reads as the floor). It exists for a renderer that draws pixels rather
+// than cells -- the MCP adapter's snapshot PNG -- so a level is the same
+// colour on a picture as on the terminal chart of the same row.
+func LevelRGB(frac float64) (r, g, b uint8) {
+	f := clamp01(frac)
 	last := len(levelStops) - 1
-	x := frac * float64(last)
+	x := f * float64(last)
 	i := int(x)
 	if i >= last {
 		c := levelStops[last]
-		return fmt.Sprintf("#%02X%02X%02X", int(c[0]), int(c[1]), int(c[2]))
+		return uint8(c[0]), uint8(c[1]), uint8(c[2])
 	}
 	t := x - float64(i)
 	lo, hi := levelStops[i], levelStops[i+1]
-	mix := func(n int) int { return int(lo[n] + (hi[n]-lo[n])*t + 0.5) }
-	return fmt.Sprintf("#%02X%02X%02X", mix(0), mix(1), mix(2))
+	mix := func(n int) uint8 { return uint8(lo[n] + (hi[n]-lo[n])*t + 0.5) }
+	return mix(0), mix(1), mix(2)
 }
 
 // nearestStop picks the ramp stop frac is closest to.

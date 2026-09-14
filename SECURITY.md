@@ -10,6 +10,11 @@ do everything `ley` can — tune, take over a sweep, destroy another client's ca
 Client identity on the wire (`leyline-client-id` and friends) is attribution for the event log, not
 a credential.
 
+`ley mcp` hands that same surface to an agent: an MCP client that can start it can do everything
+`ley` can, which is the trust a local shell already has, and it speaks stdin and stdout only. It
+opens no network listener of its own; a network transport for it waits on the same remote-access
+milestone (`docs/reference/mcp.md`, "What an agent can do, and the trust that implies").
+
 The daemon opens no network listener. Remote control is a later milestone and will arrive with
 authentication designed for it (`docs/design/control-plane.md`, "Auth for TCP remote access").
 

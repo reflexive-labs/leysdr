@@ -1,6 +1,8 @@
 # Plan: MCP adapter
 
-Status: draft, not started. Implements the "MCP surface" of `docs/design/semantic-tier.md` and §9
+Status: in progress. MCP-1 to MCP-6 landed 2026-09-14 as `ley mcp`, with the `ley://records/<job_id>`
+resource of MCP-7 ahead of the rest (reference: `docs/reference/mcp.md`); MCP-7 to MCP-12 wait on
+the milestones each names, and the closing section records what the build found. Implements the "MCP surface" of `docs/design/semantic-tier.md` and §9
 of `docs/design/decoders.md`; companion to `docs/plans/decoders.md`, whose DEC-14 ("The MCP families
 and `ley identify`") is the same work seen from the decoder tier. Milestone D.16 in
 `docs/plans/build-order.md`.
@@ -170,13 +172,12 @@ of this.
 
 ## Status legend and build items
 
-`[ ]` pending, `[x]` done, `[-]` dropped with the reason, `[d]` waiting on a decision. Nothing here
-is started. Every item is verified three ways, matching the repository's pattern: fake-daemon tests
+`[ ]` pending, `[x]` done, `[-]` dropped with the reason, `[d]` waiting on a decision. Every item is verified three ways, matching the repository's pattern: fake-daemon tests
 for the tool-to-RPC mapping (`go/internal/fakedaemon`, which already fakes the decoder RPCs, DEC-6),
 one end-to-end test against the real daemon (`go/internal/e2e`, as `TestDecodeAgainstRealDaemon`
 does), and the `ley` mirror as the compatibility check that tool and verb read the same shape.
 
-### MCP-1 `[ ]` The server and the stdio transport
+### MCP-1 `[x]` The server and the stdio transport
 
 `ley mcp` runs an MCP stdio server built on the official Go SDK, dialling the daemon UDS through
 `go/pkg/leyline` — the same `Dial` every verb uses, so the adapter is provably a client. Tool
@@ -184,30 +185,30 @@ registration is a table; the first tool can be `list_devices` to prove the round
 client lists the server's tools; a fake-daemon test that the server's daemon connection is the shared
 client and nothing else.
 
-### MCP-2 `[ ]` Orient and control tools
+### MCP-2 `[x]` Orient and control tools
 
 `list_devices`, `get_state`, `tune`, mapped to the `Control` RPCs, with `tune` refusing to retune an
 active capture unless told to take over (don't-disturb, adapter-side). Verify: a fake-daemon test per
 tool; an e2e that `tune` refuses an active capture and names why.
 
-### MCP-3 `[ ]` Observe tools
+### MCP-3 `[x]` Observe tools
 
 `scan`, `listen_summary`, and `snapshot`'s data (binned FFT from `Bulk.Subscribe`, one row). Verify:
 fake-daemon per tool; an e2e that `scan` over `ley play` of a fixture returns the fixture's
 detections.
 
-### MCP-4 `[ ]` Decoder tools
+### MCP-4 `[x]` Decoder tools
 
 `list_decoders`, `query_records`, `list_entities` (the `records.Table` fold over
 `SubscribeRecords`), `start_decode_job`. Verify: fake-daemon over the DEC-6 decoders fake; an e2e that
 `ley decode aprs` on the `aprs_afsk` fixture writes records a `query_records` call then returns.
 
-### MCP-5 `[ ]` Job control
+### MCP-5 `[x]` Job control
 
 `list_jobs`, `get_job`, `cancel_job` over the `Jobs` RPCs. Verify: fake-daemon; the `ley jobs` mirror
 returns the same job shapes.
 
-### MCP-6 `[ ]` Value-add renders
+### MCP-6 `[x]` Value-add renders
 
 `snapshot` PNG rendering and compact text summaries for scans and records (`records.Summary`), all
 adapter-side. Verify: a snapshot render produces a PNG of the negotiated bin count; a summary matches
@@ -218,7 +219,8 @@ the line `ley` prints for the same record.
 `find_recordings` and the other `ley://` resources, once the Resources service and the recording,
 scan and snapshot stores exist. `ley://records/<job_id>` can be exposed ahead of the rest, since its
 store is built. Verify: fake-daemon over faked resources; `ley recordings` returns the same URIs.
-Blocked on the Resources service (C.12).
+Blocked on the Resources service (C.12). The `ley://records/<job_id>` template landed with MCP-4
+(2026-09-14): it serves the kept job's `RecordPage`, verified against the fake and the real daemon.
 
 ### MCP-8 `[ ]` `identify_signal`
 
@@ -292,7 +294,53 @@ implements essentially the whole MCP spec and offers both the stdio and streamab
 this plan uses. Checked 2026-09-13 against the SDK's releases page
 (https://github.com/modelcontextprotocol/go-sdk/releases) and package docs
 (https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp); the v1.0.0 notes are at
-https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.0.0. Pin the version in `go.mod` at
-build time and record the pinned version in the closing section when MCP-1 lands.
+https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.0.0. `go.mod` pins v1.7.0, the
+newest stable release on 2026-09-14 (v1.8.0 was at its second pre-release).
 </content>
 </invoke>
+
+## What the build found
+
+MCP-1 to MCP-6 landed on 2026-09-14 in `go/internal/cli` (`mcp.go`, `mcp_tools.go`, `mcp_png.go`),
+verified three ways as the legend asks: fake-daemon tests per tool (`mcp_test.go`), two end-to-end
+runs against the real daemon (`go/internal/e2e/mcp_test.go`: the scan_band fixture for orient,
+control and observe; the AFSK fixture and the real APRS plugin for the decoder tools), and the
+`ley` mirror as the shape check (`list_devices` and `get_state` are held against `ley devices
+--json` and `ley state --json` message for message; `scan`, `list_jobs` and `query_records` against
+their verbs' counts). What the second look found:
+
+- **Presence is the whole lifetime story.** The server holds one `WatchEvents` stream open for its
+  life, and every session a tool opens shares the process's client id, so a channel `tune` makes on
+  a short-lived session outlives that session on the server's presence and dies with the agent's
+  conversation. That is invariant 8 ("ephemeral unless explicitly kept") without a `stop` tool:
+  `keep: true` is the one way an agent leaves something behind. The fake and the real daemon both
+  keep presence per client id (`docs/dev/engine-internals.md`, "Presence"); the e2e waits for the
+  daemon's five-second grace and checks the channel is gone.
+- **Each tool call is its own session; the server keeps no mirror.** Two tools may run at once and
+  `session` was not written for a shared, locked mirror, so a tool dials, snapshots and folds on
+  its own connection, and the server's event stream is drained and discarded. The cost is a gRPC
+  connection per call, which `ley` pays per invocation anyway.
+- **The refusal is made twice, in different words.** The adapter checks the fresh snapshot before
+  any write and names the listening channels, their frequencies and owners, ending with `take_over:
+  true`; `ensureCapture` refuses again with the daemon's picture if that was stale, and a
+  `takeOverHint` on the session swaps its `--retune` remedy for the argument an agent has. A
+  refused call leaves the daemon's event sequence untouched, and the test says so.
+- **The verbs' renderers are the summaries.** Rather than a second set of words, every tool runs
+  its session against an `App` whose stdout and stderr are buffers with plain styles, and returns
+  what the verb would have printed: `printScan`, `printJobTable`, `printRecordTable`, `renderTrack`
+  and the tune's own decision lines. The one rewrite is a remedy that named a flag.
+- **Composites, not custom shapes.** `tune` and `listen_summary` answer with more than one message,
+  so they return an envelope of proto3 JSON values under fixed keys. The one client-side statistic,
+  `listen_summary`'s `meter`, marshals NaN as `null`: encoding/json refuses NaN, and the real daemon
+  reports a squelch that is off as one, which the fake never did.
+- **A recording tunes only its own centre.** The real-daemon e2e first tried to tune the file device
+  400 kHz off its centre and was refused with `FREQ_OUT_OF_RANGE`; the capture has to be made at the
+  fixture's centre and the carriers found inside it. The fake's radio has no such limit, which is
+  why the e2e exists.
+- **The PNG draws with its own glyphs.** Axis labels need a font and the repository has no image
+  library; the fourteen 5x7 bitmaps `FormatFrequency` and a dB label need are a map in
+  `mcp_png.go`, and `ui.LevelRGB` was exported so the picture's ramp is the terminal chart's.
+- **The blocked tools are not stubs.** A tool that only refuses spends an agent's context on
+  nothing, so `find_recordings`, `get_transcript`, `identify_signal`, `lookup_identity` and
+  `whats_out_there` are named in the server's instructions with the milestone each waits on and
+  registered nowhere; the guide's stub rule is for a person typing a verb.

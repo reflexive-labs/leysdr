@@ -72,7 +72,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
 	if f.gain != "" {
 		if _, _, err := leyline.ParseGain(f.gain); err != nil {
-			return nil, usageError(fmt.Errorf("--gain: %w", err))
+			return nil, usageError(fmt.Errorf("--gain %w", err))
 		}
 	}
 	o.band = leyline.BandFor(freq)
@@ -80,7 +80,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	case f.mode != "":
 		m, reason, err := leyline.ResolveMode(f.mode, freq)
 		if err != nil {
-			return nil, usageError(fmt.Errorf("--mode: %w", err))
+			return nil, usageError(fmt.Errorf("--mode %w", err))
 		}
 		o.mode, o.modeReason = m, reason
 	case def.mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED:
@@ -97,7 +97,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	if f.bw != "" {
 		bw, err := leyline.ParseBandwidth(f.bw)
 		if err != nil {
-			return nil, usageError(fmt.Errorf("--bw: %w (examples: 12.5, 12.5k, 200k, 12500)", err))
+			return nil, usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
 		o.bw = bw
 	} else {
@@ -106,7 +106,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	if f.squelch != "" {
 		db, auto, err := leyline.ParseSquelch(f.squelch)
 		if err != nil {
-			return nil, usageError(fmt.Errorf("--squelch: %w (examples: -40, -40dB, off, auto)", err))
+			return nil, usageError(fmt.Errorf("--squelch %w (examples: -40, -40dB, off, auto)", err))
 		}
 		o.squelch, o.squelchAuto = db, auto
 	} else if o.mode == leylinev1.DemodMode_NFM || o.mode == leylinev1.DemodMode_AM {
@@ -117,7 +117,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	}
 	v, err := leyline.ParseVolume(f.volume)
 	if err != nil {
-		return nil, usageError(fmt.Errorf("--volume: %w (examples: 0.5, 50%%)", err))
+		return nil, usageError(fmt.Errorf("--volume %w (examples: 0.5, 50%%)", err))
 	}
 	o.volume = v
 	return o, nil
@@ -200,6 +200,33 @@ moves it anyway.`,
 
 // runTune performs the tune lifecycle on an open session whose device is set.
 func runTune(ctx context.Context, s *session, o *tuneOptions) error {
+	if err := s.bringUp(ctx, o); err != nil {
+		return err
+	}
+	if o.persistent {
+		if s.squelchNote != "" {
+			// A persistent tune has no banner to carry the measurement, and the
+			// threshold it chose is a decision like every other: stderr, so the
+			// ids on stdout stay a script's.
+			fmt.Fprintln(s.app.Stderr, s.squelchNote)
+		}
+		return s.printCreated()
+	}
+	err := s.live(ctx, o)
+	s.teardown()
+	if err == nil && (ctx.Err() != nil || s.channelGone) {
+		s.sayClosed()
+	}
+	return err
+}
+
+// bringUp is the first half of a tune: the capture (reused, retuned or
+// created), the gain, the channel with its initial squelch, and the speakers
+// when asked for. It announces each decision as it makes it and removes what
+// it created when a later step fails, so a caller that returns its error
+// leaves the radio as it found it. `ley tune` goes on to the live phase or
+// prints the ids; the MCP adapter's tune tool stops here.
+func (s *session) bringUp(ctx context.Context, o *tuneOptions) error {
 	// An impossible frequency fails before any decision is announced, so the
 	// error is the whole story. The capture centre is what the device tunes.
 	target := o.freq
@@ -238,21 +265,7 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 			return err
 		}
 	}
-	if o.persistent {
-		if s.squelchNote != "" {
-			// A persistent tune has no banner to carry the measurement, and the
-			// threshold it chose is a decision like every other: stderr, so the
-			// ids on stdout stay a script's.
-			fmt.Fprintln(s.app.Stderr, s.squelchNote)
-		}
-		return s.printCreated()
-	}
-	err := s.live(ctx, o)
-	s.teardown()
-	if err == nil && (ctx.Err() != nil || s.channelGone) {
-		s.sayClosed()
-	}
-	return err
+	return nil
 }
 
 // sayClosed is the one line an interrupted live session leaves behind: what

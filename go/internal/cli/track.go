@@ -408,6 +408,12 @@ func ageWord(d time.Duration) string {
 
 // printEntitySnapshot writes one NDJSON line per redraw: the table as it stands.
 func printEntitySnapshot(app *App, table *records.Table, window time.Duration) error {
+	return app.printArray(entitySnapshot(table, window))
+}
+
+// entitySnapshot is the table as the `ley track --json` object: one row per
+// entity, ages and HEARD slices measured on the table's clock.
+func entitySnapshot(table *records.Table, window time.Duration) EntitySnapshot {
 	now := tableNow(table)
 	snap := EntitySnapshot{Entities: []EntityRow{}}
 	for _, e := range table.Rows() {
@@ -422,5 +428,5 @@ func printEntitySnapshot(app *App, table *records.Table, window time.Duration) e
 		}
 		snap.Entities = append(snap.Entities, row)
 	}
-	return app.printArray(snap)
+	return snap
 }

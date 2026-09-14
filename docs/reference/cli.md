@@ -5,8 +5,8 @@ reference client of the `leyline.v1` contract. It is organised for lookup; the t
 [Using `ley`](../guide/using-ley.md), and `ley help <verb|topic>` carries the same facts at the
 prompt. `--json` output is the standard proto3 JSON mapping of the protos; the exceptions are
 listed here and nowhere else. A program that speaks the contract without going through `ley`
-starts at [Writing a client](clients.md); the MCP adapter's planned tool surface is in the
-[semantic tier design](../design/semantic-tier.md).
+starts at [Writing a client](clients.md); an agent drives the daemon through `ley mcp`, whose tools are
+the [MCP adapter reference](mcp.md).
 
 ## CLI tree
 
@@ -74,6 +74,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # name a transmitter (or read/clear its name); labels are user
 │                                    # data in a client-side JSON store ($LEYLINE_LABELS), not daemon state
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
+├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
+│                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
 ├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline
 ├── devices [--watch] | devices attach rtltcp <host:port> | devices detach <SEL>
@@ -109,7 +111,7 @@ adds no capability the protocol lacks.
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
 to stderr, so stdout is parseable. Every verb either answers the flag or refuses it: a verb whose
 output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
-`ley daemon install|uninstall|logs` — exits 2 with `<verb> has no --json output; drop the flag
+`ley daemon install|uninstall|logs`, and `ley mcp`, whose stdout is the MCP conversation — exits 2 with `<verb> has no --json output; drop the flag
 (<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
 pipeline unparseable text and exit 0. **Seven documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`

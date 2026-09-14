@@ -791,6 +791,13 @@ for a program that speaks the contract directly.
   presets) or their family (for bands), so a family of near-identical rows reads as one block;
   `--json` gives the flat arrays with every field, including the description a table trims. No
   RPC is made. `ley help presets` is the same data in prose.
+- **`ley mcp`** is the same radio for an agent: an MCP client (Claude Code, Claude Desktop, Cursor)
+  starts `ley mcp` as a subprocess and gets a tool per verb -- `list_devices`, `tune`, `scan`,
+  `snapshot` (a spectrum PNG), `listen_summary`, `query_records`, `list_entities`, the jobs -- each
+  returning the verb's `--json` shape and a short summary. `claude mcp add leyline -- ley mcp`
+  registers it in Claude Code; other clients take `{"command": "ley", "args": ["mcp"]}`. What an
+  agent tunes ends when its conversation does unless it asks to keep it. The
+  [MCP adapter reference](../reference/mcp.md) is every tool and what it hands an agent.
 - **Be explicit about the rest.** A voice channel squelches whatever the output looks like:
   `tune --json` and `tune --persistent` measure the floor too and print the threshold on stderr
   with the run's other decisions (`--squelch off` keeps the channel open). Pass `--mode`
