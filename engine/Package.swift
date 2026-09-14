@@ -94,7 +94,11 @@ let package = Package(
         .testTarget(
             name: "EngineCoreTests",
             dependencies: ["EngineCore", "TestSupport"],
-            path: "Tests/EngineCoreTests"
+            path: "Tests/EngineCoreTests",
+            // The sub-audible taps of real-radio captures (SubAudibleCaptureTests): the 1 kHz
+            // discriminator output the detector sees, kept because the captures themselves are
+            // tens of megabytes and gitignored.
+            resources: [.copy("Captures")]
         ),
         .testTarget(
             name: "LeylineDaemonTests",

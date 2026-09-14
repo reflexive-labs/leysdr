@@ -693,3 +693,31 @@ on the `Subscription`'s descriptor as it does the rest.
 - The e2e meters assertions move with SV-12b (−11 and 0 within a dB on the demod tap). Goldens
   and the guide's transcripts re-recorded against the fake; the guide's "looking at speech"
   paragraph says why a narrow radio fills the trace now.
+
+### SV-13 `[x]` The tone detector no longer names NOAA's announcer a PL
+
+Found 2026-09-14 by the owner on `ley tune noaa2`: `PL 233.6 Hz`, then `PL 225.7 Hz`, deviation
+swinging between 288 and 557 Hz, on a service that transmits no CTCSS. Recorded from the owner's
+dongle over `rtl_tcp` the same evening (`rf-captures/noaa-wx2-auto.cu8`, 12 s at 2.4 MSPS, gain
+auto; a gain-0 take carried under 10 Hz of deviation in the band and proves nothing) and replayed
+here: `PL 233.6 Hz`, then `241.8`. The tap of that capture, run through the detector hop by hop
+(`SubAudibleCaptureTests.testDumpHops`), measured:
+
+| capture | hops | claimed, three-hop horizon | claimed, eight-hop horizon |
+|---|---|---|---|
+| `noaa-wx2-auto` (no PL on the air) | 90 | 5, as 233.6 (3), 241.8, 136.5; deviation 201 to 345 Hz, SNR 15 to 26 dB | 0 |
+| `ht-narrow` (handheld, 100 Hz PL) | 75 | 48, as 100.0 (47) and 110.9 (1); deviation 258 to 314 Hz | 42, every one 100.0 |
+
+The announcer's fundamental holds still for three hops and moves within a second; the handheld's
+tone holds for the whole key-up. So the estimate must now hold within 0.5 Hz for eight hops, about
+a second at the tap's 1 kHz, and its deviation within a ratio of 1.5 across the same hops (the
+handheld's ratio is 1.22; the announcer's 1.7 within the hops it was claimed on, and 44 to 827 Hz
+over the capture). The eight-hop horizon alone removed every announcer claim and the 110.9
+mislabel in the simulation; the deviation test is the second line against a voice that holds a
+vowel longer. What it costs: the first hops of each key-up, so a tone is named about a second in
+rather than 400 ms, and a transmission shorter than a second gets none. Verified: the two taps
+are committed (`engine/Tests/EngineCoreTests/Captures/*.f32`, 48 KB each) and
+`SubAudibleCaptureTests` holds the announcer at zero claims and the handheld at 35 or more, all
+100.0; the synthetic fixtures still detect and still discriminate 67.0 from 69.3; and the capture
+replayed through the daemon prints no `PL` line while `ht-narrow` still prints `PL 100.0 Hz`.
+

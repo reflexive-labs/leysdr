@@ -49,9 +49,9 @@ final class SubAudibleTests: XCTestCase {
     private let rate = 1000.0
     private let fullScale = 5000.0
 
-    /// Run enough hops for the stability test to have something to work with.
+    /// Run enough hops for the stability tests to have a whole horizon to work with.
     private func run(toneHz: Double, devHz: Double, voice: Bool = true, noise: Double = 0.01,
-                     seed: UInt64 = 3, hops: Int = 5) -> SubAudibleResult
+                     seed: UInt64 = 3, hops: Int = SubAudibleDetector.stabilityHops + 2) -> SubAudibleResult
     {
         let d = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
         let total = 512 + hops * 128
@@ -98,7 +98,10 @@ final class SubAudibleTests: XCTestCase {
     /// test there is. 100.0 is also one of the commonest real PL tones. Only its deviation tells
     /// them apart, and this is the fixture that proves the deviation gate does its job.
     func testMainsHumIsNotReportedAsATone() {
-        let r = run(toneHz: 100.0, devHz: 40)
+        // Hum with no voice, the design's fixture: with voice on top, which hop's winning bin is
+        // the hum and which is voice leakage decides whether the deviation gate or the stability
+        // test rejects it first, and this test is about the deviation gate.
+        let r = run(toneHz: 100.0, devHz: 40, voice: false)
         XCTAssertFalse(r.detected, "40 Hz of deviation at 100 Hz is hum, not PL; got \(r.standardToneHz)")
         XCTAssertTrue(r.reason.contains("deviation"), "the reason should name the deviation: \(r.reason)")
     }
@@ -156,10 +159,11 @@ final class SubAudibleTests: XCTestCase {
         let s = discriminatorSamples(count: 512, rate: rate, fullScale: fullScale,
                                      toneHz: 100, toneDevHz: 700, voice: true, noise: 0.01, seed: 5)
         _ = d.analyse(s, fullScaleDeviationHz: fullScale)
-        // Without the reset the second window measures against the first and reports a tone.
+        // Without the reset the second window measures against the first: a frequency, and the
+        // start of a horizon that will name the tone once it has held for a second.
         let carried = d.analyse(s, fullScaleDeviationHz: fullScale)
-        XCTAssertTrue(carried.detected, "a phase reference should produce a measurement: \(carried.reason)")
-        XCTAssertFalse(carried.toneHz.isNaN)
+        XCTAssertFalse(carried.toneHz.isNaN, "a phase reference should produce a measurement: \(carried.reason)")
+        XCTAssertTrue(carried.reason.contains("settling"), "one hop is not a tone yet: \(carried.reason)")
 
         let d2 = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
         _ = d2.analyse(s, fullScaleDeviationHz: fullScale)

@@ -40,3 +40,14 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` C
 ## Build order
 
 Follow `docs/plans/build-order.md`. Spikes S1–S3 gate everything: if S2 (20 MSPS throughput) fails its threshold, stop and escalate — the all-Swift decision gets revisited, not worked around silently.
+
+## Working from the Moat container
+
+The Linux container (`run_*`, aarch64, no root) reaches the owner's Mac as `moat-host`
+(`192.168.64.1`); `localhost` is the container. When the owner runs `rtl_tcp` on the Mac it is
+`moat-host:1234`, so a real-radio capture is one command away without a dongle in the container:
+either attach it to a local daemon (`ley devices attach rtltcp moat-host:1234`) or speak rtl_tcp
+directly and write cu8 (a recorder lives in the session scratchpad; `rf-captures/` is gitignored
+and holds what has been recorded). The container's Swift toolchain, stub librtlsdr and e2e
+environment are in `docs/dev/setup.md`; `LD_LIBRARY_PATH` must include the stub before any built
+`leylined` will start.

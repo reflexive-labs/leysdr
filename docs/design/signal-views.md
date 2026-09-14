@@ -162,8 +162,13 @@ floats of state per tone.
 
 The bank is a **gate, not the answer**. Its bin width at N=512 is ~1.95 Hz and the EIA ladder is
 spaced as tightly as 2.3 Hz (67.0 / 69.3), so identity comes from a phase-slope frequency estimate
-at the winning bin, taken across hops. Voice is rejected by requiring that estimate to be *stable*:
-a pitch contour moves far more than 1 Hz per 100 ms; a PL tone does not.
+at the winning bin, taken across hops. Voice is rejected by requiring that estimate to be *stable*
+for a whole second (eight hops at the tap's 1 kHz): a human pitch contour moves far more than 1 Hz
+per 100 ms, but a synthesised one can hold a vowel still for three hops, and NOAA weather radio's
+announcer was named a PL that way on 2026-09-14 (233.6 Hz, then 241.8, on a station that sends
+none). The deviation must hold too, within a ratio of 1.5 across the horizon: a transmitter sends
+its tone at one level, while a voice fundamental's level rises and falls with every syllable. The
+numbers behind both, from the captures, are in `docs/plans/signal-views.md`, SV-13.
 
 ### What honest means here
 
@@ -183,6 +188,11 @@ This is invariant 12 applied to a second detector, and it is the part most likel
   every frequency test; 100.0 Hz is also one of the most common real PL tones. Only the deviation
   plausibility window rejects it, imperfectly. 60 Hz mains lands at 120 Hz, which is not a standard
   tone and is rejected cleanly. Say this in the docs rather than papering over it.
+- **Documented false positive, closed:** a synthesised voice. NOAA weather radio's announcer holds
+  its pitch fundamental, which sits in the 60 to 260 Hz band, still enough for a 400 ms stability
+  test and at 200 to 350 Hz of deviation, inside a transmitter's range. The second-long horizon and
+  the deviation-ratio test above are what closed it; the announcer's tap is a committed test
+  fixture (`engine/Tests/EngineCoreTests/Captures/noaa-wx2-auto.f32`) so it stays closed.
 - A tone identifies neither a talkgroup nor a person, and a repeater's output tone often differs
   from its input tone.
 

@@ -89,9 +89,11 @@ public final class SubAudibleDetector {
     private var window: [Float]
     private var prevPhase: [Double]
     private var havePrev: [Bool]
-    /// Frequency estimates from the last few hops, for the stability test.
+    /// Frequency and deviation estimates from the last `stabilityHops` hops, for the two stability
+    /// tests. Both fill regardless of the per-hop gates, so a hop that failed one still counts
+    /// against the tone: a voice that dips under the deviation floor for one syllable has moved.
     private var recent: [Double] = []
-    private static let recentKeep = 3
+    private var recentDeviation: [Double] = []
 
     public init(rate: Double, windowSize: Int = 512, hop: Int = 128) {
         precondition(rate > 0 && windowSize > 0 && hop > 0)
@@ -107,6 +109,7 @@ public final class SubAudibleDetector {
     /// Forget the phase history. Called when the squelch closes: the next transmission is a
     /// different one, and carrying phase across it would fabricate a stable estimate.
     public func reset() {
+        recentDeviation.removeAll(keepingCapacity: true)
         for i in havePrev.indices { havePrev[i] = false }
         recent.removeAll(keepingCapacity: true)
     }
@@ -176,7 +179,9 @@ public final class SubAudibleDetector {
         }
         out.toneHz = measured
         recent.append(measured)
-        if recent.count > Self.recentKeep { recent.removeFirst() }
+        recentDeviation.append(out.deviationHz)
+        if recent.count > Self.stabilityHops { recent.removeFirst() }
+        if recentDeviation.count > Self.stabilityHops { recentDeviation.removeFirst() }
 
         // The tests. Each rejects a different way of being wrong, and all must pass.
         let snr = out.toneSNRDB
@@ -190,13 +195,26 @@ public final class SubAudibleDetector {
             out.reason = "deviation \(Int(out.deviationHz.rounded())) Hz is outside a transmitter's range"
             return out
         }
-        // Voice moves; a tone does not. A pitch contour shifts far more than this in 100 ms.
-        if recent.count >= 2 {
-            let spread = (recent.max()! - recent.min()!)
-            if spread > Self.maxSpreadHz {
-                out.reason = "frequency moved \(String(format: "%.1f", spread)) Hz between hops"
-                return out
-            }
+        // Voice moves; a tone does not. A human pitch contour shifts far more than maxSpreadHz in
+        // 100 ms, but NOAA weather radio's synthesised announcer held a vowel inside it for three
+        // hops and was named a PL (233.6 Hz, then 241.8) on a station that transmits none; over a
+        // whole second it never did. So the estimate must hold for the whole horizon, and so must
+        // the deviation: a transmitter sends its tone at one level, and a voice fundamental's
+        // level rises and falls with every syllable (docs/design/signal-views.md, "Sub-audible
+        // tones"; the numbers are in docs/plans/signal-views.md, SV-13).
+        guard recent.count >= Self.stabilityHops else {
+            out.reason = "settling: \(recent.count) of \(Self.stabilityHops) hops"
+            return out
+        }
+        let spread = recent.max()! - recent.min()!
+        if spread > Self.maxSpreadHz {
+            out.reason = "frequency moved \(String(format: "%.1f", spread)) Hz across \(Self.stabilityHops) hops"
+            return out
+        }
+        let devLo = recentDeviation.min()!, devHi = recentDeviation.max()!
+        if devLo <= 0 || devHi / devLo > Self.maxDeviationRatio {
+            out.reason = "deviation moved from \(Int(devLo.rounded())) to \(Int(devHi.rounded())) Hz across \(Self.stabilityHops) hops"
+            return out
         }
         out.detected = true
 
@@ -212,8 +230,18 @@ public final class SubAudibleDetector {
     /// NFM: a real tone clears its nearest rival by 7.5 dB or more even at 2% deviation, and voice
     /// alone never managed more than 2.
     public static let minSNRDB: Double = 6
-    /// The most the estimate may wander across the last few hops.
+    /// The most the estimate may wander across the horizon.
     public static let maxSpreadHz: Double = 0.5
+    /// How many hops the estimate and the deviation must hold for before a tone is claimed: at the
+    /// tap's 1 kHz and a 128-sample hop, about a second. Measured 2026-09-14 on real captures: over
+    /// three hops the synthesised NOAA announcer (`noaa-wx2-auto`) was named a tone on 5 of 90 hops
+    /// and the handheld's real 100 Hz PL (`ht-narrow`) on 48 of 75, once as 110.9; over eight hops
+    /// the announcer is named on none and the handheld on 42, every one of them 100.0.
+    public static let stabilityHops = 8
+    /// The most the deviation may vary across the horizon, as a ratio of loudest to quietest hop.
+    /// The handheld's PL measured 258 to 314 Hz over 47 hops (a ratio of 1.22); the announcer's
+    /// fundamental swung from 201 to 345 Hz within the hops it was claimed on.
+    public static let maxDeviationRatio: Double = 1.5
 
     /// The standard tone `measured` unambiguously is, or 0. A measurement that two tones could both
     /// explain is reported as a measurement and nothing more: snapping to the nearer one on a
