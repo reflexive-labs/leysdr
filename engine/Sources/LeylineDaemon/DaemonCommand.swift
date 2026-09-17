@@ -64,6 +64,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("poll-ms"), help: "Hot-plug enumeration period in milliseconds.")
     var pollMs: Int = 1000
 
+    @Flag(name: .customLong("no-hardware"), help: "Never look for USB dongles: the daemon hosts only what is attached to it (file devices, rtl_tcp). For a daemon that must see nothing but its test radios, such as an eval's.")
+    var noHardware = false
+
     @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port, for foreground runs (repeatable; env LEYLINE_RTLTCP, comma-separated). A radio the daemon should keep is attached over the protocol instead, with `ley devices attach`.")
     var rtltcp: [String] = []
 
@@ -89,7 +92,7 @@ struct DaemonCommand: AsyncParsableCommand {
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
         let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
         let searchPath = decoders + decoderPathsFromEnvironment() + [defaultDecodersPath()]
-        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, rtltcp: remotes,
+        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, enumerateHardware: !noHardware, rtltcp: remotes,
                                           decoderSearchPath: searchPath, storePath: store,
                                           storeCapBytes: storeCap, storeAgeDays: storeAge))
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error

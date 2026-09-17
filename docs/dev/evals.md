@@ -23,7 +23,9 @@ go run ./cmd/leyeval show evals/runs/<run>/survey-2m | less
 ```
 
 `make eval` builds `ley` and the daemon, then runs `leyeval run` with the fixtures and decoders
-wired up. It costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
+wired up. Each scenario's daemon starts with `--no-hardware`, so a dongle plugged into the
+machine stays out of the run: the first run without it had the agent tune "146.52" with no
+device named and land on the owner's radio, which cost three calls to notice and undo. It costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
 in headless mode (`-p --output-format stream-json`), which needs a credential on the machine
 running it; `--claude` or `LEYEVAL_AGENT` names another command, which receives the same flags
 and the prompt on stdin. `--model` passes through.

@@ -637,6 +637,27 @@ func TestListenSummaryFold(t *testing.T) {
 	}
 }
 
+// With the squelch off, every block reads open; the fold reports no open fraction and no edges,
+// rather than a channel at the noise floor as open 100% of the time.
+func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
+	at := func(idx uint64) *leylinev1.SampleTime { return &leylinev1.SampleTime{SampleIndex: idx} }
+	sum := newListenSummary(math.NaN(), 2_400_000)
+	sum.apply(&leylinev1.TelemetryMsg{Time: at(1), Body: &leylinev1.TelemetryMsg_Meter{Meter: &leylinev1.Meter{PowerDbfs: -82, SquelchOpen: true}}})
+	sum.apply(&leylinev1.TelemetryMsg{Time: at(2), Body: &leylinev1.TelemetryMsg_Meter{Meter: &leylinev1.Meter{PowerDbfs: -83, SquelchOpen: true}}})
+	sum.finish()
+	if !math.IsNaN(sum.meter.SquelchOpenFraction) || sum.meter.OpenAtEnd || sum.meter.OpenAtStart {
+		t.Errorf("meter stats with the squelch off: %+v", sum.meter)
+	}
+	raw, err := json.Marshal(sum.meter)
+	if err != nil || !strings.Contains(string(raw), `"squelch_open_fraction":null`) || !strings.Contains(string(raw), `"squelch_db":null`) {
+		t.Errorf("meter JSON: %s (%v)", raw, err)
+	}
+	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
+	if !strings.Contains(text, "squelch off") || strings.Contains(text, "% of the time") {
+		t.Errorf("text:\n%s", text)
+	}
+}
+
 // daemon_logs keeps the daemon's own lines and counts the driver's.
 func TestMCPDaemonLogsLeavesTheDriverOut(t *testing.T) {
 	h := newMCPHarness(t)

@@ -503,7 +503,7 @@ func (m meterStats) MarshalJSON() ([]byte, error) {
 		"min_power_dbfs":        num(m.MinPowerDbfs),
 		"max_power_dbfs":        num(m.MaxPowerDbfs),
 		"mean_power_dbfs":       num(m.MeanPowerDbfs),
-		"squelch_open_fraction": m.SquelchOpenFraction,
+		"squelch_open_fraction": num(m.SquelchOpenFraction),
 		"squelch_db":            num(m.SquelchDb),
 		"open_at_end":           m.OpenAtEnd,
 		"open_at_start":         m.OpenAtStart,
@@ -703,13 +703,20 @@ func (s *session) summarise(ctx context.Context, dur time.Duration) (*listenSumm
 	}
 }
 
-// finish turns the running sums into the stats: fractions need the count.
+// finish turns the running sums into the stats: fractions need the count. With the squelch off
+// there is no gate to be open or closed, so the open fraction and the edges are not reported: a
+// squelch that is off reads as open on every block, and "open 100% of the time" on a channel at
+// the noise floor was read as traffic.
 func (sum *listenSummary) finish() {
 	if n := sum.meter.Samples; n > 0 {
 		sum.meter.MeanPowerDbfs = sum.sumPower / float64(n)
 		sum.meter.SquelchOpenFraction /= float64(n)
 	}
 	sum.meter.OpenAtEnd = sum.open
+	if leyline.SquelchOff(sum.meter.SquelchDb) {
+		sum.meter.SquelchOpenFraction = math.NaN()
+		sum.meter.OpenAtEnd, sum.meter.OpenAtStart = false, false
+	}
 }
 
 // text is the summary in words: how many transmissions, the longest and
@@ -747,10 +754,14 @@ func (sum *listenSummary) text(s *session, dur time.Duration) string {
 		b.WriteString(" A transmission was still in progress when the window ended.")
 	}
 	m := sum.meter
-	if m.Samples > 0 {
+	switch {
+	case m.Samples > 0 && leyline.SquelchOff(m.SquelchDb):
+		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch off: the level range is the whole story.",
+			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs)
+	case m.Samples > 0:
 		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch %s, open %.0f%% of the time.",
 			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs, squelchString(m.SquelchDb), 100*m.SquelchOpenFraction)
-	} else {
+	default:
 		b.WriteString("\nno meter readings arrived.")
 	}
 	if sum.tone != nil {

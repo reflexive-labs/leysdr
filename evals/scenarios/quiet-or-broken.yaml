@@ -42,6 +42,6 @@ checks:
     tool: listen_summary
     why: the meter on the job's channel is the evidence that audio reaches the decoder
   - type: max_tool_calls
-    n: 14
-    why: orient, read the job and the store, listen, look at the band, answer
+    n: 18
+    why: orient, the job and its store, listen on the channel and at the centre, a snapshot, a control decoder started, read and cancelled, answer
   - type: no_shell

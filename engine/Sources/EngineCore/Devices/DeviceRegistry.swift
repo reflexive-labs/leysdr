@@ -75,6 +75,9 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     public let persistPath: String?
     public let pollIntervalMs: Int
+    /// Whether the registry looks for USB dongles at all. Off, it hosts only what is attached to
+    /// it (file devices, rtl_tcp servers): a daemon that must see nothing but its test radios.
+    public let enumerateHardware: Bool
 
     private let hub = DeviceEventHub()
     /// Every write bumps `tableGeneration`, which is how `poll` knows the table it diffed against
@@ -107,9 +110,12 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// - Parameters:
     ///   - persistPath: JSON file that keeps the identity → id map across daemon restarts. nil = memory only.
     ///   - pollIntervalMs: hot-plug enumeration period (docs: 1 s while idle).
-    public init(persistPath: String? = nil, pollIntervalMs: Int = 1000) {
+    ///   - enumerateHardware: false never runs the enumeration loop; the machine's dongles stay
+    ///     invisible to this daemon.
+    public init(persistPath: String? = nil, pollIntervalMs: Int = 1000, enumerateHardware: Bool = true) {
         self.persistPath = persistPath
         self.pollIntervalMs = max(10, pollIntervalMs)
+        self.enumerateHardware = enumerateHardware
         if let p = persistPath, let data = FileManager.default.contents(atPath: p),
            let map = try? JSONDecoder().decode(DeviceIDMap.self, from: data) {
             idMap = map
@@ -286,10 +292,12 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     // MARK: Hot-plug polling
 
-    /// Starts the enumeration loop (one pass immediately, then every `pollIntervalMs`).
+    /// Starts the enumeration loop (one pass immediately, then every `pollIntervalMs`), unless
+    /// hardware enumeration is off, in which case the registry only hosts what is attached to it.
     public func start() {
         guard !started else { return }
         started = true
+        guard enumerateHardware else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }

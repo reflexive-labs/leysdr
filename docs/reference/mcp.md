@@ -71,7 +71,9 @@ statistic over the daemon's `Meter` telemetry with no proto message of its own: 
 min_power_dbfs, max_power_dbfs, mean_power_dbfs, squelch_open_fraction, squelch_db, open_at_end,
 open_at_start}`
 (snake_case; a level never measured and a squelch that is off are `null`, since JSON has no NaN
-and 0 dBFS is a real level). `list_entities` returns the `{"entities": [...]}` object `ley track
+and 0 dBFS is a real level; with the squelch off `squelch_open_fraction` is `null` too and the
+`open_at_*` flags are false, because a gate that is off is open on every block and "open all the
+time" at the noise floor is not traffic). `list_entities` returns the `{"entities": [...]}` object `ley track
 --json` prints, described under "Decoders" in the `ley` reference.
 
 A failed call is a tool error whose text is the sentence `ley` would print, with the daemon's

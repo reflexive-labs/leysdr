@@ -319,6 +319,8 @@ up; capped to 16384), `actualRate` is `min(requested, 30)`.
   is what re-anchors the capture timeline.
 - Hot-plug: the registry polls enumeration every 1 s while idle (cheap USB descriptor reads) and
   publishes `arrived`/`removed`. IOKit arrival notifications are a later refinement.
+  `leylined --no-hardware` never starts the poll: the daemon hosts only what is attached to it
+  (file devices, rtl_tcp), for a run that must see nothing but its test radios, such as an eval's.
 
 ### FilePlaybackDevice
 
