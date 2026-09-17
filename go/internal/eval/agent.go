@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // mcpConfig is the file the agent is pointed at: one server, `ley mcp` on the eval daemon's
@@ -27,25 +28,27 @@ func mcpConfig(dir, ley, socket string) (string, error) {
 }
 
 // runAgent runs the agent on the prompt and returns its stream. The arguments are Claude Code's
-// headless ones; an `env.Claude` that is a fake (tests) sees the same argument list and may
-// ignore all but the prompt, which comes last.
+// headless ones and the prompt goes on stdin, which is what --print reads: the tool lists are
+// variadic flags and would swallow a prompt placed after them. A fake agent (tests) sees the
+// same argument list and reads the same stdin.
 func runAgent(ctx context.Context, env Env, dir, prompt, mode string, maxTurns int, mcpPath string) (*Log, []byte, error) {
 	args := []string{
 		"-p", "--output-format", "stream-json", "--verbose",
 		"--mcp-config", mcpPath, "--strict-mcp-config",
 		"--max-turns", strconv.Itoa(maxTurns),
 	}
+	if env.Model != "" {
+		args = append(args, "--model", env.Model)
+	}
+	// The variadic flags last, so nothing can follow them.
 	if mode == "mcp" {
 		args = append(args, "--allowedTools", "mcp__leyline__*",
 			"--disallowedTools", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch", "Agent")
 	} else {
 		args = append(args, "--allowedTools", "mcp__leyline__*", "Bash")
 	}
-	if env.Model != "" {
-		args = append(args, "--model", env.Model)
-	}
-	args = append(args, prompt)
 	cmd := exec.CommandContext(ctx, env.Claude, args...)
+	cmd.Stdin = strings.NewReader(prompt)
 	// The agent runs in the run directory, which holds nothing but this run: an agent given a
 	// shell should not find the repository's answer keys beside it.
 	cmd.Dir = dir

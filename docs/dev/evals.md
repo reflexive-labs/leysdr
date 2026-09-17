@@ -26,7 +26,7 @@ go run ./cmd/leyeval show evals/runs/<run>/survey-2m | less
 wired up. It costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
 in headless mode (`-p --output-format stream-json`), which needs a credential on the machine
 running it; `--claude` or `LEYEVAL_AGENT` names another command, which receives the same flags
-and the prompt as its last argument. `--model` passes through.
+and the prompt on stdin. `--model` passes through.
 
 Two modes. `mcp` allows the leyline tools alone and disallows the host's, which tests whether the
 tools suffice for the task. `shell` allows a shell beside them and counts how often the agent

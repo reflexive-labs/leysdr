@@ -158,8 +158,8 @@ func TestRunWithAFakeAgent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(fixtures, "scan_band.cf32")); err != nil {
 		t.Skip("scan_band.cf32 missing; run make fixtures")
 	}
-	// The fake agent: it checks that the MCP config names ley mcp on the eval socket, then
-	// plays the sample stream, answer included.
+	// The fake agent: it checks that the MCP config names ley mcp on the eval socket, keeps the
+	// prompt it was given on stdin, then plays the sample stream, answer included.
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-agent.sh")
 	stream := filepath.Join(dir, "stream.jsonl")
@@ -169,9 +169,9 @@ func TestRunWithAFakeAgent(t *testing.T) {
 	if err := os.WriteFile(stream, []byte(polite), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\ncfg=''\nwhile [ $# -gt 1 ]; do if [ \"$1\" = --mcp-config ]; then cfg=$2; fi; shift; done\n" +
+	script := "#!/bin/sh\ncfg=''\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --mcp-config ]; then cfg=$2; fi; shift; done\n" +
 		"grep -q '\"mcp\"' \"$cfg\" || { echo 'no mcp config' >&2; exit 3; }\n" +
-		"echo \"$1\" > \"$(dirname \"$cfg\")/seen-prompt.txt\"\ncat " + stream + "\n"
+		"cat > \"$(dirname \"$cfg\")/seen-prompt.txt\"\ncat " + stream + "\n"
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

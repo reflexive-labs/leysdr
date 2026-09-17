@@ -121,7 +121,7 @@ end. Nothing here needs a radio or a person on the air.`,
 	f.StringVar(&env.Ley, "ley", envOr("LEY_BIN", "ley"), "the ley binary the agent's MCP server and the setup steps run (default: $LEY_BIN, else ley on PATH)")
 	f.StringVar(&env.Fixtures, "fixtures", envOr("LEYLINE_FIXTURES", "fixtures"), "where scenario fixtures are relative to")
 	f.StringVar(&env.Decoders, "decoders", envOr("LEYLINE_DECODERS", "decoders"), "the decoder plugin directory the daemon searches; the plugin binaries must be on PATH")
-	f.StringVar(&env.Claude, "claude", envOr("LEYEVAL_AGENT", "claude"), "the agent command; it gets Claude Code's headless flags and the prompt last")
+	f.StringVar(&env.Claude, "claude", envOr("LEYEVAL_AGENT", "claude"), "the agent command; it gets Claude Code's headless flags and the prompt on stdin")
 	f.StringVar(&env.Model, "model", "", "passed to the agent as --model (default: the agent's own)")
 	f.StringVar(&env.Mode, "mode", "mcp", "mcp: the leyline tools alone; shell: a shell as well, to measure how often the agent leaves the tools")
 	f.IntVar(&env.MaxTurns, "max-turns", 25, "the agent's turn budget unless the scenario sets one")
