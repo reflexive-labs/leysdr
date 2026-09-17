@@ -73,6 +73,10 @@ func Transcript(s *Scenario, res *Result, log *Log) string {
 		case "text":
 			b.WriteString(indent(strings.TrimSpace(e.Text)) + "\n\n")
 		case "tool_use":
+			if IsHarness(e.Tool) {
+				fmt.Fprintf(&b, "_%s (the client loading tool schemas; not counted)_ `%s`\n\n", e.Tool, compactJSON(e.Input))
+				continue
+			}
 			step++
 			fmt.Fprintf(&b, "**%d. → %s** `%s`\n\n", step, ShortTool(e.Tool), compactJSON(e.Input))
 		case "tool_result":

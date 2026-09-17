@@ -34,13 +34,15 @@ type Result struct {
 
 // Metrics is how the agent worked, whatever it answered.
 type Metrics struct {
-	ToolCalls  int            `json:"tool_calls"`
-	ByTool     map[string]int `json:"by_tool"`
-	ShellCalls int            `json:"shell_calls"`
-	ToolErrors int            `json:"tool_errors"`
-	Turns      int            `json:"turns"`
-	DurationMs int64          `json:"duration_ms"`
-	CostUSD    float64        `json:"cost_usd"`
+	ToolCalls int            `json:"tool_calls"`
+	ByTool    map[string]int `json:"by_tool"`
+	// HarnessCalls are the agent's client loading tool schemas (ToolSearch), outside every budget.
+	HarnessCalls int     `json:"harness_calls,omitempty"`
+	ShellCalls   int     `json:"shell_calls"`
+	ToolErrors   int     `json:"tool_errors"`
+	Turns        int     `json:"turns"`
+	DurationMs   int64   `json:"duration_ms"`
+	CostUSD      float64 `json:"cost_usd"`
 	// Subtype is the agent's result subtype: "success", or why it stopped.
 	Subtype string `json:"subtype,omitempty"`
 	// MCP is the leyline server's status at init, as the agent reported it.
@@ -53,6 +55,10 @@ func MeasureLog(log *Log) Metrics {
 	for _, e := range log.Events {
 		switch e.Kind {
 		case "tool_use":
+			if IsHarness(e.Tool) {
+				m.HarnessCalls++
+				continue
+			}
 			m.ToolCalls++
 			m.ByTool[ShortTool(e.Tool)]++
 			if IsShell(e.Tool) {
@@ -114,7 +120,7 @@ func Run(ctx context.Context, env Env, s *Scenario, outDir string) *Result {
 		res.Error = err.Error()
 		return res
 	}
-	mcpPath, err := mcpConfig(dir, env.Ley, d.socket)
+	mcpPath, err := mcpConfig(dir, env.Ley, d.socket, filepath.Join(dir, "leylined.log"))
 	if err != nil {
 		res.Error = err.Error()
 		return res

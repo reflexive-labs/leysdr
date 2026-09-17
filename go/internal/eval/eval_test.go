@@ -15,6 +15,8 @@ import (
 // result, prose, a second tool call whose result is an error, the final answer with its JSON
 // block, and the result line with its numbers.
 const sampleStream = `{"type":"system","subtype":"init","mcp_servers":[{"name":"leyline","status":"connected"}],"tools":["mcp__leyline__scan"]}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t0","name":"ToolSearch","input":{"query":"select:mcp__leyline__scan"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t0","content":[{"type":"tool_reference","tool_name":"mcp__leyline__scan"},{"type":"tool_reference","tool_name":"mcp__leyline__tune"}]}]}}
 {"type":"assistant","message":{"content":[{"type":"text","text":"I will sweep the band."},{"type":"tool_use","id":"t1","name":"mcp__leyline__scan","input":{"range":"145M..147M"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"FREQUENCY  SNR\n145.200 MHz 40\n"}]}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"mcp__leyline__tune","input":{"frequency":"101.1","take_over":true}}]}}
@@ -32,13 +34,13 @@ func TestParseStreamAndAnswer(t *testing.T) {
 	for _, e := range log.Events {
 		kinds = append(kinds, e.Kind)
 	}
-	if got := strings.Join(kinds, " "); got != "init text tool_use tool_result tool_use tool_result text result" {
+	if got := strings.Join(kinds, " "); got != "init tool_use tool_result text tool_use tool_result tool_use tool_result text result" {
 		t.Errorf("events: %s", got)
 	}
 	if log.Turns != 3 || log.CostUSD != 0.0123 || log.DurationMs != 4200 || log.Subtype != "success" {
 		t.Errorf("result numbers: %+v", log)
 	}
-	if len(log.Lines) != 7 {
+	if len(log.Lines) != 9 {
 		t.Errorf("raw lines kept: %d", len(log.Lines))
 	}
 	answer, err := log.Answer()
@@ -53,8 +55,12 @@ func TestParseStreamAndAnswer(t *testing.T) {
 		t.Errorf("t2's result: %+v", r)
 	}
 	m := MeasureLog(log)
-	if m.ToolCalls != 2 || m.ToolErrors != 1 || m.ShellCalls != 0 || m.MCP != "connected" || m.ByTool["scan"] != 1 {
+	if m.ToolCalls != 2 || m.HarnessCalls != 1 || m.ToolErrors != 1 || m.ShellCalls != 0 || m.MCP != "connected" || m.ByTool["scan"] != 1 {
 		t.Errorf("metrics: %+v", m)
+	}
+	// The client's schema load is rendered once per block, not the whole list per block.
+	if r := log.ResultFor("t0"); r == nil || strings.Count(r.Result, "tool_reference") != 2 {
+		t.Errorf("t0's result: %+v", r)
 	}
 }
 

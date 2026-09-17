@@ -14,7 +14,9 @@ attached as a radio (`ley play fixtures/scan_band.cf32 --no-audio --loop --persi
 ## Running it
 
 An MCP client runs the command `ley` with the argument `mcp`, and `--socket PATH` when the daemon is
-not on the default socket. The server exits 3 with the usual sentence when the daemon is not
+not on the default socket. A daemon started by hand logs where it was told, not where `ley daemon
+start` writes, so `mcp --log PATH` names that file for `daemon_logs`; without it the tool reads the
+default log, which may belong to another daemon. The server exits 3 with the usual sentence when the daemon is not
 running, so a client shows that line rather than failing one tool at a time.
 
 ```sh

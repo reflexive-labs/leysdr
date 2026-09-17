@@ -1,34 +1,47 @@
-# A kept APRS decoder has been listening to a channel that carries a steady tone and no packets.
+# A kept APRS decoder has been listening to a channel that carries nothing but the noise floor.
 # Is it broken, or is the band quiet? The agent must tell the two apart with evidence: the empty
-# store's explanation, and a listen that shows audio flowing.
+# store's explanation, the job's own liveness, and a listen that shows the channel is live and
+# at the floor. (An earlier version of this scenario put a strong tone on the channel and called
+# it quiet; the agent measured the tone, saw no records, and reasonably called the decoder broken.
+# Quiet means no carrier above the floor, so the fixture is noise.)
 name: quiet-or-broken
-description: A kept decoder hears nothing; the agent must show the chain is live and the band quiet.
+description: A kept decoder hears nothing on a noise-only channel; the agent must show the chain is live and the band quiet.
 fixtures:
-  - file: nfm_tone.cf32
-    as: radio-d           # a 1 kHz tone at 146.620 MHz: audio, never a packet
+  - file: noise_floor.cf32
+    as: radio-d           # complex white noise at -60 dBFS, nothing else
 setup:
   - job: {decoder: aprs, frequency: "146.62", keep: true}
 task: |
-  An APRS decoder was started earlier as a kept job on this daemon. Is APRS decoding working?
-  Decide whether the radio chain is working and the band is simply quiet, or whether something
+  An APRS decoder was started earlier as a kept job on this daemon and has produced nothing.
+  Is APRS decoding working? Decide whether the radio chain is working and the band is simply
+  quiet -- no carrier above the noise floor on the decoder's frequency -- or whether something
   is broken, and say what evidence you used. Do not conclude "no traffic" without evidence that
-  audio is actually reaching the decoder.
+  the decoder's channel is live, and do not conclude "broken" without evidence of a signal it
+  should have decoded.
 answer_schema: |
-  {"chain_working": <true or false>, "band_quiet": <true or false>, "records": <integer>, "evidence": "<one or two sentences>"}
+  {"chain_working": <true or false>, "band_quiet": <true or false>, "signal_present": <true or false>, "records": <integer>, "evidence": "<one or two sentences>"}
 truth:
   chain_working: true
   band_quiet: true
+  signal_present: false
 checks:
   - type: answered
   - type: json_equals
     path: chain_working
     truth: chain_working
+    why: the job is RUNNING with a live plugin and its channel's meter reads; nothing is broken
   - type: json_equals
     path: band_quiet
     truth: band_quiet
+    why: the channel sits at the noise floor
+  - type: json_equals
+    path: signal_present
+    truth: signal_present
+    why: no carrier stood above the floor, so there was nothing to decode
   - type: used_tool
     tool: listen_summary
-    why: the only evidence that audio reaches the decoder is the meter on its channel
+    why: the meter on the job's channel is the evidence that audio reaches the decoder
   - type: max_tool_calls
-    n: 10
+    n: 14
+    why: orient, read the job and the store, listen, look at the band, answer
   - type: no_shell

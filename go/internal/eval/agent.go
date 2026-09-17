@@ -16,10 +16,10 @@ import (
 
 // mcpConfig is the file the agent is pointed at: one server, `ley mcp` on the eval daemon's
 // socket. The agent's client starts it as a subprocess, the way a person's would.
-func mcpConfig(dir, ley, socket string) (string, error) {
+func mcpConfig(dir, ley, socket, logPath string) (string, error) {
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
-			"leyline": map[string]any{"command": ley, "args": []string{"--socket", socket, "mcp"}},
+			"leyline": map[string]any{"command": ley, "args": []string{"--socket", socket, "mcp", "--log", logPath}},
 		},
 	}
 	raw, _ := json.MarshalIndent(cfg, "", "  ")

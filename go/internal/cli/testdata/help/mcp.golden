@@ -19,8 +19,9 @@ That is the same trust a local shell already has. There is no network
 transport; a remote agent waits on the remote-access milestone.
 
 Configure it in an MCP client as the command 'ley' with the argument 'mcp'
-(and '--socket PATH' when the daemon is not on the default socket).
---json is refused: the whole conversation is JSON already.
+(and '--socket PATH' when the daemon is not on the default socket; --log
+PATH when its log is not the default one, so daemon_logs reads the right
+file). --json is refused: the whole conversation is JSON already.
 
 Usage:
   ley mcp [flags]
@@ -31,7 +32,8 @@ Examples:
   {"mcpServers": {"leyline": {"command": "ley", "args": ["mcp"]}}}
 
 Flags:
-  -h, --help   help for mcp
+  -h, --help         help for mcp
+      --log string   the daemon's log file the daemon_logs tool reads (default: the log ley daemon start writes; a daemon started by hand logs where it was told)
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

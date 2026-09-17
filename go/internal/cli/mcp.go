@@ -29,7 +29,8 @@ import (
 // snapshot PNG, is drawn from rows the daemon already made.
 
 func newMCPCommand(app *App) *cobra.Command {
-	return &cobra.Command{
+	var logPath string
+	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve the radio to an agent over MCP (stdin and stdout)",
 		Long: `mcp runs a Model Context Protocol server for a coding agent or an assistant:
@@ -53,8 +54,9 @@ That is the same trust a local shell already has. There is no network
 transport; a remote agent waits on the remote-access milestone.
 
 Configure it in an MCP client as the command 'ley' with the argument 'mcp'
-(and '--socket PATH' when the daemon is not on the default socket).
---json is refused: the whole conversation is JSON already.`,
+(and '--socket PATH' when the daemon is not on the default socket; --log
+PATH when its log is not the default one, so daemon_logs reads the right
+file). --json is refused: the whole conversation is JSON already.`,
 		Example: `  ley mcp                     # what an MCP client runs; not for typing at a prompt
   claude mcp add leyline -- ley mcp
   {"mcpServers": {"leyline": {"command": "ley", "args": ["mcp"]}}}`,
@@ -64,9 +66,12 @@ Configure it in an MCP client as the command 'ley' with the argument 'mcp'
 			if app.JSON {
 				return noJSONErrorf("mcp", "it speaks MCP over stdin and stdout; ley state --json is the snapshot")
 			}
+			app.logFile = logPath
 			return runMCP(cmd.Context(), app)
 		},
 	}
+	cmd.Flags().StringVar(&logPath, "log", "", "the daemon's log file the daemon_logs tool reads (default: the log ley daemon start writes; a daemon started by hand logs where it was told)")
+	return cmd
 }
 
 // runMCP serves MCP on stdin and stdout until the client hangs up or the

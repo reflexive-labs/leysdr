@@ -65,11 +65,16 @@ func IsShell(tool string) bool {
 	return false
 }
 
-// ToolCalls is every tool_use event, in order.
+// IsHarness reports a tool call that is the agent's client at work rather than the agent: Claude
+// Code defers tool schemas and loads them through ToolSearch before the first real call. It is
+// kept in the transcript and left out of every count and budget.
+func IsHarness(tool string) bool { return tool == "ToolSearch" }
+
+// ToolCalls is every tool_use event the agent made, in order, the client's own left out.
 func (l *Log) ToolCalls() []Event {
 	var out []Event
 	for _, e := range l.Events {
-		if e.Kind == "tool_use" {
+		if e.Kind == "tool_use" && !IsHarness(e.Tool) {
 			out = append(out, e)
 		}
 	}
@@ -247,18 +252,27 @@ func flatten(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &s); err == nil {
 		return s
 	}
-	var blocks []struct {
+	var rawBlocks []json.RawMessage
+	if err := json.Unmarshal(raw, &rawBlocks); err != nil {
+		return string(raw)
+	}
+	type block struct {
 		Type   string `json:"type"`
 		Text   string `json:"text"`
 		Source *struct {
 			MediaType string `json:"media_type"`
 			Data      string `json:"data"`
 		} `json:"source"`
-		Data     string `json:"data"`
-		MIMEType string `json:"mimeType"`
+		Data     string          `json:"data"`
+		MIMEType string          `json:"mimeType"`
+		Raw      json.RawMessage `json:"-"`
 	}
-	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return string(raw)
+	blocks := make([]block, 0, len(rawBlocks))
+	for _, rb := range rawBlocks {
+		var bl block
+		_ = json.Unmarshal(rb, &bl)
+		bl.Raw = rb
+		blocks = append(blocks, bl)
 	}
 	var b strings.Builder
 	for _, bl := range blocks {
@@ -274,7 +288,11 @@ func flatten(raw json.RawMessage) string {
 			}
 			fmt.Fprintf(&b, "[image %s, %d bytes base64]\n", mime, n)
 		default:
-			b.WriteString(string(raw))
+			// A block kind the log does not model (a tool reference, say): its own JSON, once.
+			if blob, err := json.Marshal(bl.Raw); err == nil {
+				b.Write(blob)
+				b.WriteString("\n")
+			}
 		}
 	}
 	return b.String()

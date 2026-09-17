@@ -44,7 +44,9 @@ Each run makes `evals/runs/<timestamp>/<scenario>/` (gitignored) holding:
   renders a stream saved by any means, results and all.
 - `messages.jsonl`: the agent's stream, one JSON object a line, untouched.
 - `prompt.md`, `mcp.json`, `leylined.log`, `radios/`: what the agent was given, how it was pointed
-  at the daemon, what the daemon said, and the recordings under their neutral names.
+  at the daemon (`ley mcp` with the run's socket and `--log` on the run's log, so `daemon_logs`
+  reads this daemon and not the machine's), what the daemon said, and the recordings under their
+  neutral names.
 - `result.json`: the verdicts and the metrics (tool calls by tool, host calls, tool errors, turns,
   duration, cost).
 
@@ -104,7 +106,7 @@ transcript learns what the check was for without opening the scenario.
 | `used_tool` | the calls | `tool` (short name: `scan`) | the tool was called at least once |
 | `used_one_of` | the calls | `values` (tool names) | any of them was called |
 | `not_used_tool` | the calls | `tool` | the tool was never called |
-| `max_tool_calls` | the calls | `n` | at most `n` tool calls of any kind |
+| `max_tool_calls` | the calls | `n` | at most `n` tool calls of any kind (the client loading tool schemas through `ToolSearch` is not one; the transcript shows it in italics and `result.json` counts it as `harness_calls`) |
 | `no_shell` | the calls | | no call left the MCP tools for the host (`Bash`, the file tools) |
 | `no_tool_errors` | the results | | no tool call came back as an error |
 | `take_over_after_refusal` | calls and results | | `take_over: true` was sent only after a result that refused and said so |
@@ -121,7 +123,7 @@ parameter.
 | `survey-2m` | `scan_band` idle | the four carriers are found with `scan` and called carriers, not services |
 | `aprs-stations` | `aprs_afsk` tuned | the three stations come from a decoder's records, with positions |
 | `dont-disturb` | `nfm_tone` with a channel listening | asked to look elsewhere, the agent reports the refusal and who is listening, and never takes over first |
-| `quiet-or-broken` | `nfm_tone` with a kept APRS job on a tone | an empty store is explained and `listen_summary` shows audio flowing: the chain works, the band is quiet |
+| `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works, the band is quiet. (Its first version put a strong tone under the job and called it quiet; the agent measured the tone, saw no records and called the decoder broken, which was the right answer to the wrong scenario) |
 | `pl-tone-absent` | `rf-captures/noaa-wx2-auto` (local) | no PL is reported on a station that sends none |
 | `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is named |
 
