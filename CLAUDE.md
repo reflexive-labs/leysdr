@@ -37,6 +37,37 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` C
 
 `FilePlaybackDevice` is the test harness: the entire pipeline runs headless from IQ fixtures. `fixtures/` contains generated signals (NFM tone, AM, USB, CW, noise-floor calibration) with expected demod outputs. Every DSP change must pass fixture round-trips. Hardware-in-the-loop tests are a separate, manually-run suite.
 
+## Agent evals
+
+`evals/scenarios/*.yaml` grade how an agent uses `ley mcp` against a daemon playing recordings
+(`docs/dev/evals.md` is the full page; `make eval` runs them, costs tokens, and is not part of
+`make check`). The rules:
+
+- **Add a scenario when the adapter gains a tool or a tool's contract changes, and when a real
+  session shows an agent working around the tools** (a shell detour, a second call to learn what
+  the first meant, a wrong conclusion the result invited). The scenario reproduces the situation;
+  the fix to the adapter makes it pass. Two runs of one scenario is the cheapest way to see a
+  tool change land.
+- **Truth is known before the agent starts, and it is the fixture's.** Recordings go in under
+  neutral names (`radio-a`) with a sidecar that says only format, rate and centre; a filename or
+  a description is the answer key. Nothing may depend on what is on the air or on the clock
+  (fixtures loop, so counts per minute are not stable; "which stations" is). Noise fixtures may
+  be placed on any centre with `center:`; every other file device tunes only where it was
+  recorded, so a task that needs the radio moved fails before the agent does anything.
+- **Every check is a string or number comparison** (`docs/dev/evals.md`, "Check types"): the
+  verdict is the same on every run of one log, and no check needs a judge. Ask for one JSON block
+  in `answer_schema`, grade that block, and grade the path too (`used_tool`, `no_shell`,
+  `max_tool_calls`, `take_over_after_refusal`). A budget is a number to drive down, not a wall:
+  set it from what a careful operator would need, and raise it with a `why` when a run shows a
+  thorough method that costs more (a control decoder, say).
+- **Read the transcript before touching the scenario.** A failed check is as often the scenario's
+  fault as the agent's (the first quiet-or-broken put a strong tone under a "quiet" band). A
+  passing run still shows what the tools made the agent do, and that is the adapter's backlog:
+  a redundant call, a result the agent had to explain away, a number it could not read.
+- **Keep the run hermetic.** The eval daemon starts with `--no-hardware` and its own socket, store
+  and log; the agent's `ley mcp` is pointed at that log. A scenario must not reach the machine's
+  radios, the default daemon, or anything on the network.
+
 ## Build order
 
 Follow `docs/plans/build-order.md`. Spikes S1–S3 gate everything: if S2 (20 MSPS throughput) fails its threshold, stop and escalate — the all-Swift decision gets revisited, not worked around silently.
