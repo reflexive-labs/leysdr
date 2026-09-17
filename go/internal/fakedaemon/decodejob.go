@@ -50,7 +50,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 		job.ResultUris = []string{"ley://records/" + job.JobId}
 	}
 	fj := &fakeJob{
-		proto: job, owner: ci.GetClientId(), protocol: man.GetName(), keep: cfg.GetKeep(),
+		proto: job, owner: ci.GetClientId(), protocol: man.GetName(), hz: hz, keep: cfg.GetKeep(),
 		channelID: lease.channelID, captureID: lease.captureID, createdCapture: lease.created,
 	}
 	d.jobs[job.JobId] = fj
@@ -68,6 +68,14 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 }
 
 func quoted(s string) string { return "\"" + s + "\"" }
+
+// pluralRecords is "1 record" or "N records".
+func pluralRecords(n uint64) string {
+	if n == 1 {
+		return "1 record"
+	}
+	return fmt.Sprintf("%d records", n)
+}
 
 // channelLease is what the allocator hands a decode job: the channel it owns, the capture under
 // it, and whether the capture is the job's to destroy when it ends.
@@ -275,6 +283,14 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		j.seq++
 		rec.Seq = j.seq
 		d.publishRecord(j, rec)
+		// The liveness the daemon carries in status_detail (DEC-23): the count and the age of the
+		// last record. The detail moves on every record; the Job event that carries it goes out
+		// for the first record and then every fifth, the daemon's timer at this record rate.
+		j.proto.StatusDetail = fmt.Sprintf("decoding %s on %s: %s, last just now", man.GetName(),
+			leyline.FormatFrequency(j.hz), pluralRecords(j.seq))
+		if j.seq == 1 || j.seq%5 == 0 {
+			d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
+		}
 		notify := j.proto.GetDecode().GetNotify()
 		d.mu.Unlock()
 		if notify != nil {

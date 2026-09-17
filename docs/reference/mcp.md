@@ -174,11 +174,12 @@ Notes a table cell cannot hold:
   (or the resource below) reads them. An alias a manifest lists (`vessels` for `ais`) resolves to
   the canonical decoder before the job starts, as `ley decode vessels` does.
 
-What the job list does not say: a decode job reads `RUNNING` whether the decoder is producing
-records or not, by design (`docs/plans/decoders.md`, DEC-16: a silent decoder is indistinguishable
-from a quiet band, and SAME is silent by design), and a decoder that exits is restarted with the
-job saying so in `statusDetail`. Evidence of liveness in the job itself, records so far and when
-the last one came, is DEC-23 and not built.
+What the job list says: a decode job reads `RUNNING` whether the decoder is producing records or
+not, by design (`docs/plans/decoders.md`, DEC-16: a silent decoder is indistinguishable from a quiet
+band, and SAME is silent by design), and a decoder that exits is restarted with the job saying so
+in `statusDetail`. The same field carries the job's liveness (DEC-23): "decoding with aprs: 12
+records, last 3 s ago", or "no records yet", refreshed every two seconds while records arrive, so
+`get_job` and `list_jobs` tell a decoder that is hearing things from one that is not.
 
 Not registered, because the daemon cannot back them yet: `find_recordings` (the Resources service
 and the recording store, Milestone C.12), `get_transcript` (audio-transcript watch jobs, D.15),

@@ -218,6 +218,42 @@ final class DecodeJobTests: XCTestCase {
         }
     }
 
+    /// A running job says how much it has heard (DEC-23): the first record at once, the count
+    /// afterwards on the liveness timer, so `ley jobs` tells a working decoder from a silent one
+    /// without anyone subscribing to its records.
+    func testARunningJobSaysHowMuchItHasHeard() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attachFixture(c)
+            let started = try await self.startDecode(c)
+            XCTAssertTrue(started.statusDetail.hasPrefix("starting") || started.statusDetail.contains("no records yet"),
+                          "before any record the detail says so: \(started.statusDetail)")
+            let got = try await self.records(c, job: started.jobID, count: 4)
+            XCTAssertEqual(got.count, 4)
+            // The fixture loops and the fake decodes every frame, so the count keeps climbing:
+            // what is checked is that the published count has caught up with what was delivered.
+            let counted = try await self.waitForJob(c, started.jobID, timeoutMs: 6000) { job in
+                Self.recordCount(in: job.statusDetail).map { $0 >= 4 } ?? false
+            }
+            XCTAssertNotNil(counted, "the detail never said four or more records")
+            XCTAssertTrue(counted?.statusDetail.hasPrefix("decoding with fake: ") == true, counted?.statusDetail ?? "")
+            XCTAssertTrue(counted?.statusDetail.contains(", last ") == true, "the detail says how long ago: \(counted?.statusDetail ?? "")")
+            XCTAssertEqual(counted?.state, .running, "counting records is not a state change")
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = started.jobID
+            _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+        }
+    }
+
+    /// The count in a running job's detail ("decoding with fake: 12 records, last 3 s ago"), or nil.
+    private static func recordCount(in detail: String) -> Int? {
+        guard let colon = detail.firstIndex(of: ":") else { return nil }
+        let rest = detail[detail.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        return Int(rest.prefix { $0.isNumber })
+    }
+
     func testAPluginThatStopsReadingDoesNotWedgeTheDrain() async throws {
         // A decoder that reads three frames then stops reading is the DEC-16 hang: the daemon's
         // write is non-blocking, so the drain drops and gaps rather than parking on a full pipe,

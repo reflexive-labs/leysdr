@@ -38,6 +38,8 @@ actor DecodeRunner {
     private let log: Logger
 
     private var seq: UInt64 = 0
+    /// How much the job has heard, for the detail it publishes while RUNNING (DEC-23).
+    private var liveness = DecodeLiveness()
     private var rssiDBFS = Double.nan
     private var snrDB = Double.nan
     private var task: Task<Void, Never>?
@@ -106,6 +108,7 @@ actor DecodeRunner {
         // restarted plugin nothing. Frames written while no plugin is up are dropped, and the ring
         // reports what was lost as a Gap on the next frame that lands.
         let drain = Task { [weak self] in await self?.drain(audio: audio) }
+        let counting = Task { [weak self] in await self?.followRecords() }
         var wait = Self.firstRestartSeconds
         var restarts = 0
         while !Task.isCancelled {
@@ -117,11 +120,12 @@ actor DecodeRunner {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, Self.maxRestartSeconds)
             if Task.isCancelled || stopped { break }
-            await onStatus(.running, "decoding with \(installed.manifest.name)")
+            await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
         }
         meter.cancel()
         health.cancel()
         drain.cancel()
+        counting.cancel()
         audio.wake()
         await engine.detach(audio.sink.id)
         audio.finish()
@@ -139,7 +143,7 @@ actor DecodeRunner {
             return -1
         }
         currentPlugin.withLock { $0 = process }
-        await onStatus(.running, "decoding with \(installed.manifest.name)")
+        await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
         let status = await withTaskGroup(of: Int32?.self) { group in
             group.addTask { [weak self] in
                 for await record in process.records {
@@ -245,6 +249,9 @@ actor DecodeRunner {
         rec.snrDb = snrDB
         await hub.publish(rec)
         await writer?.append(rec)
+        if liveness.noteRecord() {
+            await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+        }
         // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
         // reader, so the notifier runs in its own task with the record it saw (invariant 4 is about
         // the DSP thread; this is well clear of it, but a stall here would still back the reader up).
@@ -284,10 +291,22 @@ actor DecodeRunner {
                 case .outOfCapture:
                     await onStatus(.degraded, "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back")
                 case .active:
-                    await onStatus(.running, "decoding with \(installed.manifest.name)")
+                    await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
                 }
             }
             try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    /// Republishes the running detail while the count moves, every DecodeLiveness.interval, so a
+    /// busy decoder's count is current without a Job event per record.
+    private func followRecords() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: DecodeLiveness.interval)
+            if Task.isCancelled || stopped { return }
+            if liveness.moved {
+                await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+            }
         }
     }
 

@@ -49,6 +49,8 @@ actor IQDecodeRunner: DecodeRunning {
     private nonisolated let tapID = StreamID()
 
     private var seq: UInt64 = 0
+    /// How much the job has heard, for the detail it publishes while RUNNING (DEC-23).
+    private var liveness = DecodeLiveness()
     private var task: Task<Void, Never>?
     /// The plugin the drain is feeding. Held outside the actor because the drain runs as its own
     /// task: a pipe write must never park the actor that is also stamping records.
@@ -105,6 +107,7 @@ actor IQDecodeRunner: DecodeRunning {
         // `for await` on it would see a finished stream and feed a restarted plugin nothing. Frames
         // written while no plugin is up are dropped, and the gap is held open until one lands.
         let drain = Task { [weak self] in await self?.drain() }
+        let counting = Task { [weak self] in await self?.followRecords() }
         var wait = DecodeRunner.firstRestartSeconds
         var restarts = 0
         while !Task.isCancelled {
@@ -116,9 +119,10 @@ actor IQDecodeRunner: DecodeRunning {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, DecodeRunner.maxRestartSeconds)
             if Task.isCancelled || stopped { break }
-            await onStatus(.running, "decoding with \(installed.manifest.name)")
+            await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
         }
         drain.cancel()
+        counting.cancel()
         ring.wake()
         // A capture that goes away simply stops the tap delivering: this enabler keeps it simple and
         // does not degrade the job on detach (there is no channel to follow); that is a follow-up
@@ -139,7 +143,7 @@ actor IQDecodeRunner: DecodeRunning {
             return -1
         }
         currentPlugin.withLock { $0 = process }
-        await onStatus(.running, "decoding with \(installed.manifest.name)")
+        await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
         let status = await withTaskGroup(of: Int32?.self) { group in
             group.addTask { [weak self] in
                 for await record in process.records {
@@ -245,11 +249,26 @@ actor IQDecodeRunner: DecodeRunning {
         rec.snrDb = Double.nan
         await hub.publish(rec)
         await writer?.append(rec)
+        if liveness.noteRecord() {
+            await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+        }
         // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
         // reader, so the notifier runs in its own task with the record it saw.
         if let notify {
             let record = rec
             Task { [notifier] in await notifier.fire(record, notify) }
+        }
+    }
+
+    /// Republishes the running detail while the count moves, every DecodeLiveness.interval, so a
+    /// busy decoder's count is current without a Job event per record.
+    private func followRecords() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: DecodeLiveness.interval)
+            if Task.isCancelled || stopped { return }
+            if liveness.moved {
+                await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+            }
         }
     }
 

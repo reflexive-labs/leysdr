@@ -447,8 +447,13 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if r := h.call(t, "start_decode_job", map[string]any{"decoder": "morse"}); !r.IsError || !strings.Contains(resultText(r), "list_decoders") {
 		t.Errorf("an unknown decoder must be refused and point at list_decoders: %s", resultText(r))
 	}
-	// list_entities folds the running job's records rather than starting a second decoder.
+	// A running job says how much it has heard (DEC-23), so get_job tells a working decoder
+	// from a silent one without a subscription.
 	time.Sleep(3 * fakedaemon.RecordInterval)
+	if text := resultText(h.must(t, "get_job", map[string]any{"job": job.JobId})); !strings.Contains(text, "records, last") {
+		t.Errorf("get_job should carry the record count:\n%s", text)
+	}
+	// list_entities folds the running job's records rather than starting a second decoder.
 	ent := h.must(t, "list_entities", map[string]any{"protocol": "aprs", "duration_s": 0.5})
 	raw, _ := json.Marshal(ent.StructuredContent)
 	var snap EntitySnapshot

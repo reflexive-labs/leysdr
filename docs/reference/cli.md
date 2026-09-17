@@ -288,6 +288,10 @@ is deliberately not yet a Resource, because an ad-hoc scan is ephemeral and ther
 daemon keeps the last sixteen finished jobs in memory and loses them on restart. `Jobs.StartJob` with
 a watch or record config, `Jobs.GetTranscript` and the whole `Resources` service remain UNIMPLEMENTED
 until Milestone D.15.
+A running decode job's `status_detail` carries its liveness: "decoding with aprs: 12 records, last
+3 s ago", the first record published at once and a moving count every two seconds after it, so
+`ley jobs` tells a decoder that is hearing things from one that is not. A decoder that is silent
+stays `RUNNING`, because silence is not failure (DEC-16 in `docs/plans/decoders.md`).
 `ley jobs --json` prints a `ListJobsResponse` with the jobs in id order, which for ULIDs is the
 order they were started, so the row numbers the table prints are the same from one call to the
 next. `ley jobs cancel <job> --json` prints the `Job` the daemon answers with: cancelling a job

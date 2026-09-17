@@ -34,6 +34,7 @@ type fakeJob struct {
 	// records it has emitted (the last retainedRecords of them, for since_seq replay) and the
 	// seq it has reached.
 	protocol       string
+	hz             uint64
 	channelID      string
 	captureID      string
 	createdCapture bool
