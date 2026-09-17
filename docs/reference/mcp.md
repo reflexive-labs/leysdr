@@ -66,7 +66,8 @@ Three results are composites, one message under each key, each still its message
 report arrived), and `snapshot` returns the `ley spectrum --json` row, which is the documented
 bulk-row exception of the [`ley` reference](cli.md). `listen_summary`'s `meter` is a client-side
 statistic over the daemon's `Meter` telemetry with no proto message of its own: `{samples,
-min_power_dbfs, max_power_dbfs, mean_power_dbfs, squelch_open_fraction, squelch_db, open_at_end}`
+min_power_dbfs, max_power_dbfs, mean_power_dbfs, squelch_open_fraction, squelch_db, open_at_end,
+open_at_start}`
 (snake_case; a level never measured and a squelch that is off are `null`, since JSON has no NaN
 and 0 dBFS is a real level). `list_entities` returns the `{"entities": [...]}` object `ley track
 --json` prints, described under "Decoders" in the `ley` reference.
@@ -85,7 +86,7 @@ are optional in the schema; the defaults are the mirror verb's.
 |---|---|---|---|---|
 | `list_devices` | `ley devices` | `Control.ListDevices` | none | `ListDevicesResponse` |
 | `get_state` | `ley state` | `Control.GetState` | none | `GetStateResponse` |
-| `daemon_logs` | `ley daemon logs` | the log file on the host | `lines` (default 50, at most 500) | `{daemon: DaemonInfo, path, lines: […]}` |
+| `daemon_logs` | `ley daemon logs` | the log file on the host | `lines` (default 50, at most 500), `include_driver` | `{daemon: DaemonInfo, path, lines: […]}` |
 | `tune` | `ley tune` | `CreateCapture`, `CreateChannel`, `WriteParams` | `frequency`; `mode`, `bandwidth`, `squelch`, `gain`, `device`, `audio`, `keep`, `take_over` | `{capture, channel, sink}` |
 | `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `device`, `take_over` | `Scan` |
 | `listen_summary` | `ley tune`, `ley listen` | `Telemetry.Subscribe`, bounded | `target` (frequency, preset or `chan_…`); `duration_s` (default 10, at most 300), `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | `{channel, transcript, meter, tone}` |
@@ -107,6 +108,10 @@ Notes a table cell cannot hold:
   sequence starts over, and a job started before the restart is gone with it (the durable job
   store is Milestone D.15). The path is the default log unless `ley daemon start` was given
   `--log`, in which case the tool says which file it read and the agent can tell they differ.
+  The radio driver writes to the same file: librtlsdr prints its tuner banner and `PLL not
+  locked!` on every device open, and a dozen tunes push every daemon line out of a short tail.
+  By default the tool returns the daemon's own lines (the ones in swift-log's shape) and says
+  how many driver lines it left out; `include_driver: true` returns everything.
 
 - **`tune`** makes the same decisions `ley tune` makes and lists them in the text: the mode from
   the band unless `mode` is given, the squelch measured from the noise floor for NFM and AM unless
@@ -120,14 +125,22 @@ Notes a table cell cannot hold:
   is using with the daemon's sentence and the remedy (`take_over: true`). A detection is a carrier
   that stood above the measured noise floor with the looks that saw it (`looks`/`looksPossible`);
   it is never a protocol or a station, and the text says so. The text is `ley scan`'s table
-  and summary line, band-plan labels included.
+  and summary line, band-plan labels included. `min_snr` trims the returned `Scan`'s detections
+  the way `ley scan --min-snr` trims its rows, because a 20 MHz sweep is hundreds of detections
+  and more JSON than a result budget holds; the whole sweep stays readable as `ley://scans/<id>`
+  (below), and the text says how many it left out. The sweep runs at whatever gain the radio was
+  left at, and `Scan.gains` says which; a gain of its own is a contract change still to come.
 - **`listen_summary`** subscribes to the channel's meter, squelch and sub-audible telemetry for
   `duration_s` and folds it. A transmission is a squelch-open interval, reported from the daemon's
   own close edge as an `ActivitySegment` (start and end on the capture's timeline, `peakDbfs` the
   loudest block, `meanDbfs` the mean of the meter readings while open), so the default squelch is
   `auto` for voice modes as `ley tune`'s is; with `squelch: off` there are no edges and the meter
-  statistics are the answer. Given a channel id it taps a channel already running and refuses the
-  tune arguments, as `ley listen chan_…` does. A channel it made is removed when it returns.
+  statistics are the answer. A close edge with no open edge before it in the window is the
+  squelch having been open when listening began (a channel made with the squelch off starts open,
+  and the threshold written a moment later closes it on the first quiet block), not a
+  transmission this call observed: it is reported as `meter.open_at_start` and never as a
+  segment. Given a channel id it taps a channel already running and refuses the tune arguments,
+  as `ley listen chan_…` does. A channel it made is removed when it returns.
 - **`snapshot`** draws one FFT row as a PNG (`image/png` content, beside the text) and returns the
   row as numbers. The plot is one pixel per negotiated bin on a dark ground: the trace, a dashed
   floor line, a dB grid, the loudest bins marked with their frequencies, and the frequency asked
@@ -136,6 +149,10 @@ Notes a table cell cannot hold:
   local maxima at least 15 dB over the row's median, presentation only; `scan` is the detector.
   Like `ley spectrum` it reuses a capture that covers the frequency, refuses to move one others
   are listening on, and removes a capture it made. `no_image: true` returns the numbers alone.
+  A band wider than the radio captures (the FM broadcast band is 20 MHz; an RTL-SDR captures
+  3.2 at most) is shown centred, and the text says which frequencies the row covers and what
+  share of the band that is; a radio that captures wider shows more at once, and `scan` sweeps
+  the rest.
 - **`list_entities`** renders a decode job already running for the protocol rather than starting
   a second demodulator on the radio, replaying the records that job retained (up to 256) before
   listening for `duration_s`; with none running it starts one for the call and stops it after.
@@ -168,11 +185,15 @@ an MCP client shows the agent at connect time, say the same, so an agent does no
 
 ## Resources
 
-One resource template is served, `ley://records/{job_id}`: the records of a decode job started
-with `keep`, as the `RecordPage` `query_records` returns for that `job_id`, MIME type
-`application/json`. A job the store never had is a resource-not-found error; a kept job that has
-heard nothing yet is an empty page. Recordings, scans and snapshots become resources when the
-Resources service and their stores are built (`docs/plans/mcp.md`, MCP-7).
+Two resource templates are served, both `application/json`. `ley://records/{job_id}` is the
+records of a decode job started with `keep`, as the `RecordPage` `query_records` returns for
+that `job_id`; a job the store never had is a resource-not-found error, and a kept job that has
+heard nothing yet is an empty page. `ley://scans/{scan_id}` is the whole `Scan` a sweep produced,
+every detection included, resolved through `Jobs.GetScan`: what a job's `resultUris` names and
+what the `scan` tool returns before `min_snr` trims it. It lives as long as the daemon remembers
+the job (its last sixteen finished ones) and not across a restart, because a scan is not yet a
+stored resource. Recordings and snapshots become resources when the Resources service and their
+stores are built (`docs/plans/mcp.md`, MCP-7).
 
 ## A recorded exchange
 

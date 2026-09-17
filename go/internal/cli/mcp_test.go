@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -167,8 +169,13 @@ func TestMCPListsTheToolTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tmpl.ResourceTemplates) != 1 || tmpl.ResourceTemplates[0].URITemplate != "ley://records/{job_id}" {
-		t.Errorf("resource templates: %+v", tmpl.ResourceTemplates)
+	var uris []string
+	for _, r := range tmpl.ResourceTemplates {
+		uris = append(uris, r.URITemplate)
+	}
+	sort.Strings(uris)
+	if strings.Join(uris, " ") != "ley://records/{job_id} ley://scans/{scan_id}" {
+		t.Errorf("resource templates: %v", uris)
 	}
 	if init := h.cs.InitializeResult(); init == nil || init.ServerInfo.Name != "leyline" || !strings.Contains(init.Instructions, "proto3 JSON") {
 		t.Errorf("initialize result: %+v", init)
@@ -499,18 +506,21 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 func TestMCPDaemonLogs(t *testing.T) {
 	h := newMCPHarness(t)
 	log := filepath.Join(t.TempDir(), "leylined.log")
-	if err := os.WriteFile(log, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+	line := func(n int, msg string) string {
+		return fmt.Sprintf("2026-09-17T10:00:0%d+0000 info leyline.daemon: [LeylineDaemon] %s\n", n, msg)
+	}
+	if err := os.WriteFile(log, []byte(line(1, "one")+line(2, "two")+line(3, "three")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h.srv.app.logFile = log
 	res := h.must(t, "daemon_logs", map[string]any{"lines": 2})
 	text := resultText(res)
-	for _, want := range []string{"pid", "up since", "last 2 of 3 lines", "two\nthree"} {
+	for _, want := range []string{"pid", "up since", "last 2 of 3 daemon lines", "] two\n", "] three"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("daemon_logs lacks %q:\n%s", want, text)
 		}
 	}
-	if strings.Contains(text, "one\n") {
+	if strings.Contains(text, "] one\n") {
 		t.Errorf("the first line was not asked for:\n%s", text)
 	}
 	var info leylinev1.DaemonInfo
@@ -519,7 +529,7 @@ func TestMCPDaemonLogs(t *testing.T) {
 		t.Errorf("no pid or start time in the structured result: %v", &info)
 	}
 	raw, _ := json.Marshal(res.StructuredContent)
-	if !strings.Contains(string(raw), `"lines":["two","three"]`) {
+	if !strings.Contains(string(raw), `"lines":["2026-09-17T10:00:02+0000 info leyline.daemon: [LeylineDaemon] two","2026-09-17T10:00:03+0000 info leyline.daemon: [LeylineDaemon] three"]`) {
 		t.Errorf("structured lines: %s", raw)
 	}
 	h.srv.app.logFile = filepath.Join(t.TempDir(), "missing.log")
@@ -560,6 +570,126 @@ func TestMCPQueryRecordsExplainsAnEmptyPage(t *testing.T) {
 	text = resultText(h.must(t, "query_records", map[string]any{"job_id": kept.JobId, "device_id": "NOBODY"}))
 	if !strings.Contains(text, "the kept job "+kept.JobId) || !strings.Contains(text, "filters excluded") || !strings.Contains(text, "listen_summary") {
 		t.Errorf("kept job, filtered to nothing:\n%s", text)
+	}
+}
+
+// The listen fold alone: a close edge with no open before it is the squelch
+// having been open when listening began, not a transmission, and a real
+// open-then-close is one segment with the meter's mean while open.
+func TestListenSummaryFold(t *testing.T) {
+	at := func(idx uint64) *leylinev1.SampleTime {
+		return &leylinev1.SampleTime{CaptureId: "cap_1", SampleIndex: idx}
+	}
+	meter := func(idx uint64, db float64, open bool) *leylinev1.TelemetryMsg {
+		return &leylinev1.TelemetryMsg{Time: at(idx), Body: &leylinev1.TelemetryMsg_Meter{Meter: &leylinev1.Meter{PowerDbfs: db, SquelchOpen: open}}}
+	}
+	edge := func(idx uint64, open bool, dur uint64, peak float64) *leylinev1.TelemetryMsg {
+		return &leylinev1.TelemetryMsg{Time: at(idx), Body: &leylinev1.TelemetryMsg_Squelch{Squelch: &leylinev1.SquelchTransition{
+			Open: open, DurationSamples: dur, PeakAudioDbfs: peak, PeakSnrDb: 10,
+		}}}
+	}
+	sum := newListenSummary(-40, 2_400_000)
+	// The phantom: a close at the noise level, from channel start, before any open.
+	sum.apply(meter(1_000, -48, false))
+	sum.apply(edge(2_400_000, false, 2_400_000, -48))
+	// A real transmission: open, three loud meters, close.
+	sum.apply(edge(4_800_000, true, 0, math.NaN()))
+	sum.apply(meter(5_000_000, -20, true))
+	sum.apply(meter(5_200_000, -22, true))
+	sum.apply(meter(5_400_000, -24, true))
+	sum.apply(edge(7_200_000, false, 2_400_000, -20))
+	sum.finish()
+	if !sum.meter.OpenAtStart {
+		t.Error("a close with no open before it must be reported as open_at_start")
+	}
+	segs := sum.transcript.GetSegments()
+	if len(segs) != 1 {
+		t.Fatalf("want one segment for the real transmission, got %d: %v", len(segs), segs)
+	}
+	if segs[0].GetStart().GetSampleIndex() != 4_800_000 || segs[0].GetEnd().GetSampleIndex() != 7_200_000 {
+		t.Errorf("segment spans %d to %d, want 4800000 to 7200000", segs[0].GetStart().GetSampleIndex(), segs[0].GetEnd().GetSampleIndex())
+	}
+	if math.Abs(segs[0].GetMeanDbfs()+22) > 0.01 || segs[0].GetPeakDbfs() != -20 {
+		t.Errorf("segment mean %.1f peak %.1f, want -22 and -20", segs[0].GetMeanDbfs(), segs[0].GetPeakDbfs())
+	}
+	if sum.meter.Samples != 4 || math.Abs(sum.meter.SquelchOpenFraction-0.75) > 0.001 || sum.meter.OpenAtEnd {
+		t.Errorf("meter stats: %+v", sum.meter)
+	}
+	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
+	if !strings.Contains(text, "1 transmission") || !strings.Contains(text, "already open when listening began") {
+		t.Errorf("text:\n%s", text)
+	}
+}
+
+// daemon_logs keeps the daemon's own lines and counts the driver's.
+func TestMCPDaemonLogsLeavesTheDriverOut(t *testing.T) {
+	h := newMCPHarness(t)
+	log := filepath.Join(t.TempDir(), "leylined.log")
+	body := "2026-09-17T10:00:00+0000 info leyline.daemon: [LeylineDaemon] listening\n" +
+		"Found Rafael Micro R820T tuner\n[R82XX] PLL not locked!\n" +
+		"2026-09-17T10:00:02+0000 warning leyline.daemon: [LeylineDaemon] something\n" +
+		"Found Rafael Micro R820T tuner\n"
+	if err := os.WriteFile(log, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.app.logFile = log
+	text := resultText(h.must(t, "daemon_logs", nil))
+	if strings.Contains(text, "R820T") || !strings.Contains(text, "something") || !strings.Contains(text, "3 lines from the radio driver left out") {
+		t.Errorf("driver lines should be left out and counted:\n%s", text)
+	}
+	text = resultText(h.must(t, "daemon_logs", map[string]any{"include_driver": true}))
+	if strings.Count(text, "R820T") != 2 || strings.Contains(text, "left out") {
+		t.Errorf("include_driver should show them all:\n%s", text)
+	}
+}
+
+// scan's min_snr trims the returned Scan as `ley scan --min-snr` trims its
+// rows, and the whole sweep stays readable as its ley://scans resource.
+func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
+	h := newMCPHarness(t)
+	var whole leylinev1.Scan
+	structured(t, h.must(t, "scan", map[string]any{"range": "145M..147M"}), &whole)
+	res := h.must(t, "scan", map[string]any{"range": "145M..147M", "min_snr": 20})
+	var trimmed leylinev1.Scan
+	structured(t, res, &trimmed)
+	if len(whole.Detections) < 3 || len(trimmed.Detections) >= len(whole.Detections) {
+		t.Fatalf("min_snr 20 should drop the 18.7 dB carrier: %d of %d kept", len(trimmed.Detections), len(whole.Detections))
+	}
+	for _, d := range trimmed.Detections {
+		if d.SnrDb < 20 {
+			t.Errorf("a %.1f dB detection survived min_snr 20", d.SnrDb)
+		}
+	}
+	if !strings.Contains(resultText(res), "ley://scans/"+trimmed.ScanId) {
+		t.Errorf("the text should name the whole scan's resource:\n%s", resultText(res))
+	}
+	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://scans/" + trimmed.ScanId})
+	if err != nil {
+		t.Fatalf("read the scan resource: %v", err)
+	}
+	var viaResource leylinev1.Scan
+	if err := protojson.Unmarshal([]byte(rr.Contents[0].Text), &viaResource); err != nil || len(viaResource.Detections) != len(whole.Detections) {
+		t.Errorf("the resource is not the whole scan (%v): %d detections", err, len(viaResource.Detections))
+	}
+	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://scans/scan_nothing"}); err == nil {
+		t.Error("an unknown scan must not be found")
+	}
+	tmpl, _ := h.cs.ListResourceTemplates(context.Background(), nil)
+	if len(tmpl.ResourceTemplates) != 2 {
+		t.Errorf("resource templates: %+v", tmpl.ResourceTemplates)
+	}
+}
+
+// A band wider than the radio captures is shown in part, and the text says
+// how much. The fake's radio captures 2.4 MHz at most; the FM band is 20.
+func TestMCPSnapshotSaysHowMuchOfABandItCovers(t *testing.T) {
+	h := newMCPHarness(t)
+	res := h.must(t, "snapshot", map[string]any{"band": "fm", "no_image": true})
+	text := resultText(res)
+	for _, want := range []string{"this radio captures at most", "of the FM broadcast band's 87.500 MHz to 108.000 MHz", "scan sweeps the rest"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text lacks %q:\n%s", want, text)
+		}
 	}
 }
 

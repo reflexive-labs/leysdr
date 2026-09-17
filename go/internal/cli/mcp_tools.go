@@ -114,9 +114,11 @@ func (srv *mcpServer) registerTools() {
 	}, srv.cancelJob)
 }
 
-// registerResources exposes the one ley:// resource with a store behind it
-// today: a kept decode job's records. Recordings, scans and snapshots become
-// resources with the Resources service (docs/plans/mcp.md, MCP-7).
+// registerResources exposes the two ley:// resources the daemon can answer
+// today: a kept decode job's records, which have a store, and a scan, which
+// Jobs.GetScan resolves for as long as the daemon remembers the job (its last
+// sixteen finished ones, forgotten on restart). Recordings and snapshots
+// become resources with the Resources service (docs/plans/mcp.md, MCP-7).
 func (srv *mcpServer) registerResources() {
 	srv.server.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: "ley://records/{job_id}",
@@ -125,6 +127,34 @@ func (srv *mcpServer) registerResources() {
 		Description: "The records a decode job started with keep has written, newest first, as a RecordPage (proto3 JSON): the same page query_records returns for job_id.",
 		MIMEType:    "application/json",
 	}, srv.readRecordsResource)
+	srv.server.AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "ley://scans/{scan_id}",
+		Name:        "scans",
+		Title:       "A finished sweep",
+		Description: "The whole Scan a sweep produced (proto3 JSON), every detection included: what the scan tool returns before min_snr trims it, and what a job's resultUris names. Kept while the daemon remembers the job (its last sixteen finished), not across a restart.",
+		MIMEType:    "application/json",
+	}, srv.readScanResource)
+}
+
+// readScanResource serves ley://scans/<scan_id> through Jobs.GetScan.
+func (srv *mcpServer) readScanResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	uri := req.Params.URI
+	id, ok := strings.CutPrefix(uri, "ley://scans/")
+	if !ok || id == "" {
+		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	scan, err := srv.client.Jobs.GetScan(ctx, &leylinev1.ScanRef{ScanId: id})
+	if leyline.Code(err) == leyline.CodeScanNotFound {
+		return nil, mcp.ResourceNotFoundError(uri)
+	}
+	if err != nil {
+		return nil, toolError(srv.app.notRunning(err))
+	}
+	raw, err := protoJSON(scan)
+	if err != nil {
+		return nil, err
+	}
+	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: "application/json", Text: string(raw)}}}, nil
 }
 
 // ---------- orient ----------
@@ -155,7 +185,8 @@ func (srv *mcpServer) getState(ctx context.Context, _ *mcp.CallToolRequest, _ mc
 }
 
 type daemonLogsArgs struct {
-	Lines int `json:"lines,omitempty" jsonschema:"how many lines from the end of the log to return (default 50, at most 500)"`
+	Lines         int  `json:"lines,omitempty" jsonschema:"how many lines from the end of the log to return (default 50, at most 500)"`
+	IncludeDriver bool `json:"include_driver,omitempty" jsonschema:"also return the lines the radio driver (librtlsdr) prints on every device open, which are left out by default because a dozen tunes push every daemon line out of the tail (default: false)"`
 }
 
 // daemonLogsMax bounds a read: a log is megabytes after a week, and an agent
@@ -182,6 +213,21 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 	if len(all) == 1 && all[0] == "" {
 		all = nil
 	}
+	// The driver writes to the same file: librtlsdr prints its tuner banner and "PLL not
+	// locked!" on every device open, straight past the daemon's logger, and a dozen tunes bury
+	// the daemon's own lines. A daemon line has the swift-log shape; the rest is the driver's.
+	driver := 0
+	if !in.IncludeDriver {
+		kept := all[:0:0]
+		for _, l := range all {
+			if _, ok := parseLogLine(l); ok {
+				kept = append(kept, l)
+			} else {
+				driver++
+			}
+		}
+		all = kept
+	}
 	lines := all
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
@@ -196,7 +242,11 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 	} else {
 		b.WriteString("the daemon is not answering on the socket; the log below is what it last wrote.\n")
 	}
-	fmt.Fprintf(&b, "%s, last %d of %d lines:\n", path, len(lines), len(all))
+	fmt.Fprintf(&b, "%s, last %d of %d daemon lines", path, len(lines), len(all))
+	if driver > 0 {
+		fmt.Fprintf(&b, " (%s from the radio driver left out; include_driver: true shows them)", plural(driver, "line"))
+	}
+	b.WriteString(":\n")
 	for _, l := range lines {
 		b.WriteString(l + "\n")
 	}
@@ -367,7 +417,27 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	}
 	errb.Reset()
 	printScan(app, scan, o)
-	return protoResult(scan, out.String()+errb.String())
+	text := out.String() + errb.String()
+	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
+	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
+	// an agent's result budget holds, and the ones under the floor it asked for are the ones it
+	// did not want. The whole scan stays readable as ley://scans/<id> for as long as the daemon
+	// remembers the job.
+	if o.minSNR > 0 {
+		kept := proto.Clone(scan).(*leylinev1.Scan)
+		kept.Detections = kept.Detections[:0:0]
+		for _, d := range scan.Detections {
+			if d.GetSnrDb() >= o.minSNR {
+				kept.Detections = append(kept.Detections, d)
+			}
+		}
+		if hidden := len(scan.Detections) - len(kept.Detections); hidden > 0 {
+			text += fmt.Sprintf("%s under %.0f dB left out of the result; ley://scans/%s carries all %d.\n",
+				plural(hidden, "detection"), o.minSNR, scan.GetScanId(), len(scan.Detections))
+		}
+		scan = kept
+	}
+	return protoResult(scan, text)
 }
 
 // scanToolFailure rewrites the one remedy scanFailure phrases as a flag.
@@ -407,6 +477,10 @@ type meterStats struct {
 	SquelchOpenFraction float64 `json:"squelch_open_fraction"`
 	SquelchDb           float64 `json:"squelch_db"`
 	OpenAtEnd           bool    `json:"open_at_end"`
+	// OpenAtStart records a close edge that arrived with no open edge before it in the window:
+	// the squelch was already open when listening began. That interval is not a transmission
+	// this call observed, so it is not a segment; it is reported here instead.
+	OpenAtStart bool `json:"open_at_start"`
 }
 
 // MarshalJSON writes NaN and infinities as null, which encoding/json refuses to
@@ -426,6 +500,7 @@ func (m meterStats) MarshalJSON() ([]byte, error) {
 		"squelch_open_fraction": m.SquelchOpenFraction,
 		"squelch_db":            num(m.SquelchDb),
 		"open_at_end":           m.OpenAtEnd,
+		"open_at_start":         m.OpenAtStart,
 	})
 }
 
@@ -499,12 +574,87 @@ func subAudibleOrNil(sa *leylinev1.SubAudible) any {
 
 // listenSummary is what a bounded telemetry subscription folded into: the
 // transmissions as ActivitySegments (the transcript's own building block),
-// the meter's range, and the last tone reported.
+// the meter's range, and the last tone reported. It is the fold alone, fed one
+// message at a time, so it can be tested without a daemon.
 type listenSummary struct {
 	transcript *leylinev1.Transcript
 	meter      meterStats
 	tone       *leylinev1.SubAudible
 	rate       uint64
+	// The running state between messages.
+	sumPower, openSum float64
+	openN             int
+	open              bool
+	// sawOpen is whether an open edge has arrived in this window. A close edge
+	// with none before it closes an interval that began before listening did:
+	// on a channel made with the squelch off, the squelch starts open and the
+	// first block under the threshold written a moment later closes it, which
+	// reads as a "transmission" from channel start at the noise level. That is
+	// not traffic this call observed, so it is reported as open_at_start rather
+	// than as a segment.
+	sawOpen bool
+}
+
+func newListenSummary(squelchDb float64, rate uint64) *listenSummary {
+	return &listenSummary{
+		transcript: &leylinev1.Transcript{Segments: []*leylinev1.ActivitySegment{}},
+		meter:      meterStats{MinPowerDbfs: math.NaN(), MaxPowerDbfs: math.NaN(), MeanPowerDbfs: math.NaN(), SquelchDb: squelchDb},
+		rate:       rate,
+	}
+}
+
+// apply folds one telemetry message in.
+func (sum *listenSummary) apply(m *leylinev1.TelemetryMsg) {
+	switch b := m.Body.(type) {
+	case *leylinev1.TelemetryMsg_Meter:
+		p := b.Meter.GetPowerDbfs()
+		if math.IsNaN(p) || math.IsInf(p, 0) {
+			return
+		}
+		sum.meter.Samples++
+		sum.sumPower += p
+		if math.IsNaN(sum.meter.MinPowerDbfs) || p < sum.meter.MinPowerDbfs {
+			sum.meter.MinPowerDbfs = p
+		}
+		if math.IsNaN(sum.meter.MaxPowerDbfs) || p > sum.meter.MaxPowerDbfs {
+			sum.meter.MaxPowerDbfs = p
+		}
+		if b.Meter.GetSquelchOpen() {
+			sum.meter.SquelchOpenFraction++
+			sum.openSum += p
+			sum.openN++
+		}
+	case *leylinev1.TelemetryMsg_Squelch:
+		if b.Squelch.GetOpen() {
+			sum.open, sum.sawOpen, sum.openSum, sum.openN = true, true, 0, 0
+			return
+		}
+		sum.open = false
+		if !sum.sawOpen {
+			sum.meter.OpenAtStart = true
+			return
+		}
+		t, ok := closedTransmission(b.Squelch, sum.rate)
+		if !ok {
+			return
+		}
+		seg := &leylinev1.ActivitySegment{
+			End:      proto.Clone(m.GetTime()).(*leylinev1.SampleTime),
+			PeakDbfs: t.peakDbfs,
+			MeanDbfs: math.NaN(),
+		}
+		if st := m.GetTime(); st != nil {
+			seg.Start = &leylinev1.SampleTime{CaptureId: st.GetCaptureId(), SampleIndex: st.GetSampleIndex() - min(st.GetSampleIndex(), b.Squelch.GetDurationSamples())}
+		}
+		if sum.openN > 0 {
+			seg.MeanDbfs = sum.openSum / float64(sum.openN)
+		}
+		sum.transcript.Segments = append(sum.transcript.Segments, seg)
+	case *leylinev1.TelemetryMsg_SubAudible:
+		if b.SubAudible.GetKind() == leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS || sum.tone == nil {
+			sum.tone = b.SubAudible
+		}
+	}
 }
 
 // summarise subscribes to the channel's meter, squelch and sub-audible
@@ -528,86 +678,32 @@ func (s *session) summarise(ctx context.Context, dur time.Duration) (*listenSumm
 	}
 	stopDrain := s.drainEvents()
 	defer stopDrain()
-	sum := &listenSummary{
-		transcript: &leylinev1.Transcript{Segments: []*leylinev1.ActivitySegment{}},
-		meter:      meterStats{MinPowerDbfs: math.NaN(), MaxPowerDbfs: math.NaN(), MeanPowerDbfs: math.NaN(), SquelchDb: s.channel.GetSquelchDb()},
-		rate:       leyline.ChannelCaptureRate(s.state, s.channel),
-	}
-	var (
-		sumPower, openSum float64
-		openN             int
-		open              bool
-	)
+	sum := newListenSummary(s.channel.GetSquelchDb(), leyline.ChannelCaptureRate(s.state, s.channel))
 	for {
 		select {
 		case <-tctx.Done():
-			sum.finish(sumPower, open)
+			sum.finish()
 			return sum, nil
 		case m, ok := <-msgs:
 			if !ok {
 				if err := <-terrs; err != nil && tctx.Err() == nil {
 					return nil, err
 				}
-				sum.finish(sumPower, open)
+				sum.finish()
 				return sum, nil
 			}
-			switch b := m.Body.(type) {
-			case *leylinev1.TelemetryMsg_Meter:
-				p := b.Meter.GetPowerDbfs()
-				if math.IsNaN(p) || math.IsInf(p, 0) {
-					continue
-				}
-				sum.meter.Samples++
-				sumPower += p
-				if math.IsNaN(sum.meter.MinPowerDbfs) || p < sum.meter.MinPowerDbfs {
-					sum.meter.MinPowerDbfs = p
-				}
-				if math.IsNaN(sum.meter.MaxPowerDbfs) || p > sum.meter.MaxPowerDbfs {
-					sum.meter.MaxPowerDbfs = p
-				}
-				if b.Meter.GetSquelchOpen() {
-					sum.meter.SquelchOpenFraction++
-					openSum += p
-					openN++
-				}
-			case *leylinev1.TelemetryMsg_Squelch:
-				if b.Squelch.GetOpen() {
-					open, openSum, openN = true, 0, 0
-					continue
-				}
-				open = false
-				t, ok := closedTransmission(b.Squelch, sum.rate)
-				if !ok {
-					continue
-				}
-				seg := &leylinev1.ActivitySegment{
-					End:      proto.Clone(m.GetTime()).(*leylinev1.SampleTime),
-					PeakDbfs: t.peakDbfs,
-					MeanDbfs: math.NaN(),
-				}
-				if st := m.GetTime(); st != nil {
-					seg.Start = &leylinev1.SampleTime{CaptureId: st.GetCaptureId(), SampleIndex: st.GetSampleIndex() - min(st.GetSampleIndex(), b.Squelch.GetDurationSamples())}
-				}
-				if openN > 0 {
-					seg.MeanDbfs = openSum / float64(openN)
-				}
-				sum.transcript.Segments = append(sum.transcript.Segments, seg)
-			case *leylinev1.TelemetryMsg_SubAudible:
-				if b.SubAudible.GetKind() == leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS || sum.tone == nil {
-					sum.tone = b.SubAudible
-				}
-			}
+			sum.apply(m)
 		}
 	}
 }
 
 // finish turns the running sums into the stats: fractions need the count.
-func (sum *listenSummary) finish(sumPower float64, open bool) {
+func (sum *listenSummary) finish() {
 	if n := sum.meter.Samples; n > 0 {
-		sum.meter.MeanPowerDbfs = sumPower / float64(n)
+		sum.meter.MeanPowerDbfs = sum.sumPower / float64(n)
 		sum.meter.SquelchOpenFraction /= float64(n)
 	}
-	sum.meter.OpenAtEnd = open
+	sum.meter.OpenAtEnd = sum.open
 }
 
 // text is the summary in words: how many transmissions, the longest and
@@ -638,6 +734,9 @@ func (sum *listenSummary) text(s *session, dur time.Duration) string {
 		b.WriteString(")")
 	}
 	b.WriteString(".")
+	if sum.meter.OpenAtStart {
+		b.WriteString(" The squelch was already open when listening began; that interval is not counted.")
+	}
 	if sum.meter.OpenAtEnd {
 		b.WriteString(" A transmission was still in progress when the window ended.")
 	}
@@ -730,7 +829,15 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if err != nil {
 		return nil, nil, err
 	}
-	res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimRight(errb.String()+snapshotText(row, s), "\n")}}}
+	text := errb.String() + snapshotText(row, s)
+	if b := bo.band; b != nil && row.SpanHz < b.WidthHz() {
+		lo, hi := row.CenterHz-row.SpanHz/2, row.CenterHz+row.SpanHz/2
+		text += fmt.Sprintf("this row covers %s to %s of the %s band's %s to %s: %s of it. A radio that captures wider shows more at once; scan sweeps the rest.\n",
+			leyline.FormatFrequency(lo), leyline.FormatFrequency(hi), b.Name,
+			leyline.FormatFrequency(b.MinHz), leyline.FormatFrequency(b.MaxHz),
+			fmt.Sprintf("%.0f%%", 100*float64(row.SpanHz)/float64(b.WidthHz())))
+	}
+	res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimRight(text, "\n")}}}
 	if !in.NoImage {
 		png, err := renderSpectrumPNG(row.Bins, row.FloorDb, row.CenterHz, row.SpanHz, row.Peaks, bo.freq)
 		if err != nil {
