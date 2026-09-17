@@ -762,8 +762,8 @@ func (sum *listenSummary) finish() {
 }
 
 // text is the summary in words: how many transmissions, the longest and
-// loudest, the level range, the tone. Numbers an agent reads off the
-// structured result too; the sentence is for reasoning, not parsing.
+// loudest, the level range, the tone. Numbers an agent reads off the JSON
+// too; the sentence is for reasoning, not parsing.
 func (sum *listenSummary) text(s *session, dur time.Duration) string {
 	var b strings.Builder
 	what := audioWhat(s)
@@ -831,10 +831,10 @@ type snapshotArgs struct {
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the first real radio)"`
 	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who). Send it only after a refusal named who is listening"`
 	NoImage   bool   `json:"no_image,omitempty" jsonschema:"return the numbers only, no PNG (default: false)"`
-	// IncludeBins puts the row's bins in the structured result. Off by default: 1024 numbers are
+	// IncludeBins puts the row's bins in the JSON. Off by default: 1024 numbers are
 	// a page of JSON an agent rarely reads, and 2048 were 39 KB in one survey. The text and the
 	// peaks say what stood out; the PNG is drawn from the bins whether or not they are returned.
-	IncludeBins bool `json:"include_bins,omitempty" jsonschema:"put the row's bins (dBFS, one number a bin) in the structured result; the floor and peaks are always there (default: false, bins is null)"`
+	IncludeBins bool `json:"include_bins,omitempty" jsonschema:"put the row's bins (dBFS, one number a bin) in the JSON; the floor and peaks are always there (default: false, bins is null)"`
 }
 
 // snapshotFirstRow bounds the wait for the one row a snapshot needs.

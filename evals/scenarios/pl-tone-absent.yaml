@@ -8,17 +8,23 @@ fixtures:
     optional: true
 task: |
   Listen to 162.400 MHz for about fifteen seconds and tell me whether the transmitter sends a
-  CTCSS (PL) sub-audible tone, and if so which tone. Say how confident the daemon was.
+  CTCSS (PL) sub-audible tone, and if so which tone. Say how confident the daemon was, and
+  whether a transmitter was on the air at all.
 answer_schema: |
-  {"tone_hz": <number, or null when none>, "confidence": <number 0 to 1, or null>}
+  {"tone_hz": <number, or null when none>, "confidence": <number 0 to 1, or null>, "signal_present": <true or false>}
 truth:
   tone_hz: null
+  signal_present: true
 checks:
   - type: answered
   - type: json_equals
     path: tone_hz
     truth: tone_hz
     why: no tone is on the air; the detector must not be talked into one
+  - type: json_equals
+    path: signal_present
+    truth: signal_present
+    why: NOAA transmits without pause; a weak carrier under the auto squelch is still a carrier (an earlier run called it "no transmitter" and passed)
   - type: used_tool
     tool: listen_summary
   - type: no_shell

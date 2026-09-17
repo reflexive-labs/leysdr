@@ -345,6 +345,13 @@ their verbs' counts). What the second look found:
   answer and the tool calls: which carriers a survey found, which stations a decode named, whether
   a refusal was respected, whether an empty store was told apart from a dead chain. Every
   scenario's truth is a recording's, so no radio or operator is needed and runs compare.
+- **The text was not reaching the agent.** The first eval transcripts (2026-09-17) showed every
+  successful result arriving as the JSON alone: Claude Code hands the model only
+  `structuredContent` when a tool returns one and drops the content blocks
+  (anthropics/claude-code#55677). Every sentence above had been written for nobody. Results are
+  now two text blocks, prose then JSON, and no `structuredContent` (`jsonResult` in `mcp.go`);
+  the evals then shed a third of their tool calls, since the agent could read what the tools
+  said. The JSON is the same proto3 mapping, read from the last block.
 - **The blocked tools are not stubs.** A tool that only refuses spends an agent's context on
   nothing, so `find_recordings`, `get_transcript`, `identify_signal`, `lookup_identity` and
   `whats_out_there` are named in the server's instructions with the milestone each waits on and
