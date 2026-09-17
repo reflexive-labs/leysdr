@@ -1,0 +1,25 @@
+# The other half: a handheld with a real 100 Hz PL, recorded on the owner's dongle. Same task,
+# opposite answer, so a detector tuned to say "none" fails here.
+name: pl-tone-present
+description: Listening to a handheld with a 100 Hz PL, the agent names it.
+fixtures:
+  - file: ht-narrow.cu8
+    as: radio-f
+    optional: true
+task: |
+  Listen to 147.435 MHz for about fifteen seconds and tell me whether the transmitter sends a
+  CTCSS (PL) sub-audible tone, and if so which tone. Say how confident the daemon was.
+answer_schema: |
+  {"tone_hz": <number, or null when none>, "confidence": <number 0 to 1, or null>}
+truth:
+  tone_hz: 100.0
+checks:
+  - type: answered
+  - type: json_equals
+    path: tone_hz
+    truth: tone_hz
+  - type: used_tool
+    tool: listen_summary
+  - type: no_shell
+  - type: max_tool_calls
+    n: 6

@@ -1,0 +1,36 @@
+# What is on the 2 m band? One radio, a recording of four carriers; the agent must find all four
+# with scan and call them carriers, not stations.
+name: survey-2m
+description: Sweep 145 to 147 MHz on a radio playing four known carriers and report every one.
+fixtures:
+  - file: scan_band.cf32
+    as: radio-a
+    capture: false        # a sweep wants the radio idle
+task: |
+  One radio is attached to this daemon. Find out what is transmitting between 145 and 147 MHz
+  and report every carrier you found, with its frequency and how far it stood over the noise
+  floor. Do not guess what any of them are: report what was measured.
+answer_schema: |
+  {"carriers": [{"hz": <integer, Hz>, "snr_db": <number>}], "summary": "<one sentence>"}
+truth:
+  carriers: [145200000, 145600000, 146400000, 146800000]
+checks:
+  - type: answered
+  - type: json_within
+    path: carriers
+    field: hz
+    truth: carriers
+    tolerance: 30000
+    exact: true
+    why: all four carriers, none invented
+  - type: used_tool
+    tool: scan
+    why: the sweep is the honest detector; peaks off a snapshot are not
+  - type: forbid_words
+    words: ["is a repeater", "is an aprs", "packet station", "voice station"]
+    why: a detection is a carrier; naming a service from energy alone is a guess (invariant 12)
+  - type: max_tool_calls
+    n: 8
+    why: orient, sweep, answer
+  - type: no_shell
+  - type: take_over_after_refusal

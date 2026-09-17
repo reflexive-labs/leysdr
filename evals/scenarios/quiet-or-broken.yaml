@@ -1,0 +1,34 @@
+# A kept APRS decoder has been listening to a channel that carries a steady tone and no packets.
+# Is it broken, or is the band quiet? The agent must tell the two apart with evidence: the empty
+# store's explanation, and a listen that shows audio flowing.
+name: quiet-or-broken
+description: A kept decoder hears nothing; the agent must show the chain is live and the band quiet.
+fixtures:
+  - file: nfm_tone.cf32
+    as: radio-d           # a 1 kHz tone at 146.620 MHz: audio, never a packet
+setup:
+  - job: {decoder: aprs, frequency: "146.62", keep: true}
+task: |
+  An APRS decoder was started earlier as a kept job on this daemon. Is APRS decoding working?
+  Decide whether the radio chain is working and the band is simply quiet, or whether something
+  is broken, and say what evidence you used. Do not conclude "no traffic" without evidence that
+  audio is actually reaching the decoder.
+answer_schema: |
+  {"chain_working": <true or false>, "band_quiet": <true or false>, "records": <integer>, "evidence": "<one or two sentences>"}
+truth:
+  chain_working: true
+  band_quiet: true
+checks:
+  - type: answered
+  - type: json_equals
+    path: chain_working
+    truth: chain_working
+  - type: json_equals
+    path: band_quiet
+    truth: band_quiet
+  - type: used_tool
+    tool: listen_summary
+    why: the only evidence that audio reaches the decoder is the meter on its channel
+  - type: max_tool_calls
+    n: 10
+  - type: no_shell

@@ -1,0 +1,26 @@
+# NOAA weather radio sends no CTCSS, and its synthesised announcer once fooled the detector.
+# The capture is a real one and lives only on the checkout that recorded it (rf-captures/).
+name: pl-tone-absent
+description: Listening to NOAA WX2, the agent reports no PL tone rather than a guess.
+fixtures:
+  - file: ../rf-captures/noaa-wx2-auto.cu8
+    as: radio-e
+    optional: true
+task: |
+  Listen to 162.400 MHz for about fifteen seconds and tell me whether the transmitter sends a
+  CTCSS (PL) sub-audible tone, and if so which tone. Say how confident the daemon was.
+answer_schema: |
+  {"tone_hz": <number, or null when none>, "confidence": <number 0 to 1, or null>}
+truth:
+  tone_hz: null
+checks:
+  - type: answered
+  - type: json_equals
+    path: tone_hz
+    truth: tone_hz
+    why: no tone is on the air; the detector must not be talked into one
+  - type: used_tool
+    tool: listen_summary
+  - type: no_shell
+  - type: max_tool_calls
+    n: 6

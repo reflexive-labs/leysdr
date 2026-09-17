@@ -1,0 +1,29 @@
+# Who is on APRS? A recording of three packets from three stations, looped; the agent must run the
+# decoder (or fold one) and name the stations with their positions.
+name: aprs-stations
+description: Find the APRS stations on the air and where each last reported being.
+fixtures:
+  - file: aprs_afsk.cf32
+    as: radio-b           # tuned to its centre, 144.390 MHz, so a decode job finds its capture
+task: |
+  Find out which APRS stations are on the air right now and where each one last reported being.
+  Give every station's callsign as the protocol spells it.
+answer_schema: |
+  {"stations": [{"callsign": "<string>", "latitude": <number or null>, "longitude": <number or null>}]}
+truth:
+  stations: ["LEYTST-1", "LEYTST-2", "LEYTST-3"]
+checks:
+  - type: answered
+  - type: json_set_equals
+    path: stations
+    field: callsign
+    truth: stations
+    exact: true
+    why: the three stations and no others
+  - type: used_one_of
+    values: [list_entities, start_decode_job]
+    why: stations come from a decoder's records, never from a sweep
+  - type: max_tool_calls
+    n: 10
+  - type: no_shell
+  - type: take_over_after_refusal

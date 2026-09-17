@@ -12,6 +12,7 @@
 #                   LEYLINE_FIXTURES to point the tests elsewhere)
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
+#   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
@@ -35,7 +36,7 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e lint check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e eval lint check clean install-decoders
 
 all: go swift
 
@@ -117,6 +118,14 @@ $(TOOLS)/gofumpt:
 # with terms the code that pulls it in may use (docs/decisions/D2-licensing.md). `--fix` adds headers.
 license-check:
 	./scripts/check-licenses.sh
+
+# The agent evals (docs/dev/evals.md): a daemon per scenario playing fixtures, an agent on `ley
+# mcp` against it, graded. Costs tokens, so it is not in `check`; EVAL_ARGS passes scenario names
+# or flags through (`make eval EVAL_ARGS="survey-2m --mode shell"`).
+eval: go swift fixtures
+	cd go && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+		LEYLINE_FIXTURES=$(CURDIR)/fixtures LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
+		go run ./cmd/leyeval run --scenarios $(CURDIR)/evals/scenarios --out $(CURDIR)/evals/runs $(EVAL_ARGS)
 
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"

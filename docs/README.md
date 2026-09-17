@@ -41,6 +41,7 @@ Contributors and coding agents. Read first, in this order:
 | [Engine internals](dev/engine-internals.md) | touching the engine or daemon: threads, the hot path, pipeline math, devices, services, the error-code table, daemon lifecycle |
 | [CLI style](dev/cli-style.md) | changing anything a `ley` user sees: colour, streams, glyphs, layout, the frozen contracts |
 | [Release checklist](dev/release-checklist.md) | tagging a release: the mechanical gate, licence obligations, the acceptance pass on a real dongle |
+| [Agent evals](dev/evals.md) | measuring an agent's use of `ley mcp` against fixtures: running `leyeval`, reading a transcript, adding a scenario and its checks |
 
 ### Why it is built this way (`design/`)
 

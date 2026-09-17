@@ -37,3 +37,4 @@ rf-captures/
 
 # Scratch: pasted screenshots and other working files, not repo content.
 tmp/
+evals/runs/

@@ -340,6 +340,11 @@ their verbs' counts). What the second look found:
 - **The PNG draws with its own glyphs.** Axis labels need a font and the repository has no image
   library; the fourteen 5x7 bitmaps `FormatFrequency` and a dB label need are a map in
   `mcp_png.go`, and `ui.LevelRGB` was exported so the picture's ramp is the terminal chart's.
+- **The adapter is measured, not assumed.** `leyeval` (`go/cmd/leyeval`, `evals/scenarios`,
+  `docs/dev/evals.md`) runs an agent against `ley mcp` on a daemon playing fixtures and grades the
+  answer and the tool calls: which carriers a survey found, which stations a decode named, whether
+  a refusal was respected, whether an empty store was told apart from a dead chain. Every
+  scenario's truth is a recording's, so no radio or operator is needed and runs compare.
 - **The blocked tools are not stubs.** A tool that only refuses spends an agent's context on
   nothing, so `find_recordings`, `get_transcript`, `identify_signal`, `lookup_identity` and
   `whats_out_there` are named in the server's instructions with the milestone each waits on and
