@@ -337,12 +337,14 @@ func TestMCPScanReturnsTheDetections(t *testing.T) {
 func TestMCPListenSummary(t *testing.T) {
 	h := newMCPHarness(t)
 	// The fake's signal swings 20 dB either side of -50 dBFS every 4 s, so a
-	// squelch at -50 crosses at least twice in 4.5 s: one of them is a close.
-	res := h.must(t, "listen_summary", map[string]any{"target": "146.52", "duration_s": 4.5, "squelch": "-50"})
+	// squelch at -50 crosses every 2 s. A close counts only after an open was
+	// seen, and the first edge may be a close that is not: worst case the open
+	// comes at 4 s and its close at 6 s, so the window is 6.5 s.
+	res := h.must(t, "listen_summary", map[string]any{"target": "146.52", "duration_s": 6.5, "squelch": "-50"})
 	var tr leylinev1.Transcript
 	structuredField(t, res, "transcript", &tr)
 	if len(tr.Segments) == 0 {
-		t.Errorf("no transmission folded in 4.5 s:\n%s", resultText(res))
+		t.Errorf("no transmission folded in 6.5 s:\n%s", resultText(res))
 	}
 	for _, seg := range tr.Segments {
 		if seg.GetEnd().GetSampleIndex() <= seg.GetStart().GetSampleIndex() {
@@ -357,7 +359,7 @@ func TestMCPListenSummary(t *testing.T) {
 		t.Errorf("meter stats missing (%v): %s", err, raw)
 	}
 	text := resultText(res)
-	for _, want := range []string{"146.520 MHz NFM for 4.5 s", "transmission", "squelch -50.0 dB"} {
+	for _, want := range []string{"146.520 MHz NFM for 6.5 s", "transmission", "squelch -50.0 dB"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}
