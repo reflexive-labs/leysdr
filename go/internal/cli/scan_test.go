@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -442,6 +443,40 @@ func waitForSweep(t *testing.T, c *leyline.Client, cancel context.CancelFunc, do
 			t.Fatal("the scan never reported RUNNING")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// --gain says where the sweep pins the tuner, and the Scan says it ran there: a sweep at a known
+// gain is the only kind two of which compare. A gain that is not a gain is a usage error before
+// anything is sent; an element the radio lacks fails the job with the daemon's code.
+func TestScanRunsAtTheGainAskedFor(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	js := mustRun(t, sock, "--json", "scan", "145M..147M", "--gain", "30")
+	var scan struct {
+		Gains []struct {
+			Element string  `json:"element"`
+			Db      float64 `json:"db"`
+			Auto    bool    `json:"auto"`
+		} `json:"gains"`
+		Config struct {
+			Gain map[string]any `json:"gain"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal([]byte(js), &scan); err != nil {
+		t.Fatalf("%v\n%s", err, js)
+	}
+	if len(scan.Gains) == 0 || scan.Gains[0].Auto || math.Abs(scan.Gains[0].Db-30) > 1 {
+		t.Errorf("the sweep did not run at 30 dB: %+v", scan.Gains)
+	}
+	if scan.Config.Gain["db"] != 30.0 {
+		t.Errorf("the Scan's config should echo the gain asked for: %v", scan.Config.Gain)
+	}
+	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "auto")
+	if err != nil || !strings.Contains(errOut, "gain tuner ") {
+		t.Errorf("--gain auto: %v\n%s", err, errOut)
+	}
+	if _, _, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "loud"); exitCode(err) != ExitUsage {
+		t.Errorf("--gain loud should be a usage error, got %v", err)
 	}
 }
 

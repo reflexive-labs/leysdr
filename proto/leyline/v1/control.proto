@@ -151,7 +151,8 @@ message ParamWrite {
     double sink_volume = 10;     // target_id = sink_id
   }
 }
-message GainWrite { string element = 1; oneof value { double db = 2; bool auto = 3; } }
+// GainWrite lives in common.proto: ScanConfig (jobs.proto) carries one too, and jobs.proto
+// cannot import this file, which imports it.
 message WriteSummary { uint64 writes_received = 1; uint64 writes_applied = 2; }
 
 // ---------- Events ----------

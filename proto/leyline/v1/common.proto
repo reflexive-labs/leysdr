@@ -68,6 +68,10 @@ enum DemodMode { DEMOD_MODE_UNSPECIFIED = 0; AM = 1; NFM = 2; WFM = 3; USB = 4; 
 // Confirmed gain of one element; a capture event carries all of them (full state, never deltas),
 // and a scan carries the ones it pinned for the sweep.
 message GainState { string element = 1; double db = 2; bool auto = 3; }
+// A gain to apply: a ParamWrite sets one on a capture, a ScanConfig names one for a sweep. An
+// empty element means the first gain element the device lists. Here rather than beside ParamWrite
+// because jobs.proto carries one and control.proto imports jobs.proto (same package, wire-identical).
+message GainWrite { string element = 1; oneof value { double db = 2; bool auto = 3; } }
 
 // Where in the channel the audio is taken from.
 //

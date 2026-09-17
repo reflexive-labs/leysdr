@@ -205,7 +205,17 @@ actor JobStore {
             await finish(id, state: .failed, detail: "no device with id \(config.deviceID)", code: EngineError.Code.deviceNotFound)
             return
         }
-        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, deviceID: deviceID, takeOver: config.takeOver), for: id)
+        // The gain the sweep pins at, when the request says. `auto: false` is the write that means
+        // "manual, keep the last level", which for a sweep is the same as saying nothing.
+        var gain: GainRequest?
+        if config.hasGain {
+            switch config.gain.value {
+            case .db(let db): gain = GainRequest(element: config.gain.element, value: .db(db))
+            case .auto(true): gain = GainRequest(element: config.gain.element, value: .auto)
+            default: break
+            }
+        }
+        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, deviceID: deviceID, takeOver: config.takeOver, gain: gain), for: id)
         guard case .capture(let lease) = allocation else {
             if case .declined(let code, let reason) = allocation {
                 await finish(id, state: .failed, detail: reason, code: code)
@@ -219,6 +229,13 @@ actor JobStore {
         // waiting on: the lease is what locks every other client out of the device.
         guard entries[id]?.proto.state == .running else {
             await lease.release()
+            return
+        }
+        if let failure = await lease.pinFailure {
+            // A sweep at a gain other than the one asked for is a different measurement wearing
+            // the requested one's name, so it does not run.
+            await lease.release()
+            await finish(id, state: .failed, detail: "the gain asked for could not be set: \(failure.message)", code: failure.code)
             return
         }
         let device = await store.deviceDescriptor(for: lease.captureID)

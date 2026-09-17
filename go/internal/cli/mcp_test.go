@@ -323,6 +323,15 @@ func TestMCPScanReturnsTheDetections(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}
 	}
+	// gain pins the sweep where the agent asked, and the Scan says so.
+	var pinned leylinev1.Scan
+	structured(t, h.must(t, "scan", map[string]any{"range": "145M..147M", "gain": "25"}), &pinned)
+	if len(pinned.Gains) == 0 || pinned.Gains[0].Auto || math.Abs(pinned.Gains[0].Db-25) > 1 {
+		t.Errorf("the sweep did not run at 25 dB: %v", pinned.Gains)
+	}
+	if r := h.call(t, "scan", map[string]any{"range": "145M..147M", "gain": "loud"}); !r.IsError {
+		t.Error("a gain that is not a gain must be refused")
+	}
 	// A band name works where a range does, as it does for the verb.
 	if r := h.call(t, "scan", map[string]any{"range": "2m"}); r.IsError {
 		t.Errorf("scan by band name: %s", resultText(r))

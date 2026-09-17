@@ -27,8 +27,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
         case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver):
             return await allocateCaptureIQ(frequencyHz: frequencyHz, sampleRateHz: sampleRateHz,
                                            deviceID: deviceID, takeOver: takeOver, job: job)
-        case .exclusiveCapture(let range, let deviceID, let takeOver):
-            return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, job: job)
+        case .exclusiveCapture(let range, let deviceID, let takeOver, let gain):
+            return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, gain: gain, job: job)
         }
     }
 
@@ -273,7 +273,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
     }
 
-    private func allocateCapture(range: ClosedRange<UInt64>, deviceID wanted: DeviceID?, takeOver: Bool, job: JobID) async -> AllocationResult {
+    private func allocateCapture(range: ClosedRange<UInt64>, deviceID wanted: DeviceID?, takeOver: Bool,
+                                 gain: GainRequest?, job: JobID) async -> AllocationResult
+    {
         let state = await store.snapshot(scope: .daemon)
         // A device that can hear any of the range. Prefer one with no capture at all: creating and
         // destroying is cleaner than borrowing and restoring, and it disturbs nobody.
@@ -315,7 +317,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     lastReason = "another scan already has \(device.model)"
                     continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job) else {
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, gain: gain) else {
                     leased.remove(id)
                     continue
                 }
@@ -335,7 +337,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job, created: true) else {
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, created: true, gain: gain) else {
                     leased.remove(id)
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
@@ -381,7 +383,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return hz > 0 ? UInt64(hz) : cap.centerHz
     }
 
-    private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, created: Bool = false) async -> SessionCaptureLease? {
+    private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, created: Bool = false,
+                        gain: GainRequest? = nil) async -> SessionCaptureLease?
+    {
         guard let engine = await store.captureEngine(id) else { return nil }
         let device = await store.registry.device(id: deviceID)
         let snap = await engine.snapshot
@@ -393,7 +397,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             await self?.releaseLease(id)
         }
         await store.setSwept(id, true)
-        await lease.pinGain(device: device)
+        await lease.pinGain(device: device, requested: gain)
         return lease
     }
 
@@ -450,6 +454,9 @@ actor SessionCaptureLease: CaptureLease {
     private var entryCenterHz: UInt64
     private var entryGains: [GainState] = []
     private var pinned: [GainState] = []
+    /// Why a requested gain could not be applied, for the job to fail with. A sweep that ran at
+    /// some other gain than the one asked for would be a measurement under a different name.
+    private(set) var pinFailure: EngineError?
     private var released = false
     private let log = Logger(label: "leyline.jobs.lease")
 
@@ -486,10 +493,23 @@ actor SessionCaptureLease: CaptureLease {
     }
 
     /// Freezes the tuner's gain for the sweep. Under AGC the gain moves after every hop and SNR
-    /// measured against a moving reference is not a number.
-    func pinGain(device: (any RadioDevice)?) async {
+    /// measured against a moving reference is not a number. `requested` says where to pin: a
+    /// level, or auto for where the driver settles; nil pins the gain the radio is on.
+    func pinGain(device: (any RadioDevice)?, requested: GainRequest? = nil) async {
         entryGains = await engine.snapshot.gains
-        for g in entryGains where g.value == .auto {
+        if let requested {
+            let element = requested.element.isEmpty ? (gainElements.first?.name ?? requested.element) : requested.element
+            do {
+                try await engine.setGain(element: element, value: requested.value)
+                if requested.value == .auto {
+                    // Give the driver's AGC a moment to settle before asking where it did.
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                }
+            } catch {
+                pinFailure = error as? EngineError ?? EngineError.invalidArgument("\(error)", target: element)
+            }
+        }
+        for g in await engine.snapshot.gains where g.value == .auto {
             // Where AGC actually settled, so the sweep is exactly as sensitive as the radio was a
             // moment ago. Only when the driver cannot say does this fall back to the middle of the
             // element's range, which is a guess and is 20 dB from the truth on a quiet band.

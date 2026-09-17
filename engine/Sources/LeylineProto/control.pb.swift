@@ -762,42 +762,8 @@ public nonisolated struct Leyline_V1_ParamWrite: Sendable {
   public init() {}
 }
 
-public nonisolated struct Leyline_V1_GainWrite: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var element: String = String()
-
-  public var value: Leyline_V1_GainWrite.OneOf_Value? = nil
-
-  public var db: Double {
-    get {
-      if case .db(let v)? = value {return v}
-      return 0
-    }
-    set {value = .db(newValue)}
-  }
-
-  public var auto: Bool {
-    get {
-      if case .auto(let v)? = value {return v}
-      return false
-    }
-    set {value = .auto(newValue)}
-  }
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public nonisolated enum OneOf_Value: Equatable, Sendable {
-    case db(Double)
-    case auto(Bool)
-
-  }
-
-  public init() {}
-}
-
+/// GainWrite lives in common.proto: ScanConfig (jobs.proto) carries one too, and jobs.proto
+/// cannot import this file, which imports it.
 public nonisolated struct Leyline_V1_WriteSummary: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -2128,68 +2094,6 @@ nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobu
     if lhs.tag != rhs.tag {return false}
     if lhs.targetID != rhs.targetID {return false}
     if lhs.param != rhs.param {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Leyline_V1_GainWrite: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".GainWrite"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}element\0\u{1}db\0\u{1}auto\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.element) }()
-      case 2: try {
-        var v: Double?
-        try decoder.decodeSingularDoubleField(value: &v)
-        if let v = v {
-          if self.value != nil {try decoder.handleConflictingOneOf()}
-          self.value = .db(v)
-        }
-      }()
-      case 3: try {
-        var v: Bool?
-        try decoder.decodeSingularBoolField(value: &v)
-        if let v = v {
-          if self.value != nil {try decoder.handleConflictingOneOf()}
-          self.value = .auto(v)
-        }
-      }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.element.isEmpty {
-      try visitor.visitSingularStringField(value: self.element, fieldNumber: 1)
-    }
-    switch self.value {
-    case .db?: try {
-      guard case .db(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularDoubleField(value: v, fieldNumber: 2)
-    }()
-    case .auto?: try {
-      guard case .auto(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
-    }()
-    case nil: break
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Leyline_V1_GainWrite, rhs: Leyline_V1_GainWrite) -> Bool {
-    if lhs.element != rhs.element {return false}
-    if lhs.value != rhs.value {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

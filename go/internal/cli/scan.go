@@ -29,6 +29,8 @@ type scanOptions struct {
 	takeOver   bool
 	device     string
 	deviceID   string
+	// gain is --gain as typed: auto, or dB. Empty leaves the radio where it is.
+	gain string
 }
 
 func newScanCommand(app *App) *cobra.Command {
@@ -44,6 +46,13 @@ how wide, and how far over the floor.
 The sweep runs in the daemon, which owns the radio for the few seconds it
 takes -- so scan will not interrupt someone who is listening. It says who
 has the radio instead, and --take-over is the way to insist.
+
+The sweep holds the tuner's gain still for its whole length, because a level
+measured against a moving AGC is not a number, and says where it held it.
+Without --gain that is wherever the radio was left, so two sweeps of one band
+can differ by the last tune's gain; --gain 30 pins it there, and --gain auto
+lets the radio's AGC settle and pins that. The radio goes back to its own
+setting afterwards.
 
 What it finds is what is sitting on the band while it looks. A row's SEEN
 column is the evidence: 8/8 means the signal was there every time scan
@@ -65,6 +74,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 		Example: `  ley scan 144M..148M            # the 2 m band
   ley scan --band 2m             # the same, by name
   ley scan 162.4M..162.55M       # the NOAA weather channels
+  ley scan 144M..148M --gain 30  # at a known gain, so two sweeps compare
   ley scan 144M..148M --json     # the Scan message, for tools`,
 		GroupID: GroupLooking,
 		Args:    cobra.MaximumNArgs(1),
@@ -90,6 +100,11 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
 			default:
 				return usageErrorf("scan needs a range: ley scan 144M..148M, or ley scan --band 2m; check with: ley bands")
+			}
+			if o.gain != "" {
+				if _, _, err := leyline.ParseGain(o.gain); err != nil {
+					return usageErrorf("--gain %v", err)
+				}
 			}
 			switch sortBy {
 			case "freq", "":
@@ -124,6 +139,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 	cmd.Flags().StringVar(&sortBy, "sort", "freq", "row order: freq or snr")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "sweep even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
+	cmd.Flags().StringVar(&o.gain, "gain", "", "receiver gain to sweep at: auto (where the radio's AGC settles, then held) or dB such as 30 (default: the gain the radio is on, held)")
 	return cmd
 }
 
@@ -158,6 +174,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		Schedule: &leylinev1.ScanConfig_Once{Once: true},
 		TakeOver: o.takeOver,
 		DeviceId: o.deviceID,
+		Gain:     scanGain(o.gain),
 	}
 	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
@@ -274,6 +291,23 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 			}
 		}
 	}
+}
+
+// scanGain is --gain as the contract carries it: a GainWrite on the first gain element (the
+// daemon reads an empty element as the first), or nil to leave the radio where it is. The flag
+// was checked when it was parsed, so an error here cannot happen.
+func scanGain(flag string) *leylinev1.GainWrite {
+	if flag == "" {
+		return nil
+	}
+	db, auto, err := leyline.ParseGain(flag)
+	if err != nil {
+		return nil
+	}
+	if auto {
+		return &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: true}}
+	}
+	return &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Db{Db: db}}
 }
 
 // scanIDOf reads the scan's id out of the job's result URI. A job that named no

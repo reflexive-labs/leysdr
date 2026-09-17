@@ -72,6 +72,13 @@ message ScanConfig {
   // Which radio to sweep. Empty means the daemon picks: an idle device first, then one whose
   // capture nobody is using. Without this a two-radio setup has no way to say which.
   string device_id = 7;
+  // The tuner gain to sweep at. A sweep always pins the gain for its whole duration, because SNR
+  // against a moving AGC is not a number; this says where. `db` pins the element there (the first
+  // gain element when `element` is empty); `auto` asks the driver where its AGC settles and pins
+  // that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
+  // which is why two sweeps of one band could differ by 6 dB of floor. `Scan.gains` reports the
+  // level the sweep ran at either way, and the entry gain is restored when the radio is handed back.
+  GainWrite gain = 8;
 }
 
 message RecordConfig {

@@ -42,7 +42,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
-├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--take-over] [--device SEL]
+├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--gain dB|auto] [--take-over] [--device SEL]
 │                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
@@ -233,7 +233,8 @@ and its detections stream on the telemetry plane (type `DETECTION`, daemon-wide)
 scan's; the client folds them into the log. It runs daemon-side and owns the radio for the duration,
 declining a radio somebody is using with the same don't-disturb rule as a scan (`--take-over`
 overrides). A band wider than one capture can watch is refused with `INVALID_ARGUMENT`; `scan` sweeps
-a span that wide. There is no `--gain`, as there is none on `scan`: the daemon sets the gain. The log
+a span that wide. There is no `--gain`: a watch runs at the gain the radio is on, and `scan --gain` is
+the sweep's. The log
 table (TIME, FREQUENCY, CHANNEL, HELD (s), ON AIR (s), ACTIVITY, PEAK SNR (dB) -- TIME a dimmed
 gutter of first sightings stamped when it changes, CHANNEL present only on a band with named
 channels, HELD the first-to-last span, ON AIR the time truly transmitting from the detector's look
@@ -259,7 +260,10 @@ spectrum rows in which it cleared the threshold, out of the rows that covered th
 never a filter: a signal seen once in eight is reported as such rather than dropped, because an
 intermittent transmission is exactly what somebody may be scanning for. `Scan.gains` is the gain the
 sweep pinned for its whole duration, because a scan run at a different gain is a different
-measurement. `Scan.resolution_hz` is the analysis bin width, which every dB in the message is per --
+measurement. `--gain dB|auto` says where to pin it (`ScanConfig.gain`, a `GainWrite` on the first
+gain element): a level, or where the radio's AGC settles; without it the sweep pins whatever the
+last client left the radio at, and two sweeps of one band can differ by that. A gain the radio
+cannot set fails the job with the daemon's code rather than sweeping at another. `Scan.resolution_hz` is the analysis bin width, which every dB in the message is per --
 a wider bin holds more noise -- and `Scan.covered` is the range actually looked at, never wider than
 `config.range` and narrower whenever the radio could not reach all of it, part of the request fell
 in the tuner's own blind spot, or the sweep was stopped early; a client that reported `config.range`

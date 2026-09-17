@@ -522,6 +522,17 @@ public protocol CaptureAllocator: Sendable {
     func allocate(_ request: AllocationRequest, for job: JobID) async -> AllocationResult
 }
 
+/// A gain a job asks for on the radio it is allocated: one element (the device's first when the
+/// name is empty) set to a level or to auto.
+public struct GainRequest: Sendable, Hashable {
+    public let element: String
+    public let value: GainValue
+    public init(element: String, value: GainValue) {
+        self.element = element
+        self.value = value
+    }
+}
+
 public enum AllocationRequest: Sendable {
     /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, from
     /// D.15, a watch job) asks for this: it wants to hear one channel and does not care which
@@ -539,7 +550,9 @@ public enum AllocationRequest: Sendable {
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
     /// `deviceID` nil means the allocator picks; naming one is how a two-radio rig says which.
-    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool)
+    /// `gain` is where the sweep pins the tuner: a level, or `auto` for where the driver's AGC
+    /// settles. nil pins whatever the radio is on, which is what the last client left.
+    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool, gain: GainRequest? = nil)
 }
 
 public enum AllocationResult: Sendable {
@@ -591,6 +604,10 @@ public protocol CaptureLease: AnyObject, Sendable {
     var spectrum: any SpectrumLadder { get }
     /// The gain the lease pinned for its duration.
     var pinnedGains: [GainState] { get async }
+    /// Why the gain the job asked for could not be set, or nil when it was (or none was asked
+    /// for). A sweep at some other gain than the requested one is a different measurement, so
+    /// the job reads this before it runs.
+    var pinFailure: EngineError? { get async }
 
     func retune(centerHz: UInt64) async throws
     /// Restores what was borrowed: the original centre and gain, or the capture is destroyed if

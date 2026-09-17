@@ -712,6 +712,99 @@ func (x *GainState) GetAuto() bool {
 	return false
 }
 
+// A gain to apply: a ParamWrite sets one on a capture, a ScanConfig names one for a sweep. An
+// empty element means the first gain element the device lists. Here rather than beside ParamWrite
+// because jobs.proto carries one and control.proto imports jobs.proto (same package, wire-identical).
+type GainWrite struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Element string                 `protobuf:"bytes,1,opt,name=element,proto3" json:"element,omitempty"`
+	// Types that are valid to be assigned to Value:
+	//
+	//	*GainWrite_Db
+	//	*GainWrite_Auto
+	Value         isGainWrite_Value `protobuf_oneof:"value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GainWrite) Reset() {
+	*x = GainWrite{}
+	mi := &file_leyline_v1_common_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GainWrite) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GainWrite) ProtoMessage() {}
+
+func (x *GainWrite) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_common_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GainWrite.ProtoReflect.Descriptor instead.
+func (*GainWrite) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GainWrite) GetElement() string {
+	if x != nil {
+		return x.Element
+	}
+	return ""
+}
+
+func (x *GainWrite) GetValue() isGainWrite_Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *GainWrite) GetDb() float64 {
+	if x != nil {
+		if x, ok := x.Value.(*GainWrite_Db); ok {
+			return x.Db
+		}
+	}
+	return 0
+}
+
+func (x *GainWrite) GetAuto() bool {
+	if x != nil {
+		if x, ok := x.Value.(*GainWrite_Auto); ok {
+			return x.Auto
+		}
+	}
+	return false
+}
+
+type isGainWrite_Value interface {
+	isGainWrite_Value()
+}
+
+type GainWrite_Db struct {
+	Db float64 `protobuf:"fixed64,2,opt,name=db,proto3,oneof"`
+}
+
+type GainWrite_Auto struct {
+	Auto bool `protobuf:"varint,3,opt,name=auto,proto3,oneof"`
+}
+
+func (*GainWrite_Db) isGainWrite_Value() {}
+
+func (*GainWrite_Auto) isGainWrite_Value() {}
+
 var File_leyline_v1_common_proto protoreflect.FileDescriptor
 
 const file_leyline_v1_common_proto_rawDesc = "" +
@@ -756,7 +849,12 @@ const file_leyline_v1_common_proto_rawDesc = "" +
 	"\tGainState\x12\x18\n" +
 	"\aelement\x18\x01 \x01(\tR\aelement\x12\x0e\n" +
 	"\x02db\x18\x02 \x01(\x01R\x02db\x12\x12\n" +
-	"\x04auto\x18\x03 \x01(\bR\x04auto*R\n" +
+	"\x04auto\x18\x03 \x01(\bR\x04auto\"V\n" +
+	"\tGainWrite\x12\x18\n" +
+	"\aelement\x18\x01 \x01(\tR\aelement\x12\x10\n" +
+	"\x02db\x18\x02 \x01(\x01H\x00R\x02db\x12\x14\n" +
+	"\x04auto\x18\x03 \x01(\bH\x00R\x04autoB\a\n" +
+	"\x05value*R\n" +
 	"\x0eDeliveryPolicy\x12\x1f\n" +
 	"\x1bDELIVERY_POLICY_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vLATEST_WINS\x10\x01\x12\x0e\n" +
@@ -789,7 +887,7 @@ func file_leyline_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_leyline_v1_common_proto_goTypes = []any{
 	(DeliveryPolicy)(0),    // 0: leyline.v1.DeliveryPolicy
 	(DemodMode)(0),         // 1: leyline.v1.DemodMode
@@ -802,6 +900,7 @@ var file_leyline_v1_common_proto_goTypes = []any{
 	(*StreamPosition)(nil), // 8: leyline.v1.StreamPosition
 	(*ErrorDetail)(nil),    // 9: leyline.v1.ErrorDetail
 	(*GainState)(nil),      // 10: leyline.v1.GainState
+	(*GainWrite)(nil),      // 11: leyline.v1.GainWrite
 }
 var file_leyline_v1_common_proto_depIdxs = []int32{
 	3, // 0: leyline.v1.StreamPosition.at_sample:type_name -> leyline.v1.SampleTime
@@ -822,13 +921,17 @@ func file_leyline_v1_common_proto_init() {
 		(*StreamPosition_AtSample)(nil),
 		(*StreamPosition_AtHostTimeNs)(nil),
 	}
+	file_leyline_v1_common_proto_msgTypes[8].OneofWrappers = []any{
+		(*GainWrite_Db)(nil),
+		(*GainWrite_Auto)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_common_proto_rawDesc), len(file_leyline_v1_common_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

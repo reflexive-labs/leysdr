@@ -88,7 +88,7 @@ are optional in the schema; the defaults are the mirror verb's.
 | `get_state` | `ley state` | `Control.GetState` | none | `GetStateResponse` |
 | `daemon_logs` | `ley daemon logs` | the log file on the host | `lines` (default 50, at most 500), `include_driver` | `{daemon: DaemonInfo, path, lines: […]}` |
 | `tune` | `ley tune` | `CreateCapture`, `CreateChannel`, `WriteParams` | `frequency`; `mode`, `bandwidth`, `squelch`, `gain`, `device`, `audio`, `keep`, `take_over` | `{capture, channel, sink}` |
-| `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `device`, `take_over` | `Scan` |
+| `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `gain`, `device`, `take_over` | `Scan` |
 | `listen_summary` | `ley tune`, `ley listen` | `Telemetry.Subscribe`, bounded | `target` (frequency, preset or `chan_…`); `duration_s` (default 10, at most 300), `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | `{channel, transcript, meter, tone}` |
 | `snapshot` | `ley spectrum --json` | `Bulk.Subscribe(FFT)`, one row | `frequency` or `band`; `span`, `bins` (default 1024), `device`, `take_over`, `no_image` | the spectrum row, plus a PNG |
 | `list_decoders` | `ley decoders` | `Decoders.ListDecoders` | none | `ListDecodersResponse` |
@@ -128,8 +128,10 @@ Notes a table cell cannot hold:
   and summary line, band-plan labels included. `min_snr` trims the returned `Scan`'s detections
   the way `ley scan --min-snr` trims its rows, because a 20 MHz sweep is hundreds of detections
   and more JSON than a result budget holds; the whole sweep stays readable as `ley://scans/<id>`
-  (below), and the text says how many it left out. The sweep runs at whatever gain the radio was
-  left at, and `Scan.gains` says which; a gain of its own is a contract change still to come.
+  (below), and the text says how many it left out. `gain` (a level, or `auto` for where the radio's AGC settles) is where
+  the sweep pins the tuner; without it the sweep pins whatever gain the radio was left at, which is
+  what made two sweeps of one band differ by 6 dB of floor in the survey, and `Scan.gains` says which
+  either way.
 - **`listen_summary`** subscribes to the channel's meter, squelch and sub-audible telemetry for
   `duration_s` and folds it. A transmission is a squelch-open interval, reported from the daemon's
   own close edge as an `ActivitySegment` (start and end on the capture's timeline, `peakDbfs` the

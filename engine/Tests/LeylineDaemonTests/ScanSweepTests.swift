@@ -256,6 +256,26 @@ final class ScanSweepTests: XCTestCase {
         }
     }
 
+    /// A sweep asked for a gain runs at that gain and says so, and the radio goes back to where it
+    /// was afterwards. Without one, two sweeps of a band could differ by whatever the last client
+    /// left the tuner at, and an agent could not tell a quiet band from a deaf receiver.
+    func testTheSweepRunsAtTheGainAskedFor() async throws {
+        let carriers = [SyntheticBandDevice.Carrier(hz: 145_400_000, dbfs: -25, widthHz: 12_500)]
+        try await withSweepDaemon(carriers, configure: { $0.gain.db = 20 }) { c, scan in
+            let g = try XCTUnwrap(scan.gains.first)
+            XCTAssertEqual(g.element, "TUNER", "an empty element means the first gain element")
+            XCTAssertEqual(g.db, 20, accuracy: 0.5, "the sweep ran at \(g.db) dB, not the 20 asked for")
+            XCTAssertFalse(g.auto)
+            // Handed back: the capture the sweep made is gone, so nothing holds the gain.
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertTrue(state.captures.isEmpty, "the sweep's capture should be released")
+        }
+        try await withSweepDaemon(carriers, configure: { $0.gain.auto = true }) { _, scan in
+            let g = try XCTUnwrap(scan.gains.first)
+            XCTAssertFalse(g.auto, "auto is where the AGC settled, then pinned; never a sweep under AGC")
+        }
+    }
+
     /// A sweep declines a radio somebody is listening on, and --take-over borrows it and gives it
     /// back where it was.
     func testTakeOverBorrowsAndRestores() async throws {
@@ -406,8 +426,10 @@ final class ScanSweepTests: XCTestCase {
 
     // MARK: harness
 
-    /// Runs one sweep over a synthetic radio and hands the finished Scan to `check`.
+    /// Runs one sweep over a synthetic radio and hands the finished Scan to `check`. `configure`
+    /// edits the request before it is sent.
     private func withSweepDaemon(_ carriers: [SyntheticBandDevice.Carrier],
+                                 configure: @escaping @Sendable (inout Leyline_V1_ScanConfig) -> Void = { _ in },
                                  _ check: @escaping @Sendable (DaemonClients, Leyline_V1_Scan) async throws -> Void) async throws
     {
         try await withDaemon { c in
@@ -421,6 +443,7 @@ final class ScanSweepTests: XCTestCase {
             config.range.maxHz = 148_600_000
             config.dwellMs = 200
             config.once = true
+            configure(&config)
             var req = Leyline_V1_StartJobRequest()
             req.config = .scan(config)
             let job = try await c.jobs.startJob(req, metadata: testMetadata)

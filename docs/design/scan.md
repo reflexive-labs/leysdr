@@ -325,7 +325,17 @@ wire, and a per-row floor cannot describe a local one.
 
 **One additive field on `Scan`**: `repeated GainState gains = 7`, the gain the sweep pinned.
 
-`ScanConfig` also gains `bool take_over = 6` for the don't-disturb override below.
+`ScanConfig` also gains `bool take_over = 6` for the don't-disturb override below, and, since
+2026-09-17, `GainWrite gain = 8`: where to pin. A sweep asked for a level pins its element there
+(the first element when the write names none); one asked for `auto` sets the element to auto, lets
+the driver settle, and pins where it settled; one asked for nothing pins whatever the radio is on,
+which is what the last client left. An agent surveying a band through `ley mcp` found two sweeps of
+the same 250 kHz reading floors 6 dB apart because the tune before each had left the tuner at 19.7
+and then 15.7 dB; it could not ask for a sensitive sweep, and could not tell a quiet band from a deaf
+receiver. A gain the radio cannot set fails the job (`GAIN_ELEMENT_UNKNOWN`, or a file device's
+refusal) rather than sweeping at another level under the requested one's name. `GainWrite` moved
+from `control.proto` to `common.proto` for this, since `control.proto` imports `jobs.proto`; the
+package and the wire are unchanged.
 
 ### Lifetime
 

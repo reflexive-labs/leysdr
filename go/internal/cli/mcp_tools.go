@@ -59,7 +59,7 @@ func (srv *mcpServer) registerTools() {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "scan",
 		Description: "Sweep a frequency range and report the carriers that stood above the measured noise floor: centre, width, SNR and how many looks saw each (Jobs.StartJob(ScanConfig{once}) then Jobs.GetScan; ley scan). " +
-			"A detection is a carrier, not a protocol or a station. Takes seconds and owns the radio meanwhile; refuses a radio somebody is using unless take_over is true. Returns a Scan.",
+			"A detection is a carrier, not a protocol or a station. Takes seconds and owns the radio meanwhile; refuses a radio somebody is using unless take_over is true. gain pins the tuner for the sweep (a sweep of a quiet band at low gain reads as a deaf receiver; ask for auto or a level and read Scan.gains). Returns a Scan.",
 		Annotations: mutates,
 	}, srv.scan)
 	mcp.AddTool(s, &mcp.Tool{
@@ -383,10 +383,16 @@ type scanArgs struct {
 	MinSNR   float64 `json:"min_snr,omitempty" jsonschema:"leave out detections weaker than this many dB over the noise floor (default: 0, report everything found)"`
 	Device   string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the daemon picks an idle one)"`
 	TakeOver bool    `json:"take_over,omitempty" jsonschema:"sweep even when somebody is using the radio; it is theirs again afterwards (default: false)"`
+	Gain     string  `json:"gain,omitempty" jsonschema:"receiver gain to sweep at: auto (where the radio's AGC settles, then held for the sweep) or dB such as 30; the sweep always holds the gain still and Scan.gains says where (default: the gain the radio is on, which is whatever the last client left)"`
 }
 
 func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanArgs) (*mcp.CallToolResult, any, error) {
-	o := scanOptions{dwellMs: in.DwellMs, minSNR: in.MinSNR, takeOver: in.TakeOver, device: in.Device}
+	o := scanOptions{dwellMs: in.DwellMs, minSNR: in.MinSNR, takeOver: in.TakeOver, device: in.Device, gain: in.Gain}
+	if in.Gain != "" {
+		if _, _, err := leyline.ParseGain(in.Gain); err != nil {
+			return nil, nil, fmt.Errorf("gain %v", err)
+		}
+	}
 	if lo, hi, rerr := leyline.ParseUserRange(in.Range); rerr == nil {
 		o.minHz, o.maxHz, o.rangeInput = lo, hi, in.Range
 	} else if b, berr := leyline.ResolveBand(in.Range); berr == nil {

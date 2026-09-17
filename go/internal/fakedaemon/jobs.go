@@ -230,7 +230,11 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 		return
 	}
 	d.planScan(jobID, plan, rate)
-	gains := d.sweepGains(dev)
+	gains, gerr := d.sweepGains(dev, sc.GetGain())
+	if gerr != nil {
+		d.failScan(jobID, leyline.CodeGainElementUnknown, gerr.Error())
+		return
+	}
 	// Rows the dwell is meant to yield, fixed up front the way the daemon fixes its threshold:
 	// each row is one chance a signal has to appear, so this is what looks are counted in.
 	rows := uint32(max(2, int(dwellMs/rowIntervalMs(rate))))
@@ -330,12 +334,28 @@ func rowIntervalMs(rate uint64) float64 {
 
 // sweepGains is what the sweep froze the tuner at. AGC is pinned for the duration -- SNR measured
 // against a moving reference is not a number -- and where it was pinned is part of the answer,
-// because a scan without its gain is not comparable with another. An element already on a fixed
-// level keeps it; an automatic one is pinned where the middle of its table sits, which is what the
-// allocator falls back to when the driver will not say where AGC settled.
-func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor) []*leylinev1.GainState {
+// because a scan without its gain is not comparable with another. A requested gain pins its
+// element there (the first element when it names none; auto pins where the fake's AGC "settles",
+// the middle of the table); otherwise an element already on a fixed level keeps it, and an
+// automatic one is pinned at the middle of its table, which is what the allocator falls back to
+// when the driver will not say where AGC settled. An element the device does not have fails the
+// sweep, as the daemon's GAIN_ELEMENT_UNKNOWN does.
+func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor, want *leylinev1.GainWrite) ([]*leylinev1.GainState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	wantElement := want.GetElement()
+	if want != nil && wantElement == "" && len(dev.GainElements) > 0 {
+		wantElement = dev.GainElements[0].Name
+	}
+	if want != nil {
+		known := false
+		for _, el := range dev.GainElements {
+			known = known || el.Name == wantElement
+		}
+		if !known {
+			return nil, fmt.Errorf("the gain asked for could not be set: %s has no gain element %q", dev.Model, wantElement)
+		}
+	}
 	var out []*leylinev1.GainState
 	for _, el := range dev.GainElements {
 		g := &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, el.MaxDb/2)}
@@ -348,6 +368,13 @@ func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor) []*leylinev1.GainSt
 				}
 			}
 		}
+		if want != nil && el.Name == wantElement {
+			if db, ok := want.GetValue().(*leylinev1.GainWrite_Db); ok {
+				g = &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, db.Db)}
+			} else {
+				g = &leylinev1.GainState{Element: el.Name, Auto: true}
+			}
+		}
 		if g.Auto {
 			g.Auto = false
 			if n := len(el.ValidDb); n > 0 {
@@ -358,7 +385,7 @@ func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor) []*leylinev1.GainSt
 		}
 		out = append(out, g)
 	}
-	return out
+	return out, nil
 }
 
 // sweepSample is the sample position a detection is timed at: the capture's own clock when the

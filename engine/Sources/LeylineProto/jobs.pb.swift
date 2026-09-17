@@ -318,6 +318,21 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
   /// capture nobody is using. Without this a two-radio setup has no way to say which.
   public var deviceID: String = String()
 
+  /// The tuner gain to sweep at. A sweep always pins the gain for its whole duration, because SNR
+  /// against a moving AGC is not a number; this says where. `db` pins the element there (the first
+  /// gain element when `element` is empty); `auto` asks the driver where its AGC settles and pins
+  /// that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
+  /// which is why two sweeps of one band could differ by 6 dB of floor. `Scan.gains` reports the
+  /// level the sweep ran at either way, and the entry gain is restored when the radio is handed back.
+  public var gain: Leyline_V1_GainWrite {
+    get {_gain ?? Leyline_V1_GainWrite()}
+    set {_gain = newValue}
+  }
+  /// Returns true if `gain` has been explicitly set.
+  public var hasGain: Bool {self._gain != nil}
+  /// Clears the value of `gain`. Subsequent reads from it will return its default value.
+  public mutating func clearGain() {self._gain = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Schedule: Equatable, Sendable {
@@ -329,6 +344,7 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
   public init() {}
 
   fileprivate var _range: Leyline_V1_FrequencyRange? = nil
+  fileprivate var _gain: Leyline_V1_GainWrite? = nil
 }
 
 public nonisolated struct Leyline_V1_RecordConfig: Sendable {
@@ -445,60 +461,80 @@ public nonisolated struct Leyline_V1_Transcript: Sendable {
   public init() {}
 }
 
-public nonisolated struct Leyline_V1_Scan: Sendable {
+public nonisolated struct Leyline_V1_Scan: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var scanID: String = String()
+  public var scanID: String {
+    get {_storage._scanID}
+    set {_uniqueStorage()._scanID = newValue}
+  }
 
   public var config: Leyline_V1_ScanConfig {
-    get {_config ?? Leyline_V1_ScanConfig()}
-    set {_config = newValue}
+    get {_storage._config ?? Leyline_V1_ScanConfig()}
+    set {_uniqueStorage()._config = newValue}
   }
   /// Returns true if `config` has been explicitly set.
-  public var hasConfig: Bool {self._config != nil}
+  public var hasConfig: Bool {_storage._config != nil}
   /// Clears the value of `config`. Subsequent reads from it will return its default value.
-  public mutating func clearConfig() {self._config = nil}
+  public mutating func clearConfig() {_uniqueStorage()._config = nil}
 
-  public var detections: [Leyline_V1_Detection] = []
+  public var detections: [Leyline_V1_Detection] {
+    get {_storage._detections}
+    set {_uniqueStorage()._detections = newValue}
+  }
 
-  public var noiseFloor: [Leyline_V1_NoiseFloorSegment] = []
+  public var noiseFloor: [Leyline_V1_NoiseFloorSegment] {
+    get {_storage._noiseFloor}
+    set {_uniqueStorage()._noiseFloor = newValue}
+  }
 
-  public var startedAtNs: Int64 = 0
+  public var startedAtNs: Int64 {
+    get {_storage._startedAtNs}
+    set {_uniqueStorage()._startedAtNs = newValue}
+  }
 
-  public var completedAtNs: Int64 = 0
+  public var completedAtNs: Int64 {
+    get {_storage._completedAtNs}
+    set {_uniqueStorage()._completedAtNs = newValue}
+  }
 
   /// The gain the sweep pinned for its whole duration. A sweep must not run under the tuner's AGC
   /// -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
   /// scan that does not say which gain it ran at cannot be compared with another.
-  public var gains: [Leyline_V1_GainState] = []
+  public var gains: [Leyline_V1_GainState] {
+    get {_storage._gains}
+    set {_uniqueStorage()._gains = newValue}
+  }
 
   /// The analysis bin width, in Hz. Every dB in this message -- floor_dbfs, snr_db -- is per bin,
   /// and a bin's width is what makes those numbers mean anything: a wider bin holds more noise. A
   /// client should print this alongside the floor rather than deriving it from step_hz, which
   /// describes where the radio pointed and not how finely it looked.
-  public var resolutionHz: UInt32 = 0
+  public var resolutionHz: UInt32 {
+    get {_storage._resolutionHz}
+    set {_uniqueStorage()._resolutionHz = newValue}
+  }
 
   /// What the sweep actually covered. Never wider than config.range, and narrower whenever the
   /// radio could not reach all of it, the request fell partly in the tuner's own blind spot, or the
   /// sweep was stopped early. A client that reports config.range as though it were searched is
   /// claiming coverage nobody measured.
   public var covered: Leyline_V1_FrequencyRange {
-    get {_covered ?? Leyline_V1_FrequencyRange()}
-    set {_covered = newValue}
+    get {_storage._covered ?? Leyline_V1_FrequencyRange()}
+    set {_uniqueStorage()._covered = newValue}
   }
   /// Returns true if `covered` has been explicitly set.
-  public var hasCovered: Bool {self._covered != nil}
+  public var hasCovered: Bool {_storage._covered != nil}
   /// Clears the value of `covered`. Subsequent reads from it will return its default value.
-  public mutating func clearCovered() {self._covered = nil}
+  public mutating func clearCovered() {_uniqueStorage()._covered = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _config: Leyline_V1_ScanConfig? = nil
-  fileprivate var _covered: Leyline_V1_FrequencyRange? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct Leyline_V1_NoiseFloorSegment: Sendable {
@@ -995,7 +1031,7 @@ nonisolated extension Leyline_V1_WatchConfig: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScanConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}step_hz\0\u{3}dwell_ms\0\u{1}once\0\u{1}recurring\0\u{3}take_over\0\u{3}device_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}range\0\u{3}step_hz\0\u{3}dwell_ms\0\u{1}once\0\u{1}recurring\0\u{3}take_over\0\u{3}device_id\0\u{1}gain\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1024,6 +1060,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
       }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
+      case 8: try { try decoder.decodeSingularMessageField(value: &self._gain) }()
       default: break
       }
     }
@@ -1060,6 +1097,9 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
     if !self.deviceID.isEmpty {
       try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 7)
     }
+    try { if let v = self._gain {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1070,6 +1110,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
     if lhs.schedule != rhs.schedule {return false}
     if lhs.takeOver != rhs.takeOver {return false}
     if lhs.deviceID != rhs.deviceID {return false}
+    if lhs._gain != rhs._gain {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1267,71 +1308,123 @@ nonisolated extension Leyline_V1_Scan: SwiftProtobuf.Message, SwiftProtobuf._Mes
   public static let protoMessageName: String = _protobuf_package + ".Scan"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}scan_id\0\u{1}config\0\u{1}detections\0\u{3}noise_floor\0\u{3}started_at_ns\0\u{3}completed_at_ns\0\u{1}gains\0\u{3}resolution_hz\0\u{1}covered\0")
 
+  fileprivate class _StorageClass {
+    var _scanID: String = String()
+    var _config: Leyline_V1_ScanConfig? = nil
+    var _detections: [Leyline_V1_Detection] = []
+    var _noiseFloor: [Leyline_V1_NoiseFloorSegment] = []
+    var _startedAtNs: Int64 = 0
+    var _completedAtNs: Int64 = 0
+    var _gains: [Leyline_V1_GainState] = []
+    var _resolutionHz: UInt32 = 0
+    var _covered: Leyline_V1_FrequencyRange? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _scanID = source._scanID
+      _config = source._config
+      _detections = source._detections
+      _noiseFloor = source._noiseFloor
+      _startedAtNs = source._startedAtNs
+      _completedAtNs = source._completedAtNs
+      _gains = source._gains
+      _resolutionHz = source._resolutionHz
+      _covered = source._covered
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.scanID) }()
-      case 2: try { try decoder.decodeSingularMessageField(value: &self._config) }()
-      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.detections) }()
-      case 4: try { try decoder.decodeRepeatedMessageField(value: &self.noiseFloor) }()
-      case 5: try { try decoder.decodeSingularInt64Field(value: &self.startedAtNs) }()
-      case 6: try { try decoder.decodeSingularInt64Field(value: &self.completedAtNs) }()
-      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
-      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.resolutionHz) }()
-      case 9: try { try decoder.decodeSingularMessageField(value: &self._covered) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._scanID) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._config) }()
+        case 3: try { try decoder.decodeRepeatedMessageField(value: &_storage._detections) }()
+        case 4: try { try decoder.decodeRepeatedMessageField(value: &_storage._noiseFloor) }()
+        case 5: try { try decoder.decodeSingularInt64Field(value: &_storage._startedAtNs) }()
+        case 6: try { try decoder.decodeSingularInt64Field(value: &_storage._completedAtNs) }()
+        case 7: try { try decoder.decodeRepeatedMessageField(value: &_storage._gains) }()
+        case 8: try { try decoder.decodeSingularUInt32Field(value: &_storage._resolutionHz) }()
+        case 9: try { try decoder.decodeSingularMessageField(value: &_storage._covered) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.scanID.isEmpty {
-      try visitor.visitSingularStringField(value: self.scanID, fieldNumber: 1)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._scanID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._scanID, fieldNumber: 1)
+      }
+      try { if let v = _storage._config {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      if !_storage._detections.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._detections, fieldNumber: 3)
+      }
+      if !_storage._noiseFloor.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._noiseFloor, fieldNumber: 4)
+      }
+      if _storage._startedAtNs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._startedAtNs, fieldNumber: 5)
+      }
+      if _storage._completedAtNs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._completedAtNs, fieldNumber: 6)
+      }
+      if !_storage._gains.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._gains, fieldNumber: 7)
+      }
+      if _storage._resolutionHz != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._resolutionHz, fieldNumber: 8)
+      }
+      try { if let v = _storage._covered {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      } }()
     }
-    try { if let v = self._config {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    } }()
-    if !self.detections.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.detections, fieldNumber: 3)
-    }
-    if !self.noiseFloor.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.noiseFloor, fieldNumber: 4)
-    }
-    if self.startedAtNs != 0 {
-      try visitor.visitSingularInt64Field(value: self.startedAtNs, fieldNumber: 5)
-    }
-    if self.completedAtNs != 0 {
-      try visitor.visitSingularInt64Field(value: self.completedAtNs, fieldNumber: 6)
-    }
-    if !self.gains.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 7)
-    }
-    if self.resolutionHz != 0 {
-      try visitor.visitSingularUInt32Field(value: self.resolutionHz, fieldNumber: 8)
-    }
-    try { if let v = self._covered {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
-    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_Scan, rhs: Leyline_V1_Scan) -> Bool {
-    if lhs.scanID != rhs.scanID {return false}
-    if lhs._config != rhs._config {return false}
-    if lhs.detections != rhs.detections {return false}
-    if lhs.noiseFloor != rhs.noiseFloor {return false}
-    if lhs.startedAtNs != rhs.startedAtNs {return false}
-    if lhs.completedAtNs != rhs.completedAtNs {return false}
-    if lhs.gains != rhs.gains {return false}
-    if lhs.resolutionHz != rhs.resolutionHz {return false}
-    if lhs._covered != rhs._covered {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._scanID != rhs_storage._scanID {return false}
+        if _storage._config != rhs_storage._config {return false}
+        if _storage._detections != rhs_storage._detections {return false}
+        if _storage._noiseFloor != rhs_storage._noiseFloor {return false}
+        if _storage._startedAtNs != rhs_storage._startedAtNs {return false}
+        if _storage._completedAtNs != rhs_storage._completedAtNs {return false}
+        if _storage._gains != rhs_storage._gains {return false}
+        if _storage._resolutionHz != rhs_storage._resolutionHz {return false}
+        if _storage._covered != rhs_storage._covered {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
