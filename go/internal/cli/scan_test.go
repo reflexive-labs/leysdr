@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -49,6 +50,25 @@ func TestScanTable(t *testing.T) {
 	}
 	if strings.Contains(out, "sweeping") || strings.Contains(out, "signals,") {
 		t.Errorf("prose reached stdout:\n%s", out)
+	}
+}
+
+// The rows fewer than half the looks saw are named in a sentence, and the rows every look saw
+// are not: the SEEN column is the evidence, the sentence what it means.
+func TestScanNamesTheUnconfirmed(t *testing.T) {
+	var errb bytes.Buffer
+	app := &App{Stdout: &bytes.Buffer{}, Stderr: &errb, Style: ui.Style{}, ErrStyle: ui.Style{}, styled: true}
+	det := func(hz uint64, looks, possible uint32) *leylinev1.Detection {
+		return &leylinev1.Detection{CenterHz: hz, SnrDb: 20, Looks: looks, LooksPossible: possible}
+	}
+	unconfirmedNote(app, []*leylinev1.Detection{det(145_200_000, 4, 4), det(145_397_656, 1, 4), det(146_400_000, 2, 4)})
+	if out := errb.String(); !strings.Contains(out, "145.398 MHz (1/4)") || strings.Contains(out, "145.200") || strings.Contains(out, "146.400") {
+		t.Errorf("the one-look row and no other:\n%s", out)
+	}
+	errb.Reset()
+	unconfirmedNote(app, []*leylinev1.Detection{det(145_200_000, 4, 4), det(146_400_000, 1, 1)})
+	if errb.Len() != 0 {
+		t.Errorf("nothing to say when every row held:\n%s", errb.String())
 	}
 }
 

@@ -35,12 +35,12 @@ func (srv *mcpServer) registerTools() {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_devices",
-		Description: "List the radios the daemon can see, with their state, tuning ranges and gain elements (Control.ListDevices; ley devices). Returns a ListDevicesResponse.",
+		Description: "List the radios the daemon can see, with their state, tuning ranges and gain elements (Control.ListDevices; ley devices). get_state carries the same list under devices, so after get_state this call adds nothing. Returns a ListDevicesResponse.",
 		Annotations: readOnly,
 	}, srv.listDevices)
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_state",
-		Description: "Everything the daemon holds right now: devices, captures (a radio tuned to a band), channels (a station picked out of a capture), sinks and jobs (Control.GetState; ley state). Read this to orient before tuning or scanning. Returns a GetStateResponse.",
+		Description: "Everything the daemon holds right now: devices (the whole list_devices list), captures (a radio tuned to a band), channels (a station picked out of a capture), sinks and jobs (Control.GetState; ley state). Read this once to orient before tuning or scanning; it is the one call that needs to come first. Returns a GetStateResponse.",
 		Annotations: readOnly,
 	}, srv.getState)
 	mcp.AddTool(s, &mcp.Tool{
@@ -71,7 +71,7 @@ func (srv *mcpServer) registerTools() {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "snapshot",
 		Description: "One spectrum row of the band around a frequency (or a named band, or whatever the radio is already tuned to) as a PNG chart and as numbers: bins in dBFS, the noise floor, and the loudest local maxima (Bulk.Subscribe(FFT), one row; ley spectrum --json). " +
-			"Peaks are presentation, never called signals; scan is the honest detector. Returns {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}.",
+			"Peaks are presentation, never called signals; scan is the honest detector. Returns {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}; bins is null unless include_bins is true.",
 		Annotations: mutates,
 	}, srv.snapshot)
 	mcp.AddTool(s, &mcp.Tool{
@@ -81,7 +81,7 @@ func (srv *mcpServer) registerTools() {
 	}, srv.listDecoders)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "query_records",
-		Description: "Search the records kept decode jobs have written, newest first: who transmitted, what kind of record, what it said, with the anchors that date them (Decoders.QueryRecords; ley records). " +
+		Description: "Search the records kept decode jobs have written, newest first: who transmitted, what kind of record, what it said, with the anchors that date them (Decoders.QueryRecords; ley records). A record's deviceId is the transmitter as the protocol spells it: an APRS callsign with its SSID, an AIS MMSI. " +
 			"Only jobs started with keep write to the store. Returns a RecordPage; the text renders one line per record.",
 		Annotations: readOnly,
 	}, srv.queryRecords)
@@ -278,7 +278,7 @@ type tuneArgs struct {
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id (dev_...), id prefix or row number from list_devices (default: the first real radio)"`
 	Audio     bool   `json:"audio,omitempty" jsonschema:"also play the channel through the speakers of the machine the daemon runs on (default: false)"`
 	Keep      bool   `json:"keep,omitempty" jsonschema:"leave the channel running after this server exits (default: false; the channel ends with the agent's session)"`
-	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it; they fall silent (default: false, refuse and say who is listening)"`
+	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it; they fall silent (default: false, refuse and say who is listening). Send it only after a refusal named who is listening and taking the radio from them is the intent"`
 }
 
 func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneArgs) (*mcp.CallToolResult, any, error) {
@@ -382,7 +382,7 @@ type scanArgs struct {
 	DwellMs  uint32  `json:"dwell_ms,omitempty" jsonschema:"milliseconds to listen at each stop; longer finds weaker signals (default: the daemon's 250)"`
 	MinSNR   float64 `json:"min_snr,omitempty" jsonschema:"leave out detections weaker than this many dB over the noise floor (default: 0, report everything found)"`
 	Device   string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the daemon picks an idle one)"`
-	TakeOver bool    `json:"take_over,omitempty" jsonschema:"sweep even when somebody is using the radio; it is theirs again afterwards (default: false)"`
+	TakeOver bool    `json:"take_over,omitempty" jsonschema:"sweep even when somebody is using the radio; it is theirs again afterwards (default: false). Send it only after a refusal named who is using it"`
 	Gain     string  `json:"gain,omitempty" jsonschema:"receiver gain to sweep at: auto (where the radio's AGC settles, then held for the sweep) or dB such as 30; the sweep always holds the gain still and Scan.gains says where (default: the gain the radio is on, which is whatever the last client left)"`
 }
 
@@ -463,7 +463,7 @@ type listenSummaryArgs struct {
 	Squelch   string  `json:"squelch,omitempty" jsonschema:"auto (the default for nfm and am: a transmission is a squelch-open interval, so a squelch is what makes one countable), off, or dBFS such as -40; not with a channel id"`
 	Gain      string  `json:"gain,omitempty" jsonschema:"receiver gain: auto, or dB such as 30 (default: leave it); not with a channel id"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the first real radio)"`
-	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who)"`
+	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who). Send it only after a refusal named who is listening; a channel this tool made itself is gone when it returns and needs no taking over"`
 }
 
 // listenMaxSeconds bounds a listen_summary, because a tool call that runs for
@@ -703,6 +703,10 @@ func (s *session) summarise(ctx context.Context, dur time.Duration) (*listenSumm
 	}
 }
 
+// squelchNearMissDb is how far under the threshold the loudest reading may sit for a squelch
+// that never opened to be called a near miss rather than an empty channel.
+const squelchNearMissDb = 3.0
+
 // finish turns the running sums into the stats: fractions need the count. With the squelch off
 // there is no gate to be open or closed, so the open fraction and the edges are not reported: a
 // squelch that is off reads as open on every block, and "open 100% of the time" on a channel at
@@ -754,6 +758,14 @@ func (sum *listenSummary) text(s *session, dur time.Duration) string {
 		b.WriteString(" A transmission was still in progress when the window ended.")
 	}
 	m := sum.meter
+	// A squelch that never opened while the level sat just under it is the 10 dB margin of the
+	// auto squelch excluding a weak, steady signal, not silence: say so, or the agent reads
+	// "0 transmissions" as an empty channel and listens again to find out.
+	if m.Samples > 0 && !leyline.SquelchOff(m.SquelchDb) && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
+		m.SquelchDb-m.MaxPowerDbfs <= squelchNearMissDb {
+		fmt.Fprintf(&b, " The squelch never opened, but the level reached %.0f dBFS against a threshold of %.0f: a steady signal just under the margin, not an empty channel. squelch: off (or a lower squelch) hears it.",
+			m.MaxPowerDbfs, m.SquelchDb)
+	}
 	switch {
 	case m.Samples > 0 && leyline.SquelchOff(m.SquelchDb):
 		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch off: the level range is the whole story.",
@@ -779,8 +791,12 @@ type snapshotArgs struct {
 	Span      string `json:"span,omitempty" jsonschema:"width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate, snapped to one the radio supports (default: the radio's default, or the width it is already capturing)"`
 	Bins      uint32 `json:"bins,omitempty" jsonschema:"number of bins across the band (default 1024; the daemon may round it)"`
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the first real radio)"`
-	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who)"`
+	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who). Send it only after a refusal named who is listening"`
 	NoImage   bool   `json:"no_image,omitempty" jsonschema:"return the numbers only, no PNG (default: false)"`
+	// IncludeBins puts the row's bins in the structured result. Off by default: 1024 numbers are
+	// a page of JSON an agent rarely reads, and 2048 were 39 KB in one survey. The text and the
+	// peaks say what stood out; the PNG is drawn from the bins whether or not they are returned.
+	IncludeBins bool `json:"include_bins,omitempty" jsonschema:"put the row's bins (dBFS, one number a bin) in the structured result; the floor and peaks are always there (default: false, bins is null)"`
 }
 
 // snapshotFirstRow bounds the wait for the one row a snapshot needs.
@@ -842,11 +858,18 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
-	raw, err := json.Marshal(row)
+	returned := *row
+	if !in.IncludeBins {
+		returned.Bins = nil
+	}
+	raw, err := json.Marshal(returned)
 	if err != nil {
 		return nil, nil, err
 	}
 	text := errb.String() + snapshotText(row, s)
+	if !in.IncludeBins {
+		text += fmt.Sprintf("the %d bins are left out of the result; include_bins: true returns them.\n", len(row.Bins))
+	}
 	if b := bo.band; b != nil && row.SpanHz < b.WidthHz() {
 		lo, hi := row.CenterHz-row.SpanHz/2, row.CenterHz+row.SpanHz/2
 		text += fmt.Sprintf("this row covers %s to %s of the %s band's %s to %s: %s of it. A radio that captures wider shows more at once; scan sweeps the rest.\n",
@@ -1071,7 +1094,7 @@ type listEntitiesArgs struct {
 	DurationS float64 `json:"duration_s,omitempty" jsonschema:"how long to listen for records before answering, in seconds (default 5, at most 300); a decode job already running replays what it retained first"`
 	SinceS    float64 `json:"since_s,omitempty" jsonschema:"seed the table from kept records this many seconds old, before listening"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio to start the decoder on, when one has to be started (default: the daemon picks)"`
-	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"start the decoder even when somebody is using the radio (default: false)"`
+	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"start the decoder even when somebody is using the radio (default: false). Send it only after a refusal named who is using it"`
 }
 
 func (srv *mcpServer) listEntities(ctx context.Context, _ *mcp.CallToolRequest, in listEntitiesArgs) (*mcp.CallToolResult, any, error) {

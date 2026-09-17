@@ -430,6 +430,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 	// to 80 would silently drop the BAND column out of a piped table.
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
 	fmt.Fprintf(app.Stderr, "%s%s%s\n", plural(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan))
+	unconfirmedNote(app, rows)
 	coverageNote(app, scan, o)
 	if best := strongest(rows); best != nil {
 		fmt.Fprintf(app.Stderr, "  %s\n", st.Cmd("ley listen "+trimZeros(float64(best.CenterHz)/1e6)))
@@ -479,6 +480,23 @@ func widthCell(d *leylinev1.Detection, scan *leylinev1.Scan) string {
 // reports is per. The daemon states it; deriving it from step_hz meant knowing the geometry
 // constants and the bin count, and got it 25% wrong when either changed.
 func binWidth(scan *leylinev1.Scan) float64 { return float64(scan.GetResolutionHz()) }
+
+// unconfirmedNote names the rows fewer than half their looks saw: a burst, or a fluctuation of
+// the floor that one look caught. The SEEN column says it too, but a reader adding up a band
+// needs the sentence, and an agent otherwise sweeps again to learn what the column meant.
+func unconfirmedNote(app *App, rows []*leylinev1.Detection) {
+	var weak []string
+	for _, d := range rows {
+		if d.LooksPossible > 1 && d.Looks*2 < d.LooksPossible {
+			weak = append(weak, fmt.Sprintf("%s (%s)", leyline.FormatFrequency(d.CenterHz), seenCell(d)))
+		}
+	}
+	if len(weak) == 0 {
+		return
+	}
+	fmt.Fprintf(app.Stderr, "seen by fewer than half the looks, so a burst or the floor moving rather than a carrier that stayed: %s. A longer dwell settles it.\n",
+		strings.Join(weak, ", "))
+}
 
 // seenCell is the evidence: how many looks found it, out of how many looked.
 func seenCell(d *leylinev1.Detection) string {

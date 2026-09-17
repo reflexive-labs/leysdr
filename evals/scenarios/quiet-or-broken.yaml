@@ -9,8 +9,9 @@ description: A kept decoder hears nothing on a noise-only channel; the agent mus
 fixtures:
   - file: noise_floor.cf32
     as: radio-d           # complex white noise at -60 dBFS, nothing else
+    center: "144.39"      # placed on the APRS channel: noise has no frequency of its own
 setup:
-  - job: {decoder: aprs, frequency: "146.62", keep: true}
+  - job: {decoder: aprs, keep: true}
 task: |
   An APRS decoder was started earlier as a kept job on this daemon and has produced nothing.
   Is APRS decoding working? Decide whether the radio chain is working and the band is simply

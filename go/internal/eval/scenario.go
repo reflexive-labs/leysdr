@@ -64,6 +64,10 @@ type Fixture struct {
 	// Optional, when true, skips the scenario rather than failing it when the file is missing:
 	// a real-radio capture that lives on one checkout.
 	Optional bool `yaml:"optional"`
+	// Center, when set, is where the radio says it is tuned (a bare number is MHz) instead of
+	// the recording's own centre: a noise-only fixture has no frequency of its own, and placing
+	// it on a decoder's channel keeps the agent from noticing the frequency is off the recipe.
+	Center string `yaml:"center"`
 }
 
 // SetupStep is one thing done to the daemon before the agent starts.

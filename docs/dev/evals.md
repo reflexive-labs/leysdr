@@ -51,6 +51,8 @@ Each run makes `evals/runs/<timestamp>/<scenario>/` (gitignored) holding:
   neutral names.
 - `result.json`: the verdicts and the metrics (tool calls by tool, host calls, tool errors, turns,
   duration, cost).
+- `socket.txt`, only when the run directory's path is too long for a Unix socket (about 100
+  bytes): the daemon's socket went in a short temp directory instead, and this says where.
 
 The summary table at the end has one line a scenario: passed, failed, tool calls, host calls,
 cost. A scenario whose fixture is not on the machine is skipped and says so; a harness failure (the
@@ -69,6 +71,7 @@ fixtures:
     as: radio-a            # the model name the agent sees
     capture: false         # leave the radio idle (default: tune it to the recording's centre)
     optional: false        # true skips the scenario when the file is missing, for local captures
+    center: "144.39"       # tell the radio it is here rather than at the recording's centre (noise has none)
 setup:                     # after the fixtures, before the agent
   - ley: ["tune", "146.52", "--persistent", "--no-audio"]
   - job: {decoder: aprs, frequency: "146.62", keep: true}

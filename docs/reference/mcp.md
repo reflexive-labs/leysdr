@@ -94,7 +94,7 @@ are optional in the schema; the defaults are the mirror verb's.
 | `tune` | `ley tune` | `CreateCapture`, `CreateChannel`, `WriteParams` | `frequency`; `mode`, `bandwidth`, `squelch`, `gain`, `device`, `audio`, `keep`, `take_over` | `{capture, channel, sink}` |
 | `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `gain`, `device`, `take_over` | `Scan` |
 | `listen_summary` | `ley tune`, `ley listen` | `Telemetry.Subscribe`, bounded | `target` (frequency, preset or `chan_…`); `duration_s` (default 10, at most 300), `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | `{channel, transcript, meter, tone}` |
-| `snapshot` | `ley spectrum --json` | `Bulk.Subscribe(FFT)`, one row | `frequency` or `band`; `span`, `bins` (default 1024), `device`, `take_over`, `no_image` | the spectrum row, plus a PNG |
+| `snapshot` | `ley spectrum --json` | `Bulk.Subscribe(FFT)`, one row | `frequency` or `band`; `span`, `bins` (default 1024), `device`, `take_over`, `no_image`, `include_bins` | the spectrum row (`bins` null unless `include_bins`), plus a PNG |
 | `list_decoders` | `ley decoders` | `Decoders.ListDecoders` | none | `ListDecodersResponse` |
 | `query_records` | `ley records` | `Decoders.QueryRecords` | `protocol`, `job_id`, `device_id`, `kind`, `since_s`, `near` + `radius`, `in_effect`, `limit` | `RecordPage` |
 | `list_entities` | `ley track --json` | `Decoders.SubscribeRecords` + the `records.Table` fold | `protocol`; `duration_s` (default 5, at most 300), `since_s`, `device`, `take_over` | `{entities: […]}` |
@@ -129,7 +129,8 @@ Notes a table cell cannot hold:
 - **`scan`** takes the seconds a sweep takes, owns the radio meanwhile, and declines a radio somebody
   is using with the daemon's sentence and the remedy (`take_over: true`). A detection is a carrier
   that stood above the measured noise floor with the looks that saw it (`looks`/`looksPossible`);
-  it is never a protocol or a station, and the text says so. The text is `ley scan`'s table
+  it is never a protocol or a station, and the text says so, and names the detections fewer than
+  half the looks saw, so a one-look blip is not re-swept to find out what the column meant. The text is `ley scan`'s table
   and summary line, band-plan labels included. `min_snr` trims the returned `Scan`'s detections
   the way `ley scan --min-snr` trims its rows, because a 20 MHz sweep is hundreds of detections
   and more JSON than a result budget holds; the whole sweep stays readable as `ley://scans/<id>`
@@ -146,7 +147,9 @@ Notes a table cell cannot hold:
   squelch having been open when listening began (a channel made with the squelch off starts open,
   and the threshold written a moment later closes it on the first quiet block), not a
   transmission this call observed: it is reported as `meter.open_at_start` and never as a
-  segment. Given a channel id it taps a channel already running and refuses the tune arguments,
+  segment. A squelch that never opened while the loudest reading sat within 3 dB under it is
+  said to be a steady signal just under the auto squelch's margin, with `squelch: off` as the
+  remedy, since "0 transmissions" on a weak carrier was read as an empty channel. Given a channel id it taps a channel already running and refuses the tune arguments,
   as `ley listen chan_…` does. A channel it made is removed when it returns.
 - **`snapshot`** draws one FFT row as a PNG (`image/png` content, beside the text) and returns the
   row as numbers. The plot is one pixel per negotiated bin on a dark ground: the trace, a dashed
@@ -155,7 +158,10 @@ Notes a table cell cannot hold:
   the same five stops the terminal chart uses, so a level is the same colour in both. `peaks` are
   local maxima at least 15 dB over the row's median, presentation only; `scan` is the detector.
   Like `ley spectrum` it reuses a capture that covers the frequency, refuses to move one others
-  are listening on, and removes a capture it made. `no_image: true` returns the numbers alone.
+  are listening on, and removes a capture it made. `no_image: true` returns the numbers alone,
+  and `bins` is `null` unless `include_bins: true`: a row of 1024 numbers is a page of JSON an
+  agent rarely reads (a 2048-bin survey was 39 KB), and the floor, the peaks and the text say
+  what stood out.
   A band wider than the radio captures (the FM broadcast band is 20 MHz; an RTL-SDR captures
   3.2 at most) is shown centred, and the text says which frequencies the row covers and what
   share of the band that is; a radio that captures wider shows more at once, and `scan` sweeps

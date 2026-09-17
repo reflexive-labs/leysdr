@@ -386,7 +386,7 @@ func TestMCPListenSummary(t *testing.T) {
 // whose plot is one pixel per negotiated bin.
 func TestMCPSnapshot(t *testing.T) {
 	h := newMCPHarness(t)
-	res := h.must(t, "snapshot", map[string]any{"frequency": "146.52", "bins": 256})
+	res := h.must(t, "snapshot", map[string]any{"frequency": "146.52", "bins": 256, "include_bins": true})
 	raw, _ := json.Marshal(res.StructuredContent)
 	var row SpectrumRow
 	if err := json.Unmarshal(raw, &row); err != nil {
@@ -423,6 +423,16 @@ func TestMCPSnapshot(t *testing.T) {
 		if _, ok := c.(*mcp.ImageContent); ok {
 			t.Error("no_image still drew a picture")
 		}
+	}
+	// The bins are on request: the floor and the peaks are the result, the numbers a page.
+	raw, _ = json.Marshal(bare.StructuredContent)
+	var bareRow SpectrumRow
+	_ = json.Unmarshal(raw, &bareRow)
+	if bareRow.Bins != nil || bareRow.CenterHz != 146_520_000 || !strings.Contains(string(raw), `"bins":null`) {
+		t.Errorf("without include_bins the row must carry null bins: %s", raw)
+	}
+	if !strings.Contains(resultText(bare), "include_bins: true returns them") {
+		t.Errorf("text:\n%s", resultText(bare))
 	}
 	// Without a frequency and with an idle radio there is nothing to draw.
 	if r := h.call(t, "snapshot", nil); !r.IsError || !strings.Contains(resultText(r), "not tuned to anything yet") {
@@ -634,6 +644,30 @@ func TestListenSummaryFold(t *testing.T) {
 	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
 	if !strings.Contains(text, "1 transmission") || !strings.Contains(text, "already open when listening began") {
 		t.Errorf("text:\n%s", text)
+	}
+}
+
+// A squelch that never opened with the level just under it is a weak steady signal the auto
+// margin excluded, and the text says so; one well under is an empty channel and it does not.
+func TestListenSummaryNamesANearMiss(t *testing.T) {
+	at := func(idx uint64) *leylinev1.SampleTime { return &leylinev1.SampleTime{SampleIndex: idx} }
+	meter := func(sum *listenSummary, db float64) {
+		sum.apply(&leylinev1.TelemetryMsg{Time: at(1), Body: &leylinev1.TelemetryMsg_Meter{Meter: &leylinev1.Meter{PowerDbfs: db}}})
+	}
+	sess := &session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}
+	near := newListenSummary(-23, 2_400_000)
+	meter(near, -27)
+	meter(near, -24)
+	near.finish()
+	if text := near.text(sess, 15*time.Second); !strings.Contains(text, "just under the margin") || !strings.Contains(text, "squelch: off") {
+		t.Errorf("a near miss must be named:\n%s", text)
+	}
+	empty := newListenSummary(-23, 2_400_000)
+	meter(empty, -60)
+	meter(empty, -58)
+	empty.finish()
+	if text := empty.text(sess, 15*time.Second); strings.Contains(text, "just under the margin") {
+		t.Errorf("an empty channel is not a near miss:\n%s", text)
 	}
 }
 

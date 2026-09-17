@@ -40,15 +40,32 @@ type daemon struct {
 	env    Env
 	dir    string
 	socket string
-	store  string
-	cmd    *exec.Cmd
-	logBuf *os.File
-	client *leyline.Client
+	// socketDir is the short temp directory the socket was moved to, or empty; removed on stop.
+	socketDir string
+	store     string
+	cmd       *exec.Cmd
+	logBuf    *os.File
+	client    *leyline.Client
 }
 
-// startDaemon brings up a daemon on a temp socket with a temp store.
+// socketPathMax is the longest Unix socket path both platforms accept (104 bytes on macOS,
+// 108 on Linux), with room for the pidfile the daemon puts beside it.
+const socketPathMax = 96
+
+// startDaemon brings up a daemon on a temp socket with a temp store. The socket sits in the run
+// directory unless that path is too long for a Unix socket, in which case it goes in a short
+// temp directory of its own and the run directory gets a note saying where.
 func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
 	d := &daemon{env: env, dir: dir, socket: filepath.Join(dir, "d.sock"), store: filepath.Join(dir, "store")}
+	if len(d.socket) > socketPathMax {
+		short, err := os.MkdirTemp("", "ley")
+		if err != nil {
+			return nil, err
+		}
+		d.socketDir = short
+		d.socket = filepath.Join(short, "d.sock")
+		_ = os.WriteFile(filepath.Join(dir, "socket.txt"), []byte(d.socket+"\n"), 0o644)
+	}
 	logPath := filepath.Join(dir, "leylined.log")
 	f, err := os.Create(logPath)
 	if err != nil {
@@ -102,6 +119,9 @@ func (d *daemon) stop() {
 			<-done
 		}
 	}
+	if d.socketDir != "" {
+		_ = os.RemoveAll(d.socketDir)
+	}
 	if d.logBuf != nil {
 		_ = d.logBuf.Close()
 	}
@@ -130,6 +150,13 @@ func (d *daemon) attach(ctx context.Context, f Fixture) error {
 	}
 	if err := json.Unmarshal(raw, &side); err != nil {
 		return fmt.Errorf("fixture %s: sidecar: %w", f.File, err)
+	}
+	if f.Center != "" {
+		hz, err := leyline.ParseUserFrequency(f.Center)
+		if err != nil {
+			return fmt.Errorf("fixture %s: center: %w", f.File, err)
+		}
+		side.CenterHz = hz
 	}
 	dstDir := filepath.Join(d.dir, "radios")
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
