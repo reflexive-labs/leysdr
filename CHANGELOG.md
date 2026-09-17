@@ -36,5 +36,9 @@ Nothing has been released yet. This file starts with everything that exists on `
   `ley://records/<job_id>`. Every tool returns the proto3 JSON its `ley` mirror prints and a short
   summary; what an agent starts ends with its conversation unless it asks to keep it
   (`docs/reference/mcp.md`).
+- Sweeps take a gain (`ley scan --gain 30|auto`, the MCP tool's `gain`) and say which they ran at; a
+  running decode job's detail says how many records it has heard and how long ago; a decode job
+  started with `--job` comes back after a daemon restart as the same job; the tone detector holds
+  out for a second before naming a PL, so a synthesised voice is no longer one.
 - Not yet: recording to files, watch jobs and transcripts, the TUI dashboard, the Mac app
   (`docs/plans/build-order.md` has the order).

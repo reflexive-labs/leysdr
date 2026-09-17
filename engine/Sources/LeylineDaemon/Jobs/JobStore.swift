@@ -2,10 +2,12 @@
 
 // The job table. A table of watches, not a workflow engine: no retry DAG, no replay.
 //
-// v0 holds jobs and their scans in memory and loses them on restart, because the only job type
-// that exists is an ad-hoc scan and an ad-hoc scan is ephemeral by design -- persistence follows
-// intent (invariant 8), and nobody typing `ley scan` has declared an intent to keep anything.
-// Durable jobs and the resource store arrive together at Milestone D.15.
+// Jobs and their scans live in memory and are lost on restart, because an ad-hoc scan is ephemeral
+// by design -- persistence follows intent (invariant 8), and nobody typing `ley scan` has declared
+// an intent to keep anything. The one job that has declared it, a decode job started with `keep`,
+// is written to `kept-jobs.json` beside the record store and resumed at the next boot under the
+// same id, its records appending to the same files (DEC-11). The rest of the durable job store
+// (recurring scans, watch jobs, transcripts) arrives at Milestone D.15.
 
 import EngineCore
 import Foundation
@@ -56,12 +58,126 @@ actor JobStore {
     private var detectionSinks: [UUID: (filter: CaptureID?,
                                         continuation: AsyncStream<(Leyline_V1_Detection, SampleTime)>.Continuation,
                                         subscription: DetectionSubscription)] = [:]
+    /// Set by cancelAll: the daemon is going down, and a kept job ending now is to be resumed,
+    /// not forgotten.
+    private var shuttingDown = false
 
     init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry, records: RecordStore) {
         self.store = store
         self.allocator = allocator
         self.decoders = decoders
         self.records = records
+    }
+
+    // MARK: Kept jobs across a restart (DEC-11)
+
+    /// One kept decode job as the file holds it: enough to start it again as the same job.
+    struct KeptJob: Codable, Sendable {
+        var jobID: String
+        var createdAtNs: Int64
+        /// The DecodeConfig in proto3 JSON, so the file carries no shape of its own.
+        var config: String
+        var createdBy: KeptClient
+
+        struct KeptClient: Codable, Sendable {
+            var clientID: String
+            var kind: String
+            var label: String
+            enum CodingKeys: String, CodingKey {
+                case clientID = "client_id"
+                case kind, label
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case jobID = "job_id"
+            case createdAtNs = "created_at_ns"
+            case config
+            case createdBy = "created_by"
+        }
+    }
+
+    private struct KeptFile: Codable {
+        var jobs: [KeptJob]
+    }
+
+    /// `kept-jobs.json` beside the record store, which is where a kept job's records already are.
+    nonisolated var keptJobsPath: String { records.directory + "/kept-jobs.json" }
+
+    /// Rewrites the file from the live kept jobs. Called when one starts and when one ends, not
+    /// on shutdown: a kept job the daemon took down with itself is exactly the one to bring back.
+    private func persistKept() {
+        var kept: [KeptJob] = []
+        for id in order {
+            guard let e = entries[id], e.keep, Self.isLive(e.proto.state), case .decode(let config) = e.proto.config else { continue }
+            let by = e.proto.createdBy
+            kept.append(KeptJob(jobID: id.string, createdAtNs: e.proto.createdAtNs,
+                                config: (try? config.jsonString()) ?? "{}",
+                                createdBy: .init(clientID: by.clientID, kind: by.kind, label: by.label)))
+        }
+        do {
+            try FileManager.default.createDirectory(atPath: records.directory, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(KeptFile(jobs: kept)).write(to: URL(fileURLWithPath: keptJobsPath), options: .atomic)
+        } catch {
+            log.warning("could not write \(keptJobsPath): \(error); kept jobs will not survive a restart")
+        }
+    }
+
+    /// The kept jobs the last daemon left running, from disk. Advisory: a missing or unreadable
+    /// file is an empty list.
+    private func readKept() -> [KeptJob] {
+        guard let data = FileManager.default.contents(atPath: keptJobsPath) else { return [] }
+        do {
+            return try JSONDecoder().decode(KeptFile.self, from: data).jobs
+        } catch {
+            log.warning("\(keptJobsPath) does not parse (\(error)); no kept jobs resumed")
+            return []
+        }
+    }
+
+    /// Brings back the kept jobs the last daemon was running, once a radio is here to run them
+    /// on. Returns at once; the wait for a radio (an rtl_tcp reconnect takes seconds) happens on
+    /// its own task, bounded, and a job whose radio never comes fails the way it would have
+    /// failed at start, with the reason in its status.
+    func resumeKept() {
+        let kept = readKept()
+        guard !kept.isEmpty else { return }
+        log.info("resuming \(kept.count) kept decode job(s) from \(keptJobsPath)")
+        Task { [weak self] in
+            guard let self else { return }
+            let deadline = ContinuousClock.now.advanced(by: .seconds(Self.resumeWaitSeconds))
+            while await self.store.snapshot(scope: .daemon).devices.isEmpty, ContinuousClock.now < deadline {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            for job in kept {
+                await self.resume(job)
+            }
+        }
+    }
+
+    /// How long a resume waits for a radio before starting the jobs anyway.
+    static let resumeWaitSeconds = 20.0
+
+    private func resume(_ kept: KeptJob) async {
+        guard let id = JobID(string: kept.jobID) else {
+            log.warning("kept job \(kept.jobID): not a job id; dropped")
+            return
+        }
+        guard let config = try? Leyline_V1_DecodeConfig(jsonString: kept.config) else {
+            log.warning("kept job \(kept.jobID): its config does not parse; dropped")
+            return
+        }
+        let by = ClientContext(id: kept.createdBy.clientID, kind: kept.createdBy.kind, label: kept.createdBy.label)
+        do {
+            _ = try await startDecode(config: config, by: by, resuming: (id: id, createdAtNs: kept.createdAtNs))
+        } catch {
+            // A decoder that is no longer installed, most likely. Said once, then forgotten: the
+            // file is rewritten from what is live, and this is not.
+            log.warning("kept job \(kept.jobID) could not be resumed: \(error)")
+            persistKept()
+        }
     }
 
     // MARK: Detections on the telemetry plane
@@ -146,6 +262,8 @@ actor JobStore {
     }
 
     func cancelAll() async {
+        // The daemon is going down: what ends here is not forgotten, it is resumed at the next boot.
+        shuttingDown = true
         // Cancel every task first, then wait: a shutdown with several sweeps running should not
         // serialise their teardowns.
         for e in entries.values where Self.isLive(e.proto.state) { e.task?.cancel() }
@@ -426,7 +544,11 @@ actor JobStore {
     /// Runs a decoder on its recipe (docs/design/decoders.md, "Decisions": "A decode job is a job").
     /// The lookup and the refusals happen here, where the caller can be told; everything that can
     /// take a radio's time happens in the task.
-    func startDecode(config: Leyline_V1_DecodeConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
+    /// `resuming` starts a kept job again as the job it was (DEC-11): the same id, so its records
+    /// and its resource URI carry on, and the time it was first started.
+    func startDecode(config: Leyline_V1_DecodeConfig, by client: ClientContext,
+                     resuming: (id: JobID, createdAtNs: Int64)? = nil) async throws -> Leyline_V1_Job
+    {
         guard let installed = decoders.find(config.decoder) else {
             throw EngineError.decoderNotFound(config.decoder)
         }
@@ -442,14 +564,14 @@ actor JobStore {
             throw EngineError.deviceNotFound(config.deviceID)
         }
 
-        let id = JobID()
+        let id = resuming?.id ?? JobID()
         var job = Leyline_V1_Job()
         job.jobID = id.string
         job.state = .running
-        job.createdAtNs = realtimeNs()
+        job.createdAtNs = resuming?.createdAtNs ?? realtimeNs()
         job.createdBy = client.proto
         job.config = .decode(config)
-        job.statusDetail = "starting"
+        job.statusDetail = resuming == nil ? "starting" : "resuming after a daemon restart"
         // Persistence follows intent (invariant 8): only a kept job has a resource.
         if config.keep { job.resultUris = ["ley://records/\(id.string)"] }
 
@@ -462,6 +584,7 @@ actor JobStore {
         entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil, keep: config.keep)
         order.append(id)
         trim()
+        if config.keep { persistKept() }
         await store.publishJob(job)
         return job
     }
@@ -515,7 +638,8 @@ actor JobStore {
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
-            })
+            },
+            seqStart: await writer?.recordCount ?? 0)
         entries[id]?.decode = runner
         await runner.start()
     }
@@ -551,7 +675,8 @@ actor JobStore {
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
-            })
+            },
+            seqStart: await writer?.recordCount ?? 0)
         entries[id]?.decode = runner
         await runner.start()
     }
@@ -658,6 +783,8 @@ actor JobStore {
             e.scan = scan
         }
         entries[id] = e
+        // A kept job that ended by a cancel or a failure is over; one the shutdown ended is not.
+        if e.keep, !shuttingDown { persistKept() }
         await store.publishJob(e.proto)
     }
 

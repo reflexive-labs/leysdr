@@ -19,12 +19,18 @@ struct StoredAnchor: Codable, Sendable {
     var sampleRate: UInt64
     var driftPpm: Double
     var fromSample: UInt64
+    /// The capture this anchor dates, once a job has outlived one: a kept job resumed after a
+    /// daemon restart writes into the same file from a new capture whose sample index starts
+    /// over, and an anchor that did not say which capture it belonged to would date the old
+    /// records by the new clock. Absent in sidecars written before DEC-11, which had one capture.
+    var captureID: String?
 
     enum CodingKeys: String, CodingKey {
         case hostTimeNs = "host_time_ns"
         case sampleRate = "sample_rate"
         case driftPpm = "drift_ppm"
         case fromSample = "from_sample"
+        case captureID = "capture_id"
     }
 
     /// Wall clock for a sample index on the capture this anchor belongs to.
@@ -85,18 +91,32 @@ actor RecordStore {
 
     /// Opens a writer for a kept job. Throws if the store directory cannot be made: a `keep` job
     /// that silently kept nothing would be worse than one that refused to start.
+    ///
+    /// A job the store already has files for -- a kept job resumed after a daemon restart
+    /// (DEC-11) -- appends to them: the records and the count carry on, the old anchors stay
+    /// (each naming the capture it dated), and the new capture's anchor joins them.
     func open(job: JobID, config: Leyline_V1_DecodeConfig, manifest: Leyline_V1_DecoderManifest,
               capture: CaptureID, anchor: CaptureAnchor?) throws -> RecordWriter
     {
         try FileManager.default.createDirectory(atPath: recordsDir, withIntermediateDirectories: true)
         let base = recordsDir + "/" + job.string
+        let fresh = anchor.map { [StoredAnchor(hostTimeNs: $0.hostTimeNsAtSampleZero, sampleRate: $0.sampleRate,
+                                               driftPpm: $0.driftPPM, fromSample: 0, captureID: capture.string)] } ?? []
+        if let data = FileManager.default.contents(atPath: base + ".json"),
+           var existing = try? JSONDecoder().decode(RecordSidecar.self, from: data)
+        {
+            // Anchors written before captures were named belong to the capture the sidecar named.
+            for i in existing.anchors.indices where existing.anchors[i].captureID == nil {
+                existing.anchors[i].captureID = existing.captureID
+            }
+            existing.captureID = capture.string
+            existing.anchors.append(contentsOf: fresh)
+            return try RecordWriter(base: base, sidecar: existing)
+        }
         let sidecar = RecordSidecar(
             jobID: job.string, decoder: manifest.name, version: manifest.version,
             config: (try? config.jsonString()) ?? "{}", createdAtNs: realtimeNs(),
-            captureID: capture.string,
-            anchors: anchor.map { [StoredAnchor(hostTimeNs: $0.hostTimeNsAtSampleZero, sampleRate: $0.sampleRate,
-                                                driftPpm: $0.driftPPM, fromSample: 0)] } ?? [],
-            count: 0)
+            captureID: capture.string, anchors: fresh, count: 0)
         return try RecordWriter(base: base, sidecar: sidecar)
     }
 }
@@ -132,10 +152,9 @@ extension RecordStore {
         // no others.
         let wanted = Set(hits.map(\.job))
         for (job, entry) in anchors.sorted(by: { $0.key < $1.key }) where wanted.contains(job) {
-            let captureID = entry.captureID
             for a in entry.list {
                 var ra = Leyline_V1_RecordAnchor()
-                ra.anchor.captureID = captureID
+                ra.anchor.captureID = a.captureID ?? entry.captureID
                 ra.anchor.hostTimeNs = a.hostTimeNs
                 ra.anchor.sampleRate = a.sampleRate
                 ra.anchor.driftPpm = a.driftPpm
@@ -243,11 +262,15 @@ extension RecordStore {
     /// The newest anchor whose `from_sample` is not past the record's, as the contract says.
     private func wallTime(_ rec: Leyline_V1_DecodeRecord, _ s: RecordSidecar) -> Int64 {
         let sample = rec.time.sampleIndex
+        // Only the anchors of the capture the record was decoded on: a resumed job's file holds
+        // two captures' timelines, and each starts at sample zero.
+        let mine = s.anchors.filter { ($0.captureID ?? s.captureID) == rec.time.captureID }
+        let candidates = mine.isEmpty ? s.anchors : mine
         var chosen: StoredAnchor?
-        for a in s.anchors where a.fromSample <= sample {
+        for a in candidates where a.fromSample <= sample {
             if chosen == nil || a.fromSample >= chosen!.fromSample { chosen = a }
         }
-        guard let anchor = chosen ?? s.anchors.first else { return s.createdAtNs }
+        guard let anchor = chosen ?? candidates.first else { return s.createdAtNs }
         return anchor.hostTime(at: sample)
     }
 

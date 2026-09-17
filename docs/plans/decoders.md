@@ -225,7 +225,18 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   client (`docs/design/decoders.md`, "The state boundary" and section 5). Driver B's own traffic
   waits on an `rtl_433` adapter, a plugin like DEC-13's `dump1090` one; the surfaces above already
   work over any decoder that carries a `device_id`.
-- DEC-11 `[ ]` Kept decode jobs respawn after a daemon restart (needs the durable job store, D.15).
+- DEC-11 `[x]` Kept decode jobs come back after a daemon restart (2026-09-17). The job store writes
+  `kept-jobs.json` beside the record store whenever a kept job starts or ends by a cancel or a
+  failure, and not when the daemon's own shutdown ends it; the next daemon reads it after the
+  device mirror is up, waits up to 20 s for a radio, and starts each job again as the job it was:
+  the same id, so `ley://records/<job_id>` and `ley jobs cancel` still name it, and the time it was
+  first started, with "resuming after a daemon restart" as its first detail. Its records append to
+  the same files with the sequence continuing from the store's count, and the sidecar's anchors
+  now name the capture each dates (`capture_id`, absent in older sidecars, which had one capture),
+  because a new daemon makes a new capture whose sample index starts over and the old records must
+  keep the old capture's clock; `QueryRecords` answers with an anchor per capture. A decoder no
+  longer installed at boot is logged and dropped from the file. The rest of D.15 (recurring scans,
+  watch jobs, transcripts) is still open; this is the one job that had declared an intent to keep.
 - DEC-12 `[ ]` Slot-aligned input (driver E, FT8).
 - DEC-18 `[x]` IQ input to decoders: `DecoderInput.signal` (AUDIO default, or IQ) and the daemon
   path for it. A decoder that declares IQ gets the capture's raw cf32 baseband over the bulk IQ

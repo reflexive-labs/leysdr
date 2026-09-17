@@ -254,6 +254,76 @@ final class DecodeJobTests: XCTestCase {
         return Int(rest.prefix { $0.isNumber })
     }
 
+    /// A kept job outlives the daemon, not just its client (DEC-11): the next daemon on the same
+    /// store brings it back as the same job, its records appending to the same file with the
+    /// sequence carrying on, and the old records keeping the wall time of the capture that made
+    /// them.
+    func testAKeptJobComesBackAfterARestart() async throws {
+        let dir = try makeTempDir("restart")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let plugins = dir + "/decoders"
+        try writeFakePlugin(in: plugins)
+        let store = dir + "/store"
+        var jobID = ""
+        var before = 0
+        var firstCapture = ""
+        try await withDaemon(dir: dir + "/run1", decoderSearchPath: [plugins], storePath: store) { c in
+            try await self.attachFixture(c)
+            let started = try await self.startDecode(c, keep: true)
+            jobID = started.jobID
+            let got = try await self.records(c, job: jobID, count: 3)
+            firstCapture = got.first?.time.captureID ?? ""
+            XCTAssertEqual(got.count, 3)
+            // Let the writer flush what the query will read.
+            try await Task.sleep(nanoseconds: 300_000_000)
+            var q = Leyline_V1_RecordQuery()
+            q.jobID = jobID
+            before = try await c.decoders.queryRecords(q, metadata: testMetadata).records.count
+            XCTAssertGreaterThanOrEqual(before, 3)
+        }
+        // The daemon is gone; the file names the job it was running.
+        let kept = try XCTUnwrap(FileManager.default.contents(atPath: store + "/kept-jobs.json"))
+        XCTAssertTrue(String(decoding: kept, as: UTF8.self).contains(jobID), "kept-jobs.json should name the job")
+
+        try await withDaemon(dir: dir + "/run2", decoderSearchPath: [plugins], storePath: store) { c in
+            // The resume waits for a radio; here comes one.
+            try await self.attachFixture(c)
+            // The job is not in the table until the resume has found a radio, so a miss is a wait.
+            var back: Leyline_V1_Job?
+            for _ in 0 ..< 300 {
+                if let j = try? await self.job(c, jobID), j.state == .running { back = j; break }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            let job = try XCTUnwrap(back, "the kept job did not come back")
+            XCTAssertEqual(job.jobID, jobID, "the same job, not a new one")
+            XCTAssertEqual(job.resultUris, ["ley://records/\(jobID)"])
+            XCTAssertTrue(job.statusDetail.contains("resuming") || job.statusDetail.hasPrefix("decoding with"), job.statusDetail)
+            // Records carry on: live ones continue the sequence past what the store held.
+            let more = try await self.records(c, job: jobID, count: 2, since: nil)
+            XCTAssertEqual(more.count, 2)
+            XCTAssertGreaterThan(Int(more[0].seq), before, "seq should continue from the store's count, not restart at 1")
+            XCTAssertNotEqual(more[0].time.captureID, firstCapture, "a new daemon makes a new capture")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            var q = Leyline_V1_RecordQuery()
+            q.jobID = jobID
+            let page = try await c.decoders.queryRecords(q, metadata: testMetadata)
+            XCTAssertGreaterThan(page.records.count, before, "the store should hold both runs' records")
+            let captures = Set(page.anchors.map(\.anchor.captureID))
+            XCTAssertTrue(captures.contains(firstCapture) && captures.count == 2,
+                          "the page should carry an anchor for each capture the job ran on: \(captures)")
+            // Newest first: a record from the new run sorts before one from the old, which is only
+            // true if the old records kept the old capture's clock.
+            XCTAssertNotEqual(page.records.first?.time.captureID, firstCapture)
+            XCTAssertEqual(page.records.last?.time.captureID, firstCapture)
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = jobID
+            _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+        }
+        // Cancelled by a client, not by a shutdown: the file no longer names it.
+        let after = try XCTUnwrap(FileManager.default.contents(atPath: store + "/kept-jobs.json"))
+        XCTAssertFalse(String(decoding: after, as: UTF8.self).contains(jobID), "a cancelled job is not resumed")
+    }
+
     func testAPluginThatStopsReadingDoesNotWedgeTheDrain() async throws {
         // A decoder that reads three frames then stops reading is the DEC-16 hang: the daemon's
         // write is non-blocking, so the drain drops and gaps rather than parking on a full pipe,

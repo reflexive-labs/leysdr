@@ -105,8 +105,9 @@ Notes a table cell cannot hold:
   the log file `ley daemon logs` prints, headed by the daemon's pid and start time from
   `get_state`. Nothing on the socket says why a daemon went away; the log does. A restart also
   shows in `get_state` on its own: `DaemonInfo.pid` and `startedAtNs` change and the event
-  sequence starts over, and a job started before the restart is gone with it (the durable job
-  store is Milestone D.15). The path is the default log unless `ley daemon start` was given
+  sequence starts over. A job started before the restart is gone with it unless it was a decode
+  job started with `keep`, which the next daemon brings back as the same job (DEC-11); the rest
+  of the durable job store is Milestone D.15. The path is the default log unless `ley daemon start` was given
   `--log`, in which case the tool says which file it read and the agent can tell they differ.
   The radio driver writes to the same file: librtlsdr prints its tuner banner and `PLL not
   locked!` on every device open, and a dozen tunes push every daemon line out of a short tail.

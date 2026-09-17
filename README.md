@@ -130,8 +130,8 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   predicates and notifiers, `ley devices-seen`/`ley label`, and an IQ input mode) done for APRS,
   SAME weather alerts and marine AIS, the other four drivers listed in `docs/plans/decoders.md`; D.16
   (MCP adapter, `ley mcp`) done for the tools the daemon can back, the rest waiting on the milestones
-  `docs/plans/mcp.md` names; D.14 (terminal dashboard) and D.15 (durable jobs, watch, transcripts)
-  not started.
+  `docs/plans/mcp.md` names; D.14 (terminal dashboard) not started; of D.15 (durable jobs, watch, transcripts) only kept decode
+  jobs surviving a daemon restart is done.
 - Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
   measurement on target hardware yet; S1 (latency chain) waits for the app.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with

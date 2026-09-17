@@ -106,7 +106,7 @@ type mcpServer struct {
 // call: the shape of the answers, what is not here yet, and the honesty rule.
 const mcpInstructions = `Leyline is a software-defined radio: one daemon owns the radio, and these tools drive it the way the ley command does. Every tool's structured result is the proto3 JSON mapping of the leyline.v1 messages (the same shapes 'ley <verb> --json' prints), and the text is a short summary of the same thing. A bare frequency number is MHz (146.52); add a unit to be exact (1010k, 146520000); presets such as noaa and calling are accepted where a frequency is.
 
-A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it.
+A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it, except a decode job started with keep, which comes back as the same job.
 
 Only one thing can use the radio at a time. tune, scan, snapshot and start_decode_job refuse to move a radio somebody is listening on and say who; take_over: true insists. A channel tune makes, or a decode job started without keep, ends when this server exits.
 

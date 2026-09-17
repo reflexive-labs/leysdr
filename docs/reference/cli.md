@@ -285,7 +285,10 @@ A v0 scan job is **not persistent**: it belongs to the connection that started i
 cancels it when that connection goes, which is what makes Ctrl-C hand the radio back. Its
 `result_uris` carries `ley://scans/<id>`, which names the scan and is resolved by `Jobs.GetScan`; it
 is deliberately not yet a Resource, because an ad-hoc scan is ephemeral and there is no file. The
-daemon keeps the last sixteen finished jobs in memory and loses them on restart. `Jobs.StartJob` with
+daemon keeps the last sixteen finished jobs in memory and loses them on restart. A decode job
+started with `--job` (kept) is the exception: it is written to `kept-jobs.json` beside the record
+store and comes back after a restart as the same job, its records appending to the same resource
+(`docs/plans/decoders.md`, DEC-11); a job cancelled by a client does not. `Jobs.StartJob` with
 a watch or record config, `Jobs.GetTranscript` and the whole `Resources` service remain UNIMPLEMENTED
 until Milestone D.15.
 A running decode job's `status_detail` carries its liveness: "decoding with aprs: 12 records, last

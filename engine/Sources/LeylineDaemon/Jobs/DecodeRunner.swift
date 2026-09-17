@@ -37,7 +37,9 @@ actor DecodeRunner {
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
     private let log: Logger
 
-    private var seq: UInt64 = 0
+    /// The record sequence: 1-based and contiguous per job, so it continues from what a kept
+    /// job's store already holds when the job is resumed after a restart (DEC-11).
+    private var seq: UInt64
     /// How much the job has heard, for the detail it publishes while RUNNING (DEC-23).
     private var liveness = DecodeLiveness()
     private var rssiDBFS = Double.nan
@@ -51,7 +53,8 @@ actor DecodeRunner {
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any ChannelLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
-         onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void)
+         onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
+         seqStart: UInt64 = 0)
     {
         self.jobID = jobID
         self.installed = installed
@@ -65,6 +68,7 @@ actor DecodeRunner {
         self.predicate = predicate
         self.notify = notify
         self.onStatus = onStatus
+        seq = seqStart
         log = Logger(label: "leyline.jobs.decode")
     }
 

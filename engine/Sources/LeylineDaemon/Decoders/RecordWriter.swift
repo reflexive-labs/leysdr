@@ -51,10 +51,10 @@ actor RecordWriter {
 
     /// A capture that re-anchored while the job ran. The sidecar keeps every one, because a record
     /// is turned into wall clock by the anchor in force when it arrived, not by the newest.
-    func noteAnchor(_ anchor: CaptureAnchor, fromSample: UInt64) {
+    func noteAnchor(_ anchor: CaptureAnchor, fromSample: UInt64, captureID: String? = nil) {
         guard !closed else { return }
         let stored = StoredAnchor(hostTimeNs: anchor.hostTimeNsAtSampleZero, sampleRate: anchor.sampleRate,
-                                  driftPpm: anchor.driftPPM, fromSample: fromSample)
+                                  driftPpm: anchor.driftPPM, fromSample: fromSample, captureID: captureID ?? sidecar.captureID)
         if sidecar.anchors.last == nil || sidecar.anchors.last!.fromSample != fromSample {
             sidecar.anchors.append(stored)
             try? Self.write(sidecar, to: base)

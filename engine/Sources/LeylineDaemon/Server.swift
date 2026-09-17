@@ -153,6 +153,8 @@ final class Daemon: @unchecked Sendable {
         await attachRemoteDongles()
         await store.startDeviceMirror()
         await streams.install()
+        // Kept decode jobs the last daemon was running come back once a radio is here (DEC-11).
+        await jobs.resumeKept()
         let table = jobs
         await store.setJobsProvider { await table.snapshot() }
         await store.setClientGoneHook { await table.clientGone($0) }
