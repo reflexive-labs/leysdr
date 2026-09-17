@@ -17,6 +17,9 @@ import (
 )
 
 type monitorOptions struct {
+	// parts are the halves of a band group (gmrs), named in the refusal when the
+	// whole is wider than one capture.
+	parts []string
 	// rangeInput is what the user asked for, spelled as they typed it (a band
 	// name resolves to the band's own name), for the hint and summary lines.
 	rangeInput string
@@ -77,10 +80,10 @@ a strong transmitter spills into the channels either side of it: --skirt-db
 folds a much weaker carrier one channel over into the strong one it belongs
 to, rather than listing the same transmission three times. What each filter
 hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
-		Example: `  ley monitor gmrs               # watch the GMRS band for a minute
+		Example: `  ley monitor gmrs-462           # watch the GMRS 462 MHz half for a minute
   ley monitor 462.5M..462.75M    # the same range, spelled out
-  ley monitor gmrs --for 5m      # a longer radio check
-  ley monitor gmrs --json        # the carriers, for tools`,
+  ley monitor gmrs-462 --for 5m  # a longer radio check
+  ley monitor gmrs-462 --json    # the carriers, for tools`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -89,7 +92,7 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 			if lo, hi, rerr := leyline.ParseUserRange(args[0]); rerr == nil {
 				o.minHz, o.maxHz, o.rangeInput = lo, hi, args[0]
 			} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
-				o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
+				o.minHz, o.maxHz, o.rangeInput, o.parts = b.MinHz, b.MaxHz, b.Name, b.Parts
 			} else {
 				return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
 			}
@@ -379,7 +382,7 @@ follow:
 	tcancel()
 
 	if last.State == leylinev1.JobState_FAILED {
-		return &ExitError{Code: 1, Message: monitorFailure(last, s.app.ErrStyle)}
+		return &ExitError{Code: 1, Message: monitorFailure(last, s.app.ErrStyle, o.parts)}
 	}
 	watched := o.forDur
 	if watched == 0 || interrupted {
@@ -766,8 +769,10 @@ func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[s
 }
 
 // monitorFailure turns a failed watch into the sentence the user reads: the daemon's code is what
-// ley branches on, its status_detail the prose a person needs, mirrored on scanFailure.
-func monitorFailure(job *leylinev1.Job, st ui.Style) string {
+// ley branches on, its status_detail the prose a person needs, mirrored on scanFailure. parts
+// are the halves of a band group the watch was asked for, which is what to watch instead when
+// the whole is too wide.
+func monitorFailure(job *leylinev1.Job, st ui.Style, parts []string) string {
 	detail := job.StatusDetail
 	code := job.GetError().GetCode()
 	if code == "" {
@@ -782,6 +787,13 @@ func monitorFailure(job *leylinev1.Job, st ui.Style) string {
 	case leyline.CodeInvalidArgument:
 		// The daemon's own sentence names the remedy ("use ley scan, which sweeps"); saying it
 		// again in other words reads as a second error leaking in beside the first.
+		if len(parts) > 0 {
+			var cmds []string
+			for _, p := range parts {
+				cmds = append(cmds, st.Cmd("ley monitor "+p))
+			}
+			return detail + ". Watch one half at a time: " + strings.Join(cmds, " or ")
+		}
 		if strings.Contains(detail, "ley scan") {
 			return detail
 		}

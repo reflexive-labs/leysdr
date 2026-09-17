@@ -69,10 +69,11 @@ func TestPresetsAndBands(t *testing.T) {
 	if err != nil || errOut != "" {
 		t.Fatalf("ley bands: err=%v stderr=%q", err, errOut)
 	}
-	if rows := indentedRows(out); rows != len(leyline.Bands()) {
-		t.Fatalf("want %d band rows, got %d:\n%s", len(leyline.Bands()), rows, out)
+	// The bands, then the groups (gmrs, the whole service) under the family they belong to.
+	if want := len(leyline.Bands()) + len(leyline.BandGroups()); indentedRows(out) != want {
+		t.Fatalf("want %d band rows, got %d:\n%s", want, indentedRows(out), out)
 	}
-	for _, head := range []string{"broadcast", "amateur radio", "other services"} {
+	for _, head := range []string{"broadcast", "amateur radio", "other services", "GMRS"} {
 		if !strings.Contains(out, "\n"+head+"\n") {
 			t.Fatalf("band table is missing the %q group heading:\n%s", head, out)
 		}
@@ -90,8 +91,11 @@ func TestPresetsAndBands(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &bs); err != nil {
 		t.Fatalf("bands --json: %v\n%s", err, out)
 	}
-	if len(bs) != len(leyline.Bands()) {
-		t.Fatalf("bands --json: %d rows, want %d", len(bs), len(leyline.Bands()))
+	if want := len(leyline.Bands()) + len(leyline.BandGroups()); len(bs) != want {
+		t.Fatalf("bands --json: %d rows, want %d", len(bs), want)
+	}
+	if last := bs[len(bs)-1]; last.Aliases[0] != "gmrs" || strings.Join(last.Parts, " ") != "gmrs-462 gmrs-467" {
+		t.Fatalf("bands --json should end with the gmrs group and its parts: %+v", last)
 	}
 	var hf, vhf *bandJSON
 	for i := range bs {

@@ -30,6 +30,29 @@ func TestBandFlagRefusesAPositionalToo(t *testing.T) {
 	}
 }
 
+// A band group the radio cannot capture whole is refused with its parts named: centring a
+// picture between two halves 5 MHz apart would show neither.
+func TestBandFlagRefusesAGroupThatDoesNotFit(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	for _, verb := range []string{"spectrum", "waterfall", "phosphor"} {
+		_, _, err := runApp(t, &App{Socket: sock}, verb, "--band", "gmrs")
+		if exitCode(err) != ExitUsage {
+			t.Errorf("%s --band gmrs: want exit %d, got %v", verb, ExitUsage, err)
+			continue
+		}
+		for _, want := range []string{"GMRS is 5.200 MHz wide", "captures at most", "gmrs-462 or gmrs-467"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: refusal lacks %q: %v", verb, want, err)
+			}
+		}
+	}
+	// A half fits, and is shown whole.
+	out, _, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "gmrs-462")
+	if err != nil || !strings.Contains(out, "462") {
+		t.Errorf("spectrum --band gmrs-462: %v\n%s", err, out)
+	}
+}
+
 func TestBandFlagUnknownName(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, _, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2mm")

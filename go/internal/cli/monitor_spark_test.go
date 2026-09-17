@@ -114,7 +114,7 @@ func TestMonitorReportSparklineFitsAndStrips(t *testing.T) {
 // one that keys now and then.
 func TestMonitorActivityFromTheDaemon(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	out := mustRun(t, sock, "--json", "monitor", "gmrs", "--for", "1s")
+	out := mustRun(t, sock, "--json", "monitor", "gmrs-462", "--for", "1s")
 	slices := map[string][]float64{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		var c struct {

@@ -3,6 +3,8 @@
 package leyline
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
@@ -33,10 +35,11 @@ func TestBandFor(t *testing.T) {
 		{21_300_000, "15 m amateur", leylinev1.DemodMode_USB, 2_800},
 		{28_400_000, "10 m amateur", leylinev1.DemodMode_USB, 2_800},
 		{433_000_000, "70 cm amateur", leylinev1.DemodMode_NFM, 12_500},
-		{462_600_000, "GMRS", leylinev1.DemodMode_NFM, 20_000},
-		{462_550_000, "GMRS", leylinev1.DemodMode_NFM, 20_000},
-		{462_725_000, "GMRS", leylinev1.DemodMode_NFM, 20_000},
-		{467_600_000, "GMRS repeater inputs", leylinev1.DemodMode_NFM, 20_000},
+		{462_600_000, "GMRS 462 MHz", leylinev1.DemodMode_NFM, 20_000},
+		{462_550_000, "GMRS 462 MHz", leylinev1.DemodMode_NFM, 20_000},
+		{462_725_000, "GMRS 462 MHz", leylinev1.DemodMode_NFM, 20_000},
+		{467_600_000, "GMRS 467 MHz", leylinev1.DemodMode_NFM, 20_000},
+		{467_562_500, "GMRS 467 MHz", leylinev1.DemodMode_NFM, 20_000},
 	}
 	for _, c := range cases {
 		b := BandFor(c.hz)
@@ -55,7 +58,9 @@ func TestBandFor(t *testing.T) {
 	// The table is not a complete allocation chart, and the gap between the top
 	// marine channel and the NOAA weather block is where a reader is most likely
 	// to expect otherwise.
-	for _, hz := range []uint64{0, 100_000, 50_000_000, 115_000_000, 162_030_000, 300_000_000, 1_000_000_000} {
+	// The gap between the two GMRS halves belongs to no band: the group spans it for a sweep,
+	// but a detection at 465 MHz is not GMRS.
+	for _, hz := range []uint64{0, 100_000, 50_000_000, 115_000_000, 162_030_000, 300_000_000, 465_000_000, 1_000_000_000} {
 		if b := BandFor(hz); b != nil {
 			t.Errorf("BandFor(%d) = %q, want no band", hz, b.Name)
 		}
@@ -84,15 +89,33 @@ func TestBandsOrderedAndDisjoint(t *testing.T) {
 	}
 }
 
+// GMRS is two halves and a group: `gmrs` is the whole service for a sweep, with the halves
+// named as its parts; each half answers to its own name and to what people called it before.
 func TestResolveBandGMRS(t *testing.T) {
 	for _, name := range []string{"gmrs", "GMRS"} {
 		b, err := ResolveBand(name)
-		if err != nil || b.MinHz != 462_500_000 || b.MaxHz != 462_750_000 {
-			t.Errorf("ResolveBand(%q) = %+v, %v; want the 462 MHz GMRS band", name, b, err)
+		if err != nil || b.MinHz != 462_537_500 || b.MaxHz != 467_737_500 || !b.IsGroup() {
+			t.Errorf("ResolveBand(%q) = %+v, %v; want the whole GMRS service as a group", name, b, err)
+		}
+		if strings.Join(b.Parts, " ") != "gmrs-462 gmrs-467" {
+			t.Errorf("ResolveBand(%q).Parts = %v", name, b.Parts)
 		}
 	}
-	b, err := ResolveBand("gmrs-in")
-	if err != nil || b.MinHz != 467_500_000 {
-		t.Errorf("ResolveBand(gmrs-in) = %+v, %v; want the 467 MHz inputs band", b, err)
+	for _, name := range []string{"gmrs-462", "gmrs-out", "gmrs-simplex"} {
+		if b, err := ResolveBand(name); err != nil || b.MinHz != 462_537_500 || b.MaxHz != 462_737_500 || b.IsGroup() {
+			t.Errorf("ResolveBand(%q) = %+v, %v; want the 462 MHz half", name, b, err)
+		}
+	}
+	for _, name := range []string{"gmrs-467", "gmrs-in", "gmrs-inputs"} {
+		if b, err := ResolveBand(name); err != nil || b.MinHz != 467_537_500 || b.MaxHz != 467_737_500 {
+			t.Errorf("ResolveBand(%q) = %+v, %v; want the 467 MHz half", name, b, err)
+		}
+	}
+	parts := BandsWithin(462_537_500, 467_737_500)
+	if len(parts) != 2 || parts[0].Name != "GMRS 462 MHz" || parts[1].Name != "GMRS 467 MHz" {
+		t.Errorf("BandsWithin(the group) = %v", parts)
+	}
+	if !slices.Contains(BandAliases(), "gmrs") {
+		t.Errorf("BandAliases lacks the group: %v", BandAliases())
 	}
 }

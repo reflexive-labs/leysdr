@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
@@ -33,10 +34,25 @@ type bandOptions struct {
 // already extends when it reuses an off-centre capture.
 //
 // An explicit --span wins: someone who said how wide meant it.
-func (s *session) resolveBandFlag(app *App, o *bandOptions) {
+//
+// A group (gmrs: two halves 5 MHz apart) that the radio cannot capture whole
+// is refused with its parts named rather than centred on the empty spectrum
+// between them, which would show neither half.
+func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 	b := o.band
 	if b == nil {
-		return
+		return nil
+	}
+	if b.IsGroup() && o.span == 0 {
+		var top uint64
+		for _, r := range s.device.SampleRates {
+			top = max(top, r)
+		}
+		if top < b.WidthHz() {
+			return usageErrorf("%s is %s wide, its parts %s apart, and %s captures at most %s; ask for one part: %s",
+				b.Name, leyline.FormatFrequency(b.WidthHz()), groupGapPhrase(*b), deviceName(s.device),
+				leyline.FormatFrequency(top), strings.Join(b.Parts, " or "))
+		}
 	}
 	o.freq = b.CenterHz()
 	if o.freqInput == "" {
@@ -48,7 +64,7 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) {
 				b.Name, leyline.FormatFrequency(b.WidthHz()),
 				leyline.FormatFrequency(o.span), leyline.FormatFrequency(b.CenterHz()))
 		}
-		return
+		return nil
 	}
 	// The smallest supported rate that covers the band, or the largest there is.
 	want := b.WidthHz()
@@ -71,6 +87,17 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) {
 		}
 	}
 	o.span = best
+	return nil
+}
+
+// groupGapPhrase is the distance between a group's first two parts, for the
+// sentence that refuses to centre a picture between them.
+func groupGapPhrase(b leyline.Band) string {
+	parts := leyline.BandsWithin(b.MinHz, b.MaxHz)
+	if len(parts) < 2 {
+		return "far"
+	}
+	return leyline.FormatFrequency(parts[1].MinHz - parts[0].MaxHz)
 }
 
 // openBand picks the device, reuses or creates a capture covering the
@@ -83,7 +110,9 @@ func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 		return err
 	}
 	// --band needs the device's rates to know how much of the band fits.
-	s.resolveBandFlag(app, &o)
+	if err := s.resolveBandFlag(app, &o); err != nil {
+		return err
+	}
 	cap := leyline.FindCapture(s.state, s.device.DeviceId)
 	if cap == nil && o.freq == 0 {
 		return usageErrorf("%s is not tuned to anything yet; say where to look, e.g.: ley %s 101.1",

@@ -43,10 +43,10 @@ Usage:
   ley monitor <band|range> [flags]
 
 Examples:
-  ley monitor gmrs               # watch the GMRS band for a minute
+  ley monitor gmrs-462           # watch the GMRS 462 MHz half for a minute
   ley monitor 462.5M..462.75M    # the same range, spelled out
-  ley monitor gmrs --for 5m      # a longer radio check
-  ley monitor gmrs --json        # the carriers, for tools
+  ley monitor gmrs-462 --for 5m  # a longer radio check
+  ley monitor gmrs-462 --json    # the carriers, for tools
 
 Flags:
       --device string       which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)

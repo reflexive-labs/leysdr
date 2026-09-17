@@ -30,7 +30,18 @@ type Band struct {
 	Mode        leylinev1.DemodMode
 	BandwidthHz uint32
 	Note        string
+	// Parts, when set, makes this a group: a service in more than one place,
+	// spanning its parts and the spectrum between them. The parts are the
+	// first aliases of the bands it is made of. A sweep takes the group whole;
+	// a picture or a watch, which needs the range in one capture, is refused
+	// with the parts named unless the radio captures that wide. Groups are not
+	// in the frequency-ordered table, so BandFor never labels the gap between
+	// two parts with the group's name.
+	Parts []string
 }
+
+// IsGroup reports whether the band spans several parts.
+func (b Band) IsGroup() bool { return len(b.Parts) > 0 }
 
 // WidthHz is how much spectrum the band covers.
 func (b Band) WidthHz() uint64 { return b.MaxHz - b.MinHz }
@@ -51,22 +62,68 @@ const (
 // entries — above the top marine VHF channel at 162.025 MHz and below the NOAA
 // weather block at 162.400, say — belongs to no band, and BandFor answers nil.
 var bands = []Band{
-	{"AM broadcast", []string{"am", "mw", "ambcast"}, 530_000, 1_700_000, mAM, 10_000, "medium-wave broadcast stations"},
-	{"160 m amateur", []string{"160m"}, 1_800_000, 2_000_000, mSSB, 2_800, "amateur radio, LSB voice"},
-	{"80 m amateur", []string{"80m"}, 3_500_000, 4_000_000, mSSB, 2_800, "amateur radio, LSB voice"},
-	{"40 m amateur", []string{"40m"}, 7_000_000, 7_300_000, mSSB, 2_800, "amateur radio, LSB voice"},
-	{"20 m amateur", []string{"20m"}, 14_000_000, 14_350_000, mSSB, 2_800, "amateur radio, USB voice"},
-	{"15 m amateur", []string{"15m"}, 21_000_000, 21_450_000, mSSB, 2_800, "amateur radio, USB voice"},
-	{"CB", []string{"cb", "citizens"}, 26_965_000, 27_405_000, mAM, 10_000, "citizens band, channel 1 to 40"},
-	{"10 m amateur", []string{"10m"}, 28_000_000, 29_700_000, mSSB, 2_800, "amateur radio, USB voice"},
-	{"FM broadcast", []string{"fm", "fmbcast", "broadcast"}, 87_500_000, 108_000_000, mWFM, 200_000, "wideband FM radio stations"},
-	{"airband", []string{"air", "aviation"}, 118_000_000, 137_000_000, mAM, 10_000, "aircraft and towers, AM voice"},
-	{"2 m amateur", []string{"2m"}, 144_000_000, 148_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters"},
-	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_025_000, mNFM, 12_500, "ship and coast stations; channel 16 is 156.800"},
-	{"NOAA weather", []string{"noaa", "weather", "wx"}, 162_400_000, 162_550_000, mNFM, 12_500, "continuous weather broadcasts, WX1 to WX7"},
-	{"70 cm amateur", []string{"70cm"}, 420_000_000, 450_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters"},
-	{"GMRS", []string{"gmrs"}, 462_500_000, 462_750_000, mNFM, 20_000, "GMRS/FRS 462 MHz channels: repeater outputs and simplex -- scan here to find a repeater's transmit"},
-	{"GMRS repeater inputs", []string{"gmrs-in", "gmrs-inputs"}, 467_500_000, 467_750_000, mNFM, 20_000, "GMRS repeater inputs, the uplink a radio transmits to a repeater"},
+	{"AM broadcast", []string{"am", "mw", "ambcast"}, 530_000, 1_700_000, mAM, 10_000, "medium-wave broadcast stations", nil},
+	{"160 m amateur", []string{"160m"}, 1_800_000, 2_000_000, mSSB, 2_800, "amateur radio, LSB voice", nil},
+	{"80 m amateur", []string{"80m"}, 3_500_000, 4_000_000, mSSB, 2_800, "amateur radio, LSB voice", nil},
+	{"40 m amateur", []string{"40m"}, 7_000_000, 7_300_000, mSSB, 2_800, "amateur radio, LSB voice", nil},
+	{"20 m amateur", []string{"20m"}, 14_000_000, 14_350_000, mSSB, 2_800, "amateur radio, USB voice", nil},
+	{"15 m amateur", []string{"15m"}, 21_000_000, 21_450_000, mSSB, 2_800, "amateur radio, USB voice", nil},
+	{"CB", []string{"cb", "citizens"}, 26_965_000, 27_405_000, mAM, 10_000, "citizens band, channel 1 to 40", nil},
+	{"10 m amateur", []string{"10m"}, 28_000_000, 29_700_000, mSSB, 2_800, "amateur radio, USB voice", nil},
+	{"FM broadcast", []string{"fm", "fmbcast", "broadcast"}, 87_500_000, 108_000_000, mWFM, 200_000, "wideband FM radio stations", nil},
+	{"airband", []string{"air", "aviation"}, 118_000_000, 137_000_000, mAM, 10_000, "aircraft and towers, AM voice", nil},
+	{"2 m amateur", []string{"2m"}, 144_000_000, 148_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters", nil},
+	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_025_000, mNFM, 12_500, "ship and coast stations; channel 16 is 156.800", nil},
+	{"NOAA weather", []string{"noaa", "weather", "wx"}, 162_400_000, 162_550_000, mNFM, 12_500, "continuous weather broadcasts, WX1 to WX7", nil},
+	{"70 cm amateur", []string{"70cm"}, 420_000_000, 450_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters", nil},
+	// GMRS/FRS is one service in two places 5 MHz apart, so it is two bands and a group. The
+	// edges sit half a channel outside the lowest and highest channel of each half (ch15 at
+	// 462.550 to ch22 at 462.725; the repeater inputs 467.550 to 467.725, with ch8 to ch14 between).
+	{
+		"GMRS 462 MHz",
+		[]string{"gmrs-462", "gmrs-out", "gmrs-outputs", "gmrs-simplex"},
+		462_537_500, 462_737_500, mNFM, 20_000,
+		"GMRS/FRS channels 1 to 7 and 15 to 22: simplex and the repeater outputs -- scan here to find a repeater's transmit", nil,
+	},
+	{
+		"GMRS 467 MHz",
+		[]string{"gmrs-467", "gmrs-in", "gmrs-inputs"},
+		467_537_500, 467_737_500, mNFM, 20_000,
+		"GMRS/FRS channels 8 to 14 (low power) and the repeater inputs, the uplink a radio transmits to a repeater", nil,
+	},
+}
+
+// bandGroups are the services that live in more than one place. `gmrs` is the whole GMRS/FRS
+// service, both halves and the 4.8 MHz between them: what a sweep should cover when somebody
+// asks for "GMRS", and too wide for one capture on an RTL-SDR, so a picture or a watch is told
+// to take a half.
+var bandGroups = []Band{
+	{
+		"GMRS",
+		[]string{"gmrs"},
+		462_537_500, 467_737_500, mNFM, 20_000,
+		"GMRS/FRS, the whole service: both halves 5 MHz apart; scan sweeps it, a picture or a watch takes gmrs-462 or gmrs-467",
+		[]string{"gmrs-462", "gmrs-467"},
+	},
+}
+
+// BandGroups returns the groups (a copy), in frequency order.
+func BandGroups() []Band {
+	out := make([]Band, len(bandGroups))
+	copy(out, bandGroups)
+	return out
+}
+
+// BandsWithin returns the bands that lie wholly inside the range, in frequency order: the parts
+// a view or a watch can take when the whole is too wide.
+func BandsWithin(minHz, maxHz uint64) []Band {
+	var out []Band
+	for _, b := range bands {
+		if b.MinHz >= minHz && b.MaxHz <= maxHz {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // Bands returns the band table in frequency order (a copy).
@@ -92,13 +149,15 @@ func ResolveBand(name string) (Band, error) {
 	if key == "" {
 		return Band{}, fmt.Errorf("no band name given; try one of %s", strings.Join(BandAliases(), ", "))
 	}
-	for _, b := range bands {
-		if key == bandKey(b.Name) {
-			return b, nil
-		}
-		for _, a := range b.Aliases {
-			if key == a {
+	for _, table := range [][]Band{bands, bandGroups} {
+		for _, b := range table {
+			if key == bandKey(b.Name) {
 				return b, nil
+			}
+			for _, a := range b.Aliases {
+				if key == a {
+					return b, nil
+				}
 			}
 		}
 	}
@@ -108,13 +167,15 @@ func ResolveBand(name string) (Band, error) {
 	return Band{}, fmt.Errorf("no band called %q; try one of %s, or check with: ley bands", name, strings.Join(BandAliases(), ", "))
 }
 
-// BandAliases is every band's first alias, in frequency order: the short list
-// an error message can print without becoming a table.
+// BandAliases is every band's first alias, in frequency order, the groups
+// after: the short list an error message can print without becoming a table.
 func BandAliases() []string {
-	out := make([]string, 0, len(bands))
-	for _, b := range bands {
-		if len(b.Aliases) > 0 {
-			out = append(out, b.Aliases[0])
+	out := make([]string, 0, len(bands)+len(bandGroups))
+	for _, table := range [][]Band{bands, bandGroups} {
+		for _, b := range table {
+			if len(b.Aliases) > 0 {
+				out = append(out, b.Aliases[0])
+			}
 		}
 	}
 	return out
@@ -132,7 +193,7 @@ func NearestBandNames(input string) []string {
 		rank int
 	}
 	var out []cand
-	for _, b := range bands {
+	for _, b := range append(Bands(), bandGroups...) {
 		for _, a := range b.Aliases {
 			switch {
 			case strings.HasPrefix(a, key) || strings.HasPrefix(key, a):

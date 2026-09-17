@@ -28,7 +28,7 @@ func monitorOpts() fakedaemon.Options {
 // labels a GMRS radio shares; the live feed and the summary are the person's and go to stderr.
 func TestMonitorReportsTransmissions(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs", "--for", "1s")
+	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs-462", "--for", "1s")
 	if err != nil {
 		t.Fatalf("ley monitor: %v\n%s\n%s", err, out, errOut)
 	}
@@ -38,7 +38,7 @@ func TestMonitorReportsTransmissions(t *testing.T) {
 		}
 	}
 	// The live feed and the summary are for the person, on stderr.
-	if !strings.Contains(errOut, "watching 462.500 MHz to 462.750 MHz") {
+	if !strings.Contains(errOut, "watching 462.538 MHz to 462.738 MHz") {
 		t.Errorf("stderr lacks the watching banner:\n%s", errOut)
 	}
 	if !strings.Contains(errOut, monStrong) {
@@ -56,7 +56,7 @@ func TestMonitorReportsTransmissions(t *testing.T) {
 // --json prints one snake_case object per carrier at the end, and nothing before it.
 func TestMonitorJSON(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	out := mustRun(t, sock, "--json", "monitor", "gmrs", "--for", "1s")
+	out := mustRun(t, sock, "--json", "monitor", "gmrs-462", "--for", "1s")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) == 0 || lines[0] == "" {
 		t.Fatalf("no carriers in NDJSON:\n%s", out)
@@ -88,12 +88,12 @@ func TestMonitorJSON(t *testing.T) {
 // heard weak carrier is not the same as an empty band.
 func TestMonitorMinSNR(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	all := mustRun(t, sock, "monitor", "gmrs", "--for", "1s")
+	all := mustRun(t, sock, "monitor", "gmrs-462", "--for", "1s")
 	if !strings.Contains(all, monWeak) {
 		t.Fatalf("want the weak ch1 carrier in the report:\n%s", all)
 	}
 	// The report (stdout) hides the weak carrier; the strong one stays.
-	filtered := mustRun(t, sock, "monitor", "gmrs", "--for", "1s", "--min-snr", "20")
+	filtered := mustRun(t, sock, "monitor", "gmrs-462", "--for", "1s", "--min-snr", "20")
 	if strings.Contains(filtered, monWeak) {
 		t.Errorf("--min-snr 20 should have hidden the 12 dB carrier:\n%s", filtered)
 	}
@@ -107,7 +107,7 @@ func TestMonitorMinSNR(t *testing.T) {
 // log; --skirt-db 0 lists it again.
 func TestMonitorSkirtFold(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs", "--for", "1s")
+	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs-462", "--for", "1s")
 	if err != nil {
 		t.Fatalf("ley monitor: %v\n%s\n%s", err, out, errOut)
 	}
@@ -121,7 +121,7 @@ func TestMonitorSkirtFold(t *testing.T) {
 		t.Errorf("stderr should say a skirt was folded:\n%s", errOut)
 	}
 	// --skirt-db 0 turns the fold off, so the skirt is a row again.
-	shown := mustRun(t, sock, "monitor", "gmrs", "--for", "1s", "--skirt-db", "0")
+	shown := mustRun(t, sock, "monitor", "gmrs-462", "--for", "1s", "--skirt-db", "0")
 	if !strings.Contains(shown, monSkirt) {
 		t.Errorf("--skirt-db 0 should have listed the ch19 skirt:\n%s", shown)
 	}
@@ -166,7 +166,7 @@ func TestFilterMonitorCarriers(t *testing.T) {
 // reads low even when its span is wide.
 func TestMonitorOnAir(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	out := mustRun(t, sock, "--json", "monitor", "gmrs", "--for", "1s")
+	out := mustRun(t, sock, "--json", "monitor", "gmrs-462", "--for", "1s")
 	frac := map[string]float64{} // channel -> looks/looks_possible
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		var c map[string]any
@@ -219,12 +219,23 @@ func TestMonitorOnAirNeverExceedsHeld(t *testing.T) {
 	}
 }
 
-// A band name in the positional resolves like scan's, so `ley monitor gmrs` watches the GMRS band.
+// A band name in the positional resolves like scan's, so `ley monitor gmrs-462` watches that
+// half. The whole service is two halves 5 MHz apart, wider than one capture, so `ley monitor
+// gmrs` is refused with the halves named rather than parked on the empty spectrum between them.
 func TestMonitorBandName(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
-	out := mustSay(t, sock, "monitor", "gmrs", "--for", "1s")
-	if !strings.Contains(out, "watching 462.500 MHz to 462.750 MHz") {
-		t.Errorf("a band name should resolve to the GMRS range:\n%s", out)
+	out := mustSay(t, sock, "monitor", "gmrs-462", "--for", "1s")
+	if !strings.Contains(out, "watching 462.538 MHz to 462.738 MHz") {
+		t.Errorf("a band name should resolve to the GMRS 462 MHz half:\n%s", out)
+	}
+	_, _, err := run(t, t.Context(), sock, "monitor", "gmrs", "--for", "1s")
+	if err == nil {
+		t.Fatal("ley monitor gmrs should be refused: the service is wider than one capture")
+	}
+	for _, want := range []string{"wider than one capture", "ley monitor gmrs-462", "ley monitor gmrs-467"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal lacks %q: %v", want, err)
+		}
 	}
 }
 

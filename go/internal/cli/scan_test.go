@@ -528,17 +528,21 @@ func TestScanRefusesTheBlindSpot(t *testing.T) {
 	}
 }
 
-// `ley scan gmrs` resolves a band name in the positional, so the GMRS output space can be swept
-// without spelling the range: it is how a paired repeater's transmit frequency is found when it is
-// decoupled from the standard input+5 MHz pairing.
+// `ley scan gmrs` resolves a band name in the positional, and the name is the whole service:
+// both halves and the 5 MHz between them, so a repeater's transmit is found whichever half it
+// sits in and however it is paired. A half answers to its own name.
 func TestScanResolvesABandName(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, errOut, err := run(t, t.Context(), sock, "scan", "gmrs")
 	if err != nil {
 		t.Fatalf("ley scan gmrs: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut, "462.500 MHz to 462.750 MHz") {
-		t.Errorf("scan did not sweep the GMRS band:\n%s", errOut)
+	if !strings.Contains(errOut, "462.538 MHz to 467.738 MHz") {
+		t.Errorf("scan did not sweep the whole GMRS service:\n%s", errOut)
+	}
+	_, errOut, err = run(t, t.Context(), sock, "scan", "gmrs-462")
+	if err != nil || !strings.Contains(errOut, "462.538 MHz to 462.738 MHz") {
+		t.Errorf("ley scan gmrs-462: %v\n%s", err, errOut)
 	}
 }
 

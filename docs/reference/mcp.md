@@ -152,7 +152,8 @@ Notes a table cell cannot hold:
   A band wider than the radio captures (the FM broadcast band is 20 MHz; an RTL-SDR captures
   3.2 at most) is shown centred, and the text says which frequencies the row covers and what
   share of the band that is; a radio that captures wider shows more at once, and `scan` sweeps
-  the rest.
+  the rest. A band group whose parts sit apart (`gmrs` is two halves 5 MHz apart) is refused
+  with the parts named rather than centred on the spectrum between them.
 - **`list_entities`** renders a decode job already running for the protocol rather than starting
   a second demodulator on the radio, replaying the records that job retained (up to 256) before
   listening for `duration_s`; with none running it starts one for the call and stops it after.

@@ -155,7 +155,7 @@ func TestMonitorFailureAndRangeWording(t *testing.T) {
 		Error:        &leylinev1.ErrorDetail{Code: leyline.CodeInvalidArgument},
 	}
 	st := ui.Style{Color: true}
-	got := monitorFailure(job, st)
+	got := monitorFailure(job, st, nil)
 	if strings.Count(ui.Strip(got), "ley scan") != 1 {
 		t.Errorf("the remedy should appear once: %q", got)
 	}
@@ -165,7 +165,7 @@ func TestMonitorFailureAndRangeWording(t *testing.T) {
 		t.Errorf("the remedy after \"use \" should be Cmd up to the comma: %q", line)
 	}
 	other := &leylinev1.Job{StatusDetail: "no", Error: &leylinev1.ErrorDetail{Code: leyline.CodeInvalidArgument}}
-	if got := monitorFailure(other, ui.Style{}); !strings.Contains(got, "ley scan sweeps") {
+	if got := monitorFailure(other, ui.Style{}, nil); !strings.Contains(got, "ley scan sweeps") {
 		t.Errorf("a detail with no remedy still gets one: %q", got)
 	}
 	for _, in := range []string{"88.5", "89M..88M", "gmrs"} {

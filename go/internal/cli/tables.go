@@ -35,6 +35,8 @@ type bandJSON struct {
 	Mode        string   `json:"mode"`
 	BandwidthHz uint32   `json:"bandwidth_hz"`
 	Note        string   `json:"note"`
+	// Parts names the bands a group is made of; absent on a plain band.
+	Parts []string `json:"parts,omitempty"`
 }
 
 // bandModeName renders a band's mode: "usb/lsb" where the sideband follows
@@ -126,11 +128,13 @@ client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 			if len(args) == 1 {
 				return runBandLookup(app, args[0])
 			}
-			bs := leyline.Bands()
+			// The groups come after the bands: the table stays frequency-ordered and
+			// disjoint, and a group is a name for a sweep rather than a place.
+			bs := append(leyline.Bands(), leyline.BandGroups()...)
 			if app.JSON {
 				out := make([]bandJSON, 0, len(bs))
 				for _, b := range bs {
-					out = append(out, bandJSON{Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz, Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, Note: b.Note})
+					out = append(out, bandJSON{Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz, Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, Note: b.Note, Parts: b.Parts})
 				}
 				return app.printArray(out)
 			}
@@ -234,6 +238,8 @@ func bandFamily(b leyline.Band) string {
 		return "amateur radio"
 	case strings.Contains(b.Name, "broadcast"):
 		return "broadcast"
+	case strings.HasPrefix(b.Name, "GMRS"):
+		return "GMRS"
 	}
 	return "other services"
 }

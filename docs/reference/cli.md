@@ -102,8 +102,10 @@ explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Mo
 outputs `ch15..ch22` also answer to their repeater-slot names `rpt1..rpt8`, the
 channel-numbered `15rp..22rp`, and Baofeng's `ch23..ch30` -- every label a radio might print for
 the same channel) and **bands**
-(name, default mode, default bandwidth; includes `gmrs` and
-`gmrs-in`) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
+(name, default mode, default bandwidth; GMRS is two bands 5 MHz apart, `gmrs-462` for channels 1 to
+7 and 15 to 22 with the repeater outputs and `gmrs-467` for channels 8 to 14 with the repeater
+inputs, plus the group `gmrs` spanning both, which `scan` sweeps whole and a picture or a watch
+refuses with the halves named unless the radio captures 5.2 MHz at once) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
 prose by `ley help presets`; resolution is number/unit form first, then preset name, never probing. These are presentation over the same RPCs: the CLI
 adds no capability the protocol lacks.
 
@@ -157,7 +159,8 @@ with no proto message, emitted through encoding/json as exactly `{"version","go"
 that order (pinned by a golden test). The third is the client-local tables: `ley presets --json`
 prints one array of `{name, aliases, hz, mode, description}` and `ley bands --json` one array of
 `{name, aliases, min_hz, max_hz, mode, bandwidth_hz, note}` (`mode` is `usb/lsb` where the sideband
-follows the frequency; `aliases` are what `--band` accepts). `ley bands <frequency|preset|band>
+follows the frequency; `aliases` are what `--band` accepts; a group such as `gmrs` comes after the
+bands with `parts`, the aliases of the bands it spans). `ley bands <frequency|preset|band>
 --json` is the one place a client-local table answers with a **single object** instead:
 `{hz, band, mode, bandwidth_hz, reason}`, where `band` is one of those entries or `null` and `mode`
 is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`
@@ -222,8 +225,9 @@ both, so a tool wanting everything passes `--min-snr 0 --skirt-db 0`.
 
 **`ley monitor <band|range> [--for D] [--min-snr DB] [--min-hold D] [--skirt-db DB] [--device SEL] [--take-over] [--json]`** parks
 one capture on a band and watches it, then prints a time-ordered log of the carriers that came and
-went. A range positional (`462.5M..462.75M`) or a band name (`gmrs`, `2m`) resolves exactly as
-`scan`'s does: range first, then the band. `--for` sets how long to watch (`30s`, `2m`; `0` watches
+went. A range positional (`462.5M..462.75M`) or a band name (`gmrs-462`, `2m`) resolves exactly as
+`scan`'s does: range first, then the band; the `gmrs` group is wider than one capture and is
+refused with its halves named. `--for` sets how long to watch (`30s`, `2m`; `0` watches
 until Ctrl-C); it becomes `MonitorConfig.duration_ms`. The watch is `Jobs.StartJob(MonitorConfig)`
 and its detections stream on the telemetry plane (type `DETECTION`, daemon-wide) the same as a
 scan's; the client folds them into the log. It runs daemon-side and owns the radio for the duration,

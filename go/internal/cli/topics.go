@@ -292,7 +292,8 @@ usb/lsb means the sideband follows the amateur convention: USB at and above
 
 `)
 	tw = tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	for _, band := range leyline.Bands() {
+	// The bands, then the groups, as `ley bands` lists them: a group is a name a sweep takes whole.
+	for _, band := range append(leyline.Bands(), leyline.BandGroups()...) {
 		mode := leyline.ModeName(band.Mode)
 		if band.Mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
 			mode = "usb/lsb"
