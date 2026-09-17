@@ -102,24 +102,42 @@ func (h *mcpHarness) must(t *testing.T, name string, args map[string]any) *mcp.C
 }
 
 // resultText joins the text content blocks of a result.
+// resultText is a result's prose: its text blocks with the JSON one (the last, when it parses
+// as JSON) left out, so a count of a word in the sentences is not doubled by the same word in
+// the shapes.
 func resultText(res *mcp.CallToolResult) string {
-	var b strings.Builder
+	var texts []string
 	for _, c := range res.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
-			b.WriteString(tc.Text)
+			texts = append(texts, tc.Text)
 		}
 	}
-	return b.String()
+	if n := len(texts); n > 0 && json.Valid([]byte(texts[n-1])) && strings.HasPrefix(strings.TrimSpace(texts[n-1]), "{") {
+		texts = texts[:n-1]
+	}
+	return strings.Join(texts, "")
 }
 
-// structured unmarshals a result's structured content into m through
-// protojson, which is what proves the shape is the contract's.
+// resultJSON is a result's JSON: the last text block, where every tool puts it (a result has no
+// structuredContent, see jsonResult).
+func resultJSON(res *mcp.CallToolResult) []byte {
+	var last string
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			last = tc.Text
+		}
+	}
+	return []byte(last)
+}
+
+// structured unmarshals a result's JSON into m through protojson, which is what proves the
+// shape is the contract's.
 func structured(t *testing.T, res *mcp.CallToolResult, m proto.Message) {
 	t.Helper()
-	raw, err := json.Marshal(res.StructuredContent)
-	if err != nil {
-		t.Fatal(err)
+	if res.StructuredContent != nil {
+		t.Fatalf("a result must carry no structuredContent (Claude Code drops the text beside it): %v", res.StructuredContent)
 	}
+	raw := resultJSON(res)
 	if err := protojson.Unmarshal(raw, m); err != nil {
 		t.Fatalf("structured content is not a %T: %v\n%s", m, err, raw)
 	}
@@ -128,10 +146,7 @@ func structured(t *testing.T, res *mcp.CallToolResult, m proto.Message) {
 // structuredField pulls one top-level key out of a composite result as proto3 JSON.
 func structuredField(t *testing.T, res *mcp.CallToolResult, key string, m proto.Message) {
 	t.Helper()
-	raw, err := json.Marshal(res.StructuredContent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := resultJSON(res)
 	var parts map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &parts); err != nil {
 		t.Fatalf("%v\n%s", err, raw)
@@ -198,7 +213,7 @@ func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
 	if !strings.Contains(resultText(res), "using NFM: 2 m amateur band default") {
 		t.Errorf("the tune's decisions are missing from the text:\n%s", resultText(res))
 	}
-	raw, _ := json.Marshal(res.StructuredContent)
+	raw := resultJSON(res)
 	if !strings.Contains(string(raw), `"sink":null`) {
 		t.Errorf("no audio was asked for, so sink must be null: %s", raw)
 	}
@@ -360,7 +375,7 @@ func TestMCPListenSummary(t *testing.T) {
 			t.Errorf("segment has no length: %v", seg)
 		}
 	}
-	raw, _ := json.Marshal(res.StructuredContent)
+	raw := resultJSON(res)
 	var parts struct {
 		Meter meterStats `json:"meter"`
 	}
@@ -387,7 +402,7 @@ func TestMCPListenSummary(t *testing.T) {
 func TestMCPSnapshot(t *testing.T) {
 	h := newMCPHarness(t)
 	res := h.must(t, "snapshot", map[string]any{"frequency": "146.52", "bins": 256, "include_bins": true})
-	raw, _ := json.Marshal(res.StructuredContent)
+	raw := resultJSON(res)
 	var row SpectrumRow
 	if err := json.Unmarshal(raw, &row); err != nil {
 		t.Fatalf("%v\n%s", err, raw)
@@ -425,7 +440,7 @@ func TestMCPSnapshot(t *testing.T) {
 		}
 	}
 	// The bins are on request: the floor and the peaks are the result, the numbers a page.
-	raw, _ = json.Marshal(bare.StructuredContent)
+	raw = resultJSON(bare)
 	var bareRow SpectrumRow
 	_ = json.Unmarshal(raw, &bareRow)
 	if bareRow.Bins != nil || bareRow.CenterHz != 146_520_000 || !strings.Contains(string(raw), `"bins":null`) {
@@ -465,7 +480,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	}
 	// list_entities folds the running job's records rather than starting a second decoder.
 	ent := h.must(t, "list_entities", map[string]any{"protocol": "aprs", "duration_s": 0.5})
-	raw, _ := json.Marshal(ent.StructuredContent)
+	raw := resultJSON(ent)
 	var snap EntitySnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil || len(snap.Entities) == 0 {
 		t.Fatalf("entities (%v): %s\n%s", err, raw, resultText(ent))
@@ -554,7 +569,7 @@ func TestMCPDaemonLogs(t *testing.T) {
 	if info.GetPid() == 0 || info.GetStartedAtNs() == 0 {
 		t.Errorf("no pid or start time in the structured result: %v", &info)
 	}
-	raw, _ := json.Marshal(res.StructuredContent)
+	raw := resultJSON(res)
 	if !strings.Contains(string(raw), `"lines":["2026-09-17T10:00:02+0000 info leyline.daemon: [LeylineDaemon] two","2026-09-17T10:00:03+0000 info leyline.daemon: [LeylineDaemon] three"]`) {
 		t.Errorf("structured lines: %s", raw)
 	}
@@ -644,6 +659,108 @@ func TestListenSummaryFold(t *testing.T) {
 	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
 	if !strings.Contains(text, "1 transmission") || !strings.Contains(text, "already open when listening began") {
 		t.Errorf("text:\n%s", text)
+	}
+}
+
+// The daemon's grace after an interactive write refuses a job for a minute and says "somebody
+// was tuning"; when the write was this server's own and nobody is listening, the job may go
+// ahead. Somebody else's write, a channel listening, or audio playing keeps the refusal.
+func TestOwnGraceIsOnlyOurOwnQuietCapture(t *testing.T) {
+	now := time.Now()
+	srv := &mcpServer{}
+	srv.touched("cap_mine")
+	state := func(last time.Time, sinks uint32, chState leylinev1.ChannelState) *leylinev1.GetStateResponse {
+		st := &leylinev1.GetStateResponse{Captures: []*leylinev1.Capture{{
+			CaptureId: "cap_mine", DeviceId: "dev_a",
+			Activity: &leylinev1.CaptureActivity{LastInteractiveWriteNs: last.UnixNano(), LiveAudioSinks: sinks},
+		}}}
+		if chState != leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED {
+			st.Channels = []*leylinev1.Channel{{ChannelId: "chan_x", CaptureId: "cap_mine", State: chState}}
+		}
+		return st
+	}
+	none := leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED
+	if !srv.ownGrace(state(now, 0, none), "dev_a") {
+		t.Error("our own write a moment ago, nobody listening: the grace is ours to skip")
+	}
+	if !srv.ownGrace(state(now, 0, none), "") {
+		t.Error("with no device named, any capture of ours counts")
+	}
+	if srv.ownGrace(state(now, 0, none), "dev_b") {
+		t.Error("another device's capture is not ours")
+	}
+	if srv.ownGrace(state(now.Add(-20*time.Second), 0, none), "dev_a") {
+		t.Error("a write 20 s from ours is somebody else's")
+	}
+	if srv.ownGrace(state(now, 1, none), "dev_a") {
+		t.Error("audio playing keeps the refusal")
+	}
+	if srv.ownGrace(state(now, 0, leylinev1.ChannelState_CHANNEL_ACTIVE), "dev_a") {
+		t.Error("a channel listening keeps the refusal")
+	}
+	if (&mcpServer{}).ownGrace(state(now, 0, none), "dev_a") {
+		t.Error("a server that never wrote has no grace of its own")
+	}
+}
+
+// A gain on a radio without gain stages is refused in a sentence that names the radio, where
+// the daemon would say "no gain element named" and name nothing.
+func TestGainlessRadioIsRefusedInWords(t *testing.T) {
+	st := &leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{
+		{DeviceId: "dev_file", Driver: "file", Model: "radio-e.cu8"},
+		{DeviceId: "dev_rtl", Driver: "rtlsdr", Model: "NESDR", GainElements: []*leylinev1.GainElement{{Name: "TUNER"}}},
+	}}
+	if err := gainlessRadio(st, "dev_file", "auto"); err == nil || !strings.Contains(err.Error(), "radio-e.cu8 has no gain to set") {
+		t.Errorf("the file device must be refused by name: %v", err)
+	}
+	if err := gainlessRadio(st, "dev_rtl", "auto"); err != nil {
+		t.Errorf("the dongle has a gain: %v", err)
+	}
+	if err := gainlessRadio(st, "", "auto"); err != nil {
+		t.Errorf("with no device named and a dongle present, the daemon may pick it: %v", err)
+	}
+	if err := gainlessRadio(st, "dev_file", ""); err != nil {
+		t.Errorf("no gain asked, nothing to refuse: %v", err)
+	}
+	only := &leylinev1.GetStateResponse{Devices: st.Devices[:1]}
+	if err := gainlessRadio(only, "", "30"); err == nil || !strings.Contains(err.Error(), "no radio here has a gain") {
+		t.Errorf("with only file devices, a gain has nowhere to go: %v", err)
+	}
+}
+
+// The snapshot's text says what the row reads at the frequency asked for, so a carrier under
+// the peaks' 15 dB bar is still reported there rather than read as nothing.
+func TestSnapshotSaysTheLevelAtTheFrequency(t *testing.T) {
+	bins := make([]float64, 1024)
+	for i := range bins {
+		bins[i] = -80
+	}
+	// 2.4 MHz across 1024 bins is 2344 Hz a bin; 146.520 MHz is the centre, bin 512.
+	bins[512] = -74
+	row := &SpectrumRow{FFTRow: FFTRow{CenterHz: 146_520_000, SpanHz: 2_400_000, Bins: bins, FloorDb: -80}}
+	if got := levelAtText(row, 146_520_000); !strings.Contains(got, "at 146.520 MHz the row reads -74 dBFS, 6 dB over the floor") {
+		t.Errorf("text: %q", got)
+	}
+	if got := levelAtText(row, 146_524_000); !strings.Contains(got, "-74 dBFS") {
+		t.Errorf("a carrier 4 kHz off the dial is within the channel: %q", got)
+	}
+	if got := levelAtText(row, 146_600_000); !strings.Contains(got, "-80 dBFS, 0 dB over the floor") {
+		t.Errorf("text: %q", got)
+	}
+	if got := levelAtText(row, 150_000_000); got != "" {
+		t.Errorf("outside the row there is nothing to read: %q", got)
+	}
+}
+
+// The daemon's remedies name ley verbs; the tool's name its own.
+func TestScanToolFailureNamesTheTools(t *testing.T) {
+	err := scanToolFailure(&ExitError{Message: "all of that range sits on the DC spike; a scan does not look there. ley spectrum draws that span instead, DC spike and all"})
+	if !strings.Contains(err.Error(), "snapshot draws that span instead") || strings.Contains(err.Error(), "ley spectrum") {
+		t.Errorf("remedy: %v", err)
+	}
+	other := &ExitError{Message: "something else"}
+	if got := scanToolFailure(other); got != other {
+		t.Errorf("a message with no remedy to rewrite is returned as it is: %v", got)
 	}
 }
 

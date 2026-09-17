@@ -257,7 +257,7 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(b.String()), rawOut, nil
+	return jsonResult(b.String(), rawOut), nil, nil
 }
 
 func daemonOrNil(d *leylinev1.DaemonInfo) any {
@@ -330,7 +330,8 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(errb.String() + out.String()), raw, nil
+	srv.touched(s.capture.GetCaptureId())
+	return jsonResult(errb.String()+out.String(), raw), nil, nil
 }
 
 // sinkOrNil is a sink for composite, or JSON null when there is none: a typed
@@ -414,6 +415,13 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		}
 		o.deviceID = d.DeviceId
 	}
+	if err := gainlessRadio(s.state, o.deviceID, in.Gain); err != nil {
+		return nil, nil, err
+	}
+	var note string
+	if !o.takeOver && srv.ownGrace(s.state, o.deviceID) {
+		o.takeOver, note = true, ownGraceNote
+	}
 	scan, _, err := s.sweep(ctx, o)
 	if err != nil {
 		return nil, nil, toolError(scanToolFailure(err))
@@ -423,7 +431,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	}
 	errb.Reset()
 	printScan(app, scan, o)
-	text := out.String() + errb.String()
+	text := note + out.String() + errb.String()
 	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
 	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
 	// an agent's result budget holds, and the ones under the floor it asked for are the ones it
@@ -446,13 +454,42 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	return protoResult(scan, text)
 }
 
-// scanToolFailure rewrites the one remedy scanFailure phrases as a flag.
+// scanToolFailure rewrites the remedies scanFailure phrases as flags and verbs into the tool's
+// own: take_over for the flag, snapshot for the spectrum the daemon points at when a range sits
+// on the radio's DC spike.
 func scanToolFailure(err error) error {
 	var ee *ExitError
-	if errors.As(err, &ee) && strings.Contains(ee.Message, "ley scan --take-over") {
-		return errors.New(strings.Replace(ee.Message, "ley scan --take-over sweeps anyway", "take_over: true sweeps anyway", 1))
+	if !errors.As(err, &ee) {
+		return err
 	}
-	return err
+	msg := strings.Replace(ee.Message, "ley scan --take-over sweeps anyway", "take_over: true sweeps anyway", 1)
+	msg = strings.Replace(msg, "ley spectrum draws that span instead", "snapshot draws that span instead", 1)
+	if msg == ee.Message {
+		return err
+	}
+	return errors.New(msg)
+}
+
+// gainlessRadio refuses a gain for a radio that has no gain to set (a file device plays a
+// recording as it was made) in a sentence, where the daemon would say "no gain element named"
+// and name nothing. With no device chosen, the daemon picks an idle one, so the refusal comes
+// only when no radio at all has a gain stage.
+func gainlessRadio(state *leylinev1.GetStateResponse, deviceID, gain string) error {
+	if gain == "" {
+		return nil
+	}
+	for _, d := range state.GetDevices() {
+		if deviceID != "" && d.GetDeviceId() != deviceID {
+			continue
+		}
+		if len(d.GetGainElements()) > 0 {
+			return nil
+		}
+		if deviceID != "" {
+			return fmt.Errorf("%s has no gain to set (a file device plays its recording as it was made); leave gain out", deviceName(d))
+		}
+	}
+	return errors.New("no radio here has a gain to set (file devices play their recordings as they were made); leave gain out")
 }
 
 type listenSummaryArgs struct {
@@ -568,7 +605,8 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(errb.String() + sum.text(s, dur)), raw, nil
+	srv.touched(s.capture.GetCaptureId())
+	return jsonResult(errb.String()+sum.text(s, dur), raw), nil, nil
 }
 
 func subAudibleOrNil(sa *leylinev1.SubAudible) any {
@@ -867,6 +905,9 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 		return nil, nil, err
 	}
 	text := errb.String() + snapshotText(row, s)
+	if bo.freq != 0 {
+		text += levelAtText(row, bo.freq)
+	}
 	if !in.IncludeBins {
 		text += fmt.Sprintf("the %d bins are left out of the result; include_bins: true returns them.\n", len(row.Bins))
 	}
@@ -877,7 +918,7 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 			leyline.FormatFrequency(b.MinHz), leyline.FormatFrequency(b.MaxHz),
 			fmt.Sprintf("%.0f%%", 100*float64(row.SpanHz)/float64(b.WidthHz())))
 	}
-	res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimRight(text, "\n")}}}
+	res := jsonResult(text, raw)
 	if !in.NoImage {
 		png, err := renderSpectrumPNG(row.Bins, row.FloorDb, row.CenterHz, row.SpanHz, row.Peaks, bo.freq)
 		if err != nil {
@@ -885,7 +926,8 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 		}
 		res.Content = append(res.Content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
 	}
-	return res, json.RawMessage(raw), nil
+	srv.touched(s.capture.GetCaptureId())
+	return res, nil, nil
 }
 
 // oneRow subscribes to the capture's FFT and returns the first row as the
@@ -948,6 +990,40 @@ func snapshotText(row *SpectrumRow, s *session) string {
 		fmt.Fprintf(&b, "  %s  %.0f dBFS  (%.0f dB over the floor)%s\n", leyline.FormatFrequency(p.CenterHz), p.Db, p.Db-row.FloorDb, band)
 	}
 	return b.String()
+}
+
+// levelAtHalfWidth is half the channel a level-at-frequency reading covers: the loudest bin
+// within it is the reading, so a carrier a few kHz off the dial still counts.
+const levelAtHalfWidth = 6_250
+
+// levelAtText is the row's level at the frequency asked for: the loudest bin within a voice
+// channel of it and how far that stands over the floor. The peaks list has a 15 dB bar, so a
+// carrier 6 dB up is in the row and not in the list, and an agent reading "peaks: []" as
+// "nothing at 162.400" needed this sentence.
+func levelAtText(row *SpectrumRow, freq uint64) string {
+	n := len(row.Bins)
+	if n == 0 || row.SpanHz == 0 {
+		return ""
+	}
+	binWidth := float64(row.SpanHz) / float64(n)
+	lo := float64(row.CenterHz) - float64(row.SpanHz)/2
+	at := func(hz float64) int { return int(math.Floor((hz - lo) / binWidth)) }
+	first, last := at(float64(freq)-levelAtHalfWidth), at(float64(freq)+levelAtHalfWidth)
+	if last < 0 || first >= n {
+		return ""
+	}
+	first, last = max(first, 0), min(last, n-1)
+	loudest := math.Inf(-1)
+	for i := first; i <= last; i++ {
+		if !math.IsNaN(row.Bins[i]) && row.Bins[i] > loudest {
+			loudest = row.Bins[i]
+		}
+	}
+	if math.IsInf(loudest, -1) {
+		return ""
+	}
+	return fmt.Sprintf("at %s the row reads %.0f dBFS, %.0f dB over the floor (the loudest bin within %s).\n",
+		leyline.FormatFrequency(freq), loudest, loudest-row.FloorDb, leyline.FormatFrequency(levelAtHalfWidth))
 }
 
 // ---------- decoders ----------
@@ -1186,7 +1262,7 @@ fold:
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(out.String()), json.RawMessage(raw), nil
+	return jsonResult(out.String(), raw), nil, nil
 }
 
 type startDecodeJobArgs struct {
@@ -1210,22 +1286,26 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		}
 		cfg.FrequencyHz = hz
 	}
+	st, err := c.State(ctx)
+	if err != nil {
+		return nil, nil, toolError(srv.app.notRunning(err))
+	}
 	if in.Device != "" {
-		st, err := c.State(ctx)
-		if err != nil {
-			return nil, nil, toolError(srv.app.notRunning(err))
-		}
 		d, err := pickDevice(st, in.Device)
 		if err != nil {
 			return nil, nil, toolError(err)
 		}
 		cfg.DeviceId = d.GetDeviceId()
 	}
+	var b strings.Builder
+	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
+		cfg.TakeOver = true
+		b.WriteString(ownGraceNote)
+	}
 	job, err := c.StartDecode(ctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(decodeToolFailure(cfg.Decoder, err))
 	}
-	var b strings.Builder
 	fmt.Fprintf(&b, "%s: job %s", job.GetStatusDetail(), job.GetJobId())
 	if in.Keep {
 		fmt.Fprintf(&b, ", kept: it runs on after this server exits and its records are ley://records/%s, which query_records reads.", job.GetJobId())

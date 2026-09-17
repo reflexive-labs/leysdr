@@ -55,12 +55,17 @@ the job kept, and it outlives the agent.
 
 ## The shapes
 
-Every tool's structured result is the proto3 JSON mapping of the `leyline.v1` messages, the same
-shape `ley <verb> --json` prints for the mirror verb (lowerCamelCase keys, 64-bit integers as
-strings), and the compatibility test of every tool is that mirror: the fake-daemon tests hold
-`list_devices` against `ley devices --json` message for message. Beside the structured result each tool
-returns a short text, which is what the verb would have said on a terminal: the decisions a tune
-made, the scan table, one line per record. An agent reasons over the text and parses the JSON.
+Every tool's result is two text blocks. The first is what the verb would have said on a
+terminal: the decisions a tune made, the scan table, one line per record, the squelch that never
+opened. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
+`ley <verb> --json` prints for the mirror verb (lowerCamelCase keys, 64-bit integers as strings),
+and the compatibility test of every tool is that mirror: the fake-daemon tests hold `list_devices`
+against `ley devices --json` message for message. An agent reasons over the text and parses the
+JSON. Nothing is sent as `structuredContent`, on purpose: the server began by putting the JSON
+there with the text beside it, the way the MCP specification suggests, and the first agent evals
+showed that Claude Code hands the model only `structuredContent` when there is one and drops the
+content blocks ([anthropics/claude-code#55677](https://github.com/anthropics/claude-code/issues/55677)),
+so no sentence the tools said had ever reached an agent. Content is what every client shows.
 
 Three results are composites, one message under each key, each still its message's proto3 JSON:
 `tune` returns `{capture, channel, sink}` (`sink` is `null` unless `audio` was asked for),
@@ -134,7 +139,11 @@ Notes a table cell cannot hold:
   and summary line, band-plan labels included. `min_snr` trims the returned `Scan`'s detections
   the way `ley scan --min-snr` trims its rows, because a 20 MHz sweep is hundreds of detections
   and more JSON than a result budget holds; the whole sweep stays readable as `ley://scans/<id>`
-  (below), and the text says how many it left out. `gain` (a level, or `auto` for where the radio's AGC settles) is where
+  (below), and the text says how many it left out. A radio with no gain stage (a file device) is
+  refused a `gain` in a sentence that names it. The daemon's minute of grace after an interactive
+  write ("somebody was tuning this radio 39 s ago") is skipped when the write was this server's
+  own earlier tune, listen or snapshot and nobody is listening on the capture: the sweep goes
+  ahead, and the text says so, since a take-over that silences nobody is not one. `gain` (a level, or `auto` for where the radio's AGC settles) is where
   the sweep pins the tuner; without it the sweep pins whatever gain the radio was left at, which is
   what made two sweeps of one band differ by 6 dB of floor in the survey, and `Scan.gains` says which
   either way.
@@ -161,7 +170,9 @@ Notes a table cell cannot hold:
   are listening on, and removes a capture it made. `no_image: true` returns the numbers alone,
   and `bins` is `null` unless `include_bins: true`: a row of 1024 numbers is a page of JSON an
   agent rarely reads (a 2048-bin survey was 39 KB), and the floor, the peaks and the text say
-  what stood out.
+  what stood out. Given a frequency, the text also says what the row reads there (the loudest bin
+  within a voice channel of it and its margin over the floor), because the peaks have a 15 dB bar
+  and a carrier 6 dB up was read as nothing on the frequency.
   A band wider than the radio captures (the FM broadcast band is 20 MHz; an RTL-SDR captures
   3.2 at most) is shown centred, and the text says which frequencies the row covers and what
   share of the band that is; a radio that captures wider shows more at once, and `scan` sweeps
@@ -224,12 +235,12 @@ $ ley --socket /tmp/ley-mcp-rec.sock mcp
    {"name":"listen_summary",…},{"name":"query_records",…},{"name":"scan",…},{"name":"snapshot",…},
    {"name":"start_decode_job",…},{"name":"tune",…}]}}
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_devices","arguments":{}}}
-← {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"scan_band.cf32 (file, serial 04424b881c48893a) available, tunes 146.000 MHz"}],
-   "structuredContent":{"devices":[{"deviceId":"dev_01K…","driver":"file","model":"scan_band.cf32",…}]}}}
+← {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"scan_band.cf32 (file, serial 04424b881c48893a) available, tunes 146.000 MHz"},
+   {"type":"text","text":"{\"devices\":[{\"deviceId\":\"dev_01K…\",\"driver\":\"file\",\"model\":\"scan_band.cf32\",…}]}"}]}}
 → {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scan","arguments":{"range":"145M..147M","dwell_ms":300}}}
 ← {"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":
    "FREQUENCY    WIDTH            SNR (dB)  SEEN  BAND\n145.200 MHz  5.954 kHz              66   2/2  2 m amateur\n145.398 MHz  under 2.344 kHz         4   1/2  2 m amateur\n145.600 MHz  6.182 kHz              58   2/2  2 m amateur\n146.400 MHz  under 2.344 kHz        52   2/2  2 m amateur\n146.805 MHz  187.624 kHz            35   2/2  2 m amateur\n5 signals, floor -88 dBFS per 2.344 kHz bin\n  ley listen 145.2"}],
-   "structuredContent":{"scanId":"scan_01K…","config":{…},"detections":[{"centerHz":"145200000","bandwidthHz":5954,"snrDb":66.…,"looks":2,"looksPossible":2,"floorDbfs":-88.…},…],"noiseFloor":[…],"resolutionHz":2344,"covered":{…}}}}
+   {"type":"text","text":"{\"scanId\":\"scan_01K…\",\"config\":{…},\"detections\":[{\"centerHz\":\"145200000\",\"bandwidthHz\":5954,\"snrDb\":66.…,\"looks\":2,\"looksPossible\":2,\"floorDbfs\":-88.…},…],\"noiseFloor\":[…],\"resolutionHz\":2344,\"covered\":{…}}"}]}}
 ```
 
 The 145.398 MHz row, seen once in two looks at 4 dB, is the detector reporting what it saw and

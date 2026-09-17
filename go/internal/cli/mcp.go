@@ -9,7 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -105,11 +108,72 @@ type mcpServer struct {
 	server *mcp.Server
 	// presenceDone closes when the presence loop has stopped.
 	presenceDone chan struct{}
+	// recent is when this server last wrote to each capture (a tune, a listen, a snapshot),
+	// by capture id. The daemon's don't-disturb grace refuses a sweep or a decode for a minute
+	// after an interactive write and says "somebody was tuning"; when that somebody was this
+	// server's own earlier call, the refusal protects nobody and the tools skip it.
+	recentMu sync.Mutex
+	recent   map[string]time.Time
 }
+
+// touched records an interactive write of this server's own on a capture.
+func (srv *mcpServer) touched(captureID string) {
+	if captureID == "" {
+		return
+	}
+	srv.recentMu.Lock()
+	defer srv.recentMu.Unlock()
+	if srv.recent == nil {
+		srv.recent = map[string]time.Time{}
+	}
+	srv.recent[captureID] = time.Now()
+}
+
+// ownGraceSlack is how far apart this server's own write and the daemon's last-write stamp may
+// be and still be the same write.
+const ownGraceSlack = 3 * time.Second
+
+// ownGrace reports whether the only thing in the way of a job on the device (any device, when
+// deviceID is empty) is the daemon's grace after a write this server made itself: no channel is
+// listening on the capture, no audio plays from it, and its last interactive write is one of
+// ours to within ownGraceSlack. A job may then take the radio over without silencing anyone.
+func (srv *mcpServer) ownGrace(state *leylinev1.GetStateResponse, deviceID string) bool {
+	srv.recentMu.Lock()
+	defer srv.recentMu.Unlock()
+	for _, cap := range state.GetCaptures() {
+		if deviceID != "" && cap.GetDeviceId() != deviceID {
+			continue
+		}
+		last := cap.GetActivity().GetLastInteractiveWriteNs()
+		if last == 0 || cap.GetActivity().GetLiveAudioSinks() > 0 {
+			continue
+		}
+		listening := false
+		for _, ch := range state.GetChannels() {
+			if ch.GetCaptureId() == cap.GetCaptureId() && ch.GetState() == leylinev1.ChannelState_CHANNEL_ACTIVE {
+				listening = true
+			}
+		}
+		if listening {
+			continue
+		}
+		mine, ok := srv.recent[cap.GetCaptureId()]
+		if !ok {
+			continue
+		}
+		if d := mine.Sub(time.Unix(0, last)); d < ownGraceSlack && d > -ownGraceSlack {
+			return true
+		}
+	}
+	return false
+}
+
+// ownGraceNote is what the text says when a job went ahead over this server's own grace.
+const ownGraceNote = "the radio's grace after a tune was this server's own earlier call, so this went ahead without take_over.\n"
 
 // mcpInstructions is what the agent reads about the server before its first
 // call: the shape of the answers, what is not here yet, and the honesty rule.
-const mcpInstructions = `Leyline is a software-defined radio: one daemon owns the radio, and these tools drive it the way the ley command does. Every tool's structured result is the proto3 JSON mapping of the leyline.v1 messages (the same shapes 'ley <verb> --json' prints), and the text is a short summary of the same thing. A bare frequency number is MHz (146.52); add a unit to be exact (1010k, 146520000); presets such as noaa and calling are accepted where a frequency is.
+const mcpInstructions = `Leyline is a software-defined radio: one daemon owns the radio, and these tools drive it the way the ley command does. Every tool's result is two text blocks: first what the ley verb would have said (the decisions a tune made, the scan table, the squelch that never opened), then the proto3 JSON mapping of the leyline.v1 messages (the same shapes 'ley <verb> --json' prints). Read the sentences; parse the JSON. A bare frequency number is MHz (146.52); add a unit to be exact (1010k, 146520000); presets such as noaa and calling are accepted where a frequency is.
 
 A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it, except a decode job started with keep, which comes back as the same job.
 
@@ -221,27 +285,34 @@ func protoJSON(m proto.Message) (json.RawMessage, error) {
 	return json.RawMessage(b), nil
 }
 
-// protoResult is the result of a tool whose answer is one message: the proto3
-// JSON as the structured content and text beside it. text may be empty, in
-// which case the SDK repeats the JSON as text, which is right for a list an
-// agent reads whole.
+// protoResult is the result of a tool whose answer is one message: the text
+// beside the proto3 JSON, both as content.
 func protoResult(m proto.Message, text string) (*mcp.CallToolResult, any, error) {
 	raw, err := protoJSON(m)
 	if err != nil {
 		return nil, nil, err
 	}
-	return textResult(text), raw, nil
+	return jsonResult(text, raw), nil, nil
 }
 
-// textResult is a CallToolResult carrying text alone, trimmed of the trailing
-// newline a verb's prose ends with; nil when there is no text, so the SDK's
-// JSON fallback fills the content in.
-func textResult(text string) *mcp.CallToolResult {
-	text = strings.TrimRight(text, "\n")
-	if text == "" {
-		return nil
+// jsonResult is every tool's result: the text a verb would have printed, then
+// the JSON, as two text blocks, and no structuredContent. The MCP way would be
+// the JSON as structuredContent with the text beside it, and that is how this
+// server began; but Claude Code hands the model only structuredContent when
+// there is one and drops the content blocks (anthropics/claude-code#55677),
+// so every sentence the tools had to say -- the tune's decisions, the scan's
+// table, the squelch that never opened -- reached no agent. Content is what
+// every client shows, so everything goes there. text may be empty: a list an
+// agent reads whole needs no sentence. The text keeps one trailing newline:
+// Claude Code joins the blocks with nothing between, and a table's last row
+// ran straight into the JSON's first brace.
+func jsonResult(text string, raw json.RawMessage) *mcp.CallToolResult {
+	res := &mcp.CallToolResult{}
+	if text = strings.TrimRight(text, "\n"); text != "" {
+		res.Content = append(res.Content, &mcp.TextContent{Text: text + "\n"})
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+	res.Content = append(res.Content, &mcp.TextContent{Text: string(raw)})
+	return res
 }
 
 // composite assembles a structured result out of several messages -- tune's

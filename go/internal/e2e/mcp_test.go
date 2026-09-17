@@ -39,24 +39,52 @@ func (e *env) mcpSession(t *testing.T) *mcp.ClientSession {
 	return cs
 }
 
-// callTool runs one tool and returns its structured content as a generic
-// JSON value plus its text, failing the test on a tool error.
+// callTool runs one tool and returns its JSON (the last text block, parsed as a generic value;
+// a result carries no structuredContent, see jsonResult) plus its prose, failing the test on a
+// tool error.
 func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any) (any, string) {
 	t.Helper()
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
-	var text strings.Builder
+	if res.IsError {
+		t.Fatalf("%s %v: %s", name, args, resultProse(res))
+	}
+	if res.StructuredContent != nil {
+		t.Fatalf("%s: a result must carry no structuredContent: %v", name, res.StructuredContent)
+	}
+	return resultValue(t, res), resultProse(res)
+}
+
+// resultProse is a result's text blocks but the JSON one.
+func resultProse(res *mcp.CallToolResult) string {
+	var texts []string
 	for _, c := range res.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
-			text.WriteString(tc.Text)
+			texts = append(texts, tc.Text)
 		}
 	}
-	if res.IsError {
-		t.Fatalf("%s %v: %s", name, args, text.String())
+	if n := len(texts); n > 0 && json.Valid([]byte(texts[n-1])) && strings.HasPrefix(texts[n-1], "{") {
+		texts = texts[:n-1]
 	}
-	return res.StructuredContent, text.String()
+	return strings.Join(texts, "")
+}
+
+// resultValue is the result's JSON block as a generic value.
+func resultValue(t *testing.T, res *mcp.CallToolResult) any {
+	t.Helper()
+	var last string
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			last = tc.Text
+		}
+	}
+	var v any
+	if err := json.Unmarshal([]byte(last), &v); err != nil {
+		t.Fatalf("the result's last text block is not JSON: %v\n%s", err, last)
+	}
+	return v
 }
 
 // TestMCPAgainstRealDaemon is docs/plans/mcp.md's end-to-end check: the adapter
@@ -116,7 +144,7 @@ func TestMCPAgainstRealDaemon(t *testing.T) {
 
 	// snapshot: the row shape of `ley spectrum --json`, and a PNG one pixel per bin. A recording
 	// tunes only its own centre, so the capture is made there and the carriers sit inside it.
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "snapshot", Arguments: map[string]any{"frequency": "146.0", "device": devID, "bins": 512}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "snapshot", Arguments: map[string]any{"frequency": "146.0", "device": devID, "bins": 512, "include_bins": true}})
 	if err != nil || res.IsError {
 		var text string
 		if res != nil {
@@ -128,7 +156,7 @@ func TestMCPAgainstRealDaemon(t *testing.T) {
 		}
 		t.Fatalf("snapshot: %v %s", err, text)
 	}
-	row := res.StructuredContent.(map[string]any)
+	row := resultValue(t, res).(map[string]any)
 	if bins := list(row, "bins"); len(bins) != 512 || row["floor_db"] == nil || row["peaks"] == nil {
 		t.Errorf("snapshot row: %d bins, floor %v, peaks %v", len(bins), row["floor_db"], row["peaks"])
 	}
