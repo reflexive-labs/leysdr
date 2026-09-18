@@ -28,7 +28,10 @@ var targets: [Target] = [
             .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
             .product(name: "SwiftProtobuf", package: "swift-protobuf"),
         ],
-        path: "Sources/LeylineClient"
+        path: "Sources/LeylineClient",
+        // The band table as `ley bands --json` prints it (`make bands-json`; a Go test fails on
+        // drift), so the app has no table of its own.
+        resources: [.copy("Resources/bands.json")]
     ),
     .testTarget(
         name: "LeylineClientTests",
@@ -56,6 +59,9 @@ targets.append(
         dependencies: ["LeylineClient"],
         path: "Sources/LeylineApp",
         exclude: ["Info.plist"],
+        // The waterfall shader: SwiftPM compiles `.metal` resources into the target's
+        // `default.metallib`, loaded through `Bundle.module` (docs/plans/app.md, APP-2).
+        resources: [.process("Resources")],
         swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
     )
 )

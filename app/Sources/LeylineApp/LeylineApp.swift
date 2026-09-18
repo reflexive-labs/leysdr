@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The Mac app: a peer client of the daemon (CLAUDE.md invariant 1). It renders what the mirror
-// holds and writes through the coalescer; nothing here is authoritative (invariant 7). The layout
-// is a walking skeleton until the design handoff lands: it proves the package builds, links the
-// façade and shows the daemon's state, and no more (docs/plans/app.md, APP-1).
+// holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
+// is M1 of docs/design/app-design-handoff.md: sidebar, spectrum, waterfall, transport bar, the
+// device menu, and a Tune menu that names every gesture (docs/plans/app.md, "The M1 cut").
 
 import LeylineClient
+import LeylineProto
 import SwiftUI
 
 @main
@@ -14,45 +15,63 @@ struct LeylineApp: App {
 
     var body: some Scene {
         WindowGroup("Leyline") {
-            ContentView()
+            MainWindow()
                 .environment(session)
                 .task { await session.start() }
+                .frame(minWidth: 900, minHeight: 560)
         }
-        .defaultSize(width: 960, height: 640)
+        .defaultSize(width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height)
+        .windowToolbarStyle(.unified)
+        .commands { TuneCommands(session: session) }
     }
 }
 
-/// What every view reaches for: the daemon's state and where the connection stands, copied out
-/// of the mirror on every change, and the coalescer that writes through it. One identity per
-/// process, so the window and its writes are one client to the daemon and `ley state` shows one
-/// row for the app. Views read `state` and never the mirror, so a value they hold is one render's.
-@MainActor
-@Observable
-final class AppSession {
-    private(set) var state = MirrorState()
-    private(set) var connection: MirrorConnection = .idle
-    private(set) var socketPath = SocketPath.default()
-    private(set) var writes: WriteCoalescer?
-    private(set) var startupError: LeylineError?
-    private var mirror: DaemonMirror?
-    private var running: Task<Void, Never>?
+/// The menu bar is the reference for every tuning gesture: the canvas never explains itself
+/// (docs/design/app-design-handoff.md, "Tuning").
+struct TuneCommands: Commands {
+    let session: AppSession
 
-    func start() async {
-        guard running == nil else { return }
-        do {
-            let daemon = try DaemonConnection(identity: .fresh(kind: "app", label: "Leyline"))
-            socketPath = daemon.socketPath
-            let mirror = DaemonMirror(connection: daemon)
-            mirror.onChange = { [weak self] m in
-                self?.state = m.state
-                self?.connection = m.connection
+    var body: some Commands {
+        CommandMenu("Tune") {
+            Button("Tune Up") { session.step(1) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+            Button("Tune Down") { session.step(-1) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Fine Tune Up") { session.step(1, fine: true) }
+                .keyboardShortcut(.rightArrow, modifiers: [.shift])
+            Button("Fine Tune Down") { session.step(-1, fine: true) }
+                .keyboardShortcut(.leftArrow, modifiers: [.shift])
+            Divider()
+            Button("Enter Frequency…") { session.frequencyEntryShown = true }
+                .keyboardShortcut("l", modifiers: [.command])
+            Button("Snap to Nearest Bookmark") { session.snapToNearestBookmark() }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+            Button("Centre on Strongest Signal") { session.centreOnStrongest() }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+            Divider()
+            Menu("Mode") {
+                ForEach(TuneCommands.modes, id: \.rawValue) { m in
+                    Button(m.word) { session.setMode(m) }
+                }
             }
-            self.mirror = mirror
-            self.writes = WriteCoalescer(connection: daemon)
-            running = Task { await mirror.run() }
-            await running?.value
-        } catch {
-            startupError = LeylineError(error)
+            Menu("Bandwidth") {
+                let mode = session.channel?.mode ?? .nfm
+                ForEach(mode.offeredBandwidthsHz, id: \.self) { bw in
+                    Button(Frequency.width(bw)) { session.setBandwidth(bw) }
+                }
+            }
+            Divider()
+            Button("Bookmark This Frequency") { session.bookmarkCurrent() }
+                .keyboardShortcut("d", modifiers: [.command])
+            Button(session.isPlaying ? "Pause" : "Play") { Task { await session.togglePlay() } }
+                .keyboardShortcut(.space, modifiers: [])
+        }
+        CommandGroup(after: .toolbar) {
+            Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])
+            Button("Zoom Out") { session.zoomOut() }.keyboardShortcut("-", modifiers: [.command])
+            Toggle("Max Hold", isOn: Binding(get: { session.maxHold }, set: { session.maxHold = $0 }))
         }
     }
+
+    static let modes: [Leyline_V1_DemodMode] = [.am, .nfm, .wfm, .usb, .lsb, .cw]
 }

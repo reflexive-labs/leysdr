@@ -13,8 +13,12 @@ Nothing has been released yet. This file starts with everything that exists on `
   output of `ley bands --json` that `make bands-json` regenerates and a test holds to the table.
 - The Mac app, begun: an `app/` package with the Swift client façade (`LeylineClient`: one
   identity per process, the daemon's state as an observable mirror, coalesced writes, FFT and
-  telemetry streams) and a window that names the daemon's state and lists radios and channels.
-  `make app-run` opens it on a Mac; the spectrum is next (`docs/plans/app.md`).
+  telemetry streams, the bands and bookmarks files, and the folds `ley` already applies: max
+  hold, the peak rule, the auto squelch) and the M1 window from the design handoff: a sidebar of
+  bands and bookmarks, a spectrum, a Metal waterfall at 30 rows a second, a transport bar
+  (play, the tuning field, mode, width, signal, the squelch track, volume), a device menu with
+  the gain slider, and a Tune menu naming every gesture. `make app-run` opens it on a Mac
+  (`docs/plans/app.md`, "The M1 cut").
 - `leylined`: a launchd daemon that owns RTL-SDR hardware (USB via librtlsdr, or a remote dongle over
   `rtl_tcp`) and IQ files, runs every stage of the signal path (capture, channelize, NFM/WFM/AM/USB/
   LSB/CW demodulation, squelch, spectrum, sub-audible tone detection, energy detection) and speaks
