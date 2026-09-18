@@ -43,10 +43,11 @@ public enum BulkDecode {
     /// 32768 so a full-scale negative sample lands on exactly -1.
     public static func audio(_ payload: Data, format: Leyline_V1_AudioSampleFormat) -> [Float] {
         if format == .f32 { return f32(payload) }
-        var out = [Float](repeating: 0, count: payload.count / 2)
+        let count = payload.count / 2
+        var out = [Float](repeating: 0, count: count)
         payload.withUnsafeBytes { raw in
-            for i in out.indices {
-                let v = Int16(bitPattern: UInt16(raw[2 * i]) | UInt16(raw[2 * i + 1]) << 8)
+            for i in 0..<count {
+                let v = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: 2 * i, as: Int16.self))
                 out[i] = Float(v) / 32768
             }
         }
@@ -54,10 +55,14 @@ public enum BulkDecode {
     }
 
     static func f32(_ payload: Data) -> [Float] {
-        var out = [Float](repeating: 0, count: payload.count / 4)
+        // One unaligned load per sample rather than four byte reads or-ed together: the same
+        // bytes, and an expression the type checker resolves at once (a four-term shift chain
+        // hit its complexity limit under Xcode 26).
+        let count = payload.count / 4
+        var out = [Float](repeating: 0, count: count)
         payload.withUnsafeBytes { raw in
-            for i in out.indices {
-                let bits = UInt32(raw[4 * i]) | UInt32(raw[4 * i + 1]) << 8 | UInt32(raw[4 * i + 2]) << 16 | UInt32(raw[4 * i + 3]) << 24
+            for i in 0..<count {
+                let bits = UInt32(littleEndian: raw.loadUnaligned(fromByteOffset: 4 * i, as: UInt32.self))
                 out[i] = Float(bitPattern: bits)
             }
         }
