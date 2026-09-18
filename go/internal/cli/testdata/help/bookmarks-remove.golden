@@ -1,0 +1,19 @@
+remove takes a bookmark's id or its name. A name in any case is enough
+while only one bookmark answers to it; when two do, remove names them and
+removes nothing, because this is the one thing here that cannot be undone.
+
+Usage:
+  ley bookmarks remove <id|name> [flags]
+
+Examples:
+  ley bookmarks remove "Local repeater"
+  ley bookmarks remove bm_01J8Z6R9TC7QK3W4M5N6P7Q8R9
+
+Flags:
+  -h, --help   help for remove
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

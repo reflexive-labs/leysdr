@@ -119,3 +119,27 @@ func TestResolveBandGMRS(t *testing.T) {
 		t.Errorf("BandAliases lacks the group: %v", BandAliases())
 	}
 }
+
+// Every band carries a tuning step, groups included: the app tunes by the band's channel step,
+// so a zero would leave an arrow key doing nothing there. The step is the channel spacing and
+// not the bandwidth -- airband is 10 kHz wide and spaced 25 kHz -- and fine tuning is a tenth
+// of it with a 100 Hz floor.
+func TestEveryBandHasAStep(t *testing.T) {
+	for _, b := range append(Bands(), BandGroups()...) {
+		if b.StepHz == 0 {
+			t.Errorf("%s has no tuning step", b.Name)
+		}
+		if fine := b.FineStepHz(); fine < 100 || (b.StepHz >= 1000 && fine != b.StepHz/10) {
+			t.Errorf("%s: FineStepHz = %d for a step of %d", b.Name, fine, b.StepHz)
+		}
+	}
+	air, err := ResolveBand("air")
+	if err != nil || air.StepHz != 25_000 || air.BandwidthHz != 10_000 {
+		t.Errorf("airband is 10 kHz wide and spaced 25 kHz, got %+v (%v)", air, err)
+	}
+	// A 1 kHz step floors at 100 Hz rather than going below it.
+	hf, err := ResolveBand("40m")
+	if err != nil || hf.StepHz != 1_000 || hf.FineStepHz() != 100 {
+		t.Errorf("40 m: step %d, fine %d (%v)", hf.StepHz, hf.FineStepHz(), err)
+	}
+}

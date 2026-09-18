@@ -4,6 +4,13 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- Bookmarks: `ley bookmarks add 146.94 --name "Local repeater"` keeps a frequency, `ley bookmarks`
+  lists what you kept and `ley bookmarks remove` forgets one. They are your data in a JSON file
+  beside the labels store (`$LEYLINE_BOOKMARKS` overrides its path), not daemon state, and the Mac
+  app reads the same file, so a frequency kept from a terminal is in its sidebar. The band table
+  gained a `step_hz` column -- the channel spacing, which is not the bandwidth: airband is 10 kHz
+  wide and spaced 25 kHz -- and the app's seed copy of the table is `bands.json`, the checked-in
+  output of `ley bands --json` that `make bands-json` regenerates and a test holds to the table.
 - The Mac app, begun: an `app/` package with the Swift client façade (`LeylineClient`: one
   identity per process, the daemon's state as an observable mirror, coalesced writes, FFT and
   telemetry streams) and a window that names the daemon's state and lists radios and channels.

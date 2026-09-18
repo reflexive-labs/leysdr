@@ -16,6 +16,7 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/testutil"
+	"github.com/dpup/leysdr/go/pkg/bookmarks"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -35,6 +36,9 @@ type jsonVerbCase struct {
 	prep func(t *testing.T, sock string, c *leyline.Client) []string
 	// noDaemon points the verb at a socket nothing answers on.
 	noDaemon bool
+	// env is the environment the verb runs with, built per run: a verb that writes a user's
+	// store is pointed at a temp file here rather than at the machine's.
+	env func(t *testing.T) map[string]string
 	// timeout bounds a verb that otherwise streams until Ctrl-C.
 	timeout time.Duration
 }
@@ -48,6 +52,9 @@ var jsonVerbs = []jsonVerbCase{
 	// things stand gets the state snapshot.
 	{path: "ley", args: nil},
 	{path: "bands", args: []string{"bands"}},
+	{path: "bookmarks", args: []string{"bookmarks"}, env: tempBookmarks},
+	{path: "bookmarks add", args: []string{"bookmarks", "add", "146.94", "--name", "Local repeater"}, env: tempBookmarks},
+	{path: "bookmarks remove", args: []string{"bookmarks", "remove", "Local repeater"}, env: seededBookmarks},
 	{path: "completion", args: []string{"completion"}, refuse: jsonNoOutput},
 	{path: "completion bash", args: []string{"completion", "bash"}, refuse: jsonNoOutput},
 	{path: "completion fish", args: []string{"completion", "fish"}, refuse: jsonNoOutput},
@@ -97,6 +104,27 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "watch", args: []string{"watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "2"}},
 	{path: "waveform", args: []string{"waveform", "146.52", "--seconds", "2", "--count", "2"}},
 	{path: "waterfall", args: []string{"waterfall", "146.52", "--count", "2", "--rate", "10"}},
+}
+
+// tempBookmarks points the bookmarks verbs at a store of their own: add and remove write a file
+// a person keeps, and a test must not write the one on this machine.
+func tempBookmarks(t *testing.T) map[string]string {
+	t.Helper()
+	return map[string]string{bookmarks.BookmarksEnv: filepath.Join(t.TempDir(), "bookmarks.json")}
+}
+
+// seededBookmarks is tempBookmarks with one bookmark already in it, for the verb that forgets one.
+func seededBookmarks(t *testing.T) map[string]string {
+	t.Helper()
+	env := tempBookmarks(t)
+	s, err := bookmarks.Open(env[bookmarks.BookmarksEnv])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add("Local repeater", 146_940_000, leylinev1.DemodMode_NFM, 0); err != nil {
+		t.Fatal(err)
+	}
+	return env
 }
 
 // prepChannel leaves a channel running for the verbs that adjust or stop one.
@@ -217,7 +245,11 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 				defer cancel()
 				time.AfterFunc(c.timeout, cancel)
 			}
-			out, errOut, err := run(t, ctx, sock, args...)
+			var env map[string]string
+			if c.env != nil {
+				env = c.env(t)
+			}
+			out, errOut, err := runEnv(t, ctx, sock, env, args...)
 			if c.refuse != "" {
 				if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), c.refuse) {
 					t.Fatalf("ley %v: want exit %d saying %q, got exit %d (%v)", args, ExitUsage, c.refuse, exitCode(err), err)

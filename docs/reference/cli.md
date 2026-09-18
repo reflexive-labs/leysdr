@@ -74,6 +74,10 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # name a transmitter (or read/clear its name); labels are user
 │                                    # data in a client-side JSON store ($LEYLINE_LABELS), not daemon state
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
+├── bookmarks [add <freq|preset> --name NAME [--mode M] [--bw N] | remove <id|name>]
+│                                    # the third client-local table and the only one you write: the
+│                                    # frequencies you kept, in a JSON file ($LEYLINE_BOOKMARKS) the
+│                                    # Mac app reads too, so one kept from a terminal is in its sidebar
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
 ├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto] [--device SEL] [--take-over]
@@ -168,15 +172,25 @@ the next row — never silently; gap lines do not count toward `--count`. The se
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
 that order (pinned by a golden test). The third is the client-local tables: `ley presets --json`
 prints one array of `{name, aliases, hz, mode, description}` and `ley bands --json` one array of
-`{name, aliases, min_hz, max_hz, mode, bandwidth_hz, note}` (`mode` is `usb/lsb` where the sideband
-follows the frequency; `aliases` are what `--band` accepts; a group such as `gmrs` comes after the
+`{name, aliases, min_hz, max_hz, mode, bandwidth_hz, step_hz, note}` (`mode` is `usb/lsb` where the
+sideband follows the frequency; `aliases` are what `--band` accepts; `step_hz` is the band's channel
+spacing, what one arrow key moves the dial by in the Mac app, which is not the bandwidth: airband is
+10 kHz wide and spaced 25 kHz; a group such as `gmrs` comes after the
 bands with `parts`, the aliases of the bands it spans). `ley bands <frequency|preset|band>
 --json` is the one place a client-local table answers with a **single object** instead:
 `{hz, band, mode, bandwidth_hz, reason}`, where `band` is one of those entries or `null` and `mode`
 is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`
 does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script asking "what would
 tune do here" came for, and they are always present. Neither verb dials the daemon; `ley help
-presets` is the same data in prose, and `ley presets` (the verb) owns the bare name. The fourth is
+presets` is the same data in prose, and `ley presets` (the verb) owns the bare name. `ley
+bookmarks --json` is the third such table and the only one a client writes: an array of
+`{id, name, hz, mode, bandwidth_hz, updated_ns}` ordered by frequency and then name, which are the
+fields of `bookmarks.json` itself (`$LEYLINE_BOOKMARKS`, else beside `labels.json` in
+`~/Library/Application Support/Leyline`), so `mode` is the contract's own spelling (`NFM`) rather
+than the CLI's and `bandwidth_hz` 0 means the mode's usual width; `ley bookmarks add` and `ley
+bookmarks remove` print the single record they touched. The Mac app reads that file, and reads the
+band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in bytes of `ley bands
+--json` that `make bands-json` regenerates and a Go test holds to the table. The fourth is
 `ley track --json`, the entity table: a client-side fold with no proto message, described under
 "Decoders" below.
 

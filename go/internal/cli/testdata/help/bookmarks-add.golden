@@ -1,0 +1,32 @@
+add keeps a frequency so you can find it again by name. The frequency is
+read the way 'ley tune' reads one: a bare number is MHz (146.94), a unit is
+exact (162550k), and a preset name (noaa, marine16) stands for its frequency.
+
+The mode comes from the band table when --mode is not given, the same lookup
+tune does, and the bandwidth is left as the mode's usual width unless --bw
+says otherwise -- so a bookmark keeps following the defaults rather than
+freezing today's.
+
+Adding the same name at the same frequency updates that bookmark instead of
+making a second one.
+
+Usage:
+  ley bookmarks add <frequency|preset> --name NAME [flags]
+
+Examples:
+  ley bookmarks add 146.94 --name "Local repeater"
+  ley bookmarks add noaa --name "Weather"
+  ley bookmarks add 121.5 --name Guard --mode am --bw 10
+  ley bookmarks add 145.8 --name "ISS" --json | jq -r .id
+
+Flags:
+      --bw string     how wide a slice to listen to: a bare number is kHz (12.5), or 200k (default: the mode's usual width)
+  -h, --help          help for add
+      --mode string   how to decode it: nfm, wfm, am, usb, lsb, cw (default: by band, as tune does)
+      --name string   what to call it in the list, e.g. --name "Local repeater" (required)
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

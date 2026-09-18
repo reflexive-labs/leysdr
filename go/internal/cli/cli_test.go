@@ -56,11 +56,19 @@ func harness(t *testing.T, opts fakedaemon.Options) (string, *leyline.Client) {
 	return sock, c
 }
 
-// run executes ley in-process with captured output.
+// run executes ley in-process with captured output and an empty environment.
 func run(t *testing.T, ctx context.Context, sock string, args ...string) (string, string, error) {
 	t.Helper()
+	return runEnv(t, ctx, sock, nil, args...)
+}
+
+// runEnv is run with the environment a verb reads. A verb that writes a user's file -- the
+// labels and bookmarks stores -- is pointed at a temp one this way, so a test never writes the
+// machine's.
+func runEnv(t *testing.T, ctx context.Context, sock string, env map[string]string, args ...string) (string, string, error) {
+	t.Helper()
 	var out, errb bytes.Buffer
-	app := &App{Stdout: &out, Stderr: &errb, LookupEnv: func(string) (string, bool) { return "", false }}
+	app := &App{Stdout: &out, Stderr: &errb, LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
 	err := Execute(ctx, app, append([]string{"--socket", sock}, args...))
 	return out.String(), errb.String(), err
 }

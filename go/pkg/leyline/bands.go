@@ -29,7 +29,13 @@ type Band struct {
 	MaxHz       uint64
 	Mode        leylinev1.DemodMode
 	BandwidthHz uint32
-	Note        string
+	// StepHz is how far one arrow key moves the dial here: the band's channel
+	// spacing, which is not its bandwidth. Airband is 10 kHz wide per channel
+	// and spaced 25 kHz, so tuning by the bandwidth would land between
+	// channels twice before reaching the next one. Fine tuning is
+	// FineStepHz. The app reads it from bands.json; ley uses it nowhere yet.
+	StepHz uint32
+	Note   string
 	// Parts, when set, makes this a group: a service in more than one place,
 	// spanning its parts and the spectrum between them. The parts are the
 	// first aliases of the bands it is made of. A sweep takes the group whole;
@@ -50,6 +56,18 @@ func (b Band) WidthHz() uint64 { return b.MaxHz - b.MinHz }
 // band puts the radio.
 func (b Band) CenterHz() uint64 { return b.MinHz + b.WidthHz()/2 }
 
+// FineStepHz is the fine tuning step: a tenth of the band's channel step, and
+// never below 100 Hz. A tenth is small enough to walk across a channel and
+// large enough that a held key crosses one; below 100 Hz the dial moves by
+// less than a voice channel's drift and the digits change without the sound
+// doing so.
+func (b Band) FineStepHz() uint32 {
+	if b.StepHz/10 < 100 {
+		return 100
+	}
+	return b.StepHz / 10
+}
+
 const (
 	mAM  = leylinev1.DemodMode_AM
 	mNFM = leylinev1.DemodMode_NFM
@@ -62,33 +80,33 @@ const (
 // entries — above the top marine VHF channel at 162.025 MHz and below the NOAA
 // weather block at 162.400, say — belongs to no band, and BandFor answers nil.
 var bands = []Band{
-	{"AM broadcast", []string{"am", "mw", "ambcast"}, 530_000, 1_700_000, mAM, 10_000, "medium-wave broadcast stations", nil},
-	{"160 m amateur", []string{"160m"}, 1_800_000, 2_000_000, mSSB, 2_800, "amateur radio, LSB voice", nil},
-	{"80 m amateur", []string{"80m"}, 3_500_000, 4_000_000, mSSB, 2_800, "amateur radio, LSB voice", nil},
-	{"40 m amateur", []string{"40m"}, 7_000_000, 7_300_000, mSSB, 2_800, "amateur radio, LSB voice", nil},
-	{"20 m amateur", []string{"20m"}, 14_000_000, 14_350_000, mSSB, 2_800, "amateur radio, USB voice", nil},
-	{"15 m amateur", []string{"15m"}, 21_000_000, 21_450_000, mSSB, 2_800, "amateur radio, USB voice", nil},
-	{"CB", []string{"cb", "citizens"}, 26_965_000, 27_405_000, mAM, 10_000, "citizens band, channel 1 to 40", nil},
-	{"10 m amateur", []string{"10m"}, 28_000_000, 29_700_000, mSSB, 2_800, "amateur radio, USB voice", nil},
-	{"FM broadcast", []string{"fm", "fmbcast", "broadcast"}, 87_500_000, 108_000_000, mWFM, 200_000, "wideband FM radio stations", nil},
-	{"airband", []string{"air", "aviation"}, 118_000_000, 137_000_000, mAM, 10_000, "aircraft and towers, AM voice", nil},
-	{"2 m amateur", []string{"2m"}, 144_000_000, 148_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters", nil},
-	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_025_000, mNFM, 12_500, "ship and coast stations; channel 16 is 156.800", nil},
-	{"NOAA weather", []string{"noaa", "weather", "wx"}, 162_400_000, 162_550_000, mNFM, 12_500, "continuous weather broadcasts, WX1 to WX7", nil},
-	{"70 cm amateur", []string{"70cm"}, 420_000_000, 450_000_000, mNFM, 12_500, "amateur radio, FM voice and repeaters", nil},
+	{"AM broadcast", []string{"am", "mw", "ambcast"}, 530_000, 1_700_000, mAM, 10_000, 10_000, "medium-wave broadcast stations", nil},
+	{"160 m amateur", []string{"160m"}, 1_800_000, 2_000_000, mSSB, 2_800, 1_000, "amateur radio, LSB voice", nil},
+	{"80 m amateur", []string{"80m"}, 3_500_000, 4_000_000, mSSB, 2_800, 1_000, "amateur radio, LSB voice", nil},
+	{"40 m amateur", []string{"40m"}, 7_000_000, 7_300_000, mSSB, 2_800, 1_000, "amateur radio, LSB voice", nil},
+	{"20 m amateur", []string{"20m"}, 14_000_000, 14_350_000, mSSB, 2_800, 1_000, "amateur radio, USB voice", nil},
+	{"15 m amateur", []string{"15m"}, 21_000_000, 21_450_000, mSSB, 2_800, 1_000, "amateur radio, USB voice", nil},
+	{"CB", []string{"cb", "citizens"}, 26_965_000, 27_405_000, mAM, 10_000, 10_000, "citizens band, channel 1 to 40", nil},
+	{"10 m amateur", []string{"10m"}, 28_000_000, 29_700_000, mSSB, 2_800, 1_000, "amateur radio, USB voice", nil},
+	{"FM broadcast", []string{"fm", "fmbcast", "broadcast"}, 87_500_000, 108_000_000, mWFM, 200_000, 200_000, "wideband FM radio stations", nil},
+	{"airband", []string{"air", "aviation"}, 118_000_000, 137_000_000, mAM, 10_000, 25_000, "aircraft and towers, AM voice", nil},
+	{"2 m amateur", []string{"2m"}, 144_000_000, 148_000_000, mNFM, 12_500, 5_000, "amateur radio, FM voice and repeaters", nil},
+	{"marine VHF", []string{"marine", "vhf"}, 156_000_000, 162_025_000, mNFM, 12_500, 25_000, "ship and coast stations; channel 16 is 156.800", nil},
+	{"NOAA weather", []string{"noaa", "weather", "wx"}, 162_400_000, 162_550_000, mNFM, 12_500, 25_000, "continuous weather broadcasts, WX1 to WX7", nil},
+	{"70 cm amateur", []string{"70cm"}, 420_000_000, 450_000_000, mNFM, 12_500, 12_500, "amateur radio, FM voice and repeaters", nil},
 	// GMRS/FRS is one service in two places 5 MHz apart, so it is two bands and a group. The
 	// edges sit half a channel outside the lowest and highest channel of each half (ch15 at
 	// 462.550 to ch22 at 462.725; the repeater inputs 467.550 to 467.725, with ch8 to ch14 between).
 	{
 		"GMRS 462 MHz",
 		[]string{"gmrs-462", "gmrs-out", "gmrs-outputs", "gmrs-simplex"},
-		462_537_500, 462_737_500, mNFM, 20_000,
+		462_537_500, 462_737_500, mNFM, 20_000, 12_500,
 		"GMRS/FRS channels 1 to 7 and 15 to 22: simplex and the repeater outputs -- scan here to find a repeater's transmit", nil,
 	},
 	{
 		"GMRS 467 MHz",
 		[]string{"gmrs-467", "gmrs-in", "gmrs-inputs"},
-		467_537_500, 467_737_500, mNFM, 20_000,
+		467_537_500, 467_737_500, mNFM, 20_000, 12_500,
 		"GMRS/FRS channels 8 to 14 (low power) and the repeater inputs, the uplink a radio transmits to a repeater", nil,
 	},
 }
@@ -101,7 +119,7 @@ var bandGroups = []Band{
 	{
 		"GMRS",
 		[]string{"gmrs"},
-		462_537_500, 467_737_500, mNFM, 20_000,
+		462_537_500, 467_737_500, mNFM, 20_000, 12_500,
 		"GMRS/FRS, the whole service: both halves 5 MHz apart; scan sweeps it, a picture or a watch takes gmrs-462 or gmrs-467",
 		[]string{"gmrs-462", "gmrs-467"},
 	},

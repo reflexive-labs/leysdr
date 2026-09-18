@@ -34,7 +34,10 @@ type bandJSON struct {
 	MaxHz       uint64   `json:"max_hz"`
 	Mode        string   `json:"mode"`
 	BandwidthHz uint32   `json:"bandwidth_hz"`
-	Note        string   `json:"note"`
+	// StepHz is the band's channel spacing, which the app tunes by; it is not
+	// the bandwidth (airband is 10 kHz wide and spaced 25 kHz).
+	StepHz uint32 `json:"step_hz"`
+	Note   string `json:"note"`
 	// Parts names the bands a group is made of; absent on a plain band.
 	Parts []string `json:"parts,omitempty"`
 }
@@ -115,8 +118,11 @@ position would quietly redefine them.
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
---json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, note}:
-client-local data with no proto message, so it is not the proto3 JSON mapping.`,
+--json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, step_hz,
+note}: client-local data with no proto message, so it is not the proto3 JSON
+mapping. step_hz is the band's channel spacing -- what one arrow key moves the
+dial by, which is not the bandwidth: airband is 10 kHz wide and spaced 25 kHz.
+The Mac app reads the same array from a checked-in bands.json (make bands-json).`,
 		Example: `  ley bands                      # the table
   ley bands 146.52               # what is this, and what will tune do here?
   ley bands 2m                   # the same answer, asked by name
@@ -134,7 +140,11 @@ client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 			if app.JSON {
 				out := make([]bandJSON, 0, len(bs))
 				for _, b := range bs {
-					out = append(out, bandJSON{Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz, Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, Note: b.Note, Parts: b.Parts})
+					out = append(out, bandJSON{
+						Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz,
+						Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, StepHz: b.StepHz,
+						Note: b.Note, Parts: b.Parts,
+					})
 				}
 				return app.printArray(out)
 			}
@@ -181,6 +191,11 @@ func printPresetTable(app *App, ps []leyline.Preset) error {
 // family (in the order the families first appear, frequency order within
 // one) and the note drops the "amateur radio," the heading now carries.
 // --json keeps the flat, frequency-ordered array with the full note.
+//
+// The step is not a column. The six here already want 86 columns before NOTE
+// is given its minimum, so an eighty-column terminal is truncating the note to
+// print them; a seventh column would spend the rest of that note on a number
+// no `ley` verb tunes by yet (the app reads it from bands.json).
 func printBandTable(app *App, bs []leyline.Band) error {
 	s := tableStyle(app)
 	keys := make([]string, len(bs))
@@ -343,7 +358,8 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 		if b != nil {
 			out.Band = &bandJSON{
 				Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz,
-				Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, Note: b.Note,
+				Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, StepHz: b.StepHz,
+				Note: b.Note,
 			}
 		}
 		return app.printArray(out)

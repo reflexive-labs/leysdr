@@ -13,8 +13,11 @@ position would quietly redefine them.
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
---json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, note}:
-client-local data with no proto message, so it is not the proto3 JSON mapping.
+--json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, step_hz,
+note}: client-local data with no proto message, so it is not the proto3 JSON
+mapping. step_hz is the band's channel spacing -- what one arrow key moves the
+dial by, which is not the bandwidth: airband is 10 kHz wide and spaced 25 kHz.
+The Mac app reads the same array from a checked-in bands.json (make bands-json).
 
 Usage:
   ley bands [frequency|preset|band] [flags]

@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -112,6 +113,15 @@ func TestPresetsAndBands(t *testing.T) {
 	if vhf == nil || vhf.Mode != "nfm" || vhf.BandwidthHz != 12_500 {
 		t.Fatalf("2 m band: %+v", vhf)
 	}
+	// step_hz is the channel spacing the app tunes by, and it is not the bandwidth.
+	if vhf.StepHz != 5_000 {
+		t.Errorf("2 m steps 5 kHz, got %d", vhf.StepHz)
+	}
+	for _, b := range bs {
+		if b.StepHz == 0 {
+			t.Errorf("%s has no step_hz", b.Name)
+		}
+	}
 }
 
 // TestPresetsTopicKeepsProse: `ley presets` is the table while `ley help
@@ -131,5 +141,24 @@ func TestPresetsTopicKeepsProse(t *testing.T) {
 	}
 	if prose == table {
 		t.Fatalf("ley presets and ley help presets should differ")
+	}
+}
+
+// The Mac app has no Go library, so its sidebar reads the band table from a checked-in copy of
+// what `ley bands --json` prints (docs/design/app-design-handoff.md, "Bands and bookmarks are
+// files"). This is the drift test the help goldens are: the resource is the exact bytes, and a
+// change to the table without a regeneration fails here rather than in a window.
+func TestBandsJSONResource(t *testing.T) {
+	const resource = "../../../app/Sources/LeylineClient/Resources/bands.json"
+	want, err := os.ReadFile(resource)
+	if err != nil {
+		t.Fatalf("%v; run: make bands-json", err)
+	}
+	got, errOut, err := run(t, context.Background(), "/nonexistent/leyline-tables.sock", "--json", "bands")
+	if err != nil || errOut != "" {
+		t.Fatalf("ley bands --json: err=%v stderr=%q", err, errOut)
+	}
+	if string(want) != got {
+		t.Errorf("app/Sources/LeylineClient/Resources/bands.json is not what ley bands --json prints;\nrun: make bands-json\n--- file\n%s\n--- command\n%s", want, got)
 	}
 }

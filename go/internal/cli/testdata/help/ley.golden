@@ -25,6 +25,7 @@ Adjusting:
 
 Looking around:
   bands        List the bands ley recognises and their defaults
+  bookmarks    List the frequencies you have kept
   decode       Run a decoder and print what it hears
   decoders     List the decoders the daemon has installed
   devices      List the radios the daemon can see

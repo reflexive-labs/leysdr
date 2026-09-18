@@ -5,6 +5,7 @@
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
 #   make version    regenerate the engine's version constant from the root VERSION file
 #   make go         build the Go clients (ley, leyfix) into go/bin
+#   make bands-json regenerate the app's seed copy of the band table from `ley bands --json`
 #   make go-test    Go unit + contract tests
 #   make race       Go tests that exercise goroutines, under the race detector
 #   make swift      build the engine (leylined) — macOS for the real thing, Linux compiles the non-DSP core
@@ -42,7 +43,7 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint check clean install-decoders
 
 all: go swift app
 
@@ -68,6 +69,14 @@ go:
 
 go-test:
 	cd go && go test ./...
+
+# bands.json is the app's seed layer: the band table lives in Go (go/pkg/leyline/bands.go), the
+# app has no Go library, so the sidebar's bands come from the exact bytes `ley bands --json`
+# prints, checked in as a resource of the LeylineClient target. TestBandsJSONResource fails when
+# the two drift and names this target; the app never edits the file.
+bands-json: go
+	mkdir -p app/Sources/LeylineClient/Resources
+	$(GOBIN)/ley bands --json > app/Sources/LeylineClient/Resources/bands.json
 
 # The verbs stream events on a background goroutine while the foreground reads the session mirror,
 # which only the race detector can police; it is a separate target because -race is slow enough that

@@ -1,0 +1,38 @@
+bookmarks lists the frequencies you asked ley to remember, lowest first,
+with the mode and bandwidth to tune each one with. They are your data, not the
+daemon's: they live in a small JSON file ($LEYLINE_BOOKMARKS overrides its
+path) that the Mac app reads too, so a frequency kept here is in its sidebar
+and one kept there is in this list.
+
+'ley bookmarks add' keeps one and 'ley bookmarks remove' forgets it. A
+bookmark is a name, a frequency, a mode and a bandwidth; nothing is tuned,
+started or measured by any of the three.
+
+--json prints an array of {id, name, hz, mode, bandwidth_hz, updated_ns} in
+the same order, the fields the file holds: mode is the contract's spelling
+(NFM), and bandwidth_hz 0 means the mode's usual width.
+
+Usage:
+  ley bookmarks [flags]
+  ley bookmarks [command]
+
+Examples:
+  ley bookmarks                                      # the table
+  ley bookmarks add 146.94 --name "Local repeater"   # keep one
+  ley bookmarks remove "Local repeater"              # forget it
+  ley bookmarks --json | jq -r '.[] | "\(.hz) \(.name)"'
+
+Available Commands:
+  add         Keep a frequency under a name
+  remove      Forget a bookmark
+
+Flags:
+  -h, --help   help for bookmarks
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Use "ley bookmarks [command] --help" for more information about a command.
