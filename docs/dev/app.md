@@ -150,8 +150,14 @@ fixture is the radio. Nothing in the app's suites may need hardware.
   `os_signpost` on both ends (`../plans/build-order.md`, spike S1); a waterfall without them
   cannot be measured later without being rewritten.
 - **Colours and type come from `Theme.swift`** and nowhere else, so the design handoff is one
-  file's worth of edits. The level ramp there is the terminal's until the handoff replaces it
-  (`cli-style.md`, "3a. The level ramp": the app's ramp runs near-black to cream and assumes the
-  dark ground it owns).
+  file's worth of edits. The tokens and the six-stop ramp are the handoff's
+  (`../design/app-design-handoff.md`, "Palette"); `cli-style.md` shares hue order with it and
+  nothing else.
+- **The band table is Go's; the app reads a generated copy.** `bands.json` under
+  `LeylineClient/Resources` is `ley bands --json` checked in, `make bands-json` regenerates it
+  and a Go test fails when the two drift. Never edit it by hand, and never add a band in Swift.
+- **Bookmarks are a file both clients own.** `bookmarks.json` beside `labels.json`, the shape in
+  the handoff ("Bands and bookmarks are files"); the app and `ley bookmarks` read and write the
+  same file, and a bookmark that only one of them can see is a bug.
 - **Prose in the window follows `../writing-guide.md`**: the daemon, a radio, a capture, a
   channel; "the daemon is not running" and what to type, never a spinner with no words.
