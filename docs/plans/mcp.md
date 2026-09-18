@@ -353,6 +353,7 @@ their verbs' counts). What the second look found:
   the evals then shed a third of their tool calls, since the agent could read what the tools
   said. The JSON is the same proto3 mapping, read from the last block.
 - **The blocked tools are not stubs.** A tool that only refuses spends an agent's context on
-  nothing, so `find_recordings`, `get_transcript`, `identify_signal`, `lookup_identity` and
-  `whats_out_there` are named in the server's instructions with the milestone each waits on and
-  registered nowhere; the guide's stub rule is for a person typing a verb.
+  nothing, so `get_transcript`, `identify_signal`, `lookup_identity` and `whats_out_there` are
+  named in the server's instructions with the milestone each waits on and registered nowhere; the
+  guide's stub rule is for a person typing a verb. (`find_recordings` was one of them until C.12
+  built its store.)

@@ -53,6 +53,20 @@ type Options struct {
 	// error rejects the write (WriteRejected with that code) in place of the
 	// fake's own validation. A test hook for clients' rejection handling.
 	RejectWrites func(w *leylinev1.ParamWrite) *leyline.Error
+	// RecordingsDir is where record jobs write their files. A test that wants
+	// to look at what was written names a directory of its own; the default is
+	// a temp directory, which is enough for a client that only reads the
+	// manifest back through the contract.
+	RecordingsDir string
+	// NoSystemAudio makes the fake answer StartPlayback (and a system-audio sink) with
+	// PLATFORM_UNSUPPORTED, which is what a headless daemon does. It is how a client's fallback
+	// to the machine's own player is tested.
+	NoSystemAudio bool
+	// RecordGateAt is the schedule the fake's squelch gate follows, in
+	// milliseconds from the start of a recording, alternating open, close,
+	// open, ... Empty keeps the gate open for the whole recording, which is
+	// what a continuous recording wants anyway.
+	RecordGateAt []int64
 }
 
 // Daemon is the in-memory state store plus all six service implementations.
@@ -72,11 +86,14 @@ type Daemon struct {
 	captures map[string]*capture
 	channels map[string]*leylinev1.Channel
 	sinks    map[string]*leylinev1.Sink
-	streams  map[string]*stream
-	watchers map[*watcher]struct{}
-	presence map[string]*presence // by client id
-	jobs     map[string]*fakeJob
-	jobOrder []string
+	// Recordings the fake is "playing": the state object and its position, so a client is tested
+	// against the shape without the fake owning an audio device.
+	playbacks map[string]*playback
+	streams   map[string]*stream
+	watchers  map[*watcher]struct{}
+	presence  map[string]*presence // by client id
+	jobs      map[string]*fakeJob
+	jobOrder  []string
 	// recordSubs are the open SubscribeRecords streams, and store is the fake's record store:
 	// one entry per kept decode job, which is what QueryRecords reads.
 	recordSubs map[*recordSub]struct{}
@@ -170,6 +187,7 @@ func New(opts Options) *Daemon {
 		devices:      map[string]*leylinev1.DeviceDescriptor{},
 		files:        map[string]fileInfo{},
 		captures:     map[string]*capture{},
+		playbacks:    map[string]*playback{},
 		channels:     map[string]*leylinev1.Channel{},
 		sinks:        map[string]*leylinev1.Sink{},
 		jobs:         map[string]*fakeJob{},

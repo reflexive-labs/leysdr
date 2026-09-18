@@ -28,7 +28,7 @@ final class DaemonTests: XCTestCase {
             XCTAssertTrue(none.jobs.isEmpty)
             XCTAssertTrue(state.jobs.isEmpty)
 
-            // Everything the durable job store owns is still UNIMPLEMENTED, with the leyline trailer.
+            // What the durable job store still owns is UNIMPLEMENTED, with the leyline trailer.
             do {
                 _ = try await c.jobs.getTranscript(Leyline_V1_TranscriptRequest(), metadata: testMetadata)
                 XCTFail("expected UNIMPLEMENTED")
@@ -38,12 +38,10 @@ final class DaemonTests: XCTestCase {
                 XCTAssertEqual(detail?.code, "UNIMPLEMENTED")
                 XCTAssertEqual((error as? RPCError)?.code, .unimplemented)
             }
-            do {
-                _ = try await c.resources.listResources(Leyline_V1_ListResourcesRequest(), metadata: testMetadata)
-                XCTFail("expected UNIMPLEMENTED")
-            } catch {
-                XCTAssertEqual((error as? RPCError)?.code, .unimplemented)
-            }
+            // Resources is implemented (C.12). An idle daemon holds none, and an empty list is the
+            // true answer rather than an error.
+            let resources = try await c.resources.listResources(Leyline_V1_ListResourcesRequest(), metadata: testMetadata)
+            XCTAssertTrue(resources.resources.isEmpty)
         }
     }
 

@@ -32,6 +32,7 @@ import (
 var mcpToolNames = []string{
 	"list_devices", "get_state", "daemon_logs", "tune", "scan", "listen_summary", "snapshot",
 	"list_decoders", "query_records", "list_entities", "start_decode_job",
+	"record", "find_recordings", "get_recording",
 	"list_jobs", "get_job", "cancel_job",
 }
 
@@ -46,9 +47,13 @@ type mcpHarness struct {
 	stderr *bytes.Buffer
 }
 
-func newMCPHarness(t *testing.T) *mcpHarness {
+func newMCPHarness(t *testing.T) *mcpHarness { return newMCPHarnessWith(t, fakedaemon.Options{}) }
+
+// newMCPHarnessWith is the same harness over a fake configured by the caller: a
+// recordings directory, a gate schedule.
+func newMCPHarnessWith(t *testing.T, opts fakedaemon.Options) *mcpHarness {
 	t.Helper()
-	sock, c := harness(t, fakedaemon.Options{})
+	sock, c := harness(t, opts)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	var errb bytes.Buffer
@@ -189,7 +194,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		uris = append(uris, r.URITemplate)
 	}
 	sort.Strings(uris)
-	if strings.Join(uris, " ") != "ley://records/{job_id} ley://scans/{scan_id}" {
+	if strings.Join(uris, " ") != "ley://recordings/{job_id} ley://records/{job_id} ley://scans/{scan_id}" {
 		t.Errorf("resource templates: %v", uris)
 	}
 	if init := h.cs.InitializeResult(); init == nil || init.ServerInfo.Name != "leyline" || !strings.Contains(init.Instructions, "proto3 JSON") {
@@ -863,7 +868,7 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 		t.Error("an unknown scan must not be found")
 	}
 	tmpl, _ := h.cs.ListResourceTemplates(context.Background(), nil)
-	if len(tmpl.ResourceTemplates) != 2 {
+	if len(tmpl.ResourceTemplates) != 3 {
 		t.Errorf("resource templates: %+v", tmpl.ResourceTemplates)
 	}
 }
@@ -949,5 +954,126 @@ func TestRenderSpectrumPNG(t *testing.T) {
 	}
 	if _, err := renderSpectrumPNG(nil, 0, 0, 0, nil, 0); err != nil {
 		t.Errorf("an empty row must still render: %v", err)
+	}
+}
+
+// The recording tools: record makes one and waits for it, find_recordings finds
+// it, get_recording hands back the files' paths and never their bytes
+// (docs/design/recording.md, "MCP").
+func TestMCPRecordFindAndGet(t *testing.T) {
+	dir := t.TempDir()
+	h := newMCPHarnessWith(t, fakedaemon.Options{RecordingsDir: dir})
+
+	// What an agent starts must end without it: the schema makes duration_s required, so a call
+	// without one never reaches the daemon.
+	if res := h.call(t, "record", map[string]any{"target": "146.52"}); !res.IsError ||
+		!strings.Contains(resultText(res), "duration_s") {
+		t.Fatalf("a recording with no duration: %s", resultText(res))
+	}
+	if res := h.call(t, "record", map[string]any{"target": "146.52", "duration_s": 99999}); !res.IsError {
+		t.Error("a recording longer than the bound must be refused")
+	}
+
+	res := h.must(t, "record", map[string]any{"target": "146.52", "duration_s": 1})
+	var job leylinev1.Job
+	structured(t, res, &job)
+	if job.GetState() != leylinev1.JobState_COMPLETED {
+		t.Fatalf("the tool waits for the recording: %v %s", job.GetState(), job.GetStatusDetail())
+	}
+	uri := ""
+	for _, u := range job.GetResultUris() {
+		uri = u
+	}
+	if uri != leyline.RecordingURI(job.GetJobId()) {
+		t.Fatalf("resultUris: %v", job.GetResultUris())
+	}
+	text := resultText(res)
+	if !strings.Contains(text, uri) || !strings.Contains(text, "get_recording") {
+		t.Errorf("the text must name the recording and how to fetch it:\n%s", text)
+	}
+
+	found := h.must(t, "find_recordings", map[string]any{"kind": "audio"})
+	var list leylinev1.ListResourcesResponse
+	structured(t, found, &list)
+	if len(list.GetResources()) != 1 || list.GetResources()[0].GetUri() != uri {
+		t.Fatalf("find_recordings: %v", list.GetResources())
+	}
+	if m := list.GetResources()[0].GetMetadata(); m["mode"] != "NFM" || m["parts"] == "" {
+		t.Errorf("the frozen metadata keys: %v", m)
+	}
+	// A filter that cannot match returns nothing rather than everything.
+	none := h.must(t, "find_recordings", map[string]any{"kind": "iq"})
+	structured(t, none, &list)
+	if len(list.GetResources()) != 0 {
+		t.Errorf("an iq filter must not match an audio recording: %v", list.GetResources())
+	}
+
+	got := h.must(t, "get_recording", map[string]any{"id": job.GetJobId()})
+	var doc struct {
+		Directory string `json:"directory"`
+		Parts     []struct {
+			Part int    `json:"part"`
+			Path string `json:"path"`
+		} `json:"parts"`
+		Manifest struct {
+			JobID string `json:"job_id"`
+			Kind  string `json:"kind"`
+		} `json:"manifest"`
+	}
+	if err := json.Unmarshal(resultJSON(got), &doc); err != nil {
+		t.Fatalf("get_recording: %v\n%s", err, resultJSON(got))
+	}
+	if doc.Manifest.JobID != job.GetJobId() || doc.Manifest.Kind != "audio" {
+		t.Errorf("manifest: %+v", doc.Manifest)
+	}
+	if len(doc.Parts) != 1 || filepath.Dir(doc.Parts[0].Path) != doc.Directory {
+		t.Fatalf("parts: %+v in %s", doc.Parts, doc.Directory)
+	}
+	if _, err := os.Stat(doc.Parts[0].Path); err != nil {
+		t.Errorf("the path an agent is handed does not name a file: %v", err)
+	}
+	if !strings.Contains(resultText(got), "never their bytes") {
+		t.Errorf("the text must say samples stay on disk:\n%s", resultText(got))
+	}
+
+	// The resource template serves the same manifest.
+	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri})
+	if err != nil {
+		t.Fatalf("read the recording resource: %v", err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(rr.Contents[0].Text), &manifest); err != nil || manifest["job_id"] != job.GetJobId() {
+		t.Errorf("the resource is not the manifest (%v): %s", err, rr.Contents[0].Text)
+	}
+	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://recordings/job_nothing"}); err == nil {
+		t.Error("a recording nobody made must not be found")
+	}
+	if res := h.call(t, "get_recording", map[string]any{"id": "job_nothing"}); !res.IsError ||
+		!strings.Contains(resultText(res), "find_recordings") {
+		t.Errorf("get_recording on a missing recording: %s", resultText(res))
+	}
+}
+
+// A gated recording an agent starts reports how many times the squelch opened,
+// which is the question "how busy was it" in one call.
+func TestMCPRecordGateReportsTheOvers(t *testing.T) {
+	h := newMCPHarnessWith(t, fakedaemon.Options{
+		RecordingsDir: t.TempDir(),
+		RecordGateAt:  []int64{100, 300, 500, 700},
+	})
+	res := h.must(t, "record", map[string]any{
+		"target": "146.52", "duration_s": 1, "gate": "squelch", "hang_ms": 1000,
+	})
+	text := resultText(res)
+	if !strings.Contains(text, "the squelch opened 2 times") {
+		t.Errorf("the text must count the overs:\n%s", text)
+	}
+	if !strings.Contains(text, "gap where nothing was recorded") {
+		t.Errorf("and state the gap:\n%s", text)
+	}
+	// The gate flags need a gate.
+	if r := h.call(t, "record", map[string]any{"target": "146.52", "duration_s": 1, "hang_ms": 1000}); !r.IsError ||
+		!strings.Contains(resultText(r), "need gate") {
+		t.Errorf("hang_ms without a gate: %s", resultText(r))
 	}
 }

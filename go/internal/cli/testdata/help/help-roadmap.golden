@@ -1,8 +1,11 @@
-Planned, not in this build. Running one of these verbs exits 2 with the
-same line as below.
+Every verb ley knows is in this build. What is planned next lives in
+docs/plans/build-order.md; the Mac app is the next milestone.
 
-  record   Record a channel or the raw capture to a file (Milestone C.12)
-           today: ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build
+Recording is in this build:
+
+  ley record <freq>        write what the radio hears to a file
+  ley recordings           what has been recorded
+  ley recordings path <id> where a recording is, for Finder or another tool
 
 Decoding is in this build:
 

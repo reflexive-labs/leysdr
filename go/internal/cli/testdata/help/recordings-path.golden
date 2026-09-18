@@ -1,0 +1,27 @@
+path prints the recording's directory, or one part's file with --part, and
+nothing else, so it composes:
+
+  open -R "$(ley recordings path job_01J...)"      reveal it in Finder
+  afplay "$(ley recordings path job_01J... --part 1)"
+
+Without --json the path is printed alone, so it composes into a shell command.
+With --json it is a LocalPath object ({"path": "..."}), which is the shape the
+contract carries and what every other --json output in ley is.
+
+Usage:
+  ley recordings path <id> [flags]
+
+Examples:
+  ley recordings path job_01J...
+  open -R "$(ley recordings path job_01J...)"
+  ley recordings path job_01J... --part 2 --json | jq -r .path
+
+Flags:
+  -h, --help       help for path
+      --part int   print this part's samples file instead of the directory, e.g. 1
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

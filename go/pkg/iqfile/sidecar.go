@@ -60,6 +60,28 @@ type DecodeExpect struct {
 	DeviceIDs []string `json:"device_ids,omitempty"`
 }
 
+// RecordSegment is one keyed transmission in a fixture, in seconds from the
+// start of the file. A gated recording of the fixture is expected to produce
+// one part per segment, less the pre-roll and the hang.
+type RecordSegment struct {
+	StartS float64 `json:"start_s"`
+	EndS   float64 `json:"end_s"`
+}
+
+// RecordExpect describes what a gated recording of the fixture must produce
+// (docs/design/recording.md, "Testing without hardware"). It is the answer key
+// a fixture carrying keyed transmissions states, so a recording test compares
+// the cuts it made with the keying the generator actually wrote rather than
+// with whatever the daemon happened to do.
+type RecordExpect struct {
+	// Gate is the gate the expectation holds for: "squelch" today.
+	Gate string `json:"gate"`
+	// SquelchDBFS is the threshold the segments were measured against.
+	SquelchDBFS float64 `json:"squelch_dbfs"`
+	// Segments are the keyed transmissions, in order.
+	Segments []RecordSegment `json:"segments"`
+}
+
 // Expect describes one channel to create on a capture of the file and what
 // its demodulated audio and meters must satisfy.
 type Expect struct {
@@ -70,6 +92,7 @@ type Expect struct {
 	Meter       *MeterExpect  `json:"meter,omitempty"`
 	SubAudible  *SubExpect    `json:"sub_audible,omitempty"`
 	Decode      *DecodeExpect `json:"decode,omitempty"`
+	Record      *RecordExpect `json:"record,omitempty"`
 }
 
 // SubExpect is what a sub-audible detector should say about a fixture. It is

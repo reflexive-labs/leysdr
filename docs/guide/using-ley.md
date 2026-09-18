@@ -613,10 +613,97 @@ override, `--loop` starts over at the end. The pretend radio is removed on exit 
 and `ley devices detach <id>` (or its row number) removes the pretend radio together with its
 channels.
 
-Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12;
-`ley help roadmap`).
+## 11. Record what you hear
 
-## 11. Decode what is being said
+`ley record` writes what the radio hears to files the daemon keeps. It is a job, so it outlives
+the terminal that started it, and what it writes is a resource: `ley recordings` lists them and
+`ley recordings path` says where they are.
+
+```console
+$ ley record 146.52 --for 2m
+Recording 146.520 MHz (NFM, 2 m amateur)
+Writing   audio WAV, 48 kHz mono
+Until     2 min have passed
+/Users/you/Library/Application Support/Leyline/recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+Ctrl-C stops; the recording stays.
+recording audio: 1 m 12 s, 1 part, 6.9 MB
+Recorded 2 min in 1 part, 11.5 MB
+Find it again: ley recordings show job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+ley://recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+```
+
+The banner states what the daemon decided rather than what you asked for, so a recording of the
+wrong thing is caught in the first line and not in the file. `--listen` plays it through the
+speakers while it records, so you can hear what is going into the file without a second command. The URI on stdout is what a script
+keeps; everything else is for you. Ctrl-C stops the job and leaves the recording **complete rather
+than damaged** — the file is closed properly and the manifest says it was cancelled. `--detach`
+starts it and exits, printing the id `ley jobs cancel` takes.
+
+Recording a busy channel continuously fills a disk with silence, so `--gate squelch` records only
+while something is on the air, one file per exchange:
+
+```console
+$ ley record 146.52 --gate squelch --stop-after-quiet 10m --detach
+Recording 146.520 MHz (NFM, 2 m amateur)
+Writing   audio WAV, 48 kHz mono
+Gate      squelch, 500 ms pre-roll, 5 s hang, below -92 dBFS is silence
+Until     10 min with nothing on the air
+/Users/you/Library/Application Support/Leyline/recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+Left running; ley jobs cancel 1 stops it
+```
+
+The squelch it names is the one it measured from the channel's own noise floor, the way
+`ley tune` does; `--squelch -40` sets one yourself.
+
+The pauses *between overs* stay inside one file (`--hang`, 5 s by default) and half a second
+before each key-up is kept (`--pre`), so an exchange plays back whole. Silence is never edited out
+of a file: the gaps between files are stated in the manifest instead, so what you play back
+sounds like the air did.
+
+`--iq` records the radio's raw samples instead of demodulated audio — the format another tool
+reads, and what `ley play` tunes back. It is large (about 19 MB a second at 2.4 MSPS), so it is
+cut into a new file every minute unless `--part` says otherwise.
+
+To find one again:
+
+```console
+$ ley recordings
+STARTED   FREQUENCY    MODE  KIND   LENGTH  PARTS  SIZE     ID
+14:03:22  146.520 MHz  NFM   audio  2 min   1      11.5 MB  job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+
+$ ley recordings show job_01J8
+Recording 146.520 MHz NFM audio, wav-s16
+Holds     2 min of signal in 1 part, 11.5 MB of samples
+Started   2026-09-17 14:03:22, ended by duration
+Radio     Nooelec NESDR SMArt (rtlsdr), tuner gain 29.7 dB
+/Users/you/Library/Application Support/Leyline/recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+
+PART  STARTED   LENGTH  PEAK        OVERS  FILE
+1     14:03:22  2 min   -6.2 dBFS   -      2026-09-17_14-03-22_146.520MHz_NFM_001.wav
+Listen: ley play job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
+```
+
+An id prefix is enough, as everywhere else in `ley`. The files are a plain directory Finder can
+open, so `open -R "$(ley recordings path job_01J8)"` reveals one. To hear a recording, give its id
+to `ley play`, whichever kind it is:
+
+```console
+$ ley play job_01J8
+$ ley play job_01J8 --part 2      # or any other part
+```
+
+`ley play` works on either kind, and does the right thing for each: an IQ recording is tuned back
+as if it were a radio, and an audio recording is played by the daemon through the same speakers
+`ley tune` uses — a WAV holds what the demodulator already produced, and there is no signal left
+in it to tune. Either way Ctrl-C stops it. (If the daemon has no audio device, `ley play` hands
+the file to your own player instead and says so.)
+
+Moving the radio while a recording runs leaves a gap in it, so `ley tune` and `ley set freq`
+refuse and name the job; `--retune` goes ahead, and the recording logs the gap rather than
+failing. The daemon drops the oldest recordings when the store passes its cap (20 GiB by
+default); deleting one in Finder is enough, and nothing has to be told.
+
+## 12. Decode what is being said
 
 `ley decode` answers *what are the packets on this frequency saying*. The daemon runs a decoder,
 a separate program that turns a channel's audio into typed records, and `decode` prints one
@@ -757,7 +844,7 @@ contract every decoder speaks is in
 the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
 roadmap` names what is next.
 
-## 12. For scripts and agents
+## 13. For scripts and agents
 
 `ley help scripting` is the authoritative short version; every `--json` shape and exit code is
 in the [`ley` reference](../reference/cli.md), and [Writing a client](../reference/clients.md) is
@@ -821,7 +908,7 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
-## 13. When things go wrong
+## 14. When things go wrong
 
 Every error is one line that says what happened and what to run next, and the exit status says
 which kind of failure it was. [Troubleshooting](troubleshooting.md) lists the messages a newcomer

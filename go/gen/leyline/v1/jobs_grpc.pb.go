@@ -326,9 +326,15 @@ const (
 // ResourcesClient is the client API for Resources service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+// opens the file (docs/design/data-planes.md, "no lossless network stream").
 type ResourcesClient interface {
 	ListResources(ctx context.Context, in *ListResourcesRequest, opts ...grpc.CallOption) (*ListResourcesResponse, error)
 	GetResource(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*Resource, error)
+	// ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+	// to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+	// so a missing one is JOB_NOT_FOUND.
 	ResolveLocalPath(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*LocalPath, error)
 }
 
@@ -373,9 +379,15 @@ func (c *resourcesClient) ResolveLocalPath(ctx context.Context, in *ResourceRef,
 // ResourcesServer is the server API for Resources service.
 // All implementations must embed UnimplementedResourcesServer
 // for forward compatibility.
+//
+// The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+// opens the file (docs/design/data-planes.md, "no lossless network stream").
 type ResourcesServer interface {
 	ListResources(context.Context, *ListResourcesRequest) (*ListResourcesResponse, error)
 	GetResource(context.Context, *ResourceRef) (*Resource, error)
+	// ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+	// to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+	// so a missing one is JOB_NOT_FOUND.
 	ResolveLocalPath(context.Context, *ResourceRef) (*LocalPath, error)
 	mustEmbedUnimplementedResourcesServer()
 }

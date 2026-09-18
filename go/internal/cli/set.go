@@ -57,7 +57,10 @@ func setParamList() string {
 }
 
 func newSetCommand(app *App) *cobra.Command {
-	var channelSel, captureSel, element string
+	var (
+		channelSel, captureSel, element string
+		retune                          bool
+	)
 	cmd := &cobra.Command{
 		Use:   "set [parameter value]",
 		Short: "Adjust what is playing, while it plays",
@@ -120,12 +123,13 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 			if len(args) == 0 {
 				return showSettings(s, ch, cap)
 			}
-			return runSet(cmd.Context(), s, args[0], args[1], element, ch, cap)
+			return runSet(cmd.Context(), s, args[0], args[1], element, ch, cap, retune)
 		},
 	}
 	cmd.Flags().StringVar(&channelSel, "channel", "", "which channel: an id (chan_...), id prefix, row number from 'ley state' or frequency, e.g. --channel 146.62 (default: the active one)")
 	cmd.Flags().StringVar(&captureSel, "capture", "", "which capture (a radio tuned to a band), for freq and gain: id, prefix, row number or frequency (default: the channel's)")
 	cmd.Flags().StringVar(&element, "element", "", "which gain stage, for radios with more than one; names from 'ley devices', e.g. --element IF (default: the radio's first)")
+	cmd.Flags().BoolVar(&retune, "retune", false, "move the radio even when a recording is running on it (the recording logs the gap); without it set freq refuses and names the job")
 	return cmd
 }
 
@@ -312,7 +316,7 @@ func paramErr(name string, err error) error {
 // buildWrites turns (param, value) into the ParamWrites and a predicate that
 // recognises the confirming event. hz is the frequency the write concerns
 // (for friendly out-of-range errors), 0 when none.
-func buildWrites(ctx context.Context, s *session, param, value, element string, ch *leylinev1.Channel, cap *leylinev1.Capture) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, hz uint64, err error) {
+func buildWrites(ctx context.Context, s *session, param, value, element string, ch *leylinev1.Channel, cap *leylinev1.Capture, retune bool) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, hz uint64, err error) {
 	needChannel := func() error {
 		if ch == nil {
 			return fmt.Errorf("set %s needs a channel; pick one with --channel", param)
@@ -346,6 +350,11 @@ func buildWrites(ctx context.Context, s *session, param, value, element string, 
 			if err := s.checkRange(value, hz); err != nil {
 				return nil, nil, 0, err
 			}
+		}
+		// Moving the radio under a running recording leaves a gap in it. The daemon degrades the
+		// job and records the gap rather than refusing a person; `ley` asks first.
+		if rerr := s.refuseRetuneOverRecording(cap.CaptureId, retune); rerr != nil && (ch == nil || !covers(cap, hz, ch.BandwidthHz)) {
+			return nil, nil, 0, rerr
 		}
 		if ch == nil {
 			w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: hz}}
@@ -516,8 +525,8 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 }
 
 // runSet writes, waits for confirmation (or a rejection) and prints the result.
-func runSet(ctx context.Context, s *session, param, value, element string, ch *leylinev1.Channel, cap *leylinev1.Capture) error {
-	writes, confirmed, hz, err := buildWrites(ctx, s, param, value, element, ch, cap)
+func runSet(ctx context.Context, s *session, param, value, element string, ch *leylinev1.Channel, cap *leylinev1.Capture, retune bool) error {
+	writes, confirmed, hz, err := buildWrites(ctx, s, param, value, element, ch, cap, retune)
 	if err != nil {
 		return err
 	}

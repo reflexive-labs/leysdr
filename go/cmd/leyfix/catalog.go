@@ -34,6 +34,10 @@ type fixture struct {
 	// packet fixture asserts a count, and half a second of it is not the same
 	// file with fewer samples. 0 means any duration.
 	minDurationS float64
+	// fixedDurationS overrides --duration entirely: a fixture whose signal is a
+	// schedule in absolute seconds is that schedule or it is a different
+	// fixture. 0 means --duration decides.
+	fixedDurationS float64
 }
 
 func f64(v float64) *float64 { return &v }
@@ -65,6 +69,14 @@ const plSNRDB = 8
 
 func hz(v float64) string { return fmt.Sprintf("%.0f", v) }
 
+// The keying schedule of nfm_keyed, and the file length it needs. Absolute
+// rather than proportional to --duration: the 3.0 s gaps are what make the
+// fixture prove the hang rules, so the file is always generated at its own
+// length however short the rest of the set is asked for.
+var keyedSegments = []keySegment{{1.0, 2.0}, {5.0, 5.5}, {8.5, 10.5}}
+
+const keyedDurationS = 10.5
+
 var catalog = []fixture{
 	{
 		name: "nfm_tone", centerHz: 146_520_000,
@@ -74,6 +86,34 @@ var catalog = []fixture{
 			return []source{&fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS}}
 		},
 		expect: func(float64) []iqfile.Expect { return []iqfile.Expect{toneExpect("NFM", 100_000, 12_500, 1000, 30)} },
+	},
+	{
+		// Three transmissions with silence between them: the fixture a gated
+		// recording is graded against (docs/design/recording.md, "Testing
+		// without hardware"). The gaps are 3.0 s, which is inside the default
+		// 5 s hang and outside a 1 s one, so the same file proves both rules --
+		// an exchange keeps its overs in one part, and a short hang cuts one
+		// part per transmission.
+		name: "nfm_keyed", centerHz: 146_520_000,
+		description:    "NFM 1 kHz tone at +100 kHz keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between",
+		metadata:       map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		fixedDurationS: keyedDurationS,
+		build: func(rate float64) []source {
+			return []source{&keyed{
+				rate:     rate,
+				segments: keyedSegments,
+				inner:    &fmTone{rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS},
+			}}
+		},
+		expect: func(float64) []iqfile.Expect {
+			e := iqfile.Expect{Mode: "NFM", OffsetHz: 100_000, BandwidthHz: 12_500}
+			segments := make([]iqfile.RecordSegment, 0, len(keyedSegments))
+			for _, seg := range keyedSegments {
+				segments = append(segments, iqfile.RecordSegment{StartS: seg.startS, EndS: seg.endS})
+			}
+			e.Record = &iqfile.RecordExpect{Gate: "squelch", SquelchDBFS: squelchRefDBFS, Segments: segments}
+			return []iqfile.Expect{e}
+		},
 	},
 	{
 		// The everyday case: a repeater transmission carrying PL 100.0 under

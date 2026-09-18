@@ -15,15 +15,10 @@ type stub struct {
 	use, short, milestone, today string
 }
 
-// Stubs is the roadmap table: verbs that are planned but not implemented.
-var Stubs = []stub{
-	{
-		use:       "record",
-		short:     "Record a channel or the raw capture to a file",
-		milestone: "Milestone C.12",
-		today:     "ley play <file> plays back an IQ recording; recording is a daemon job and is not in this build",
-	},
-}
+// Stubs is the roadmap table: verbs that are planned but not implemented. Empty is the healthy
+// state; a verb lands here when its milestone is named and a newcomer would otherwise type it and
+// get Cobra's "unknown command".
+var Stubs []stub
 
 // stubMessage is the exit-2 line a stub prints.
 func stubMessage(s stub) string {

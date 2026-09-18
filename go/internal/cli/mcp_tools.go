@@ -22,9 +22,9 @@ import (
 )
 
 // The tool table of docs/plans/mcp.md, in the order an agent reads it: orient,
-// control, observe, decode, jobs. Each tool names the RPC it maps onto and the
-// `ley` verb that mirrors it, and returns that verb's `--json` shape. The
-// blocked tools of the plan (find_recordings, get_transcript, identify_signal,
+// control, observe, decode, record, jobs. Each tool names the RPC it maps onto
+// and the `ley` verb that mirrors it, and returns that verb's `--json` shape.
+// The blocked tools of the plan (get_transcript, identify_signal,
 // lookup_identity, whats_out_there) are not registered: a tool that only
 // refuses spends an agent's context on nothing, and the server's instructions
 // say what is not here yet.
@@ -98,6 +98,25 @@ func (srv *mcpServer) registerTools() {
 		Annotations: mutates,
 	}, srv.startDecodeJob)
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "record",
+		Description: "Record what the radio hears to files the daemon keeps, and wait for it (Jobs.StartJob(RecordConfig); ley record). " +
+			"duration_s is required, 1 to 3600: what an agent starts must end without it. gate: \"squelch\" records only while something is on the air, one file per exchange, so a quiet band costs no disk. " +
+			"Refuses a radio somebody is using unless take_over is true. Returns the finished Job; its resultUris names ley://recordings/<job_id>, which get_recording resolves to files on this machine.",
+		Annotations: mutates,
+	}, srv.record)
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "find_recordings",
+		Description: "The recordings the daemon has kept, newest first: what was recorded, when, how long and how big (Resources.ListResources(RECORDING); ley recordings). " +
+			"The filters are the recording's own metadata: kind (audio|iq), frequency, mode. Returns a ListResourcesResponse; the text is one line per recording.",
+		Annotations: readOnly,
+	}, srv.findRecordings)
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "get_recording",
+		Description: "One recording's manifest with each part's path on the daemon's machine, so a file can be handed to another tool (Resources.GetResource + ResolveLocalPath; ley recordings show / ley recordings path). " +
+			"Samples are never returned through MCP; a path is. Returns {manifest, directory, parts: [{part, path, samples}]}.",
+		Annotations: readOnly,
+	}, srv.getRecording)
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_jobs",
 		Description: "The daemon's background work -- sweeps, decode jobs, watches -- with state and progress (Jobs.ListJobs; ley jobs). Returns a ListJobsResponse.",
 		Annotations: readOnly,
@@ -114,12 +133,19 @@ func (srv *mcpServer) registerTools() {
 	}, srv.cancelJob)
 }
 
-// registerResources exposes the two ley:// resources the daemon can answer
-// today: a kept decode job's records, which have a store, and a scan, which
-// Jobs.GetScan resolves for as long as the daemon remembers the job (its last
-// sixteen finished ones, forgotten on restart). Recordings and snapshots
-// become resources with the Resources service (docs/plans/mcp.md, MCP-7).
+// registerResources exposes the ley:// resources the daemon can answer: a
+// recording, which has a store and outlives the daemon; a kept decode job's
+// records, which also have one; and a scan, which Jobs.GetScan resolves for as
+// long as the daemon remembers the job (its last sixteen finished ones,
+// forgotten on restart). Snapshots and transcripts arrive with their milestones.
 func (srv *mcpServer) registerResources() {
+	srv.server.AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "ley://recordings/{job_id}",
+		Name:        "recordings",
+		Title:       "A recording",
+		Description: "The manifest of a recording ley record made: the radio and gain it was made on, its parts with their span on the capture's timeline, the times nothing was recorded and why, and how it ended. get_recording returns the same document with each part's local path.",
+		MIMEType:    "application/json",
+	}, srv.readRecordingResource)
 	srv.server.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: "ley://records/{job_id}",
 		Name:        "records",

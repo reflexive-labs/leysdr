@@ -35,8 +35,13 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   │                         (don't-disturb capture and channel leasing for jobs)
 │   ├── Decoders/             DecoderRegistry (manifests on disk), PluginProcess (the stdio wire),
 │   │                         RecordHub (the live plane), RecordStore/RecordWriter (kept records)
-│   ├── Services/             Control, Telemetry, Bulk, Jobs (scan and decode implemented; watch/record
-│   │                         UNIMPLEMENTED), Decoders, Resources (UNIMPLEMENTED in v0)
+│   ├── Recording/            RecordRunner (a record job's drain and gate), RecordGateMachine (the
+│   │                         squelch state machine, no DSP), PartWriter (one open file + the
+│   │                         manifest), RecordingStore (the directory, retention, restart repair),
+│   │                         PlaybackEngine + WAVReader (playing a recording back through the
+│   │                         daemon's own audio device)
+│   ├── Services/             Control, Telemetry, Bulk, Jobs (scan, monitor, decode and record
+│   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
 │   ├── RememberedDevices.swift  devices.json beside the socket: the rtl_tcp endpoints to re-attach
@@ -420,7 +425,9 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
   mode default. Owner = calling client.
 - `AttachSink`: `system_audio` → `CoreAudioSink` (`PLATFORM_UNSUPPORTED` off macOS); `stream` →
   the sink is the bulk-plane handle (clients use `Bulk.Subscribe` on the channel instead — v0
-  returns `UNIMPLEMENTED` for attaching a stream sink directly); `file` → `UNIMPLEMENTED` in v0.
+  returns `UNIMPLEMENTED` for attaching a stream sink directly); `file` → `UNIMPLEMENTED`, and
+  stays so: a recording is a job's output (`Jobs.StartJob(RecordConfig)`, "Recording" below), because
+  a sink attached to a channel dies with that channel's owner and leaves a file nothing indexes.
 - `WriteParams`: `WriteCoalescer` keeps last value per `(target_id, param case)` and applies every
   20 ms. Rejections become `WriteRejected` events with the client tag. `gain` writes target the
   capture's device; the confirmed value comes back in the `Capture.gains` field of the capture event.
@@ -494,7 +501,7 @@ and a radio someone else is using must not be retried blind.
 | `CHANNEL_NOT_FOUND` | `NOT_FOUND` | no channel with that id |
 | `SINK_NOT_FOUND` | `NOT_FOUND` | no sink with that id |
 | `STREAM_NOT_FOUND` | `NOT_FOUND` | no bulk stream with that id |
-| `JOB_NOT_FOUND` | `NOT_FOUND` | no job with that id |
+| `JOB_NOT_FOUND` | `NOT_FOUND` | no job with that id, and no recording either: a recording's id is its job's, so `RESOURCE_NOT_FOUND` does not exist |
 | `SCAN_NOT_FOUND` | `NOT_FOUND` | no scan result with that id (sixteen are kept) |
 | `DECODER_NOT_FOUND` | `NOT_FOUND` | no installed decoder by that name (`ley decoders` lists them) |
 | `DECODER_FAILED` | `FAILED_PRECONDITION` | the decoder's program could not be started: missing, not executable, or exited before reading its descriptor |
@@ -547,9 +554,9 @@ tears the subscription down; a subscription with no `Stream` reader for 10 s is 
 
 ### Jobs service and lease lifecycle
 
-`StartJob(ScanConfig{once})` is implemented (Milestone D.13) and so is `StartJob(DecodeConfig)`
-("Decoders" below); `watch` and `record` configs, and the whole Resources service, still return
-`UNIMPLEMENTED`. A scan job never touches a capture directly
+`StartJob(ScanConfig{once})` is implemented (Milestone D.13), and so are `StartJob(DecodeConfig)`
+("Decoders" below), `StartJob(MonitorConfig)` and `StartJob(RecordConfig)` ("Recording" below); a
+`watch` config and `GetTranscript` still return `UNIMPLEMENTED`. A scan job never touches a capture directly
 (invariant 9): it asks `SessionCaptureAllocator` for a range, and the allocator either hands back a
 `CaptureLease` or a declined result with a reason. Allocation prefers a device with no capture at all
 over borrowing one that has one — creating and destroying disturbs nobody. Borrowing an existing
@@ -616,6 +623,67 @@ protocol or wall-clock span cannot match, filters the rest in memory, sorts newe
 to be slow, not before. Retention (`--store-cap`, default 2 GiB; `--store-age`, default 90 days)
 runs at daemon start and whenever a kept job starts: age first, then the oldest until the store
 fits.
+
+### Recording
+
+A recording is a job's output (`docs/design/recording.md`); `Control.AttachSink(file)` stays
+`UNIMPLEMENTED`, because a sink attached to somebody's channel dies with that channel's owner and
+leaves a file nothing indexes. `RecordRunner` is built like `DecodeRunner` and is the only runner
+for both forms: the audio form borrows or leases a `ChannelLease` and reads it through the same
+`AudioFrameSource` (a `CallbackSink` into a `FloatRing`) the bulk audio path uses, and the IQ form
+takes a `CaptureIQLease` and an `IQFrameTap` into a `FrameRing` exactly as `IQDecodeRunner` does.
+Nothing new runs on the DSP thread: the drain task pops the ring and hands blocks to `PartWriter`,
+which converts f32 to S16, accumulates peak and mean, and writes the files.
+
+The channel form borrows: `BorrowedChannelLease.release()` does nothing, so recording what
+somebody is listening to leaves their channel and their radio exactly as it found them, and the
+runner polls `SessionStore.channelEngine` so that the owner destroying the channel ends the job
+`COMPLETED` rather than orphaning a sink. The frequency form takes a real lease from the
+allocator, which is what hands the radio back when the job ends.
+
+`RecordGateMachine` is the squelch gate and has no clock and no DSP: it is driven by the channel's
+own squelch transitions (through `telemetrySubscription`, never a second reader on the DSP-side
+ring) and by the drain's progress along the capture timeline, and it answers in actions --
+open a part at *this* sample, note an over, close the part at the close transition plus the hang,
+end the job on quiet. Deciding at frame granularity is the accuracy claim: a cut lands within one
+capture block of the transition (16384 samples, 6.8 ms at 2.4 MSPS). Audio arriving while no part
+is open goes into a pre-roll ring allocated once at start, so a part can begin before the squelch
+did. A gated recording with no squelch on its channel measures one from the channel's own meter
+and sits 10 dB above it, which is `ley tune`'s auto squelch done where the channel is.
+
+`duration_ms` is enforced twice, on the samples and on the clock, and whichever comes first ends
+the job: the sample check is the accurate one, but a radio that stops delivering -- a file device
+at the end of its file, a dongle unplugged -- would otherwise leave a job that asked for five
+minutes running for ever.
+
+`PartWriter` owns one open file at a time: a WAV opens with placeholder lengths that are patched
+from the file's own size on close, a cf32 is appended raw, and the part's sidecar and the manifest
+are written when it closes. The manifest is rewritten atomically on every change, so a client
+reading a running recording sees an honest file. `RecordingStore` is the directory
+(`--recordings`, default beside the record store), its retention (`--recordings-cap`, default
+20 GiB; `--recordings-age`, default 0) and the restart repair: at boot, any manifest with no
+`ended_by` has its unlisted part files' headers patched from their lengths, those parts joined to
+it, and `ended_by = restart` written. A recording is a bounded artefact and does not resume;
+whoever wanted a longer one starts another. Retention runs when a recording opens and when one
+ends, and never removes a recording whose job is running.
+
+**Playing one back.** `PlaybackEngine` (`Recording/PlaybackEngine.swift`) is the one place the
+daemon reads a file for sound. `WAVReader` takes the mono 16-bit PCM `PartWriter` writes and
+nothing else -- it walks the chunks rather than assuming the canonical layout, and a `data` chunk
+whose length is still the placeholder is read to the end of the file, the same rule the restart
+repair follows. A task reads 20 ms blocks, converts S16 to f32 and pushes them into the same
+`CoreAudioSink` a channel's audio goes to, pacing against the start so jitter never accumulates;
+the sink's ring is the buffer, so a late tick is absorbed rather than heard. There is no DSP
+thread in this path at all. `SessionStore` owns the table, publishes `Event.playback` and reaps a
+departing client's playbacks beside its channels, which is what makes Ctrl-C in `ley play` stop
+the sound. An IQ part is refused `INVALID_ARGUMENT` (those are tuned), and a host with no
+AVFoundation answers `PLATFORM_UNSUPPORTED` exactly as `AttachSink(system_audio)` does.
+
+`Resources` is implemented over these manifests plus the kept-decode store: `ListResources` answers
+`RECORDING` and `RECORDS` from disk and `SCAN` from the jobs the daemon still remembers,
+`GetResource` the same shapes by URI, and `ResolveLocalPath` the recording's directory
+(`ley://recordings/<id>`) or one part's samples file (`ley://recordings/<id>/<part>`). Nothing is
+streamed: a client on this machine opens the file (invariant 3).
 
 ### Detections on the telemetry plane
 

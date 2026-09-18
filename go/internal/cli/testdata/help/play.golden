@@ -28,6 +28,7 @@ Flags:
       --loop             start over when the file ends, until Ctrl-C (default: stop at the end)
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
       --no-audio         decode but do not play through the speakers (use with --persistent or --json)
+      --part int         which part of a ley://recordings/ recording to play, e.g. 2 (default: the first)
       --persistent       leave the channel running after the command exits and print its ids (for scripts)
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
       --volume string    speaker volume: 0 to 1, or a percentage like 50% (default "1")

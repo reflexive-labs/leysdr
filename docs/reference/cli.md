@@ -76,8 +76,19 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
-├── play <file.cf32> [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
-│                                    # FilePlaybackDevice through the same pipeline
+├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto] [--device SEL] [--take-over]
+│                                    # Jobs.StartJob(RecordConfig): the daemon finds or makes the capture and
+│                                    # writes WAV (or .cf32 with --iq) into its store; the job's id is the
+│                                    # recording's, and ley://recordings/<job_id> is on stdout when it ends
+├── recordings [--kind audio|iq] [--freq F] [--since D] [--limit N]
+│   ├── show <id>                    # the manifest: the radio, the parts, the coverage gaps, how it ended
+│   └── path <id> [--part N]         # where it is on this machine, for Finder or another tool
+│                                    # Resources.ListResources / GetResource / ResolveLocalPath
+├── play <file.cf32 | job_ID | ley://recordings/ID[/PART]> [--part N] [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
+│                                    # FilePlaybackDevice through the same pipeline; a recording's id or URI
+│                                    # is resolved to its part file first. An audio part holds what a
+│                                    # demodulator already produced, so there is nothing left to tune: play
+│                                    # hands it to the machine's own player ($LEYLINE_PLAYER, else open)
 ├── devices [--watch] | devices attach rtltcp <host:port> | devices detach <SEL>
 │                                    # attach adds a radio another machine serves with rtl_tcp and the daemon
 │                                    # remembers it across restarts; detach removes any device a client attached
@@ -85,8 +96,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── daemon [install|uninstall|start|stop|status|logs]
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
-├── record                           # hidden stub: exit 2 "not implemented yet (Milestone …)"; listed by `ley help roadmap`
-└── (planned) jobs, transcript, recordings   # arrive with the durable job store and Resources (Milestones C.12, D.15)
+└── (planned) transcript             # arrives with the durable job store (Milestone D.15)
 ```
 
 Global flags: `--json` on every verb (answered, or refused with exit 2 where there is no machine form); `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/dev/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
@@ -115,7 +125,7 @@ to stderr, so stdout is parseable. Every verb either answers the flag or refuses
 output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
 `ley daemon install|uninstall|logs`, and `ley mcp`, whose stdout is the MCP conversation — exits 2 with `<verb> has no --json output; drop the flag
 (<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
-pipeline unparseable text and exit 0. **Seven documented exceptions.** The first sits beside the
+pipeline unparseable text and exit 0. **Eight documented exceptions.** The first sits beside the
 shm-ring bypass in the design docs: bulk rows have no proto message, so `ley fft --format json`
 and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, floor_db}` (snake_case,
 numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
@@ -288,9 +298,10 @@ is deliberately not yet a Resource, because an ad-hoc scan is ephemeral and ther
 daemon keeps the last sixteen finished jobs in memory and loses them on restart. A decode job
 started with `--job` (kept) is the exception: it is written to `kept-jobs.json` beside the record
 store and comes back after a restart as the same job, its records appending to the same resource
-(`docs/plans/decoders.md`, DEC-11); a job cancelled by a client does not. `Jobs.StartJob` with
-a watch or record config, `Jobs.GetTranscript` and the whole `Resources` service remain UNIMPLEMENTED
-until Milestone D.15.
+(`docs/plans/decoders.md`, DEC-11); a job cancelled by a client does not. A **record job** is the
+other exception and needs no flag: a recording outlives the client that started it, because its
+output is a file (`Jobs.StartJob(RecordConfig)`, below). `Jobs.StartJob` with a watch config and
+`Jobs.GetTranscript` remain UNIMPLEMENTED until Milestone D.15.
 A running decode job's `status_detail` carries its liveness: "decoding with aprs: 12 records, last
 3 s ago", the first record published at once and a moving count every two seconds after it, so
 `ley jobs` tells a decoder that is hearing things from one that is not. A decoder that is silent
@@ -315,6 +326,101 @@ print the same `DaemonInfo` as `daemon status --json` (start from a fresh `GetSt
 action; stop the last info the daemon reported, pid included, or only `socketPath` when nothing was
 running); `daemon install`, `uninstall` and `logs` have no JSON shape and reject `--json` as a
 usage error (exit 2).
+
+**Recording** (`docs/design/recording.md`). A recording is a job's output, not a sink somebody
+attaches: `Control.AttachSink(file)` stays refused, because a sink attached to a channel dies with
+that channel's owner and leaves a file nothing indexes, while a job goes through the allocator,
+outlives its client and produces a resource. The job's id **is** the recording's id, so
+`Job.result_uris` carries `ley://recordings/<job_id>` from the moment the job exists.
+
+`ley record <freq|preset|chan_ID>` writes audio as WAV (PCM S16 mono at the channel's audio rate)
+or, with `--iq`, the capture's raw samples as `.cf32` at the capture rate. A channel id records
+what somebody is already listening to, with their mode, bandwidth and squelch, and ends
+`COMPLETED` when that channel closes; `--mode`, `--bw` and `--squelch` are refused there rather
+than ignored. `--gate squelch` records only while the squelch is open and writes **one file per
+exchange**: a re-open inside `--hang` (default 5 s) continues the same file, so the pauses between
+overs stay in one part, and `--pre` (default 500 ms) keeps what came just before each key-up.
+`--listen` also plays the channel through the daemon's speakers while it records, so you hear
+what is going into the file without a second command holding a second channel; the sink belongs to
+that terminal and goes when it exits, which is why it is refused with `--detach`, and with `--iq`,
+whose samples have not been through a demodulator. Audio is what `record` writes unless `--iq`
+says otherwise; `--audio` is accepted as the explicit spelling of that default, because the V0
+story names the pair, and asking for both is refused. `--stop-after-quiet D` ends the job after that long with nothing on the air. `--part D` cuts a new
+file on a timer (the default for `--iq` is 60 s, because 2.4 MSPS is 19.2 MB a second); audio is
+one file unless asked otherwise. `--gate squelch` with `--iq` is refused, and so are `--pre`,
+`--hang` and `--stop-after-quiet` without a gate. Silence is never edited out of a file: each part
+says where on the capture's timeline it starts, and the times nothing was recorded are listed in
+the manifest as `coverage_gaps` (CLAUDE.md invariant 5). The verb runs in the foreground and prints, on stderr, a banner of the decisions **the daemon**
+made rather than the ones asked for — it waits up to two seconds for the manifest so the rate,
+format, gate and radio in it are the real ones — then a live line, then what it recorded; the
+recording's URI is on stdout when it ends. Ctrl-C cancels the job, which finalises the files —
+**a cancelled recording is complete, not damaged** — and `--detach` exits at once with the job id
+and the URI for a script.
+
+`ley recordings` lists the store through `Resources.ListResources(RECORDING)`, newest first;
+`--kind`, `--freq` and `--since` filter on the resource's own metadata, whose keys are frozen
+because `metadata_filter` matches them by exact string: `kind` (`audio`|`iq`), `frequency_hz`,
+`mode`, `sample_rate`, `format`, `duration_ms`, `parts`, `started_at_ns`, `ended_at_ns`,
+`ended_by`, `device`. `ley recordings show <id>` prints the manifest and `ley recordings path
+<id> [--part N]` the directory or one part's samples file, so `open -R "$(ley recordings path
+job_…)"` reveals it in Finder. Every id argument takes a full job id, an id prefix or a
+`ley://recordings/` URI, `ley play` included: `ley play job_01J…` plays a recording's first part,
+and `--part N` picks another.
+
+**What `ley play` does with a recording depends on what is in it.** An **IQ** part is raw samples,
+so it is attached as a pretend radio and tuned, exactly as a fixture is. An **audio** part is a
+WAV: it holds what a demodulator already produced, and there is no signal left in it for a channel
+to decode — attaching it as a radio would put a fictional capture and a fictional mode into
+`ley state`, and demodulating audio gives noise. **The daemon plays it instead**
+(`Control.StartPlayback`), through the same audio device a channel's audio comes out of, so the
+sound is where the radio is, a client on another machine hears it, and `ley play` holds the
+terminal with a position until Ctrl-C stops it — the same shape as every other listening verb. A
+daemon with no audio device answers `PLATFORM_UNSUPPORTED` and `ley` then hands the file to this
+machine's own player (`$LEYLINE_PLAYER` when set — `afplay`, `mpv`, `vlc` — else `open` on macOS
+and `xdg-open` elsewhere), saying which happened. Under `--json` nothing is played at all and the
+`LocalPath` is printed instead: a script wants the path, not a sound.
+
+A **`Playback`** is daemon state like everything else (`playback_id`, `resource_uri`, `path`,
+`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`), so it appears in
+`GetState` and on the event stream, `ley state` lists what is playing and how far in, and a second
+client — the Mac app — renders a position and a stop button without polling. It is not a job (a
+job's output is a resource; a playback produces nothing) and not a sink (a sink is where a
+*channel's* audio goes; a playback has no channel). It belongs to the client that started it and
+stops when that client goes, which is what makes Ctrl-C stop the sound; `Control.StopPlayback`
+stops one early, and the final event carries `state` unset as the tombstone, so a client can tell
+"it reached the end" from "somebody stopped it". Seeking, pausing and looping are not in v1:
+`position` is reported and not writable.
+
+`ley record --json` prints the `Job` as each state change arrives, one object per line, and
+nothing else on stdout — the URI is in its `resultUris`. `ley recordings --json` prints a
+`ListResourcesResponse` and `ley recordings path --json` a `LocalPath` (`{"path": "..."}`); without
+`--json` the path is printed alone so it composes into a shell command. **`ley recordings show
+--json` is the eighth documented exception**: it prints `recording.json` itself, byte for byte the
+document beside the files, because the daemon owns that format and a client that re-rendered it
+would drift from what Finder shows. Its keys are snake_case: `{job_id, uri, kind, frequency_hz,
+mode, bandwidth_hz, sample_rate, format, device, gains, squelch_dbfs, gate, part_ms, started_at_ns,
+ended_at_ns, ended_by, created_by, anchors, parts, coverage_gaps, bytes}`, where `parts` is
+`[{part, file, start_sample, end_sample, samples, bytes, peak_dbfs, mean_dbfs, squelch_opens}]`
+(`peak_dbfs` and `mean_dbfs` absent on a part nobody finished measuring, such as one a restart
+repaired), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
+capture the recording spanned, each dating its own capture's samples. `ended_by` is one of
+`duration`, `quiet`, `cancelled`, `channel ended`, `restart`, `store full`, `error`. Beside each
+part is its own sidecar — the `iqfile` document (`iq-files.md`) with a `recording` block — which is
+what makes a part a file `ley play` can read.
+
+The store is a plain directory Finder can open and Spotlight can index:
+`~/Library/Application Support/Leyline/recordings` on macOS, `$XDG_DATA_HOME/leyline/recordings`
+elsewhere, `leylined --recordings PATH` to move it, with `--recordings-cap BYTES` (default 20 GiB)
+and `--recordings-age DAYS` (default 0, never) as its retention. A recording deleted in Finder is
+gone and nothing has to be told: the listing is a scan of the manifests. Retention never removes a
+recording whose job is running, and a daemon restart does not resume a recording — the next daemon
+repairs the last part's WAV header from the file's length and closes the manifest with
+`ended_by = restart`.
+
+A radio moved out from under a running recording leaves a gap in it. The daemon never refuses a
+person on a job's behalf: it marks the job `DEGRADED`, closes the open part and records the gap.
+The guard is in the client, so `ley tune` and `ley set freq` refuse a retune of a capture a
+recording is riding on, name the job and `ley jobs cancel`, and go ahead with `--retune`.
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`listen`/`devices --watch` session; 1 when the daemon refused or
@@ -347,10 +453,11 @@ snapshot, and every client would have to repeat it. The recorded follow-up is an
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 
-**Roadmap stubs.** `record` (Milestone C.12) exists as a hidden verb so a newcomer who types it
-learns what is coming and what to use today (`ley play`); it exits 2 and never reaches the daemon.
-`scan` was one of them until Milestone D.13, and `watch` until D.17: the name went to the
-record-watch verb (a decode job with a predicate and a notifier, DEC-9a), the newer spec; the
-audio-transcript watch that reserved it is D.15's to place.
+**Roadmap stubs.** There are none: every verb `ley` knows reaches the daemon. The mechanism stays
+(a hidden verb that exits 2 naming its milestone and what to use today, listed by `ley help
+roadmap`), because a newcomer who types a planned verb should learn what is coming rather than see
+Cobra's "unknown command". `scan` was one until Milestone D.13, `watch` until D.17 -- the name went
+to the record-watch verb (a decode job with a predicate and a notifier, DEC-9a), the newer spec,
+and the audio-transcript watch that reserved it is D.15's to place -- and `record` until C.12.
 
 Deliberate omissions at v0: no remote flags (UDS-only) and no TX verbs.

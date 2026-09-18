@@ -46,10 +46,12 @@ short text summary so the agent spends its context on reasoning.
 
 Tools: list_devices, get_state, daemon_logs, tune, scan, listen_summary,
 snapshot, list_decoders, query_records, list_entities, start_decode_job,
-list_jobs, get_job, cancel_job. The resource ley://records/<job_id> reads a kept decode
-job's records. Anything an agent starts here (a channel from tune, a decode
-job without keep) ends when the agent disconnects, the way a ley verb's ends
-at Ctrl-C; keep: true on a tool leaves it running.
+record, find_recordings, get_recording, list_jobs, get_job, cancel_job. The
+resources ley://recordings/<job_id> and ley://records/<job_id> read a
+recording's manifest and a kept decode job's records. Anything an agent
+starts here (a channel from tune, a decode job without keep) ends when the
+agent disconnects, the way a ley verb's ends at Ctrl-C; keep: true on a tool
+leaves it running, and a recording always outlives the call that made it.
 
 The socket has no authentication, so an agent that can start 'ley mcp' can
 do anything a shell running ley can: tune, take a radio over, cancel jobs.
@@ -177,9 +179,9 @@ const mcpInstructions = `Leyline is a software-defined radio: one daemon owns th
 
 A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it, except a decode job started with keep, which comes back as the same job.
 
-Only one thing can use the radio at a time. tune, scan, snapshot and start_decode_job refuse to move a radio somebody is listening on and say who; take_over: true insists. A channel tune makes, or a decode job started without keep, ends when this server exits.
+Only one thing can use the radio at a time. tune, scan, snapshot, start_decode_job and record refuse to move a radio somebody is listening on and say who; take_over: true insists. A channel tune makes, or a decode job started without keep, ends when this server exits; a recording does not -- it is written to disk and stays there.
 
-The detector stays honest: a detection is a carrier that stood above the measured noise floor with the looks that saw it; nothing here names a protocol or a station unless a decoder decoded it. Not available yet: recordings and snapshot resources (ley:// store), transcripts of watched audio, signal identification, and external identity lookups.`
+The detector stays honest: a detection is a carrier that stood above the measured noise floor with the looks that saw it; nothing here names a protocol or a station unless a decoder decoded it. Audio and samples never cross this connection: record writes files on the daemon's machine and get_recording hands back their paths, for another tool to open. Not available yet: snapshot resources (ley:// store), transcripts of watched audio, signal identification, and external identity lookups.`
 
 // newMCPServer dials the daemon, opens the presence stream and registers the
 // tool table. A daemon that is not running is reported the way every verb

@@ -1,0 +1,58 @@
+record writes what the radio hears to files the daemon keeps: audio as WAV
+by default, or the raw samples with --iq. Audio is the default because it is
+the one you can listen to and it is two hundred times smaller -- 96 KB a
+second against 19 MB. It is a job, so it outlives the terminal that started
+it and what it writes is a resource -- 'ley recordings' lists them,
+'ley recordings path' says where they are.
+
+Given a frequency or preset, record tunes for itself (the mode comes from the
+band unless --mode says otherwise). Given a channel id from 'ley state' it
+records what you are already listening to, with your mode, bandwidth and
+squelch, and stops when you do.
+
+--gate squelch records only while the squelch is open, one file per exchange:
+the pauses between overs stay inside one file (--hang) and half a second
+before each key-up is kept (--pre). Silence is never edited out of a file --
+the gaps between files are stated in the manifest instead, so a recording
+played back sounds like the air did.
+
+record runs in the foreground and prints what it is doing until --for elapses
+or Ctrl-C, which stops the job and leaves the recording complete. --detach
+starts it and exits with the job id; 'ley jobs cancel' stops one.
+
+--json prints the Job as each state change arrives, one object per line.
+
+Usage:
+  ley record <frequency|preset|channel> [flags]
+
+Examples:
+  ley record 146.52 --for 5m             # five minutes of audio
+  ley record noaa --gate squelch         # only while something is on the air
+  ley record chan_01J... --for 10m       # what this channel is hearing
+  ley record 146.52 --iq --for 30s       # raw samples, for another tool
+  ley record 462.6 --gate squelch --stop-after-quiet 10m --detach
+  ley play "$(ley record 146.52 --iq --for 10s --json | tail -1 | jq -r .resultUris[0])"
+
+Flags:
+      --bw string                 how wide a slice of spectrum to record: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
+      --detach                    start the recording and exit, printing its job id and URI (for scripts; 'ley jobs cancel' stops it)
+      --device string             which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --for string                how long to record, e.g. 30s, 5m, 2h (default: until Ctrl-C or ley jobs cancel)
+      --gain string               receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting)
+      --gate string               record only while something is on the air: squelch (default: record continuously)
+      --hang string               how long a file stays open after a key-down, so the pauses between overs stay in one file, e.g. 5s (default 5s; needs --gate)
+  -h, --help                      help for record
+      --iq                        record the radio's raw samples (.cf32) instead of demodulated audio: about 19 MB a second at 2.4 MSPS against 96 KB a second for audio, so it is cut into parts (see --part)
+      --listen                    also play what is being recorded through the speakers, so you can hear it go in (not with --iq or --detach)
+      --mode string               how to decode: nfm, wfm, am, usb, lsb, cw (default: by band; ley help modes)
+      --part string               cut a new file every so often, e.g. 60s (default: audio is one file, IQ is cut every 60s)
+      --pre string                how much audio to keep from before each key-up, e.g. 500ms (default 500ms; needs --gate)
+      --squelch string            mute below this level: auto (default with --gate), off, or a level like -40 (dBFS)
+      --stop-after-quiet string   stop recording after this long with nothing on the air, e.g. 10m (needs --gate)
+      --take-over                 record even when somebody is using the radio; it is theirs again afterwards
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

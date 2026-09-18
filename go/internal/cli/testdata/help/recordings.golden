@@ -1,0 +1,39 @@
+recordings reads the daemon's store: what 'ley record' wrote, newest first.
+A recording is one directory of files -- 'ley recordings path' says where, so
+'open -R "$(ley recordings path <id>)"' reveals it in Finder.
+
+The store is a plain directory. A recording deleted there is gone, and the
+daemon does not have to be told; the daemon drops the oldest when the store
+passes its cap (leylined --recordings-cap).
+
+--json prints a ListResourcesResponse.
+
+Usage:
+  ley recordings [flags]
+  ley recordings [command]
+
+Examples:
+  ley recordings                       # everything kept, newest first
+  ley recordings --kind audio          # just the WAVs
+  ley recordings --freq 146.52         # one frequency
+  ley recordings show job_01J...       # the manifest: parts, gaps, the radio
+  open -R "$(ley recordings path job_01J...)"
+
+Available Commands:
+  path        Print where a recording is on this machine
+  show        Print one recording's manifest
+
+Flags:
+      --freq string    only recordings of this frequency or preset, e.g. 146.52
+  -h, --help           help for recordings
+      --kind string    only audio or iq recordings
+      --limit int      at most this many rows, e.g. 20 (default: all of them)
+      --since string   only recordings started more recently than this, e.g. 1h, 30m, 2d
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Use "ley recordings [command] --help" for more information about a command.

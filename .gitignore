@@ -27,6 +27,10 @@ fixtures/*.cu8
 fixtures/*.iq
 fixtures/*.json
 
+# Instruments traces from a profiling run (S2, and the allocation checks in
+# docs/decisions/S2-throughput.md). Tens of megabytes each, and a fresh one every run.
+*.trace/
+
 # Local daemon state / logs
 *.sock
 *.pid

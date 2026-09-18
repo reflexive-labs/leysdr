@@ -51,7 +51,7 @@ honest options for a first public release:
 
 | cut | contains | sizes the unbuilt part at |
 |---|---|---|
-| (a) engine + `ley` | V0 complete: recording lands (C.12), the docs tell the truth, it installs | L (recording) + the release plumbing |
+| (a) engine + `ley` | V0 complete: recording lands (C.12, done 2026-09-18), the docs tell the truth, it installs | the release plumbing |
 | (a′) = (a) + the terminal dashboard | V0.5; the three live views exist and the rest is composition and an event loop over the client-library move in LIB-1 | + M–L |
 | (b) = (a) + MCP adapter | the agent story, which is the positioning (`docs/plans/user-stories.md` "spectrum explorer … agents"); six of the nine MCP tools can be written against today's daemon | + L (adapter, after the client-library move in LIB-1) |
 | (c) = (b) + durable watch jobs | the "watch 146.52 for an hour" story; needs the job store, respawn, transcript (D.15) | + XL |
@@ -146,7 +146,7 @@ Decisions taken here without waiting, because there is one reasonable answer and
 | B.6 FFT ladder + **shm ring** + gRPC stream | partial | the shm ring does not exist: `StreamRegistry.swift:96` always answers `grpc`, `client.go:390` always asks for it, `FrameRing` is process-local. CLAUDE.md invariant 1 calls it "the single documented bypass" |
 | B.7 NFM + CoreAudio | done | see V0-3 |
 | C.8 – C.11 | done | |
-| C.12 FileSink + Resources + record/play/recordings | **missing** except `ley play` | the largest hole in V0 |
+| C.12 recording + Resources + record/play/recordings | done | 2026-09-18; `docs/design/recording.md`. A recording is a job's output rather than an attached sink, which is why the plan's `AttachSink(file)` line below is not what landed |
 | D.13 detector + telemetry + `ley scan` | done | `docs/design/scan.md` |
 | D.14 TUI dashboard | partial | three live views exist (`spectrum --watch`, `waterfall`, `phosphor`) and negotiate low-rate streams; no dashboard, no event loop, no bubbletea dependency. README, CLAUDE.md and `docs/reference/cli.md` all still say "Bubble Tea TUI" |
 | D.15 jobs | one of five pieces | `CaptureAllocator` with don't-disturb landed with scan; the store is in-memory (`JobStore.swift:3`), no respawn, no watch job (`JobsService.swift:22`), no transcript (`:51`) |
@@ -439,16 +439,24 @@ than paraphrasing), the docs map, a status section that agrees with `docs/plans/
 
 ### R-10 `[ ]` (folded into R-1: delete the dead launchd template)
 
-### R-11 `[ ]` Recording (L, Opus; in every cut, so it waits only on the review fixes)
+### R-11 `[x]` Recording (L, Opus; in every cut, so it waited only on the review fixes)
 
-Milestone C.12: a `FileSink` in `EngineCore/Sinks` writing IQ (`.cf32` + sidecar, the `go/pkg/iqfile`
-format, with the `CaptureAnchor`) and audio (WAV s16 mono at the channel's rate); `AttachSink(file)`
-in the daemon and the fake; `Jobs.StartJob(record)` with `duration_ms` and `start_at_ns == 0`; a
-resource store directory (`~/Library/Application Support/Leyline/recordings`) and the minimum of the
-`Resources` service that makes `ley://recordings/<id>` real (`ListResources`, `GetResource`,
-`ResolveLocalPath`); `ley record <freq> [--iq|--audio] [--for DURATION]`, `ley recordings`, and
-`ley play` accepting a `ley://` URI. Design note first (`docs/design/recording.md`, short: what the
-sidecar carries, where files go, retention) because the store shape outlives v1.0.
+Landed 2026-09-18 as Milestone C.12, to `docs/design/recording.md`, which the design note this item
+asked for grew into. What shipped differs from the sketch here in one decision and gains two
+features the design added:
+
+- **Not `AttachSink(file)`.** A recording is a job's output, so `Jobs.StartJob(RecordConfig)` is the
+  only way to make one and `AttachSink(file)` stays refused: a sink attached to somebody's channel
+  dies with that channel's owner and leaves a file nothing indexes, while a job goes through the
+  allocator, outlives its client and produces a resource. There is no `FileSink` in
+  `EngineCore/Sinks`; `LeylineDaemon/Recording/` holds the runner, the gate, the part writer and
+  the store.
+- **The squelch gate and parts.** `--gate squelch` writes one file per exchange and `--part D` cuts
+  long recordings on a timer, because a first week of use asks for both; the manifest states the
+  coverage gaps rather than editing silence out of a file.
+- As sketched: the store directory with retention, `Resources` (which also answers `RECORDS` and
+  `SCAN`, so the service is whole rather than one kind of it), `ley record` / `ley recordings` /
+  `ley recordings show` / `ley recordings path`, and `ley play` on a `ley://` URI.
 
 ### R-12 `[x]` MCP adapter (L, Opus; after D1 and R-13)
 

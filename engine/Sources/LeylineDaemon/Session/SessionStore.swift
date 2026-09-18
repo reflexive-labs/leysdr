@@ -109,6 +109,11 @@ actor SessionStore {
         var isSystemAudio: Bool
     }
 
+    struct PlaybackEntry {
+        var engine: PlaybackEngine
+        var owner: ClientContext
+    }
+
     private struct Presence {
         var open: Int = 0
         var grace: Task<Void, Never>?
@@ -136,6 +141,10 @@ actor SessionStore {
     private var attachingRemotes: [String: Task<DeviceDescriptor, any Error>] = [:]
     private(set) var channels: [ChannelID: ChannelEntry] = [:]
     private(set) var sinks: [SinkID: SinkEntry] = [:]
+    /// Recordings the daemon is playing through its own audio device (docs/design/recording.md,
+    /// "Playing a recording back"). Daemon state like everything else here, so a second client
+    /// sees one and the app renders its position; owned by the client that started it.
+    private(set) var playbacks: [PlaybackID: PlaybackEntry] = [:]
     private(set) var seq: UInt64 = 0
     private var subscribers: [UUID: Subscriber] = [:]
     /// The most recent `eventHistoryLimit` events, oldest first, for `since_seq` replay.
@@ -284,6 +293,8 @@ actor SessionStore {
             await destroyChannel(id: id, by: .daemon, engineAlreadyClosed: false)
         }
         if stillAbsent(clientID) {
+            await reapPlaybacks(clientID: clientID)
+            guard stillAbsent(clientID) else { return }
             // A sweep nobody is reading is a radio nobody can use. The CLI cancels its own scan on
             // Ctrl-C; this is the backstop for a hard kill.
             await clientGoneHook?(clientID)
@@ -666,6 +677,17 @@ actor SessionStore {
         }
     }
 
+    /// The capture a channel sits in. A record job borrowing somebody's channel needs it to date
+    /// the samples and to find the anchor (invariant 5).
+    func channelCapture(_ id: ChannelID) -> CaptureID? { channels[id]?.captureID }
+
+    /// Re-emits a channel after something changed it that was not a client write: the squelch a
+    /// record job set on the channel the allocator built for it, say.
+    func publishChannel(_ id: ChannelID) async {
+        guard let entry = channels[id] else { return }
+        await emitChannel(id, by: entry.owner)
+    }
+
     func channelProto(_ id: ChannelID) async -> Leyline_V1_Channel? {
         guard let entry = channels[id] else { return nil }
         let config = await entry.engine.config
@@ -770,6 +792,78 @@ actor SessionStore {
         }
         emit(.sink(proto), captureID: entry.captureID, by: by)
         return proto
+    }
+
+    // MARK: Playing a recording back
+
+    /// Opens the file, starts the audio device and publishes the playback. The caller has already
+    /// resolved the uri to a path; this owns the sound.
+    func startPlayback(path: String, resourceURI: String, volume: Double, deviceUID: String?,
+                       by client: ClientContext) async throws -> Leyline_V1_Playback
+    {
+        let id = PlaybackID()
+        let engine = try PlaybackEngine(id: id, path: path, resourceURI: resourceURI, volume: volume,
+                                        deviceUID: deviceUID) { [weak self] ended in
+            // The file ran out: the playback goes the way a stopped one does, so a client watching
+            // its own sees the same tombstone either way.
+            await self?.endPlayback(ended, by: .daemon)
+        }
+        playbacks[id] = PlaybackEntry(engine: engine, owner: client)
+        await engine.start()
+        let proto = await playbackProto(id)!
+        emit(.playback(proto), captureID: nil, by: client)
+        return proto
+    }
+
+    func stopPlaybackChecked(id: PlaybackID, by: ClientContext) async throws {
+        guard playbacks[id] != nil else {
+            throw EngineError(code: EngineError.Code.sinkNotFound, message: "no such playback", target: id.string)
+        }
+        await endPlayback(id, by: by)
+    }
+
+    /// Ends a playback and emits the tombstone: the same message with `state` unset, so a client
+    /// can tell "it finished" from "somebody stopped it" by who caused the event.
+    private func endPlayback(_ id: PlaybackID, by: ClientContext) async {
+        guard let entry = playbacks.removeValue(forKey: id) else { return }
+        await entry.engine.stop()
+        var proto = await playbackProto(id, entry: entry) ?? Leyline_V1_Playback()
+        proto.playbackID = id.string
+        proto.state = .unspecified
+        emit(.playback(proto), captureID: nil, by: by)
+    }
+
+    func playbackProto(_ id: PlaybackID, entry: PlaybackEntry? = nil) async -> Leyline_V1_Playback? {
+        guard let entry = entry ?? playbacks[id] else { return nil }
+        var p = Leyline_V1_Playback()
+        p.playbackID = id.string
+        p.resourceUri = await entry.engine.resourceURI
+        p.path = entry.engine.path
+        p.sampleRate = entry.engine.sampleRate
+        p.samples = entry.engine.frames
+        p.position = await entry.engine.position
+        p.volume = entry.engine.volume
+        p.createdBy = entry.owner.proto
+        p.state = .playbackPlaying
+        return p
+    }
+
+    /// Every playback, for `GetState`.
+    func playbackProtos() async -> [Leyline_V1_Playback] {
+        var out: [Leyline_V1_Playback] = []
+        for id in playbacks.keys.sorted(by: { $0.string < $1.string }) {
+            if let p = await playbackProto(id) { out.append(p) }
+        }
+        return out
+    }
+
+    /// Ends every playback a departing client started: the sound belongs to whoever asked for it,
+    /// which is what makes Ctrl-C in `ley play` stop it.
+    private func reapPlaybacks(clientID: String) async {
+        for (id, entry) in playbacks where entry.owner.id == clientID {
+            log.info("stopping playback \(id.string) of absent client \(clientID)")
+            await endPlayback(id, by: .daemon)
+        }
     }
 
     func detachSinkChecked(id: SinkID, by: ClientContext) async throws {
@@ -1042,6 +1136,10 @@ actor SessionStore {
         // reader asked about that capture.
         if capFilter == nil, let provider = jobsProvider {
             out.jobs = await provider()
+        }
+        // A playback is not tied to a capture either: it is a file playing, with no radio in it.
+        if capFilter == nil {
+            out.playbacks = await playbackProtos()
         }
         out.eventSeq = at
         return out

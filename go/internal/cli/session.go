@@ -453,6 +453,11 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		if err := s.checkRange(o.input, o.freq); err != nil {
 			return err
 		}
+		// A recording is named before the channels are counted: "1 channel listening" is true of
+		// a record job's own channel but tells the reader nothing they can act on.
+		if err := s.refuseRetuneOverRecording(cap.CaptureId, o.retune); err != nil {
+			return err
+		}
 		if n := s.activeChannels(cap.CaptureId); n > 0 && !o.retune {
 			hint := s.takeOverHint
 			if hint == "" {
@@ -537,6 +542,69 @@ func (s *session) checkRange(input string, hz uint64) error {
 		Code: leyline.CodeFreqOutOfRange, Target: s.device.DeviceId,
 		Message: fmt.Sprintf("%d Hz is outside the device tuning range", hz),
 	}, input, hz)
+}
+
+// recordingsOn lists the running record jobs whose recording would be damaged
+// by moving this capture. A record job either owns a channel on the capture
+// (the audio form) or reads the capture itself (--iq); both are found by the
+// job's own frequency against what the mirror holds.
+//
+// The daemon never refuses a person on a job's behalf -- it degrades the
+// recording and states the gap. The guard lives where the click happens, which
+// for `ley` is here (docs/design/recording.md, "Don't-disturb").
+func (s *session) recordingsOn(captureID string) []*leylinev1.Job {
+	cap := captureByID(s.state, captureID)
+	if cap == nil {
+		return nil
+	}
+	var out []*leylinev1.Job
+	for _, j := range s.state.GetJobs() {
+		cfg := j.GetRecord()
+		if cfg == nil || !isLiveJob(j) {
+			continue
+		}
+		if cfg.GetChannelId() != "" {
+			if ch := channelByID(s.state, cfg.GetChannelId()); ch != nil && ch.GetCaptureId() == captureID {
+				out = append(out, j)
+			}
+			continue
+		}
+		// A frequency-form job: its own channel on this capture, or, for --iq,
+		// this capture's span around where it was asked to listen.
+		hz := cfg.GetFrequencyHz()
+		onChannel := false
+		for _, ch := range s.state.GetChannels() {
+			if ch.GetCaptureId() == captureID && ch.GetOwner().GetKind() == "job" && ch.GetRequiredHz() == hz {
+				onChannel = true
+			}
+		}
+		if onChannel || (cfg.GetMode() == leylinev1.DemodMode_RAW_IQ && covers(cap, hz, 0)) {
+			out = append(out, j)
+		}
+	}
+	return out
+}
+
+// refuseRetuneOverRecording is the sentence `ley tune` and `ley set freq` print
+// rather than moving a radio out from under a recording. nil when nothing is
+// recording, or when --retune said to go ahead.
+func (s *session) refuseRetuneOverRecording(captureID string, retune bool) error {
+	recs := s.recordingsOn(captureID)
+	if len(recs) == 0 || retune {
+		return nil
+	}
+	st := s.app.ErrStyle
+	ids := make([]string, 0, len(recs))
+	for _, j := range recs {
+		ids = append(ids, j.GetJobId())
+	}
+	hint := s.takeOverHint
+	if hint == "" {
+		hint = "Add --retune to move it anyway (the recording logs the gap), or stop it with: " +
+			st.Cmd("ley jobs cancel "+ids[0])
+	}
+	return fmt.Errorf("%s recording on this radio (%s); retuning would leave a gap in %s. %s",
+		plural(len(recs), "job is"), strings.Join(ids, ", "), themOrIt(len(recs)), hint)
 }
 
 // activeChannels counts the ACTIVE channels riding on a capture in the mirror.

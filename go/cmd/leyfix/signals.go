@@ -158,3 +158,62 @@ func (s *gaussNoise) describe() map[string]any {
 // span reports no band: white noise fills whatever rate it is generated at and
 // so never decides whether a fixture fits.
 func (s *gaussNoise) span() (float64, float64) { return 0, 0 }
+
+// keySegment is one transmission of a keyed source, in seconds from the start
+// of the file.
+type keySegment struct{ startS, endS float64 }
+
+// keyed gates another source on and off, so the fixture carries transmissions
+// with silence between them rather than a carrier that never stops. It is what
+// a recording's squelch gate is tested against: the file states exactly when it
+// was keyed, and a recording that cuts elsewhere is wrong about the air rather
+// than merely different (docs/design/recording.md, "Testing without hardware").
+//
+// The gating is hard-edged on purpose. A real transmitter's attack is a few
+// milliseconds and the squelch's own detector is slower than that, so a ramp
+// here would measure the ramp rather than the daemon.
+type keyed struct {
+	inner    source
+	rate     float64
+	segments []keySegment
+	// scratch holds the inner source's output for one block. The inner source
+	// keeps its own phase running through the gaps, which is what a transmitter
+	// does not do -- but a recorder cannot tell, and a phase that restarted
+	// would put a click at every key-up.
+	scratch []complex128
+}
+
+func (s *keyed) fill(dst []complex128, n0 int64) {
+	if cap(s.scratch) < len(dst) {
+		s.scratch = make([]complex128, len(dst))
+	}
+	blk := s.scratch[:len(dst)]
+	clear(blk)
+	s.inner.fill(blk, n0)
+	for i := range dst {
+		if s.on(float64(n0+int64(i)) / s.rate) {
+			dst[i] += blk[i]
+		}
+	}
+}
+
+func (s *keyed) on(t float64) bool {
+	for _, seg := range s.segments {
+		if t >= seg.startS && t < seg.endS {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *keyed) describe() map[string]any {
+	segs := make([]map[string]any, 0, len(s.segments))
+	for _, seg := range s.segments {
+		segs = append(segs, map[string]any{"start_s": seg.startS, "end_s": seg.endS})
+	}
+	d := map[string]any{"type": "keyed", "segments": segs}
+	d["carrier"] = s.inner.describe()
+	return d
+}
+
+func (s *keyed) span() (float64, float64) { return s.inner.span() }

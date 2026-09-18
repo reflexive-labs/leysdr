@@ -295,6 +295,40 @@ public nonisolated enum Leyline_V1_FileSinkKind: SwiftProtobuf.Enum, Swift.CaseI
 
 }
 
+public nonisolated enum Leyline_V1_PlaybackState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case playbackPlaying // = 1
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .playbackPlaying
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .playbackPlaying: return 1
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_PlaybackState] = [
+    .unspecified,
+    .playbackPlaying,
+  ]
+
+}
+
 public nonisolated struct Leyline_V1_DeviceDescriptor: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -577,7 +611,12 @@ public nonisolated struct Leyline_V1_Sink: Sendable {
     set {kind = .stream(newValue)}
   }
 
-  /// daemon records; lossless lives here, never on the network
+  /// The daemon recording to a file; lossless lives here and never on the network. `AttachSink`
+  /// refuses this kind too: a recording is a job's output (jobs.proto, RecordConfig). A sink
+  /// attached to somebody's channel dies with that channel's owner and leaves a file nothing
+  /// indexes, while a job goes through the allocator (invariant 9), outlives the client that
+  /// started it, and produces a resource (invariant 8). This field stays so that a recording
+  /// job's own sink can be named in state; a client makes one with Jobs.StartJob(RecordConfig).
   public var file: Leyline_V1_FileSink {
     get {
       if case .file(let v)? = kind {return v}
@@ -601,7 +640,12 @@ public nonisolated struct Leyline_V1_Sink: Sendable {
     /// channel audio or IQ negotiates it with `Bulk.Subscribe`, which is where delivery policy and
     /// transport are agreed.
     case stream(Leyline_V1_StreamSink)
-    /// daemon records; lossless lives here, never on the network
+    /// The daemon recording to a file; lossless lives here and never on the network. `AttachSink`
+    /// refuses this kind too: a recording is a job's output (jobs.proto, RecordConfig). A sink
+    /// attached to somebody's channel dies with that channel's owner and leaves a file nothing
+    /// indexes, while a job goes through the allocator (invariant 9), outlives the client that
+    /// started it, and produces a resource (invariant 8). This field stays so that a recording
+    /// job's own sink can be named in state; a client makes one with Jobs.StartJob(RecordConfig).
     case file(Leyline_V1_FileSink)
 
   }
@@ -862,6 +906,16 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     set {_uniqueStorage()._body = .job(newValue)}
   }
 
+  /// A recording the daemon is playing. Daemon state like everything else here, so the app
+  /// renders a position and a stop button by subscription rather than by polling.
+  public var playback: Leyline_V1_Playback {
+    get {
+      if case .playback(let v)? = _storage._body {return v}
+      return Leyline_V1_Playback()
+    }
+    set {_uniqueStorage()._body = .playback(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Body: Equatable, Sendable {
@@ -876,6 +930,9 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     /// them by subscription rather than by polling GetJob; Job is already a whole-object message,
     /// so this stays full-state (never a delta) like every other member.
     case job(Leyline_V1_Job)
+    /// A recording the daemon is playing. Daemon state like everything else here, so the app
+    /// renders a position and a stop button by subscription rather than by polling.
+    case playback(Leyline_V1_Playback)
 
   }
 
@@ -1039,6 +1096,9 @@ public nonisolated struct Leyline_V1_GetStateResponse: Sendable {
   /// running and recently finished; reconnect renders these like the rest
   public var jobs: [Leyline_V1_Job] = []
 
+  /// recordings the daemon is playing right now
+  public var playbacks: [Leyline_V1_Playback] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1059,6 +1119,98 @@ public nonisolated struct Leyline_V1_DaemonInfo: Sendable {
   public var startedAtNs: Int64 = 0
 
   public var socketPath: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// A recording the daemon is playing through its own audio device (docs/design/recording.md,
+/// "Playing a recording back"). It is not a sink: a sink is where a *channel's* audio goes, and a
+/// playback has no channel. It is not a job either: nothing is produced and it is over when the
+/// person stops listening. A playback belongs to the client that started it and ends when that
+/// client goes, which is what makes Ctrl-C stop the sound.
+public nonisolated struct Leyline_V1_Playback: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// pb_<ulid>
+  public var playbackID: String = String()
+
+  /// ley://recordings/<id>/<part>
+  public var resourceUri: String = String()
+
+  /// the file the daemon opened, for a client on the same machine
+  public var path: String = String()
+
+  public var sampleRate: UInt32 = 0
+
+  /// frames in the file; 0 when it could not be counted
+  public var samples: UInt64 = 0
+
+  /// Frames played so far. A client renders elapsed time from this and the rate rather than from a
+  /// clock of its own, and it is reported rather than written: seeking is not in v1.
+  public var position: UInt64 = 0
+
+  public var volume: Double = 0
+
+  public var createdBy: Leyline_V1_ClientInfo {
+    get {_createdBy ?? Leyline_V1_ClientInfo()}
+    set {_createdBy = newValue}
+  }
+  /// Returns true if `createdBy` has been explicitly set.
+  public var hasCreatedBy: Bool {self._createdBy != nil}
+  /// Clears the value of `createdBy`. Subsequent reads from it will return its default value.
+  public mutating func clearCreatedBy() {self._createdBy = nil}
+
+  /// Unset on an event is the tombstone, the same rule Capture.state and Sink.state follow: without
+  /// it a start and an end are the same bytes, and a client cannot tell a playback that finished
+  /// from one somebody stopped.
+  public var state: Leyline_V1_PlaybackState = .unspecified
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _createdBy: Leyline_V1_ClientInfo? = nil
+}
+
+public nonisolated struct Leyline_V1_StartPlaybackRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// What to play: ley://recordings/<id> takes the first part, ley://recordings/<id>/<part> that
+  /// part. An IQ part is refused INVALID_ARGUMENT -- those are tuned, not played.
+  public var resourceUri: String = String()
+
+  /// 0..1; absent = 1.0 (full), explicit 0 = muted
+  public var volume: Double {
+    get {_volume ?? 0}
+    set {_volume = newValue}
+  }
+  /// Returns true if `volume` has been explicitly set.
+  public var hasVolume: Bool {self._volume != nil}
+  /// Clears the value of `volume`. Subsequent reads from it will return its default value.
+  public mutating func clearVolume() {self._volume = nil}
+
+  /// empty = the daemon's default output
+  public var audioDeviceUid: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _volume: Double? = nil
+}
+
+public nonisolated struct Leyline_V1_StopPlaybackRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var playbackID: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1331,6 +1483,10 @@ nonisolated extension Leyline_V1_SinkState: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension Leyline_V1_FileSinkKind: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FILE_SINK_KIND_UNSPECIFIED\0\u{1}RECORD_IQ\0\u{1}RECORD_AUDIO\0")
+}
+
+nonisolated extension Leyline_V1_PlaybackState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PLAYBACK_STATE_UNSPECIFIED\0\u{1}PLAYBACK_PLAYING\0")
 }
 
 nonisolated extension Leyline_V1_DeviceDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -2136,7 +2292,7 @@ nonisolated extension Leyline_V1_WriteSummary: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Event"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0")
 
   fileprivate class _StorageClass {
     var _seq: UInt64 = 0
@@ -2266,6 +2422,19 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
             _storage._body = .job(v)
           }
         }()
+        case 10: try {
+          var v: Leyline_V1_Playback?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .playback(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .playback(v)
+          }
+        }()
         default: break
         }
       }
@@ -2312,6 +2481,10 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
       case .job?: try {
         guard case .job(let v)? = _storage._body else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      }()
+      case .playback?: try {
+        guard case .playback(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
       }()
       case nil: break
       }
@@ -2541,7 +2714,7 @@ nonisolated extension Leyline_V1_GetStateRequest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetStateResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2556,6 +2729,7 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
       case 5: try { try decoder.decodeSingularUInt64Field(value: &self.eventSeq) }()
       case 6: try { try decoder.decodeSingularMessageField(value: &self._daemon) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.jobs) }()
+      case 8: try { try decoder.decodeRepeatedMessageField(value: &self.playbacks) }()
       default: break
       }
     }
@@ -2587,6 +2761,9 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if !self.jobs.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.jobs, fieldNumber: 7)
     }
+    if !self.playbacks.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.playbacks, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2598,6 +2775,7 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if lhs.eventSeq != rhs.eventSeq {return false}
     if lhs._daemon != rhs._daemon {return false}
     if lhs.jobs != rhs.jobs {return false}
+    if lhs.playbacks != rhs.playbacks {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2643,6 +2821,154 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
     if lhs.pid != rhs.pid {return false}
     if lhs.startedAtNs != rhs.startedAtNs {return false}
     if lhs.socketPath != rhs.socketPath {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Playback"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.playbackID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.resourceUri) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.path) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.sampleRate) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.samples) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.position) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.volume) }()
+      case 8: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
+      case 9: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.playbackID.isEmpty {
+      try visitor.visitSingularStringField(value: self.playbackID, fieldNumber: 1)
+    }
+    if !self.resourceUri.isEmpty {
+      try visitor.visitSingularStringField(value: self.resourceUri, fieldNumber: 2)
+    }
+    if !self.path.isEmpty {
+      try visitor.visitSingularStringField(value: self.path, fieldNumber: 3)
+    }
+    if self.sampleRate != 0 {
+      try visitor.visitSingularUInt32Field(value: self.sampleRate, fieldNumber: 4)
+    }
+    if self.samples != 0 {
+      try visitor.visitSingularUInt64Field(value: self.samples, fieldNumber: 5)
+    }
+    if self.position != 0 {
+      try visitor.visitSingularUInt64Field(value: self.position, fieldNumber: 6)
+    }
+    if self.volume.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.volume, fieldNumber: 7)
+    }
+    try { if let v = self._createdBy {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    } }()
+    if self.state != .unspecified {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Playback, rhs: Leyline_V1_Playback) -> Bool {
+    if lhs.playbackID != rhs.playbackID {return false}
+    if lhs.resourceUri != rhs.resourceUri {return false}
+    if lhs.path != rhs.path {return false}
+    if lhs.sampleRate != rhs.sampleRate {return false}
+    if lhs.samples != rhs.samples {return false}
+    if lhs.position != rhs.position {return false}
+    if lhs.volume != rhs.volume {return false}
+    if lhs._createdBy != rhs._createdBy {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".StartPlaybackRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}resource_uri\0\u{1}volume\0\u{3}audio_device_uid\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.resourceUri) }()
+      case 2: try { try decoder.decodeSingularDoubleField(value: &self._volume) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.audioDeviceUid) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.resourceUri.isEmpty {
+      try visitor.visitSingularStringField(value: self.resourceUri, fieldNumber: 1)
+    }
+    try { if let v = self._volume {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 2)
+    } }()
+    if !self.audioDeviceUid.isEmpty {
+      try visitor.visitSingularStringField(value: self.audioDeviceUid, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_StartPlaybackRequest, rhs: Leyline_V1_StartPlaybackRequest) -> Bool {
+    if lhs.resourceUri != rhs.resourceUri {return false}
+    if lhs._volume != rhs._volume {return false}
+    if lhs.audioDeviceUid != rhs.audioDeviceUid {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_StopPlaybackRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".StopPlaybackRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.playbackID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.playbackID.isEmpty {
+      try visitor.visitSingularStringField(value: self.playbackID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_StopPlaybackRequest, rhs: Leyline_V1_StopPlaybackRequest) -> Bool {
+    if lhs.playbackID != rhs.playbackID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

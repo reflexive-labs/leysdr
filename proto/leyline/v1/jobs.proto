@@ -26,10 +26,11 @@ message Job {
     DecodeConfig decode = 11;
     MonitorConfig monitor = 12;
   }
-  // ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
-  // Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
-  // implemented), and it does not outlive the daemon's memory of its last sixteen finished jobs
-  // or a restart. Persisted, resolvable resources arrive with the durable job store.
+  // ley:// resources produced so far. A record job's is ley://recordings/<job_id> and a kept
+  // decode job's ley://records/<job_id>; both are on disk and outlive the daemon, and the
+  // Resources service resolves them. A scan job's ley://scans/<scan_id> is resolved by
+  // Jobs.GetScan for as long as the daemon remembers the job (its last sixteen finished ones,
+  // forgotten on restart); a persisted scan arrives with the durable job store.
   repeated string result_uris = 8;
   string status_detail = 9;         // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
   // Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
@@ -81,11 +82,41 @@ message ScanConfig {
   GainWrite gain = 8;
 }
 
+// A recording is a job's output (docs/design/recording.md). Control.AttachSink(file) stays
+// refused: a sink attached to somebody's channel dies with that channel's owner and leaves a file
+// nothing indexes, while a job goes through the allocator (invariant 9), outlives the client that
+// started it, and produces a resource (invariant 8). The job's id is the recording's id, so
+// `Job.result_uris` holds ley://recordings/<job_id>.
 message RecordConfig {
   uint64 frequency_hz = 1;
-  DemodMode mode = 2;       // RAW_IQ records IQ
-  int64 start_at_ns = 3;    // 0 = now
-  int64 duration_ms = 4;
+  DemodMode mode = 2;         // RAW_IQ records the capture's IQ; anything else records audio
+  int64 start_at_ns = 3;      // 0 = now; a later start is refused UNIMPLEMENTED in v1
+  int64 duration_ms = 4;      // 0 = until cancelled or stop_after_quiet_ms
+
+  // Record what an existing channel hears, with its mode, bandwidth and squelch. frequency_hz
+  // and mode are ignored. The job borrows the channel and does not own it: when the channel's
+  // owner destroys it the job ends COMPLETED, "channel ended". With RAW_IQ the channel's capture
+  // is recorded.
+  string channel_id = 5;
+  string device_id = 6;       // empty = the daemon picks, as a scan or decode does
+  bool take_over = 7;         // retune a capture somebody is using; off by default
+  uint32 bandwidth_hz = 8;    // 0 = the mode's default, as CreateChannel
+  double squelch_dbfs = 9;    // NaN or unset = the channel default (auto), as ley tune
+  GainWrite gain = 10;        // absent = leave the radio's gain alone
+
+  RecordGate gate = 11;       // NONE (default) or SQUELCH
+  uint32 pre_roll_ms = 12;    // audio kept from before the squelch opened; default 500
+  uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 5000
+  int64 stop_after_quiet_ms = 14; // end the job after this long with the squelch closed; 0 = never
+  int64 part_ms = 15;         // cut parts on this timer; 0 = audio: one part, IQ: 60000
+}
+
+// What opens and closes a recording's parts. A gated recording writes no file while the squelch is
+// closed, and its manifest says where the gaps were: time is never edited (invariant 5).
+enum RecordGate {
+  RECORD_GATE_UNSPECIFIED = 0;
+  NONE = 1;
+  SQUELCH = 2;
 }
 
 // Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
@@ -155,7 +186,11 @@ message Resource {
   int64 created_at_ns = 3;
   uint64 size_bytes = 4;
   string originating_job_id = 5;    // empty for explicit keeps
-  map<string, string> metadata = 6; // frequency, mode, duration, anchor — queryable
+  // Queryable, and frozen per kind because ListResourcesRequest.metadata_filter matches on these
+  // by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, sample_rate,
+  // format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by, device
+  // (docs/design/recording.md, "The wire"). Adding a key is additive; renaming one is not.
+  map<string, string> metadata = 6;
 }
 
 enum ResourceKind {
@@ -176,9 +211,14 @@ service Jobs {
   rpc GetScan(ScanRef) returns (Scan);
 }
 
+// The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+// opens the file (docs/design/data-planes.md, "no lossless network stream").
 service Resources {
   rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
   rpc GetResource(ResourceRef) returns (Resource);
+  // ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+  // to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+  // so a missing one is JOB_NOT_FOUND.
   rpc ResolveLocalPath(ResourceRef) returns (LocalPath); // UDS clients read the file directly
 }
 

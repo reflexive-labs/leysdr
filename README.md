@@ -123,8 +123,9 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   the e2e attaches one to the real daemon, on both CI hosts.
 - Milestone A (scaffold, daemon lifecycle, fixtures and file playback): done.
 - Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.
-- Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done except
-  C.12, recording and resources, which is not started.
+- Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done,
+  C.12 included -- `ley record` writes WAV or raw IQ through a daemon-side job, the squelch gate
+  writes one file per exchange, and `ley recordings` reads the store back through `Resources`.
 - Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.17 (decoders:
   the plugin contract, the record store, `ley decode`, `ley records`, `ley track`, `ley watch` with
   predicates and notifiers, `ley devices-seen`/`ley label`, and an IQ input mode) done for APRS,

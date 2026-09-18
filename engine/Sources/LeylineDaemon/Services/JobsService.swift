@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// leyline.v1.Jobs — scan is implemented (Milestone D.13); watch, record and Resources arrive with
-// the durable job store at D.15.
+// leyline.v1.Jobs — scan, monitor, decode and record are implemented; watch and transcripts arrive
+// with the durable job store at D.15. `Resources` is its own file.
 
 import EngineCore
 import Foundation
@@ -27,14 +27,14 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
             return try await mapErrors { try await jobs.startScan(config: config, by: client) }
         case .watch?:
             throw unimplemented("Jobs.StartJob(watch)")
-        case .record?:
-            throw unimplemented("Jobs.StartJob(record)")
+        case .record(let config)?:
+            return try await mapErrors { try await jobs.startRecord(config: config, by: client) }
         case .decode(let config)?:
             return try await mapErrors { try await jobs.startDecode(config: config, by: client) }
         case .monitor(let config)?:
             return try await mapErrors { try await jobs.startMonitor(config: config, by: client) }
         case nil:
-            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan, monitor and decode are the ones in v0", target: ""))
+            throw ProtoMapping.rpcError(EngineError.invalidArgument("StartJob needs a config: scan, monitor, decode and record are the ones in v0", target: ""))
         }
     }
 
@@ -72,19 +72,5 @@ struct JobsService: Leyline_V1_Jobs.SimpleServiceProtocol {
             throw ProtoMapping.rpcError(EngineError.scanNotFound(request.scanID))
         }
         return scan
-    }
-}
-
-struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
-    func listResources(request _: Leyline_V1_ListResourcesRequest, context _: ServerContext) async throws -> Leyline_V1_ListResourcesResponse {
-        throw unimplemented("Resources.ListResources")
-    }
-
-    func getResource(request _: Leyline_V1_ResourceRef, context _: ServerContext) async throws -> Leyline_V1_Resource {
-        throw unimplemented("Resources.GetResource")
-    }
-
-    func resolveLocalPath(request _: Leyline_V1_ResourceRef, context _: ServerContext) async throws -> Leyline_V1_LocalPath {
-        throw unimplemented("Resources.ResolveLocalPath")
     }
 }

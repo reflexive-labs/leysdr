@@ -34,6 +34,7 @@ Flags:
       --channel string   which channel: an id (chan_...), id prefix, row number from 'ley state' or frequency, e.g. --channel 146.62 (default: the active one)
       --element string   which gain stage, for radios with more than one; names from 'ley devices', e.g. --element IF (default: the radio's first)
   -h, --help             help for set
+      --retune           move the radio even when a recording is running on it (the recording logs the gap); without it set freq refuses and names the job
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

@@ -45,6 +45,7 @@ struct DaemonClients {
 func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shutdownDeadlineNs: UInt64? = nil,
                 rtltcp: [Daemon.RTLTCPEndpoint] = [],
                 decoderSearchPath: [String]? = nil, storePath: String? = nil,
+                recordingsPath: String? = nil, recordingsCapBytes: UInt64 = 20 << 30,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
     let caller = dir
     let dir = caller ?? (NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))")
@@ -56,7 +57,9 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
                                       presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
                                       decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
-                                      storePath: storePath ?? (dir + "/store")))
+                                      storePath: storePath ?? (dir + "/store"),
+                                      recordingsPath: recordingsPath ?? (dir + "/recordings"),
+                                      recordingsCapBytes: recordingsCapBytes))
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
     XCTAssertTrue(listening, "daemon did not start listening")

@@ -33,6 +33,8 @@ const (
 	Control_DestroyChannel_FullMethodName   = "/leyline.v1.Control/DestroyChannel"
 	Control_AttachSink_FullMethodName       = "/leyline.v1.Control/AttachSink"
 	Control_DetachSink_FullMethodName       = "/leyline.v1.Control/DetachSink"
+	Control_StartPlayback_FullMethodName    = "/leyline.v1.Control/StartPlayback"
+	Control_StopPlayback_FullMethodName     = "/leyline.v1.Control/StopPlayback"
 	Control_WriteParams_FullMethodName      = "/leyline.v1.Control/WriteParams"
 	Control_AttachDevice_FullMethodName     = "/leyline.v1.Control/AttachDevice"
 	Control_DetachDevice_FullMethodName     = "/leyline.v1.Control/DetachDevice"
@@ -53,6 +55,11 @@ type ControlClient interface {
 	DestroyChannel(ctx context.Context, in *DestroyChannelRequest, opts ...grpc.CallOption) (*Empty, error)
 	AttachSink(ctx context.Context, in *AttachSinkRequest, opts ...grpc.CallOption) (*Sink, error)
 	DetachSink(ctx context.Context, in *DetachSinkRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+	// does for a channel's audio, so a client on another machine hears it where the radio is and a
+	// client on this one needs no player of its own (docs/design/recording.md).
+	StartPlayback(ctx context.Context, in *StartPlaybackRequest, opts ...grpc.CallOption) (*Playback, error)
+	StopPlayback(ctx context.Context, in *StopPlaybackRequest, opts ...grpc.CallOption) (*Empty, error)
 	WriteParams(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ParamWrite, WriteSummary], error)
 	// Virtual devices. A device a client attaches appears in ListDevices/events like any
 	// hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
@@ -169,6 +176,26 @@ func (c *controlClient) DetachSink(ctx context.Context, in *DetachSinkRequest, o
 	return out, nil
 }
 
+func (c *controlClient) StartPlayback(ctx context.Context, in *StartPlaybackRequest, opts ...grpc.CallOption) (*Playback, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Playback)
+	err := c.cc.Invoke(ctx, Control_StartPlayback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlClient) StopPlayback(ctx context.Context, in *StopPlaybackRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Control_StopPlayback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controlClient) WriteParams(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ParamWrite, WriteSummary], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Control_ServiceDesc.Streams[1], Control_WriteParams_FullMethodName, cOpts...)
@@ -235,6 +262,11 @@ type ControlServer interface {
 	DestroyChannel(context.Context, *DestroyChannelRequest) (*Empty, error)
 	AttachSink(context.Context, *AttachSinkRequest) (*Sink, error)
 	DetachSink(context.Context, *DetachSinkRequest) (*Empty, error)
+	// Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+	// does for a channel's audio, so a client on another machine hears it where the radio is and a
+	// client on this one needs no player of its own (docs/design/recording.md).
+	StartPlayback(context.Context, *StartPlaybackRequest) (*Playback, error)
+	StopPlayback(context.Context, *StopPlaybackRequest) (*Empty, error)
 	WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error
 	// Virtual devices. A device a client attaches appears in ListDevices/events like any
 	// hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
@@ -278,6 +310,12 @@ func (UnimplementedControlServer) AttachSink(context.Context, *AttachSinkRequest
 }
 func (UnimplementedControlServer) DetachSink(context.Context, *DetachSinkRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DetachSink not implemented")
+}
+func (UnimplementedControlServer) StartPlayback(context.Context, *StartPlaybackRequest) (*Playback, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartPlayback not implemented")
+}
+func (UnimplementedControlServer) StopPlayback(context.Context, *StopPlaybackRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopPlayback not implemented")
 }
 func (UnimplementedControlServer) WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error {
 	return status.Error(codes.Unimplemented, "method WriteParams not implemented")
@@ -470,6 +508,42 @@ func _Control_DetachSink_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Control_StartPlayback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartPlaybackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).StartPlayback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_StartPlayback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).StartPlayback(ctx, req.(*StartPlaybackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Control_StopPlayback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopPlaybackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).StopPlayback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_StopPlayback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).StopPlayback(ctx, req.(*StopPlaybackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Control_WriteParams_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(ControlServer).WriteParams(&grpc.GenericServerStream[ParamWrite, WriteSummary]{ServerStream: stream})
 }
@@ -587,6 +661,14 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DetachSink",
 			Handler:    _Control_DetachSink_Handler,
+		},
+		{
+			MethodName: "StartPlayback",
+			Handler:    _Control_StartPlayback_Handler,
+		},
+		{
+			MethodName: "StopPlayback",
+			Handler:    _Control_StopPlayback_Handler,
 		},
 		{
 			MethodName: "AttachDevice",

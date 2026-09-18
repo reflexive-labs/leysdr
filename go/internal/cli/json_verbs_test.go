@@ -78,7 +78,10 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "phosphor", args: []string{"phosphor", "146.52", "--count", "1", "--bins", "32", "--levels", "8"}},
 	{path: "play", args: []string{"play"}, prep: prepIQFile, timeout: 2 * time.Second},
 	{path: "presets", args: []string{"presets"}},
-	{path: "record", args: []string{"record"}, refuse: "not implemented yet"},
+	{path: "record", args: []string{"record", "146.52", "--for", "300ms"}},
+	{path: "recordings", args: []string{"recordings"}, prep: prepRecordingOnly},
+	{path: "recordings show", args: []string{"recordings", "show"}, prep: prepRecording},
+	{path: "recordings path", args: []string{"recordings", "path"}, prep: prepRecording},
 	{path: "records", args: []string{"records"}, prep: prepKeptDecode},
 	{path: "track", args: []string{"track", "aprs", "--count", "1"}},
 	{path: "devices-seen", args: []string{"devices-seen"}, prep: prepKeptDecode},
@@ -114,6 +117,28 @@ func prepSweep(t *testing.T, _ string, c *leyline.Client) []string {
 func prepSweepOnly(t *testing.T, sock string, c *leyline.Client) []string {
 	t.Helper()
 	prepSweep(t, sock, c)
+	return nil
+}
+
+// prepRecording leaves one finished recording in the store, and names it for
+// the verbs that take an id.
+func prepRecording(t *testing.T, sock string, _ *leyline.Client) []string {
+	t.Helper()
+	out := mustRun(t, sock, "--json", "record", "146.52", "--for", "300ms")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var job struct {
+		JobID string `json:"jobId"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &job); err != nil || job.JobID == "" {
+		t.Fatalf("ley record --json: no job id in %q (%v)", lines[0], err)
+	}
+	return []string{job.JobID}
+}
+
+// prepRecordingOnly leaves the same recording for a verb that takes no id.
+func prepRecordingOnly(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	prepRecording(t, sock, c)
 	return nil
 }
 

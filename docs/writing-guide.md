@@ -37,7 +37,7 @@ on. A reader who finds the gap before the docs admit it stops trusting the docs.
 
 | avoid | prefer |
 |---|---|
-| Recording support is coming soon. | Recording is not in this build: `ley record` exits 2 and says so (Milestone C.12). |
+| Recording support is coming soon. | The Mac app is not in this build: `ley` is the only client today (Milestone E). |
 | The waterfall shows LoRa packets. | The waterfall is the right instrument, and ours cannot resolve the signal: a symbol is shorter than a row. |
 
 **Numbers are measured, and say where.** Every number in a design doc was measured before it was

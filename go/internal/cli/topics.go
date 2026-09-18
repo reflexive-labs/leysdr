@@ -423,10 +423,18 @@ accepted as selectors; scripts should use full ids.
 // topicRoadmap is generated from the stub table.
 func topicRoadmap() string {
 	var b strings.Builder
-	b.WriteString("Planned, not in this build. Running one of these verbs exits 2 with the\nsame line as below.\n\n")
-	for _, s := range Stubs {
-		fmt.Fprintf(&b, "  %-8s %s (%s)\n           today: %s\n", s.use, s.short, s.milestone, s.today)
+	if len(Stubs) == 0 {
+		b.WriteString("Every verb ley knows is in this build. What is planned next lives in\ndocs/plans/build-order.md; the Mac app is the next milestone.\n")
+	} else {
+		b.WriteString("Planned, not in this build. Running one of these verbs exits 2 with the\nsame line as below.\n\n")
+		for _, s := range Stubs {
+			fmt.Fprintf(&b, "  %-8s %s (%s)\n           today: %s\n", s.use, s.short, s.milestone, s.today)
+		}
 	}
+	b.WriteString("\nRecording is in this build:\n\n")
+	b.WriteString("  ley record <freq>        write what the radio hears to a file\n")
+	b.WriteString("  ley recordings           what has been recorded\n")
+	b.WriteString("  ley recordings path <id> where a recording is, for Finder or another tool\n")
 	b.WriteString("\nDecoding is in this build:\n\n")
 	b.WriteString("  ley decoders             the installed decoder plugins\n")
 	b.WriteString("  ley decode <name>        run one and print what it hears\n")

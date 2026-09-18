@@ -10,7 +10,7 @@ You have an RTL-SDR (or an IQ recording) and a Mac.
 | read | when |
 |---|---|
 | [Installing Leyline](guide/install.md) | building the daemon and `ley`, starting at login, a radio on another machine, uninstalling |
-| [Using `ley`](guide/using-ley.md) | the tasks in the order a newcomer meets them: see the radio, hear a station, adjust it, see the band, scan, watch, the waveform, two channels, a recording, decode packets, scripts |
+| [Using `ley`](guide/using-ley.md) | the tasks in the order a newcomer meets them: see the radio, hear a station, adjust it, see the band, scan, watch, the waveform, two channels, play a recording, make one, decode packets, scripts |
 | [Troubleshooting](guide/troubleshooting.md) | the daemon is not running, no radio listed, a busy dongle, no audio, and every message `ley` prints |
 | [`ley` reference](reference/cli.md) | the command tree, input conventions, every `--json` shape, exit status |
 | [IQ files and fixtures](reference/iq-files.md) | the `.cf32` + sidecar format `ley play` reads, and the generated signals |
@@ -59,6 +59,7 @@ changes the doc first.
 | [Audio meters](design/audio-meters.md) | `ley levels` and `ley waveform` as instruments | implemented |
 | [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | draft; persistence implemented, the rest not |
 | [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | draft; APRS being built (D.17) |
+| [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented (C.12) |
 
 ### Decisions (`decisions/`)
 
@@ -70,7 +71,8 @@ Apache-2.0) and [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb 
 
 What is being built, in what order, and the record of what each step found.
 
-- [Build order](plans/build-order.md): milestones A to D and the spikes, with acceptance criteria.
+- [Build order](plans/build-order.md): milestones A to E and the spikes, with acceptance criteria,
+  and "Closing the core", the gate between the engine milestones and the app.
   [User stories](plans/user-stories.md) are the acceptance tests of record.
 - Live plans, with `[ ]` items still open: [v1 release](plans/v1-release.md) (the gap analysis and
   work list for the first shared release), [signal views](plans/signal-views.md) (DCS and the

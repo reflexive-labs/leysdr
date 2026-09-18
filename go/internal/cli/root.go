@@ -200,6 +200,8 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newDecodersCommand(app),
 		newDecodeCommand(app),
 		newWatchCommand(app),
+		newRecordCommand(app),
+		newRecordingsCommand(app),
 		newRecordsCommand(app),
 		newTrackCommand(app),
 		newDevicesSeenCommand(app),
@@ -308,6 +310,12 @@ func Execute(ctx context.Context, app *App, args []string) error {
 	root := NewRootCommand(app)
 	root.SetArgs(args)
 	err := withCode(root.ExecuteContext(ctx))
+	// A verb that finished its work by handing it to something else -- `ley play` on an audio
+	// recording, which opens it in the machine's own player -- has nothing left to run and
+	// nothing to report. It is a success with an early return, not a failure.
+	if errors.Is(err, errDone) {
+		return nil
+	}
 	if err != nil && !app.styled {
 		// A usage error (unknown verb, bad flag) is raised before the pre-run
 		// hook resolves the styles, and the error line still wants stderr's

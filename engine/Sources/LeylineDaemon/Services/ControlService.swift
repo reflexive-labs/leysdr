@@ -9,6 +9,8 @@ import LeylineProto
 
 struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
     let store: SessionStore
+    /// Where a `ley://recordings/` uri resolves to a file, for `StartPlayback`.
+    let recordings: RecordingStore
 
     private var client: ClientContext { ClientContext.current }
 
@@ -99,6 +101,49 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         return try await mapErrors {
             guard let id = SinkID(string: request.sinkID) else { throw EngineError.sinkNotFound(request.sinkID) }
             try await store.detachSinkChecked(id: id, by: client)
+            return Leyline_V1_Empty()
+        }
+    }
+
+    /// Plays a recording through the daemon's own audio device (docs/design/recording.md, "Playing
+    /// a recording back"). The daemon owns the speakers, so a client on another machine hears it
+    /// where the radio is and a client on this one needs no player of its own.
+    func startPlayback(request: Leyline_V1_StartPlaybackRequest, context: ServerContext) async throws -> Leyline_V1_Playback {
+        await store.touchUnary(client)
+        return try await mapErrors {
+            guard case .recording(let jobID, let part) = ResourceURI(request.resourceUri) else {
+                throw EngineError.invalidArgument(
+                    "\(request.resourceUri) is not a recording; playback takes ley://recordings/<id> or ley://recordings/<id>/<part>",
+                    target: request.resourceUri)
+            }
+            guard let manifest = await recordings.manifest(jobID: jobID) else {
+                throw EngineError.jobNotFound(jobID)
+            }
+            // Raw samples are tuned, not played: the daemon pushing baseband at an audio device
+            // would be noise, and `ley play` on the file is what hears an IQ recording.
+            guard manifest.kind != "iq" else {
+                throw EngineError.invalidArgument(
+                    "\(jobID) is an IQ recording: those are tuned rather than played. Attach it as a device instead",
+                    target: request.resourceUri)
+            }
+            let wanted = part ?? manifest.parts.first?.part ?? 1
+            guard let path = await recordings.localPath(jobID: jobID, part: wanted) else {
+                throw EngineError.invalidArgument("\(jobID) has no part \(wanted)", target: request.resourceUri)
+            }
+            let volume = request.hasVolume ? Swift.max(0, Swift.min(1, request.volume)) : 1
+            let device = request.audioDeviceUid.isEmpty ? nil : request.audioDeviceUid
+            return try await store.startPlayback(path: path, resourceURI: "ley://recordings/\(jobID)/\(wanted)",
+                                                 volume: volume, deviceUID: device, by: client)
+        }
+    }
+
+    func stopPlayback(request: Leyline_V1_StopPlaybackRequest, context: ServerContext) async throws -> Leyline_V1_Empty {
+        await store.touchUnary(client)
+        return try await mapErrors {
+            guard let id = PlaybackID(string: request.playbackID) else {
+                throw EngineError(code: EngineError.Code.sinkNotFound, message: "no such playback", target: request.playbackID)
+            }
+            try await store.stopPlaybackChecked(id: id, by: client)
             return Leyline_V1_Empty()
         }
     }

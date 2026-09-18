@@ -207,3 +207,5 @@ public struct ScanID: PrefixedID { public static let prefix = "scan"; public var
 public struct StreamID: PrefixedID { public static let prefix = "strm"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
 /// Daemon-assigned per connection; used for attribution on events.
 public struct ClientID: PrefixedID { public static let prefix = "cli"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
+/// A recording the daemon is playing through its own audio device (docs/design/recording.md).
+public struct PlaybackID: PrefixedID { public static let prefix = "pb"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }

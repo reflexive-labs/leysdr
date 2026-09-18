@@ -1,0 +1,23 @@
+show prints what the daemon wrote beside a recording's files: the radio and
+the gain it was made on, the parts with their span on the capture's timeline,
+the times nothing was recorded and why, and how it ended.
+
+The id is a job id, an id prefix, or a ley://recordings/ URI.
+
+--json prints the manifest itself, the same document 'recording.json' holds.
+
+Usage:
+  ley recordings show <id> [flags]
+
+Examples:
+  ley recordings show job_01J...
+  ley recordings show job_01J... --json | jq '.parts[].file'
+
+Flags:
+  -h, --help   help for show
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

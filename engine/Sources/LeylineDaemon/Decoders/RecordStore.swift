@@ -87,7 +87,7 @@ actor RecordStore {
 
     var stats: Stats { Stats(path: directory, capBytes: capBytes, ageDays: ageDays) }
 
-    private var recordsDir: String { directory + "/records" }
+    var recordsDir: String { directory + "/records" }
 
     /// Opens a writer for a kept job. Throws if the store directory cannot be made: a `keep` job
     /// that silently kept nothing would be worse than one that refused to start.
@@ -204,7 +204,7 @@ extension RecordStore {
         return names.filter { $0.hasSuffix(".json") }.sorted().map { recordsDir + "/" + $0 }
     }
 
-    private func sidecars() -> [RecordSidecar] {
+    func sidecars() -> [RecordSidecar] {
         sidecarPaths().compactMap { path in
             guard let data = FileManager.default.contents(atPath: path) else { return nil }
             do {
@@ -303,4 +303,43 @@ func haversineMetres(_ a: Leyline_V1_Position, _ b: Leyline_V1_Position) -> Doub
     let dl = (b.longitude - a.longitude) * .pi / 180
     let h = sin(dp / 2) * sin(dp / 2) + cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
     return 2 * radius * atan2(sqrt(h), sqrt(1 - h))
+}
+
+// MARK: As resources
+
+// A kept decode job's records are a resource like a recording is (jobs.proto, ResourceKind.RECORDS):
+// the same service answers both, from the same shape of on-disk store, so a client that can list
+// one can list the other (docs/design/recording.md, "The wire").
+extension RecordStore {
+    func resources() -> [Leyline_V1_Resource] {
+        sidecars().map { resource($0) }
+    }
+
+    func resource(jobID: String) -> Leyline_V1_Resource? {
+        sidecars().first { $0.jobID == jobID }.map { resource($0) }
+    }
+
+    /// The records file itself, for `ResolveLocalPath`. A client on this machine reads the
+    /// varint-delimited records rather than paging them over the socket.
+    func localPath(jobID: String) -> String? {
+        let path = recordsDir + "/" + jobID + ".records"
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
+    private func resource(_ sidecar: RecordSidecar) -> Leyline_V1_Resource {
+        var r = Leyline_V1_Resource()
+        r.uri = "ley://records/\(sidecar.jobID)"
+        r.kind = .records
+        r.createdAtNs = sidecar.createdAtNs
+        r.originatingJobID = sidecar.jobID
+        let attrs = try? FileManager.default.attributesOfItem(atPath: recordsDir + "/" + sidecar.jobID + ".records")
+        r.sizeBytes = ((attrs?[.size] as? NSNumber)?.uint64Value) ?? 0
+        r.metadata = [
+            "protocol": sidecar.decoder,
+            "version": sidecar.version,
+            "records": String(sidecar.count),
+            "created_at_ns": String(sidecar.createdAtNs),
+        ]
+        return r
+    }
 }

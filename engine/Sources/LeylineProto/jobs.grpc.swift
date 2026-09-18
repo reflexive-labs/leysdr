@@ -1366,6 +1366,11 @@ extension Leyline_V1_Resources {
     ///
     /// Where possible, prefer using the stricter, less-verbose ``ServiceProtocol``
     /// or ``SimpleServiceProtocol`` instead.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+    /// > opens the file (docs/design/data-planes.md, "no lossless network stream").
     public protocol StreamingServiceProtocol: GRPCCore.RegistrableRPCService {
         /// Handle the "ListResources" method.
         ///
@@ -1399,7 +1404,9 @@ extension Leyline_V1_Resources {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > UDS clients read the file directly
+        /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+        /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+        /// > so a missing one is JOB_NOT_FOUND.
         ///
         /// - Parameters:
         ///   - request: A streaming request of `Leyline_V1_ResourceRef` messages.
@@ -1421,6 +1428,11 @@ extension Leyline_V1_Resources {
     /// trailing response metadata. If you don't need these then consider using
     /// the ``SimpleServiceProtocol``. If you need fine grained control over your RPCs then
     /// use ``StreamingServiceProtocol``.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+    /// > opens the file (docs/design/data-planes.md, "no lossless network stream").
     public protocol ServiceProtocol: Leyline_V1_Resources.StreamingServiceProtocol {
         /// Handle the "ListResources" method.
         ///
@@ -1454,7 +1466,9 @@ extension Leyline_V1_Resources {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > UDS clients read the file directly
+        /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+        /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+        /// > so a missing one is JOB_NOT_FOUND.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -1474,6 +1488,11 @@ extension Leyline_V1_Resources {
     /// This is the highest level protocol for the service. The API is the easiest to use but
     /// doesn't provide access to request or response metadata. If you need access to these
     /// then use ``ServiceProtocol`` instead.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+    /// > opens the file (docs/design/data-planes.md, "no lossless network stream").
     public protocol SimpleServiceProtocol: Leyline_V1_Resources.ServiceProtocol {
         /// Handle the "ListResources" method.
         ///
@@ -1507,7 +1526,9 @@ extension Leyline_V1_Resources {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > UDS clients read the file directly
+        /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+        /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+        /// > so a missing one is JOB_NOT_FOUND.
         ///
         /// - Parameters:
         ///   - request: A `Leyline_V1_ResourceRef` message.
@@ -1651,6 +1672,11 @@ extension Leyline_V1_Resources {
     ///
     /// You don't need to implement this protocol directly, use the generated
     /// implementation, ``Client``.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+    /// > opens the file (docs/design/data-planes.md, "no lossless network stream").
     public protocol ClientProtocol: Sendable {
         /// Call the "ListResources" method.
         ///
@@ -1694,7 +1720,9 @@ extension Leyline_V1_Resources {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > UDS clients read the file directly
+        /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+        /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+        /// > so a missing one is JOB_NOT_FOUND.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -1719,6 +1747,11 @@ extension Leyline_V1_Resources {
     /// The ``Client`` provides an implementation of ``ClientProtocol`` which wraps
     /// a `GRPCCore.GRPCCClient`. The underlying `GRPCClient` provides the long-lived
     /// means of communication with the remote peer.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > The stores on disk, read back. Samples are never streamed: a local client is handed a path and
+    /// > opens the file (docs/design/data-planes.md, "no lossless network stream").
     public struct Client<Transport>: ClientProtocol where Transport: GRPCCore.ClientTransport {
         private let client: GRPCCore.GRPCClient<Transport>
 
@@ -1794,7 +1827,9 @@ extension Leyline_V1_Resources {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > UDS clients read the file directly
+        /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+        /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+        /// > so a missing one is JOB_NOT_FOUND.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -1883,7 +1918,9 @@ extension Leyline_V1_Resources.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > UDS clients read the file directly
+    /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+    /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+    /// > so a missing one is JOB_NOT_FOUND.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -1974,7 +2011,9 @@ extension Leyline_V1_Resources.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > UDS clients read the file directly
+    /// > ley://recordings/<id> resolves to the recording's directory and ley://recordings/<id>/<part>
+    /// > to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
+    /// > so a missing one is JOB_NOT_FOUND.
     ///
     /// - Parameters:
     ///   - message: request message to send.

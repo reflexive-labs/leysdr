@@ -1,0 +1,30 @@
+# Ten seconds of a keyed band, recorded and counted. The fixture states its own keying -- three
+# transmissions with 3 s of floor between -- so the answer key is the generator's, not the air's.
+# At the default 5 s hang the three overs stay in one part, so the number to report is the
+# squelch_opens the manifest carries, not the part count: an agent that reads the parts and says
+# "1" has found the tool's shape rather than the band's.
+name: record-squelch-opens
+description: Record a keyed band for ten seconds and say how many times the squelch opened.
+fixtures:
+  - file: nfm_keyed.cf32
+    as: radio-a           # tuned to its centre, 146.520 MHz; the carrier sits 100 kHz up
+task: |
+  Record about ten seconds of 146.620 MHz, capturing only what is actually on the air, and tell me
+  how many separate transmissions you caught and how long the recording holds in total.
+answer_schema: |
+  {"transmissions": <number>, "seconds_recorded": <number>}
+truth:
+  transmissions: 3
+checks:
+  - type: answered
+  - type: json_equals
+    path: transmissions
+    truth: transmissions
+    why: the fixture keys up three times; the manifest counts the squelch openings
+  - type: used_tool
+    tool: record
+    why: a recording is what the question asks for, and one call answers it
+  - type: max_tool_calls
+    n: 8
+  - type: no_shell
+  - type: take_over_after_refusal

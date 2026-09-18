@@ -112,7 +112,13 @@ message Sink {
     // channel audio or IQ negotiates it with `Bulk.Subscribe`, which is where delivery policy and
     // transport are agreed.
     StreamSink stream = 4;
-    FileSink file = 5;                 // daemon records; lossless lives here, never on the network
+    // The daemon recording to a file; lossless lives here and never on the network. `AttachSink`
+    // refuses this kind too: a recording is a job's output (jobs.proto, RecordConfig). A sink
+    // attached to somebody's channel dies with that channel's owner and leaves a file nothing
+    // indexes, while a job goes through the allocator (invariant 9), outlives the client that
+    // started it, and produces a resource (invariant 8). This field stays so that a recording
+    // job's own sink can be named in state; a client makes one with Jobs.StartJob(RecordConfig).
+    FileSink file = 5;
   }
   // A detached sink is emitted one last time with state unset -- the tombstone
   // Capture.state describes. Without it an attach and a detach are the same
@@ -173,6 +179,9 @@ message Event {
     // them by subscription rather than by polling GetJob; Job is already a whole-object message,
     // so this stays full-state (never a delta) like every other member.
     Job job = 9;
+    // A recording the daemon is playing. Daemon state like everything else here, so the app
+    // renders a position and a stop button by subscription rather than by polling.
+    Playback playback = 10;
   }
 }
 message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
@@ -202,6 +211,12 @@ service Control {
   rpc AttachSink(AttachSinkRequest) returns (Sink);
   rpc DetachSink(DetachSinkRequest) returns (Empty);
 
+  // Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+  // does for a channel's audio, so a client on another machine hears it where the radio is and a
+  // client on this one needs no player of its own (docs/design/recording.md).
+  rpc StartPlayback(StartPlaybackRequest) returns (Playback);
+  rpc StopPlayback(StopPlaybackRequest) returns (Empty);
+
   rpc WriteParams(stream ParamWrite) returns (WriteSummary);
 
   // Virtual devices. A device a client attaches appears in ListDevices/events like any
@@ -224,6 +239,7 @@ message GetStateResponse {
   uint64 event_seq = 5; // events after this seq are newer than this snapshot
   DaemonInfo daemon = 6;
   repeated Job jobs = 7;   // running and recently finished; reconnect renders these like the rest
+  repeated Playback playbacks = 8;  // recordings the daemon is playing right now
 }
 message DaemonInfo {
   string version = 1;
@@ -231,6 +247,38 @@ message DaemonInfo {
   int64 started_at_ns = 3;  // CLOCK_REALTIME
   string socket_path = 4;
 }
+// A recording the daemon is playing through its own audio device (docs/design/recording.md,
+// "Playing a recording back"). It is not a sink: a sink is where a *channel's* audio goes, and a
+// playback has no channel. It is not a job either: nothing is produced and it is over when the
+// person stops listening. A playback belongs to the client that started it and ends when that
+// client goes, which is what makes Ctrl-C stop the sound.
+message Playback {
+  string playback_id = 1;       // pb_<ulid>
+  string resource_uri = 2;      // ley://recordings/<id>/<part>
+  string path = 3;              // the file the daemon opened, for a client on the same machine
+  uint32 sample_rate = 4;
+  uint64 samples = 5;           // frames in the file; 0 when it could not be counted
+  // Frames played so far. A client renders elapsed time from this and the rate rather than from a
+  // clock of its own, and it is reported rather than written: seeking is not in v1.
+  uint64 position = 6;
+  double volume = 7;
+  ClientInfo created_by = 8;
+  // Unset on an event is the tombstone, the same rule Capture.state and Sink.state follow: without
+  // it a start and an end are the same bytes, and a client cannot tell a playback that finished
+  // from one somebody stopped.
+  PlaybackState state = 9;
+}
+enum PlaybackState { PLAYBACK_STATE_UNSPECIFIED = 0; PLAYBACK_PLAYING = 1; }
+
+message StartPlaybackRequest {
+  // What to play: ley://recordings/<id> takes the first part, ley://recordings/<id>/<part> that
+  // part. An IQ part is refused INVALID_ARGUMENT -- those are tuned, not played.
+  string resource_uri = 1;
+  optional double volume = 2;   // 0..1; absent = 1.0 (full), explicit 0 = muted
+  string audio_device_uid = 3;  // empty = the daemon's default output
+}
+message StopPlaybackRequest { string playback_id = 1; }
+
 message CreateCaptureRequest { string device_id = 1; uint64 center_hz = 2; uint64 sample_rate = 3; }
 message DestroyCaptureRequest { string capture_id = 1; }
 message CreateChannelRequest {

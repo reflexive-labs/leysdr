@@ -36,6 +36,12 @@ final class Daemon: @unchecked Sendable {
         var storePath: String = defaultStorePath()
         var storeCapBytes: UInt64 = 2 << 30
         var storeAgeDays: UInt32 = 90
+        /// Where recordings live, and the retention applied to them. The cap is a fixed number in
+        /// one flag rather than a fraction of free space: predictable, and the same shape as the
+        /// kept-records store (docs/design/recording.md, "Retention").
+        var recordingsPath: String = defaultRecordingsPath()
+        var recordingsCapBytes: UInt64 = 20 << 30
+        var recordingsAgeDays: UInt32 = 0
     }
 
     /// A parsed `--rtltcp host:port`.
@@ -80,7 +86,10 @@ final class Daemon: @unchecked Sendable {
         let allocator = SessionCaptureAllocator(store: store)
         let decoders = DecoderRegistry(searchPath: config.decoderSearchPath)
         let recordStore = RecordStore(directory: config.storePath, capBytes: config.storeCapBytes, ageDays: config.storeAgeDays)
-        jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore)
+        let recordings = RecordingStore(directory: config.recordingsPath, capBytes: config.recordingsCapBytes,
+                                        ageDays: config.recordingsAgeDays)
+        jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
+                        recordings: recordings)
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
@@ -91,12 +100,12 @@ final class Daemon: @unchecked Sendable {
         server = GRPCServer(
             transport: .http2NIOPosix(address: .unixDomainSocket(path: config.socketPath), transportSecurity: .plaintext, config: transport),
             services: [
-                ControlService(store: store),
+                ControlService(store: store, recordings: recordings),
                 TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
                 JobsService(jobs: jobs, store: store),
                 DecodersService(jobs: jobs, store: store),
-                ResourcesService(),
+                ResourcesService(jobs: jobs, store: store),
             ],
             interceptors: [ClientContextInterceptor()]
         )
@@ -154,6 +163,10 @@ final class Daemon: @unchecked Sendable {
         // Retention at start, as the design doc says: a store over its cap or its age is trimmed
         // before anything new is written to it.
         await jobs.records.retain()
+        // A recording the last daemon was still writing is closed rather than resumed: the part's
+        // WAV header is repaired from the file's length and the manifest says `restart`. A
+        // recording is a bounded artefact (docs/design/recording.md, "Retune, detach and restart").
+        await jobs.repairRecordings()
         await attachRemoteDongles()
         await store.startDeviceMirror()
         await streams.install()

@@ -98,11 +98,16 @@ func checkExpect(x []complex128, rate float64, e iqfile.Expect) (bool, string) {
 		return false, fmt.Sprintf("%s @%+.0f bw %.0f: %v", e.Mode, e.OffsetHz, e.BandwidthHz, err)
 	}
 	// Drop the filter/IIR settling transient (50 ms) when the file is long enough.
+	// `trimmedS` is what that costs the time base: the record check reports edges
+	// in seconds from the start of the file, and a silent 50 ms shift would move
+	// every one of them.
+	trimmedS := 0.0
 	if skip := int(0.05 * res.audioRate); len(res.audio) > 4*skip {
 		res.audio = res.audio[skip:]
 	}
 	if skip := int(0.05 * res.iqRate); len(res.iq) > 4*skip {
 		res.iq = res.iq[skip:]
+		trimmedS = float64(skip) / res.iqRate
 	}
 	pass := true
 	var parts []string
@@ -141,7 +146,61 @@ func checkExpect(x []complex128, rate float64, e iqfile.Expect) (bool, string) {
 			parts = append(parts, fmt.Sprintf("squelch open=%v @%.0f dBFS (want %v%s)", open, squelchRefDBFS, *e.Meter.SquelchOpen, okMark(ok)))
 		}
 	}
+	if e.Record != nil {
+		ok, detail := checkRecord(res, e.Record, trimmedS)
+		pass = pass && ok
+		parts = append(parts, detail)
+	}
 	return pass, strings.Join(parts, " ")
+}
+
+// checkRecord verifies a keyed fixture's own answer key: the channel's power
+// crosses the stated squelch threshold exactly where the sidecar says it was
+// keyed, and nowhere else. The fixture claims the segments, so this is what
+// keeps that claim honest -- a recording test graded against a fixture whose
+// keying had drifted would fail the daemon for the generator's mistake.
+func checkRecord(res *channelResult, e *iqfile.RecordExpect, offsetS float64) (bool, string) {
+	if len(res.iq) == 0 {
+		return false, "record: no channel samples"
+	}
+	// One decision per 20 ms, which is finer than any hang or pre-roll the
+	// recorder uses and coarse enough to be a stable power estimate.
+	const windowS = 0.020
+	window := max(1, int(windowS*res.iqRate))
+	var found []iqfile.RecordSegment
+	open := false
+	var openedAt float64
+	for start := 0; start+window <= len(res.iq); start += window {
+		p := meanPowerDBFS(res.iq[start : start+window])
+		at := offsetS + float64(start)/res.iqRate
+		if p > e.SquelchDBFS && !open {
+			open, openedAt = true, at
+		} else if p <= e.SquelchDBFS && open {
+			open = false
+			found = append(found, iqfile.RecordSegment{StartS: openedAt, EndS: at})
+		}
+	}
+	if open {
+		found = append(found, iqfile.RecordSegment{StartS: openedAt, EndS: offsetS + float64(len(res.iq))/res.iqRate})
+	}
+	// The filter's group delay and the window itself move an edge by a few tens
+	// of milliseconds; 100 ms is generous against that and still far tighter
+	// than the shortest gap the fixture states.
+	const tolS = 0.100
+	ok := len(found) == len(e.Segments)
+	var parts []string
+	parts = append(parts, fmt.Sprintf("record: %d/%d segments", len(found), len(e.Segments)))
+	for i, want := range e.Segments {
+		if i >= len(found) {
+			break
+		}
+		startOK := math.Abs(found[i].StartS-want.StartS) <= tolS
+		endOK := math.Abs(found[i].EndS-want.EndS) <= tolS
+		ok = ok && startOK && endOK
+		parts = append(parts, fmt.Sprintf("[%.2f,%.2f] want [%.2f,%.2f]%s",
+			found[i].StartS, found[i].EndS, want.StartS, want.EndS, okMark(startOK && endOK)))
+	}
+	return ok, strings.Join(parts, " ")
 }
 
 func okMark(ok bool) string {

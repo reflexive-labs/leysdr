@@ -79,6 +79,46 @@ public nonisolated enum Leyline_V1_JobState: SwiftProtobuf.Enum, Swift.CaseItera
 
 }
 
+/// What opens and closes a recording's parts. A gated recording writes no file while the squelch is
+/// closed, and its manifest says where the gaps were: time is never edited (invariant 5).
+public nonisolated enum Leyline_V1_RecordGate: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case none // = 1
+  case squelch // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .none
+    case 2: self = .squelch
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .none: return 1
+    case .squelch: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_RecordGate] = [
+    .unspecified,
+    .none,
+    .squelch,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_ResourceKind: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -205,10 +245,11 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
     set {_uniqueStorage()._config = .monitor(newValue)}
   }
 
-  /// ley:// resources produced so far. For a scan job today this is ley://scans/<scan_id>, which
-  /// Jobs.GetScan resolves by its id; it is not yet a Resource (the Resources service is not
-  /// implemented), and it does not outlive the daemon's memory of its last sixteen finished jobs
-  /// or a restart. Persisted, resolvable resources arrive with the durable job store.
+  /// ley:// resources produced so far. A record job's is ley://recordings/<job_id> and a kept
+  /// decode job's ley://records/<job_id>; both are on disk and outlive the daemon, and the
+  /// Resources service resolves them. A scan job's ley://scans/<scan_id> is resolved by
+  /// Jobs.GetScan for as long as the daemon remembers the job (its last sixteen finished ones,
+  /// forgotten on restart); a persisted scan arrives with the durable job store.
   public var resultUris: [String] {
     get {_storage._resultUris}
     set {_uniqueStorage()._resultUris = newValue}
@@ -347,6 +388,11 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
   fileprivate var _gain: Leyline_V1_GainWrite? = nil
 }
 
+/// A recording is a job's output (docs/design/recording.md). Control.AttachSink(file) stays
+/// refused: a sink attached to somebody's channel dies with that channel's owner and leaves a file
+/// nothing indexes, while a job goes through the allocator (invariant 9), outlives the client that
+/// started it, and produces a resource (invariant 8). The job's id is the recording's id, so
+/// `Job.result_uris` holds ley://recordings/<job_id>.
 public nonisolated struct Leyline_V1_RecordConfig: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -354,17 +400,63 @@ public nonisolated struct Leyline_V1_RecordConfig: Sendable {
 
   public var frequencyHz: UInt64 = 0
 
-  /// RAW_IQ records IQ
+  /// RAW_IQ records the capture's IQ; anything else records audio
   public var mode: Leyline_V1_DemodMode = .unspecified
 
-  /// 0 = now
+  /// 0 = now; a later start is refused UNIMPLEMENTED in v1
   public var startAtNs: Int64 = 0
 
+  /// 0 = until cancelled or stop_after_quiet_ms
   public var durationMs: Int64 = 0
+
+  /// Record what an existing channel hears, with its mode, bandwidth and squelch. frequency_hz
+  /// and mode are ignored. The job borrows the channel and does not own it: when the channel's
+  /// owner destroys it the job ends COMPLETED, "channel ended". With RAW_IQ the channel's capture
+  /// is recorded.
+  public var channelID: String = String()
+
+  /// empty = the daemon picks, as a scan or decode does
+  public var deviceID: String = String()
+
+  /// retune a capture somebody is using; off by default
+  public var takeOver: Bool = false
+
+  /// 0 = the mode's default, as CreateChannel
+  public var bandwidthHz: UInt32 = 0
+
+  /// NaN or unset = the channel default (auto), as ley tune
+  public var squelchDbfs: Double = 0
+
+  /// absent = leave the radio's gain alone
+  public var gain: Leyline_V1_GainWrite {
+    get {_gain ?? Leyline_V1_GainWrite()}
+    set {_gain = newValue}
+  }
+  /// Returns true if `gain` has been explicitly set.
+  public var hasGain: Bool {self._gain != nil}
+  /// Clears the value of `gain`. Subsequent reads from it will return its default value.
+  public mutating func clearGain() {self._gain = nil}
+
+  /// NONE (default) or SQUELCH
+  public var gate: Leyline_V1_RecordGate = .unspecified
+
+  /// audio kept from before the squelch opened; default 500
+  public var preRollMs: UInt32 = 0
+
+  /// how long after the squelch closes a part stays open; default 5000
+  public var hangMs: UInt32 = 0
+
+  /// end the job after this long with the squelch closed; 0 = never
+  public var stopAfterQuietMs: Int64 = 0
+
+  /// cut parts on this timer; 0 = audio: one part, IQ: 60000
+  public var partMs: Int64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _gain: Leyline_V1_GainWrite? = nil
 }
 
 /// Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
@@ -576,7 +668,10 @@ public nonisolated struct Leyline_V1_Resource: Sendable {
   /// empty for explicit keeps
   public var originatingJobID: String = String()
 
-  /// frequency, mode, duration, anchor — queryable
+  /// Queryable, and frozen per kind because ListResourcesRequest.metadata_filter matches on these
+  /// by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, sample_rate,
+  /// format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by, device
+  /// (docs/design/recording.md, "The wire"). Adding a key is additive; renaming one is not.
   public var metadata: Dictionary<String,String> = [:]
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -772,6 +867,10 @@ fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_JobState: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0JOB_STATE_UNSPECIFIED\0\u{1}RUNNING\0\u{1}DEGRADED\0\u{1}COMPLETED\0\u{1}CANCELLED\0\u{1}FAILED\0")
+}
+
+nonisolated extension Leyline_V1_RecordGate: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0RECORD_GATE_UNSPECIFIED\0\u{1}NONE\0\u{1}SQUELCH\0")
 }
 
 nonisolated extension Leyline_V1_ResourceKind: SwiftProtobuf._ProtoNameProviding {
@@ -1118,7 +1217,7 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_RecordConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RecordConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequency_hz\0\u{1}mode\0\u{3}start_at_ns\0\u{3}duration_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequency_hz\0\u{1}mode\0\u{3}start_at_ns\0\u{3}duration_ms\0\u{3}channel_id\0\u{3}device_id\0\u{3}take_over\0\u{3}bandwidth_hz\0\u{3}squelch_dbfs\0\u{1}gain\0\u{1}gate\0\u{3}pre_roll_ms\0\u{3}hang_ms\0\u{3}stop_after_quiet_ms\0\u{3}part_ms\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1130,12 +1229,27 @@ nonisolated extension Leyline_V1_RecordConfig: SwiftProtobuf.Message, SwiftProto
       case 2: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
       case 3: try { try decoder.decodeSingularInt64Field(value: &self.startAtNs) }()
       case 4: try { try decoder.decodeSingularInt64Field(value: &self.durationMs) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.channelID) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.bandwidthHz) }()
+      case 9: try { try decoder.decodeSingularDoubleField(value: &self.squelchDbfs) }()
+      case 10: try { try decoder.decodeSingularMessageField(value: &self._gain) }()
+      case 11: try { try decoder.decodeSingularEnumField(value: &self.gate) }()
+      case 12: try { try decoder.decodeSingularUInt32Field(value: &self.preRollMs) }()
+      case 13: try { try decoder.decodeSingularUInt32Field(value: &self.hangMs) }()
+      case 14: try { try decoder.decodeSingularInt64Field(value: &self.stopAfterQuietMs) }()
+      case 15: try { try decoder.decodeSingularInt64Field(value: &self.partMs) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if self.frequencyHz != 0 {
       try visitor.visitSingularUInt64Field(value: self.frequencyHz, fieldNumber: 1)
     }
@@ -1148,6 +1262,39 @@ nonisolated extension Leyline_V1_RecordConfig: SwiftProtobuf.Message, SwiftProto
     if self.durationMs != 0 {
       try visitor.visitSingularInt64Field(value: self.durationMs, fieldNumber: 4)
     }
+    if !self.channelID.isEmpty {
+      try visitor.visitSingularStringField(value: self.channelID, fieldNumber: 5)
+    }
+    if !self.deviceID.isEmpty {
+      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 6)
+    }
+    if self.takeOver != false {
+      try visitor.visitSingularBoolField(value: self.takeOver, fieldNumber: 7)
+    }
+    if self.bandwidthHz != 0 {
+      try visitor.visitSingularUInt32Field(value: self.bandwidthHz, fieldNumber: 8)
+    }
+    if self.squelchDbfs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.squelchDbfs, fieldNumber: 9)
+    }
+    try { if let v = self._gain {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    } }()
+    if self.gate != .unspecified {
+      try visitor.visitSingularEnumField(value: self.gate, fieldNumber: 11)
+    }
+    if self.preRollMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.preRollMs, fieldNumber: 12)
+    }
+    if self.hangMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.hangMs, fieldNumber: 13)
+    }
+    if self.stopAfterQuietMs != 0 {
+      try visitor.visitSingularInt64Field(value: self.stopAfterQuietMs, fieldNumber: 14)
+    }
+    if self.partMs != 0 {
+      try visitor.visitSingularInt64Field(value: self.partMs, fieldNumber: 15)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1156,6 +1303,17 @@ nonisolated extension Leyline_V1_RecordConfig: SwiftProtobuf.Message, SwiftProto
     if lhs.mode != rhs.mode {return false}
     if lhs.startAtNs != rhs.startAtNs {return false}
     if lhs.durationMs != rhs.durationMs {return false}
+    if lhs.channelID != rhs.channelID {return false}
+    if lhs.deviceID != rhs.deviceID {return false}
+    if lhs.takeOver != rhs.takeOver {return false}
+    if lhs.bandwidthHz != rhs.bandwidthHz {return false}
+    if lhs.squelchDbfs != rhs.squelchDbfs {return false}
+    if lhs._gain != rhs._gain {return false}
+    if lhs.gate != rhs.gate {return false}
+    if lhs.preRollMs != rhs.preRollMs {return false}
+    if lhs.hangMs != rhs.hangMs {return false}
+    if lhs.stopAfterQuietMs != rhs.stopAfterQuietMs {return false}
+    if lhs.partMs != rhs.partMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

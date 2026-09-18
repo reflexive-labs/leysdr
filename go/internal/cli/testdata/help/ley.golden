@@ -16,6 +16,7 @@ Examples:
 
 Listening:
   play         Listen to a recording as if it were a radio
+  record       Record a channel or the raw capture to a file
   tune         Listen to a frequency through the speakers
 
 Adjusting:
@@ -35,6 +36,7 @@ Looking around:
   monitor      Park on a band and log the transmissions on it
   phosphor     Show what is usually on a band, not just what is on it now
   presets      List the named frequencies tune accepts
+  recordings   List the recordings the daemon has kept
   records      Search the records kept decode jobs have written
   scan         Sweep a range and list the signals on it
   scope        Draw the waveform a mode produces

@@ -4,6 +4,7 @@ package fakedaemon
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/dpup/leysdr/go/pkg/leyline"
@@ -58,6 +59,10 @@ func (d *Daemon) emit(by *leylinev1.ClientInfo, body any) {
 	case *leylinev1.CaptureAnchor:
 		ev.Body = &leylinev1.Event_Anchor{Anchor: proto.Clone(b).(*leylinev1.CaptureAnchor)}
 		captureID = b.CaptureId
+	case *leylinev1.Playback:
+		// A playback has no capture: it is a file playing, with no radio in it, so it is
+		// daemon-scoped like a job.
+		ev.Body = &leylinev1.Event_Playback{Playback: proto.Clone(b).(*leylinev1.Playback)}
 	}
 	d.history = append(d.history, retainedEvent{captureID: captureID, event: ev})
 	if n := len(d.history) - eventHistoryLimit; n > 0 {
@@ -134,6 +139,15 @@ func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateRespon
 			if j := d.jobs[id]; j != nil {
 				resp.Jobs = append(resp.Jobs, proto.Clone(j.proto).(*leylinev1.Job))
 			}
+		}
+		// A playback is not tied to a capture either.
+		ids := make([]string, 0, len(d.playbacks))
+		for id := range d.playbacks {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			resp.Playbacks = append(resp.Playbacks, proto.Clone(d.playbacks[id].proto).(*leylinev1.Playback))
 		}
 	}
 	for _, c := range d.captures {
@@ -240,6 +254,8 @@ func (d *Daemon) reap(clientID string) {
 		}
 		d.destroyChannelLocked(id, by)
 	}
+	// The sound belongs to whoever asked for it, which is what makes Ctrl-C in `ley play` stop it.
+	d.reapPlaybacksLocked(clientID)
 }
 
 // destroyChannelLocked removes a channel, its sinks and its bulk streams,

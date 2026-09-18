@@ -48,7 +48,7 @@ This is the design for Milestone D.16. The build plan -- where the MCP server ru
 tools land -- is `docs/plans/mcp.md`, and the tools the daemon can back are implemented as `ley mcp`
 (2026-09-14; the reference is `docs/reference/mcp.md`). Of the table below, `start_job` exists as
 `start_decode_job`, since decode is the one job an agent can start today (watch and record configs
-are Milestone D.15); `get_transcript` and `find_recordings` wait on D.15 and C.12; the decoder
+are Milestone D.15); `get_transcript` waits on D.15 and `find_recordings` landed with C.12; the decoder
 tools the plan added (`list_decoders`, `query_records`, `list_entities`) are in the reference. Tools
 map one-to-one onto RPCs (names indicative):
 

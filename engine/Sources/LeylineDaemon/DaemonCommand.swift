@@ -27,6 +27,10 @@ func defaultDecodersPath() -> String { defaultDataPath("decoders") }
 /// Where kept records live when nothing says otherwise, by the same rule.
 func defaultStorePath() -> String { defaultDataPath("store") }
 
+/// Where recordings live when nothing says otherwise: a plain directory Finder can open and
+/// Spotlight can index, beside the kept-records store (docs/design/recording.md, "Files").
+func defaultRecordingsPath() -> String { defaultDataPath("recordings") }
+
 private func defaultDataPath(_ leaf: String) -> String {
     #if os(macOS)
     return NSHomeDirectory() + "/Library/Application Support/Leyline/" + leaf
@@ -82,6 +86,15 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("store-age"), help: "Days a kept job's records are held before they are dropped.")
     var storeAge: UInt32 = 90
 
+    @Option(help: "Where recordings are written (platform default otherwise).")
+    var recordings: String = defaultRecordingsPath()
+
+    @Option(name: .customLong("recordings-cap"), help: "Recordings store size cap in bytes; the oldest finished recordings go when it is exceeded, and a running one is never dropped.")
+    var recordingsCap: UInt64 = 20 << 30
+
+    @Option(name: .customLong("recordings-age"), help: "Days a recording is held before it is dropped; 0 keeps them until the cap does.")
+    var recordingsAge: UInt32 = 0
+
     func run() async throws {
         let level = Logger.Level(rawValue: logLevel) ?? .info
         LoggingSystem.bootstrap { label in
@@ -94,7 +107,9 @@ struct DaemonCommand: AsyncParsableCommand {
         let searchPath = decoders + decoderPathsFromEnvironment() + [defaultDecodersPath()]
         let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, enumerateHardware: !noHardware, rtltcp: remotes,
                                           decoderSearchPath: searchPath, storePath: store,
-                                          storeCapBytes: storeCap, storeAgeDays: storeAge))
+                                          storeCapBytes: storeCap, storeAgeDays: storeAge,
+                                          recordingsPath: recordings, recordingsCapBytes: recordingsCap,
+                                          recordingsAgeDays: recordingsAge))
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.
         signal(SIGPIPE, SIG_IGN)

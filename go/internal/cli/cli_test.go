@@ -302,13 +302,17 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"devices", "--bogus"}, "unknown flag: --bogus"},
 		{[]string{"fft", "--format", "xml"}, "--format must be json or bin"},
 		{[]string{"spectrum", "146,52"}, "is not a frequency"},
-		{[]string{"record"}, "record is not implemented yet (Milestone C.12). Today:"},
-		{[]string{"record", "--audio", "--duration", "10"}, "record is not implemented yet (Milestone C.12). Today:"},
+		// record is a real verb now (C.12): its positional and flags are parsed here.
+		{[]string{"record"}, "record needs a frequency or preset"},
+		{[]string{"record", "146.52", "--gate", "sideways"}, "is not a gate; squelch is the one there is"},
+		{[]string{"record", "146.52", "--hang", "5s"}, "--hang needs --gate squelch"},
+		{[]string{"record", "146.52", "--iq", "--gate", "squelch"}, "--iq and --gate squelch do not go together"},
+		{[]string{"record", "146.52", "--iq", "--mode", "nfm"}, "--mode has nothing to decode"},
+		{[]string{"recordings", "--kind", "video"}, "is not a kind of recording"},
 		{[]string{"scan", "146.52"}, "is not a range; two frequencies with .. between them"},
 		{[]string{"scan"}, "scan needs a range"},
 		{[]string{"scan", "144M..148M", "--band", "2m"}, "not both"},
 		{[]string{"scan", "144M..148M", "--sort", "sideways"}, "--sort must be freq or snr"},
-		{[]string{"record"}, "record is not implemented yet (Milestone C.12)"},
 		// watch is a real verb now: its argument count is a usage error, not a stub message.
 		{[]string{"watch"}, "accepts 1 arg(s), received 0"},
 		// tune's positional and flags are parsed before anything reaches the daemon.
@@ -495,19 +499,27 @@ func TestRenderOrientationStates(t *testing.T) {
 	}
 }
 
+// Every stub is hidden from --help and exits 2 with its milestone. The table is empty now that
+// record has landed (C.12), so this asserts the shape rather than any particular verb: a stub
+// added later must still be hidden, and a verb that has shipped must not still be a stub.
 func TestStubsHiddenAndListed(t *testing.T) {
 	root := NewRootCommand(&App{})
-	for _, name := range []string{"record"} {
-		cmd, _, err := root.Find([]string{name})
-		if err != nil || cmd.Name() != name || !cmd.Hidden {
-			t.Errorf("stub %s: %v hidden=%v", name, err, cmd != nil && cmd.Hidden)
+	for _, st := range Stubs {
+		cmd, _, err := root.Find([]string{st.use})
+		if err != nil || cmd.Name() != st.use || !cmd.Hidden {
+			t.Errorf("stub %s: %v hidden=%v", st.use, err, cmd != nil && cmd.Hidden)
 		}
 	}
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetArgs([]string{"--help"})
-	if err := root.Execute(); err != nil || regexp.MustCompile(`(?m)^\s+(record)\s`).MatchString(out.String()) {
-		t.Errorf("stubs must be hidden from --help: %v\n%s", err, out.String())
+	if err := root.Execute(); err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	for _, st := range Stubs {
+		if regexp.MustCompile(`(?m)^\s+(` + st.use + `)\s`).MatchString(out.String()) {
+			t.Errorf("stub %s must be hidden from --help:\n%s", st.use, out.String())
+		}
 	}
 }
 

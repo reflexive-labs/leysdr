@@ -69,7 +69,7 @@ func generate(o genOptions, w io.Writer) error {
 		if len(selected) > 0 && !selected[f.name] {
 			continue
 		}
-		if f.minDurationS > 0 && o.duration < f.minDurationS {
+		if f.minDurationS > 0 && f.fixedDurationS == 0 && o.duration < f.minDurationS {
 			if selected[f.name] {
 				return fmt.Errorf("generate: %s needs at least %.0f s, not %g", f.name, f.minDurationS, o.duration)
 			}
@@ -103,7 +103,11 @@ func findFixture(name string) *fixture {
 
 // generateOne streams a single fixture (samples + sidecar) to path.
 func generateOne(f *fixture, o genOptions, path string) error {
-	total := int64(o.rate*o.duration + 0.5)
+	duration := o.duration
+	if f.fixedDurationS > 0 {
+		duration = f.fixedDurationS
+	}
+	total := int64(o.rate*duration + 0.5)
 	sources := f.build(o.rate)
 	noise := newNoise(o.seed)
 	wr, err := iqfile.NewWriter(path)

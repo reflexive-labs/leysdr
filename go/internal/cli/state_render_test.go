@@ -251,3 +251,35 @@ func TestStateTreeOrphansKeepWireOrder(t *testing.T) {
 		t.Errorf("orphans are not in wire order:\n%s", want)
 	}
 }
+
+// A playback hangs off no device, so it gets its own block after the tree: `ley state` is the
+// whole picture, and a state object it silently omitted would be one nobody could see or stop.
+func TestStateTreeShowsWhatIsPlaying(t *testing.T) {
+	st := busyState()
+	st.Playbacks = []*leylinev1.Playback{{
+		PlaybackId:  "pb_01M224S5ZRDDEGKRWJSCTABBRB",
+		ResourceUri: "ley://recordings/job_01M224S5ZRDDEGKRWJSCTABBRC/1",
+		Path:        "/recordings/job_01M224S5ZRDDEGKRWJSCTABBRC/part.wav",
+		SampleRate:  48000,
+		Samples:     48000 * 125, // 2:05
+		Position:    48000 * 12,  // 0:12
+		State:       leylinev1.PlaybackState_PLAYBACK_PLAYING,
+		CreatedBy:   &leylinev1.ClientInfo{Kind: "cli", Label: "ley play", ClientId: "cli_01M224S5ZG4DTW0HSZEZ4KJ5AH"},
+	}}
+	plain := renderStateTree(ui.Style{Unicode: true, Width: 80}, st)
+	for _, want := range []string{"playing through the daemon's audio", "0:12 / 2:05", st.Playbacks[0].ResourceUri} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("the state screen does not say %q:\n%s", want, plain)
+		}
+	}
+	// Styling adds SGR and nothing else (docs/dev/cli-style.md, principle 1).
+	styled := renderStateTree(ui.Style{Color: true, Unicode: true, Width: 80}, st)
+	if ui.Strip(styled) != plain {
+		t.Errorf("stripped ink differs from plain:\n--- plain\n%s\n--- stripped\n%s", plain, ui.Strip(styled))
+	}
+	// Nothing playing is the usual case, and says nothing at all.
+	st.Playbacks = nil
+	if quiet := renderStateTree(ui.Style{Unicode: true, Width: 80}, st); strings.Contains(quiet, "playing through") {
+		t.Errorf("an idle daemon must not mention playback:\n%s", quiet)
+	}
+}

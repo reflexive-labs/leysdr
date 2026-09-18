@@ -104,6 +104,9 @@ are optional in the schema; the defaults are the mirror verb's.
 | `query_records` | `ley records` | `Decoders.QueryRecords` | `protocol`, `job_id`, `device_id`, `kind`, `since_s`, `near` + `radius`, `in_effect`, `limit` | `RecordPage` |
 | `list_entities` | `ley track --json` | `Decoders.SubscribeRecords` + the `records.Table` fold | `protocol`; `duration_s` (default 5, at most 300), `since_s`, `device`, `take_over` | `{entities: […]}` |
 | `start_decode_job` | `ley decode`, `ley decode --job` | `Jobs.StartJob(DecodeConfig)` | `decoder`; `frequency`, `device`, `take_over`, `keep` | `Job` |
+| `record` | `ley record` | `Jobs.StartJob(RecordConfig)` | `target` (frequency, preset or `chan_…`), `duration_s` (**required**, 1 to 3600); `iq`, `gate`, `pre_roll_ms`, `hang_ms`, `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | the finished `Job` |
+| `find_recordings` | `ley recordings` | `Resources.ListResources(RECORDING)` | `kind`, `frequency`, `mode`, `since_s`, `limit` | `ListResourcesResponse` |
+| `get_recording` | `ley recordings show`, `ley recordings path` | `Resources.GetResource` + `ResolveLocalPath` | `id` (job id or `ley://recordings/` uri) | `{manifest, directory, parts: [{part, path, samples}]}` |
 | `list_jobs` | `ley jobs` | `Jobs.ListJobs` | none | `ListJobsResponse` |
 | `get_job` | `ley jobs` | `Jobs.GetJob` | `job` (id, prefix or row) | `Job` |
 | `cancel_job` | `ley jobs cancel` | `Jobs.CancelJob` | `job` | `Job` |
@@ -196,6 +199,19 @@ Notes a table cell cannot hold:
   (or the resource below) reads them. An alias a manifest lists (`vessels` for `ais`) resolves to
   the canonical decoder before the job starts, as `ley decode vessels` does.
 
+- **`record`** is the one tool that waits: it starts the job, waits for it and returns the
+  finished `Job`, so one call answers "record ten seconds and tell me what you got" instead of a
+  start and a poll. `duration_s` is required and bounded at an hour — what an agent starts must
+  end without it, and a radio recording for ever is a radio nobody else can use. `gate: "squelch"`
+  records only while something is on the air and writes one file per exchange, so a quiet band
+  costs no disk; the text then says how many times the squelch opened, which is usually the
+  question. The recording outlives the call and the server: it is a file, and `find_recordings`
+  finds it in the next session.
+- **`get_recording`** returns the manifest and every part's path on the daemon's machine, never
+  the samples. Audio and IQ do not cross this connection (`docs/design/data-planes.md`, "no
+  lossless network stream"); an agent that wants to transcribe a recording hands the path to a
+  tool that can open it, and an agent on another machine cannot, which is the honest answer.
+
 What the job list says: a decode job reads `RUNNING` whether the decoder is producing records or
 not, by design (`docs/plans/decoders.md`, DEC-16: a silent decoder is indistinguishable from a quiet
 band, and SAME is silent by design), and a decoder that exits is restarted with the job saying so
@@ -203,23 +219,27 @@ in `statusDetail`. The same field carries the job's liveness (DEC-23): "decoding
 records, last 3 s ago", or "no records yet", refreshed every two seconds while records arrive, so
 `get_job` and `list_jobs` tell a decoder that is hearing things from one that is not.
 
-Not registered, because the daemon cannot back them yet: `find_recordings` (the Resources service
-and the recording store, Milestone C.12), `get_transcript` (audio-transcript watch jobs, D.15),
-`identify_signal` (the honest characteriser, DEC-14), `lookup_identity` (no external lookup
-adapters exist) and `whats_out_there` (needs `identify_signal`). The server's instructions, which
-an MCP client shows the agent at connect time, say the same, so an agent does not go looking.
+Not registered, because the daemon cannot back them yet: `get_transcript` (audio-transcript watch
+jobs, D.15), `identify_signal` (the honest characteriser, DEC-14), `lookup_identity` (no external
+lookup adapters exist) and `whats_out_there` (needs `identify_signal`). The server's instructions,
+which an MCP client shows the agent at connect time, say the same, so an agent does not go
+looking.
 
 ## Resources
 
-Two resource templates are served, both `application/json`. `ley://records/{job_id}` is the
+Three resource templates are served, all `application/json`. `ley://recordings/{job_id}` is a
+recording's manifest as `recording.json` holds it: the radio and gain it was made on, its parts
+with their span on the capture's timeline, the times nothing was recorded and why, and how it
+ended. It is on disk and outlives the daemon; `get_recording` returns the same document with each
+part's local path added. `ley://records/{job_id}` is the
 records of a decode job started with `keep`, as the `RecordPage` `query_records` returns for
 that `job_id`; a job the store never had is a resource-not-found error, and a kept job that has
 heard nothing yet is an empty page. `ley://scans/{scan_id}` is the whole `Scan` a sweep produced,
 every detection included, resolved through `Jobs.GetScan`: what a job's `resultUris` names and
 what the `scan` tool returns before `min_snr` trims it. It lives as long as the daemon remembers
 the job (its last sixteen finished ones) and not across a restart, because a scan is not yet a
-stored resource. Recordings and snapshots become resources when the Resources service and their
-stores are built (`docs/plans/mcp.md`, MCP-7).
+stored resource. Snapshots become resources when their store is built (`docs/plans/mcp.md`,
+MCP-7).
 
 ## A recorded exchange
 

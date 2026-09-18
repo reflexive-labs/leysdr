@@ -44,6 +44,9 @@ type fakeJob struct {
 	// cancelled is CancelJob's request to stop. The sweep is what ends the job, so the partial
 	// results are stored before the terminal event goes out.
 	cancelled bool
+	// record is the recording a record job is writing: its directory, its manifest and the
+	// schedule its gate follows. Nil for every other kind.
+	record *recordJob
 }
 
 // publishDetection appends to the log every telemetry subscriber reads. Caller holds the lock.
@@ -71,12 +74,15 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 	if mon, isMon := req.Config.(*leylinev1.StartJobRequest_Monitor); isMon && mon.Monitor != nil {
 		return d.startMonitor(ctx, mon.Monitor)
 	}
+	if r, isRecord := req.Config.(*leylinev1.StartJobRequest_Record); isRecord && r.Record != nil {
+		return d.startRecord(ctx, r.Record)
+	}
 	cfg, ok := req.Config.(*leylinev1.StartJobRequest_Scan)
 	if !ok || cfg.Scan == nil {
 		if req.Config == nil {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "StartJob needs a config: scan and decode are the ones in v0"))
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "StartJob needs a config: scan, monitor, decode and record are the ones in v0"))
 		}
-		return nil, unimplemented(ctx, "Jobs.StartJob(watch/record)")
+		return nil, unimplemented(ctx, "Jobs.StartJob(watch)")
 	}
 	sc := cfg.Scan
 	if _, recurring := sc.Schedule.(*leylinev1.ScanConfig_Recurring); recurring {
@@ -744,19 +750,4 @@ func (d *Daemon) GetScan(ctx context.Context, req *leylinev1.ScanRef) (*leylinev
 	return nil, fail(ctx, errorf(leyline.CodeScanNotFound, req.ScanId, "no such scan"))
 }
 
-// Resources service: UNIMPLEMENTED in v0.
-
-// ListResources implements Resources.
-func (d *Daemon) ListResources(ctx context.Context, _ *leylinev1.ListResourcesRequest) (*leylinev1.ListResourcesResponse, error) {
-	return nil, unimplemented(ctx, "Resources.ListResources")
-}
-
-// GetResource implements Resources.
-func (d *Daemon) GetResource(ctx context.Context, _ *leylinev1.ResourceRef) (*leylinev1.Resource, error) {
-	return nil, unimplemented(ctx, "Resources.GetResource")
-}
-
-// ResolveLocalPath implements Resources.
-func (d *Daemon) ResolveLocalPath(ctx context.Context, _ *leylinev1.ResourceRef) (*leylinev1.LocalPath, error) {
-	return nil, unimplemented(ctx, "Resources.ResolveLocalPath")
-}
+// Resources lives in resources.go, over the manifests record jobs write.

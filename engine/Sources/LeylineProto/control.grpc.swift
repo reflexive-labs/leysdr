@@ -142,6 +142,32 @@ public enum Leyline_V1_Control: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "StartPlayback" metadata.
+        public enum StartPlayback: Sendable {
+            /// Request type for "StartPlayback".
+            public typealias Input = Leyline_V1_StartPlaybackRequest
+            /// Response type for "StartPlayback".
+            public typealias Output = Leyline_V1_Playback
+            /// Descriptor for "StartPlayback".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Control"),
+                method: "StartPlayback",
+                type: .unary
+            )
+        }
+        /// Namespace for "StopPlayback" metadata.
+        public enum StopPlayback: Sendable {
+            /// Request type for "StopPlayback".
+            public typealias Input = Leyline_V1_StopPlaybackRequest
+            /// Response type for "StopPlayback".
+            public typealias Output = Leyline_V1_Empty
+            /// Descriptor for "StopPlayback".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Control"),
+                method: "StopPlayback",
+                type: .unary
+            )
+        }
         /// Namespace for "WriteParams" metadata.
         public enum WriteParams: Sendable {
             /// Request type for "WriteParams".
@@ -218,6 +244,8 @@ public enum Leyline_V1_Control: Sendable {
             DestroyChannel.descriptor,
             AttachSink.descriptor,
             DetachSink.descriptor,
+            StartPlayback.descriptor,
+            StopPlayback.descriptor,
             WriteParams.descriptor,
             AttachDevice.descriptor,
             DetachDevice.descriptor,
@@ -376,6 +404,40 @@ extension Leyline_V1_Control {
         /// - Returns: A streaming response of `Leyline_V1_Empty` messages.
         func detachSink(
             request: GRPCCore.StreamingServerRequest<Leyline_V1_DetachSinkRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "StartPlayback" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+        /// > client on this one needs no player of its own (docs/design/recording.md).
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_StartPlaybackRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Playback` messages.
+        func startPlayback(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_StartPlaybackRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Playback>
+
+        /// Handle the "StopPlayback" method.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_StopPlaybackRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Empty` messages.
+        func stopPlayback(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_StopPlaybackRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
 
@@ -593,6 +655,40 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
 
+        /// Handle the "StartPlayback" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+        /// > client on this one needs no player of its own (docs/design/recording.md).
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Playback` message.
+        func startPlayback(
+            request: GRPCCore.ServerRequest<Leyline_V1_StartPlaybackRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Playback>
+
+        /// Handle the "StopPlayback" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StopPlaybackRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Empty` message.
+        func stopPlayback(
+            request: GRPCCore.ServerRequest<Leyline_V1_StopPlaybackRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
+
         /// Handle the "WriteParams" method.
         ///
         /// - Parameters:
@@ -806,6 +902,40 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_Empty
 
+        /// Handle the "StartPlayback" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+        /// > client on this one needs no player of its own (docs/design/recording.md).
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_StartPlaybackRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Playback` to respond with.
+        func startPlayback(
+            request: Leyline_V1_StartPlaybackRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Playback
+
+        /// Handle the "StopPlayback" method.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_StopPlaybackRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Empty` to respond with.
+        func stopPlayback(
+            request: Leyline_V1_StopPlaybackRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Empty
+
         /// Handle the "WriteParams" method.
         ///
         /// - Parameters:
@@ -987,6 +1117,28 @@ extension Leyline_V1_Control.StreamingServiceProtocol {
             }
         )
         router.registerHandler(
+            forMethod: Leyline_V1_Control.Method.StartPlayback.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_StartPlaybackRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Playback>(),
+            handler: { request, context in
+                try await self.startPlayback(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Control.Method.StopPlayback.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_StopPlaybackRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Empty>(),
+            handler: { request, context in
+                try await self.stopPlayback(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
             forMethod: Leyline_V1_Control.Method.WriteParams.descriptor,
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ParamWrite>(),
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_WriteSummary>(),
@@ -1140,6 +1292,28 @@ extension Leyline_V1_Control.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
         let response = try await self.detachSink(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func startPlayback(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_StartPlaybackRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Playback> {
+        let response = try await self.startPlayback(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func stopPlayback(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_StopPlaybackRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
+        let response = try await self.stopPlayback(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -1319,6 +1493,32 @@ extension Leyline_V1_Control.SimpleServiceProtocol {
     ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
         return GRPCCore.ServerResponse<Leyline_V1_Empty>(
             message: try await self.detachSink(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func startPlayback(
+        request: GRPCCore.ServerRequest<Leyline_V1_StartPlaybackRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Playback> {
+        return GRPCCore.ServerResponse<Leyline_V1_Playback>(
+            message: try await self.startPlayback(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func stopPlayback(
+        request: GRPCCore.ServerRequest<Leyline_V1_StopPlaybackRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
+        return GRPCCore.ServerResponse<Leyline_V1_Empty>(
+            message: try await self.stopPlayback(
                 request: request.message,
                 context: context
             ),
@@ -1571,6 +1771,50 @@ extension Leyline_V1_Control {
         func detachSink<Result>(
             request: GRPCCore.ClientRequest<Leyline_V1_DetachSinkRequest>,
             serializer: some GRPCCore.MessageSerializer<Leyline_V1_DetachSinkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StartPlayback" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+        /// > client on this one needs no player of its own (docs/design/recording.md).
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_StartPlaybackRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Playback` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func startPlayback<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_StartPlaybackRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_StartPlaybackRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Playback>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StopPlayback" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StopPlaybackRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_StopPlaybackRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func stopPlayback<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_StopPlaybackRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_StopPlaybackRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
@@ -1965,6 +2209,72 @@ extension Leyline_V1_Control {
             )
         }
 
+        /// Call the "StartPlayback" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+        /// > client on this one needs no player of its own (docs/design/recording.md).
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_StartPlaybackRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Playback` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func startPlayback<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_StartPlaybackRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_StartPlaybackRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Playback>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Control.Method.StartPlayback.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "StopPlayback" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StopPlaybackRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_StopPlaybackRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func stopPlayback<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_StopPlaybackRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_StopPlaybackRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Control.Method.StopPlayback.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "WriteParams" method.
         ///
         /// - Parameters:
@@ -2346,6 +2656,62 @@ extension Leyline_V1_Control.ClientProtocol {
         try await self.detachSink(
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_DetachSinkRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartPlayback" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+    /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+    /// > client on this one needs no player of its own (docs/design/recording.md).
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startPlayback<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_StartPlaybackRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.startPlayback(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_StartPlaybackRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Playback>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StopPlayback" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_StopPlaybackRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func stopPlayback<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_StopPlaybackRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.stopPlayback(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_StopPlaybackRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
             options: options,
             onResponse: handleResponse
@@ -2743,6 +3109,70 @@ extension Leyline_V1_Control.ClientProtocol {
             metadata: metadata
         )
         return try await self.detachSink(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartPlayback" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
+    /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
+    /// > client on this one needs no player of its own (docs/design/recording.md).
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startPlayback<Result>(
+        _ message: Leyline_V1_StartPlaybackRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_StartPlaybackRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.startPlayback(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StopPlayback" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func stopPlayback<Result>(
+        _ message: Leyline_V1_StopPlaybackRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_StopPlaybackRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.stopPlayback(
             request: request,
             options: options,
             onResponse: handleResponse

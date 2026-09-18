@@ -125,7 +125,30 @@ func renderStateTree(s ui.Style, st *leylinev1.GetStateResponse) string {
 		fmt.Fprintf(&b, "\n%s\n", s.Muted("not attached to a listed device"))
 		writeNodes(&b, s, orphans, "  ")
 	}
+	// A playback hangs off no device: it is a recording playing through the daemon's speakers,
+	// with no radio in it, so it gets its own short block rather than a place in the tree.
+	writePlaybacks(&b, s, st)
 	return b.String()
+}
+
+// writePlaybacks lists the recordings the daemon is playing. Nothing is written when there are
+// none, which is the usual case.
+func writePlaybacks(b *strings.Builder, s ui.Style, st *leylinev1.GetStateResponse) {
+	if len(st.GetPlaybacks()) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n%s\n", s.Muted("playing through the daemon's audio"))
+	for _, p := range st.GetPlaybacks() {
+		fmt.Fprintf(b, "  %s  %s  %s\n", playbackPosition(p), p.GetResourceUri(),
+			s.Muted(clientString(p.GetCreatedBy())))
+	}
+}
+
+// playbackPosition is how far a playback has got, as a player shows it.
+func playbackPosition(p *leylinev1.Playback) string {
+	rate := float64(max(p.GetSampleRate(), 1))
+	return fmt.Sprintf("%s / %s",
+		clockPhrase(float64(p.GetPosition())/rate), clockPhrase(float64(p.GetSamples())/rate))
 }
 
 // stateNodes turns the flat lists into the tree, and returns anything whose
@@ -415,4 +438,14 @@ func printStateTables(app *App, st *leylinev1.GetStateResponse) {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.SinkId, s.ChannelId, kind, detail)
 	}
 	w.Flush()
+	if len(st.GetPlaybacks()) > 0 {
+		fmt.Fprintln(app.Stdout, "\nPlaybacks")
+		w = app.table()
+		fmt.Fprintln(w, "ID\tRESOURCE\tPOSITION\tCREATED BY")
+		for _, p := range st.GetPlaybacks() {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.GetPlaybackId(), p.GetResourceUri(),
+				playbackPosition(p), clientString(p.GetCreatedBy()))
+		}
+		w.Flush()
+	}
 }

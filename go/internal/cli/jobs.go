@@ -189,6 +189,16 @@ func jobRange(j *leylinev1.Job) string {
 		}
 		return "recipe"
 	}
+	// A recording is on one frequency too, or on somebody else's channel, which names itself.
+	if rec, ok := j.GetConfig().(*leylinev1.Job_Record); ok {
+		if hz := rec.Record.GetFrequencyHz(); hz > 0 {
+			return leyline.FormatFrequency(hz)
+		}
+		return rec.Record.GetChannelId()
+	}
+	if mon, ok := j.GetConfig().(*leylinev1.Job_Monitor); ok && mon.Monitor.GetRange() != nil {
+		return rangesPhrase([]*leylinev1.FrequencyRange{mon.Monitor.GetRange()})
+	}
 	return ""
 }
 

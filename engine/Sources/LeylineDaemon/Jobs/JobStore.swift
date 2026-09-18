@@ -36,6 +36,8 @@ actor JobStore {
         /// A decode job's runner (audio or IQ), holding its plugin, lease and store writer. Nil for
         /// every other kind.
         var decode: (any DecodeRunning)?
+        /// A record job's runner, holding its lease, gate and part writer. Nil for every other kind.
+        var record: (any RecordRunning)?
         /// `keep`: persistence follows intent (invariant 8). A kept job outlives its client.
         var keep = false
     }
@@ -46,11 +48,13 @@ actor JobStore {
         state == .running || state == .degraded
     }
 
-    private let store: SessionStore
-    private let allocator: SessionCaptureAllocator
+    let store: SessionStore
+    let allocator: SessionCaptureAllocator
     /// Decoders as installed on disk, and the kept-records store (docs/design/decoders.md).
     let decoders: DecoderRegistry
     let records: RecordStore
+    /// Where recordings are written (docs/design/recording.md, "Files").
+    let recordings: RecordingStore
     let hub = RecordHub()
     private let log = Logger(label: "leyline.jobs")
     private var entries: [JobID: Entry] = [:]
@@ -62,11 +66,14 @@ actor JobStore {
     /// not forgotten.
     private var shuttingDown = false
 
-    init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry, records: RecordStore) {
+    init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry,
+         records: RecordStore, recordings: RecordingStore)
+    {
         self.store = store
         self.allocator = allocator
         self.decoders = decoders
         self.records = records
+        self.recordings = recordings
     }
 
     // MARK: Kept jobs across a restart (DEC-11)
@@ -225,6 +232,19 @@ actor JobStore {
         if let runner = e.decode {
             await runner.stop()
             await finish(id, state: .cancelled, detail: "cancelled")
+            return entries[id]?.proto
+        }
+        // A record job's is the same shape: the open part is closed and the manifest says how it
+        // ended, so a cancelled recording is complete rather than damaged, and that is the normal
+        // way an open-ended one stops.
+        if let runner = e.record {
+            // A daemon going down under a recording is not the client cancelling one, and the
+            // manifest says which: "a recording is a bounded artefact; whoever wanted a longer
+            // one starts another" (docs/design/recording.md).
+            await runner.stop(endedBy: shuttingDown ? "restart" : "cancelled")
+            let detail = entries[id].map { $0.proto.statusDetail } ?? ""
+            await finish(id, state: entries[id]?.proto.state == .completed ? .completed : .cancelled,
+                         detail: detail.hasPrefix("recorded ") ? detail : "stopped; the recording is complete")
             return entries[id]?.proto
         }
         // Wait for the sweep to put down what it found before answering. Without this the caller
@@ -734,7 +754,7 @@ actor JobStore {
         entries[id] = e
     }
 
-    private func setDetail(_ id: JobID, _ detail: String) async {
+    func setDetail(_ id: JobID, _ detail: String) async {
         guard var e = entries[id], Self.isLive(e.proto.state) else { return }
         e.proto.statusDetail = detail
         entries[id] = e
@@ -814,6 +834,60 @@ actor JobStore {
         if hz >= 1_000_000 { return String(format: "%.3f MHz", Double(hz) / 1e6) }
         if hz >= 1000 { return String(format: "%.3f kHz", Double(hz) / 1e3) }
         return "\(hz) Hz"
+    }
+
+    // MARK: Record jobs (docs/design/recording.md)
+
+    /// Whether the job is still one the daemon is working on. The record extension checks it
+    /// around every suspension, exactly as the scan and decode paths do.
+    func jobIsLive(_ id: JobID) -> Bool { entries[id].map { Self.isLive($0.proto.state) } == true }
+
+    /// Puts a record job in the table. `keep` is true for every recording: a job that outlives the
+    /// client that started it is what `ley record --detach` means, and the foreground form cancels
+    /// explicitly on Ctrl-C. Nothing is written to `kept-jobs.json` -- that file resumes decode
+    /// jobs, and a recording is a bounded artefact that ends at a restart rather than resuming
+    /// (docs/design/recording.md, "Retune, detach and restart").
+    func setRecordEntry(_ id: JobID, job: Leyline_V1_Job, task: Task<Void, Never>, client: ClientContext) {
+        entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil,
+                            record: nil, keep: true)
+        order.append(id)
+        trim()
+    }
+
+    func setRecordRunner(_ id: JobID, _ runner: any RecordRunning) { entries[id]?.record = runner }
+
+    /// Who asked for the recording, as the manifest records it.
+    func recordingClient(_ id: JobID) -> RecordingClient {
+        let by = entries[id]?.proto.createdBy
+        return RecordingClient(clientID: by?.clientID ?? "", kind: by?.kind ?? "", label: by?.label ?? "")
+    }
+
+    /// What the runner reports. A terminal state carries its code; RUNNING and DEGRADED are the
+    /// job moving between having its capture and waiting for it back.
+    func setRecordStatus(_ id: JobID, state: Leyline_V1_JobState, detail: String, code: String?) async {
+        guard var e = entries[id], Self.isLive(e.proto.state) else { return }
+        if !Self.isLive(state) {
+            await finish(id, state: state, detail: detail, code: code)
+            return
+        }
+        e.proto.state = state
+        e.proto.statusDetail = detail
+        entries[id] = e
+        await store.publishJob(e.proto)
+    }
+
+    func finishRecord(_ id: JobID, state: Leyline_V1_JobState, detail: String, code: String? = nil) async {
+        await finish(id, state: state, detail: detail, code: code)
+    }
+
+    /// Repairs whatever the last daemon left half-written, at boot (docs/design/recording.md,
+    /// "Retune, detach and restart"), and brings the store back inside its cap.
+    func repairRecordings() async {
+        let closed = await recordings.repairUnfinished()
+        if !closed.isEmpty {
+            log.info("closed \(closed.count) recording(s) the last daemon was still writing: ended by a daemon restart")
+        }
+        await recordings.retain()
     }
 
     private func trim() {
