@@ -48,22 +48,38 @@ struct PlayButton: View {
     }
 }
 
-/// `146.520` in ink, `000` dimmed, `MHz`, a stepper. Click opens the entry field (⌘L).
+/// `146.520` in ink, `000` dimmed, `MHz`, a stepper. A click, or ⌘L, edits it in place: the
+/// same field, a caret instead of a readout, Enter tunes and Escape puts the readout back.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
+    @State private var text = ""
+    @State private var editing = false
+    @FocusState private var focused: Bool
 
     var body: some View {
         let parts = Frequency.fieldParts(session.tunedHz ?? 0)
         HStack(spacing: 6) {
-            Button { session.frequencyEntryShown = true } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(parts.major).font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(session.tunedHz == nil ? Theme.inkDisabled : Theme.ink)
-                    Text(parts.minor).font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
-                    Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 3)
-                    Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+            if editing {
+                TextField("146.520", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(Theme.Font.frequency)
+                    .foregroundStyle(Theme.ink)
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onExitCommand(perform: cancel)
+                    .frame(width: 168)
+                Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+            } else {
+                Button(action: begin) {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(parts.major).font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(session.tunedHz == nil ? Theme.inkDisabled : Theme.ink)
+                        Text(parts.minor).font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
+                        Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 3)
+                        Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+                    }
                 }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             VStack(spacing: 2) {
                 stepButton("chevron.up") { session.step(1) }
                 stepButton("chevron.down") { session.step(-1) }
@@ -71,7 +87,33 @@ struct FrequencyField: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.borderFocus))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(editing ? Theme.accent : Theme.borderFocus))
+        .onChange(of: session.frequencyEntryShown) { _, shown in
+            if shown, !editing { begin() }
+        }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused, editing { cancel() }
+        }
+    }
+
+    private func begin() {
+        text = session.tunedHz.map { Frequency.fieldParts($0).major } ?? ""
+        editing = true
+        session.frequencyEntryShown = true
+        Task { @MainActor in focused = true }
+    }
+
+    private func commit() {
+        if let hz = Frequency.parse(text) { session.tune(to: hz) }
+        finish()
+    }
+
+    private func cancel() { finish() }
+
+    private func finish() {
+        editing = false
+        focused = false
+        session.frequencyEntryShown = false
     }
 
     private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -183,7 +225,11 @@ struct SquelchTrack: View {
                 .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.border))
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { v in dragDb = db(atX: v.location.x, width: w) }
+                    .onChanged { v in
+                        let d = db(atX: v.location.x, width: w)
+                        dragDb = d
+                        session.setSquelch(d)  // coalesced: one write a tick, the last value wins
+                    }
                     .onEnded { v in
                         let d = db(atX: v.location.x, width: w)
                         dragDb = nil

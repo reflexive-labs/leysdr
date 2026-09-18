@@ -76,7 +76,11 @@ ring decision is made from that note.
 First commit here confirms the Metal path: a `.metal` file as a resource of the `LeylineApp`
 target, compiled by SwiftPM into the resource bundle, loaded through `Bundle.module`. If SwiftPM
 does not compile it on the Mac, the fallback is a build plugin or a checked-in `.metallib`, and
-the decision above about no Xcode project is not reopened for this alone.
+the decision above about no Xcode project is not reopened for this alone. **Tried 2026-09-18:**
+the first run on the Mac drew the spectrum and left the waterfall dark, with no message, so the
+shader is now Swift source (`WaterfallShader.swift`) compiled with `makeLibrary(source:)` at
+launch, which works under `swift build` and Xcode alike, and a compile failure is printed to
+stderr and shown in the panel instead of being a dark rectangle.
 
 Where the handoff lands: the waterfall's ramp and the spectrum's inks in `Theme.swift`; the
 layout in the views; nothing in the façade.

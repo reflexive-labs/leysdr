@@ -15,6 +15,7 @@ struct WaterfallView: View {
     @State private var pointer: CGPoint?
     @State private var dragStartHz: UInt64?
     @State private var dragHz: UInt64?
+    @State private var problem: String?
 
     var body: some View {
         GeometryReader { geo in
@@ -28,9 +29,15 @@ struct WaterfallView: View {
                     onPointer: { pointer = $0 },
                     onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
                     onDrag: { p, ended in drag(p, ended: ended, columns: columns) },
-                    onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) }
+                    onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) },
+                    onProblem: { problem = $0 }
                 )
                 if let c = columns { overlays(columns: c, size: geo.size) }
+                if let problem {
+                    EmptyWords(headline: "No waterfall", detail: problem)
+                        .frame(maxWidth: 520)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .background(Theme.ground)
@@ -144,6 +151,8 @@ struct WaterfallMetalView: NSViewRepresentable {
     let onClick: (CGPoint) -> Void
     let onDrag: (CGPoint, Bool) -> Void
     let onScroll: (CGFloat) -> Void
+    /// Called once, off the update pass, if the renderer could not come up.
+    let onProblem: (String) -> Void
 
     func makeCoordinator() -> WaterfallRenderer { WaterfallRenderer() }
 
@@ -174,6 +183,11 @@ struct WaterfallMetalView: NSViewRepresentable {
         view.onClick = onClick
         view.onDrag = onDrag
         view.onScroll = onScroll
+        if let problem = r.problem, !r.problemReported {
+            r.problemReported = true
+            let report = onProblem
+            Task { @MainActor in report(problem) }
+        }
     }
 }
 
@@ -273,17 +287,34 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     var viewLo: Float = 0
     var viewHi: Float = 1
     var floorDB: Float = .nan
+    /// Why there is no pipeline, in the compiler's or Metal's words; nil when it came up.
+    private(set) var problem: String?
+    var problemReported = false
+    private(set) var frames = 0
 
     override init() {
         device = MTLCreateSystemDefaultDevice()
         queue = device?.makeCommandQueue()
         super.init()
-        guard let device, let library = try? device.makeDefaultLibrary(bundle: .module) else { return }
-        let desc = MTLRenderPipelineDescriptor()
-        desc.vertexFunction = library.makeFunction(name: "waterfall_vertex")
-        desc.fragmentFunction = library.makeFunction(name: "waterfall_fragment")
-        desc.colorAttachments[0].pixelFormat = .bgra8Unorm
-        pipeline = try? device.makeRenderPipelineState(descriptor: desc)
+        guard let device else {
+            fail("no Metal device")
+            return
+        }
+        do {
+            let library = try device.makeLibrary(source: WaterfallShader.source, options: nil)
+            let desc = MTLRenderPipelineDescriptor()
+            desc.vertexFunction = library.makeFunction(name: "waterfall_vertex")
+            desc.fragmentFunction = library.makeFunction(name: "waterfall_fragment")
+            desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+            pipeline = try device.makeRenderPipelineState(descriptor: desc)
+        } catch {
+            fail("\(error)")
+        }
+    }
+
+    private func fail(_ why: String) {
+        problem = "The waterfall shader did not load: \(why)"
+        FileHandle.standardError.write(Data((problem! + "\n").utf8))
     }
 
     nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -329,6 +360,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         enc.endEncoding()
         cmd.present(drawable)
         cmd.commit()
+        frames += 1
         signposter.endInterval("draw", state)
     }
 

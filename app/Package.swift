@@ -59,9 +59,6 @@ targets.append(
         dependencies: ["LeylineClient"],
         path: "Sources/LeylineApp",
         exclude: ["Info.plist"],
-        // The waterfall shader: SwiftPM compiles `.metal` resources into the target's
-        // `default.metallib`, loaded through `Bundle.module` (docs/plans/app.md, APP-2).
-        resources: [.process("Resources")],
         swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
     )
 )

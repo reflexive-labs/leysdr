@@ -11,7 +11,6 @@ struct MainWindow: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        @Bindable var session = session
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 SidebarView()
@@ -28,7 +27,6 @@ struct MainWindow: View {
             ToolbarItem(placement: .primaryAction) { DeviceChip() }
         }
         .toolbarBackground(Theme.chrome, for: .windowToolbar)
-        .sheet(isPresented: $session.frequencyEntryShown) { FrequencyEntry() }
         .preferredColorScheme(.dark)
     }
 
@@ -96,48 +94,5 @@ struct NoticeStrip: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Theme.chrome.opacity(0.94))
         .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
-    }
-}
-
-/// ⌘L: a field to type a frequency into. The only place a frequency is typed.
-struct FrequencyEntry: View {
-    @Environment(AppSession.self) private var session
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-    @State private var problem: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(text: "Enter frequency")
-            TextField("146.520", text: $text)
-                .textFieldStyle(.plain)
-                .font(Theme.Font.frequency)
-                .foregroundStyle(Theme.ink)
-                .padding(8)
-                .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.borderFocus))
-                .onSubmit(submit)
-            Text(problem ?? "MHz unless you say otherwise: 146.52, 162550k, 1090MHz")
-                .font(Theme.Font.footnote)
-                .foregroundStyle(problem == nil ? Theme.inkFaintest : Theme.recording)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Tune", action: submit).keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(16)
-        .frame(width: 360)
-        .background(Theme.chrome)
-        .onAppear { if let hz = session.tunedHz { text = Frequency.fieldParts(hz).major } }
-    }
-
-    private func submit() {
-        guard let hz = Frequency.parse(text) else {
-            problem = "That is not a frequency"
-            return
-        }
-        session.tune(to: hz)
-        dismiss()
     }
 }

@@ -62,9 +62,14 @@ final class SpectrumFeed {
 
     private(set) var latest: [Float] = []
     private(set) var hold = MaxHold()
-    /// The noise floor the ramp and the spectrum's axis are keyed from: the median of the newest
-    /// row, smoothed so a burst does not move the whole picture.
+    /// The noise floor the ramp and the spectrum's axis are keyed from. Held, not chased: it is
+    /// taken from the smoothed median and re-taken only when that drifts more than `floorSlackDB`
+    /// from it, because an axis that follows every wobble of the median makes the max-hold trace
+    /// throb. Reset on a retune.
     private(set) var floorDB: Float = .nan
+    /// The median of the newest row, smoothed over about ten rows.
+    private(set) var medianDB: Float = .nan
+    static let floorSlackDB: Float = 4
     private(set) var rows = 0
     private(set) var gaps = 0
     private(set) var descriptor: Leyline_V1_StreamDescriptor?
@@ -112,6 +117,7 @@ final class SpectrumFeed {
     func resetFolds() {
         hold.reset()
         floorDB = .nan
+        medianDB = .nan
     }
 
     private func ingest(_ row: FFTRow) {
@@ -120,7 +126,8 @@ final class SpectrumFeed {
         if hold.levelsDB.count != row.levelsDB.count { hold.reset() }
         hold.fold(row.levelsDB)
         let median = SpectrumFold.medianDB(row.levelsDB)
-        floorDB = floorDB.isNaN ? median : floorDB + (median - floorDB) * 0.1
+        medianDB = medianDB.isNaN ? median : medianDB + (median - medianDB) * 0.1
+        if floorDB.isNaN || abs(medianDB - floorDB) > Self.floorSlackDB { floorDB = medianDB.rounded() }
         waterfall.append(row.levelsDB, seq: row.seq)
         rows += 1
         if row.gap != nil { gaps += 1 }

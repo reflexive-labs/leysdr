@@ -45,6 +45,7 @@ final class AppSession {
     // View state that is the window's alone: presentation, never radio truth.
     var maxHold = true
     var zoom = 1
+    /// Set by ⌘L: the transport field takes focus and edits in place.
     var frequencyEntryShown = false
     var deviceMenuShown = false
     /// One sentence about the last thing that happened, or nil.
@@ -293,12 +294,28 @@ final class AppSession {
             Task { await writes.centerHz(hz, capture: cap.captureID) }
             Task { await writes.offsetHz(0, channel: ch.channelID) }
             spectrum.resetFolds()
-            selectedBandID = nil
+            followBand(from: tunedHz, to: hz, channel: ch)
             return
         }
         let offset = Int64(hz) - Int64(cap.centerHz)
         Task { await writes.offsetHz(offset, channel: ch.channelID) }
+        followBand(from: tunedHz, to: hz, channel: ch)
+    }
+
+    /// Crossing into another band takes that band's mode and width, because nobody chooses a
+    /// demodulator to hear a station; inside one band the channel keeps whatever was chosen.
+    private func followBand(from oldHz: UInt64?, to hz: UInt64, channel ch: Leyline_V1_Channel) {
+        guard let writes else { return }
+        let was = oldHz.flatMap { Bands.band(containing: $0, in: bands) }
+        let now = Bands.band(containing: hz, in: bands)
         if let b = band, !b.contains(hz) { selectedBandID = nil }
+        guard let now, now.id != was?.id else { return }
+        let mode = now.mode(at: hz)
+        if ch.mode != mode {
+            Task { await writes.mode(mode, channel: ch.channelID) }
+            notice = "\(now.name): \(mode.word) at \(Frequency.width(now.bandwidthHz))"
+        }
+        if ch.bandwidthHz != now.bandwidthHz { Task { await writes.bandwidthHz(now.bandwidthHz, channel: ch.channelID) } }
     }
 
     private func tuneCreating(hz: UInt64) async {

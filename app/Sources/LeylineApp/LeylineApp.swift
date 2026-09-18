@@ -44,15 +44,18 @@ struct TuneCommands: Commands {
     let session: AppSession
 
     var body: some Commands {
+        // The arrow and space equivalents are held back while the frequency field is being
+        // typed into, or the menu would take the keys before the field does.
+        let typing = session.frequencyEntryShown
         CommandMenu("Tune") {
             Button("Tune Up") { session.step(1) }
-                .keyboardShortcut(.rightArrow, modifiers: [])
+                .keyboardShortcut(.rightArrow, modifiers: []).disabled(typing)
             Button("Tune Down") { session.step(-1) }
-                .keyboardShortcut(.leftArrow, modifiers: [])
+                .keyboardShortcut(.leftArrow, modifiers: []).disabled(typing)
             Button("Fine Tune Up") { session.step(1, fine: true) }
-                .keyboardShortcut(.rightArrow, modifiers: [.shift])
+                .keyboardShortcut(.rightArrow, modifiers: [.shift]).disabled(typing)
             Button("Fine Tune Down") { session.step(-1, fine: true) }
-                .keyboardShortcut(.leftArrow, modifiers: [.shift])
+                .keyboardShortcut(.leftArrow, modifiers: [.shift]).disabled(typing)
             Divider()
             Button("Enter Frequency…") { session.frequencyEntryShown = true }
                 .keyboardShortcut("l", modifiers: [.command])
@@ -76,7 +79,7 @@ struct TuneCommands: Commands {
             Button("Bookmark This Frequency") { session.bookmarkCurrent() }
                 .keyboardShortcut("d", modifiers: [.command])
             Button(session.isPlaying ? "Pause" : "Play") { Task { await session.togglePlay() } }
-                .keyboardShortcut(.space, modifiers: [])
+                .keyboardShortcut(.space, modifiers: []).disabled(typing)
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])
