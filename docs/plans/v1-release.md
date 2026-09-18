@@ -138,7 +138,7 @@ Decisions taken here without waiting, because there is one reasonable answer and
 | task | status | note |
 |---|---|---|
 | S1 latency chain | missing | needs the app and the shm ring; V1a |
-| S2 throughput | harness only | never run on target hardware against its criteria (D5) |
+| S2 throughput | done | measured and passed on an M4 Max, 2026-09-18: `docs/decisions/S2-throughput.md` |
 | S3 USB posture | decided, one host check open | `docs/decisions/S3-usb-posture.md:34-40` |
 | A.1 scaffold | partial | no App target, no MCP package, no Bubble Tea; the macOS CI job runs the Swift suite and the generation-drift check — Go tests and the e2e run on Linux only |
 | A.2 daemon lifecycle, A.3 fixtures | done | |

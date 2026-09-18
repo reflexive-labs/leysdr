@@ -133,8 +133,9 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   (MCP adapter, `ley mcp`) done for the tools the daemon can back, the rest waiting on the milestones
   `docs/plans/mcp.md` names; D.14 (terminal dashboard) not started; of D.15 (durable jobs, watch, transcripts) only kept decode
   jobs surviving a daemon restart is done.
-- Spikes: S3 (USB posture) decided in `docs/decisions/`; S2 (20 MSPS throughput) has a harness but no
-  measurement on target hardware yet; S1 (latency chain) waits for the app.
+- Spikes: S3 (USB posture) and S2 (20 MSPS throughput) decided in `docs/decisions/`; S2 sustained
+  the full rate for ten minutes on one fifth of a core, with no overruns and an allocation-free
+  sample path, so the all-Swift engine stands. S1 (latency chain) waits for the app.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
   audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
   with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered

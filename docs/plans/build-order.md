@@ -72,9 +72,13 @@ shape since D.13, and it waits behind the app rather than in front of it.
 - ~~C.12 recording, as `docs/design/recording.md` specifies it: the V0 story that was in every cut,
   the app's "start/stop recording from the UI", and the MCP `find_recordings` tool in one.~~
   **Done, 2026-09-18.**
-- S2 measured on the owner's Mac under Instruments against its criteria above, recorded as
-  `docs/decisions/S2-throughput.md`. A fail revisits the all-Swift decision before the app commits
-  to Swift on top of the engine; it needs no app code, so it is not the app's first task.
+- ~~S2 measured on the owner's Mac under Instruments against its criteria above, recorded as
+  `docs/decisions/S2-throughput.md`.~~ **Measured 2026-09-18 and passed on throughput and CPU:**
+  20 MSPS sustained 10.7 minutes, 0 overruns, 19.4% of one core, Accelerate kernels. The
+  all-Swift decision stands. The allocations criterion passed too, at **zero per block**: ten times
+  the DSP work in the same wall clock cost eleven more allocations, and a model of startup plus
+  elapsed time accounts for every allocation the process makes
+  (`scripts/hot-path-allocations.sh`). **The gate is closed; Milestone E may start.**
 
 **Decided not to gate on:**
 

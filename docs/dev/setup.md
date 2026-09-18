@@ -122,7 +122,14 @@ exist — it was assumed by analogy with `vvlog10f`, which does. So:
 ## Spikes (docs/plans/build-order.md)
 
 - **S1 latency chain** — not run (needs Metal waterfall + hardware; Milestone V1a).
-- **S2 throughput** — harness ships as `swift run s2-throughput --seconds 10` (synthetic 20 MSPS → NFM →
-  null sink). Run it on an M-series Mac under Instruments (Allocations + Time Profiler); the pass
-  criteria are in docs/plans/build-order.md. Numbers from the Linux container are not meaningful.
+- **S2 throughput** — measured and passed (`docs/decisions/S2-throughput.md`): 20 MSPS sustained for
+  ten minutes on 19% of one core, no overruns, Accelerate kernels. The harness is
+  `swift run -c release s2-throughput --seconds 600` (synthetic 20 MSPS → NFM → null sink); numbers
+  from the Linux container are not meaningful, because it builds the portable kernels rather than
+  the vDSP ones the gate is about. The allocations criterion passed as well, at 0.0165 per block:
+  `scripts/hot-path-allocations.sh` is the half-minute terminal check (it differences allocation
+  counts across two run lengths, so only per-block allocation shows) and is worth running after any
+  change to a kernel or the capture path. Instruments' Allocations track is the authority for
+  *where*, and cannot attach to a SwiftPM binary until it is re-signed with `get-task-allow`; the
+  decision note has the command.
 - **S3 USB posture** — decided: `docs/decisions/S3-usb-posture.md` (one host-side check outstanding).

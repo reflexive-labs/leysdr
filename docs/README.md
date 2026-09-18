@@ -65,7 +65,9 @@ changes the doc first.
 
 One decision each, dated, with what it costs and what would reopen it.
 [D2 licensing](decisions/D2-licensing.md) (everything ships open; engine GPL-3.0-or-later, all else
-Apache-2.0) and [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb now, IOUSBHost later).
+Apache-2.0), [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb now, IOUSBHost later)
+and [S2 throughput](decisions/S2-throughput.md) (20 MSPS on one fifth of a core: the all-Swift
+engine stands).
 
 ### Plans (`plans/`)
 
