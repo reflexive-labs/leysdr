@@ -26,7 +26,9 @@ mirror so nothing works only from Swift.
   Xcode-only entitlement flow would be the sign).
 - **Outside `engine/`.** The licence gate maps `engine/*` to GPL; the app is Apache-2.0
   (`../decisions/D2-licensing.md`) and depends on the engine package for `LeylineProto` alone.
-  `make license-check` refuses an engine import under `app/`.
+  `make license-check` refuses an engine import under `app/`. 2026-09-18: the generated contract
+  moved to its own package at `swift/LeylineProto`, so the app depends on that and neither client
+  depends on the engine package.
 - **Swift 6 language mode.** The engine builds in Swift 5 mode for its history; the app starts
   in 6, so an actor-isolation mistake is an error here, not a warning to read past.
 - **The mirror is one `@MainActor` object, and the app's session is the `@Observable` one.**

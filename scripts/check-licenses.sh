@@ -8,10 +8,10 @@
 #   scripts/check-licenses.sh          check
 #   scripts/check-licenses.sh --fix    add the SPDX line to hand-written files that lack it
 #
-# Licence by path: engine/ is GPL-3.0-or-later (it links librtlsdr); everything else is Apache-2.0;
-# engine/Sources/LeylineProto is generated from proto/ and keeps the protos' Apache-2.0. Generated
-# files (go/gen, LeylineProto) inherit the line from their .proto, so `make proto` refreshes them and
-# --fix never touches them.
+# Licence by path: engine/ is GPL-3.0-or-later (it links librtlsdr); everything else is Apache-2.0,
+# the generated contract in swift/LeylineProto included — it lives outside engine/ so the licence
+# boundary is a directory boundary. Generated files (go/gen, LeylineProto) inherit the line from
+# their .proto, so `make proto` refreshes them and --fix never touches them.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -28,12 +28,11 @@ bad() { say "license-check: $*"; fail=1; }
 
 expected_licence() {
   case "$1" in
-    engine/Sources/LeylineProto/*) echo Apache-2.0 ;;
     engine/*) echo GPL-3.0-or-later ;;
     *) echo Apache-2.0 ;;
   esac
 }
-is_generated() { case "$1" in go/gen/*|engine/Sources/LeylineProto/*) return 0 ;; *) return 1 ;; esac; }
+is_generated() { case "$1" in go/gen/*|swift/LeylineProto/Sources/*) return 0 ;; *) return 1 ;; esac; }
 comment_prefix() {
   case "$1" in
     *.go|*.swift|*.proto|*.h|*.modulemap) echo '//' ;;
@@ -110,10 +109,11 @@ while read -r _ name _ file; do
   cmp -s "$src" "third_party/licenses/$file" || bad "$name: third_party/licenses/$file differs from the module's own licence file ($src)"
 done < <(grep -v '^#' "$manifest" | awk 'NF==4 && $1=="go"')
 
-# 5. The Swift packages engine/Package.resolved and app/Package.resolved pin equal the manifest
-#    (the app resolves the engine's graph again through its path dependency, plus anything of its
-#    own); texts compared when the checkouts exist (after a swift build), skipped otherwise.
+# 5. The Swift packages the three Package.resolved files pin equal the manifest (each resolves the
+#    contract package's graph again through its path dependency, plus anything of its own); texts
+#    compared when the checkouts exist (after a swift build), skipped otherwise.
 resolved=(engine/Package.resolved)
+[ -f swift/LeylineProto/Package.resolved ] && resolved+=(swift/LeylineProto/Package.resolved)
 [ -f app/Package.resolved ] && resolved+=(app/Package.resolved)
 actual=$(cat "${resolved[@]}" | grep -o '"identity" *: *"[^"]*"' | sed 's/.*: *"//; s/"//' | sort -u)
 listed=$(rows swift)
@@ -124,9 +124,9 @@ for p in $(comm -13 <(printf '%s\n' "$actual") <(printf '%s\n' "$listed")); do
   bad "Swift package $p is in $manifest but not in ${resolved[*]}"
 done
 
-# 6. The app never links the engine: it depends on the engine package for the generated
-#    LeylineProto product only, so it stays a separate Apache-2.0 work beside the GPL daemon
-#    (docs/decisions/D2-licensing.md, "Licence assignment").
+# 6. The app never links the engine: it depends on swift/LeylineProto for the generated contract
+#    and on the engine package not at all, so it stays a separate Apache-2.0 work beside the GPL
+#    daemon (docs/decisions/D2-licensing.md, "Licence assignment").
 if git grep --untracked -nE '^\s*(@testable )?import (EngineCore|CRTLSDR|LeylineDaemon)\b' -- 'app/*.swift' >/dev/null 2>&1; then
   bad "app/ imports the engine: $(git grep --untracked -lE '^\s*(@testable )?import (EngineCore|CRTLSDR|LeylineDaemon)\b' -- 'app/*.swift' | tr '\n' ' ')(the app links LeylineProto only)"
 fi

@@ -12,8 +12,9 @@
 //                      evaluated on macOS, so `swift build` on Linux builds and tests the façade.
 //
 // The app is a peer client of the daemon (CLAUDE.md invariant 1) and a separate Apache-2.0 work
-// beside the GPL engine (docs/decisions/D2-licensing.md): it depends on the engine package for the
-// generated `LeylineProto` product only and never on `EngineCore`. `make license-check` refuses an
+// beside the GPL engine (docs/decisions/D2-licensing.md): it depends on the `swift/LeylineProto`
+// package for the generated contract and on the engine package not at all, so nothing GPL is in its
+// graph and nothing in the app can reach around the wire. `make license-check` refuses an
 // `import EngineCore` under app/.
 import PackageDescription
 
@@ -21,7 +22,7 @@ var targets: [Target] = [
     .target(
         name: "LeylineClient",
         dependencies: [
-            .product(name: "LeylineProto", package: "engine"),
+            .product(name: "LeylineProto", package: "LeylineProto"),
             .product(name: "GRPCCore", package: "grpc-swift-2"),
             .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
             .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
@@ -66,9 +67,9 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: products,
     dependencies: [
-        // The engine package, for its `LeylineProto` product (generated; `make proto`). The
-        // versions below are the engine's own pins, so the two packages resolve one graph.
-        .package(name: "engine", path: "../engine"),
+        // The generated contract (`make proto`), its own package outside engine/. The versions
+        // below are the engine's own pins, so every package resolves one graph.
+        .package(name: "LeylineProto", path: "../swift/LeylineProto"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.3"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.2"),
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.1"),

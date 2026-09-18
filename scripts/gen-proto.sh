@@ -6,8 +6,9 @@
 # Toolchain: everything except protoc itself comes from the repo and is installed into
 # .tools/<os>-<arch>/bin (gitignored) so the output never depends on what happens to be on PATH:
 #   - protoc-gen-go, protoc-gen-go-grpc: `tool` directives in go/go.mod (`go install tool`)
-#   - protoc-gen-swift, protoc-gen-grpc-swift-2: products of the engine package's resolved
-#     dependencies (engine/Package.resolved), built with `swift build` when a Swift toolchain is present
+#   - protoc-gen-swift, protoc-gen-grpc-swift-2: products of the LeylineProto package's resolved
+#     dependencies (swift/LeylineProto/Package.resolved), built with `swift build` when a Swift
+#     toolchain is present
 # protoc: the system one (Homebrew, apt, arduino/setup-protoc in CI). Any current version produces the
 # same code for these proto3 files; the Go plugins stamp the protoc version into a header comment,
 # which this script normalises. Real drift (a different descriptor or plugin) still fails proto-check.
@@ -36,15 +37,15 @@ echo "installing pinned Go plugins -> .tools/$HOST/bin (go/go.mod tool directive
 # Swift plugins: rebuilt when missing or when the resolved package versions change.
 SWIFT_PLUGINS=0
 if command -v swift >/dev/null; then
-  stamp="$(cksum engine/Package.resolved | awk '{print $1}')"
+  stamp="$(cksum swift/LeylineProto/Package.resolved | awk '{print $1}')"
   if [ ! -x "$TOOLS/protoc-gen-swift" ] || [ ! -x "$TOOLS/protoc-gen-grpc-swift-2" ] \
      || [ "$(cat "$ROOT/.tools/$HOST/swift-plugins.stamp" 2>/dev/null)" != "$stamp" ]; then
-    echo "building pinned Swift plugins -> .tools/$HOST/bin (engine/Package.resolved)"
-    (cd engine && swift build -c release --product protoc-gen-swift >/dev/null \
+    echo "building pinned Swift plugins -> .tools/$HOST/bin (swift/LeylineProto/Package.resolved)"
+    (cd swift/LeylineProto && swift build -c release --product protoc-gen-swift >/dev/null \
                && swift build -c release --product protoc-gen-grpc-swift-2 >/dev/null)
     # --show-bin-path resolves the per-triple directory; the .build/release symlink can point at
     # another host's build on a shared checkout.
-    bin="$(cd engine && swift build -c release --show-bin-path)"
+    bin="$(cd swift/LeylineProto && swift build -c release --show-bin-path)"
     cp "$bin/protoc-gen-swift" "$bin/protoc-gen-grpc-swift-2" "$TOOLS/"
     echo "$stamp" > "$ROOT/.tools/$HOST/swift-plugins.stamp"
   fi
@@ -59,8 +60,8 @@ protoc -I proto --descriptor_set_out=/dev/null "${PROTOS[@]}"
 
 # Generate into a scratch directory and replace the checked-in files only once protoc has
 # succeeded, so a failed run (missing plugin, bad proto) never leaves the tree without its
-# generated code. This matters on a shared checkout: the Swift package cannot even load without
-# engine/Sources/LeylineProto, and the plugins are built from that package.
+# generated code. This matters on a shared checkout: the LeylineProto package has no sources
+# without swift/LeylineProto/Sources/LeylineProto, and the plugins are built from that package.
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/leyline-gen.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 
@@ -79,7 +80,7 @@ rm -f go/gen/leyline/v1/*.pb.go
 cp "$OUT"/go/leyline/v1/*.pb.go go/gen/leyline/v1/
 
 if [ "$SWIFT_PLUGINS" = "1" ]; then
-  echo "generating Swift -> engine/Sources/LeylineProto"
+  echo "generating Swift -> swift/LeylineProto/Sources/LeylineProto"
   mkdir -p "$OUT/swift"
   protoc -I proto \
     --plugin=protoc-gen-swift="$TOOLS/protoc-gen-swift" --plugin=protoc-gen-grpc-swift-2="$TOOLS/protoc-gen-grpc-swift-2" \
@@ -87,8 +88,8 @@ if [ "$SWIFT_PLUGINS" = "1" ]; then
     --grpc-swift-2_out="$OUT/swift" --grpc-swift-2_opt=Visibility=Public \
     --grpc-swift-2_opt=Server=true --grpc-swift-2_opt=Client=true --grpc-swift-2_opt=FileNaming=DropPath \
     "${PROTOS[@]}"
-  mkdir -p engine/Sources/LeylineProto
-  rm -f engine/Sources/LeylineProto/*.pb.swift engine/Sources/LeylineProto/*.grpc.swift
-  cp "$OUT"/swift/*.pb.swift "$OUT"/swift/*.grpc.swift engine/Sources/LeylineProto/
+  mkdir -p swift/LeylineProto/Sources/LeylineProto
+  rm -f swift/LeylineProto/Sources/LeylineProto/*.pb.swift swift/LeylineProto/Sources/LeylineProto/*.grpc.swift
+  cp "$OUT"/swift/*.pb.swift "$OUT"/swift/*.grpc.swift swift/LeylineProto/Sources/LeylineProto/
 fi
 echo "done"

@@ -7,8 +7,13 @@ CLAUDE.md invariants apply throughout; this doc says *how* the engine keeps them
 ## Module map
 
 ```
-engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swift 5 language mode)
-├── Sources/LeylineProto      generated leyline.v1 messages + grpc-swift 2 stubs — never hand-edit (`make proto`)
+swift/LeylineProto/           SwiftPM package: generated leyline.v1 messages + grpc-swift 2 stubs —
+                              never hand-edit (`make proto`). Its own package outside engine/, so the
+                              Apache-2.0 contract is not inside the GPL directory and the app can
+                              depend on it without the engine (../decisions/D2-licensing.md).
+
+engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swift 5 language mode),
+                              depending on swift/LeylineProto for the contract
 ├── Sources/CRTLSDR           system-library shim over librtlsdr (brew install librtlsdr)
 ├── Sources/EngineCore        the engine. Proto-free: it never imports LeylineProto.
 │   ├── CoreProtocols.swift   the contract (hand-written)

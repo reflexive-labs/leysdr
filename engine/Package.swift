@@ -3,13 +3,16 @@
 // Leyline engine — SwiftPM package. See docs/dev/engine-internals.md for the module map.
 //
 // Targets:
-//   LeylineProto   generated leyline.v1 messages + grpc-swift 2 stubs (never hand-edit; `make proto`)
 //   CRTLSDR        system-library shim over librtlsdr (brew install librtlsdr)
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
 //   TestSupport    fakes shared by both test suites (test-only; no product depends on it)
 //   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
 //                  to proto, and the session and job stores hold proto messages as their own
 //                  record type
+//
+// The generated leyline.v1 contract is not a target here: it is the `swift/LeylineProto` package
+// this one depends on, so the Apache-2.0 contract sits outside the GPL directory
+// (docs/decisions/D2-licensing.md).
 //
 // The product is Mac-only. Platform-specific code (Accelerate, AVFoundation, IOKit, os_signpost) is
 // guarded with `#if canImport(...)` so the package also builds on Linux for CI/dev checks. The only
@@ -26,9 +29,9 @@ let package = Package(
         // A decoder plugin that decodes nothing, for the daemon's decode-job tests (DEC-4).
         .executable(name: "leyline-fake-decoder", targets: ["FakeDecoder"]),
         .library(name: "EngineCore", targets: ["EngineCore"]),
-        .library(name: "LeylineProto", targets: ["LeylineProto"]),
     ],
     dependencies: [
+        .package(name: "LeylineProto", path: "../swift/LeylineProto"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.3"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.2"),
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.1"),
@@ -44,15 +47,6 @@ let package = Package(
             providers: [.brew(["librtlsdr"]), .apt(["librtlsdr-dev"])]
         ),
         .target(
-            name: "LeylineProto",
-            dependencies: [
-                .product(name: "GRPCCore", package: "grpc-swift-2"),
-                .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
-                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-            ],
-            path: "Sources/LeylineProto"
-        ),
-        .target(
             name: "EngineCore",
             dependencies: [
                 "CRTLSDR",
@@ -64,7 +58,7 @@ let package = Package(
             name: "LeylineDaemon",
             dependencies: [
                 "EngineCore",
-                "LeylineProto",
+                .product(name: "LeylineProto", package: "LeylineProto"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
@@ -76,7 +70,7 @@ let package = Package(
         .executableTarget(
             name: "FakeDecoder",
             dependencies: [
-                "LeylineProto",
+                .product(name: "LeylineProto", package: "LeylineProto"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             path: "Sources/FakeDecoder"
@@ -105,7 +99,7 @@ let package = Package(
             dependencies: [
                 "LeylineDaemon",
                 "EngineCore",
-                "LeylineProto",
+                .product(name: "LeylineProto", package: "LeylineProto"),
                 "TestSupport",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),

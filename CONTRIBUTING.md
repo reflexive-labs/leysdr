@@ -18,7 +18,7 @@ design-doc change first, not a clever workaround. The ones people trip on:
   allocation, no locks held across calls, no `async`.
 - **Events carry the whole object, never a delta.** Reconnect is `GetState` plus resume from `seq`.
 - **The wire contract is generated; the engine contract is not.** Never hand-edit `go/gen` or
-  `engine/Sources/LeylineProto` (run `make proto`); never generate
+  `swift/LeylineProto` (run `make proto`); never generate
   `engine/Sources/EngineCore/CoreProtocols.swift`.
 - **Proto changes are additive within v1.** New fields get new numbers; reserved numbers stay
   reserved; nothing is renamed or retyped.

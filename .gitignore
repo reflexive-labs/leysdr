@@ -3,6 +3,7 @@
 
 # SwiftPM / Xcode
 engine/.build/
+swift/LeylineProto/.build/
 engine/Package.resolved.bak
 .swiftpm/
 DerivedData/

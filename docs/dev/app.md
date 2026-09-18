@@ -17,10 +17,10 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
-The package depends on the engine package (`.package(path: "../engine")`) for one product, the
-generated `LeylineProto`, and on the same grpc-swift and swift-protobuf versions the engine pins.
-It never imports `EngineCore`, `CRTLSDR` or `LeylineDaemon`: the app is a separate Apache-2.0
-work beside the GPL daemon (`../decisions/D2-licensing.md`), and `make license-check` refuses
+The package depends on the generated contract (`.package(path: "../swift/LeylineProto")`) and on
+the same grpc-swift and swift-protobuf versions the engine pins; it does not depend on the engine
+package at all. It never imports `EngineCore`, `CRTLSDR` or `LeylineDaemon`: the app is a separate
+Apache-2.0 work beside the GPL daemon (`../decisions/D2-licensing.md`), and `make license-check` refuses
 the import. DSP stays in the daemon (invariant 2); the app decodes bytes into pixels and nothing
 more.
 

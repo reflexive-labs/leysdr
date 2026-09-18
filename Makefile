@@ -52,7 +52,7 @@ proto:
 # Fails if generated code is stale relative to proto/.
 proto-check:
 	./scripts/gen-proto.sh
-	git diff --exit-code -- go/gen engine/Sources/LeylineProto
+	git diff --exit-code -- go/gen swift/LeylineProto/Sources
 
 version:
 	./scripts/gen-version.sh
@@ -133,11 +133,11 @@ eval: go swift fixtures
 		LEYLINE_FIXTURES=$(CURDIR)/fixtures LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
 		go run ./cmd/leyeval run --scenarios $(CURDIR)/evals/scenarios --out $(CURDIR)/evals/runs $(EVAL_ARGS)
 
-# The Mac app (docs/dev/app.md). One package at app/, depending on the engine package for the
-# generated LeylineProto product only. `swift test` in app/ would run the daemon-backed suite
-# too and silently skip it without LEYLINED_BIN, so the two targets name their suites: app-test
-# skips it, app-e2e is the only place it runs, with the daemon `make swift` built and the fixtures
-# the file device plays.
+# The Mac app (docs/dev/app.md). One package at app/, depending on swift/LeylineProto for the
+# generated contract and on the engine package not at all. `swift test` in app/ would run the
+# daemon-backed suite too and silently skip it without LEYLINED_BIN, so the two targets name their
+# suites: app-test skips it, app-e2e is the only place it runs, with the daemon `make swift` built
+# and the fixtures the file device plays.
 app:
 	cd app && swift build -c $(SWIFT_CONFIG)
 
@@ -161,4 +161,4 @@ lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 check: proto-check version-check license-check go-test race lint swift swift-test e2e app app-test app-e2e
 
 clean:
-	rm -rf go/bin engine/.build app/.build app/dist
+	rm -rf go/bin engine/.build swift/LeylineProto/.build app/.build app/dist

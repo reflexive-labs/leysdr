@@ -109,7 +109,8 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 | path | what |
 |---|---|
 | `proto/leyline/v1` | the contract: control, telemetry and bulk planes; jobs and resources |
-| `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks), `LeylineDaemon` (`leylined`: services, session store, jobs), generated `LeylineProto`, the `s2-throughput` spike harness |
+| `swift/LeylineProto` | SwiftPM package: the generated Swift contract (`make proto`), outside `engine/` so the Apache-2.0 code is outside the GPL directory and both Swift packages can depend on it |
+| `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks), `LeylineDaemon` (`leylined`: services, session store, jobs), the `s2-throughput` spike harness |
 | `go/` | Go module: `pkg/leyline` client library, `cmd/ley`, `cmd/leyfix` (fixture generator and analyser), `internal/fakedaemon` (an in-memory implementation of the contract the CLI tests run against), `internal/e2e` (`ley` driving a real `leylined`) |
 | `fixtures/` | generated IQ signals with expected demod outputs (`make fixtures`; gitignored) |
 | `docs/` | [`docs/README.md`](docs/README.md) is the map: `guide/` for using Leyline, `reference/` for `ley` and the contract, `design/` for why it is built this way, `dev/` for contributor contracts (engine internals, CLI style), `decisions/`, `plans/` |

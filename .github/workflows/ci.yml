@@ -102,7 +102,8 @@ jobs:
         run: make app app-test app-e2e app-bundle
       # Swift generation drift. The Go job proves go/gen is current; nothing else regenerates
       # LeylineProto, so a proto change that only regenerated Go would otherwise pass. The script
-      # builds the Swift plugins from engine/Package.resolved and the Go ones from go/go.mod.
+      # builds the Swift plugins from swift/LeylineProto/Package.resolved and the Go ones from
+      # go/go.mod.
       - uses: arduino/setup-protoc@v3
         with:
           version: "25.1"
@@ -110,4 +111,4 @@ jobs:
       - name: generated Swift code is current
         run: |
           REQUIRE_SWIFT=1 ./scripts/gen-proto.sh
-          git diff --exit-code -- engine/Sources/LeylineProto go/gen
+          git diff --exit-code -- swift/LeylineProto/Sources go/gen

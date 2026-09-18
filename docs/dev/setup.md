@@ -53,10 +53,11 @@ transcripts are plain text; this is for the colour.
 `scripts/gen-proto.sh` installs the pinned plugins into `.tools/<os>-<arch>/bin` (gitignored, per host so a
 checkout shared with a Linux container keeps separate binaries): `protoc-gen-go` and
 `protoc-gen-go-grpc` from the `tool` directives in `go/go.mod`, and `protoc-gen-swift` /
-`protoc-gen-grpc-swift-2` built from the engine package's resolved dependencies (`engine/Package.resolved`,
-rebuilt when that file changes). Nothing on your `PATH` influences the output, so `make proto-check` fails
-only on real drift. To bump a plugin: `cd go && go get -tool <module>@<version>` or update the engine's
-package dependency, then `make proto` and commit the regenerated code.
+`protoc-gen-grpc-swift-2` built from the `LeylineProto` package's resolved dependencies
+(`swift/LeylineProto/Package.resolved`, rebuilt when that file changes). Nothing on your `PATH`
+influences the output, so `make proto-check` fails only on real drift. To bump a plugin: `cd go &&
+go get -tool <module>@<version>` or update that package's dependency, then `make proto` and commit
+the regenerated code.
 
 ### Cutting a release
 
@@ -76,9 +77,9 @@ the licences.
 `make license-check` (part of `make check` and of CI) runs `scripts/check-licenses.sh`: every source
 file carries an `SPDX-License-Identifier` line matching its directory (GPL-3.0-or-later under
 `engine/`, Apache-2.0 everywhere else, the generated `LeylineProto` included because it inherits the
-line from the `.proto`), `third_party/licenses/MANIFEST.txt` equals what `go.mod` and
-`engine/Package.resolved` pull in, each vendored text still matches the module's own, `NOTICE`
-names every row, and nothing outside `engine/` imports copyleft code. `scripts/check-licenses.sh
+line from the `.proto` and lives outside `engine/`), `third_party/licenses/MANIFEST.txt` equals what
+`go.mod` and the three `Package.resolved` files pull in, each vendored text still matches the
+module's own, `NOTICE` names every row, and nothing outside `engine/` imports copyleft code. `scripts/check-licenses.sh
 --fix` adds a missing header to a new file. Adding a dependency means adding its manifest row,
 copying its licence text (and NOTICE, if it ships one) beside it, and naming it in `NOTICE`; the
 check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is the decision.
