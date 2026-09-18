@@ -110,16 +110,26 @@ while read -r _ name _ file; do
   cmp -s "$src" "third_party/licenses/$file" || bad "$name: third_party/licenses/$file differs from the module's own licence file ($src)"
 done < <(grep -v '^#' "$manifest" | awk 'NF==4 && $1=="go"')
 
-# 5. The Swift packages engine/Package.resolved pins equal the manifest; texts compared when the
-#    checkouts exist (after a swift build), skipped otherwise.
-actual=$(grep -o '"identity" *: *"[^"]*"' engine/Package.resolved | sed 's/.*: *"//; s/"//' | sort -u)
+# 5. The Swift packages engine/Package.resolved and app/Package.resolved pin equal the manifest
+#    (the app resolves the engine's graph again through its path dependency, plus anything of its
+#    own); texts compared when the checkouts exist (after a swift build), skipped otherwise.
+resolved=(engine/Package.resolved)
+[ -f app/Package.resolved ] && resolved+=(app/Package.resolved)
+actual=$(cat "${resolved[@]}" | grep -o '"identity" *: *"[^"]*"' | sed 's/.*: *"//; s/"//' | sort -u)
 listed=$(rows swift)
 for p in $(comm -23 <(printf '%s\n' "$actual") <(printf '%s\n' "$listed")); do
-  bad "Swift package $p is in engine/Package.resolved but not in $manifest"
+  bad "Swift package $p is in ${resolved[*]} but not in $manifest"
 done
 for p in $(comm -13 <(printf '%s\n' "$actual") <(printf '%s\n' "$listed")); do
-  bad "Swift package $p is in $manifest but not in engine/Package.resolved"
+  bad "Swift package $p is in $manifest but not in ${resolved[*]}"
 done
+
+# 6. The app never links the engine: it depends on the engine package for the generated
+#    LeylineProto product only, so it stays a separate Apache-2.0 work beside the GPL daemon
+#    (docs/decisions/D2-licensing.md, "Licence assignment").
+if git grep --untracked -nE '^\s*(@testable )?import (EngineCore|CRTLSDR|LeylineDaemon)\b' -- 'app/*.swift' >/dev/null 2>&1; then
+  bad "app/ imports the engine: $(git grep --untracked -lE '^\s*(@testable )?import (EngineCore|CRTLSDR|LeylineDaemon)\b' -- 'app/*.swift' | tr '\n' ' ')(the app links LeylineProto only)"
+fi
 while read -r _ name _ file; do
   src=$(first_of engine/.build/checkouts/"$name"/LICENSE*)
   [ -n "$src" ] || continue

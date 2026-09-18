@@ -42,6 +42,7 @@ Contributors and coding agents. Read first, in this order:
 | [CLI style](dev/cli-style.md) | changing anything a `ley` user sees: colour, streams, glyphs, layout, the frozen contracts |
 | [Release checklist](dev/release-checklist.md) | tagging a release: the mechanical gate, licence obligations, the acceptance pass on a real dongle |
 | [Agent evals](dev/evals.md) | measuring an agent's use of `ley mcp` against fixtures: running `leyeval`, reading a transcript, adding a scenario and its checks |
+| [App internals](dev/app.md) | touching the Mac app: the `app/` package, the client façade (identity, mirror, coalescer, streams), building, bundling and testing it against the daemon |
 
 ### Why it is built this way (`design/`)
 
@@ -81,7 +82,9 @@ What is being built, in what order, and the record of what each step found.
   sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
   [decoders](plans/decoders.md) (the plugin contract and APRS first; the other four drivers follow),
   [MCP adapter](plans/mcp.md) (where the server lives and the order the tools land; the tools the
-  daemon can back landed as `ley mcp`, the rest wait on their milestones).
+  daemon can back landed as `ley mcp`, the rest wait on their milestones),
+  [the Mac app](plans/app.md) (Milestone E: the façade and the skeleton window landed as APP-1,
+  the spectrum and spike S1 are next).
 - [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit
   messages cite their item ids. Nothing in there is a work list any more.
 
@@ -107,6 +110,6 @@ docs/
 ├── reference/             lookup: cli, iq-files, clients
 ├── design/                why it is built this way, with the measured numbers
 ├── decisions/             dated decision records (D2, S3)
-├── dev/                   contributor contracts: setup, engine-internals, cli-style, release-checklist
+├── dev/                   contributor contracts: setup, engine-internals, cli-style, app, release-checklist
 └── plans/                 build-order, user-stories, live plans; archive/ for finished ones
 ```

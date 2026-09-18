@@ -4,6 +4,10 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app, begun: an `app/` package with the Swift client façade (`LeylineClient`: one
+  identity per process, the daemon's state as an observable mirror, coalesced writes, FFT and
+  telemetry streams) and a window that names the daemon's state and lists radios and channels.
+  `make app-run` opens it on a Mac; the spectrum is next (`docs/plans/app.md`).
 - `leylined`: a launchd daemon that owns RTL-SDR hardware (USB via librtlsdr, or a remote dongle over
   `rtl_tcp`) and IQ files, runs every stage of the signal path (capture, channelize, NFM/WFM/AM/USB/
   LSB/CW demodulation, squelch, spectrum, sub-audible tone detection, energy detection) and speaks

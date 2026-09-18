@@ -4,7 +4,7 @@ Native macOS SDR engine + app. Read `docs/design/*.md` before structural changes
 
 ## What this is
 
-A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` CLI/TUI, and MCP adapter as peer clients over one gRPC contract (`proto/leyline.v1`). Mac-only on purpose — use platform frameworks (vDSP, CoreAudio, Metal, IOUSBHost, os_signpost) without apology. Languages: **Swift** for the engine and Mac app; **Go** for terminal clients — `ley` is one Go binary (CLI verbs + terminal live views today: `spectrum --watch`, `waterfall`,
+A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`, its own SwiftPM package; `docs/dev/app.md`), `ley` CLI/TUI, and MCP adapter as peer clients over one gRPC contract (`proto/leyline.v1`). Mac-only on purpose — use platform frameworks (vDSP, CoreAudio, Metal, IOUSBHost, os_signpost) without apology. Languages: **Swift** for the engine and Mac app; **Go** for terminal clients — `ley` is one Go binary (CLI verbs + terminal live views today: `spectrum --watch`, `waterfall`,
 `phosphor`; the dashboard is Milestone D.14) and the MCP adapter shares its Go client library. The Go clients are the living proof of the cross-language contract; never let a feature ship that only works from Swift.
 
 ## Invariants — do not violate without a design-doc change
@@ -26,6 +26,12 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app, `ley` C
 ## Conventions
 
 - IDs: prefixed ULIDs (`cap_`, `chan_`, `job_`…). Resource URIs: `ley://<kind>/<id>`.
+- The app (`app/`) links `LeylineProto` and never `EngineCore` (`make license-check` refuses it); its
+  views render `AppSession`, a copy of `DaemonMirror`, and write through `WriteCoalescer`, never a
+  state of their own; its
+  tests run against `leylined --no-hardware` with a fixture as the radio (`make app-e2e`). Colours
+  and type live in `Theme.swift` only. Every contract addition the app needs ships with its `ley`
+  mirror.
 - `--json` CLI output is the standard proto3 JSON mapping — no custom shapes.
 - Proto changes: additive only within v1; run `protoc` validation in CI; reserved field numbers stay reserved.
 - Instrument the sample path with `os_signpost` from the start — the spikes depend on it.

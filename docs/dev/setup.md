@@ -17,8 +17,14 @@ git clone <this repo> leysdr && cd leysdr
 make go                              # → go/bin/ley, go/bin/leyfix
 make swift-release                   # → engine/.build/release/leylined
 make fixtures                        # IQ fixtures for hardware-free tests (make swift-test / make e2e need them)
-make check                           # what CI runs: proto drift, Go tests, lint, engine build + tests, e2e
+make check                           # what CI runs: proto drift, Go tests, lint, engine build + tests, e2e, the app
+make app-run                         # the Mac app, straight from app/ (or: open app/Package.swift in Xcode)
 ```
+
+The app is its own SwiftPM package at `app/`, depending on the engine package for the generated
+contract only; `make app` builds it, `make app-bundle` lays out `app/dist/Leyline.app`, and
+`make app-test app-e2e` runs its suites, the second against a `leylined --no-hardware` playing a
+fixture. [App internals](app.md) is the page for working on it.
 
 `make check` never skips silently: `swift-test` depends on `fixtures` so the fixture round-trips run,
 and `make e2e` builds `ley` and `leylined` and drives the daemon over UDS (`go/internal/e2e`, which
@@ -81,6 +87,11 @@ check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is t
 
 - Go side: `make go go-test lint`. `ley` is tested against `go/internal/fakedaemon`, an in-memory
   implementation of the contract.
+- App side: `make app app-test app-e2e` builds the client façade (`app/`, the `LeylineClient`
+  target) and runs its suites against the Linux-built daemon; the SwiftUI target is declared only
+  on macOS, so nothing under `app/Sources/LeylineApp` is compiled here (the same blind spot as
+  Accelerate below). `make app-e2e` needs the same `LD_LIBRARY_PATH` as `make e2e`: the tests
+  spawn `leylined` themselves.
 - Swift side: the package builds on Linux with a Swift 6.2 toolchain and `librtlsdr-dev`
   (`apt install librtlsdr-dev`, or the header+stub `.so` the container uses). Accelerate/AVFoundation
   code is compiled out; the portable DSP kernels run the DSP tests and the daemon's control plane
@@ -121,7 +132,8 @@ exist — it was assumed by analogy with `vvlog10f`, which does. So:
 
 ## Spikes (docs/plans/build-order.md)
 
-- **S1 latency chain** — not run (needs Metal waterfall + hardware; Milestone V1a).
+- **S1 latency chain** — not run; it is APP-2 in `docs/plans/app.md` (the Metal waterfall over the
+  gRPC FFT stream, signposts on both ends, a dongle on the Mac).
 - **S2 throughput** — measured and passed (`docs/decisions/S2-throughput.md`): 20 MSPS sustained for
   ten minutes on 19% of one core, no overruns, Accelerate kernels. The harness is
   `swift run -c release s2-throughput --seconds 600` (synthetic 20 MSPS → NFM → null sink); numbers

@@ -99,6 +99,10 @@ shape since D.13, and it waits behind the app rather than in front of it.
 
 ## Milestone E — the Mac app
 
+Started 2026-09-18; the live plan is `docs/plans/app.md` (items APP-1 to APP-7 are E.1 to E.7,
+with what each landed). E.1 is done: the `app/` package, the client façade and its tests against
+the real daemon, the skeleton window, `make app*`, CI and the bundle script (`docs/dev/app.md`).
+
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine
 (`docs/decisions/D2-licensing.md`). Its tests run against the real daemon with `--no-hardware` and a

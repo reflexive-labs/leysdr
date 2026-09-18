@@ -135,7 +135,10 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   jobs surviving a daemon restart is done.
 - Spikes: S3 (USB posture) and S2 (20 MSPS throughput) decided in `docs/decisions/`; S2 sustained
   the full rate for ten minutes on one fifth of a core, with no overruns and an allocation-free
-  sample path, so the all-Swift engine stands. S1 (latency chain) waits for the app.
+  sample path, so the all-Swift engine stands. S1 (latency chain) is the app's first spectrum.
+- Milestone E (the Mac app): E.1 done -- the `app/` package, a Swift client façade tested against
+  the real daemon (`docs/dev/app.md`), and a window that names the daemon's state and lists what is
+  tuned. No spectrum yet: that is E.2, with spike S1 (`docs/plans/app.md`).
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
   audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
   with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered

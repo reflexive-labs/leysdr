@@ -42,3 +42,7 @@ rf-captures/
 # Scratch: pasted screenshots and other working files, not repo content.
 tmp/
 evals/runs/
+
+# The app package's build products and the assembled bundle (scripts/bundle-app.sh)
+app/.build/
+app/dist/

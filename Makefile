@@ -13,6 +13,12 @@
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
+#   make app        build the Mac app package (app/): the app and the client façade on macOS, the
+#                   façade alone on Linux, where the SwiftUI target is not declared
+#   make app-test   the façade's unit tests (no daemon)
+#   make app-e2e    the façade against a locally built leylined --no-hardware playing a fixture
+#   make app-run    macOS: run the app straight from the package (no bundle, no signature)
+#   make app-bundle macOS: assemble and sign app/dist/Leyline.app (scripts/bundle-app.sh)
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
@@ -36,9 +42,9 @@ TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
 
-.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e eval lint check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test race swift swift-release swift-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint check clean install-decoders
 
-all: go swift
+all: go swift app
 
 proto:
 	./scripts/gen-proto.sh
@@ -127,10 +133,32 @@ eval: go swift fixtures
 		LEYLINE_FIXTURES=$(CURDIR)/fixtures LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
 		go run ./cmd/leyeval run --scenarios $(CURDIR)/evals/scenarios --out $(CURDIR)/evals/runs $(EVAL_ARGS)
 
+# The Mac app (docs/dev/app.md). One package at app/, depending on the engine package for the
+# generated LeylineProto product only. `swift test` in app/ would run the daemon-backed suite
+# too and silently skip it without LEYLINED_BIN, so the two targets name their suites: app-test
+# skips it, app-e2e is the only place it runs, with the daemon `make swift` built and the fixtures
+# the file device plays.
+app:
+	cd app && swift build -c $(SWIFT_CONFIG)
+
+app-test:
+	cd app && swift test --skip LeylineClientDaemonTests
+
+app-e2e: swift fixtures
+	cd app && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" \
+		LEYLINE_FIXTURES=$(CURDIR)/fixtures swift test --filter LeylineClientDaemonTests
+
+app-run:
+	@[ "$$(uname -s)" = Darwin ] || { echo "the app runs on the Mac" >&2; exit 2; }
+	cd app && swift run -c $(SWIFT_CONFIG) LeylineApp
+
+app-bundle:
+	./scripts/bundle-app.sh $(BUNDLE_ARGS)
+
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 
-check: proto-check version-check license-check go-test race lint swift swift-test e2e
+check: proto-check version-check license-check go-test race lint swift swift-test e2e app app-test app-e2e
 
 clean:
-	rm -rf go/bin engine/.build
+	rm -rf go/bin engine/.build app/.build app/dist
