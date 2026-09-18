@@ -5,12 +5,14 @@
 // is M1 of docs/design/app-design-handoff.md: sidebar, spectrum, waterfall, transport bar, the
 // device menu, and a Tune menu that names every gesture (docs/plans/app.md, "The M1 cut").
 
+import AppKit
 import LeylineClient
 import LeylineProto
 import SwiftUI
 
 @main
 struct LeylineApp: App {
+    @NSApplicationDelegateAdaptor(Activation.self) private var activation
     @State private var session = AppSession()
 
     var body: some Scene {
@@ -23,6 +25,16 @@ struct LeylineApp: App {
         .defaultSize(width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height)
         .windowToolbarStyle(.unified)
         .commands { TuneCommands(session: session) }
+    }
+}
+
+/// A bare executable (`make app-run`, no bundle) is not activated by macOS: its window opens
+/// behind the terminal without focus or a Dock icon. This is the launch a bundle would get.
+final class Activation: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first?.makeKeyAndOrderFront(nil)
     }
 }
 
