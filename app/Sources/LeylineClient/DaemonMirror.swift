@@ -106,10 +106,16 @@ public struct MirrorState: Sendable, Equatable {
     public func device(_ id: String) -> Leyline_V1_DeviceDescriptor? { devices.first { $0.deviceID == id } }
     public func channels(in capture: String) -> [Leyline_V1_Channel] { channels.filter { $0.captureID == capture } }
     public func sinks(of channel: String) -> [Leyline_V1_Sink] { sinks.filter { $0.channelID == channel } }
-    /// A channel's absolute frequency: its capture's centre plus its offset.
+    /// A channel's absolute frequency: its capture's centre plus its offset, or nil when there is
+    /// no such frequency. Another client can retune a shared capture below this channel's negative
+    /// offset — the channel goes `OUT_OF_CAPTURE` and keeps the offset it was given
+    /// (`docs/dev/engine-internals.md`, "Control service") — and a channel below 0 Hz is not a
+    /// frequency, so it is reported absent rather than trapping the render that reads it.
     public func frequencyHz(of channel: Leyline_V1_Channel) -> UInt64? {
         guard let c = capture(channel.captureID) else { return nil }
-        return UInt64(Int64(c.centerHz) + channel.offsetHz)
+        let hz = Int64(c.centerHz) + channel.offsetHz
+        guard hz >= 0 else { return nil }
+        return UInt64(hz)
     }
 }
 

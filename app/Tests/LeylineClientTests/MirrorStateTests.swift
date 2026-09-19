@@ -86,6 +86,18 @@ final class MirrorStateTests: XCTestCase {
         XCTAssertEqual(s.rejections.last?.tag, UInt64(MirrorState.rejectionsKept + 4))
     }
 
+    func testFrequencyAddsOffsetAndIsAbsentBelowZero() {
+        var s = MirrorState()
+        s.apply(event(1, .capture(capture("cap_a", center: 146_520_000))))
+        s.apply(event(2, .channel(channel("chan_1", capture: "cap_a", offset: 100_000))))
+        XCTAssertEqual(s.frequencyHz(of: s.channel("chan_1")!), 146_620_000)
+
+        // Another client retunes the shared capture under the channel's negative offset: the sum
+        // is a frequency below 0 Hz, which no channel has, and reading it must not trap.
+        s.apply(event(3, .channel(channel("chan_1", capture: "cap_a", offset: -200_000_000))))
+        XCTAssertNil(s.frequencyHz(of: s.channel("chan_1")!))
+    }
+
     func testAnchorUpdatesItsCapture() {
         var s = MirrorState()
         s.apply(event(1, .capture(capture("cap_a"))))
