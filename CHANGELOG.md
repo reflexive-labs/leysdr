@@ -4,6 +4,11 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- A channel's `snr_db` is its power over the band's noise floor at the channel's width, the
+  number the Mac app's "over noise" and `ley tune`'s auto squelch already measured for themselves
+  from a spectrum row. It was the channel's power over its own running minimum, which on a
+  carrier that never stops is the carrier, so a -12 dBFS signal read 0 dB over noise in `ley`'s
+  `snr` column. NaN until the capture has read a row.
 - The window and `ley tune` name the failure states a newcomer hits instead of showing a dark
   waterfall: a signal within 3 dB of full scale ("lower the gain"), and nothing 15 dB above the
   noise floor, with the gain named as the thing to try when it is set by hand to its lowest and

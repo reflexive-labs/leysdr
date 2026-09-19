@@ -44,20 +44,25 @@ public actor DefaultChannelEngine: ChannelEngine {
     /// Absolute frequency the channel follows across retunes: `center + offset` at creation/update.
     private var absoluteHz: Int64
     private var sinkTable: [any AudioSink] = []
+    /// The capture's floor, handed to every core this engine builds; nil only in tests that run
+    /// a channel with no capture, whose meters then report NaN for `snrDB`.
+    private let floor: BandFloor?
     private var drainTask: Task<Void, Never>?
     private var subAudibleTask: Task<Void, Never>?
     private var closed = false
 
     /// Builds the first core synchronously; the capture engine registers `slot` afterwards.
     /// - Throws: `INVALID_ARGUMENT`, `OFFSET_OUT_OF_CAPTURE`, `MODE_UNSUPPORTED`.
-    public init(id: ChannelID = ChannelID(), captureID: CaptureID, captureRate: UInt64, centerHz: UInt64, config: ChannelConfig) throws {
+    public init(id: ChannelID = ChannelID(), captureID: CaptureID, captureRate: UInt64, centerHz: UInt64, config: ChannelConfig,
+                floor: BandFloor? = nil) throws {
         self.id = id
         self.captureID = captureID
         self.captureRate = captureRate
         self.centerHz = centerHz
+        self.floor = floor
         currentConfig = config
         absoluteHz = Int64(centerHz) + config.offsetHz
-        let core = try ChannelDSPCore(captureRate: captureRate, config: config, telemetry: telemetryQueue)
+        let core = try ChannelDSPCore(captureRate: captureRate, config: config, telemetry: telemetryQueue, floor: floor)
         slot = ChannelSlot(core: core)
         audioRateBox.store(core.audioRate, ordering: .relaxed)
         let queue = telemetryQueue
@@ -279,7 +284,7 @@ public actor DefaultChannelEngine: ChannelEngine {
         var cfg = currentConfig
         cfg.offsetHz = offsetHz
         currentConfig = cfg
-        let core = try ChannelDSPCore(captureRate: captureRate, config: cfg, telemetry: telemetryQueue)
+        let core = try ChannelDSPCore(captureRate: captureRate, config: cfg, telemetry: telemetryQueue, floor: floor)
         core.setSinks(sinkTable)
         audioRateBox.store(core.audioRate, ordering: .relaxed)
         slot.store(core)

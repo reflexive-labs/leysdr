@@ -330,7 +330,9 @@ public nonisolated struct Leyline_V1_Meter: Sendable {
   /// channel IQ power: what the squelch measures
   public var powerDbfs: Double = 0
 
-  /// NaN if noise floor not yet estimated
+  /// power_dbfs over the band's noise floor at the channel's width: the median bin of the
+  /// capture's spectrum plus 10*log10(bandwidth / bin width), the number the auto squelch
+  /// is measured from. NaN until the capture has read a row.
   public var snrDb: Double = 0
 
   public var squelchOpen: Bool = false

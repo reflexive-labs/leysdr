@@ -46,7 +46,7 @@ final class DSPKernelTests: XCTestCase {
         let iq = DSPTest.storage(DSPTest.fmTone(carrierHz: 100_000, audioHz: 1_000, deviationHz: 3_000, rate: 2_400_000, count: block))
         let chStore = SampleStorage(capacity: ch.maxOutput, format: .cf32)
         let outStore = SampleStorage(capacity: ch.maxOutput, format: .f32)
-        var meter = PowerMeter(rate: 48_000)
+        var meter = PowerMeter()
         var squelch = Squelch(thresholdDB: -40)
         let cap = CaptureID()
         var frames = 0

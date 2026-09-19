@@ -521,32 +521,14 @@ public enum DemodulatorFactory {
     }
 }
 
-/// Per-block power meter: mean power of a cf32 block in dBFS plus a running-minimum noise floor
-/// over a 5 s window (two half-window buckets). `snrDB` is NaN until 1 s of data has been seen.
+/// Per-block power meter: mean power of a cf32 block in dBFS. The floor a block is judged against
+/// is the capture's (`BandFloor`), not this meter's: until 2026-09-19 it kept a running minimum
+/// of its own block power, which on a carrier that never stops is the carrier.
 public struct PowerMeter {
-    public let rate: Double
-    /// Samples per half-window (window = 5 s).
-    private let bucketLength: UInt64
-    private var bucketSamples: UInt64 = 0
-    private var totalSamples: UInt64 = 0
-    private var currentMin: Float = .infinity
-    private var previousMin: Float = .infinity
     /// Most recent block power (dBFS); NaN before the first block.
     public private(set) var powerDBFS: Float = .nan
 
-    public init(rate: Double, windowSeconds: Double = 5) {
-        self.rate = rate
-        bucketLength = max(1, UInt64(rate * windowSeconds / 2))
-    }
-
-    /// Running-minimum block power (dBFS) over the window; `+inf` before any block.
-    public var floorDBFS: Float { min(currentMin, previousMin) }
-
-    /// `power − floor` in dB; NaN until 1 s of samples has been measured.
-    public var snrDB: Float {
-        guard Double(totalSamples) >= rate else { return .nan }
-        return powerDBFS - floorDBFS
-    }
+    public init() {}
 
     /// Measure one interleaved cf32 block. Allocation-free. Returns the block power in dBFS.
     @discardableResult
@@ -560,20 +542,10 @@ public struct PowerMeter {
         let mean = sum / Float(n)
         let db = mean > 0 ? 10 * log10f(mean) : -200
         powerDBFS = db
-        totalSamples &+= UInt64(n)
-        bucketSamples &+= UInt64(n)
-        if bucketSamples >= bucketLength {
-            previousMin = currentMin
-            currentMin = .infinity
-            bucketSamples = 0
-        }
-        if db < currentMin { currentMin = db }
         return db
     }
 
     public mutating func reset() {
-        bucketSamples = 0; totalSamples = 0
-        currentMin = .infinity; previousMin = .infinity
         powerDBFS = .nan
     }
 }

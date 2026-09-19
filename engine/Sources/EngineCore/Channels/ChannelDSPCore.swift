@@ -136,6 +136,11 @@ public final class ChannelDSPCore: @unchecked Sendable {
     /// which have no demodulator stage to tap.
     private let rawOut: SampleStorage?
     private var meter: PowerMeter
+    /// The capture's floor (`BandFloor`), or nil for a core run outside a capture, whose `snrDB`
+    /// is then NaN. `bandwidthDB` is `10·log10(bandwidth)`, fixed for the life of the core, so a
+    /// block's SNR is one atomic load and two subtractions.
+    private let floor: BandFloor?
+    private let bandwidthDB: Float
     private var squelch: Squelch
     private let squelchBits = Atomic<UInt32>(Float.nan.bitPattern)
     private let agcAuto = Atomic<Bool>(true)
@@ -152,10 +157,13 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private let squelchCloses = Atomic<UInt64>(0)
 
     /// - Throws: `INVALID_ARGUMENT`, `OFFSET_OUT_OF_CAPTURE`, `MODE_UNSUPPORTED` (from the demodulator).
-    public init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384) throws {
+    public init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384,
+                floor: BandFloor? = nil) throws {
         self.captureRate = captureRate
         self.config = config
         self.telemetry = telemetry
+        self.floor = floor
+        bandwidthDB = 10 * log10f(Float(Swift.max(1, config.bandwidthHz)))
         channelizer = try Channelizer(captureRate: captureRate, offsetHz: config.offsetHz, bandwidthHz: config.bandwidthHz,
                                       mode: config.mode, maxBlock: maxBlock)
         demodulator = DemodulatorFactory.make(mode: config.mode)
@@ -178,7 +186,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
         iqOut = SampleStorage(capacity: channelizer.maxOutput, format: .cf32)
         audioOut = SampleStorage(capacity: channelizer.maxOutput, format: .f32)
         rawOut = config.mode == .rawIQ ? nil : SampleStorage(capacity: channelizer.maxOutput, format: .f32)
-        meter = PowerMeter(rate: channelizer.outputRateHz)
+        meter = PowerMeter()
         squelch = Squelch(thresholdDB: Float(config.squelchDB))
         meterInterval = max(1, Int(channelizer.outputRateHz / 10))
         setSquelch(thresholdDB: config.squelchDB)
@@ -254,6 +262,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
         guard n > 0 else { return }
         iq.count = n
         let power = meter.measure(iq)
+        // Power over the band's floor at this channel's width; NaN until the capture has read a
+        // row. The squelch is not involved: it compares `power` to its own dBFS threshold.
+        let snr = floor.map { power - ($0.densityDBFS + bandwidthDB) } ?? .nan
         lastBlockTime = time
         squelch.thresholdDB = Float(bitPattern: squelchBits.load(ordering: .relaxed))
         // Track the transmission in progress: two compares, no branch on the common path. The block
@@ -261,16 +272,15 @@ public final class ChannelDSPCore: @unchecked Sendable {
         if squelch.isOpen {
             openSamples &+= UInt64(block.count)
             if !(power <= peakPowerDBFS) { peakPowerDBFS = power }
-            let snr = meter.snrDB
             if !(snr <= peakSNRDB) { peakSNRDB = snr }
         }
         if squelch.update(powerDB: power) {
-            var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: power, snrDB: meter.snrDB, squelchOpen: squelch.isOpen)
+            var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: power, snrDB: snr, squelchOpen: squelch.isOpen)
             if squelch.isOpen {
                 // Opening: start a fresh interval. This block belongs to it.
                 openSamples = UInt64(block.count)
                 peakPowerDBFS = power
-                peakSNRDB = meter.snrDB
+                peakSNRDB = snr
             } else {
                 rec.openSamples = openSamples
                 rec.peakPowerDBFS = peakPowerDBFS
@@ -329,7 +339,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
         samplesSinceMeter += n
         if samplesSinceMeter >= meterInterval {
             samplesSinceMeter -= meterInterval
-            var rec = ChannelTelemetryRecord(kind: .meter, time: time, powerDBFS: power, snrDB: meter.snrDB, squelchOpen: squelch.isOpen)
+            var rec = ChannelTelemetryRecord(kind: .meter, time: time, powerDBFS: power, snrDB: snr, squelchOpen: squelch.isOpen)
             if audioSamples > 0 {
                 // Full scale is 1.0, so RMS 1.0 is 0 dBFS. A silent interval is -inf, which the
                 // mapping layer floors; NaN stays NaN and means "not measured", which is different.
@@ -347,7 +357,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     }
 
     /// Start the channel over on a discontinuous stream: filter history, NCO phase, demodulator and
-    /// noise floor go, and so does the transmission in progress -- its sample count and peaks
+    /// last block power go, and so does the transmission in progress -- its sample count and peaks
     /// describe the stream before the gap, and a duration that spans dead air is a lie about the
     /// air. Call it only while no block is in flight (the device is stopped and the DSP thread
     /// drained); the state it touches belongs to the DSP thread.

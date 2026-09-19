@@ -437,6 +437,47 @@ final class ChannelTests: XCTestCase {
                           "audio level and channel power must be measured separately")
     }
 
+    /// `snrDB` is the channel's power over the band's floor at the channel's width -- the number
+    /// the Mac app's "over noise" and `ley tune`'s auto squelch compute from a spectrum row -- and
+    /// not over the channel's own running minimum, which on `nfm_tone`'s continuous carrier was the
+    /// carrier itself and read about 0 dB (`docs/plans/app.md`, APP-3, 2026-09-19). The fixture's
+    /// sidecar says what floor the generator spread under the tone, so the expected number is
+    /// `power - (noise + 10·log10(bandwidth / rate))`, to the 0.17 dB the median-of-a-Hann-row
+    /// estimate is known to sit high (`DSPSpectrumTests.testBandFloorIsTheRowMedianAsADensity`).
+    func testMeterSNRIsPowerOverTheBandFloorAtTheChannelWidth() async throws {
+        let path = try nfmTonePath()
+        let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
+        guard case let .object(generator)? = device.sidecar.generator, case let .number(noiseDBFS)? = generator["noise_dbfs"] else {
+            return XCTFail("nfm_tone.json names the noise floor its generator used")
+        }
+        let rate = UInt64(device.sidecar.sampleRate)
+        let capture = DefaultCaptureEngine(device: device, centerHz: UInt64(device.sidecar.centerHz), sampleRate: rate)
+        let bandwidthHz: UInt32 = 12_500
+        let channel = try await capture.addChannel(ChannelConfig(offsetHz: 100_000, bandwidthHz: bandwidthHz, mode: .nfm, squelchDB: -40)) as! DefaultChannelEngine
+        let collector = AudioCollector()
+        try await channel.attach(collector.sink)
+        let events = Task<[ChannelTelemetry], Never> {
+            var out: [ChannelTelemetry] = []
+            for await t in channel.telemetrySubscription().stream { out.append(t) }
+            return out
+        }
+        try await capture.start()
+        let deadline = Date().addingTimeInterval(10)
+        while collector.count < 48_000, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        await capture.stop()
+
+        let inBandFloor = noiseDBFS + 10 * log10(Double(bandwidthHz) / Double(rate))
+        var meters = 0
+        for e in await events.value {
+            guard case let .meter(_, power, snr, _, _, _) = e, !snr.isNaN else { continue }
+            meters += 1
+            XCTAssertGreaterThan(snr, 30, "a -20 dBFS tone over a -60 dBFS band is not 0 dB over noise")
+            XCTAssertEqual(snr, power - inBandFloor, accuracy: 2,
+                           "snr \(snr) should be power \(power) over the band floor \(inBandFloor) at \(bandwidthHz) Hz")
+        }
+        XCTAssertGreaterThanOrEqual(meters, 3, "the floor is read on the first block, so nearly every meter carries an SNR")
+    }
+
     /// The close edge of a squelch transition summarises the transmission that just ended: how long
     /// it ran and how loud it got. The open edge carries no summary, because a transmission still in
     /// progress has neither a duration nor a final peak, and a client must be able to tell that

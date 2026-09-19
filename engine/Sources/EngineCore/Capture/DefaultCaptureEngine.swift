@@ -189,7 +189,8 @@ public actor DefaultCaptureEngine: CaptureEngine {
     /// Creates a channel at the current rate/centre and registers its slot with the DSP thread.
     /// - Throws: `OFFSET_OUT_OF_CAPTURE`, `INVALID_ARGUMENT`, `MODE_UNSUPPORTED`.
     public func addChannel(_ config: ChannelConfig) async throws -> any ChannelEngine {
-        let engine = try DefaultChannelEngine(captureID: id, captureRate: sampleRate, centerHz: centerHz, config: config)
+        let engine = try DefaultChannelEngine(captureID: id, captureRate: sampleRate, centerHz: centerHz, config: config,
+                                              floor: core.floor)
         channelTable[engine.id] = engine
         channelOrder.append(engine.id)
         publishChannels()

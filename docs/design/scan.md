@@ -260,10 +260,11 @@ look at. A 150 kHz-wide carrier half outside `--band`'s edge reads tens of kHz l
 range fixes it, and the honest alternative -- reporting a centre from bins outside what was asked
 for -- would be worse.
 
-**SNR** is the peak bin's excess over the local floor, in dB, and it is a *spectral* SNR. The
-`Meter.snr_db` a listening channel reports is a *temporal* one — block power minus a five-second
-running minimum — and the two will not agree for the same signal. Both are on the wire; neither is
-quoted as the other.
+**SNR** is the peak bin's excess over the local floor, in dB, and it is a *spectral* SNR of one
+bin. The `Meter.snr_db` a listening channel reports is the channel's whole power over the band's
+median floor scaled to the channel's width (`docs/dev/engine-internals.md`, "Squelch and meters"),
+and the two will not agree for the same signal. Both are on the wire; neither is quoted as the
+other.
 
 ### Rejecting the IQ image
 

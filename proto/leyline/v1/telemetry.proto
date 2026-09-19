@@ -86,7 +86,10 @@ enum SubAudibleKind {
 message Meter {
   string channel_id = 1;
   double power_dbfs = 2;   // channel IQ power: what the squelch measures
-  double snr_db = 3;       // NaN if noise floor not yet estimated
+  // power_dbfs over the band's noise floor at the channel's width: the median bin of the
+  // capture's spectrum plus 10*log10(bandwidth / bin width), the number the auto squelch
+  // is measured from. NaN until the capture has read a row.
+  double snr_db = 3;
   bool squelch_open = 4;
   // What the listener actually hears, measured on the demodulated block rather
   // than on the channel IQ. A strong carrier with no modulation has a high

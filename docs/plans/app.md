@@ -110,17 +110,18 @@ waterfall, and the device menu with the gain slider (`DeviceMenuView.swift`). Th
 states landed 2026-09-19 (below). Built and running on the owner's Mac from 2026-09-18; every change
 since has gone through `make app-run` there, and the state on 2026-09-19 is a window that hears,
 tunes by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the dB axis
-and the squelch-keyed waterfall. Still open in M1: CHIRP import (APP-4), the S1 trace (APP-2), and
-the daemon's meter floor (above).
+and the squelch-keyed waterfall. Still open in M1: CHIRP import (APP-4) and the S1 trace (APP-2).
 
 Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
 `PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s
 (`engine/Sources/EngineCore/DSP/Demodulators.swift`), which on a carrier that never stops is
 the carrier and reads `0 dB over noise` under a −12 dBFS signal. The window shows power over
 the band's floor scaled to the channel's width instead (`AppSession.overNoiseDB`, the auto
-squelch's rule); `ley`'s `snr` column still shows the meter's number. Giving the meter a floor
-from the capture's spectrum rather than the channel's minimum is engine work for after M1, and
-until then the two clients disagree on a continuous carrier.
+squelch's rule); `ley`'s `snr` column showed the meter's number. Landed 2026-09-19: the capture
+reads its own floor (`BandFloor`, the median bin of a 1024-bin row as a density) and every
+channel's meter reports power over that floor at the channel's width, NaN until a row has been
+read (`../dev/engine-internals.md`, "Squelch and meters"). `overNoiseDB` and the meter now agree
+by construction, so the window's code is left as it is.
 
 Landed 2026-09-19, the named failure states: `FailureState` in the façade (`../dev/app.md`,
 "Failure states") names what the band's numbers show, from the feed's held floor and peak and

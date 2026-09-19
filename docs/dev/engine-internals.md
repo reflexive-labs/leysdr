@@ -140,8 +140,9 @@ interval (or a rewound timeline from a misbehaving device) can never stall rows.
 
 **Channels start over across a restart.** Alongside `expectNewAnchor()`, `DefaultCaptureEngine`
 calls `captureStreamRestarted()` on every channel before the stream starts, which resets that
-channel's `ChannelDSPCore`: filter history, NCO phase, demodulator, the meter's noise floor and the
-transmission in progress all go. The samples either side of the gap are not continuous, so filtering
+channel's `ChannelDSPCore`: filter history, NCO phase, demodulator, the meter's last block power and
+the transmission in progress all go, and the capture forgets its band floor (`BandFloor.reset`) so
+the first block of the new stream is read for a fresh one. The samples either side of the gap are not continuous, so filtering
 the first blocks against pre-gap history, judging them against a floor measured on the old stream,
 or reporting an open duration that spans the dead air would all describe air that was never heard.
 A squelch that was open when the reset lands gets a close record stamped with the last block the
@@ -269,7 +270,17 @@ Per block the channel computes mean power of the post-filter IQ in dBFS (`10·lo
 Squelch opens when power > threshold, closes when power < threshold − 2 dB (hysteresis). While
 closed the channel writes zeros to sinks so audio timing stays continuous. Meter cadence: every
 100 ms of samples, emit `.meter`; on state change emit `.squelch` with the exact block start time.
-SNR estimate: power − running minimum of block power (5 s window). Reported as NaN until 1 s of data.
+`snrDB` is the block's power over the band's floor at the channel's width: the capture's
+`BandFloor` reads a 1024-bin row of its own four times a second on the DSP thread (one transform
+and one selection per row; `CaptureDSPCore.processBlock` runs it before the channels so the first
+meter has a floor), takes the median bin as the floor per bin and publishes it as a density,
+dBFS per hertz, in one atomic; each channel adds `10·log10(bandwidth)` once per block. That is
+the same number the Mac app's "over noise" and `ley tune`'s auto squelch compute from a 2048-bin
+row (median bin plus `10·log10(bandwidth / bin width)`; the bin count cancels), so the meter and
+the clients agree by construction. NaN until a row has been read, which is the first block of a
+stream. Until 2026-09-19 the floor was the channel's own running minimum over 5 s, which on a
+carrier that never stops is the carrier, so a −12 dBFS signal read 0 dB over noise. The squelch
+never reads `snrDB`: it compares power to its threshold in dBFS.
 
 Telemetry records leave the DSP thread through `ChannelTelemetryQueue`, a fixed-capacity (64) ring
 with per-slot seqlock versions. Policy is drop-oldest: a full ring evicts the oldest unread record

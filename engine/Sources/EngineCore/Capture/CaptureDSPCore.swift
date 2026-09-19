@@ -40,6 +40,9 @@ public final class CaptureDSPCore: @unchecked Sendable {
     public let captureID: CaptureID
     public let ring: BlockRing
     public let ladder = DefaultSpectrumLadder()
+    /// The band's noise floor, read from this capture's own spectrum four times a second and
+    /// handed to every channel so its meter's `snrDB` is measured against the band, not itself.
+    public let floor = BandFloor()
     private let sampleRateBox: Atomic<UInt64>
     private let centerHzBox: Atomic<UInt64>
     private let tableLock = NSLock()
@@ -106,7 +109,11 @@ public final class CaptureDSPCore: @unchecked Sendable {
     /// Ask for a fresh anchor on the next delivered block (stream restart, rebound). That block
     /// also starts a new device epoch: its device index is rebased onto the capture timeline so
     /// committed `SampleTime`s keep increasing across the restart.
-    public func expectNewAnchor() { needsAnchor.store(true, ordering: .relaxed) }
+    public func expectNewAnchor() {
+        needsAnchor.store(true, ordering: .relaxed)
+        // The floor goes with the stream it was read from, for the reason the channels reset.
+        floor.reset()
+    }
 
     /// Capture-timeline index one past the last delivered sample. Diagnostics/tests.
     public var deliveredEnd: UInt64 { lastDeliveredEnd.load(ordering: .relaxed) }
@@ -276,13 +283,15 @@ public final class CaptureDSPCore: @unchecked Sendable {
         }
     }
 
-    /// One block through every channel, the ladder and every tap. Table snapshot: lock, copy, release.
+    /// One block through the floor, every channel, the ladder and every tap. Table snapshot:
+    /// lock, copy, release. The floor goes first so the first meter a channel stamps has one.
     @inline(__always)
     private func processBlock(_ block: SampleBuffer, at time: SampleTime) {
         tableLock.lock()
         let slots = channelSlots
         let tapTable = taps
         tableLock.unlock()
+        floor.observe(block, at: time, spanHz: sampleRate)
         for slot in slots {
             if let core = slot.load() { core.process(block: block, at: time) }
         }

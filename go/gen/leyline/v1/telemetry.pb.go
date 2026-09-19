@@ -542,11 +542,14 @@ func (x *SubAudible) GetHopsAgreeing() uint32 {
 
 // Fixed cadence while the channel is active (default 10 Hz, daemon-configured).
 type Meter struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId   string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	PowerDbfs   float64                `protobuf:"fixed64,2,opt,name=power_dbfs,json=powerDbfs,proto3" json:"power_dbfs,omitempty"` // channel IQ power: what the squelch measures
-	SnrDb       float64                `protobuf:"fixed64,3,opt,name=snr_db,json=snrDb,proto3" json:"snr_db,omitempty"`             // NaN if noise floor not yet estimated
-	SquelchOpen bool                   `protobuf:"varint,4,opt,name=squelch_open,json=squelchOpen,proto3" json:"squelch_open,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ChannelId string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	PowerDbfs float64                `protobuf:"fixed64,2,opt,name=power_dbfs,json=powerDbfs,proto3" json:"power_dbfs,omitempty"` // channel IQ power: what the squelch measures
+	// power_dbfs over the band's noise floor at the channel's width: the median bin of the
+	// capture's spectrum plus 10*log10(bandwidth / bin width), the number the auto squelch
+	// is measured from. NaN until the capture has read a row.
+	SnrDb       float64 `protobuf:"fixed64,3,opt,name=snr_db,json=snrDb,proto3" json:"snr_db,omitempty"`
+	SquelchOpen bool    `protobuf:"varint,4,opt,name=squelch_open,json=squelchOpen,proto3" json:"squelch_open,omitempty"`
 	// What the listener actually hears, measured on the demodulated block rather
 	// than on the channel IQ. A strong carrier with no modulation has a high
 	// power_dbfs and a low audio_dbfs; the two answer different questions.

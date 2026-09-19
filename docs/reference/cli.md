@@ -294,7 +294,8 @@ in the tuner's own blind spot, or the sweep was stopped early; a client that rep
 as searched would be claiming coverage nobody measured. `Scan.config.step_hz` is the advance the
 daemon chose; there is no `--step`, because the step geometry is what keeps the sweep free of blind
 spots. `ScanConfig.device_id` names the radio when there is more than one. `snr_db` here is *spectral* -- a bin against a spectral floor -- and will not agree
-numerically with `Meter.snr_db`, which is a block's power against a five-second running minimum.
+numerically with `Meter.snr_db`, which is a channel's whole power over the band's floor at the
+channel's width.
 Full design, with the measured numbers: `docs/design/scan.md`.
 
 While a sweep holds a radio it is the only thing tuning it: `CreateCapture`, `CreateChannel` and

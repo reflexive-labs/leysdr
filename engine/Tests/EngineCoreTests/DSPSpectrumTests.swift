@@ -153,16 +153,15 @@ final class DSPSpectrumTests: XCTestCase {
     }
 
     func testPowerMeterAndSquelch() {
-        var meter = PowerMeter(rate: 48_000)
+        var meter = PowerMeter()
         let tone = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 4800))
         let quiet = DSPTest.storage(DSPTest.complexTone(frequencyHz: 1_000, rate: 48_000, count: 4800, amplitude: 0.001))
+        XCTAssertTrue(meter.powerDBFS.isNaN, "nothing measured yet")
         XCTAssertEqual(meter.measure(tone.view()), 0, accuracy: 0.01)
-        XCTAssertTrue(meter.snrDB.isNaN) // < 1 s of data
         for _ in 0 ..< 10 { meter.measure(quiet.view()) }
         XCTAssertEqual(meter.powerDBFS, -60, accuracy: 0.01)
-        XCTAssertEqual(meter.floorDBFS, -60, accuracy: 0.01)
-        meter.measure(tone.view())
-        XCTAssertEqual(meter.snrDB, 60, accuracy: 0.05)
+        meter.reset()
+        XCTAssertTrue(meter.powerDBFS.isNaN)
 
         var squelch = Squelch(thresholdDB: -30)
         XCTAssertFalse(squelch.isOpen)
@@ -240,5 +239,53 @@ extension DSPSpectrumTests {
         let maxed = await ladder.subscribe(bins: 256, rowsPerSecond: 4, accumulation: .max, policy: .latestWins, sink: sink)
         XCTAssertEqual(maxed.looksPerRow, DefaultSpectrumLadder.maxLooksPerRow)
         XCTAssertEqual(maxed.accumulation, .max)
+    }
+
+    /// The band's floor is the median bin of a row turned into a density, so a channel of any
+    /// width can scale it and land on the number the clients compute from a 2048-bin row. On
+    /// white noise of total power P over a span of Fs the density is `P - 10·log10(Fs)` plus
+    /// 0.17 dB: the Hann window's 1.5-bin noise bandwidth (+1.76 dB) less the median of an
+    /// exponential distribution against its mean (-1.59 dB), both of which the clients' rows
+    /// carry too, because they read the same ladder.
+    func testBandFloorIsTheRowMedianAsADensity() {
+        let rate: UInt64 = 2_400_000
+        let noiseDBFS = -60.0
+        let floor = BandFloor()
+        XCTAssertTrue(floor.densityDBFS.isNaN, "no row yet")
+        XCTAssertTrue(floor.floorDBFS(bandwidthHz: 12_500).isNaN)
+        // Gaussian noise at -60 dBFS total complex power, seeded so the row is the same every run.
+        var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func uniform() -> Double {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return (Double(state >> 11) + 0.5) / Double(1 << 53)
+        }
+        let sigma = pow(10, noiseDBFS / 20) / 2.0.squareRoot()
+        var iq = [Float](repeating: 0, count: 16384 * 2)
+        for i in stride(from: 0, to: iq.count, by: 2) {
+            let r = (-2 * log(uniform())).squareRoot() * sigma
+            let theta = 2 * Double.pi * uniform()
+            iq[i] = Float(r * cos(theta))
+            iq[i + 1] = Float(r * sin(theta))
+        }
+        let block = DSPTest.storage(iq)
+        let cap = CaptureID()
+        floor.observe(block.view(), at: SampleTime(captureID: cap, sampleIndex: 0), spanHz: rate)
+        let expectedDensity = noiseDBFS - 10 * log10(Double(rate)) + 0.17
+        XCTAssertEqual(Double(floor.densityDBFS), expectedDensity, accuracy: 0.5)
+        // At a channel's width the floor is the in-band noise the fixture generator promises
+        // (`go/cmd/leyfix/catalog.go`, `inBandFloorDBFS`), to the same 0.17 dB.
+        let inBand = noiseDBFS + 10 * log10(12_500 / Double(rate))
+        XCTAssertEqual(Double(floor.floorDBFS(bandwidthHz: 12_500)), inBand + 0.17, accuracy: 0.5)
+        // A row is due four times a second; a block inside the interval is not read.
+        let quiet = DSPTest.storage([Float](repeating: 0, count: 16384 * 2))
+        floor.observe(quiet.view(), at: SampleTime(captureID: cap, sampleIndex: 16384), spanHz: rate)
+        XCTAssertEqual(Double(floor.densityDBFS), expectedDensity, accuracy: 0.5, "inside the interval the floor holds")
+        floor.observe(quiet.view(), at: SampleTime(captureID: cap, sampleIndex: rate / 4), spanHz: rate)
+        XCTAssertLessThan(floor.densityDBFS, -150, "a silent block read at the next due point moves the floor")
+        // A restart forgets the floor and reads the next block at once, whatever the schedule says.
+        floor.reset()
+        XCTAssertTrue(floor.densityDBFS.isNaN)
+        floor.observe(block.view(), at: SampleTime(captureID: cap, sampleIndex: rate / 4 + 16384), spanHz: rate)
+        XCTAssertEqual(Double(floor.densityDBFS), expectedDensity, accuracy: 0.5)
     }
 }
