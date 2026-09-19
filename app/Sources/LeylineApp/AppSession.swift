@@ -37,6 +37,11 @@ final class AppSession {
     /// writes and reconciles on the event).
     private(set) var requestedHz: UInt64?
     private var requestedAt = Date.distantPast
+    /// A centre write not yet confirmed by the capture's event; clicks in the meantime are
+    /// computed against it rather than the mirror's old centre.
+    private var centreInFlight: Int64?
+    private var creatingChannel = false
+    private var lastPan = Date.distantPast
 
     // Files both clients own.
     let bands: [Band] = Bands.plain
@@ -148,7 +153,7 @@ final class AppSession {
         state = m.state
         connection = m.connection
         if wasLive != isLive { log("session", isLive ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures" : "not live: \(connection)") }
-        if let r = requestedHz, r == tunedHz || Date().timeIntervalSince(requestedAt) > 1 { requestedHz = nil }
+        if let r = requestedHz, r == tunedHz || Date().timeIntervalSince(requestedAt) > 2 { requestedHz = nil }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted.
         if let id = captureID, state.capture(id) == nil { captureID = nil }
         if let id = channelID, state.channel(id) == nil { channelID = nil }
@@ -177,6 +182,7 @@ final class AppSession {
             captureID = cap.captureID
             if channelID == nil, let ch = state.channels(in: cap.captureID).first { channelID = ch.channelID }
             log("session", "adopted capture \(cap.captureID) at \(cap.centerHz) Hz, \(cap.sampleRate) S/s, channel \(channelID ?? "none")")
+            if channelID == nil { Task { await tuneCreating(hz: cap.centerHz) } }
             return
         }
         guard captureID == nil, hasRadio else { return }
@@ -297,35 +303,47 @@ final class AppSession {
 
     // MARK: Tuning
 
-    /// Every gesture ends here: an `offset_hz` write inside the capture, and outside it a centre
-    /// move first, which is the one thing that should feel slower. A drag never moves the
-    /// capture: it is clamped at the edge, because re-centring under a pointer that is still at
-    /// the edge moves the capture again on the next event, without end. A click, a step or a
-    /// typed frequency outside the span moves the centre so the target sits an eighth of the
-    /// span in from the edge it arrived through.
+    /// Every gesture ends here. Inside the capture it is one `offset_hz` write. Outside it the
+    /// centre moves first and the offset follows once the capture's event confirms the move:
+    /// the two in one tick land in the daemon's order, and an offset applied against the old
+    /// centre is a frequency nobody asked for, which then moves again. A click, a step or a
+    /// typed frequency puts the target an eighth of the span in from the edge it arrived
+    /// through. A drag held past the edge pans the capture an eighth of the span at a time, no
+    /// faster than every 300 ms, so the picture moves under the pointer at a pace a hand can
+    /// follow rather than a span per event.
     func tune(to hz: UInt64, dragging: Bool = false) {
         guard let cap = capture, let writes else { return }
         guard let ch = channel else {
-            Task { await tuneCreating(hz: hz) }
+            if !dragging, !creatingChannel { Task { await tuneCreating(hz: hz) } }
             return
         }
         let span = Int64(cap.sampleRate)
         let margin = Int64(ch.bandwidthHz)
-        let lo = Int64(cap.centerHz) - span / 2 + margin
-        let hi = Int64(cap.centerHz) + span / 2 - margin
+        let centre = centreInFlight ?? Int64(cap.centerHz)
+        let lo = centre - span / 2 + margin
+        let hi = centre + span / 2 - margin
         var target = Int64(hz)
-        var centre = Int64(cap.centerHz)
         if target < lo || target > hi {
             if dragging {
                 target = min(max(target, lo), hi)
-            } else {
-                centre = target < lo ? target + span * 3 / 8 : target - span * 3 / 8
-                if let r = device?.tuningRanges.first(where: { Int64($0.minHz) <= target && target <= Int64($0.maxHz) }) {
-                    centre = min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
+                if Date().timeIntervalSince(lastPan) > 0.3, centreInFlight == nil {
+                    lastPan = Date()
+                    let newCentre = clampCentre(target < lo ? centre - span / 8 : centre + span / 8, span: span)
+                    requestedHz = UInt64(max(0, target))
+                    requestedAt = Date()
+                    log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
+                    Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
+                    followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
+                    return
                 }
-                Task { await writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID) }
-                spectrum.resetFolds()
-                log("tune", "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz")
+            } else {
+                let newCentre = clampCentre(target < lo ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
+                requestedHz = UInt64(max(0, target))
+                requestedAt = Date()
+                log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
+                Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
+                followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
+                return
             }
         }
         let offset = target - centre
@@ -334,6 +352,57 @@ final class AppSession {
         Task { await writes.offsetHz(offset, channel: ch.channelID) }
         if !dragging { log("tune", "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")") }
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
+    }
+
+    /// A centre inside the radio's tuning range, with half a span to spare on each side.
+    private func clampCentre(_ centre: Int64, span: Int64) -> Int64 {
+        guard let r = device?.tuningRanges.first(where: { Int64($0.minHz) - span / 2 <= centre && centre <= Int64($0.maxHz) + span / 2 })
+            ?? device?.tuningRanges.first else { return max(0, centre) }
+        return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
+    }
+
+    /// The centre write, the wait for its event, then the offset.
+    private func retune(centre: Int64, offset: Int64, capture: String, channel: String) async {
+        guard let writes else { return }
+        centreInFlight = centre
+        spectrum.resetFolds()
+        await writes.centerHz(UInt64(max(0, centre)), capture: capture)
+        await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
+        if self.capture?.centerHz != UInt64(max(0, centre)) { log("tune", "centre \(centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)") }
+        centreInFlight = nil
+        await writes.offsetHz(offset, channel: channel)
+    }
+
+    /// No channel yet (a capture adopted from another client, or the first click): the centre
+    /// moves if it must, then a channel on the band's defaults, a sink, a measured squelch. One
+    /// at a time, because a drag with no channel once asked for thirteen.
+    private func tuneCreating(hz: UInt64) async {
+        guard let cap = capture, let writes, !creatingChannel else { return }
+        creatingChannel = true
+        defer { creatingChannel = false }
+        let mode = Bands.defaultMode(at: hz, in: bands)
+        let bw = Bands.band(containing: hz, in: bands).map { $0.mode(at: hz) == mode ? $0.bandwidthHz : mode.defaultBandwidthHz } ?? mode.defaultBandwidthHz
+        let span = Int64(cap.sampleRate)
+        var centre = Int64(cap.centerHz)
+        let target = Int64(hz)
+        if target < centre - span / 2 + Int64(bw) || target > centre + span / 2 - Int64(bw) {
+            centre = clampCentre(target < centre ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
+            log("tune", "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
+            centreInFlight = centre
+            await writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
+            await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
+            centreInFlight = nil
+        }
+        requestedHz = hz
+        requestedAt = Date()
+        do {
+            let ch = try await ensureChannel(in: cap, offsetHz: target - centre, mode: mode, bandwidthHz: bw)
+            try await ensureSink(on: ch)
+            await measureSquelch(channel: ch, sampleRate: cap.sampleRate, bandwidthHz: bw)
+        } catch {
+            lastError = LeylineError(error)
+            log("tune", "could not make a channel at \(hz) Hz: \(LeylineError(error))")
+        }
     }
 
     /// Crossing into another band takes that band's mode and width, because nobody chooses a
@@ -358,6 +427,7 @@ final class AppSession {
     func apply(mode: Leyline_V1_DemodMode, bandwidthHz: UInt32, to ch: Leyline_V1_Channel) async {
         guard let writes else { return }
         let id = ch.channelID
+        await widenCapture(for: bandwidthHz)
         if ch.mode == mode {
             if ch.bandwidthHz != bandwidthHz { await writes.bandwidthHz(bandwidthHz, channel: id) }
             return
@@ -383,24 +453,25 @@ final class AppSession {
         }
     }
 
+    /// A channel needs room: the capture is widened to the smallest rate the radio offers that
+    /// holds the width with a quarter to spare, and the move is confirmed before the channel is
+    /// touched. WFM at 200 kHz on a 250 kS/s capture was refused for want of this.
+    private func widenCapture(for bandwidthHz: UInt32) async {
+        guard let cap = capture, let dev = device, let writes else { return }
+        let need = UInt64(bandwidthHz) * 5 / 4
+        guard cap.sampleRate < need else { return }
+        guard let rate = dev.sampleRates.filter({ $0 >= need }).min() ?? dev.sampleRates.max(), rate > cap.sampleRate else { return }
+        log("tune", "capture \(cap.sampleRate) -> \(rate) S/s to hold \(bandwidthHz) Hz")
+        _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
+        spectrum.resetFolds()
+        await confirmed { self.capture?.sampleRate == rate }
+    }
+
     /// Waits up to a second for the mirror to show `condition`, checking every 50 ms.
     private func confirmed(_ condition: () -> Bool) async {
         for _ in 0..<20 {
             if condition() { return }
             try? await Task.sleep(for: .milliseconds(50))
-        }
-    }
-
-    private func tuneCreating(hz: UInt64) async {
-        guard let cap = capture else { return }
-        let mode = Bands.defaultMode(at: hz, in: bands)
-        let bw = Bands.band(containing: hz, in: bands).map { $0.mode(at: hz) == mode ? $0.bandwidthHz : mode.defaultBandwidthHz } ?? mode.defaultBandwidthHz
-        do {
-            let ch = try await ensureChannel(in: cap, offsetHz: Int64(hz) - Int64(cap.centerHz), mode: mode, bandwidthHz: bw)
-            try await ensureSink(on: ch)
-            await measureSquelch(channel: ch, sampleRate: cap.sampleRate, bandwidthHz: bw)
-        } catch {
-            lastError = LeylineError(error)
         }
     }
 
@@ -422,7 +493,10 @@ final class AppSession {
     func setBandwidth(_ hz: UInt32) {
         guard let ch = channel, let writes else { return }
         log("tune", "width \(hz) Hz chosen")
-        Task { await writes.bandwidthHz(hz, channel: ch.channelID) }
+        Task {
+            await widenCapture(for: hz)
+            await writes.bandwidthHz(hz, channel: ch.channelID)
+        }
     }
 
     func setSquelch(_ db: Double) {

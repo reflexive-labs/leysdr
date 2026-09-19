@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 5: the transport bar, in its final layout from the first release. Play/pause, the one
-// editable frequency in the window, mode, width, the signal readout (M1 only), the squelch
-// track with its words, and volume with the output's name. Absent for good: gain, elapsed
-// time, recording, sample rate.
+// Region 5: the transport bar, in its final layout from the first release (docs/design/
+// app-design-handoff.md, and the design's footer). Every block is a header on one line with
+// its control under it: play, the one editable frequency in the window, mode, width, a
+// divider, the signal readout (M1 only), the squelch track with its words, and volume with the
+// output's name. Absent for good: gain, elapsed time, recording, sample rate.
 
 import LeylineClient
 import LeylineProto
@@ -13,11 +14,13 @@ struct TransportBarView: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(alignment: .top, spacing: 20) {
             PlayButton()
+                .frame(maxHeight: .infinity)
             FrequencyField()
             ModePopup()
             WidthPopup()
+            Rectangle().fill(Theme.border).frame(width: 1).padding(.vertical, 14)
             SignalReadout()
             SquelchTrack()
                 .frame(maxWidth: .infinity)
@@ -25,7 +28,22 @@ struct TransportBarView: View {
                 .frame(width: 142)
         }
         .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
         .background(Theme.chrome)
+    }
+}
+
+/// A header and the control under it, the way every block of the bar is built.
+struct Block<Content: View>: View {
+    let header: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SectionHeader(text: header)
+            content
+        }
     }
 }
 
@@ -48,9 +66,10 @@ struct PlayButton: View {
     }
 }
 
-/// `146.520` in ink, `000` dimmed, `MHz`. One text field, always: clicking into it or ⌘L edits
-/// it in place, Enter tunes, Escape or clicking away puts the daemon's number back. The arrow
-/// keys step by the band's step (the Tune menu), so there is no stepper.
+/// `146.520` in ink, `000` dimmed, `MHz`. One text field, always, right-aligned at a fixed
+/// width so editing changes nothing but the caret: clicking into it or ⌘L edits in place, Enter
+/// tunes, Escape or clicking away puts the daemon's number back. The arrow keys step by the
+/// band's step (the Tune menu), so there is no stepper.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
     @State private var text = ""
@@ -58,25 +77,27 @@ struct FrequencyField: View {
 
     var body: some View {
         let hz = session.displayHz
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(Theme.Font.frequency)
-                .foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
-                .focused($focused)
-                .onSubmit(commit)
-                .onExitCommand { focused = false }
-                .frame(width: 122)
-            if !focused {
+        Block(header: "Tuning") {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(Theme.Font.frequency)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onExitCommand { focused = false }
+                    .frame(width: 124)
                 Text(Frequency.fieldParts(hz ?? 0).minor)
                     .font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
+                    .opacity(focused ? 0 : 1)
+                Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
+                Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
             }
-            Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
-            Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Theme.accent : Theme.borderFocus))
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Theme.accent : Theme.borderFocus))
         .onAppear { text = major(hz) }
         .onChange(of: hz) { _, new in
             if !focused { text = major(new) }
@@ -101,17 +122,50 @@ struct FrequencyField: View {
     }
 }
 
+/// A pop-up as the design draws it: a raised button with the value and a chevron, a menu of
+/// the choices behind it. It previews the choice until the daemon's event confirms it, so the
+/// button does not snap back for the tick the write takes.
+struct PopupButton<T: Hashable>: View {
+    let choices: [T]
+    let label: (T) -> String
+    let current: T
+    let choose: (T) -> Void
+    @State private var pending: T?
+
+    var body: some View {
+        Menu {
+            ForEach(choices, id: \.self) { c in
+                Button(label(c)) {
+                    pending = c
+                    choose(c)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(label(pending ?? current)).font(Theme.Font.body).foregroundStyle(Theme.ink)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkFaint)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .frame(width: 106)
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onChange(of: current) { _, _ in pending = nil }
+    }
+}
+
 struct ModePopup: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        LabeledPopup(label: "Mode") {
-            Picker("", selection: Binding(get: { session.channel?.mode ?? .nfm }, set: { session.setMode($0) })) {
-                ForEach(TuneCommands.modes, id: \.rawValue) { m in Text(m.word).tag(m) }
-            }
-            .labelsHidden()
-            .frame(width: 106)
-            .disabled(session.channel == nil)
+        Block(header: "Mode") {
+            PopupButton(choices: TuneCommands.modes, label: { $0.word }, current: session.channel?.mode ?? .nfm) { session.setMode($0) }
+                .disabled(session.channel == nil)
         }
     }
 }
@@ -122,50 +176,41 @@ struct WidthPopup: View {
     var body: some View {
         let mode = session.channel?.mode ?? .nfm
         let current = session.channel?.bandwidthHz ?? mode.defaultBandwidthHz
-        let choices = mode.offeredBandwidthsHz.contains(current) ? mode.offeredBandwidthsHz : [current] + mode.offeredBandwidthsHz
-        LabeledPopup(label: "Width") {
-            Picker("", selection: Binding(get: { current }, set: { session.setBandwidth($0) })) {
-                ForEach(choices, id: \.self) { bw in Text(Frequency.width(bw)).tag(bw) }
-            }
-            .labelsHidden()
-            .frame(width: 106)
-            .disabled(session.channel == nil)
+        // The mode's widths in order, and the channel's own if it is not one of them, so the
+        // list never reorders under the pointer.
+        let choices = (mode.offeredBandwidthsHz + (mode.offeredBandwidthsHz.contains(current) ? [] : [current])).sorted()
+        Block(header: "Width") {
+            PopupButton(choices: choices, label: { Frequency.width($0) }, current: current) { session.setBandwidth($0) }
+                .disabled(session.channel == nil)
         }
     }
 }
 
-struct LabeledPopup<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(text: label)
-            content
-        }
-    }
-}
-
-/// `−38 dBFS` and `26 dB over noise`, the channel meter's numbers. M1 only; the inspector takes
-/// this over in M2.
+/// `−38` with a small `dBFS`, and `26 dB over noise` under it: the channel meter's numbers. M1
+/// only; the inspector takes this over in M2.
 struct SignalReadout: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            SectionHeader(text: "Signal")
-            let m = session.meter
-            Text(m.map { $0.powerDbfs.isFinite ? String(format: "%.0f dBFS", $0.powerDbfs) : "—" } ?? "—")
-                .font(Theme.Font.readout).foregroundStyle(Theme.ink)
-            Text(m.flatMap { $0.snrDb.isFinite ? String(format: "%.0f dB over noise", $0.snrDb) : nil } ?? " ")
-                .font(Theme.Font.footnote).foregroundStyle(Theme.good)
+        let m = session.meter
+        Block(header: "Signal") {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(m.map { $0.powerDbfs.isFinite ? String(format: "%.0f", $0.powerDbfs) : "—" } ?? "—")
+                        .font(Theme.Font.readout).foregroundStyle(Theme.ink)
+                    Text("dBFS").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+                }
+                Text(m.flatMap { $0.snrDb.isFinite ? String(format: "%.0f dB over noise", $0.snrDb) : nil } ?? " ")
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.good)
+            }
         }
         .frame(width: 112, alignment: .leading)
     }
 }
 
 /// A track with a marked threshold: muted left of it, heard right of it, the level as a
-/// ramp-filled bar, the marker draggable. The words are the point.
+/// ramp-filled bar the height of the track, the marker draggable and written as it moves. The
+/// words are the point.
 struct SquelchTrack: View {
     @Environment(AppSession.self) private var session
     @State private var dragDb: Double?
@@ -177,7 +222,7 @@ struct SquelchTrack: View {
         let squelch = dragDb ?? session.channel?.squelchDb ?? .nan
         let open = session.meter?.squelchOpen ?? false
         let power = session.meter?.powerDbfs ?? .nan
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 SectionHeader(text: "Squelch")
                 Spacer()
@@ -191,12 +236,14 @@ struct SquelchTrack: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3).fill(Theme.ground)
                     Rectangle().fill(Theme.good.opacity(0.09)).frame(width: max(0, w - markerX)).offset(x: markerX)
-                    Rectangle()
-                        .fill(LinearGradient(colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(0, levelX), height: 8)
-                        .mask(alignment: .leading) { Rectangle().frame(width: max(0, levelX)) }
-                    Marker().offset(x: markerX - 1.25)
+                    LinearGradient(colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing)
+                        .frame(width: w)
+                        .mask(alignment: .leading) { RoundedRectangle(cornerRadius: 3).frame(width: max(0, levelX)) }
+                    Rectangle().fill(Theme.ink).frame(width: 2.5)
+                        .overlay(alignment: .top) { Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2) }
+                        .offset(x: markerX - 1.25)
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 3))
                 .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.border))
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)
@@ -211,7 +258,7 @@ struct SquelchTrack: View {
                         session.setSquelch(d)
                     })
             }
-            .frame(height: 18)
+            .frame(height: 16)
             HStack {
                 Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
                 Spacer()
@@ -238,26 +285,6 @@ struct SquelchTrack: View {
     private func db(atX x: CGFloat, width: CGFloat) -> Double {
         Self.minDb + Double((x / max(width, 1)).clamped(to: 0...1)) * (Self.maxDb - Self.minDb)
     }
-
-    struct Marker: View {
-        var body: some View {
-            VStack(spacing: 0) {
-                Triangle().fill(Theme.ink).frame(width: 7, height: 4)
-                Rectangle().fill(Theme.ink).frame(width: 2.5, height: 14)
-            }
-        }
-    }
-
-    struct Triangle: Shape {
-        func path(in r: CGRect) -> Path {
-            var p = Path()
-            p.move(to: CGPoint(x: r.midX, y: r.maxY))
-            p.addLine(to: CGPoint(x: r.minX, y: r.minY))
-            p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
-            p.closeSubpath()
-            return p
-        }
-    }
 }
 
 struct VolumeControl: View {
@@ -266,14 +293,15 @@ struct VolumeControl: View {
     var body: some View {
         let sink = session.sink
         let volume = sink.map { $0.systemAudio.hasVolume ? $0.systemAudio.volume : 1 } ?? 1
-        VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(text: "Volume")
-            Slider(value: Binding(get: { volume }, set: { session.setVolume($0) }), in: 0...1)
-                .controlSize(.small)
-                .tint(Theme.inkTertiary)
-                .disabled(sink == nil)
-            Text(outputName(sink))
-                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest).lineLimit(1)
+        Block(header: "Volume") {
+            VStack(alignment: .leading, spacing: 4) {
+                Slider(value: Binding(get: { volume }, set: { session.setVolume($0) }), in: 0...1)
+                    .controlSize(.small)
+                    .tint(Theme.inkTertiary)
+                    .disabled(sink == nil)
+                Text(outputName(sink))
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest).lineLimit(1)
+            }
         }
     }
 

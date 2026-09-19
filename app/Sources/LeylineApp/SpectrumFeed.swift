@@ -59,6 +59,14 @@ final class SpectrumFeed {
     /// How far above the floor the ramp reaches: six stops over 60 dB. The terminal's is 40 with
     /// four shades (`go/internal/cli/waterfall_view.go`); the eye can use more here.
     static let rangeDB: Float = 60
+    /// The ramp's cold end sits this far above the median, so noise, which spreads a few dB
+    /// either side of it, stays in the near-black first stop and a signal is what has colour.
+    /// The desktop SDRs do the same with a waterfall minimum set above the floor. The floor
+    /// itself follows the gain: a gain change moves the median, and the held floor is re-taken
+    /// once it drifts `floorSlackDB`.
+    static let noiseHeadroomDB: Float = 6
+    /// Where the waterfall's ramp starts: the held floor plus the headroom.
+    var rampFloorDB: Float { floorDB.isNaN ? .nan : floorDB + Self.noiseHeadroomDB }
 
     private(set) var latest: [Float] = []
     private(set) var hold = MaxHold()

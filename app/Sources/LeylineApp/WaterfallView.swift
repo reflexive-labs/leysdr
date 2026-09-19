@@ -23,7 +23,7 @@ struct WaterfallView: View {
             ZStack(alignment: .topLeading) {
                 WaterfallMetalView(
                     feed: session.spectrum,
-                    floorDB: session.spectrum.floorDB,
+                    floorDB: session.spectrum.rampFloorDB,
                     viewLo: fraction(of: session.visibleRange?.lowerBound),
                     viewHi: fraction(of: session.visibleRange?.upperBound),
                     onPointer: { pointer = $0 },
@@ -64,7 +64,7 @@ struct WaterfallView: View {
             log("tune", "drag from \(hz) Hz")
         }
         dragHz = hz
-        session.tune(to: hz, dragging: !ended)
+        session.tune(to: hz, dragging: true)  // the end of a drag is still a drag: no centre jump
         if ended {
             log("tune", "drag ended at \(hz) Hz")
             dragStartHz = nil
