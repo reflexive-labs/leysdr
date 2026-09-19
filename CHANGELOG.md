@@ -16,8 +16,8 @@ Nothing has been released yet. This file starts with everything that exists on `
   telemetry streams, the bands and bookmarks files, and the folds `ley` already applies: max
   hold, the peak rule, the auto squelch) and the M1 window from the design handoff: a sidebar of
   bands and bookmarks, a band rail (the band's edges as a track, the slice on screen, bookmarks
-  and the tuned frequency as ticks, the neighbouring bands at its ends and a drag past an end
-  crossing into them), a spectrum, a Metal waterfall at 30 rows a second, a transport bar
+  and the tuned frequency as ticks, a drag that moves the region inside the band, and the
+  neighbouring bands named at its ends), a spectrum, a Metal waterfall at 30 rows a second, a transport bar
   (play, the tuning field, mode, width, signal, the squelch track, volume), a device menu with
   the gain slider, and a Tune menu naming every gesture. `make app-run` opens it on a Mac
   (`docs/plans/app.md`, "The M1 cut").

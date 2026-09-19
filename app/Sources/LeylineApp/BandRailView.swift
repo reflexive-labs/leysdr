@@ -4,8 +4,8 @@
 // band at a time: the band's name, its neighbours named at the end caps, a track from one edge
 // of the band to the other with the bounds numbered beneath the caps, a pill for the slice on
 // screen, the tuned frequency as an accent tick and every bookmark in the band as a `good` one.
-// A click tunes; a drag moves the region and leaves the station where it is unless the edge
-// pushes it; a drag past a cap crosses into the neighbour at its near edge. The one number the
+// A click tunes; a drag moves the region inside the band and leaves the station where it is
+// unless the edge pushes it; the neighbours' names are the way into them. The one number the
 // rail states is what a column of the spectrum covers.
 
 import LeylineClient
@@ -22,7 +22,7 @@ struct BandRailView: View {
                 if let rail = railRange {
                     let neighbours = Bands.neighbours(of: rail, in: session.bands)
                     NeighbourButton(band: neighbours.below, side: .below)
-                    BandRail(range: rail, neighbours: neighbours)
+                    BandRail(range: rail)
                     NeighbourButton(band: neighbours.above, side: .above)
                     Text(perColumn(width: geo.size.width))
                         .font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
@@ -85,8 +85,8 @@ struct BandRailView: View {
 enum RailSide { case below, above }
 
 /// The neighbour's name at an end cap, faint, pointing the way; a click crosses into it at the
-/// near edge, the same place a drag past the cap lands. Nothing there when there is no band
-/// that way.
+/// near edge, so the dial reads on from where this band ends. Nothing there when there is no
+/// band that way.
 struct NeighbourButton: View {
     @Environment(AppSession.self) private var session
     let band: Band?
@@ -120,11 +120,6 @@ struct NeighbourButton: View {
 struct BandRail: View {
     @Environment(AppSession.self) private var session
     let range: ClosedRange<UInt64>
-    let neighbours: (below: Band?, above: Band?)
-    /// Set once a drag has left the track past a cap: the crossing happens once per gesture and
-    /// the rest of that gesture is ignored, because the rail under the pointer is now another
-    /// band's.
-    @State private var crossed = false
     /// The centre when the drag began, so every event is a whole translation from it rather
     /// than a step from the last, which drifts.
     @State private var dragStartCentre: Int64?
@@ -173,7 +168,9 @@ struct BandRail: View {
                 .frame(width: w)
                 .offset(y: Self.trackY + Self.capHeight / 2 + 3)
             }
-            .frame(width: w, height: geo.size.height)
+            // Top-leading, because the offsets above do not count toward layout and a centred
+            // frame put the track two thirds of the way down and the bounds off the strip.
+            .frame(width: w, height: geo.size.height, alignment: .topLeading)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { v in moved(v, width: w) }
@@ -228,23 +225,10 @@ struct BandRail: View {
         return s
     }
 
-    /// Past a cap by more than a few points the drag crosses into the neighbour, once. On the
-    /// track it drags the region: the centre moves by the pointer's whole translation from
-    /// where it began, and the station stays put unless the region's edge pushes it
-    /// (`AppSession.pan`).
+    /// A drag of the region: the centre moves by the pointer's whole translation from where it
+    /// began, never past the band's edges, and the station stays put unless the region's edge
+    /// pushes it (`AppSession.pan`). A drag never changes the band; the neighbours' names do.
     private func moved(_ v: DragGesture.Value, width: CGFloat) {
-        guard !crossed else { return }
-        let px = v.location.x
-        if px < -4 {
-            crossed = true
-            if let b = neighbours.below { Task { await session.select(band: b, at: b.maxHz) } }
-            return
-        }
-        if px > width + 4 {
-            crossed = true
-            if let b = neighbours.above { Task { await session.select(band: b, at: b.minHz) } }
-            return
-        }
         guard panned || abs(v.translation.width) >= 3 else { return }
         if dragStartCentre == nil {
             guard let cap = session.capture else { return }
@@ -259,11 +243,9 @@ struct BandRail: View {
     /// to the frequency under the pointer on the band's grid.
     private func ended(_ v: DragGesture.Value, width: CGFloat) {
         defer {
-            crossed = false
             panned = false
             dragStartCentre = nil
         }
-        guard !crossed else { return }
         if panned, let start = dragStartCentre {
             session.pan(centreTo: start + translation(v, width: width), ended: true)
         } else {

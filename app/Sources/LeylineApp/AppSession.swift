@@ -461,9 +461,11 @@ final class AppSession {
         place(hz, panning: dragging, quiet: dragging)
     }
 
-    /// A drag along the rail moves the capture, not the station. The offset follows the centre
-    /// so the frequency stays put, until the station would leave the middle 80 % of the span,
-    /// when it rides that edge instead (and never nearer the span's end than its own width).
+    /// A drag along the rail moves the capture, not the station, and never out of the band:
+    /// the region stops at the band's edges, and a band the region holds whole does not move
+    /// at all. The offset follows the centre so the frequency stays put, until the station
+    /// would leave the middle 80 % of the span, when it rides that edge instead (and never
+    /// nearer the span's end than its own width).
     /// The centre and the offset go in one tick, centre first: the daemon bounds an offset by
     /// the sample rate alone, so either order applies and there is nothing to confirm between
     /// them, unlike a click's move (`retune`). While a click's move is in flight the drag is
@@ -473,7 +475,12 @@ final class AppSession {
         guard let cap = capture, let ch = channel, let writes else { return }
         guard panCentre != nil || centreInFlight == nil else { return }
         let span = Int64(cap.sampleRate)
-        let newCentre = clampCentre(centre, span: span)
+        var newCentre = clampCentre(centre, span: span)
+        if let b = band {
+            newCentre = b.widthHz > cap.sampleRate
+                ? min(max(newCentre, Int64(b.minHz) + span / 2), Int64(b.maxHz) - span / 2)
+                : Int64(cap.centerHz)
+        }
         let bound = max(0, min(span * 4 / 10, span / 2 - Int64(ch.bandwidthHz)))
         let station = Int64(displayHz ?? cap.centerHz)
         let held = min(max(station, newCentre - bound), newCentre + bound)
