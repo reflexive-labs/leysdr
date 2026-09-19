@@ -313,7 +313,6 @@ final class AppSession {
         guard threshold.isFinite else { return }
         await writes.squelchDb(threshold, channel: ch.channelID)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
-        notice = "Squelch \(Int(threshold)) dBFS, 10 dB above the band's noise floor (\(Int(floor.rounded())) dBFS)"
     }
 
     // MARK: Tuning

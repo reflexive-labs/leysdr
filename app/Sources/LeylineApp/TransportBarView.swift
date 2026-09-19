@@ -380,11 +380,10 @@ struct SquelchTrack: View {
                 let markerX = squelch.isNaN ? 0 : x(of: squelch, width: w)
                 let levelX = power.isNaN ? 0 : x(of: power, width: w)
                 let inset: CGFloat = 3
-                let levelColour = Theme.level(Double(levelX / max(w, 1)))
                 ZStack(alignment: .leading) {
-                    // The container: black at the left to the level's own colour, dimmed, at the right.
+                    // The container: black at the left to the ramp's dark teal at the right.
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(LinearGradient(colors: [.black, levelColour.opacity(0.35)], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [.black, Theme.levelStops[1]], startPoint: .leading, endPoint: .trailing))
                     Rectangle().fill(Theme.good.opacity(0.09)).frame(width: max(0, w - markerX)).offset(x: markerX)
                     // The colour region, inset, filled to the level through the ramp.
                     LinearGradient(colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing)
