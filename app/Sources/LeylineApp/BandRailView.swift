@@ -4,8 +4,9 @@
 // band at a time: the band's name, its neighbours named at the end caps, a track from one edge
 // of the band to the other with the bounds numbered beneath the caps, a pill for the slice on
 // screen, the tuned frequency as an accent tick and every bookmark in the band as a `good` one.
-// A click or a drag along the track tunes; a drag past a cap crosses into the neighbour at its
-// near edge. The one number the rail states is what a column of the spectrum covers.
+// A click tunes; a drag moves the region and leaves the station where it is unless the edge
+// pushes it; a drag past a cap crosses into the neighbour at its near edge. The one number the
+// rail states is what a column of the spectrum covers.
 
 import LeylineClient
 import SwiftUI
@@ -84,7 +85,7 @@ struct BandRailView: View {
 enum RailSide { case below, above }
 
 /// The neighbour's name at an end cap, faint, pointing the way; a click crosses into it at the
-/// near edge, the same place a scrub past the cap lands. Nothing there when there is no band
+/// near edge, the same place a drag past the cap lands. Nothing there when there is no band
 /// that way.
 struct NeighbourButton: View {
     @Environment(AppSession.self) private var session
@@ -113,8 +114,9 @@ struct NeighbourButton: View {
     }
 }
 
-/// The track itself: end caps with the bounds numbered beneath, the pill for what is on screen,
-/// bookmark ticks, the tuned tick, and the gesture.
+/// The track itself: end caps with the bounds numbered beneath, the pill for the capture's
+/// span (with the zoomed window inset when there is one), bookmark ticks, the tuned tick, and
+/// the gesture.
 struct BandRail: View {
     @Environment(AppSession.self) private var session
     let range: ClosedRange<UInt64>
@@ -123,6 +125,12 @@ struct BandRail: View {
     /// the rest of that gesture is ignored, because the rail under the pointer is now another
     /// band's.
     @State private var crossed = false
+    /// The centre when the drag began, so every event is a whole translation from it rather
+    /// than a step from the last, which drifts.
+    @State private var dragStartCentre: Int64?
+    /// Once the pointer has moved a few points the gesture is a drag of the region, and its end
+    /// is not a click.
+    @State private var panned = false
 
     private static let trackY: CGFloat = 13
     private static let capHeight: CGFloat = 10
@@ -136,16 +144,12 @@ struct BandRail: View {
                 Rectangle().fill(Theme.border).frame(width: w, height: 2).offset(y: Self.trackY - 1)
                 cap(x: 0)
                 cap(x: w)
-                // The slice on screen.
-                if let vis = session.visibleRange {
-                    let lo = x(of: max(vis.lowerBound, range.lowerBound), width: w)
-                    let hi = x(of: min(vis.upperBound, range.upperBound), width: w)
-                    if hi > lo {
-                        RoundedRectangle(cornerRadius: Self.pillHeight / 2)
-                            .fill(Theme.raised)
-                            .overlay(RoundedRectangle(cornerRadius: Self.pillHeight / 2).stroke(Theme.borderStrong))
-                            .frame(width: max(hi - lo, Self.pillHeight), height: Self.pillHeight)
-                            .offset(x: lo, y: Self.trackY - Self.pillHeight / 2)
+                // The region the radio holds, where the hand has it during a drag.
+                if let region = captureRange {
+                    pill(region, width: w, fill: Theme.raised, stroke: Theme.borderStrong)
+                    // The zoomed window inside it.
+                    if session.zoom > 1, let vis = session.visibleRange {
+                        pill(vis, width: w, fill: Theme.selected, stroke: Theme.borderFocus)
                     }
                 }
                 // Bookmarks in the band.
@@ -172,8 +176,29 @@ struct BandRail: View {
             .frame(width: w, height: geo.size.height)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { v in moved(to: v.location.x, width: w) }
-                .onEnded { v in ended(at: v.location.x, width: w) })
+                .onChanged { v in moved(v, width: w) }
+                .onEnded { v in ended(v, width: w) })
+        }
+    }
+
+    /// The capture's span, from the centre a drag is taking it to when there is one.
+    private var captureRange: ClosedRange<UInt64>? {
+        guard let cap = session.capture, cap.sampleRate > 0 else { return nil }
+        let centre = session.panCentre ?? Int64(cap.centerHz)
+        let half = Int64(cap.sampleRate / 2)
+        return UInt64(max(0, centre - half))...UInt64(max(0, centre + half))
+    }
+
+    @ViewBuilder
+    private func pill(_ r: ClosedRange<UInt64>, width w: CGFloat, fill: Color, stroke: Color) -> some View {
+        let lo = x(of: max(r.lowerBound, range.lowerBound), width: w)
+        let hi = x(of: min(r.upperBound, range.upperBound), width: w)
+        if hi > lo {
+            RoundedRectangle(cornerRadius: Self.pillHeight / 2)
+                .fill(fill)
+                .overlay(RoundedRectangle(cornerRadius: Self.pillHeight / 2).stroke(stroke))
+                .frame(width: max(hi - lo, Self.pillHeight), height: Self.pillHeight)
+                .offset(x: lo, y: Self.trackY - Self.pillHeight / 2)
         }
     }
 
@@ -203,24 +228,53 @@ struct BandRail: View {
         return s
     }
 
-    /// Past a cap by more than a few points the drag crosses into the neighbour, once; on the
-    /// track it scrubs.
-    private func moved(to px: CGFloat, width: CGFloat) {
+    /// Past a cap by more than a few points the drag crosses into the neighbour, once. On the
+    /// track it drags the region: the centre moves by the pointer's whole translation from
+    /// where it began, and the station stays put unless the region's edge pushes it
+    /// (`AppSession.pan`).
+    private func moved(_ v: DragGesture.Value, width: CGFloat) {
         guard !crossed else { return }
+        let px = v.location.x
         if px < -4 {
             crossed = true
             if let b = neighbours.below { Task { await session.select(band: b, at: b.maxHz) } }
-        } else if px > width + 4 {
+            return
+        }
+        if px > width + 4 {
             crossed = true
             if let b = neighbours.above { Task { await session.select(band: b, at: b.minHz) } }
+            return
+        }
+        guard panned || abs(v.translation.width) >= 3 else { return }
+        if dragStartCentre == nil {
+            guard let cap = session.capture else { return }
+            dragStartCentre = session.panCentre ?? Int64(cap.centerHz)
+        }
+        guard let start = dragStartCentre else { return }
+        panned = true
+        session.pan(centreTo: start + translation(v, width: width), ended: false)
+    }
+
+    /// A drag ends where the region is; anything shorter than a drag is a click, which tunes
+    /// to the frequency under the pointer on the band's grid.
+    private func ended(_ v: DragGesture.Value, width: CGFloat) {
+        defer {
+            crossed = false
+            panned = false
+            dragStartCentre = nil
+        }
+        guard !crossed else { return }
+        if panned, let start = dragStartCentre {
+            session.pan(centreTo: start + translation(v, width: width), ended: true)
         } else {
-            session.scrub(to: hz(atX: px, width: width))
+            session.tune(to: hz(atX: v.location.x, width: width))
         }
     }
 
-    private func ended(at px: CGFloat, width: CGFloat) {
-        defer { crossed = false }
-        guard !crossed else { return }
-        session.tune(to: hz(atX: px, width: width))
+    /// The pointer's travel since the drag began, in hertz along the rail.
+    private func translation(_ v: DragGesture.Value, width: CGFloat) -> Int64 {
+        guard width > 0 else { return 0 }
+        let span = Double(range.upperBound - range.lowerBound)
+        return Int64((Double(v.translation.width) / Double(width) * span).rounded())
     }
 }

@@ -112,9 +112,12 @@ states from telemetry. Same caveat as APP-2: unbuilt on the Mac.
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
 the owner brought and the four answers recorded in the handoff's "Decided 2026-09-19": the
 band's edges as a track with numbered caps, the slice on screen as a pill, bookmarks and the
-tuned frequency as ticks, the neighbouring bands named at the caps, a scrub past a cap crossing
-into the neighbour at its near edge (`AppSession.select(band:at:)` places the capture so the
-edge is inside it), and what a column covers as the one resolution the window states.
+tuned frequency as ticks, the neighbouring bands named at the caps, a drag that moves the
+region and pushes the station only from the middle 80 % of it (`AppSession.pan`: centre and
+offset in one tick, because the daemon bounds an offset by the sample rate alone), a drag past
+a cap crossing into the neighbour at its near edge (`AppSession.select(band:at:)` places the
+capture so the edge is inside it), and what a column covers as the one resolution the window
+states.
 
 ### APP-4 `[ ]` Bookmarks, presets and CHIRP import, with `ley bookmarks` (E.4)
 

@@ -63,6 +63,9 @@ final class AppSession {
     private var nextRetune: (centre: Int64, offset: Int64, capture: String, channel: String)?
     private var creatingChannel = false
     private var lastPan = Date.distantPast
+    /// Where a rail drag is taking the centre, until the capture's event carries it: the rail
+    /// draws its pill there so the region moves with the hand, not a tick behind it.
+    private(set) var panCentre: Int64?
 
     // Files both clients own.
     let bands: [Band] = Bands.plain
@@ -306,7 +309,7 @@ final class AppSession {
     /// is heard, and a squelch measured from the floor. Creates what does not exist and writes
     /// what does (docs/design/app-design-handoff.md, Region 1). With `hz`, the band arrives
     /// tuned there rather than at its centre, and the capture sits where that frequency is
-    /// inside it: a scrub past the rail's end cap lands on the neighbour's near edge.
+    /// inside it: a drag past the rail's end cap lands on the neighbour's near edge.
     func select(band: Band, at hz: UInt64? = nil) async {
         guard !busy, daemon != nil else { return }
         busy = true
@@ -458,11 +461,42 @@ final class AppSession {
         place(hz, panning: dragging, quiet: dragging)
     }
 
-    /// A drag along the band rail: every event is an absolute frequency, so a target outside
-    /// the capture moves the centre the way a click does rather than panning an eighth at a
-    /// time, and nothing is logged until the gesture ends with a `tune(to:)`.
-    func scrub(to hz: UInt64) {
-        place(hz, panning: false, quiet: true)
+    /// A drag along the rail moves the capture, not the station. The offset follows the centre
+    /// so the frequency stays put, until the station would leave the middle 80 % of the span,
+    /// when it rides that edge instead (and never nearer the span's end than its own width).
+    /// The centre and the offset go in one tick, centre first: the daemon bounds an offset by
+    /// the sample rate alone, so either order applies and there is nothing to confirm between
+    /// them, unlike a click's move (`retune`). While a click's move is in flight the drag is
+    /// refused, because two writers of the same centre leave one offset against a centre that
+    /// never applied.
+    func pan(centreTo centre: Int64, ended: Bool) {
+        guard let cap = capture, let ch = channel, let writes else { return }
+        guard panCentre != nil || centreInFlight == nil else { return }
+        let span = Int64(cap.sampleRate)
+        let newCentre = clampCentre(centre, span: span)
+        let bound = max(0, min(span * 4 / 10, span / 2 - Int64(ch.bandwidthHz)))
+        let station = Int64(displayHz ?? cap.centerHz)
+        let held = min(max(station, newCentre - bound), newCentre + bound)
+        panCentre = newCentre
+        centreInFlight = newCentre
+        request(UInt64(max(0, held)))
+        spectrum.resetFolds()
+        let want = UInt64(max(0, newCentre))
+        Task {
+            await writes.centerHz(want, capture: cap.captureID)
+            await writes.offsetHz(held - newCentre, channel: ch.channelID)
+        }
+        if ended {
+            log("tune", "pan capture \(cap.centerHz) -> \(newCentre) Hz, station at \(held) Hz\(held != station ? ", pushed from \(station)" : "")")
+            followBand(from: tunedHz, to: UInt64(max(0, held)), channel: ch)
+            Task {
+                await confirmed { self.capture?.centerHz == want }
+                if panCentre == newCentre {
+                    panCentre = nil
+                    centreInFlight = nil
+                }
+            }
+        }
     }
 
     private func place(_ hz: UInt64, panning dragging: Bool, quiet: Bool) {
