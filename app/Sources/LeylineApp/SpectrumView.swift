@@ -3,7 +3,8 @@
 // Region 3: the spectrum. A live trace, a max-hold trace, a 10×4 grid, and the tuned channel as
 // a vertical band. It is a peak display and says so nowhere, because the label would be the
 // detector's word (invariant 12). Every column is the loudest bin under it, so a carrier one
-// bin wide is never lost between two pixels.
+// bin wide is never lost between two pixels. The mouse works here as on the waterfall, through
+// the same `ChartMouse`, and the pointer's hairline shows on both.
 
 import LeylineClient
 import LeylineProto
@@ -11,6 +12,7 @@ import SwiftUI
 
 struct SpectrumView: View {
     @Environment(AppSession.self) private var session
+    @State private var pointer: CGPoint?
 
     /// The trace's axis: this far under the floor at the bottom, this far over it at the top.
     static let belowFloorDB: Float = 10
@@ -30,14 +32,35 @@ struct SpectrumView: View {
             tunedHz: session.tunedHz,
             channel: session.channel
         )
-        ZStack(alignment: .topLeading) {
-            Canvas(rendersAsynchronously: false) { ctx, size in
-                draw(in: &ctx, size: size, rows: rows)
+        GeometryReader { geo in
+            let columns = rows.columns(width: geo.size.width)
+            ZStack(alignment: .topLeading) {
+                Canvas(rendersAsynchronously: false) { ctx, size in
+                    draw(in: &ctx, size: size, rows: rows)
+                }
+                ChartCatcher(
+                    onPointer: { p in
+                        pointer = p
+                        session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
+                    },
+                    onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
+                    onDrag: { p, ended in if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) } },
+                    onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) }
+                )
+                if let c = columns {
+                    // The tuned channel, the same view the waterfall draws, so the two bands
+                    // are one width and meet at the seam.
+                    if let hz = rows.tunedHz, let ch = rows.channel {
+                        TunedBand(x0: c.x(of: hz - UInt64(ch.bandwidthHz) / 2), x1: c.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: geo.size.height)
+                    }
+                    PointerOverlay(columns: c, size: geo.size, point: pointer)
+                }
+                MaxHoldChip()
+                    .padding(8)
             }
-            MaxHoldChip()
-                .padding(8)
         }
         .background(Theme.ground)
+        .clipped()
     }
 
     /// Everything one frame of the trace is drawn from, read in `body` where observation
@@ -50,6 +73,11 @@ struct SpectrumView: View {
         var range: ClosedRange<UInt64>?
         var tunedHz: UInt64?
         var channel: Leyline_V1_Channel?
+
+        func columns(width: CGFloat) -> Columns? {
+            guard let cap = capture, let range, cap.sampleRate > 0 else { return nil }
+            return Columns(range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate, bins: Int(SpectrumFeed.bins), width: width)
+        }
     }
 
     private func draw(in ctx: inout GraphicsContext, size: CGSize, rows: Rows) {
@@ -74,18 +102,6 @@ struct SpectrumView: View {
         let bottom = floor - Self.belowFloorDB
         let top = floor + Self.aboveFloorDB
         let columns = Columns(range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate, bins: latest.count, width: size.width)
-
-        // The tuned channel first, under the traces.
-        if let hz = rows.tunedHz, let ch = rows.channel {
-            let x0 = columns.x(of: hz - UInt64(ch.bandwidthHz) / 2)
-            let x1 = columns.x(of: hz + UInt64(ch.bandwidthHz) / 2)
-            let band = CGRect(x: x0, y: 0, width: max(2, x1 - x0), height: size.height)
-            ctx.fill(Path(band), with: .color(Theme.accent.opacity(0.11)))
-            var edges = Path()
-            edges.move(to: CGPoint(x: band.minX, y: 0)); edges.addLine(to: CGPoint(x: band.minX, y: size.height))
-            edges.move(to: CGPoint(x: band.maxX, y: 0)); edges.addLine(to: CGPoint(x: band.maxX, y: size.height))
-            ctx.stroke(edges, with: .color(Theme.accent.opacity(0.8)), lineWidth: 1)
-        }
 
         if rows.hold.count == latest.count {
             let path = trace(rows.hold, columns: columns, size: size, bottom: bottom, top: top)

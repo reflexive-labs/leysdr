@@ -13,7 +13,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 | target | what | builds on |
 |---|---|---|
 | `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`, `MeterFeed`), the M1 views (sidebar, band rail, spectrum, the Metal waterfall and its shader under `Resources/`, transport bar, device menu), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`, `MeterFeed`), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 

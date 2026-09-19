@@ -3,7 +3,8 @@
 // Region 4: the waterfall. The Metal view draws rows from the feed's ring, newest at the top,
 // one row per display pixel at 30 rows a second; SwiftUI draws what sits over it: the tuned
 // channel, the pointer's hairline and badge, the time axis in seconds. Every gesture is handled
-// by the Metal view (it owns the mouse) and lands in `AppSession.tune(to:)`.
+// by the Metal view (it owns the mouse, through `ChartMouse` like the spectrum) and lands in
+// `AppSession.tune(to:)`.
 
 import Foundation
 import LeylineClient
@@ -14,8 +15,6 @@ struct WaterfallView: View {
     @Environment(AppSession.self) private var session
     @Environment(\.displayScale) private var displayScale
     @State private var pointer: CGPoint?
-    @State private var dragStartHz: UInt64?
-    @State private var dragHz: UInt64?
     @State private var problem: String?
 
     var body: some View {
@@ -27,9 +26,12 @@ struct WaterfallView: View {
                     floorDB: session.rampFloorDB,
                     viewLo: fraction(of: session.visibleRange?.lowerBound),
                     viewHi: fraction(of: session.visibleRange?.upperBound),
-                    onPointer: { pointer = $0 },
+                    onPointer: { p in
+                        pointer = p
+                        session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
+                    },
                     onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
-                    onDrag: { p, ended in drag(p, ended: ended, columns: columns) },
+                    onDrag: { p, ended in if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) } },
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) },
                     onProblem: { problem = $0 }
                 )
@@ -57,70 +59,15 @@ struct WaterfallView: View {
         return Float(((Double(hz) - lo) / Double(cap.sampleRate)).clamped(to: 0...1))
     }
 
-    private func drag(_ p: CGPoint, ended: Bool, columns: Columns?) {
-        guard let columns else { return }
-        let hz = columns.hz(atX: p.x)
-        if dragStartHz == nil {
-            dragStartHz = hz
-            log("tune", "drag from \(hz) Hz")
-        }
-        dragHz = hz
-        session.tune(to: hz, dragging: true)  // the end of a drag is still a drag: no centre jump
-        if ended {
-            log("tune", "drag ended at \(hz) Hz")
-            dragStartHz = nil
-            dragHz = nil
-        }
-    }
-
     @ViewBuilder
     private func overlays(columns: Columns, size: CGSize) -> some View {
         // The tuned channel, continuous with the spectrum's band above.
         if let hz = session.tunedHz, let ch = session.channel {
-            let x0 = columns.x(of: hz - UInt64(ch.bandwidthHz) / 2)
-            let x1 = columns.x(of: hz + UInt64(ch.bandwidthHz) / 2)
-            // The edges are overlaid before the offset: an overlay added after it is placed on
-            // the un-shifted frame, at the left of the panel.
-            Rectangle().fill(Theme.accent.opacity(0.11))
-                .overlay(alignment: .leading) { Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5) }
-                .overlay(alignment: .trailing) { Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5) }
-                .frame(width: max(2, x1 - x0), height: size.height)
-                .offset(x: x0)
-                .allowsHitTesting(false)
+            TunedBand(x0: columns.x(of: hz - UInt64(ch.bandwidthHz) / 2), x1: columns.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: size.height)
         }
         TimeAxis(rowsPerPoint: Double(displayScale), height: size.height)
             .allowsHitTesting(false)
-        // The pointer: a hairline at its frequency and a badge with the value, not the verb.
-        if let p = pointer {
-            let hz = dragHz ?? columns.hz(atX: p.x)
-            Rectangle().fill(Theme.ink.opacity(0.35)).frame(width: 1, height: size.height)
-                .offset(x: columns.x(of: hz))
-                .allowsHitTesting(false)
-            PointerBadge(text: badgeText(hz: hz))
-                .offset(x: min(max(p.x + 12, 0), size.width - 130), y: min(max(p.y + 14, 0), size.height - 28))
-                .allowsHitTesting(false)
-        }
-    }
-
-    private func badgeText(hz: UInt64) -> String {
-        let f = Frequency.fieldParts(hz)
-        if let start = dragStartHz, start != hz {
-            let sweep = start > hz ? start - hz : hz - start
-            return "\(f.major) MHz · \(Frequency.format(sweep)) swept"
-        }
-        return "\(f.major) MHz"
-    }
-}
-
-struct PointerBadge: View {
-    let text: String
-    var body: some View {
-        Text(text)
-            .font(Theme.Font.value)
-            .foregroundStyle(Theme.ink)
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Theme.ground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
+        PointerOverlay(columns: columns, size: size, point: pointer)
     }
 }
 
@@ -186,10 +133,10 @@ struct WaterfallMetalView: NSViewRepresentable {
         r.viewLo = viewLo
         r.viewHi = viewHi
         r.floorDB = floorDB
-        view.onPointer = onPointer
-        view.onClick = onClick
-        view.onDrag = onDrag
-        view.onScroll = onScroll
+        view.mouse.onPointer = onPointer
+        view.mouse.onClick = onClick
+        view.mouse.onDrag = onDrag
+        view.mouse.onScroll = onScroll
         if let problem = r.problem, !r.problemReported {
             r.problemReported = true
             let report = onProblem
@@ -198,20 +145,11 @@ struct WaterfallMetalView: NSViewRepresentable {
     }
 }
 
-/// An MTKView that owns the mouse: the cursor teaches the gesture, and every event is handed
-/// up as a point in the view's coordinates (origin top-left, points).
+/// An MTKView that owns the mouse through `ChartMouse`, every event handed up as a point in
+/// the view's coordinates (origin top-left, points).
 final class InteractiveMetalView: MTKView {
-    var onPointer: ((CGPoint?) -> Void)?
-    var onClick: ((CGPoint) -> Void)?
-    var onDrag: ((CGPoint, Bool) -> Void)?
-    var onScroll: ((CGFloat) -> Void)?
+    let mouse = ChartMouse()
     private var tracking: NSTrackingArea?
-    private var downAt: CGPoint?
-    private var dragged = false
-    private var scrolled: CGFloat = 0
-
-    /// How far the wheel or the fingers travel for one fine step.
-    static let scrollNotch: CGFloat = 20
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -219,62 +157,21 @@ final class InteractiveMetalView: MTKView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .cursorUpdate], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: bounds, options: ChartMouse.trackingOptions, owner: self, userInfo: nil)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func cursorUpdate(with event: NSEvent) {
-        (downAt == nil ? NSCursor.crosshair : NSCursor.resizeLeftRight).set()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        onPointer?(convert(event.locationInWindow, from: nil))
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        onPointer?(nil)
-    }
-
+    override func cursorUpdate(with event: NSEvent) { mouse.cursorUpdate() }
+    override func mouseMoved(with event: NSEvent) { mouse.moved(convert(event.locationInWindow, from: nil)) }
+    override func mouseExited(with event: NSEvent) { mouse.exited() }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        downAt = convert(event.locationInWindow, from: nil)
-        dragged = false
-        NSCursor.resizeLeftRight.set()
+        mouse.down(convert(event.locationInWindow, from: nil))
     }
-
-    override func mouseDragged(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        guard let start = downAt else { return }
-        if !dragged, abs(p.x - start.x) < 3 { return }
-        dragged = true
-        onPointer?(p)
-        onDrag?(p, false)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        if dragged { onDrag?(p, true) } else { onClick?(p) }
-        downAt = nil
-        dragged = false
-        NSCursor.crosshair.set()
-    }
-
-    // One fine step per notch of travel, because a trackpad reports precise deltas of a point
-    // or two and keeps reporting them after the fingers lift: a step per event ran the frequency
-    // away on one flick. Momentum is not a hand on the wheel, so it is ignored, and a mouse
-    // wheel's line counts as a whole notch.
-    override func scrollWheel(with event: NSEvent) {
-        guard event.momentumPhase.isEmpty else { return }
-        if event.phase.contains(.began) { scrolled = 0 }
-        scrolled += event.hasPreciseScrollingDeltas
-            ? event.scrollingDeltaY
-            : event.scrollingDeltaY * Self.scrollNotch
-        guard abs(scrolled) >= Self.scrollNotch else { return }
-        let travel = scrolled
-        scrolled = 0
-        onScroll?(travel)
-    }
+    override func mouseDragged(with event: NSEvent) { mouse.dragged(convert(event.locationInWindow, from: nil)) }
+    override func mouseUp(with event: NSEvent) { mouse.up(convert(event.locationInWindow, from: nil)) }
+    override func scrollWheel(with event: NSEvent) { mouse.scroll(event) }
 }
 
 /// Uniforms the shader reads; scalars only, so the two layouts cannot disagree.

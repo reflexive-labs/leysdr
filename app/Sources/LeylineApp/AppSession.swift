@@ -80,6 +80,11 @@ final class AppSession {
     // View state that is the window's alone: presentation, never radio truth.
     var maxHold = true
     var zoom = 1
+    /// The frequency under the pointer on either chart, so the hairline shows on both; nil when
+    /// the pointer is over neither.
+    var pointerHz: UInt64?
+    /// Where a chart drag began, for the badge's `swept` figure.
+    private(set) var sweepFromHz: UInt64?
     /// Set by ⌘L: the transport field takes focus and edits in place.
     var frequencyEntryShown = false
     var deviceMenuShown = false
@@ -448,6 +453,31 @@ final class AppSession {
     }
 
     // MARK: Tuning
+
+    /// A drag across the spectrum or the waterfall: the end of a drag is still a drag, so there
+    /// is no centre jump on release.
+    func chartDrag(to hz: UInt64, ended: Bool) {
+        if sweepFromHz == nil {
+            sweepFromHz = hz
+            log("tune", "drag from \(hz) Hz")
+        }
+        pointerHz = hz
+        tune(to: hz, dragging: true)
+        if ended {
+            log("tune", "drag ended at \(hz) Hz")
+            sweepFromHz = nil
+        }
+    }
+
+    /// `146.520 MHz`, and during a drag how far it has swept.
+    func pointerWords(_ hz: UInt64) -> String {
+        let f = Frequency.fieldParts(hz)
+        if let start = sweepFromHz, start != hz {
+            let sweep = start > hz ? start - hz : hz - start
+            return "\(f.major) MHz · \(Frequency.format(sweep)) swept"
+        }
+        return "\(f.major) MHz"
+    }
 
     /// Every gesture ends here. Inside the capture it is one `offset_hz` write. Outside it the
     /// centre moves first and the offset follows once the capture's event confirms the move:
