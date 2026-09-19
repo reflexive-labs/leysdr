@@ -40,15 +40,27 @@ final class AppSession {
     /// between an RPC's response and its event, which once made ten channels from ten tunes.
     private var captureSeen = false
     private var channelSeen = false
-    /// The frequency this app last asked for, until the daemon confirms it or a second passes:
+    /// When the id was set, so a gap that never closes is not waited on forever: an object the
+    /// daemon made and lost before its first event would otherwise leave the window pointing at
+    /// an id no event will ever carry.
+    private var captureSetAt = Date.distantPast
+    private var channelSetAt = Date.distantPast
+    /// The frequency this app last asked for, until the daemon confirms it or two seconds pass:
     /// what the field shows and what a step is taken from, so two quick presses do not both
     /// start from the frequency before the first (`../dev/app.md`: a view previews its own
     /// writes and reconciles on the event).
     private(set) var requestedHz: UInt64?
-    private var requestedAt = Date.distantPast
+    /// The clock that clears `requestedHz`, because a write the daemon never confirms leaves the
+    /// field showing a frequency nothing is tuned to until the next event, and a quiet daemon
+    /// sends none.
+    private var requestedExpiry: Task<Void, Never>?
     /// A centre write not yet confirmed by the capture's event; clicks in the meantime are
     /// computed against it rather than the mirror's old centre.
     private var centreInFlight: Int64?
+    /// A centre move asked for while one was in flight. The last one wins, and `retune` performs
+    /// it when the move it is waiting on confirms: two moves at once leave the coalescer holding
+    /// only the last centre, and the first offset written against a centre that never applied.
+    private var nextRetune: (centre: Int64, offset: Int64, capture: String, channel: String)?
     private var creatingChannel = false
     private var lastPan = Date.distantPast
 
@@ -177,20 +189,21 @@ final class AppSession {
         state = m.state
         connection = m.connection
         if wasLive != isLive { log("session", isLive ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures" : "not live: \(connection)") }
-        if let r = requestedHz, r == tunedHz || Date().timeIntervalSince(requestedAt) > 2 { requestedHz = nil }
-        // Objects the window pointed at may be gone: a tombstone, or the daemon restarted.
+        if let r = requestedHz, r == tunedHz { clearRequested() }
+        // Objects the window pointed at may be gone: a tombstone, or the daemon restarted. One
+        // that was never in the mirror goes the same way after 3 s, because the gap between an
+        // RPC's response and its event closes in milliseconds and an object evicted inside it
+        // has no event coming.
         if let id = captureID {
             if state.capture(id) != nil {
                 captureSeen = true
                 pendingCapture = nil
             } else if captureSeen {
                 log("session", "capture \(id) is gone; a new one will be made")
-                captureID = nil
-                captureSeen = false
-                channelID = nil
-                channelSeen = false
-                pendingChannel = nil
-                adopted = false
+                dropCapture()
+            } else if Date().timeIntervalSince(captureSetAt) > 3 {
+                log("session", "the mirror has no capture \(id) 3 s after the window took it; a new one will be made")
+                dropCapture()
             }
         }
         if let id = channelID {
@@ -199,8 +212,10 @@ final class AppSession {
                 pendingChannel = nil
             } else if channelSeen {
                 log("session", "channel \(id) is gone")
-                channelID = nil
-                channelSeen = false
+                dropChannel()
+            } else if Date().timeIntervalSince(channelSetAt) > 3 {
+                log("session", "the mirror has no channel \(id) 3 s after the window took it")
+                dropChannel()
             }
         }
         if case .live = connection {
@@ -222,6 +237,44 @@ final class AppSession {
         }
     }
 
+    /// Forgets the capture, and the channel with it: a channel without its capture is nothing.
+    /// The window then makes new ones, because `adopt` runs again.
+    private func dropCapture() {
+        captureID = nil
+        captureSeen = false
+        pendingCapture = nil
+        adopted = false
+        dropChannel()
+    }
+
+    private func dropChannel() {
+        channelID = nil
+        channelSeen = false
+        pendingChannel = nil
+    }
+
+    /// The frequency the field shows until the daemon confirms it, with the clock that clears it
+    /// armed afresh: a tune whose event never arrives stops showing after two seconds rather
+    /// than until the mirror happens to change.
+    private func request(_ hz: UInt64) {
+        requestedHz = hz
+        requestedExpiry?.cancel()
+        requestedExpiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            if self.requestedHz == hz {
+                self.requestedHz = nil
+                self.requestedExpiry = nil
+            }
+        }
+    }
+
+    private func clearRequested() {
+        requestedHz = nil
+        requestedExpiry?.cancel()
+        requestedExpiry = nil
+    }
+
     /// On the first live snapshot: show a capture that already exists (another client's, or
     /// ours from before a reconnect), else make one on the last band used, else FM broadcast.
     private func adopt() {
@@ -229,7 +282,11 @@ final class AppSession {
         adopted = true
         if captureID == nil, let cap = state.captures.first(where: { $0.state == .captureActive }) ?? state.captures.first {
             captureID = cap.captureID
-            if channelID == nil, let ch = state.channels(in: cap.captureID).first { channelID = ch.channelID }
+            captureSetAt = Date()
+            if channelID == nil, let ch = state.channels(in: cap.captureID).first {
+                channelID = ch.channelID
+                channelSetAt = Date()
+            }
             log("session", "adopted capture \(cap.captureID) at \(cap.centerHz) Hz, \(cap.sampleRate) S/s, channel \(channelID ?? "none")")
             if channelID == nil, state.channels(in: cap.captureID).isEmpty { Task { await tuneCreating(hz: cap.centerHz) } }
             return
@@ -300,10 +357,9 @@ final class AppSession {
         log("session", "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
         captureID = cap.captureID
         captureSeen = false
+        captureSetAt = Date()
         pendingCapture = cap
-        channelID = nil
-        channelSeen = false
-        pendingChannel = nil
+        dropChannel()
         return cap
     }
 
@@ -327,6 +383,7 @@ final class AppSession {
         log("session", "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
         channelID = ch.channelID
         channelSeen = false
+        channelSetAt = Date()
         pendingChannel = ch
         return ch
     }
@@ -341,14 +398,27 @@ final class AppSession {
     }
 
     /// `ley tune`'s auto squelch from the next fresh row: 10 dB above the floor scaled to the
-    /// channel width. Waits for two rows so the first is not the old span's.
+    /// channel width. It waits for the feed to be subscribed to this channel's capture and for
+    /// two of its rows, because a row of the span before is a floor from another band: the feed
+    /// zeroes its count on each subscription, so a count that went backwards means the rows on
+    /// hand are the new capture's and two of them is two of that span's. Three seconds is the
+    /// budget, and if it runs out the squelch is left off, which is what `ley tune` leaves.
     private func measureSquelch(channel ch: Leyline_V1_Channel, sampleRate: UInt64, bandwidthHz: UInt32) async {
         guard let writes else { return }
-        let target = spectrum.rows + 2
-        for _ in 0..<60 where spectrum.rows < target {
+        let start = spectrum.rows
+        var fresh = false
+        for _ in 0..<60 {
+            let since = spectrum.rows >= start ? spectrum.rows - start : spectrum.rows
+            if spectrum.subscribedCapture == ch.captureID, since >= 2 {
+                fresh = true
+                break
+            }
             try? await Task.sleep(for: .milliseconds(50))
         }
-        guard spectrum.rows >= target else { return }
+        guard fresh else {
+            log("session", "no two rows of capture \(ch.captureID) within 3 s; squelch left off, so no station is muted by another band's floor")
+            return
+        }
         let (threshold, floor) = SpectrumFold.autoSquelch(spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
         await writes.squelchDb(threshold, channel: ch.channelID)
@@ -383,8 +453,7 @@ final class AppSession {
                 if Date().timeIntervalSince(lastPan) > 0.3, centreInFlight == nil {
                     lastPan = Date()
                     let newCentre = clampCentre(target < lo ? centre - span / 8 : centre + span / 8, span: span)
-                    requestedHz = UInt64(max(0, target))
-                    requestedAt = Date()
+                    request(UInt64(max(0, target)))
                     log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
                     Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
                     followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
@@ -392,17 +461,25 @@ final class AppSession {
                 }
             } else {
                 let newCentre = clampCentre(target < lo ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
-                requestedHz = UInt64(max(0, target))
-                requestedAt = Date()
-                log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
-                Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
+                request(UInt64(max(0, target)))
+                // One move at a time: while one is in flight the new one waits in the slot and
+                // `retune` performs it next, because two of them leave the coalescer holding
+                // only the last centre and the first offset written against a centre that
+                // never applied.
+                if centreInFlight != nil {
+                    if let waiting = nextRetune { log("tune", "centre \(waiting.centre) Hz superseded before it ran") }
+                    log("tune", "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
+                    nextRetune = (centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID)
+                } else {
+                    log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
+                    Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
+                }
                 followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                 return
             }
         }
         let offset = target - centre
-        requestedHz = UInt64(max(0, target))
-        requestedAt = Date()
+        request(UInt64(max(0, target)))
         Task { await writes.offsetHz(offset, channel: ch.channelID) }
         if !dragging { log("tune", "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")") }
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
@@ -415,16 +492,27 @@ final class AppSession {
         return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
     }
 
-    /// The centre write, the wait for its event, then the offset.
+    /// The centre write, the wait for its event, then the offset — and then whatever move was
+    /// asked for in the meantime, before `centreInFlight` is cleared, so a second request never
+    /// starts a second one of these. A superseded move's offset is not written: the centre it
+    /// belonged to is already on its way somewhere else.
     private func retune(centre: Int64, offset: Int64, capture: String, channel: String) async {
         guard let writes else { return }
-        centreInFlight = centre
-        spectrum.resetFolds()
-        await writes.centerHz(UInt64(max(0, centre)), capture: capture)
-        await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
-        if self.capture?.centerHz != UInt64(max(0, centre)) { log("tune", "centre \(centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)") }
+        var move = (centre: centre, offset: offset, capture: capture, channel: channel)
+        while true {
+            centreInFlight = move.centre
+            spectrum.resetFolds()
+            let want = UInt64(max(0, move.centre))
+            await writes.centerHz(want, capture: move.capture)
+            await confirmed { self.capture?.centerHz == want }
+            if self.capture?.centerHz != want { log("tune", "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)") }
+            if nextRetune == nil { await writes.offsetHz(move.offset, channel: move.channel) }
+            guard let next = nextRetune else { break }
+            nextRetune = nil
+            log("tune", "centre \(move.centre) -> \(next.centre) Hz, the move that was waiting")
+            move = next
+        }
         centreInFlight = nil
-        await writes.offsetHz(offset, channel: channel)
     }
 
     /// No channel yet (a capture adopted from another client, or the first click): the centre
@@ -447,8 +535,7 @@ final class AppSession {
             await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
             centreInFlight = nil
         }
-        requestedHz = hz
-        requestedAt = Date()
+        request(hz)
         do {
             let ch = try await ensureChannel(in: cap, offsetHz: target - centre, mode: mode, bandwidthHz: bw)
             try await ensureSink(on: ch)
@@ -521,9 +608,10 @@ final class AppSession {
         await confirmed { self.capture?.sampleRate == rate }
     }
 
-    /// Waits up to a second for the mirror to show `condition`, checking every 50 ms.
-    private func confirmed(_ condition: () -> Bool) async {
-        for _ in 0..<20 {
+    /// Waits up to `seconds` for the mirror to show `condition`, checking every 50 ms. A second
+    /// is the default because that is a control write's round trip with room to spare.
+    private func confirmed(within seconds: Double = 1, _ condition: () -> Bool) async {
+        for _ in 0..<Int(seconds * 20) {
             if condition() { return }
             try? await Task.sleep(for: .milliseconds(50))
         }
@@ -607,13 +695,15 @@ final class AppSession {
     /// (destroyed only if this app made it).
     func choose(device: Leyline_V1_DeviceDescriptor) async {
         guard let daemon, device.deviceID != capture?.deviceID else { return }
+        // `select(band:)` returns without doing anything while another band change is in flight,
+        // so the switch must wait for that one rather than be dropped on the floor.
+        await confirmed(within: 2) { !self.busy }
+        guard !busy else {
+            log("session", "device \(device.model) not chosen: a band change was still in flight after 2 s")
+            return
+        }
         let old = capture
-        captureID = nil
-        channelID = nil
-        captureSeen = false
-        channelSeen = false
-        pendingCapture = nil
-        pendingChannel = nil
+        dropCapture()
         if let b = band { await select(band: b) } else if let b = bands.first(where: { $0.id == "fm" }) { await select(band: b) }
         if let old, old.createdBy.clientID == daemon.identity.id {
             var req = Leyline_V1_DestroyCaptureRequest()

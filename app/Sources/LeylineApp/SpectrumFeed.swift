@@ -85,7 +85,9 @@ final class SpectrumFeed {
     let waterfall = WaterfallBuffer()
 
     private var task: Task<Void, Never>?
-    private var subscribedCapture: String?
+    /// The capture the rows on hand belong to, so a caller that folds them (the app's auto
+    /// squelch) can tell rows of this span from rows of the one before.
+    private(set) var subscribedCapture: String?
     private var subscribedRate: UInt64 = 0
 
     /// Follows `capture`, resubscribing when it or its sample rate changes. Nil stops the feed.
@@ -119,11 +121,15 @@ final class SpectrumFeed {
         }
     }
 
+    /// Ends the subscription and forgets what it counted: `rows` counts one subscription's rows,
+    /// not the feed's lifetime, so waiting for two rows is waiting for two rows of this span.
     func stop() {
         task?.cancel()
         task = nil
         subscribedCapture = nil
         subscribedRate = 0
+        rows = 0
+        gaps = 0
     }
 
     /// The capture moved: what was held is about another span.
