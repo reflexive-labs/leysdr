@@ -54,7 +54,7 @@ final class WaterfallBuffer {
 @MainActor
 @Observable
 final class SpectrumFeed {
-    static let bins: UInt32 = 2048
+    nonisolated static let bins: UInt32 = 2048
     static let rowsPerSecond: Double = 30
     /// How far above the floor the ramp reaches: six stops over 60 dB. The terminal's is 40 with
     /// four shades (`go/internal/cli/waterfall_view.go`); the eye can use more here.
