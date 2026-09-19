@@ -77,7 +77,6 @@ struct FrequencyField: View {
     @State private var khz: [Character] = ["0", "0", "0"]
     @State private var caret = 0
     @State private var inKhz = false
-    @State private var frame = CGRect.zero
     @State private var monitor: Any?
     @FocusState private var focused: Bool
 
@@ -88,8 +87,11 @@ struct FrequencyField: View {
                 digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
                 Text(".").font(Theme.Font.frequency).foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
                 digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
-                Text(Frequency.fieldParts(hz ?? 0).minor)
-                    .font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
+                // Sub-kHz digits only when there are any: a drag lands between kHz, a keypad never does.
+                if let hz, hz % 1_000 != 0, !focused {
+                    Text(Frequency.fieldParts(hz).minor)
+                        .font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
+                }
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
             }
@@ -104,7 +106,6 @@ struct FrequencyField: View {
             .focused($focused)
             .onKeyPress { handle($0) }
         }
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
         .onAppear { load(hz) }
         .onChange(of: hz) { _, new in
             if !focused { load(new) }
@@ -173,7 +174,19 @@ struct FrequencyField: View {
     private func handle(_ press: KeyPress) -> KeyPress.Result {
         if press.key == .return { commit(); return .handled }
         if press.key == .escape { focused = false; return .handled }
-        if press.key == .leftArrow {
+        return handleEditingKey(press.key, press.characters)
+    }
+
+    private func forwardDelete() {
+        if inKhz {
+            if caret < khz.count { khz[caret] = "0" }
+        } else if caret < mhz.count, mhz.count > 1 {
+            mhz.remove(at: caret)
+        }
+    }
+
+    private func handleEditingKey(_ key: KeyEquivalent, _ characters: String) -> KeyPress.Result {
+        if key == .leftArrow {
             if inKhz {
                 if caret > 0 { caret -= 1 } else { inKhz = false; caret = mhz.count }
             } else if caret > 0 { caret -= 1 }
@@ -191,7 +204,7 @@ struct FrequencyField: View {
             } else if caret > 0 { caret -= 1; mhz.remove(at: caret) }
             return .handled
         }
-        guard let c = press.characters.first else { return .ignored }
+        guard let c = characters.first else { return .ignored }
         if c == "." || c == "," {
             if !inKhz {
                 mhz = Array(mhz.prefix(max(caret, 1)))
@@ -213,21 +226,44 @@ struct FrequencyField: View {
         return .handled
     }
 
-    /// A click anywhere but the field ends the edit. SwiftUI's focus does not move for a click
-    /// on a view that takes none, so the window's clicks are watched while the field has focus.
+    /// While the field has focus the window's events are watched directly: SwiftUI hands a
+    /// focusable view its digits but not reliably Return or Escape, and it moves focus for no
+    /// click on a view that takes none. Any mouse-down ends the edit (a click on the field
+    /// itself begins a fresh one through its tap); Return tunes and Escape restores, swallowed
+    /// so nothing else acts on them.
     private func watchClicks() {
         if monitor != nil { return }
         let blur = $focused
-        let field = frame
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+        log("field", "editing")
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
             MainActor.assumeIsolated {
-                if let content = event.window?.contentView {
-                    let p = event.locationInWindow
-                    let inSwiftUI = CGPoint(x: p.x, y: content.bounds.height - p.y)
-                    if !field.contains(inSwiftUI) { blur.wrappedValue = false }
+                switch event.type {
+                case .leftMouseDown, .rightMouseDown:
+                    log("field", "click ends the edit")
+                    blur.wrappedValue = false
+                    return event
+                case .keyDown:
+                    switch event.keyCode {
+                    case 36, 76:  // Return, keypad Enter
+                        commit()
+                        return nil
+                    case 53:  // Escape
+                        log("field", "escape restores")
+                        blur.wrappedValue = false
+                        return nil
+                    case 51:  // Backspace: step back, clearing what was there
+                        _ = handleEditingKey(.delete, "")
+                        return nil
+                    case 117:  // Forward delete: clear the digit under the caret, staying put
+                        forwardDelete()
+                        return nil
+                    default:
+                        return event
+                    }
+                default:
+                    return event
                 }
             }
-            return event
         }
     }
 }
