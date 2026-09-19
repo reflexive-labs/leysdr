@@ -6,6 +6,7 @@
 // bin wide is never lost between two pixels.
 
 import LeylineClient
+import LeylineProto
 import SwiftUI
 
 struct SpectrumView: View {
@@ -16,10 +17,19 @@ struct SpectrumView: View {
     static let aboveFloorDB: Float = 70
 
     var body: some View {
-        // Read here, in the body, so the canvas is redrawn on every row: a read inside the
-        // drawing closure alone is not tracked.
+        // Read here, in the body, so the canvas is redrawn on every row and on every retune: a
+        // read inside the drawing closure alone is not tracked, so the capture, the visible range
+        // and the tuned channel read there left the old band drawn until the next row arrived.
         let feed = session.spectrum
-        let rows = Rows(latest: feed.latest, hold: session.maxHold ? feed.hold.levelsDB : [], floorDB: feed.floorDB)
+        let rows = Rows(
+            latest: feed.latest,
+            hold: session.maxHold ? feed.hold.levelsDB : [],
+            floorDB: feed.floorDB,
+            capture: session.capture,
+            range: session.visibleRange,
+            tunedHz: session.tunedHz,
+            channel: session.channel
+        )
         ZStack(alignment: .topLeading) {
             Canvas(rendersAsynchronously: false) { ctx, size in
                 draw(in: &ctx, size: size, rows: rows)
@@ -30,10 +40,16 @@ struct SpectrumView: View {
         .background(Theme.ground)
     }
 
+    /// Everything one frame of the trace is drawn from, read in `body` where observation
+    /// tracks it and handed to `draw` whole.
     struct Rows {
         var latest: [Float]
         var hold: [Float]
         var floorDB: Float
+        var capture: Leyline_V1_Capture?
+        var range: ClosedRange<UInt64>?
+        var tunedHz: UInt64?
+        var channel: Leyline_V1_Channel?
     }
 
     private func draw(in ctx: inout GraphicsContext, size: CGSize, rows: Rows) {
@@ -51,7 +67,7 @@ struct SpectrumView: View {
         }
         ctx.stroke(grid, with: .color(Theme.border.opacity(0.6)), lineWidth: 0.5)
 
-        guard let cap = session.capture, let range = session.visibleRange, cap.sampleRate > 0 else { return }
+        guard let cap = rows.capture, let range = rows.range, cap.sampleRate > 0 else { return }
         let latest = rows.latest
         guard !latest.isEmpty else { return }
         let floor = rows.floorDB.isNaN ? SpectrumFold.medianDB(latest) : rows.floorDB
@@ -60,7 +76,7 @@ struct SpectrumView: View {
         let columns = Columns(range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate, bins: latest.count, width: size.width)
 
         // The tuned channel first, under the traces.
-        if let hz = session.tunedHz, let ch = session.channel {
+        if let hz = rows.tunedHz, let ch = rows.channel {
             let x0 = columns.x(of: hz - UInt64(ch.bandwidthHz) / 2)
             let x1 = columns.x(of: hz + UInt64(ch.bandwidthHz) / 2)
             let band = CGRect(x: x0, y: 0, width: max(2, x1 - x0), height: size.height)

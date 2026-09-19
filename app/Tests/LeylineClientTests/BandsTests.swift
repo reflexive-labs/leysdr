@@ -46,7 +46,8 @@ final class BandsTests: XCTestCase {
         XCTAssertEqual(Bands.band(containing: 462_600_000, in: bands)?.name, "GMRS 462 MHz")
         XCTAssertNil(Bands.band(containing: 465_000_000, in: bands), "the gap between two parts belongs to no band")
         XCTAssertEqual(Bands.defaultMode(at: 465_000_000, in: bands), .nfm)
-        XCTAssertEqual(Bands.plain.filter(\.isGroup).count, 0)
+        XCTAssertTrue(Bands.builtIn.contains { $0.isGroup }, "bands.json has no group, so plain drops nothing")
+        XCTAssertLessThan(Bands.plain.count, Bands.builtIn.count)
     }
 
     func testSampleRateIsTheSmallestThatCoversTheBand() {

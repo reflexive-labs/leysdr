@@ -45,12 +45,12 @@ final class AppLog: @unchecked Sendable {
     /// `area` is the part of the window that speaks (`session`, `tune`, `feed`, `waterfall`);
     /// the message is one sentence with the numbers in it.
     func log(_ area: String, _ message: String) {
-        let line: String
+        // Both writes happen under the lock: stderr outside it let two lines interleave.
         lock.lock()
-        line = "\(stamp.string(from: Date())) \(area): \(message)\n"
-        handle?.write(Data(line.utf8))
+        let line = Data("\(stamp.string(from: Date())) \(area): \(message)\n".utf8)
+        handle?.write(line)
+        FileHandle.standardError.write(line)
         lock.unlock()
-        FileHandle.standardError.write(Data(line.utf8))
         logger.log("\(area, privacy: .public): \(message, privacy: .public)")
     }
 }

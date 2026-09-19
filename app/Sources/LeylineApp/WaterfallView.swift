@@ -5,6 +5,7 @@
 // channel, the pointer's hairline and badge, the time axis in seconds. Every gesture is handled
 // by the Metal view (it owns the mouse) and lands in `AppSession.tune(to:)`.
 
+import Foundation
 import LeylineClient
 import MetalKit
 import SwiftUI
@@ -207,6 +208,10 @@ final class InteractiveMetalView: MTKView {
     private var tracking: NSTrackingArea?
     private var downAt: CGPoint?
     private var dragged = false
+    private var scrolled: CGFloat = 0
+
+    /// How far the wheel or the fingers travel for one fine step.
+    static let scrollNotch: CGFloat = 20
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -255,10 +260,20 @@ final class InteractiveMetalView: MTKView {
         NSCursor.crosshair.set()
     }
 
+    // One fine step per notch of travel, because a trackpad reports precise deltas of a point
+    // or two and keeps reporting them after the fingers lift: a step per event ran the frequency
+    // away on one flick. Momentum is not a hand on the wheel, so it is ignored, and a mouse
+    // wheel's line counts as a whole notch.
     override func scrollWheel(with event: NSEvent) {
-        let dy = event.scrollingDeltaY
-        guard abs(dy) >= 1 else { return }
-        onScroll?(dy)
+        guard event.momentumPhase.isEmpty else { return }
+        if event.phase.contains(.began) { scrolled = 0 }
+        scrolled += event.hasPreciseScrollingDeltas
+            ? event.scrollingDeltaY
+            : event.scrollingDeltaY * Self.scrollNotch
+        guard abs(scrolled) >= Self.scrollNotch else { return }
+        let travel = scrolled
+        scrolled = 0
+        onScroll?(travel)
     }
 }
 
@@ -287,6 +302,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     private var pipeline: MTLRenderPipelineState?
     private var texture: MTLTexture?
     private var uploaded = 0
+    private var lastTextureFailure: CFAbsoluteTime = 0
     private var stops: [SIMD4<Float>] = Theme.levelStopsRGB.map { SIMD4($0, 1) }
 
     var buffer: WaterfallBuffer?
@@ -303,7 +319,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         queue = device?.makeCommandQueue()
         super.init()
         guard let device else {
-            fail("no Metal device")
+            fail("The waterfall shader did not load: there is no Metal device.")
             return
         }
         do {
@@ -315,13 +331,16 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
             pipeline = try device.makeRenderPipelineState(descriptor: desc)
             log("waterfall", "shader compiled on \(device.name)")
         } catch {
-            fail("\(error)")
+            fail("The waterfall shader did not load: \(error)")
         }
     }
 
-    private func fail(_ why: String) {
-        problem = "The waterfall shader did not load: \(why)"
-        log("waterfall", problem!)
+    /// The first failure is the one that explains the dark panel, so it is the one kept, and it
+    /// goes to the log as well as to the window.
+    private func fail(_ what: String) {
+        guard problem == nil else { return }
+        problem = what
+        log("waterfall", what)
     }
 
     nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -334,10 +353,8 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         guard let device, let queue, let pipeline, let buffer, buffer.bins > 0,
               let drawable = view.currentDrawable, let pass = view.currentRenderPassDescriptor else { return }
         if texture == nil || texture?.width != buffer.bins {
-            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Uint, width: buffer.bins, height: WaterfallBuffer.capacity, mipmapped: false)
-            d.usage = [.shaderRead]
-            d.storageMode = .managed
-            texture = device.makeTexture(descriptor: d)
+            guard let made = makeRingTexture(device: device, bins: buffer.bins) else { return }
+            texture = made
             uploaded = 0
             log("waterfall", "texture \(buffer.bins)×\(WaterfallBuffer.capacity), drawable \(Int(view.drawableSize.width))×\(Int(view.drawableSize.height))")
         }
@@ -370,6 +387,22 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         cmd.commit()
         frames += 1
         signposter.endInterval("draw", state)
+    }
+
+    /// The ring texture, or nil while Metal is refusing one. A refusal says so in the window
+    /// once and is retried at most once a second: `draw(in:)` runs at the row rate, so an
+    /// ungated retry would ask thirty times a second and the panel would stay dark without a word.
+    private func makeRingTexture(device: MTLDevice, bins: Int) -> MTLTexture? {
+        guard CFAbsoluteTimeGetCurrent() - lastTextureFailure >= 1 else { return nil }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Uint, width: bins, height: WaterfallBuffer.capacity, mipmapped: false)
+        d.usage = [.shaderRead]
+        d.storageMode = .managed
+        guard let texture = device.makeTexture(descriptor: d) else {
+            lastTextureFailure = CFAbsoluteTimeGetCurrent()
+            fail("The waterfall has no texture: Metal refused \(bins)×\(WaterfallBuffer.capacity) bytes on \(device.name).")
+            return nil
+        }
+        return texture
     }
 
     /// Copies the rows appended since the last draw; after a long stall the whole ring.

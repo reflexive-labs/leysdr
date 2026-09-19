@@ -66,7 +66,11 @@ enum WaterfallShader {
         float b1f = mix(u.viewLo, u.viewHi, x1) * float(u.bins);
         uint b0 = uint(clamp(b0f, 0.0, float(u.bins - 1)));
         uint b1 = uint(clamp(b1f, 0.0, float(u.bins - 1)));
-        uint hi = min(b1, b0 + 16u);
+        // The cap bounds the loop's work per pixel, so a wrong uniform cannot make one pixel
+        // scan the whole row; 64 is more bins than a column covers at any width the panel gets
+        // (2048 bins over a drawable 32 pixels wide), and 16 under-reported a peak the spectrum
+        // showed when the window was narrow.
+        uint hi = min(b1, b0 + 64u);
         uint loudest = 0;
         for (uint b = b0; b <= hi; b++) {
             loudest = max(loudest, rows.read(uint2(b, slot)).r);

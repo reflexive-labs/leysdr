@@ -128,6 +128,7 @@ struct GainControl: View {
 
     var body: some View {
         let element = device.gainElements.first
+        let supportsAuto = element?.supportsAuto ?? false
         let state = session.capture?.gains.first
         let auto = state?.auto ?? true
         let db = dragging ?? state?.db ?? element?.minDb ?? 0
@@ -136,13 +137,14 @@ struct GainControl: View {
                 Text("Gain").font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                 Spacer()
                 Picker("", selection: Binding(get: { auto }, set: { if $0 { session.setGainAuto() } else { session.setGain(db: db) } })) {
-                    Text("Auto").tag(true)
+                    // Only the modes the radio has, and the picker is never disabled: a device
+                    // that reports auto without supporting it used to leave Manual unreachable.
+                    if supportsAuto { Text("Auto").tag(true) }
                     Text("Manual").tag(false)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 130)
-                .disabled(!(element?.supportsAuto ?? false) && auto)
             }
             if let element {
                 GainSlider(element: element, db: db, dimmed: auto) { newDb, ended in
