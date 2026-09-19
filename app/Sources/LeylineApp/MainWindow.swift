@@ -40,7 +40,7 @@ struct MainWindow: View {
                 VStack(spacing: 0) {
                     SpectrumView()
                         .frame(height: Theme.Layout.spectrumHeight)
-                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                    Rectangle().fill(Theme.border).frame(height: 1)
                     WaterfallView()
                 }
                 if let words = session.emptyWords { EmptyWords(headline: words.headline, detail: words.detail) }
