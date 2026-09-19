@@ -207,3 +207,28 @@ func TestGainWriteNeedsAValue(t *testing.T) {
 		}
 	}
 }
+
+// A write that names no element lands on the first the device lists, the rule the contract states
+// and the daemon applies; the confirmed state comes back under that element's name.
+func TestGainWriteWithAnEmptyElementIsTheFirst(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := context.Background()
+	st := mustState(t, c)
+	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	el := st.Devices[0].GainElements[0]
+	level := el.ValidDb[3]
+	w := &leylinev1.ParamWrite{TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Db{Db: level}}}}
+	sum, err := c.WriteParams(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.WritesApplied != 1 {
+		t.Fatalf("applied %d writes, want 1", sum.WritesApplied)
+	}
+	if got := gainOf(t, c, cap.CaptureId, el.Name); got.Auto || got.Db != level {
+		t.Errorf("empty element = %v, want %s at %g dB manual", got, el.Name, level)
+	}
+}

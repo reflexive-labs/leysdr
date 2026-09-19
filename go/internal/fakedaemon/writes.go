@@ -264,8 +264,17 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 	if db, ok := g.Value.(*leylinev1.GainWrite_Db); ok && (math.IsNaN(db.Db) || math.IsInf(db.Db, 0)) {
 		return errorf(leyline.CodeInvalidArgument, target, "gain db must be finite")
 	}
+	// An empty element is the first the device lists (common.proto, GainWrite), as the daemon
+	// reads it; a radio with no gain stage has nothing for it to name.
+	element := g.Element
+	if element == "" {
+		if len(dev.GainElements) == 0 {
+			return errorf(leyline.CodeGainElementUnknown, target, "this radio reports no gain elements")
+		}
+		element = dev.GainElements[0].Name
+	}
 	for _, el := range dev.GainElements {
-		if el.Name != g.Element {
+		if el.Name != element {
 			continue
 		}
 		for _, gs := range c.Gains {

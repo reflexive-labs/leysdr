@@ -963,18 +963,30 @@ final class AppSession {
     // MARK: Device and gain
 
     func setGain(db: Double) {
-        guard let cap = capture, let writes else { return }
-        var w = Leyline_V1_GainWrite()
-        w.db = db
-        Task { await writes.gain(w, capture: cap.captureID) }
+        writeGain(String(format: "%.1f dB", db)) { $0.db = db }
     }
 
     func setGainAuto() {
+        writeGain("auto") { $0.auto = true }
+    }
+
+    /// A gain write names the device's first element, as `ley` does (`go/internal/cli/session.go`,
+    /// `applyGain`): the daemon reads an empty element as the first one too, but the confirmed
+    /// state comes back under the element's name and the menu reads it by that name. A radio
+    /// with no gain stage (a recording) has nothing to write to, and says so.
+    private func writeGain(_ words: String, _ fill: (inout Leyline_V1_GainWrite) -> Void) {
         guard let cap = capture, let writes else { return }
+        guard let element = device?.gainElements.first else {
+            notice = "This radio reports no gain stage, so there is nothing to set."
+            return
+        }
         var w = Leyline_V1_GainWrite()
-        w.auto = true
+        w.element = element.name
+        fill(&w)
+        log("gain", "\(element.name) \(words)")
         Task { await writes.gain(w, capture: cap.captureID) }
     }
+
 
     func setSampleRate(_ rate: UInt64) {
         guard let cap = capture, let writes else { return }

@@ -122,6 +122,13 @@ squelch's rule); `ley`'s `snr` column still shows the meter's number. Giving the
 from the capture's spectrum rather than the channel's minimum is engine work for after M1, and
 until then the two clients disagree on a continuous carrier.
 
+Found the same day from the app log: every gain write from the window was refused with
+`GAIN_ELEMENT_UNKNOWN no gain element named ` because the window sent no element, while `ley`
+names the device's first. Fixed on both sides: the daemon now reads an empty element as the
+first the device lists, as `common.proto` promises and the scan allocator already did (a radio
+with no gain stage says "this radio reports no gain elements"), the fake daemon does the same,
+and the window names the element and logs the write like a tune. Unverified on the Mac: that the
+slider's confirmed level now reads back under the element's name.
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
 the owner brought and the four answers recorded in the handoff's "Decided 2026-09-19": the
 band's edges as a track with numbered caps, the slice on screen as a pill, bookmarks and the

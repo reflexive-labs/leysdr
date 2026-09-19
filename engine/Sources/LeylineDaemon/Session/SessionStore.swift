@@ -990,8 +990,20 @@ actor SessionStore {
                 if case .db(let db)? = g.value, !db.isFinite {
                     throw EngineError.invalidArgument("gain db must be finite", target: w.targetID)
                 }
-                guard let d = devices[entry.deviceID], let el = d.gainElement(named: g.element) else {
+                // An empty element is the first the device lists (`common.proto`, `GainWrite`), the
+                // rule the scan allocator already applies; the confirmed level and the manual level
+                // are kept under the resolved name, so a client that names it and one that does not
+                // read the same state back.
+                guard let d = devices[entry.deviceID] else {
                     throw EngineError.gainElementUnknown(g.element, target: w.targetID)
+                }
+                let element = g.element.isEmpty ? (d.gainElements.first?.name ?? "") : g.element
+                guard let el = d.gainElement(named: element) else {
+                    if element.isEmpty {
+                        throw EngineError(code: EngineError.Code.gainElementUnknown,
+                                          message: "this radio reports no gain elements", target: w.targetID)
+                    }
+                    throw EngineError.gainElementUnknown(element, target: w.targetID)
                 }
                 func manual(_ db: Double) -> Double { el.validDB.isEmpty ? db : el.snapped(db) }
                 let value: GainValue
@@ -999,13 +1011,13 @@ actor SessionStore {
                 case .db(let db)?:
                     value = .db(manual(db))
                 case .auto(true)?:
-                    guard el.supportsAuto else { throw EngineError.gainElementUnknown(g.element, target: w.targetID) }
+                    guard el.supportsAuto else { throw EngineError.gainElementUnknown(element, target: w.targetID) }
                     value = .auto
                 case .auto(false)?:
                     // Manual, level unchanged: the confirmed manual level, else the driver's current
                     // manual level, else a mid-range default (never the minimum — that deafens the radio).
-                    let current = await entry.engine.snapshot.gains.first { $0.element == g.element }?.value
-                    if let db = entry.manualGainDB[g.element] {
+                    let current = await entry.engine.snapshot.gains.first { $0.element == element }?.value
+                    if let db = entry.manualGainDB[element] {
                         value = .db(db)
                     } else if case .db(let db)? = current {
                         value = .db(db)
@@ -1015,8 +1027,8 @@ actor SessionStore {
                     }
                 case nil: throw EngineError.invalidArgument("gain value is required", target: w.targetID)
                 }
-                try await entry.engine.setGain(element: g.element, value: value)
-                if case .db(let db) = value { captures[id]?.manualGainDB[g.element] = db }
+                try await entry.engine.setGain(element: element, value: value)
+                if case .db(let db) = value { captures[id]?.manualGainDB[element] = db }
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
             case .offsetHz?, .bandwidthHz?, .mode?, .squelchDb?:
