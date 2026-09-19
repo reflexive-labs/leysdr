@@ -392,10 +392,11 @@ struct SquelchTrack: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(LinearGradient(colors: [.black, Theme.levelStops[1]], startPoint: .leading, endPoint: .trailing))
                     Rectangle().fill(Theme.good.opacity(0.09)).frame(width: max(0, w - markerX)).offset(x: markerX)
-                    // The colour region, inset, filled to the level through the ramp.
-                    LinearGradient(colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing)
-                        .frame(width: max(0, w - 2 * inset))
-                        .mask(alignment: .leading) { RoundedRectangle(cornerRadius: 2).frame(width: max(0, levelX - inset)) }
+                    // The colour region, inset, as long as the level: dark teal at its left to
+                    // the ramp's yellow at its right whatever its length, as the design draws it.
+                    LinearGradient(colors: Array(Theme.levelStops[1...3]), startPoint: .leading, endPoint: .trailing)
+                        .frame(width: max(0, levelX - inset))
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
                         .padding(.vertical, inset)
                         .offset(x: inset)
                     Rectangle().fill(Theme.ink).frame(width: 2.5)

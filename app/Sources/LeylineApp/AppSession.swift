@@ -31,6 +31,15 @@ final class AppSession {
     private(set) var channelID: String?
     private(set) var selectedBandID: String?
     private var adopted = false
+    /// The objects this app made, as their RPCs returned them, until the mirror carries them: a
+    /// response arrives before the event does, and in that gap the window still has a channel.
+    private var pendingCapture: Leyline_V1_Capture?
+    private var pendingChannel: Leyline_V1_Channel?
+    /// Whether the mirror has carried the object at all. An id is dropped only once the mirror
+    /// had the object and lost it (a tombstone, or a resync without it), never for the gap
+    /// between an RPC's response and its event, which once made ten channels from ten tunes.
+    private var captureSeen = false
+    private var channelSeen = false
     /// The frequency this app last asked for, until the daemon confirms it or a second passes:
     /// what the field shows and what a step is taken from, so two quick presses do not both
     /// start from the frequency before the first (`../dev/app.md`: a view previews its own
@@ -69,8 +78,8 @@ final class AppSession {
 
     // MARK: Derived
 
-    var capture: Leyline_V1_Capture? { captureID.flatMap { state.capture($0) } }
-    var channel: Leyline_V1_Channel? { channelID.flatMap { state.channel($0) } }
+    var capture: Leyline_V1_Capture? { captureID.flatMap { state.capture($0) } ?? pendingCapture }
+    var channel: Leyline_V1_Channel? { channelID.flatMap { state.channel($0) } ?? pendingChannel }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
     var sink: Leyline_V1_Sink? {
         guard let channelID else { return nil }
@@ -170,12 +179,36 @@ final class AppSession {
         if wasLive != isLive { log("session", isLive ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures" : "not live: \(connection)") }
         if let r = requestedHz, r == tunedHz || Date().timeIntervalSince(requestedAt) > 2 { requestedHz = nil }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted.
-        if let id = captureID, state.capture(id) == nil { captureID = nil }
-        if let id = channelID, state.channel(id) == nil { channelID = nil }
+        if let id = captureID {
+            if state.capture(id) != nil {
+                captureSeen = true
+                pendingCapture = nil
+            } else if captureSeen {
+                log("session", "capture \(id) is gone; a new one will be made")
+                captureID = nil
+                captureSeen = false
+                channelID = nil
+                channelSeen = false
+                pendingChannel = nil
+                adopted = false
+            }
+        }
+        if let id = channelID {
+            if state.channel(id) != nil {
+                channelSeen = true
+                pendingChannel = nil
+            } else if channelSeen {
+                log("session", "channel \(id) is gone")
+                channelID = nil
+                channelSeen = false
+            }
+        }
         if case .live = connection {
             if !adopted { adopt() }
         } else {
             adopted = false
+            captureSeen = false
+            channelSeen = false
         }
         spectrum.follow(capture, connection: daemon)
         meters.follow(channelID, connection: daemon)
@@ -192,12 +225,13 @@ final class AppSession {
     /// On the first live snapshot: show a capture that already exists (another client's, or
     /// ours from before a reconnect), else make one on the last band used, else FM broadcast.
     private func adopt() {
+        guard !busy, !creatingChannel else { return }
         adopted = true
         if captureID == nil, let cap = state.captures.first(where: { $0.state == .captureActive }) ?? state.captures.first {
             captureID = cap.captureID
             if channelID == nil, let ch = state.channels(in: cap.captureID).first { channelID = ch.channelID }
             log("session", "adopted capture \(cap.captureID) at \(cap.centerHz) Hz, \(cap.sampleRate) S/s, channel \(channelID ?? "none")")
-            if channelID == nil { Task { await tuneCreating(hz: cap.centerHz) } }
+            if channelID == nil, state.channels(in: cap.captureID).isEmpty { Task { await tuneCreating(hz: cap.centerHz) } }
             return
         }
         guard captureID == nil, hasRadio else { return }
@@ -265,7 +299,11 @@ final class AppSession {
         do { cap = try await daemon.control.createCapture(req) } catch { throw LeylineError(error) }
         log("session", "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
         captureID = cap.captureID
+        captureSeen = false
+        pendingCapture = cap
         channelID = nil
+        channelSeen = false
+        pendingChannel = nil
         return cap
     }
 
@@ -288,6 +326,8 @@ final class AppSession {
         do { ch = try await daemon.control.createChannel(req) } catch { throw LeylineError(error) }
         log("session", "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
         channelID = ch.channelID
+        channelSeen = false
+        pendingChannel = ch
         return ch
     }
 
@@ -570,6 +610,10 @@ final class AppSession {
         let old = capture
         captureID = nil
         channelID = nil
+        captureSeen = false
+        channelSeen = false
+        pendingCapture = nil
+        pendingChannel = nil
         if let b = band { await select(band: b) } else if let b = bands.first(where: { $0.id == "fm" }) { await select(band: b) }
         if let old, old.createdBy.clientID == daemon.identity.id {
             var req = Leyline_V1_DestroyCaptureRequest()
