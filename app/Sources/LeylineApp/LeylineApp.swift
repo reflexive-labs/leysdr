@@ -44,18 +44,19 @@ struct TuneCommands: Commands {
     let session: AppSession
 
     var body: some Commands {
-        // The arrow and space equivalents are held back while the frequency field is being
-        // typed into, or the menu would take the keys before the field does.
-        let typing = session.frequencyEntryShown
+        // The arrows and space belong to the frequency field while it is being typed into, and
+        // it keeps them itself: its event monitor swallows them (TransportBarView.swift,
+        // `watchClicks`), because a Commands body is not promised a re-evaluation when the
+        // session's frequencyEntryShown changes.
         CommandMenu("Tune") {
             Button("Tune Up") { session.step(1) }
-                .keyboardShortcut(.rightArrow, modifiers: []).disabled(typing)
+                .keyboardShortcut(.rightArrow, modifiers: [])
             Button("Tune Down") { session.step(-1) }
-                .keyboardShortcut(.leftArrow, modifiers: []).disabled(typing)
+                .keyboardShortcut(.leftArrow, modifiers: [])
             Button("Fine Tune Up") { session.step(1, fine: true) }
-                .keyboardShortcut(.rightArrow, modifiers: [.shift]).disabled(typing)
+                .keyboardShortcut(.rightArrow, modifiers: [.shift])
             Button("Fine Tune Down") { session.step(-1, fine: true) }
-                .keyboardShortcut(.leftArrow, modifiers: [.shift]).disabled(typing)
+                .keyboardShortcut(.leftArrow, modifiers: [.shift])
             Divider()
             Button("Enter Frequency…") { session.frequencyEntryShown = true }
                 .keyboardShortcut("l", modifiers: [.command])
@@ -79,7 +80,7 @@ struct TuneCommands: Commands {
             Button("Bookmark This Frequency") { session.bookmarkCurrent() }
                 .keyboardShortcut("d", modifiers: [.command])
             Button(session.isPlaying ? "Pause" : "Play") { Task { await session.togglePlay() } }
-                .keyboardShortcut(.space, modifiers: []).disabled(typing)
+                .keyboardShortcut(.space, modifiers: [])
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])

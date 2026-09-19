@@ -78,6 +78,10 @@ struct FrequencyField: View {
     @State private var caret = 0
     @State private var inKhz = false
     @State private var monitor: Any?
+    /// The window the field was focused in, so the monitor below can tell its own keys from the
+    /// device popover's. An identity is all that is compared, and it crosses actors where an
+    /// `NSWindow` could not.
+    @State private var ownWindow: ObjectIdentifier?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -117,6 +121,13 @@ struct FrequencyField: View {
         .onChange(of: session.frequencyEntryShown) { _, shown in
             if shown, !focused { begin() }
         }
+        .onDisappear {
+            // A window that closes while the field has focus never reports the focus lost, so
+            // without this the monitor outlives the field and swallows keys for the process.
+            focused = false
+            session.frequencyEntryShown = false
+            end()
+        }
     }
 
     /// Each digit its own glyph, the one under the caret on an accent ground while editing, and
@@ -155,19 +166,26 @@ struct FrequencyField: View {
     private func end() {
         if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = nil
+        ownWindow = nil
         inKhz = false
         caret = 0
         load(session.displayHz)
     }
 
+    /// Nothing below 500 kHz (AM broadcast starts at 530) or above 6 GHz is a frequency a radio
+    /// here can be tuned to, and the keypad makes both easy to type: a `.` into an empty MHz part
+    /// followed by three digits reads as 0.500. A refused number keeps the field focused, so it
+    /// can be finished rather than sending the radio somewhere nobody asked for.
     private func commit() {
         let whole = UInt64(String(mhz)) ?? 0
         let thousandths = UInt64(String(khz)) ?? 0
         let hz = whole * 1_000_000 + thousandths * 1_000
-        if hz > 0 {
-            log("tune", "typed \(String(mhz)).\(String(khz)) -> \(hz) Hz")
-            session.tune(to: hz)
+        if hz < 500_000 || hz > 6_000_000_000 {
+            log("field", "refused \(String(mhz)).\(String(khz))")
+            return
         }
+        log("tune", "typed \(String(mhz)).\(String(khz)) -> \(hz) Hz")
+        session.tune(to: hz)
         focused = false
     }
 
@@ -226,17 +244,24 @@ struct FrequencyField: View {
         return .handled
     }
 
-    /// While the field has focus the window's events are watched directly: SwiftUI hands a
+    /// While the field has focus its own window's events are watched directly: SwiftUI hands a
     /// focusable view its digits but not reliably Return or Escape, and it moves focus for no
-    /// click on a view that takes none. Any mouse-down ends the edit (a click on the field
-    /// itself begins a fresh one through its tap); Return tunes and Escape restores, swallowed
-    /// so nothing else acts on them.
+    /// click on a view that takes none. A local monitor sees the whole application, so an event
+    /// of any other window — Escape in the device popover — passes through untouched, and only
+    /// the window that was key when focus began is the field's. Any mouse-down there ends the
+    /// edit (a click on the field itself begins a fresh one through its tap); Return tunes,
+    /// Escape restores, the arrows move the caret and space does nothing, all swallowed so the
+    /// Tune menu's key equivalents do not fire on top of typing.
     private func watchClicks() {
         if monitor != nil { return }
         let blur = $focused
+        ownWindow = NSApp.keyWindow.map { ObjectIdentifier($0) }
+        let own = ownWindow
         log("field", "editing")
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
-            // Only the two values the field needs cross into the main actor; an NSEvent is not Sendable.
+            // Only the two values the field needs cross into the main actor; an NSEvent is not
+            // Sendable and an ObjectIdentifier is, so the window is compared out here.
+            guard let own, let window = event.window, ObjectIdentifier(window) == own else { return event }
             let type = event.type
             let code = event.keyCode
             let swallow: Bool = MainActor.assumeIsolated { react(to: type, keyCode: code, blur: blur) }
@@ -265,6 +290,14 @@ struct FrequencyField: View {
                 return true
             case 117:  // Forward delete: clear the digit under the caret, staying put
                 forwardDelete()
+                return true
+            case 123:  // Left arrow: the caret's, not the Tune menu's step
+                _ = handleEditingKey(.leftArrow, "")
+                return true
+            case 124:  // Right arrow: likewise
+                _ = handleEditingKey(.rightArrow, "")
+                return true
+            case 49:  // Space: no part of a frequency, and not play/pause while one is typed
                 return true
             default:
                 return false

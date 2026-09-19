@@ -53,6 +53,9 @@ enum Theme {
     /// The ramp at `frac` in [0, 1], interpolated between stops. A chart names its own cold end
     /// (the noise line) and hot end.
     static func level(_ frac: Double) -> Color {
+        // A meter with nothing measured yet hands over NaN, which clamps to itself and traps in
+        // `Int(_:)`; the cold end is what no reading looks like.
+        guard frac.isFinite else { return levelStops[0] }
         let stops = levelStopsRGB
         let x = frac.clamped(to: 0...1) * Double(stops.count - 1)
         let i = min(Int(x), stops.count - 2)
