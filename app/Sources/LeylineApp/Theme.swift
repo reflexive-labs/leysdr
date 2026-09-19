@@ -81,6 +81,11 @@ enum Theme {
             .monospacedDigit()
         static let body = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
+        /// A view's own headline: the band rail's band name, the empty-state headline.
+        static let title = SwiftUI.Font.system(size: 15, weight: .medium)
+        /// A popover's header: the device menu's, smaller than `title` because it sits over a
+        /// control rather than the window.
+        static let menuTitle = SwiftUI.Font.system(size: 13, weight: .medium)
         /// A value beside a label.
         static let value = SwiftUI.Font.system(size: 11, design: .monospaced).monospacedDigit()
         static let valueSmall = SwiftUI.Font.system(size: 10.5, design: .monospaced)
@@ -113,10 +118,6 @@ extension Color {
     }
 }
 
-extension Comparable {
-    func clamped(to r: ClosedRange<Self>) -> Self { min(max(self, r.lowerBound), r.upperBound) }
-}
-
 /// A section header in the handoff's voice: uppercase, small, tracked, faint.
 struct SectionHeader: View {
     let text: String
@@ -125,57 +126,5 @@ struct SectionHeader: View {
             .font(Theme.Font.section)
             .tracking(Theme.sectionTracking)
             .foregroundStyle(Theme.inkFaint)
-    }
-}
-
-enum Frequency {
-    /// `146.520 MHz`, `88.5 MHz`, `1.766 GHz`: the guide's spelling, a space before the unit.
-    static func format(_ hz: UInt64) -> String {
-        if hz >= 1_000_000_000 { return String(format: "%.3f GHz", Double(hz) / 1e9) }
-        if hz >= 1_000_000 { return String(format: "%.3f MHz", Double(hz) / 1e6) }
-        if hz >= 1_000 { return String(format: "%.1f kHz", Double(hz) / 1e3) }
-        return "\(hz) Hz"
-    }
-
-    /// `146.520` and `000`: the MHz digits the field shows in ink and the sub-kHz ones it dims.
-    static func fieldParts(_ hz: UInt64) -> (major: String, minor: String) {
-        let mhz = hz / 1_000_000
-        let khz = (hz % 1_000_000) / 1_000
-        let sub = hz % 1_000
-        return (String(format: "%d.%03d", mhz, khz), String(format: "%03d", sub))
-    }
-
-    /// A width as a person says it: `12.5 kHz`, `200 kHz`, `500 Hz`.
-    static func width(_ hz: UInt32) -> String {
-        if hz >= 1_000_000 { return String(format: "%g MHz", Double(hz) / 1e6) }
-        if hz >= 1_000 { return String(format: "%g kHz", Double(hz) / 1e3) }
-        return "\(hz) Hz"
-    }
-
-    /// Parses what a person types into the frequency field: `146.52`, `146.52M`, `162550k`,
-    /// `1090MHz`, `7.2 MHz`. A bare number is MHz unless it is too large to be one.
-    static func parse(_ text: String) -> UInt64? {
-        let s = text.trimmingCharacters(in: .whitespaces).lowercased().replacingOccurrences(
-            of: " ", with: "")
-        var digits = s
-        var scale = 1e6
-        if s.hasSuffix("ghz") || s.hasSuffix("g") {
-            scale = 1e9
-            digits = String(s.dropLast(s.hasSuffix("ghz") ? 3 : 1))
-        } else if s.hasSuffix("mhz") || s.hasSuffix("m") {
-            scale = 1e6
-            digits = String(s.dropLast(s.hasSuffix("mhz") ? 3 : 1))
-        } else if s.hasSuffix("khz") || s.hasSuffix("k") {
-            scale = 1e3
-            digits = String(s.dropLast(s.hasSuffix("khz") ? 3 : 1))
-        } else if s.hasSuffix("hz") {
-            scale = 1
-            digits = String(s.dropLast(2))
-        }
-        guard let v = Double(digits), v > 0 else { return nil }
-        if scale == 1e6, v >= 30_000 { scale = 1 }  // nobody means 146 520 000 MHz
-        let hz = v * scale
-        guard hz.isFinite, hz < 1e12 else { return nil }
-        return UInt64(hz.rounded())
     }
 }

@@ -59,8 +59,9 @@ single declaration. `WaterfallShader.swift:1` and `Streams.swift:1` are the same
 shader and a decoder, and `app/Package.swift:1` proves it holds for a manifest.
 
 **One concern per file, and the leading comment is the test.** If the comment needs two
-paragraphs about two unrelated things, the file is two files. `Theme.swift` currently fails this
-and is in section 13.
+paragraphs about two unrelated things, the file is two files. `Theme.swift` holds colours,
+`Theme.Font`, `Theme.Layout`, `SectionHeader` and `Color(hex:)`; `Frequency` moved to its own
+file and `Comparable.clamped(to:)` to `Scale.swift` on 2026-09-19.
 
 **Doc comments are `///`.** Never `/** */`, never a block comment where a doc comment belongs.
 
@@ -363,38 +364,13 @@ and comments", not here.
 ## 13. To fix
 
 Recorded so they are pending rather than forgotten. None of these is urgent; each is a small
-commit of its own.
+commit of its own. The rest of this section's findings were landed on 2026-09-19: frequency
+formatting, `Frequency.parse`, `Theme.swift`'s concerns, the dB suffix, the three inline font
+sizes and `AppSession`'s inlined numbers.
 
-- **Frequency formatting lives in four places.** `Theme.swift:119` defines `Frequency.format`,
-  `fieldParts` and `width`, yet `SidebarView.swift:102` and `BandRailView.swift:231` are
-  byte-for-byte the same private "four decimals, trim zeros" formatter. One window shows
-  `146.520 MHz` and `146.52` for the same frequency; one formatter should own the spellings the
-  writing guide names.
-- **The clamped affine map is copied four times.** `SpectrumView.swift:154`,
-  `BandRailView.swift:217`, `TransportBarView.swift:477` and `DeviceMenuView.swift:201` are the
-  same function under four names; one generic helper would do.
-- **`Frequency.parse` is dead code.** Nothing calls it (`Theme.swift:146`), because
-  `FrequencyField.commit` does its own digit assembly and bounds check. Either the field uses it
-  or it goes.
-- **`Theme.swift` holds three concerns.** `app.md`, "Rules for new work" and CLAUDE.md both say
-  colours and type live there and nowhere else; the file also carries `Frequency`, `Color(hex:)`
-  and a global `Comparable.clamped(to:)`, which belong in their own files.
-- **The dB suffix is inconsistent** where it mirrors nothing: `SquelchTrack.minDb`/`maxDb`/
-  `dragDb` (`TransportBarView.swift:407`) and `GainControl`'s locals should be `DB` under
-  section 3's rule; the proto-shadowing names stay.
-- **Two extensions on `Leyline_V1_DemodMode` in two files.** `Bands.swift:135` has `named`,
-  `word` and the bandwidths; `Bookmarks.swift:221` has `wireName`, which differs from `word` only
-  in `raw IQ` against `RAW_IQ`. One extension, one spelling each.
-- **`ClientIdentity.metadata` is unused in production.** `IdentityInterceptor` re-adds the three
-  keys by hand (`DaemonConnection.swift:140`); it should use the property instead.
-- **`AppSession` inlines numbers `SpectrumFeed` would have named**: three seconds, 300 ms,
-  `span * 3 / 8`, and the string "15 dB" at `AppSession.swift:944` that duplicates
-  `SpectrumFold.peakAboveFloorDB`.
-- **`LeylineApp` sets `.enableUpcomingFeature("StrictConcurrency")`** (`app/Package.swift:62`),
-  redundant under `.v6` and not set on `LeylineClient`. Drop it.
-- **Three texts set their size inline** rather than through `Theme.Font`: the rail's band name
-  (`BandRailView.swift:20`, 15 pt medium), the device menu's header (`DeviceMenuView.swift:71`,
-  13 pt medium) and the empty-state headline (`MainWindow.swift:65`, 15 pt medium). Two of them
-  are the same role and want one token.
-- **Two comments use `--` where the em dash belongs** (`DaemonMirror.swift:9`,
-  `Bookmarks.swift:112`).
+- **Two of the four affine maps remain separate.** `SquelchTrack` and `GainSlider` mapped a
+  clamped `Double` both ways and now share `Scale.swift`. `SpectrumView`'s `Columns.x(of:)`/
+  `hz(atX:)` and `BandRailView`'s `BandRail.x(of:)`/`hz(atX:)` map a `UInt64` frequency instead,
+  do not clamp the forward direction, and `BandRail.hz(atX:)` snaps its result to the band
+  afterward; folding them into `Scale` would mean adding a clamp neither one has today, which is
+  a behaviour change and wants its own review, not a mechanical rename.

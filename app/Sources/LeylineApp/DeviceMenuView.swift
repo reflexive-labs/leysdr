@@ -74,7 +74,7 @@ struct DeviceMenuView: View {
             HStack(spacing: 7) {
                 Circle().fill(d.state == .disconnected ? Theme.recording : Theme.good).frame(
                     width: 7, height: 7)
-                Text(d.model.isEmpty ? d.driver : d.model).font(.system(size: 13, weight: .medium))
+                Text(d.model.isEmpty ? d.driver : d.model).font(Theme.Font.menuTitle)
                     .foregroundStyle(Theme.ink)
             }
             Text("\(stateWord(d.state))\(d.serial.isEmpty ? "" : " · serial \(d.serial)")")
@@ -166,9 +166,9 @@ struct GainControl: View {
                 .frame(width: 130)
             }
             if let element {
-                GainSlider(element: element, db: db, dimmed: auto) { newDb, ended in
-                    dragging = ended ? nil : newDb
-                    if ended { session.setGain(db: newDb) }
+                GainSlider(element: element, db: db, dimmed: auto) { newDB, ended in
+                    dragging = ended ? nil : newDB
+                    if ended { session.setGain(db: newDB) }
                 }
                 HStack {
                     Text(String(format: "%.0f dB", element.minDb)).font(Theme.Font.valueSmall)
@@ -229,11 +229,12 @@ struct GainSlider: View {
 
     private func x(of v: Double, width: CGFloat) -> CGFloat {
         guard hi > lo else { return 0 }
-        return CGFloat(((v - lo) / (hi - lo)).clamped(to: 0...1)) * width
+        return Scale.x(of: v, in: lo...hi, width: width)
     }
 
     private func value(atX x: CGFloat, width: CGFloat) -> Double {
-        lo + Double((x / max(width, 1)).clamped(to: 0...1)) * (hi - lo)
+        guard hi > lo else { return lo }
+        return Scale.value(atX: x, in: lo...hi, width: width)
     }
 
     /// The nearest entry of the radio's table, else the nearest step.

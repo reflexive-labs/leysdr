@@ -105,7 +105,8 @@ struct BandRow: View {
     /// with the zeros a person would not say dropped.
     private var detail: String {
         var parts = [
-            "\(mhz(band.minHz)) – \(mhz(band.maxHz)) MHz", Frequency.width(band.bandwidthHz),
+            "\(Frequency.mhz(band.minHz)) – \(Frequency.mhz(band.maxHz)) MHz",
+            Frequency.width(band.bandwidthHz),
         ]
         if let s = squelchDb {
             parts.append(
@@ -114,13 +115,6 @@ struct BandRow: View {
                     : "sq \(String(Int(s.rounded())).replacingOccurrences(of: "-", with: "−"))")
         }
         return parts.joined(separator: " · ")
-    }
-
-    private func mhz(_ hz: UInt64) -> String {
-        var s = String(format: "%.4f", Double(hz) / 1e6)
-        while s.hasSuffix("0") { s.removeLast() }
-        if s.hasSuffix(".") { s.removeLast() }
-        return s
     }
 }
 

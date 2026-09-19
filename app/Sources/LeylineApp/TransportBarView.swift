@@ -457,13 +457,13 @@ struct SignalReadout: View {
 /// words are the point.
 struct SquelchTrack: View {
     @Environment(AppSession.self) private var session
-    @State private var dragDb: Double?
+    @State private var dragDB: Double?
 
-    static let minDb: Double = -120
-    static let maxDb: Double = 0
+    static let minDB: Double = -120
+    static let maxDB: Double = 0
 
     var body: some View {
-        let squelch = dragDb ?? session.channel?.squelchDb ?? .nan
+        let squelch = dragDB ?? session.channel?.squelchDb ?? .nan
         let open = session.meter?.squelchOpen ?? false
         let power = session.meter?.powerDbfs ?? .nan
         VStack(alignment: .leading, spacing: 7) {
@@ -509,12 +509,12 @@ struct SquelchTrack: View {
                     DragGesture(minimumDistance: 0)
                         .onChanged { v in
                             let d = db(atX: v.location.x, width: w)
-                            dragDb = d
+                            dragDB = d
                             session.setSquelch(d)  // coalesced: one write a tick, the last value wins
                         }
                         .onEnded { v in
                             let d = db(atX: v.location.x, width: w)
-                            dragDb = nil
+                            dragDB = nil
                             session.setSquelch(d)
                         })
             }
@@ -541,11 +541,11 @@ struct SquelchTrack: View {
     }
 
     private func x(of db: Double, width: CGFloat) -> CGFloat {
-        CGFloat(((db - Self.minDb) / (Self.maxDb - Self.minDb)).clamped(to: 0...1)) * width
+        Scale.x(of: db, in: Self.minDB...Self.maxDB, width: width)
     }
 
     private func db(atX x: CGFloat, width: CGFloat) -> Double {
-        Self.minDb + Double((x / max(width, 1)).clamped(to: 0...1)) * (Self.maxDb - Self.minDb)
+        Scale.value(atX: x, in: Self.minDB...Self.maxDB, width: width)
     }
 }
 

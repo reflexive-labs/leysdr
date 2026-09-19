@@ -17,7 +17,7 @@ struct BandRailView: View {
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 10) {
-                Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.ink)
+                Text(title).font(Theme.Font.title).foregroundStyle(Theme.ink)
                     .lineLimit(1).fixedSize()
                 if let rail = railRange {
                     let neighbours = Bands.neighbours(of: rail, in: session.tunableBands)
@@ -177,9 +177,9 @@ struct BandRail: View {
                 }
                 // The bounds, beneath the caps.
                 HStack {
-                    Text(bound(range.lowerBound))
+                    Text(Frequency.mhz(range.lowerBound))
                     Spacer()
-                    Text(bound(range.upperBound))
+                    Text(Frequency.mhz(range.upperBound))
                 }
                 .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
                 .frame(width: w)
@@ -235,14 +235,6 @@ struct BandRail: View {
         let f = Double(x / width).clamped(to: 0...1)
         let raw = range.lowerBound + UInt64(f * Double(range.upperBound - range.lowerBound))
         return session.band?.snapped(raw) ?? raw
-    }
-
-    /// `144`, `462.5375`: MHz with the zeros a person would not say.
-    private func bound(_ hz: UInt64) -> String {
-        var s = String(format: "%.4f", Double(hz) / 1e6)
-        while s.hasSuffix("0") { s.removeLast() }
-        if s.hasSuffix(".") { s.removeLast() }
-        return s
     }
 
     /// A drag of the region: the centre moves by the pointer's whole translation from where it

@@ -260,6 +260,11 @@ final class AppSession {
         }
     }
 
+    /// An id the mirror never carried is dropped after this long: the gap between an RPC's
+    /// response and its event closes in milliseconds, so an object still missing this long
+    /// after the window took it has no event coming.
+    static let neverSeenDropSeconds: TimeInterval = 3
+
     private func mirrorChanged(_ m: DaemonMirror) {
         let wasLive = isLive
         state = m.state
@@ -283,7 +288,7 @@ final class AppSession {
             } else if captureSeen {
                 log("session", "capture \(id) is gone; a new one will be made")
                 dropCapture()
-            } else if Date().timeIntervalSince(captureSetAt) > 3 {
+            } else if Date().timeIntervalSince(captureSetAt) > Self.neverSeenDropSeconds {
                 log(
                     "session",
                     "the mirror has no capture \(id) 3 s after the window took it; a new one will be made"
@@ -298,7 +303,7 @@ final class AppSession {
             } else if channelSeen {
                 log("session", "channel \(id) is gone")
                 dropChannel()
-            } else if Date().timeIntervalSince(channelSetAt) > 3 {
+            } else if Date().timeIntervalSince(channelSetAt) > Self.neverSeenDropSeconds {
                 log("session", "the mirror has no channel \(id) 3 s after the window took it")
                 dropChannel()
             }
@@ -655,6 +660,14 @@ final class AppSession {
         }
     }
 
+    /// A drag held past the capture's edge pans at most this often, so the picture moves under
+    /// the pointer at a pace a hand can follow rather than a span per event.
+    static let panRateLimitSeconds: TimeInterval = 0.3
+    /// Where a click, a step or a typed frequency lands when the capture must re-centre: this
+    /// many eighths of the span in from the edge it arrived through, so the new tuning is not
+    /// pinned to the very edge.
+    static let edgeInsetEighths: Int64 = 3
+
     private func place(_ hz: UInt64, panning dragging: Bool, quiet: Bool) {
         guard let cap = capture, let writes else { return }
         guard let ch = channel else {
@@ -670,7 +683,9 @@ final class AppSession {
         if target < lo || target > hi {
             if dragging {
                 target = min(max(target, lo), hi)
-                if Date().timeIntervalSince(lastPan) > 0.3, centreInFlight == nil {
+                if Date().timeIntervalSince(lastPan) > Self.panRateLimitSeconds,
+                    centreInFlight == nil
+                {
                     lastPan = Date()
                     let newCentre = clampCentre(
                         target < lo ? centre - span / 8 : centre + span / 8, span: span)
@@ -686,7 +701,9 @@ final class AppSession {
                 }
             } else {
                 let newCentre = clampCentre(
-                    target < lo ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
+                    target < lo
+                        ? target + span * Self.edgeInsetEighths / 8
+                        : target - span * Self.edgeInsetEighths / 8, span: span)
                 request(UInt64(max(0, target)))
                 // One move at a time: while one is in flight the new one waits in the slot and
                 // `retune` performs it next, because two of them leave the coalescer holding
@@ -783,7 +800,9 @@ final class AppSession {
         let target = Int64(hz)
         if target < centre - span / 2 + Int64(bw) || target > centre + span / 2 - Int64(bw) {
             centre = clampCentre(
-                target < centre ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
+                target < centre
+                    ? target + span * Self.edgeInsetEighths / 8
+                    : target - span * Self.edgeInsetEighths / 8, span: span)
             log(
                 "tune",
                 "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
@@ -1080,7 +1099,8 @@ final class AppSession {
             let peak = SpectrumFold.strongest(
                 spectrum.latest, centerHz: cap.centerHz, spanHz: cap.sampleRate)
         else {
-            notice = "Nothing in the span is 15 dB above the floor"
+            notice =
+                "Nothing in the span is \(Int(SpectrumFold.peakAboveFloorDB)) dB above the floor"
             return
         }
         log("tune", "strongest peak \(peak.centerHz) Hz at \(peak.db) dBFS")

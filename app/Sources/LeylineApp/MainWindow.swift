@@ -64,7 +64,7 @@ struct EmptyWords: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Text(headline).font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.ink)
+            Text(headline).font(Theme.Font.title).foregroundStyle(Theme.ink)
             Text(detail).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                 .multilineTextAlignment(.center)
         }
