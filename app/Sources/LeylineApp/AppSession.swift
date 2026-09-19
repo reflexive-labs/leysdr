@@ -624,14 +624,27 @@ final class AppSession {
 
     // MARK: Bookmarks
 
+    /// Loads into the store the session already holds, so a read that fails leaves it unloaded
+    /// and every write refuses until one succeeds: the sidebar goes on showing the last list it
+    /// read, and nothing overwrites a file nobody could parse.
     private func loadBookmarks() {
-        var store = BookmarkStore(path: BookmarkStore.defaultPath())
         do {
-            try store.load()
-            bookmarks = store
+            try bookmarks.load()
         } catch {
-            lastError = LeylineError(code: "BOOKMARKS_UNREADABLE", message: "bookmarks.json could not be read: \(error)", target: store.path)
+            lastError = LeylineError(code: "BOOKMARKS_UNREADABLE", message: "bookmarks.json could not be read: \(error)", target: bookmarks.path)
         }
+    }
+
+    /// What a refused bookmark write says. The unloaded case is the one worth spelling out: the
+    /// file is still whatever it was, so the line names it and says nothing was written.
+    private func bookmarkWriteError(_ error: any Error) -> LeylineError {
+        if let reason = error as? BookmarkError, case .notLoaded(let path) = reason {
+            return LeylineError(
+                code: "BOOKMARKS_UNREADABLE",
+                message: "\(path) could not be read, so nothing was written. Fix that file, or move it aside, and the list reloads.",
+                target: path)
+        }
+        return LeylineError(code: "BOOKMARKS_UNWRITABLE", message: "bookmarks.json could not be written: \(error)", target: bookmarks.path)
     }
 
     /// Reloads when `ley bookmarks` or anyone else writes the file.
@@ -658,7 +671,7 @@ final class AppSession {
             try bookmarks.save()
             notice = "Bookmarked \(name)"
         } catch {
-            lastError = LeylineError(code: "BOOKMARKS_UNWRITABLE", message: "bookmarks.json could not be written: \(error)", target: bookmarks.path)
+            lastError = bookmarkWriteError(error)
         }
     }
 
@@ -667,7 +680,7 @@ final class AppSession {
             try bookmarks.remove(bookmark.id)
             try bookmarks.save()
         } catch {
-            lastError = LeylineError(code: "BOOKMARKS_UNWRITABLE", message: "bookmarks.json could not be written: \(error)", target: bookmarks.path)
+            lastError = bookmarkWriteError(error)
         }
     }
 

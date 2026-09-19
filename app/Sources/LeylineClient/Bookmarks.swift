@@ -62,7 +62,12 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
 
 public enum BookmarkError: Error, Equatable, Sendable {
     case emptyName
+    /// A bookmark carries the mode to come back on, so `.unspecified` is refused rather than
+    /// written as `DEMOD_MODE_UNSPECIFIED`, which `ley bookmarks` would then list with no mode.
+    case unspecifiedMode
     case malformed(String)
+    /// No load has succeeded, so the file on disk is unknown and nothing may be written over it.
+    case notLoaded(String)
     /// Nothing matched, or more than one did; the candidates are the names that came close.
     case noSuchBookmark(String, candidates: [String])
 }
@@ -75,6 +80,11 @@ public struct BookmarkStore: Sendable {
 
     public let path: String
     public private(set) var bookmarks: [String: Bookmark] = [:]
+    /// Whether the last `load()` succeeded. Until one has, `add`, `remove` and `save` refuse:
+    /// a store that could not read the file does not know what is in it, and `save` writes the
+    /// whole file, so writing would lose a list somebody built by hand. `go/pkg/bookmarks`
+    /// says the same thing by returning no store at all from `Open`.
+    public private(set) var loaded = false
     /// The clock the mutators stamp with, so a test can hold time still.
     public var now: @Sendable () -> Date = { Date() }
 
@@ -97,16 +107,19 @@ public struct BookmarkStore: Sendable {
         var bookmarks: [String: Bookmark]
     }
 
-    /// Reads the file. A missing file is an empty store: nobody has bookmarked anything yet. A
-    /// malformed one is an error rather than an empty store, because the next save would
-    /// overwrite what the person meant to keep.
+    /// Reads the file. A missing file is an empty store, loaded: nobody has bookmarked anything
+    /// yet. A malformed one throws and leaves the store unloaded, so the mutators refuse until a
+    /// read succeeds -- otherwise the next save would overwrite what the person meant to keep.
     public mutating func load() throws {
+        loaded = false
         guard FileManager.default.fileExists(atPath: path) else {
             bookmarks = [:]
+            loaded = true
             return
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         bookmarks = try Self.decode(data)
+        loaded = true
     }
 
     public static func decode(_ data: Data) throws -> [String: Bookmark] {
@@ -129,16 +142,20 @@ public struct BookmarkStore: Sendable {
     }
 
     /// Writes the whole file through a temporary neighbour and a rename, so a reader never
-    /// sees half a file.
+    /// sees half a file. The neighbour is removed whether or not the rename works: a `.tmp`
+    /// left beside the file is one the next run would neither read nor clean up.
     public func save() throws {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
         let url = URL(fileURLWithPath: path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(ProcessInfo.processInfo.processIdentifier).tmp")
+        defer { try? FileManager.default.removeItem(at: tmp) }
         try encoded().write(to: tmp, options: .atomic)
-        if FileManager.default.fileExists(atPath: path) {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
-        } else {
-            try FileManager.default.moveItem(at: tmp, to: url)
+        // rename(2) rather than FileManager's replaceItemAt: one step, replacing whatever is
+        // there, which is what `go/pkg/bookmarks` does with os.Rename. replaceItemAt unlinks
+        // the original first, so a failure there loses the file the temp was meant to protect.
+        guard rename(tmp.path, url.path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSFilePathErrorKey: path])
         }
     }
 
@@ -151,8 +168,10 @@ public struct BookmarkStore: Sendable {
     /// Does not save.
     @discardableResult
     public mutating func add(name: String, hz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32 = 0) throws -> Bookmark {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BookmarkError.emptyName }
+        guard mode != .unspecified else { throw BookmarkError.unspecifiedMode }
         let stamp = Int64(now().timeIntervalSince1970 * 1e9)
         if var existing = bookmarks.values.first(where: { $0.hz == hz && $0.name == name }) {
             existing.modeName = mode.wireName
@@ -167,19 +186,22 @@ public struct BookmarkStore: Sendable {
     }
 
     /// Removes by exact id, else exact name, else a case-insensitive name that matches exactly
-    /// one bookmark. Does not save.
+    /// one bookmark. The argument is trimmed first, as `go/pkg/bookmarks` trims it, so a name
+    /// pasted with a trailing space still names its bookmark. Does not save.
     @discardableResult
     public mutating func remove(_ idOrName: String) throws -> Bookmark {
-        if let b = bookmarks[idOrName] {
-            bookmarks[idOrName] = nil
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        let arg = idOrName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let b = bookmarks[arg] {
+            bookmarks[arg] = nil
             return b
         }
-        let exact = bookmarks.values.filter { $0.name == idOrName }
+        let exact = bookmarks.values.filter { $0.name == arg }
         if exact.count == 1, let b = exact.first {
             bookmarks[b.id] = nil
             return b
         }
-        let loose = bookmarks.values.filter { $0.name.lowercased() == idOrName.lowercased() }
+        let loose = bookmarks.values.filter { $0.name.lowercased() == arg.lowercased() }
         if exact.isEmpty, loose.count == 1, let b = loose.first {
             bookmarks[b.id] = nil
             return b
