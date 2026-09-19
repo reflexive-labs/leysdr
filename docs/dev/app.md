@@ -109,10 +109,10 @@ version from `VERSION`), resource bundles beside the binary, and a signature; wi
 the shape a distributed build has (APP-7) and nothing installs yet. `CODESIGN_IDENTITY` signs
 for real; notarization is `release-checklist.md`'s step.
 
-Metal shaders, when they arrive with APP-2, go in the `LeylineApp` target as resources:
-SwiftPM on macOS compiles `.metal` files into the target's resource bundle as
-`default.metallib`, reachable through `Bundle.module`. That path is unverified until the first
-shader lands; the plan's APP-2 says to confirm it on the Mac before drawing anything.
+The waterfall's shader is Swift source compiled at launch, not a `.metal` resource: APP-2 tried
+the resource path and `swift build` does not produce the `default.metallib` Xcode does, so the
+source lives in `WaterfallShader.swift` and a compile failure is a sentence in the window rather
+than a dark panel (`swift-style.md`, "AppKit and Metal").
 
 In the container and on Linux CI, `make app` builds the façade and `make app-test app-e2e` runs
 both suites against the Linux-built daemon; the SwiftUI target does not exist there. Anything

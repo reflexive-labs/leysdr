@@ -31,13 +31,16 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
   state of their own; its
   tests run against `leylined --no-hardware` with a fixture as the radio (`make app-e2e`). Colours
   and type live in `Theme.swift` only. Every contract addition the app needs ships with its `ley`
-  mirror.
+  mirror. `LeylineApp` is declared under `#if os(macOS)` and is never compiled in the container, so
+  a green Linux run says nothing about a view: read the diff by eye for isolation, scope, `Sendable`
+  and layout, and name the files and behaviours left unverified when handing over
+  (`docs/dev/swift-style.md`, "Working as an agent on this repository").
 - `--json` CLI output is the standard proto3 JSON mapping — no custom shapes.
 - Proto changes: additive only within v1; run `protoc` validation in CI; reserved field numbers stay reserved.
 - Instrument the sample path with `os_signpost` from the start — the spikes depend on it.
 - Errors: stable machine codes in `ErrorDetail.code`; prose goes in `message`.
 - Licensing: GPL is fine (open-source engine); prefer first-party driver bindings (librtlsdr, libhackrf, vendor SDKs) wrapped behind `RadioDevice`.
-- Docs: `docs/README.md` is the map, by reader (`guide/`, `reference/`, `design/`, `dev/`, `decisions/`, `plans/`); prose follows `docs/writing-guide.md`. A moved page takes every `docs/` reference with it. The "Error codes" table in `docs/dev/engine-internals.md` and the help goldens are parsed by tests.
+- Docs: `docs/README.md` is the map, by reader (`guide/`, `reference/`, `design/`, `dev/`, `decisions/`, `plans/`); prose follows `docs/writing-guide.md`, and Swift follows `docs/dev/swift-style.md` as `ley`'s output follows `docs/dev/cli-style.md`. A moved page takes every `docs/` reference with it. The "Error codes" table in `docs/dev/engine-internals.md` and the help goldens are parsed by tests.
 
 ## Testing without hardware
 

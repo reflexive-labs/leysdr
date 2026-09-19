@@ -40,6 +40,7 @@ Contributors and coding agents. Read first, in this order:
 | [Developer setup](dev/setup.md) | building on the Mac, the Linux container, regenerating protos, cutting a release |
 | [Engine internals](dev/engine-internals.md) | touching the engine or daemon: threads, the hot path, pipeline math, devices, services, the error-code table, daemon lifecycle |
 | [CLI style](dev/cli-style.md) | changing anything a `ley` user sees: colour, streams, glyphs, layout, the frozen contracts |
+| [Swift style](dev/swift-style.md) | writing Swift anywhere in the repository: file headers and SPDX, comment and doc-comment voice, naming and unit suffixes, isolation and `Task`, the session, mirror and coalescer patterns, what only the Mac can check |
 | [Release checklist](dev/release-checklist.md) | tagging a release: the mechanical gate, licence obligations, the acceptance pass on a real dongle |
 | [Agent evals](dev/evals.md) | measuring an agent's use of `ley mcp` against fixtures: running `leyeval`, reading a transcript, adding a scenario and its checks |
 | [App internals](dev/app.md) | touching the Mac app: the `app/` package, the client façade (identity, mirror, coalescer, streams), building, bundling and testing it against the daemon |
@@ -91,10 +92,13 @@ What is being built, in what order, and the record of what each step found.
 
 ### For coding agents
 
-`CLAUDE.md` is loaded automatically; this directory is where its rules come from. The three reads
+`CLAUDE.md` is loaded automatically; this directory is where its rules come from. The four reads
 that prevent the most rework: the design doc for the area before a structural change,
-[CLI style](dev/cli-style.md) before changing output, and [Engine internals](dev/engine-internals.md)
-plus the fixture round-trips in [IQ files and fixtures](reference/iq-files.md) before DSP.
+[CLI style](dev/cli-style.md) before changing output, [Engine internals](dev/engine-internals.md)
+plus the fixture round-trips in [IQ files and fixtures](reference/iq-files.md) before DSP, and
+[Swift style](dev/swift-style.md) before writing Swift — its last two sections say what the Linux
+container can verify, what only the Mac catches, and what to say when handing over work that was
+never compiled.
 
 Two documents are parsed by tests, so their shape is part of the contract: the "Error codes" table
 in `dev/engine-internals.md` (`ErrorTableTests` on the Swift side, the error registry test on the Go
@@ -111,6 +115,6 @@ docs/
 ├── reference/             lookup: cli, iq-files, clients
 ├── design/                why it is built this way, with the measured numbers
 ├── decisions/             dated decision records (D2, S3)
-├── dev/                   contributor contracts: setup, engine-internals, cli-style, app, release-checklist
+├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, release-checklist
 └── plans/                 build-order, user-stories, live plans; archive/ for finished ones
 ```
