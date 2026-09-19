@@ -98,4 +98,34 @@ final class BandsTests: XCTestCase {
         let none = Band(name: "x", aliases: ["x"], minHz: 100, maxHz: 200, mode: "nfm", bandwidthHz: 10, stepHz: 0)
         XCTAssertEqual(none.snapped(150), 150)
     }
+
+    func testNeighboursAbutOnlyWhenTheGapIsSmall() {
+        let twoM = Band(name: "2 m amateur", aliases: ["2m"], minHz: 144_000_000, maxHz: 148_000_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
+        let marine = Band(name: "marine VHF", aliases: ["marine"], minHz: 156_000_000, maxHz: 162_025_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 25_000)
+        let noaa = Band(name: "NOAA weather", aliases: ["noaa"], minHz: 162_400_000, maxHz: 162_550_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 25_000)
+        XCTAssertFalse(Bands.abut(twoM.minHz...twoM.maxHz, marine), "8 MHz is not next door to a 4 MHz band")
+        XCTAssertTrue(Bands.abut(marine.minHz...marine.maxHz, noaa), "375 kHz is, for a 6 MHz band")
+        XCTAssertFalse(Bands.abut(noaa.minHz...noaa.maxHz, marine), "and not for a 150 kHz one")
+        XCTAssertTrue(Bands.abut(twoM.minHz...twoM.maxHz, twoM), "overlap is a gap of nothing")
+    }
+
+    func testBandsOutOfTheRadiosReachAreNamedSo() {
+        var r820t = Leyline_V1_FrequencyRange()
+        r820t.minHz = 24_000_000
+        r820t.maxHz = 1_766_000_000
+        let forty = Band(name: "40 m amateur", aliases: ["40m"], minHz: 7_000_000, maxHz: 7_300_000, mode: "usb/lsb", bandwidthHz: 2_800, stepHz: 1_000)
+        let twoM = Band(name: "2 m amateur", aliases: ["2m"], minHz: 144_000_000, maxHz: 148_000_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
+        let high = Band(name: "x", aliases: ["x"], minHz: 2_000_000_000, maxHz: 2_100_000_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
+        XCTAssertFalse(Bands.tunable(forty, ranges: [r820t]))
+        XCTAssertTrue(Bands.tunable(twoM, ranges: [r820t]))
+        XCTAssertTrue(Bands.tunable(forty, ranges: []), "a radio that did not say offers everything")
+        XCTAssertEqual(Bands.outOfRangeWords(forty, ranges: [r820t]), "below what this radio tunes (24 – 1766 MHz)")
+        XCTAssertEqual(Bands.outOfRangeWords(high, ranges: [r820t]), "above what this radio tunes (24 – 1766 MHz)")
+        XCTAssertNil(Bands.outOfRangeWords(twoM, ranges: [r820t]))
+        var e4kLow = Leyline_V1_FrequencyRange(); e4kLow.minHz = 52_000_000; e4kLow.maxHz = 1_100_000_000
+        var e4kHigh = Leyline_V1_FrequencyRange(); e4kHigh.minHz = 1_250_000_000; e4kHigh.maxHz = 2_200_000_000
+        let gap = Band(name: "g", aliases: ["g"], minHz: 1_150_000_000, maxHz: 1_200_000_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
+        XCTAssertEqual(Bands.outOfRangeWords(gap, ranges: [e4kLow, e4kHigh]), "outside what this radio tunes (52 – 2200 MHz)")
+        XCTAssertTrue(Bands.tunable(high, ranges: [e4kLow, e4kHigh]))
+    }
 }

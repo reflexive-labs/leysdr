@@ -20,10 +20,10 @@ struct BandRailView: View {
                 Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.ink)
                     .lineLimit(1).fixedSize()
                 if let rail = railRange {
-                    let neighbours = Bands.neighbours(of: rail, in: session.bands)
-                    NeighbourButton(band: neighbours.below, side: .below)
+                    let neighbours = Bands.neighbours(of: rail, in: session.tunableBands)
+                    NeighbourButton(band: neighbours.below, side: .below, from: rail)
                     BandRail(range: rail)
-                    NeighbourButton(band: neighbours.above, side: .above)
+                    NeighbourButton(band: neighbours.above, side: .above, from: rail)
                     Text(perColumn(width: geo.size.width))
                         .font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
                         .lineLimit(1).fixedSize()
@@ -84,29 +84,39 @@ struct BandRailView: View {
 
 enum RailSide { case below, above }
 
-/// The neighbour's name at an end cap, faint, pointing the way; a click crosses into it at the
-/// near edge, so the dial reads on from where this band ends. Nothing there when there is no
-/// band that way.
+/// What lies past an end cap, faint, pointing the way: the next band's name when it sits
+/// against this one (`Bands.abut`), else the frequency a click would land on, because a band
+/// 60 MHz away is not a neighbour and must not be named as one. The hover names it and says
+/// how far. A click crosses at the near edge either way, so the dial reads on from where this
+/// band ends. Nothing there when there is no band that way the radio can reach.
 struct NeighbourButton: View {
     @Environment(AppSession.self) private var session
     let band: Band?
     let side: RailSide
+    let from: ClosedRange<UInt64>
 
     var body: some View {
         if let band {
+            let edge = side == .below ? band.maxHz : band.minHz
+            let abuts = Bands.abut(from, band)
             Button {
-                Task { await session.select(band: band, at: side == .below ? band.maxHz : band.minHz) }
+                Task { await session.select(band: band, at: edge) }
             } label: {
                 HStack(spacing: 4) {
                     if side == .below { arrow("arrowtriangle.left.fill") }
-                    Text(band.name).font(Theme.Font.value).lineLimit(1).fixedSize()
+                    Text(abuts ? band.name : Frequency.fieldParts(edge).major).font(Theme.Font.value).lineLimit(1).fixedSize()
                     if side == .above { arrow("arrowtriangle.right.fill") }
                 }
                 .foregroundStyle(Theme.inkFaint)
             }
             .buttonStyle(.plain)
-            .help("\(band.name), \(side == .below ? "below" : "above") this band")
+            .help(abuts ? "\(band.name), \(side == .below ? "below" : "above") this band" : "\(band.name), \(Frequency.format(gap(to: band))) \(side == .below ? "below" : "above") this band")
         }
+    }
+
+    private func gap(to band: Band) -> UInt64 {
+        side == .below ? (from.lowerBound > band.maxHz ? from.lowerBound - band.maxHz : 0)
+                       : (band.minHz > from.upperBound ? band.minHz - from.upperBound : 0)
     }
 
     private func arrow(_ name: String) -> some View {

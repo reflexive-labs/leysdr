@@ -216,3 +216,35 @@ extension Bands {
         return (below, above)
     }
 }
+
+// MARK: Neighbours and reach
+
+extension Bands {
+    /// Whether `band` sits close enough against `range` to be named its neighbour: the gap
+    /// between them is no more than a tenth of `range`'s width. Marine VHF and NOAA weather,
+    /// 375 kHz apart, are neighbours; 2 m and marine VHF, 8 MHz apart, are not, and a rail
+    /// that named them so was naming a band 60 MHz away.
+    public static func abut(_ range: ClosedRange<UInt64>, _ band: Band) -> Bool {
+        let gap: UInt64
+        if band.minHz >= range.upperBound { gap = band.minHz - range.upperBound }
+        else if band.maxHz <= range.lowerBound { gap = range.lowerBound - band.maxHz }
+        else { gap = 0 }
+        return gap <= (range.upperBound - range.lowerBound) / 10
+    }
+
+    /// Whether any of the radio's tuning ranges reaches into the band. No ranges means the
+    /// radio did not say, and every band is offered.
+    public static func tunable(_ band: Band, ranges: [Leyline_V1_FrequencyRange]) -> Bool {
+        ranges.isEmpty || ranges.contains { $0.minHz <= band.maxHz && $0.maxHz >= band.minHz }
+    }
+
+    /// Why a band is out of the radio's reach, to follow its name: `below what this radio
+    /// tunes (24 – 1766 MHz)`. Nil when it is tunable.
+    public static func outOfRangeWords(_ band: Band, ranges: [Leyline_V1_FrequencyRange]) -> String? {
+        guard !tunable(band, ranges: ranges), let lo = ranges.map(\.minHz).min(), let hi = ranges.map(\.maxHz).max() else { return nil }
+        let side = band.maxHz < lo ? "below" : band.minHz > hi ? "above" : "outside"
+        return "\(side) what this radio tunes (\(mhz(lo)) – \(mhz(hi)) MHz)"
+    }
+
+    private static func mhz(_ hz: UInt64) -> String { String(format: "%g", Double(hz) / 1e6) }
+}

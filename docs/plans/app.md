@@ -109,6 +109,15 @@ name from CoreAudio), the Tune menu (`TuneCommands`), click, drag and scroll on 
 and the device menu with the gain slider (`DeviceMenuView.swift`). Not yet: the named failure
 states from telemetry. Same caveat as APP-2: unbuilt on the Mac.
 
+Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
+`PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s
+(`engine/Sources/EngineCore/DSP/Demodulators.swift`), which on a carrier that never stops is
+the carrier and reads `0 dB over noise` under a −12 dBFS signal. The window shows power over
+the band's floor scaled to the channel's width instead (`AppSession.overNoiseDB`, the auto
+squelch's rule); `ley`'s `snr` column still shows the meter's number. Giving the meter a floor
+from the capture's spectrum rather than the channel's minimum is engine work for after M1, and
+until then the two clients disagree on a continuous carrier.
+
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
 the owner brought and the four answers recorded in the handoff's "Decided 2026-09-19": the
 band's edges as a track with numbered caps, the slice on screen as a pill, bookmarks and the

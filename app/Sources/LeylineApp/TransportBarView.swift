@@ -372,8 +372,9 @@ struct WidthPopup: View {
     }
 }
 
-/// `−38` with a small `dBFS`, and `26 dB over noise` under it: the channel meter's numbers. M1
-/// only; the inspector takes this over in M2.
+/// `−38` with a small `dBFS`, and `26 dB over noise` under it: the meter's power, and that
+/// power over the band's floor at the channel's width (`AppSession.overNoiseDB`). M1 only; the
+/// inspector takes this over in M2.
 struct SignalReadout: View {
     @Environment(AppSession.self) private var session
 
@@ -386,7 +387,7 @@ struct SignalReadout: View {
                         .font(Theme.Font.readout).foregroundStyle(Theme.ink)
                     Text("dBFS").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
                 }
-                Text(m.flatMap { $0.snrDb.isFinite ? String(format: "%.0f dB over noise", $0.snrDb) : nil } ?? " ")
+                Text(session.overNoiseDB.map { String(format: "%.0f dB over noise", $0) } ?? " ")
                     .font(Theme.Font.footnote).foregroundStyle(Theme.good)
             }
         }

@@ -66,11 +66,18 @@ public enum SpectrumFold {
     /// `ley tune`'s auto squelch (`go/internal/cli/session.go`, `measureSquelch`). Returns the
     /// threshold and the scaled floor; both NaN on an empty row.
     public static func autoSquelch(_ bins: [Float], sampleRate: UInt64, bandwidthHz: UInt32) -> (thresholdDB: Double, floorDB: Double) {
-        let median = Double(medianDB(bins))
-        guard median.isFinite, bins.count > 0, sampleRate > 0, bandwidthHz > 0 else { return (.nan, .nan) }
-        let binWidth = Double(sampleRate) / Double(bins.count)
-        let floor = median + 10 * log10(Double(bandwidthHz) / binWidth)
+        let floor = channelFloorDB(binFloorDB: Double(medianDB(bins)), bins: bins.count, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
+        guard floor.isFinite else { return (.nan, .nan) }
         return ((floor + 10).rounded(), floor)
+    }
+
+    /// The floor of a channel from the floor of a bin: `floor + 10·log10(bandwidth / bin
+    /// width)`, the auto squelch's scaling, which is also what a channel's power is over noise
+    /// by. NaN when there is nothing to scale.
+    public static func channelFloorDB(binFloorDB: Double, bins: Int, sampleRate: UInt64, bandwidthHz: UInt32) -> Double {
+        guard binFloorDB.isFinite, bins > 0, sampleRate > 0, bandwidthHz > 0 else { return .nan }
+        let binWidth = Double(sampleRate) / Double(bins)
+        return binFloorDB + 10 * log10(Double(bandwidthHz) / binWidth)
     }
 }
 

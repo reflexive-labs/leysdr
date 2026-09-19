@@ -56,9 +56,14 @@ final class WaterfallBuffer {
 final class SpectrumFeed {
     nonisolated static let bins: UInt32 = 2048
     static let rowsPerSecond: Double = 30
-    /// How far above the floor the ramp reaches: six stops over 60 dB. The terminal's is 40 with
-    /// four shades (`go/internal/cli/waterfall_view.go`); the eye can use more here.
-    static let rangeDB: Float = 60
+    /// The ramp's reach above its cold end before a peak is known: six stops over 60 dB. Once
+    /// rows arrive the hot end is `peakDB` (`AppSession.rampRangeDB`).
+    static let fallbackRangeDB: Float = 60
+    /// The least the ramp reaches, so an empty band is not its noise blown up to cream.
+    static let minRangeDB: Float = 20
+    /// How fast the held peak lets go: 1 dB a second, so a burst does not leave the picture
+    /// cold for the rest of the session and a carrier that stays keeps the top stop.
+    static let peakDecayDBPerRow: Float = 1 / Float(rowsPerSecond)
     /// The ramp's cold end sits this far above the median, so noise, which spreads a few dB
     /// either side of it, stays in the near-black first stop and a signal is what has colour.
     /// The desktop SDRs do the same with a waterfall minimum set above the floor. The floor
@@ -70,6 +75,10 @@ final class SpectrumFeed {
 
     private(set) var latest: [Float] = []
     private(set) var hold = MaxHold()
+    /// The loudest level on the band, held and let go at `peakDecayDBPerRow`: the ramp's hot
+    /// end, so the strongest thing on the band reaches the last stop rather than a full scale
+    /// nothing reaches (a −12 dBFS carrier 200 kHz wide is −34 dBFS a bin). Reset on a retune.
+    private(set) var peakDB: Float = .nan
     /// The noise floor the ramp and the spectrum's axis are keyed from. Held, not chased: it is
     /// taken from the smoothed median and re-taken only when that drifts more than `floorSlackDB`
     /// from it, because an axis that follows every wobble of the median makes the max-hold trace
@@ -137,6 +146,7 @@ final class SpectrumFeed {
         hold.reset()
         floorDB = .nan
         medianDB = .nan
+        peakDB = .nan
     }
 
     private func ingest(_ row: FFTRow) {
@@ -147,6 +157,9 @@ final class SpectrumFeed {
         let median = SpectrumFold.medianDB(row.levelsDB)
         medianDB = medianDB.isNaN ? median : medianDB + (median - medianDB) * 0.1
         if floorDB.isNaN || abs(medianDB - floorDB) > Self.floorSlackDB { floorDB = medianDB.rounded() }
+        if let rowMax = row.levelsDB.max(), rowMax.isFinite {
+            peakDB = peakDB.isNaN ? rowMax : max(rowMax, peakDB - Self.peakDecayDBPerRow)
+        }
         waterfall.append(row.levelsDB, seq: row.seq)
         rows += 1
         if row.gap != nil { gaps += 1 }

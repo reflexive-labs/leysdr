@@ -61,4 +61,17 @@ final class SpectrumFoldTests: XCTestCase {
         hold.reset()
         XCTAssertTrue(hold.levelsDB.isEmpty)
     }
+
+    func testChannelFloorScalesTheBinFloorToTheWidth() {
+        // 2.4 MS/s over 2048 bins is 1171.875 Hz a bin; a 12.5 kHz channel holds 10.67 of them.
+        let floor = SpectrumFold.channelFloorDB(binFloorDB: -64, bins: 2048, sampleRate: 2_400_000, bandwidthHz: 12_500)
+        XCTAssertEqual(floor, -64 + 10 * log10(12_500 / 1171.875), accuracy: 1e-9)
+        XCTAssertTrue(SpectrumFold.channelFloorDB(binFloorDB: .nan, bins: 2048, sampleRate: 2_400_000, bandwidthHz: 12_500).isNaN)
+        XCTAssertTrue(SpectrumFold.channelFloorDB(binFloorDB: -64, bins: 0, sampleRate: 2_400_000, bandwidthHz: 12_500).isNaN)
+        // The auto squelch is the same floor plus 10, rounded.
+        let bins = [Float](repeating: -64, count: 2048)
+        let (threshold, f) = SpectrumFold.autoSquelch(bins, sampleRate: 2_400_000, bandwidthHz: 12_500)
+        XCTAssertEqual(f, floor, accuracy: 1e-9)
+        XCTAssertEqual(threshold, (floor + 10).rounded())
+    }
 }

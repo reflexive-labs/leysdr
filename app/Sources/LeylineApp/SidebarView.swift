@@ -16,9 +16,13 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header("Bands") { EmptyView() }
                 ForEach(session.bands) { band in
-                    BandRow(band: band, selected: session.band?.id == band.id, squelchDb: session.channel?.squelchDb)
+                    // A band the radio cannot reach stays listed, disabled, and the hover says
+                    // why: a click that could only fail is not offered.
+                    let why = session.outOfRangeWords(band)
+                    BandRow(band: band, selected: session.band?.id == band.id, squelchDb: session.channel?.squelchDb, disabled: why != nil)
                         .contentShape(Rectangle())
-                        .onTapGesture { Task { await session.select(band: band) } }
+                        .onTapGesture { if why == nil { Task { await session.select(band: band) } } }
+                        .help(why.map { "\(band.name) is \($0)" } ?? "")
                 }
                 header("Bookmarks") {
                     Button { session.bookmarkCurrent() } label: {
@@ -65,13 +69,15 @@ struct BandRow: View {
     let band: Band
     let selected: Bool
     let squelchDb: Double?
+    var disabled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(band.name).font(Theme.Font.label).foregroundStyle(selected ? Theme.ink : Theme.inkSecondary)
+                Text(band.name).font(Theme.Font.label)
+                    .foregroundStyle(disabled ? Theme.inkDisabled : selected ? Theme.ink : Theme.inkSecondary)
                 Spacer()
-                Text(band.modeWord).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                Text(band.modeWord).font(Theme.Font.valueSmall).foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkFaint)
             }
             if selected {
                 Text(detail).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)

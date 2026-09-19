@@ -128,6 +128,26 @@ final class AppSession {
     static let squelchFadeDB: Float = 6
     var rampFadeDB: Float { squelchPerBinDB == nil ? 0 : Self.squelchFadeDB }
 
+    /// How far the ramp reaches above its cold end: to the loudest level on the band, so the
+    /// strongest thing there is cream and the third strongest visibly cooler, and never less
+    /// than `SpectrumFeed.minRangeDB`. Before a peak is known, the fallback.
+    var rampRangeDB: Float {
+        let cold = rampFloorDB
+        let peak = spectrum.peakDB
+        guard cold.isFinite, peak.isFinite else { return SpectrumFeed.fallbackRangeDB }
+        return max(peak - cold, SpectrumFeed.minRangeDB)
+    }
+
+    /// The channel's power over the band's floor at the channel's width, the auto squelch's
+    /// scaling. The meter's own `snr_db` is power over the channel's running minimum, which on
+    /// a carrier that never stops is the carrier itself and reads 0 (`docs/plans/app.md`,
+    /// APP-3); this is the number a newcomer can trust. Nil until the floor is known.
+    var overNoiseDB: Double? {
+        guard let m = meter, m.powerDbfs.isFinite, let cap = capture, let ch = channel else { return nil }
+        let floor = SpectrumFold.channelFloorDB(binFloorDB: Double(spectrum.floorDB), bins: Int(SpectrumFeed.bins), sampleRate: cap.sampleRate, bandwidthHz: ch.bandwidthHz)
+        return floor.isFinite ? m.powerDbfs - floor : nil
+    }
+
     /// The squelch as a level per bin, or nil when it is off or there is no floor to bound it.
     private var squelchPerBinDB: Float? {
         let feed = spectrum
@@ -138,6 +158,17 @@ final class AppSession {
         let perBin = Float(ch.squelchDb - 10 * log10(Double(ch.bandwidthHz) / binWidth))
         return max(perBin, feed.floorDB - 10)
     }
+
+    /// What the radio in hand can tune: the capture's device, else the first connected one.
+    private var radioRanges: [Leyline_V1_FrequencyRange] {
+        (device ?? state.devices.first { $0.state != .disconnected })?.tuningRanges ?? []
+    }
+
+    /// The bands this radio can reach; without a radio, all of them.
+    var tunableBands: [Band] { bands.filter { Bands.tunable($0, ranges: radioRanges) } }
+
+    /// Why a band is out of this radio's reach, to follow its name, or nil.
+    func outOfRangeWords(_ band: Band) -> String? { Bands.outOfRangeWords(band, ranges: radioRanges) }
 
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
     var band: Band? {
@@ -329,6 +360,11 @@ final class AppSession {
     /// inside it: a drag past the rail's end cap lands on the neighbour's near edge.
     func select(band: Band, at hz: UInt64? = nil) async {
         guard !busy, daemon != nil else { return }
+        if let why = outOfRangeWords(band) {
+            notice = "\(band.name) is \(why)"
+            log("session", "select band \(band.name) refused: \(why)")
+            return
+        }
         busy = true
         defer { busy = false }
         selectedBandID = band.id
