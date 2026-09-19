@@ -103,14 +103,15 @@ waterfall through the coalescer; keyboard shortcuts; the named failure states fr
 layer 2 is ever required for layers 0 and 1 to succeed (`user-stories.md`, V1a).
 
 Written 2026-09-18 with APP-2: the transport bar (`TransportBarView.swift`: play as the sink
-attached or detached, the tuning field and ⌘L entry, mode and width pop-ups, the signal
-readout from the channel meter, the squelch track with its words, volume with the output's
-name from CoreAudio), the Tune menu (`TuneCommands`), click, drag and scroll on the waterfall,
-and the device menu with the gain slider (`DeviceMenuView.swift`). The named failure states landed 2026-09-19 (below). Built and running on the owner's Mac from 2026-09-18; every change since
-has gone through `make app-run` there, and the state on 2026-09-19 is a window that hears, tunes
-by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the dB axis and
-the squelch-keyed waterfall. Still open in M1: CHIRP import (APP-4), the S1 trace (APP-2), and the daemon's meter floor
-(above).
+attached or detached, the tuning field with its ⌘L entry and its stepper, mode and width pop-ups,
+the signal readout from the channel meter, the squelch track with its words, volume with the
+output's name from CoreAudio), the Tune menu (`TuneCommands`), click, drag and scroll on the
+waterfall, and the device menu with the gain slider (`DeviceMenuView.swift`). The named failure
+states landed 2026-09-19 (below). Built and running on the owner's Mac from 2026-09-18; every change
+since has gone through `make app-run` there, and the state on 2026-09-19 is a window that hears,
+tunes by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the dB axis
+and the squelch-keyed waterfall. Still open in M1: CHIRP import (APP-4), the S1 trace (APP-2), and
+the daemon's meter floor (above).
 
 Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
 `PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s

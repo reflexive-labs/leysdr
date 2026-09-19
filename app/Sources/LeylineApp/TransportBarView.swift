@@ -73,7 +73,8 @@ struct PlayButton: View {
 /// overwriting: click or ⌘L puts the caret on the first digit, each digit typed replaces the one
 /// under the caret and moves on, `.` jumps to the kHz digits (dropping whatever MHz digits were
 /// not retyped), Backspace steps back, Enter tunes, Escape or a click anywhere else puts the
-/// daemon's number back. The sub-kHz digits are shown and never typed.
+/// daemon's number back. The sub-kHz digits are shown and never typed. The stepper against the
+/// right edge does what the Tune menu's arrows do: the band's step, and the fine step with ⇧.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
     @State private var mhz: [Character] = []
@@ -104,7 +105,8 @@ struct FrequencyField: View {
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
             }
-            .padding(.horizontal, 10).padding(.vertical, 5)
+            // The trailing side leaves room for the stepper.
+            .padding(.leading, 10).padding(.trailing, 32).padding(.vertical, 5)
             .frame(minWidth: 232, alignment: .trailing)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
             .overlay(
@@ -116,6 +118,12 @@ struct FrequencyField: View {
             .focusEffectDisabled()
             .focused($focused)
             .onKeyPress { handle($0) }
+            // Above the focusable field, not inside it, so a click on an arrow never takes the
+            // field's focus. During an edit the field's own monitor ends the edit on the
+            // mouse-down, so the arrow steps the daemon's number, never the digits being typed.
+            .overlay(alignment: .trailing) {
+                StepArrows(enabled: session.channel != nil).padding(.trailing, 9)
+            }
         }
         .onAppear { load(hz) }
         .onChange(of: hz) { _, new in
@@ -350,6 +358,48 @@ struct FrequencyField: View {
         default:
             return false
         }
+    }
+}
+
+/// The two-arrow stepper on the tuning field: up and down by the band's step, the fine step
+/// with ⇧ held, exactly the Tune menu's arrows. `inkMuted` at rest as the pop-ups' carets are,
+/// `ink` under the pointer, `inkDisabled` with no channel to step.
+struct StepArrows: View {
+    @Environment(AppSession.self) private var session
+    let enabled: Bool
+
+    var body: some View {
+        VStack(spacing: 3) {
+            StepArrow(symbol: "chevron.up", enabled: enabled) { step(1) }
+                .help("Tune up by the band's step; ⇧ for the fine step")
+            StepArrow(symbol: "chevron.down", enabled: enabled) { step(-1) }
+                .help("Tune down by the band's step; ⇧ for the fine step")
+        }
+        .disabled(!enabled)
+    }
+
+    private func step(_ direction: Int) {
+        session.step(direction, fine: NSEvent.modifierFlags.contains(.shift))
+    }
+}
+
+struct StepArrow: View {
+    let symbol: String
+    let enabled: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(
+                    !enabled ? Theme.inkDisabled : hovering ? Theme.ink : Theme.inkMuted
+                )
+                .frame(width: 16, height: 10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
