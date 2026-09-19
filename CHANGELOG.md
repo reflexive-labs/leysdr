@@ -4,6 +4,12 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The window and `ley tune` name the failure states a newcomer hits instead of showing a dark
+  waterfall: a signal within 3 dB of full scale ("lower the gain"), and nothing 15 dB above the
+  noise floor, with the gain named as the thing to try when it is set by hand to its lowest and
+  the antenna otherwise. `ley tune` says it beside the squelch it measured, on stderr; the MCP
+  tune tool carries the same line, so an agent is told a band is deaf rather than left to read an
+  empty decode as quiet.
 - A gain write that names no element now lands on the first the device lists, as the contract
   always said; the Mac app's gain slider was refused on every drag because of it.
 - Bookmarks: `ley bookmarks add 146.94 --name "Local repeater"` keeps a frequency, `ley bookmarks`

@@ -12,7 +12,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold) | macOS and Linux |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states (`FailureState.swift`) | macOS and Linux |
 | `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`, `MeterFeed`), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
@@ -91,6 +91,19 @@ divides by 32768) and they match `go/pkg/leyline/bulk.go` bit for bit, tested on
 The shm ring is not built: the app draws over gRPC first and S1 decides
 (`../plans/build-order.md`, "Closing the core").
 
+**Failure states** (`FailureState.swift`). What the band's numbers say is wrong, named rather
+than left as a dark waterfall (`../plans/user-stories.md`, V1a): the loudest bin within 3 dB of
+full scale, or nothing 15 dB above the floor for 3 s, with the gain named as the thing to try
+when it is set by hand to its lowest. A pure function over the feed's held floor and peak, the
+capture's gains and the device's gain elements; each state carries the number it was read from
+and one thing to try, and none is a detector (invariant 12): a quiet band and a missing antenna
+read the same, and the words say so. The rule is `ley tune`'s (`go/internal/cli/failure.go`),
+which says the same sentence from the row it measured the squelch on, and the two tests share
+their rows. The daemon not running, no radio and an unplugged radio are the mirror's states and
+live in `AppSession.emptyWords`. The session names the state after every row and every mirror
+change, logs each change, and the strip over the waterfall shows it until the numbers change or
+the user closes it (a closed state stays closed until a different one is named).
+
 ## Building and running
 
 On the Mac (Xcode 26, the same as the engine):
@@ -124,7 +137,8 @@ under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, 
 
 The app writes one line per thing the window did (`AppLog.swift`): dialling and the daemon's
 state, the capture and channel it made or adopted, every tune with the offset and any centre
-move, band crossings and the mode-and-width pairs they write, rejections with the write's tag,
+band crossings and the mode-and-width pairs they write, every gain write, rejections with the
+write's tag, the failure state named or cleared,
 the FFT subscription's descriptor and a row count every thirty seconds, and whether the shader
 compiled. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once

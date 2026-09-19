@@ -210,6 +210,9 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 			// ids on stdout stay a script's.
 			fmt.Fprintln(s.app.Stderr, s.squelchNote)
 		}
+		if s.failureNote != "" {
+			fmt.Fprintln(s.app.Stderr, s.failureNote)
+		}
 		return s.printCreated()
 	}
 	err := s.live(ctx, o)
@@ -355,13 +358,21 @@ func (s *session) banner(o *tuneOptions) string {
 	// are not padded into a column because three golden substrings pin
 	// "Squelch <value>" and "<device>, gain auto" with single spaces; the
 	// leading word carries Label ink instead.
-	return strings.Join([]string{
+	lines := []string{
 		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", leyline.FormatFrequency(o.freq), where)),
 		s.bannerSource(st),
 		leadWord(st, squelch),
+	}
+	// What the squelch's row said is wrong, when it said anything: the one
+	// line a newcomer with no antenna or a hot front end needs to read.
+	if s.failureNote != "" {
+		lines = append(lines, leadWord(st, s.failureNote))
+	}
+	lines = append(lines,
 		st.Muted("Ctrl-C stops."),
-		st.Muted("From another terminal:") + " " + st.Cmd("ley set squelch -50") + st.Muted(" · ") + st.Cmd(s.bannerSecondHint()) + st.Muted(" · ") + st.Cmd("ley spectrum"),
-	}, "\n") + "\n"
+		st.Muted("From another terminal:")+" "+st.Cmd("ley set squelch -50")+st.Muted(" · ")+st.Cmd(s.bannerSecondHint())+st.Muted(" · ")+st.Cmd("ley spectrum"),
+	)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // bannerSource is the banner's second line: the radio, or what is being played

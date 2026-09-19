@@ -343,6 +343,9 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	if s.squelchNote != "" {
 		fmt.Fprintln(app.Stderr, s.squelchNote)
 	}
+	if s.failureNote != "" {
+		fmt.Fprintln(app.Stderr, s.failureNote)
+	}
 	fmt.Fprintf(app.Stdout, "listening to %s (%s) on %s: channel %s on capture %s.\n",
 		leyline.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), deviceName(s.device),
 		s.channel.GetChannelId(), s.capture.GetCaptureId())

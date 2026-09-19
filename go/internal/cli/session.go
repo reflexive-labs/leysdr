@@ -78,6 +78,10 @@ type session struct {
 	seq uint64
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
+	// failureNote is what the row the squelch was measured from says is wrong
+	// (failureWords), or "": a signal near full scale, or nothing above the
+	// floor. Printed beside squelchNote, because it was measured with it.
+	failureNote string
 	// proseToStderr forces say() to stderr even without --json, for verbs
 	// whose stdout carries a stream a person never reads (listen).
 	proseToStderr bool
@@ -792,6 +796,9 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 	if len(vals) == 0 {
 		return 0, 0, fmt.Errorf("spectrum row in an unexpected format")
 	}
+	// The same row answers whether the band is heard at all; a second
+	// subscription would be another wait for the same numbers.
+	s.failureNote = failureWords(vals, cap.GetGains(), s.device.GetGainElements())
 	median := medianDb(vals)
 	binWidth := float64(cap.SampleRate) / float64(len(vals))
 	floor = median + 10*math.Log10(float64(bw)/binWidth)

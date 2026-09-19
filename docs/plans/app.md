@@ -106,12 +106,11 @@ Written 2026-09-18 with APP-2: the transport bar (`TransportBarView.swift`: play
 attached or detached, the tuning field and ⌘L entry, mode and width pop-ups, the signal
 readout from the channel meter, the squelch track with its words, volume with the output's
 name from CoreAudio), the Tune menu (`TuneCommands`), click, drag and scroll on the waterfall,
-and the device menu with the gain slider (`DeviceMenuView.swift`). Not yet: the named failure
-states from telemetry. Built and running on the owner's Mac from 2026-09-18; every change since
+and the device menu with the gain slider (`DeviceMenuView.swift`). The named failure states landed 2026-09-19 (below). Built and running on the owner's Mac from 2026-09-18; every change since
 has gone through `make app-run` there, and the state on 2026-09-19 is a window that hears, tunes
 by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the dB axis and
-the squelch-keyed waterfall. Still open in M1: the named failure states here, CHIRP import
-(APP-4), the S1 trace (APP-2), and the daemon's meter floor (above).
+the squelch-keyed waterfall. Still open in M1: CHIRP import (APP-4), the S1 trace (APP-2), and the daemon's meter floor
+(above).
 
 Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
 `PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s
@@ -122,6 +121,17 @@ squelch's rule); `ley`'s `snr` column still shows the meter's number. Giving the
 from the capture's spectrum rather than the channel's minimum is engine work for after M1, and
 until then the two clients disagree on a continuous carrier.
 
+Landed 2026-09-19, the named failure states: `FailureState` in the façade (`../dev/app.md`,
+"Failure states") names what the band's numbers show, from the feed's held floor and peak and
+the capture's gains: a signal within 3 dB of full scale, or nothing 15 dB above the floor for
+3 s, with the gain named as the thing to try when it is set by hand to its lowest. The strip
+over the waterfall says it in a sentence with the number and one thing to try; `ley tune` says
+the same sentence from the row it measured the squelch on, and the MCP tune tool carries it, so
+an agent is told the band is deaf rather than left to read an empty decode as quiet. The daemon
+not running, no radio and an unplugged radio were already the window's empty words. Not
+compiled in the container: the strip's third branch in `MainWindow.swift` and the session's
+`nameFailure` path; the rule itself is tested on Linux.
+
 Found the same day from the app log: every gain write from the window was refused with
 `GAIN_ELEMENT_UNKNOWN no gain element named ` because the window sent no element, while `ley`
 names the device's first. Fixed on both sides: the daemon now reads an empty element as the
@@ -129,6 +139,8 @@ first the device lists, as `common.proto` promises and the scan allocator alread
 with no gain stage says "this radio reports no gain elements"), the fake daemon does the same,
 and the window names the element and logs the write like a tune. Unverified on the Mac: that the
 slider's confirmed level now reads back under the element's name.
+
+
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
 the owner brought and the four answers recorded in the handoff's "Decided 2026-09-19": the
 band's edges as a track with numbered caps, the slice on screen as a pill, bookmarks and the

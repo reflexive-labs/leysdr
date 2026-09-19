@@ -91,6 +91,12 @@ final class AppSession {
     /// One sentence about the last thing that happened, or nil.
     private(set) var notice: String?
     private(set) var lastError: LeylineError?
+    /// What the band's numbers say is wrong, or nil (`FailureState`): named from the feed's
+    /// folds after every row and from the mirror when the gains change, and logged when it
+    /// changes. Shown until the numbers change or the user dismisses it.
+    private(set) var failure: FailureState?
+    /// The state the user dismissed; it comes back when a different one is named.
+    private var dismissedFailure: FailureState?
     private var busy = false
     private var rejectionsSeen = 0
 
@@ -240,6 +246,7 @@ final class AppSession {
 
     func start() async {
         guard running == nil else { return }
+        spectrum.onRow = { [weak self] in self?.nameFailure() }
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
@@ -317,6 +324,7 @@ final class AppSession {
         }
         spectrum.follow(capture, connection: daemon)
         meters.follow(channelID, connection: daemon)
+        nameFailure()
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
         if state.rejections.count != rejectionsSeen {
             rejectionsSeen = state.rejections.count
@@ -1124,6 +1132,52 @@ final class AppSession {
 
     func clearNotice() { notice = nil }
     func clearError() { lastError = nil }
+
+    /// The failure state the band's numbers show now, from the feed's held floor and peak and
+    /// the capture's gains. A change is one log line, so a strip that appeared can be explained.
+    private func nameFailure() {
+        let now: FailureState?
+        if let cap = capture, isLive, spectrum.error == nil {
+            now = FailureState.name(
+                floorDB: spectrum.floorDB, peakDB: spectrum.peakDB, rows: spectrum.heldRows,
+                rowsPerSecond: SpectrumFeed.rowsPerSecond, gains: cap.gains,
+                elements: device?.gainElements ?? [])
+        } else {
+            now = nil
+        }
+        guard now != failure else { return }
+        // A state re-named with a new number is the same state: keep the dismissal, skip the log.
+        if let now, let was = failure, now.kind == was.kind {
+            failure = now
+            return
+        }
+        failure = now
+        if let now {
+            log("failure", "\(now.headline): \(now.detail)")
+        } else {
+            log("failure", "cleared")
+        }
+        if let d = dismissedFailure, now?.kind != d.kind { dismissedFailure = nil }
+    }
+
+    /// Whether the strip shows the failure: not after the user closed it, until a different one.
+    var failureShown: FailureState? {
+        guard let failure else { return nil }
+        if let d = dismissedFailure, d.kind == failure.kind { return nil }
+        return failure
+    }
+
+    func dismissFailure() { dismissedFailure = failure }
+}
+
+extension FailureState {
+    /// The case without its numbers, for telling a re-measurement from a change.
+    fileprivate var kind: Int {
+        switch self {
+        case .nearFullScale: return 0
+        case .nothingAboveFloor: return 1
+        }
+    }
 }
 
 extension LeylineError {
