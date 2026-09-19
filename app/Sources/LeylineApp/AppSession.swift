@@ -83,6 +83,21 @@ final class AppSession {
     var meter: Leyline_V1_Meter? { meters.meter }
     var isLive: Bool { if case .live = connection { true } else { false } }
 
+    /// The waterfall's cold end: the squelch, as a level per bin, so raising the squelch darkens
+    /// the noise and what is heard is what has colour, the way the desktop SDRs tie the waterfall
+    /// minimum to the floor. The squelch is a channel power over the channel's width; per bin it
+    /// is `squelch − 10·log10(bandwidth / bin width)`, the auto squelch's own scaling in reverse.
+    /// With the squelch off, or before a floor is known, the feed's floor plus its headroom.
+    var rampFloorDB: Float {
+        let feed = spectrum
+        guard let ch = channel, ch.squelchDb.isFinite, let cap = capture, cap.sampleRate > 0, ch.bandwidthHz > 0, !feed.floorDB.isNaN else {
+            return feed.rampFloorDB
+        }
+        let binWidth = Double(cap.sampleRate) / Double(SpectrumFeed.bins)
+        let perBin = Float(ch.squelchDb - 10 * log10(Double(ch.bandwidthHz) / binWidth))
+        return max(perBin, feed.floorDB - 10)
+    }
+
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
     var band: Band? {
         if let id = selectedBandID, let b = bands.first(where: { $0.id == id }) { return b }

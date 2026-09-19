@@ -23,7 +23,7 @@ struct WaterfallView: View {
             ZStack(alignment: .topLeading) {
                 WaterfallMetalView(
                     feed: session.spectrum,
-                    floorDB: session.spectrum.rampFloorDB,
+                    floorDB: session.rampFloorDB,
                     viewLo: fraction(of: session.visibleRange?.lowerBound),
                     viewHi: fraction(of: session.visibleRange?.upperBound),
                     onPointer: { pointer = $0 },

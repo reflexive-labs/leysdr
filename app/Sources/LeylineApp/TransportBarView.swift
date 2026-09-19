@@ -66,59 +66,169 @@ struct PlayButton: View {
     }
 }
 
-/// `146.520` in ink, `000` dimmed, `MHz`. One text field, always, right-aligned at a fixed
-/// width so editing changes nothing but the caret: clicking into it or ⌘L edits in place, Enter
-/// tunes, Escape or clicking away puts the daemon's number back. The arrow keys step by the
-/// band's step (the Tune menu), so there is no stepper.
+/// `146.520` in ink, `000` dimmed, `MHz`. Entry works the way a radio's keypad does, by
+/// overwriting: click or ⌘L puts the caret on the first digit, each digit typed replaces the one
+/// under the caret and moves on, `.` jumps to the kHz digits (dropping whatever MHz digits were
+/// not retyped), Backspace steps back, Enter tunes, Escape or a click anywhere else puts the
+/// daemon's number back. The sub-kHz digits are shown and never typed.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
-    @State private var text = ""
+    @State private var mhz: [Character] = []
+    @State private var khz: [Character] = ["0", "0", "0"]
+    @State private var caret = 0
+    @State private var inKhz = false
+    @State private var frame = CGRect.zero
+    @State private var monitor: Any?
     @FocusState private var focused: Bool
 
     var body: some View {
         let hz = session.displayHz
         Block(header: "Tuning") {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                TextField("", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(Theme.Font.frequency)
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
-                    .focused($focused)
-                    .onSubmit(commit)
-                    .onExitCommand { focused = false }
-                    .frame(width: 124)
+                digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
+                Text(".").font(Theme.Font.frequency).foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
+                digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
                 Text(Frequency.fieldParts(hz ?? 0).minor)
                     .font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
-                    .opacity(focused ? 0 : 1)
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
+            .frame(minWidth: 232, alignment: .trailing)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Theme.accent : Theme.borderFocus))
+            .contentShape(Rectangle())
+            .onTapGesture { begin() }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focused)
+            .onKeyPress { handle($0) }
         }
-        .onAppear { text = major(hz) }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+        .onAppear { load(hz) }
         .onChange(of: hz) { _, new in
-            if !focused { text = major(new) }
+            if !focused { load(new) }
         }
         .onChange(of: focused) { _, isFocused in
             session.frequencyEntryShown = isFocused
-            if !isFocused { text = major(hz) }
+            if isFocused { watchClicks() } else { end() }
         }
         .onChange(of: session.frequencyEntryShown) { _, shown in
-            if shown, !focused { focused = true }
+            if shown, !focused { begin() }
         }
     }
 
-    private func major(_ hz: UInt64?) -> String { hz.map { Frequency.fieldParts($0).major } ?? "" }
+    /// Each digit its own glyph, the one under the caret on an accent ground while editing, and
+    /// a bar after the last when the caret is past it.
+    private func digits(_ chars: [Character], active: Bool, dim: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(chars.enumerated()), id: \.offset) { i, c in
+                Text(String(c))
+                    .font(Theme.Font.frequency).tracking(Theme.frequencyTracking)
+                    .foregroundStyle(dim ? Theme.inkDisabled : Theme.ink)
+                    .background(active && i == caret ? Theme.accent.opacity(0.3) : Color.clear)
+            }
+            if active, caret >= chars.count {
+                Rectangle().fill(Theme.accent).frame(width: 2, height: 28).offset(y: 4)
+            }
+        }
+    }
+
+    private func load(_ hz: UInt64?) {
+        guard let hz else {
+            mhz = []
+            khz = ["0", "0", "0"]
+            return
+        }
+        mhz = Array(String(hz / 1_000_000))
+        khz = Array(String(format: "%03d", (hz % 1_000_000) / 1_000))
+    }
+
+    private func begin() {
+        load(session.displayHz)
+        caret = 0
+        inKhz = false
+        focused = true
+    }
+
+    private func end() {
+        if let m = monitor { NSEvent.removeMonitor(m) }
+        monitor = nil
+        inKhz = false
+        caret = 0
+        load(session.displayHz)
+    }
 
     private func commit() {
-        if let v = Frequency.parse(text) {
-            log("tune", "typed \(text) -> \(v) Hz")
-            session.tune(to: v)
+        let whole = UInt64(String(mhz)) ?? 0
+        let thousandths = UInt64(String(khz)) ?? 0
+        let hz = whole * 1_000_000 + thousandths * 1_000
+        if hz > 0 {
+            log("tune", "typed \(String(mhz)).\(String(khz)) -> \(hz) Hz")
+            session.tune(to: hz)
         }
         focused = false
+    }
+
+    private func handle(_ press: KeyPress) -> KeyPress.Result {
+        if press.key == .return { commit(); return .handled }
+        if press.key == .escape { focused = false; return .handled }
+        if press.key == .leftArrow {
+            if inKhz {
+                if caret > 0 { caret -= 1 } else { inKhz = false; caret = mhz.count }
+            } else if caret > 0 { caret -= 1 }
+            return .handled
+        }
+        if press.key == .rightArrow {
+            if inKhz {
+                if caret < khz.count { caret += 1 }
+            } else if caret < mhz.count { caret += 1 } else { inKhz = true; caret = 0 }
+            return .handled
+        }
+        if press.key == .delete {
+            if inKhz {
+                if caret > 0 { caret -= 1; khz[caret] = "0" } else { inKhz = false; caret = mhz.count }
+            } else if caret > 0 { caret -= 1; mhz.remove(at: caret) }
+            return .handled
+        }
+        guard let c = press.characters.first else { return .ignored }
+        if c == "." || c == "," {
+            if !inKhz {
+                mhz = Array(mhz.prefix(max(caret, 1)))
+                inKhz = true
+                caret = 0
+            }
+            return .handled
+        }
+        guard c.isNumber else { return .ignored }
+        if inKhz {
+            if caret < khz.count { khz[caret] = c; caret += 1 }
+        } else if caret < mhz.count {
+            mhz[caret] = c
+            caret += 1
+        } else if mhz.count < 4 {
+            mhz.append(c)
+            caret += 1
+        }
+        return .handled
+    }
+
+    /// A click anywhere but the field ends the edit. SwiftUI's focus does not move for a click
+    /// on a view that takes none, so the window's clicks are watched while the field has focus.
+    private func watchClicks() {
+        if monitor != nil { return }
+        let blur = $focused
+        let field = frame
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            MainActor.assumeIsolated {
+                if let content = event.window?.contentView {
+                    let p = event.locationInWindow
+                    let inSwiftUI = CGPoint(x: p.x, y: content.bounds.height - p.y)
+                    if !field.contains(inSwiftUI) { blur.wrappedValue = false }
+                }
+            }
+            return event
+        }
     }
 }
 
@@ -233,18 +343,25 @@ struct SquelchTrack: View {
                 let w = geo.size.width
                 let markerX = squelch.isNaN ? 0 : x(of: squelch, width: w)
                 let levelX = power.isNaN ? 0 : x(of: power, width: w)
+                let inset: CGFloat = 3
+                let levelColour = Theme.level(Double(levelX / max(w, 1)))
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3).fill(Theme.ground)
+                    // The container: black at the left to the level's own colour, dimmed, at the right.
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(LinearGradient(colors: [.black, levelColour.opacity(0.35)], startPoint: .leading, endPoint: .trailing))
                     Rectangle().fill(Theme.good.opacity(0.09)).frame(width: max(0, w - markerX)).offset(x: markerX)
+                    // The colour region, inset, filled to the level through the ramp.
                     LinearGradient(colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing)
-                        .frame(width: w)
-                        .mask(alignment: .leading) { RoundedRectangle(cornerRadius: 3).frame(width: max(0, levelX)) }
+                        .frame(width: max(0, w - 2 * inset))
+                        .mask(alignment: .leading) { RoundedRectangle(cornerRadius: 2).frame(width: max(0, levelX - inset)) }
+                        .padding(.vertical, inset)
+                        .offset(x: inset)
                     Rectangle().fill(Theme.ink).frame(width: 2.5)
                         .overlay(alignment: .top) { Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2) }
                         .offset(x: markerX - 1.25)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)
                     .onChanged { v in
@@ -258,7 +375,7 @@ struct SquelchTrack: View {
                         session.setSquelch(d)
                     })
             }
-            .frame(height: 16)
+            .frame(height: 18)
             HStack {
                 Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
                 Spacer()
