@@ -192,13 +192,13 @@ struct FrequencyField: View {
             } else if caret > 0 { caret -= 1 }
             return .handled
         }
-        if press.key == .rightArrow {
+        if key == .rightArrow {
             if inKhz {
                 if caret < khz.count { caret += 1 }
             } else if caret < mhz.count { caret += 1 } else { inKhz = true; caret = 0 }
             return .handled
         }
-        if press.key == .delete {
+        if key == .delete {
             if inKhz {
                 if caret > 0 { caret -= 1; khz[caret] = "0" } else { inKhz = false; caret = mhz.count }
             } else if caret > 0 { caret -= 1; mhz.remove(at: caret) }
@@ -236,34 +236,41 @@ struct FrequencyField: View {
         let blur = $focused
         log("field", "editing")
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
-            MainActor.assumeIsolated {
-                switch event.type {
-                case .leftMouseDown, .rightMouseDown:
-                    log("field", "click ends the edit")
-                    blur.wrappedValue = false
-                    return event
-                case .keyDown:
-                    switch event.keyCode {
-                    case 36, 76:  // Return, keypad Enter
-                        commit()
-                        return nil
-                    case 53:  // Escape
-                        log("field", "escape restores")
-                        blur.wrappedValue = false
-                        return nil
-                    case 51:  // Backspace: step back, clearing what was there
-                        _ = handleEditingKey(.delete, "")
-                        return nil
-                    case 117:  // Forward delete: clear the digit under the caret, staying put
-                        forwardDelete()
-                        return nil
-                    default:
-                        return event
-                    }
-                default:
-                    return event
-                }
+            // Only the two values the field needs cross into the main actor; an NSEvent is not Sendable.
+            let type = event.type
+            let code = event.keyCode
+            let swallow: Bool = MainActor.assumeIsolated { react(to: type, keyCode: code, blur: blur) }
+            return swallow ? nil : event
+        }
+    }
+
+    /// Returns true when the key was the field's and nothing else should see it.
+    private func react(to type: NSEvent.EventType, keyCode: UInt16, blur: FocusState<Bool>.Binding) -> Bool {
+        switch type {
+        case .leftMouseDown, .rightMouseDown:
+            log("field", "click ends the edit")
+            blur.wrappedValue = false
+            return false
+        case .keyDown:
+            switch keyCode {
+            case 36, 76:  // Return, keypad Enter
+                commit()
+                return true
+            case 53:  // Escape
+                log("field", "escape restores")
+                blur.wrappedValue = false
+                return true
+            case 51:  // Backspace: step back, clearing what was there
+                _ = handleEditingKey(.delete, "")
+                return true
+            case 117:  // Forward delete: clear the digit under the caret, staying put
+                forwardDelete()
+                return true
+            default:
+                return false
             }
+        default:
+            return false
         }
     }
 }

@@ -215,7 +215,7 @@ final class AppSession {
     /// is heard, and a squelch measured from the floor. Creates what does not exist and writes
     /// what does (docs/design/app-design-handoff.md, Region 1).
     func select(band: Band) async {
-        guard !busy, let daemon else { return }
+        guard !busy, daemon != nil else { return }
         busy = true
         defer { busy = false }
         selectedBandID = band.id
