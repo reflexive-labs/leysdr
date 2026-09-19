@@ -24,6 +24,7 @@ struct WaterfallView: View {
                 WaterfallMetalView(
                     feed: session.spectrum,
                     floorDB: session.rampFloorDB,
+                    fadeDB: session.rampFadeDB,
                     viewLo: fraction(of: session.visibleRange?.lowerBound),
                     viewHi: fraction(of: session.visibleRange?.upperBound),
                     onPointer: { p in
@@ -104,6 +105,7 @@ struct TimeAxis: View {
 struct WaterfallMetalView: NSViewRepresentable {
     let feed: SpectrumFeed
     let floorDB: Float
+    let fadeDB: Float
     let viewLo: Float
     let viewHi: Float
     let onPointer: (CGPoint?) -> Void
@@ -138,6 +140,7 @@ struct WaterfallMetalView: NSViewRepresentable {
         r.viewLo = viewLo
         r.viewHi = viewHi
         r.floorDB = floorDB
+        r.fadeDB = fadeDB
         view.mouse.onPointer = onPointer
         view.mouse.onClick = onClick
         view.mouse.onDrag = onDrag
@@ -192,7 +195,7 @@ struct WaterfallUniforms {
     var width: Float = 1
     var height: Float = 1
     var rowsPerPixel: Float = 1
-    var pad: Float = 0
+    var fadeU8: Float = 0
 }
 
 /// Fills a byte texture from the feed's ring and draws it through the ramp. S1's client half:
@@ -211,6 +214,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     var viewLo: Float = 0
     var viewHi: Float = 1
     var floorDB: Float = .nan
+    var fadeDB: Float = 0
     /// Why there is no pipeline, in the compiler's or Metal's words; nil when it came up.
     private(set) var problem: String?
     var problemReported = false
@@ -274,6 +278,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         let floor = floorDB.isNaN ? -100 : floorDB
         u.floorU8 = (floor + DBU8.offset) * DBU8.scale
         u.rangeU8 = SpectrumFeed.rangeDB * DBU8.scale
+        u.fadeU8 = fadeDB * DBU8.scale
         u.width = Float(view.drawableSize.width)
         u.height = Float(view.drawableSize.height)
         u.rowsPerPixel = 1

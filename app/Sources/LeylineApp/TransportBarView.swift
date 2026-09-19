@@ -421,9 +421,10 @@ struct SquelchTrack: View {
                 let levelX = power.isNaN ? 0 : x(of: power, width: w)
                 let inset: CGFloat = 3
                 ZStack(alignment: .leading) {
-                    // The container: black at the left to the ramp's dark teal at the right.
+                    // The container: black at the left to the ramp's first stop, the near-black
+                    // teal, at the right.
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(LinearGradient(colors: [.black, Theme.levelStops[1]], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [.black, Theme.levelStops[0]], startPoint: .leading, endPoint: .trailing))
                     Rectangle().fill(Theme.good.opacity(0.09)).frame(width: max(0, w - markerX)).offset(x: markerX)
                     // The colour region, inset, as long as the level: dark teal at its left to
                     // the ramp's yellow at its right whatever its length, as the design draws it.

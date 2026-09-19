@@ -118,9 +118,21 @@ final class AppSession {
     /// is `squelch − 10·log10(bandwidth / bin width)`, the auto squelch's own scaling in reverse.
     /// With the squelch off, or before a floor is known, the feed's floor plus its headroom.
     var rampFloorDB: Float {
+        squelchPerBinDB ?? spectrum.rampFloorDB
+    }
+
+    /// How far below the cold end the waterfall fades to the ground, when the cold end is the
+    /// squelch: what the squelch silences goes dark rather than sitting at the ramp's first
+    /// stop, so the picture says what is heard. Nothing with the squelch off, where the cold
+    /// end is a headroom over the noise and the noise is meant to stay a faint teal.
+    static let squelchFadeDB: Float = 6
+    var rampFadeDB: Float { squelchPerBinDB == nil ? 0 : Self.squelchFadeDB }
+
+    /// The squelch as a level per bin, or nil when it is off or there is no floor to bound it.
+    private var squelchPerBinDB: Float? {
         let feed = spectrum
         guard let ch = channel, ch.squelchDb.isFinite, let cap = capture, cap.sampleRate > 0, ch.bandwidthHz > 0, !feed.floorDB.isNaN else {
-            return feed.rampFloorDB
+            return nil
         }
         let binWidth = Double(cap.sampleRate) / Double(SpectrumFeed.bins)
         let perBin = Float(ch.squelchDb - 10 * log10(Double(ch.bandwidthHz) / binWidth))

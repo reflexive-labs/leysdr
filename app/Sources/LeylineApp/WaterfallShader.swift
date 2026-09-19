@@ -6,8 +6,10 @@
 // compiler message that the window can show (docs/plans/app.md, APP-2).
 //
 // One byte a bin in a ring texture, newest row at the top, one row per pixel, coloured through
-// the six-stop ramp between the floor and floor + range. A pixel column that covers several
-// bins takes the loudest, so a carrier one bin wide is never lost between two pixels.
+// the six-stop ramp between the floor and floor + range; below the floor, when the floor is
+// the squelch, a short fade to the ground, so what the squelch silences goes dark. A pixel
+// column that covers several bins takes the loudest, so a carrier one bin wide is never lost
+// between two pixels.
 
 enum WaterfallShader {
     static let source = """
@@ -26,7 +28,7 @@ enum WaterfallShader {
         float width;        // drawable size, pixels
         float height;
         float rowsPerPixel;
-        float pad;
+        float fadeU8;       // how far under the floor the fade to the ground runs; 0 = no fade
     };
 
     struct VertexOut {
@@ -75,7 +77,14 @@ enum WaterfallShader {
         for (uint b = b0; b <= hi; b++) {
             loudest = max(loudest, rows.read(uint2(b, slot)).r);
         }
-        float frac = (float(loudest) - u.floorU8) / max(u.rangeU8, 1.0);
+        float level = float(loudest);
+        if (level < u.floorU8 && u.fadeU8 > 0.0) {
+            // Under the squelch: from the ramp's first stop down to the ground over the fade,
+            // then the ground, like clipping rather than a rescaled ramp.
+            float t = clamp((u.floorU8 - level) / u.fadeU8, 0.0, 1.0);
+            return float4(mix(stops[0].rgb, ground, t), 1.0);
+        }
+        float frac = (level - u.floorU8) / max(u.rangeU8, 1.0);
         return float4(ramp(frac, stops), 1.0);
     }
     """
