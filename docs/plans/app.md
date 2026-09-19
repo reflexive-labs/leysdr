@@ -140,6 +140,14 @@ with no gain stage says "this radio reports no gain elements"), the fake daemon 
 and the window names the element and logs the write like a tune. Unverified on the Mac: that the
 slider's confirmed level now reads back under the element's name.
 
+Found the same evening: a sample-rate change silenced the station. The daemon keeps the capture
+centre on a rate write, so a station placed off-centre (88.5 MHz in a capture centred on
+89.4 MHz, the band's centre) falls out of a narrower capture and the channel goes
+`OUT_OF_CAPTURE`, which the window did not name. Now `setSampleRate` re-places the centre for
+the tuned frequency at the new width and writes centre and rate in one tick (centre first when
+narrowing, rate first when widening), refuses in words a width the channel cannot fit, and the
+strip names an out-of-capture channel when another client causes one. Unverified on the Mac:
+the placement and the one-tick order, which `LeylineApp` alone compiles.
 
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
 the owner brought and the four answers recorded in the handoff's "Decided 2026-09-19": the

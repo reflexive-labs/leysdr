@@ -97,6 +97,8 @@ final class AppSession {
     private(set) var failure: FailureState?
     /// The state the user dismissed; it comes back when a different one is named.
     private var dismissedFailure: FailureState?
+    /// The out-of-capture words were closed; they return once the channel has been back inside.
+    private var outOfCaptureDismissed = false
     private var busy = false
     private var rejectionsSeen = 0
 
@@ -325,6 +327,7 @@ final class AppSession {
         spectrum.follow(capture, connection: daemon)
         meters.follow(channelID, connection: daemon)
         nameFailure()
+        if let ch = channel, ch.state != .outOfCapture { outOfCaptureDismissed = false }
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
         if state.rejections.count != rejectionsSeen {
             rejectionsSeen = state.rejections.count
@@ -995,12 +998,68 @@ final class AppSession {
         Task { await writes.gain(w, capture: cap.captureID) }
     }
 
-
+    /// A new capture width. The daemon keeps the centre where it was, so a station off-centre
+    /// falls out of a narrower capture and goes silent (`OUT_OF_CAPTURE`, `engine-internals.md`);
+    /// the window re-places the centre for the tuned frequency at the new width, as a band
+    /// change does, and writes centre and rate in one tick: centre first when narrowing and rate
+    /// first when widening, so the channel fits at each step the daemon applies. A width the
+    /// channel cannot fit at all is refused here, in words.
     func setSampleRate(_ rate: UInt64) {
-        guard let cap = capture, let writes else { return }
-        Task { _ = await writes.set(.captureSampleRate(rate), target: cap.captureID) }
+        guard let cap = capture, let writes, rate != cap.sampleRate else { return }
+        guard centreInFlight == nil else {
+            log("rate", "\(rate) S/s refused: a centre move is in flight")
+            return
+        }
+        let span = Int64(rate)
+        var centre = Int64(cap.centerHz)
+        if let ch = channel, let hz = tunedHz {
+            let bw = Int64(ch.bandwidthHz)
+            if bw > span {
+                notice =
+                    "\(ch.mode.word) at \(Frequency.format(UInt64(bw))) wide does not fit a \(Frequency.format(rate)) capture. Pick a narrower width first."
+                return
+            }
+            let target = Int64(hz)
+            if let b = band { centre = Int64(captureCentre(for: b, at: hz, rate: rate)) }
+            // The band's rule leaves the band's width to spare; the channel may be wider.
+            centre = min(max(centre, target - span / 2 + bw), target + span / 2 - bw)
+            centre = clampCentre(centre, span: span)
+        }
+        let want = UInt64(max(0, centre))
+        let narrowing = rate < cap.sampleRate
+        centreInFlight = Int64(want)
         spectrum.resetFolds()
+        log(
+            "rate",
+            "\(cap.sampleRate) -> \(rate) S/s, centre \(cap.centerHz) -> \(want) Hz\(tunedHz.map { " for \($0) Hz" } ?? "")"
+        )
+        Task {
+            if narrowing, want != cap.centerHz {
+                await writes.centerHz(want, capture: cap.captureID)
+            }
+            _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
+            if !narrowing, want != cap.centerHz {
+                await writes.centerHz(want, capture: cap.captureID)
+            }
+            await confirmed(within: 2) {
+                self.capture?.centerHz == want && self.capture?.sampleRate == rate
+            }
+            if centreInFlight == Int64(want) { centreInFlight = nil }
+        }
     }
+
+    /// The tuned channel lies outside the capture, silent: another client narrowed or moved the
+    /// capture (the window's own writes keep the station inside). The daemon holds the channel
+    /// at its frequency until the capture covers it again, and the words say what would.
+    var outOfCaptureWords: String? {
+        guard !outOfCaptureDismissed, let ch = channel, ch.state == .outOfCapture,
+            let cap = capture, let hz = tunedHz
+        else { return nil }
+        return
+            "\(Frequency.format(hz)) is outside the \(Frequency.format(cap.sampleRate)) the radio is capturing around \(Frequency.format(cap.centerHz)). Pick a wider sample rate, or tune inside it."
+    }
+
+    func dismissOutOfCapture() { outOfCaptureDismissed = true }
 
     /// Another radio: a new capture there on the current band, the old one left to its owner
     /// (destroyed only if this app made it).

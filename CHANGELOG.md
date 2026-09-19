@@ -12,6 +12,9 @@ Nothing has been released yet. This file starts with everything that exists on `
   empty decode as quiet.
 - A gain write that names no element now lands on the first the device lists, as the contract
   always said; the Mac app's gain slider was refused on every drag because of it.
+- Changing the sample rate in the Mac app keeps the station inside the capture: the centre is
+  re-placed for the tuned frequency at the new width, a width the channel cannot fit is refused
+  in words, and a channel another client leaves outside the capture is named in the window.
 - Bookmarks: `ley bookmarks add 146.94 --name "Local repeater"` keeps a frequency, `ley bookmarks`
   lists what you kept and `ley bookmarks remove` forgets one. They are your data in a JSON file
   beside the labels store (`$LEYLINE_BOOKMARKS` overrides its path), not daemon state, and the Mac

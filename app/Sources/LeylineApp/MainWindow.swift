@@ -74,9 +74,10 @@ struct EmptyWords: View {
     }
 }
 
-/// One line about the last thing that happened, the last thing that went wrong, or what the
-/// band's numbers say is wrong (`FailureState`), over the bottom of the waterfall; a click
-/// dismisses it. A failure is the quietest of the three: it is named, not alarmed.
+/// One line about the last thing that happened, the last thing that went wrong, a channel the
+/// capture no longer covers, or what the band's numbers say is wrong (`FailureState`), over the
+/// bottom of the waterfall; a click dismisses it. The last two are the quietest: named, not
+/// alarmed.
 struct NoticeStrip: View {
     @Environment(AppSession.self) private var session
 
@@ -87,6 +88,8 @@ struct NoticeStrip: View {
             }
         } else if let n = session.notice {
             line(n, colour: Theme.inkTertiary) { session.clearNotice() }
+        } else if let words = session.outOfCaptureWords {
+            line(words, colour: Theme.inkSecondary) { session.dismissOutOfCapture() }
         } else if let f = session.failureShown {
             line("\(f.headline). \(f.detail)", colour: Theme.inkSecondary) {
                 session.dismissFailure()

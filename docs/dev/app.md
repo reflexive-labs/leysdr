@@ -102,7 +102,11 @@ which says the same sentence from the row it measured the squelch on, and the tw
 their rows. The daemon not running, no radio and an unplugged radio are the mirror's states and
 live in `AppSession.emptyWords`. The session names the state after every row and every mirror
 change, logs each change, and the strip over the waterfall shows it until the numbers change or
-the user closes it (a closed state stays closed until a different one is named).
+the user closes it (a closed state stays closed until a different one is named). A channel the
+capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or moved the capture) is
+named the same way from the mirror, with the width and centre it would need; the window's own
+rate change never causes it, because `AppSession.setSampleRate` re-places the centre for the
+tuned frequency at the new width and writes centre and rate in one tick.
 
 ## Building and running
 
@@ -137,8 +141,8 @@ under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, 
 
 The app writes one line per thing the window did (`AppLog.swift`): dialling and the daemon's
 state, the capture and channel it made or adopted, every tune with the offset and any centre
-band crossings and the mode-and-width pairs they write, every gain write, rejections with the
-write's tag, the failure state named or cleared,
+move, band crossings and the mode-and-width pairs they write, every gain write, every rate change
+with the centre it moved to, rejections with the write's tag, the failure state named or cleared,
 the FFT subscription's descriptor and a row count every thirty seconds, and whether the shader
 compiled. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
