@@ -89,7 +89,7 @@ enum Theme {
     // Layout, from the handoff's window: ratios of a 1360×820 design, fixed where it says so.
     enum Layout {
         static let sidebarWidth: CGFloat = 236
-        static let bandHeaderHeight: CGFloat = 36
+        static let bandRailHeight: CGFloat = 40
         static let spectrumHeight: CGFloat = 150
         static let transportHeight: CGFloat = 88
         static let defaultWindow = CGSize(width: 1360, height: 820)

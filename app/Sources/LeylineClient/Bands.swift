@@ -189,3 +189,30 @@ extension Leyline_V1_DemodMode {
         }
     }
 }
+
+// MARK: The rail
+
+extension Band {
+    /// `hz` on the band's grid: the nearest multiple of the step counted from the low edge, so a
+    /// scrub along the rail lands on a channel the band names rather than between two. A band
+    /// with no step hands the frequency back.
+    public func snapped(_ hz: UInt64) -> UInt64 {
+        guard stepHz > 0 else { return hz }
+        let step = UInt64(stepHz)
+        let off = hz >= minHz ? hz - minHz : 0
+        let n = (off + step / 2) / step
+        return min(minHz + n * step, maxHz)
+    }
+}
+
+extension Bands {
+    /// The bands on either side of `range`, by frequency: the nearest one that ends at or below
+    /// its low edge and the nearest that begins at or above its high edge, groups skipped. The
+    /// rail names these at its end caps, and a scrub past a cap crosses into them.
+    public static func neighbours(of range: ClosedRange<UInt64>, in bands: [Band] = builtIn) -> (below: Band?, above: Band?) {
+        let plain = bands.filter { !$0.isGroup }
+        let below = plain.filter { $0.maxHz <= range.lowerBound }.max { $0.maxHz < $1.maxHz }
+        let above = plain.filter { $0.minHz >= range.upperBound }.min { $0.minHz < $1.minHz }
+        return (below, above)
+    }
+}

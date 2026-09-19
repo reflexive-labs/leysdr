@@ -304,22 +304,26 @@ final class AppSession {
 
     /// The band's centre and rate on the radio, its mode and width on the channel, a sink so it
     /// is heard, and a squelch measured from the floor. Creates what does not exist and writes
-    /// what does (docs/design/app-design-handoff.md, Region 1).
-    func select(band: Band) async {
+    /// what does (docs/design/app-design-handoff.md, Region 1). With `hz`, the band arrives
+    /// tuned there rather than at its centre, and the capture sits where that frequency is
+    /// inside it: a scrub past the rail's end cap lands on the neighbour's near edge.
+    func select(band: Band, at hz: UInt64? = nil) async {
         guard !busy, daemon != nil else { return }
         busy = true
         defer { busy = false }
         selectedBandID = band.id
         UserDefaults.standard.set(band.id, forKey: Self.lastBandKey)
         lastError = nil
-        log("session", "select band \(band.name)")
+        log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
         do {
             let dev = try pickDevice()
             let rate = Bands.sampleRate(for: band, offered: dev.sampleRates) ?? 2_400_000
-            let centre = band.centerHz
+            let target = hz ?? band.centerHz
+            let centre = hz == nil ? band.centerHz : captureCentre(for: band, at: target, rate: rate)
             let cap = try await ensureCapture(on: dev, centerHz: centre, sampleRate: rate)
-            let mode = band.mode(at: centre)
-            let ch = try await ensureChannel(in: cap, offsetHz: 0, mode: mode, bandwidthHz: band.bandwidthHz)
+            let mode = band.mode(at: target)
+            if hz != nil { request(target) }
+            let ch = try await ensureChannel(in: cap, offsetHz: Int64(target) - Int64(centre), mode: mode, bandwidthHz: band.bandwidthHz)
             try await ensureSink(on: ch)
             spectrum.resetFolds()
             if band.widthHz > rate {
@@ -331,6 +335,21 @@ final class AppSession {
         } catch {
             lastError = LeylineError(error)
         }
+    }
+
+    /// Where the capture sits so that `hz` is inside it with the channel's width to spare: the
+    /// band's centre when the band fits the span, else the span slid along the band to hold
+    /// `hz`, and either way pulled in until the channel has room, then kept in the radio's range.
+    private func captureCentre(for band: Band, at hz: UInt64, rate: UInt64) -> UInt64 {
+        let span = Int64(rate)
+        let target = Int64(hz)
+        let bw = Int64(band.bandwidthHz)
+        var centre = Int64(band.centerHz)
+        if band.widthHz > rate {
+            centre = min(max(target, Int64(band.minHz) + span / 2), Int64(band.maxHz) - span / 2)
+        }
+        centre = min(max(centre, target - span / 2 + bw), target + span / 2 - bw)
+        return UInt64(max(0, clampCentre(centre, span: span)))
     }
 
     private func pickDevice() throws -> Leyline_V1_DeviceDescriptor {
@@ -436,6 +455,17 @@ final class AppSession {
     /// faster than every 300 ms, so the picture moves under the pointer at a pace a hand can
     /// follow rather than a span per event.
     func tune(to hz: UInt64, dragging: Bool = false) {
+        place(hz, panning: dragging, quiet: dragging)
+    }
+
+    /// A drag along the band rail: every event is an absolute frequency, so a target outside
+    /// the capture moves the centre the way a click does rather than panning an eighth at a
+    /// time, and nothing is logged until the gesture ends with a `tune(to:)`.
+    func scrub(to hz: UInt64) {
+        place(hz, panning: false, quiet: true)
+    }
+
+    private func place(_ hz: UInt64, panning dragging: Bool, quiet: Bool) {
         guard let cap = capture, let writes else { return }
         guard let ch = channel else {
             if !dragging, !creatingChannel { Task { await tuneCreating(hz: hz) } }
@@ -481,7 +511,7 @@ final class AppSession {
         let offset = target - centre
         request(UInt64(max(0, target)))
         Task { await writes.offsetHz(offset, channel: ch.channelID) }
-        if !dragging { log("tune", "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")") }
+        if !quiet { log("tune", "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")") }
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
     }
 

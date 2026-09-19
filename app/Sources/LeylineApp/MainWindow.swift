@@ -30,11 +30,11 @@ struct MainWindow: View {
         .preferredColorScheme(.dark)
     }
 
-    /// Band header, spectrum and waterfall, or the words for why there is nothing to draw.
+    /// Band rail, spectrum and waterfall, or the words for why there is nothing to draw.
     private var canvas: some View {
         VStack(spacing: 0) {
-            BandHeaderView()
-                .frame(height: Theme.Layout.bandHeaderHeight)
+            BandRailView()
+                .frame(height: Theme.Layout.bandRailHeight)
             Rectangle().fill(Theme.border).frame(height: 1)
             ZStack {
                 VStack(spacing: 0) {

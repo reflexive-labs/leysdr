@@ -66,4 +66,36 @@ final class BandsTests: XCTestCase {
             XCTAssertEqual(m.offeredBandwidthsHz.first, m.defaultBandwidthHz, "\(m.word): the first width offered is the default")
         }
     }
+
+    func testNeighboursAreTheNearestBandsOnEitherSide() {
+        let air = Band(name: "airband", aliases: ["air"], minHz: 118_000_000, maxHz: 137_000_000, mode: "am", bandwidthHz: 10_000, stepHz: 25_000)
+        let twoM = Band(name: "2 m amateur", aliases: ["2m"], minHz: 144_000_000, maxHz: 148_000_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
+        let marine = Band(name: "marine VHF", aliases: ["marine"], minHz: 156_000_000, maxHz: 162_025_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 25_000)
+        let group = Band(name: "VHF", aliases: ["vhf"], minHz: 118_000_000, maxHz: 162_025_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 25_000, parts: ["air", "2m", "marine"])
+        let bands = [marine, group, air, twoM]
+        let n = Bands.neighbours(of: twoM.minHz...twoM.maxHz, in: bands)
+        XCTAssertEqual(n.below?.name, "airband")
+        XCTAssertEqual(n.above?.name, "marine VHF")
+        let gap = Bands.neighbours(of: 150_000_000...151_000_000, in: bands)
+        XCTAssertEqual(gap.below?.name, "2 m amateur", "a slice between two bands still has both neighbours")
+        XCTAssertEqual(gap.above?.name, "marine VHF")
+        XCTAssertNil(Bands.neighbours(of: air.minHz...air.maxHz, in: bands).below, "nothing below the lowest")
+        XCTAssertNil(Bands.neighbours(of: marine.minHz...marine.maxHz, in: bands).above, "nothing above the highest")
+        let real = Bands.neighbours(of: 144_000_000...148_000_000)
+        XCTAssertNotNil(real.below)
+        XCTAssertNotNil(real.above)
+        XCTAssertFalse(real.below!.isGroup)
+    }
+
+    func testSnappedLandsOnTheBandsGrid() {
+        let twoM = Band(name: "2 m amateur", aliases: ["2m"], minHz: 144_000_000, maxHz: 148_000_000, mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
+        XCTAssertEqual(twoM.snapped(146_521_234), 146_520_000)
+        XCTAssertEqual(twoM.snapped(146_522_500), 146_525_000, "halfway rounds up")
+        XCTAssertEqual(twoM.snapped(147_999_999), 148_000_000)
+        XCTAssertEqual(twoM.snapped(143_000_000), 144_000_000, "below the band is its low edge")
+        let gmrs = Band(name: "GMRS 462 MHz", aliases: ["gmrs-462"], minHz: 462_537_500, maxHz: 462_737_500, mode: "nfm", bandwidthHz: 20_000, stepHz: 12_500)
+        XCTAssertEqual(gmrs.snapped(462_560_000), 462_562_500, "the grid starts at the low edge, not at zero")
+        let none = Band(name: "x", aliases: ["x"], minHz: 100, maxHz: 200, mode: "nfm", bandwidthHz: 10, stepHz: 0)
+        XCTAssertEqual(none.snapped(150), 150)
+    }
 }
