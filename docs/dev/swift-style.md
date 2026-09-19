@@ -32,20 +32,20 @@ judgement, and says "prefer".
    the daemon's.
 5. **Every wait has a deadline.** A write the daemon never confirms and an id no event carries
    both happen; each wait names the seconds it gives up after
-   (`app/Sources/LeylineApp/AppSession.swift:310`, `:762`).
+   (`app/Sources/LeylineApp/AppSession.swift:350`, `:902`).
 6. **Colours, fonts and fixed dimensions come from `Theme`.** No `Color(red:)`, no
    `.font(.system(size:))` on text (an SF Symbol's glyph size is the one inline size allowed),
    no system or white colours: the window owns a dark ground, and the handoff is meant to be
-   one file's worth of edits. Three texts break this today and are in section 13.
+   one file's worth of edits.
 7. **Only `Sendable` values cross into `MainActor.assumeIsolated`.** An `NSEvent` is not
    `Sendable`; the scalars it yields are, and are extracted first
-   (`app/Sources/LeylineApp/TransportBarView.swift:262`).
+   (`app/Sources/LeylineApp/TransportBarView.swift:308`).
 8. **`@unchecked Sendable` carries a comment naming what makes it safe.** There is one in the
    tree, `AppLog`, and the comment on its writes names the lock
-   (`app/Sources/LeylineApp/AppLog.swift:12`, `:47`).
+   (`app/Sources/LeylineApp/AppLog.swift:12`, `:60`).
 9. **A negative or non-finite number is never converted blind.** `UInt64(someInt64)` traps below
-   zero and `Int(Double.nan)` is fatal (`app/Sources/LeylineClient/DaemonMirror.swift:110`,
-   `app/Sources/LeylineApp/Theme.swift:58`).
+   zero and `Int(Double.nan)` is fatal (`app/Sources/LeylineClient/DaemonMirror.swift:148`,
+   `app/Sources/LeylineApp/Theme.swift:64`).
 10. **Every contract addition ships with its `ley` mirror** (CLAUDE.md, Conventions). A field the
     app reads that `ley --json` cannot show is not done.
 
@@ -53,10 +53,10 @@ judgement, and says "prefer".
 
 **A file opens with SPDX, a blank line, then a `//` block that says what it is and why it
 exists**, citing the document that owns its rules by path and heading. The what is one clause;
-the why earns the lines. `app/Sources/LeylineClient/DaemonMirror.swift:1` is the model: the
+the why earns the lines. `app/Sources/LeylineClient/DaemonMirror.swift:3` is the model: the
 fold's whole rationale — invariants 6 and 7, the tombstone rule, the seq-gap rule — before a
-single declaration. `WaterfallShader.swift:1` and `Streams.swift:1` are the same shape for a
-shader and a decoder, and `app/Package.swift:1` proves it holds for a manifest.
+single declaration. `WaterfallShader.swift:3` and `Streams.swift:3` are the same shape for a
+shader and a decoder, and `app/Package.swift:3` proves it holds for a manifest.
 
 **One concern per file, and the leading comment is the test.** If the comment needs two
 paragraphs about two unrelated things, the file is two files. `Theme.swift` holds colours,
@@ -83,10 +83,10 @@ type, booleans read as assertions. On top of that, this project's own:
   `SpectrumFold`, `Bands`, `BulkDecode`, `Frequency`, `SocketPath` and `WaterfallShader` are all
   caseless enums holding static functions, which is how the façade says "this has no state".
 - **Three verb families, each meaning exactly one thing.** `ensureX` creates the thing if it is
-  absent, writes it if it is present, and returns it (`AppSession.swift:417`, `:441`, `:466`).
+  absent, writes it if it is present, and returns it (`AppSession.swift:473`, `:503`, `:532`).
   `followX` subscribes and resubscribes when the thing it follows changes
-  (`app/Sources/LeylineApp/SpectrumFeed.swift:103`, `AppSession.swift:700`). `setX` is one
-  coalesced parameter write and nothing else (`AppSession.swift:777` through `:837`). A function
+  (`app/Sources/LeylineApp/SpectrumFeed.swift:103`, `AppSession.swift:828`). `setX` is one
+  coalesced parameter write and nothing else (`AppSession.swift:917` through `:979`). A function
   that does something else takes a different verb, because these three are read as promises.
 - **A unit is part of the name, never a comment.** `centerHz`, `offsetHz`, `bandwidthHz`,
   `stepHz`, `peakDecayDBPerRow`, `updatedNs`. A bare `frequency`, `width` or `rate` is a review
@@ -154,7 +154,7 @@ max hold, zoom, the pointer frequency, which sheet is up (`AppSession.swift:81`)
 **A view previews its own write and reconciles on the event.** `requestedHz`
 (`AppSession.swift:52`) is what the field shows until the daemon confirms the tune, so two quick
 presses do not both start from the frequency before the first; `request(_:)`
-(`AppSession.swift:310`) arms the clock that clears it. The write itself is never treated as
+(`AppSession.swift:350`) arms the clock that clears it. The write itself is never treated as
 done.
 
 **The response arrives before the event, so hold what the RPC returned.** A capture or channel
@@ -165,7 +165,7 @@ deleted look identical otherwise (`AppSession.swift:34`, `:248`).
 **Every wait has a deadline, and the deadline is in the doc comment.** An id never seen is
 released after three seconds, `requestedHz` expires after two, a busy device gets two, the auto
 squelch gives up after three and leaves the squelch off. `confirmed(within:_:)`
-(`AppSession.swift:762`) is the one helper; use it rather than a bare sleep.
+(`AppSession.swift:902`) is the one helper; use it rather than a bare sleep.
 
 **One move in flight at a time.** A second centre move waits in `nextRetune`
 (`AppSession.swift:63`, `:648`) rather than racing the first, because two at once leave the
@@ -179,7 +179,7 @@ applied. A drag is rate-limited the same way: at most an eighth of a span every 
 
 ## 6. Concurrency and isolation
 
-The app package builds in Swift 6 language mode (`app/Package.swift:82`); the engine is still
+The app package builds in Swift 6 language mode (`app/Package.swift:81`); the engine is still
 `.v5`, where an isolation mistake is a warning rather than an error (`setup.md`). Do not lean on
 the engine's build to catch one.
 
@@ -191,7 +191,7 @@ to say so explicitly; nothing in the app currently needs to.
 `nonisolated` (`SpectrumFeed.swift:57`, read by `Rows.columns(width:)` off the actor); the pure
 folds in `LeylineClient` are free functions on caseless enums and need no isolation at all; a
 protocol method AppKit calls off the actor is `nonisolated` and hops back
-(`app/Sources/LeylineApp/WaterfallView.swift:258`).
+(`app/Sources/LeylineApp/WaterfallView.swift:278`).
 
 **`MainActor.assumeIsolated` is the bridge from a callback already on the main thread**, and it
 appears exactly three times: a `DispatchSource` on `.main`, an `NSEvent` monitor, and
@@ -200,14 +200,14 @@ thread, it is not, and `assumeIsolated` will trap.
 
 **Task capture follows the task's lifetime.** A fire-and-forget write inside a `@MainActor`
 method captures `self` strongly and inherits the actor; the cycle ends when the round trip does
-(`AppSession.swift:793`). Anything that outlives the call — a subscription, an expiry clock, the
-mirror's callback — takes `[weak self]` (`SpectrumFeed.swift:113`, `AppSession.swift:313`).
+(`AppSession.swift:1051`). Anything that outlives the call — a subscription, an expiry clock, the
+mirror's callback — takes `[weak self]` (`SpectrumFeed.swift:116`, `AppSession.swift:353`).
 Inside an `actor`, `Task {}` inherits that actor's isolation, which is why
 `WriteCoalescer.start()` calls back into itself without an `await`.
 
 **A `Task` that owns a stream is paired with `continuation.onTermination`** so ending the
-consumer cancels the RPC (`app/Sources/LeylineClient/DaemonConnection.swift:125`,
-`Streams.swift:134`). A stream left running after its reader is gone is a channel the daemon
+consumer cancels the RPC (`app/Sources/LeylineClient/DaemonConnection.swift:133`,
+`Streams.swift:146`). A stream left running after its reader is gone is a channel the daemon
 keeps alive for nobody.
 
 **Express what is true now; resist refactoring.** The Swift migration guide's own rule, and the
@@ -224,18 +224,18 @@ These are the facts the compiler cannot catch, each one paid for by a fix commit
 **Read observable state in `body`; hand a closure a value.** Reads inside a `Canvas` drawing
 closure are not tracked by Observation, so a canvas that reached into the session drew the old
 band until the next row happened to arrive. `SpectrumView.swift:22` reads everything in `body`
-and passes one `Rows` struct (`:68`) to `draw`. The same holds for a `GeometryReader` child and
+and passes one `Rows` struct (`:72`) to `draw`. The same holds for a `GeometryReader` child and
 for any escaping closure that renders.
 
 **`@Bindable var session = session` at the top of a `body`** is how a binding is taken from an
-`@Environment(AppSession.self)` object (`SpectrumView.swift:188`).
+`@Environment(AppSession.self)` object (`SpectrumView.swift:202`).
 
 **`.offset` does not contribute to layout.** A `ZStack` whose children are positioned by offset
 must be framed `alignment: .topLeading`, or the frame centres whatever is left and the content
-lands somewhere else entirely (`app/Sources/LeylineApp/BandRailView.swift:181`).
+lands somewhere else entirely (`app/Sources/LeylineApp/BandRailView.swift:154`).
 
 **Overlay first, offset second.** An `.overlay` added after `.offset` is placed on the un-shifted
-frame (`app/Sources/LeylineApp/ChartMouse.swift:165`).
+frame (`app/Sources/LeylineApp/ChartMouse.swift:179`).
 
 **`GeometryReader` only where the size is an input to something.** The charts need the pixel
 width to map frequency to a column, so they use one; a layout that only wants to fill its parent
@@ -262,12 +262,12 @@ until the capability only exists in AppKit; each bridge is one file.
 
 **A hosted AppKit view draws over its SwiftUI neighbours**, so anything that must sit on top of
 it is drawn inside it. The seam between spectrum and waterfall is a rectangle inside the
-waterfall, over the Metal view (`WaterfallView.swift:40`).
+waterfall, over the Metal view (`WaterfallView.swift:42`).
 
 **The shader is Swift source compiled at launch**, not a `.metal` resource: `swift build` does
 not produce a `default.metallib` the way Xcode does, and a shader that silently fails to load is
 a dark panel with no words. A compile failure is a sentence in the window
-(`WaterfallShader.swift:1`, `WaterfallView.swift:236`).
+(`WaterfallShader.swift:3`, `WaterfallView.swift:243`).
 
 **Uniforms are scalars.** Pack what the shader needs as plain numbers in one struct, so nothing
 whose memory layout has to be guessed crosses that boundary.
@@ -277,10 +277,10 @@ whose memory layout has to be guessed crosses that boundary.
 **Frequencies are `UInt64` Hz, as the contract spells them.** Arithmetic that can go negative is
 done in `Int64` and converted back only behind a `>= 0` guard: a channel below 0 Hz is not a
 frequency and is reported absent rather than trapping the render that reads it
-(`DaemonMirror.swift:110`).
+(`DaemonMirror.swift:148`).
 
 **Guard `isFinite` before `Int(...)`, and clamp before a `UInt` conversion.** `Double.clamped`
-keeps NaN and `Int(Double.nan)` is fatal, so a measured value is checked first (`Theme.swift:58`).
+keeps NaN and `Int(Double.nan)` is fatal, so a measured value is checked first (`Theme.swift:64`).
 
 **A threshold is a named constant beside the feed that uses it, with a doc comment saying why it
 is that number** (`SpectrumFeed.swift:57` onward). Never write the same number twice: a string in
@@ -291,7 +291,7 @@ the UI that quotes a threshold reads the constant.
 **An atomic file write is `write(to: tmp, options: .atomic)` then `rename(2)`.**
 `FileManager.replaceItemAt` unlinks the original first, so a failure there loses the file the
 temp was meant to protect; `go/pkg/bookmarks` does the same thing with `os.Rename`, and the two
-clients own the same file (`app/Sources/LeylineClient/Bookmarks.swift:154`).
+clients own the same file (`app/Sources/LeylineClient/Bookmarks.swift:163`).
 
 **Anything under `#if canImport(Accelerate)`, `#if canImport(AppKit)` or `#if os(macOS)` is never
 compiled on Linux.** A vDSP kernel needs its portable twin and a row in `KernelParityTests`, or
@@ -300,7 +300,7 @@ running" records for views).
 
 **Xcode's type checker is stricter than the Linux one.** A four-term shift chain the container
 accepted was refused on the Mac; one `loadUnaligned` per sample is the idiom both decoders use
-(`Streams.swift:48`). Expect the Mac to reject expressions the container compiled, and write the
+(`Streams.swift:51`). Expect the Mac to reject expressions the container compiled, and write the
 simpler form first.
 
 **When Swift and Go both read a file or decode a payload, they take the same shape**, because
