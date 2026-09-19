@@ -48,81 +48,56 @@ struct PlayButton: View {
     }
 }
 
-/// `146.520` in ink, `000` dimmed, `MHz`, a stepper. A click, or ⌘L, edits it in place: the
-/// same field, a caret instead of a readout, Enter tunes and Escape puts the readout back.
+/// `146.520` in ink, `000` dimmed, `MHz`. One text field, always: clicking into it or ⌘L edits
+/// it in place, Enter tunes, Escape or clicking away puts the daemon's number back. The arrow
+/// keys step by the band's step (the Tune menu), so there is no stepper.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
     @State private var text = ""
-    @State private var editing = false
     @FocusState private var focused: Bool
 
     var body: some View {
-        let parts = Frequency.fieldParts(session.tunedHz ?? 0)
-        HStack(spacing: 6) {
-            if editing {
-                TextField("146.520", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(Theme.Font.frequency)
-                    .foregroundStyle(Theme.ink)
-                    .focused($focused)
-                    .onSubmit(commit)
-                    .onExitCommand(perform: cancel)
-                    .frame(width: 168)
-                Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
-            } else {
-                Button(action: begin) {
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        Text(parts.major).font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(session.tunedHz == nil ? Theme.inkDisabled : Theme.ink)
-                        Text(parts.minor).font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
-                        Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 3)
-                        Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
-                    }
-                }
-                .buttonStyle(.plain)
+        let hz = session.displayHz
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            TextField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(Theme.Font.frequency)
+                .foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
+                .focused($focused)
+                .onSubmit(commit)
+                .onExitCommand { focused = false }
+                .frame(width: 122)
+            if !focused {
+                Text(Frequency.fieldParts(hz ?? 0).minor)
+                    .font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
             }
-            VStack(spacing: 2) {
-                stepButton("chevron.up") { session.step(1) }
-                stepButton("chevron.down") { session.step(-1) }
-            }
+            Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
+            Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(editing ? Theme.accent : Theme.borderFocus))
-        .onChange(of: session.frequencyEntryShown) { _, shown in
-            if shown, !editing { begin() }
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Theme.accent : Theme.borderFocus))
+        .onAppear { text = major(hz) }
+        .onChange(of: hz) { _, new in
+            if !focused { text = major(new) }
         }
         .onChange(of: focused) { _, isFocused in
-            if !isFocused, editing { cancel() }
+            session.frequencyEntryShown = isFocused
+            if !isFocused { text = major(hz) }
+        }
+        .onChange(of: session.frequencyEntryShown) { _, shown in
+            if shown, !focused { focused = true }
         }
     }
 
-    private func begin() {
-        text = session.tunedHz.map { Frequency.fieldParts($0).major } ?? ""
-        editing = true
-        session.frequencyEntryShown = true
-        Task { @MainActor in focused = true }
-    }
+    private func major(_ hz: UInt64?) -> String { hz.map { Frequency.fieldParts($0).major } ?? "" }
 
     private func commit() {
-        if let hz = Frequency.parse(text) { session.tune(to: hz) }
-        finish()
-    }
-
-    private func cancel() { finish() }
-
-    private func finish() {
-        editing = false
-        focused = false
-        session.frequencyEntryShown = false
-    }
-
-    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 8, weight: .bold)).frame(width: 16, height: 11)
+        if let v = Frequency.parse(text) {
+            log("tune", "typed \(text) -> \(v) Hz")
+            session.tune(to: v)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(Theme.inkTertiary)
-        .disabled(session.tunedHz == nil)
+        focused = false
     }
 }
 

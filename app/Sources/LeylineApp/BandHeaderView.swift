@@ -14,10 +14,13 @@ struct BandHeaderView: View {
             Text(title).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
             Text(range).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
             Spacer()
-            zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
-            Text(session.zoom > 1 ? "\(session.zoom)×" : "")
-                .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint).frame(width: 22)
-            zoomButton("plus") { session.zoomIn() }.disabled(session.zoom >= 8)
+            HStack(spacing: 2) {
+                zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
+                Text("\(session.zoom)×")
+                    .font(Theme.Font.valueSmall).foregroundStyle(session.zoom > 1 ? Theme.inkTertiary : Theme.inkFaint)
+                    .frame(width: 24)
+                zoomButton("plus") { session.zoomIn() }.disabled(session.zoom >= 8)
+            }
         }
         .padding(.horizontal, 14)
         .background(Theme.panelHeader)

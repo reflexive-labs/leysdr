@@ -59,10 +59,14 @@ struct WaterfallView: View {
     private func drag(_ p: CGPoint, ended: Bool, columns: Columns?) {
         guard let columns else { return }
         let hz = columns.hz(atX: p.x)
-        if dragStartHz == nil { dragStartHz = hz }
+        if dragStartHz == nil {
+            dragStartHz = hz
+            log("tune", "drag from \(hz) Hz")
+        }
         dragHz = hz
-        session.tune(to: hz)
+        session.tune(to: hz, dragging: !ended)
         if ended {
+            log("tune", "drag ended at \(hz) Hz")
             dragStartHz = nil
             dragHz = nil
         }
@@ -74,11 +78,13 @@ struct WaterfallView: View {
         if let hz = session.tunedHz, let ch = session.channel {
             let x0 = columns.x(of: hz - UInt64(ch.bandwidthHz) / 2)
             let x1 = columns.x(of: hz + UInt64(ch.bandwidthHz) / 2)
+            // The edges are overlaid before the offset: an overlay added after it is placed on
+            // the un-shifted frame, at the left of the panel.
             Rectangle().fill(Theme.accent.opacity(0.11))
-                .frame(width: max(2, x1 - x0), height: size.height)
-                .offset(x: x0)
                 .overlay(alignment: .leading) { Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5) }
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5) }
+                .frame(width: max(2, x1 - x0), height: size.height)
+                .offset(x: x0)
                 .allowsHitTesting(false)
         }
         TimeAxis(rowsPerPoint: Double(displayScale), height: size.height)
@@ -307,6 +313,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
             desc.fragmentFunction = library.makeFunction(name: "waterfall_fragment")
             desc.colorAttachments[0].pixelFormat = .bgra8Unorm
             pipeline = try device.makeRenderPipelineState(descriptor: desc)
+            log("waterfall", "shader compiled on \(device.name)")
         } catch {
             fail("\(error)")
         }
@@ -314,7 +321,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
 
     private func fail(_ why: String) {
         problem = "The waterfall shader did not load: \(why)"
-        FileHandle.standardError.write(Data((problem! + "\n").utf8))
+        log("waterfall", problem!)
     }
 
     nonisolated func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -332,6 +339,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
             d.storageMode = .managed
             texture = device.makeTexture(descriptor: d)
             uploaded = 0
+            log("waterfall", "texture \(buffer.bins)×\(WaterfallBuffer.capacity), drawable \(Int(view.drawableSize.width))×\(Int(view.drawableSize.height))")
         }
         guard let texture else { return }
         upload(from: buffer, into: texture)

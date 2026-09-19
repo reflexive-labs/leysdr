@@ -159,7 +159,8 @@ app-e2e: swift fixtures
 
 app-run:
 	@[ "$$(uname -s)" = Darwin ] || { echo "the app runs on the Mac" >&2; exit 2; }
-	cd app && swift run -c $(SWIFT_CONFIG) LeylineApp
+	@mkdir -p tmp
+	cd app && LEYLINE_APP_LOG=$(CURDIR)/tmp/leyline-app.log swift run -c $(SWIFT_CONFIG) LeylineApp
 
 app-bundle:
 	./scripts/bundle-app.sh $(BUNDLE_ARGS)

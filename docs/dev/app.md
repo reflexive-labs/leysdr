@@ -119,6 +119,19 @@ both suites against the Linux-built daemon; the SwiftUI target does not exist th
 under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, the same trap
 `setup.md` records for Accelerate: a green Linux run says nothing about a view.
 
+## Logs
+
+The app writes one line per thing the window did (`AppLog.swift`): dialling and the daemon's
+state, the capture and channel it made or adopted, every tune with the offset and any centre
+move, band crossings and the mode-and-width pairs they write, rejections with the write's tag,
+the FFT subscription's descriptor and a row count every thirty seconds, and whether the shader
+compiled. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
+`LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
+to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
+which the Moat container's bind mount sees, so the log of a run on the Mac can be read from the
+container with no copying. A behaviour that cannot be explained from the log wants a line added
+where it happened, not a guess.
+
 ## Testing
 
 `make app-test` is the façade without a daemon: the fold's rules, the coalescer's last-value

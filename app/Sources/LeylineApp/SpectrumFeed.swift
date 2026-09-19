@@ -96,12 +96,17 @@ final class SpectrumFeed {
                 let (desc, rows) = try await connection.fft(capture: id, bins: Self.bins, rowsPerSecond: Self.rowsPerSecond)
                 guard let self else { return }
                 self.descriptor = desc
+                log("feed", "fft \(desc.streamID): \(desc.fft.bins) bins, \(desc.fft.rowsPerSecond) rows/s, \(desc.fft.binFormat), centre \(desc.centerHz) span \(desc.spanHz)")
                 for try await row in rows {
                     if Task.isCancelled { return }
                     self.ingest(row)
                 }
+                log("feed", "fft stream ended after \(self.rows) rows")
             } catch {
-                if !Task.isCancelled { self?.error = LeylineError(error) }
+                if !Task.isCancelled {
+                    self?.error = LeylineError(error)
+                    log("feed", "fft stream failed: \(LeylineError(error))")
+                }
             }
         }
     }
@@ -131,6 +136,7 @@ final class SpectrumFeed {
         waterfall.append(row.levelsDB, seq: row.seq)
         rows += 1
         if row.gap != nil { gaps += 1 }
+        if rows % 900 == 0 { log("feed", "\(rows) rows, \(gaps) gaps, floor \(floorDB) dBFS") }
     }
 }
 
