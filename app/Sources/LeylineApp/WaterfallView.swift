@@ -35,6 +35,11 @@ struct WaterfallView: View {
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) },
                     onProblem: { problem = $0 }
                 )
+                // The seam with the spectrum, the same `border` as the sidebar's edge, drawn
+                // over the Metal view because an AppKit view hosted in SwiftUI covers what the
+                // layout puts beside it; there whether or not there is a capture.
+                Rectangle().fill(Theme.border).frame(width: geo.size.width, height: 1)
+                    .allowsHitTesting(false)
                 if let c = columns { overlays(columns: c, size: geo.size) }
                 if let problem {
                     EmptyWords(headline: "No waterfall", detail: problem)
