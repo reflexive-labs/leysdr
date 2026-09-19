@@ -26,7 +26,9 @@ final class ClientDaemonTests: XCTestCase {
 
     /// A capture on the fixture plus one NFM channel at +100 kHz, made by `c`. Free of `self` so
     /// a main-actor test can call it without sending the test case across actors.
-    nonisolated static func tuneFixture(_ c: DaemonConnection, on daemon: DaemonUnderTest) async throws -> (Leyline_V1_Capture, Leyline_V1_Channel) {
+    nonisolated static func tuneFixture(_ c: DaemonConnection, on daemon: DaemonUnderTest)
+        async throws -> (Leyline_V1_Capture, Leyline_V1_Channel)
+    {
         let dev = try await Harness.attachFixture(daemon, via: c)
         var cap = Leyline_V1_CreateCaptureRequest()
         cap.deviceID = dev.deviceID
@@ -43,7 +45,8 @@ final class ClientDaemonTests: XCTestCase {
 
     @MainActor
     func testMirrorReflectsAnotherClientsChanges() async throws {
-        let app = try DaemonConnection(socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
         defer { app.close() }
         let mirror = DaemonMirror(connection: app)
         let running = Task { await mirror.run() }
@@ -53,28 +56,37 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertFalse(mirror.state.daemon.version.isEmpty)
 
         // "The CLI": a second identity, holding its own event stream so its channel stays alive.
-        let cli = try DaemonConnection(socketPath: daemon.socketPath, identity: .fresh(kind: "cli", label: "test-cli"))
+        let cli = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "cli", label: "test-cli"))
         defer { cli.close() }
         let presence = Task { for try await _ in cli.events() {} }
         defer { presence.cancel() }
         let (capture, channel) = try await Self.tuneFixture(cli, on: daemon)
 
-        await assertEventually("the channel never reached the mirror") { mirror.state.channel(channel.channelID) != nil }
-        XCTAssertEqual(mirror.state.capture(capture.captureID)?.centerHz, 146_520_000, "the fixture's centre")
-        XCTAssertEqual(mirror.state.frequencyHz(of: mirror.state.channel(channel.channelID)!), 146_620_000)
+        await assertEventually("the channel never reached the mirror") {
+            mirror.state.channel(channel.channelID) != nil
+        }
+        XCTAssertEqual(
+            mirror.state.capture(capture.captureID)?.centerHz, 146_520_000, "the fixture's centre")
+        XCTAssertEqual(
+            mirror.state.frequencyHz(of: mirror.state.channel(channel.channelID)!), 146_620_000)
         XCTAssertEqual(mirror.state.devices.first?.driver, "file")
-        XCTAssertEqual(mirror.state.channel(channel.channelID)?.owner.kind, "cli", "events carry attribution")
+        XCTAssertEqual(
+            mirror.state.channel(channel.channelID)?.owner.kind, "cli", "events carry attribution")
 
         var destroy = Leyline_V1_DestroyChannelRequest()
         destroy.channelID = channel.channelID
         _ = try await cli.control.destroyChannel(destroy)
-        await assertEventually("the tombstone never removed the channel") { mirror.state.channel(channel.channelID) == nil }
+        await assertEventually("the tombstone never removed the channel") {
+            mirror.state.channel(channel.channelID) == nil
+        }
         XCTAssertEqual(mirror.snapshots, 1, "no seq gap: the stream carried everything")
     }
 
     @MainActor
     func testCoalescedWritesLandAsTheLastValueAndRefusalsCarryTheirTag() async throws {
-        let app = try DaemonConnection(socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
         defer { app.close() }
         let mirror = DaemonMirror(connection: app)
         let running = Task { await mirror.run() }
@@ -84,33 +96,48 @@ final class ClientDaemonTests: XCTestCase {
 
         let writes = WriteCoalescer(connection: app, tick: .milliseconds(50))  // wide enough that a loaded runner cannot split the burst
         // A drag: a burst of offsets inside one tick. Only the last should be applied.
-        for hz: Int64 in [110_000, 120_000, 130_000, 140_000, 150_000] { await writes.offsetHz(hz, channel: channel.channelID) }
-        await assertEventually("the last offset never arrived") { mirror.state.channel(channel.channelID)?.offsetHz == 150_000 }
-        XCTAssertEqual(mirror.state.frequencyHz(of: mirror.state.channel(channel.channelID)!), 146_670_000)
+        for hz: Int64 in [110_000, 120_000, 130_000, 140_000, 150_000] {
+            await writes.offsetHz(hz, channel: channel.channelID)
+        }
+        await assertEventually("the last offset never arrived") {
+            mirror.state.channel(channel.channelID)?.offsetHz == 150_000
+        }
+        XCTAssertEqual(
+            mirror.state.frequencyHz(of: mirror.state.channel(channel.channelID)!), 146_670_000)
 
         // Out of the capture (2.4 MSPS spans ±1.2 MHz): refused, and the refusal names the tag.
         let tag = await writes.offsetHz(5_000_000, channel: channel.channelID)
-        await assertEventually("no WriteRejected for the bad offset") { mirror.state.rejections.contains { $0.tag == tag } }
+        await assertEventually("no WriteRejected for the bad offset") {
+            mirror.state.rejections.contains { $0.tag == tag }
+        }
         let rejection = mirror.state.rejections.first { $0.tag == tag }!
         XCTAssertEqual(rejection.error.code, "OFFSET_OUT_OF_CAPTURE")
-        XCTAssertEqual(mirror.state.channel(channel.channelID)?.offsetHz, 150_000, "the refused write changed nothing")
+        XCTAssertEqual(
+            mirror.state.channel(channel.channelID)?.offsetHz, 150_000,
+            "the refused write changed nothing")
 
         await writes.stop()
         let summary = await writes.lastSummary
         let streamError = await writes.lastError
-        XCTAssertNotNil(summary, "the stream ends with the daemon's summary: \(String(describing: streamError))")
-        XCTAssertEqual(summary?.writesReceived, 2, "five offsets in a tick are one write, plus the refused one")
+        XCTAssertNotNil(
+            summary, "the stream ends with the daemon's summary: \(String(describing: streamError))"
+        )
+        XCTAssertEqual(
+            summary?.writesReceived, 2, "five offsets in a tick are one write, plus the refused one"
+        )
         _ = capture
     }
 
     func testFFTRowsDecodeAgainstTheAnsweredDescriptor() async throws {
-        let app = try DaemonConnection(socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
         defer { app.close() }
         let presence = Task { for try await _ in app.events() {} }
         defer { presence.cancel() }
         let (capture, _) = try await Self.tuneFixture(app, on: daemon)
 
-        let (descriptor, rows) = try await app.fft(capture: capture.captureID, bins: 256, rowsPerSecond: 10)
+        let (descriptor, rows) = try await app.fft(
+            capture: capture.captureID, bins: 256, rowsPerSecond: 10)
         XCTAssertEqual(descriptor.kind, .fft)
         XCTAssertEqual(descriptor.centerHz, 146_520_000)
         XCTAssertEqual(descriptor.spanHz, 2_400_000)
@@ -120,7 +147,8 @@ final class ClientDaemonTests: XCTestCase {
         var seen = 0
         for try await row in rows {
             XCTAssertEqual(row.levelsDB.count, Int(descriptor.fft.bins))
-            XCTAssertEqual(row.time.captureID, capture.captureID, "every row carries the sample timebase")
+            XCTAssertEqual(
+                row.time.captureID, capture.captureID, "every row carries the sample timebase")
             XCTAssertTrue(row.levelsDB.allSatisfy { $0 >= -120 && $0 <= 7.5 })
             // The fixture's tone at +100 kHz sits about 40 dB over its floor; the loudest bin is
             // in the upper half of the row.
@@ -133,7 +161,8 @@ final class ClientDaemonTests: XCTestCase {
     }
 
     func testErrorCodesSurviveTheTrip() async throws {
-        let app = try DaemonConnection(socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
         defer { app.close() }
         var req = Leyline_V1_CreateCaptureRequest()
         req.deviceID = "dev_00000000000000000000000000"
@@ -148,7 +177,9 @@ final class ClientDaemonTests: XCTestCase {
     }
 
     func testNoDaemonIsUnavailableAndTheMirrorKeepsTrying() async throws {
-        let app = try DaemonConnection(socketPath: "/tmp/ley-app-nobody-\(getpid()).sock", identity: .fresh(kind: "app", label: "test-app"))
+        let app = try DaemonConnection(
+            socketPath: "/tmp/ley-app-nobody-\(getpid()).sock",
+            identity: .fresh(kind: "app", label: "test-app"))
         defer { app.close() }
         do {
             _ = try await app.state()

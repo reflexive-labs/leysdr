@@ -101,13 +101,27 @@ public actor WriteCoalescer {
     }
 
     // Sugar for the writes the views make.
-    @discardableResult public func centerHz(_ hz: UInt64, capture: String) -> UInt64 { set(.centerHz(hz), target: capture) }
-    @discardableResult public func offsetHz(_ hz: Int64, channel: String) -> UInt64 { set(.offsetHz(hz), target: channel) }
-    @discardableResult public func bandwidthHz(_ hz: UInt32, channel: String) -> UInt64 { set(.bandwidthHz(hz), target: channel) }
-    @discardableResult public func mode(_ mode: Leyline_V1_DemodMode, channel: String) -> UInt64 { set(.mode(mode), target: channel) }
-    @discardableResult public func squelchDb(_ db: Double, channel: String) -> UInt64 { set(.squelchDb(db), target: channel) }
-    @discardableResult public func volume(_ v: Double, sink: String) -> UInt64 { set(.sinkVolume(v), target: sink) }
-    @discardableResult public func gain(_ write: Leyline_V1_GainWrite, capture: String) -> UInt64 { set(.gain(write), target: capture) }
+    @discardableResult public func centerHz(_ hz: UInt64, capture: String) -> UInt64 {
+        set(.centerHz(hz), target: capture)
+    }
+    @discardableResult public func offsetHz(_ hz: Int64, channel: String) -> UInt64 {
+        set(.offsetHz(hz), target: channel)
+    }
+    @discardableResult public func bandwidthHz(_ hz: UInt32, channel: String) -> UInt64 {
+        set(.bandwidthHz(hz), target: channel)
+    }
+    @discardableResult public func mode(_ mode: Leyline_V1_DemodMode, channel: String) -> UInt64 {
+        set(.mode(mode), target: channel)
+    }
+    @discardableResult public func squelchDb(_ db: Double, channel: String) -> UInt64 {
+        set(.squelchDb(db), target: channel)
+    }
+    @discardableResult public func volume(_ v: Double, sink: String) -> UInt64 {
+        set(.sinkVolume(v), target: sink)
+    }
+    @discardableResult public func gain(_ write: Leyline_V1_GainWrite, capture: String) -> UInt64 {
+        set(.gain(write), target: capture)
+    }
 
     /// Ends the stream after a last flush. The daemon answers with how many writes it applied.
     public func stop() async {
@@ -119,7 +133,8 @@ public actor WriteCoalescer {
 
     private func start() {
         guard task == nil else { return }
-        let (kicks, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let (kicks, continuation) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
         kick = continuation
         let tick = tick
         task = Task { [connection] in

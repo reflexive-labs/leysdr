@@ -5,9 +5,10 @@
 // S16 audio divides by 32768.
 
 import Foundation
-@testable import LeylineClient
 import LeylineProto
 import XCTest
+
+@testable import LeylineClient
 
 final class BulkDecodeTests: XCTestCase {
     func testDBU8() {
@@ -22,7 +23,9 @@ final class BulkDecodeTests: XCTestCase {
             withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
         }
         XCTAssertEqual(BulkDecode.fftLevels(data, format: .dbF32), [-42.5, 0, 3.25])
-        XCTAssertEqual(BulkDecode.fftLevels(data, format: .unspecified), [-42.5, 0, 3.25], "unknown reads as the wire default")
+        XCTAssertEqual(
+            BulkDecode.fftLevels(data, format: .unspecified), [-42.5, 0, 3.25],
+            "unknown reads as the wire default")
     }
 
     func testAudioS16FullScaleNegativeIsMinusOne() {

@@ -32,8 +32,10 @@ final class AppLog: @unchecked Sendable {
         stamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let fm = FileManager.default
         let url = URL(fileURLWithPath: path)
-        try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let size = (try? fm.attributesOfItem(atPath: path)[.size] as? Int), size > Self.rotateAt {
+        try? fm.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let size = (try? fm.attributesOfItem(atPath: path)[.size] as? Int), size > Self.rotateAt
+        {
             try? fm.removeItem(atPath: path + ".1")
             try? fm.moveItem(atPath: path, toPath: path + ".1")
         }

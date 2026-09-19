@@ -2,6 +2,7 @@
 
 import LeylineProto
 import XCTest
+
 @testable import LeylineClient
 
 final class BookmarksTests: XCTestCase {
@@ -16,7 +17,8 @@ final class BookmarksTests: XCTestCase {
         try store.load()
         XCTAssertTrue(store.list.isEmpty)
 
-        let b = try store.add(name: "Local repeater", hz: 146_940_000, mode: .nfm, bandwidthHz: 12_500)
+        let b = try store.add(
+            name: "Local repeater", hz: 146_940_000, mode: .nfm, bandwidthHz: 12_500)
         XCTAssertTrue(b.id.hasPrefix("bm_"))
         XCTAssertEqual(b.updatedNs, 1_700_000_000_000_000_000)
         try store.add(name: "WX1", hz: 162_550_000, mode: .nfm)
@@ -46,7 +48,9 @@ final class BookmarksTests: XCTestCase {
         XCTAssertEqual(first.id, second.id)
         XCTAssertEqual(store.list.count, 1)
         XCTAssertEqual(store.list[0].mode, .am)
-        XCTAssertThrowsError(try store.add(name: "  ", hz: 1, mode: .nfm)) { XCTAssertEqual($0 as? BookmarkError, .emptyName) }
+        XCTAssertThrowsError(try store.add(name: "  ", hz: 1, mode: .nfm)) {
+            XCTAssertEqual($0 as? BookmarkError, .emptyName)
+        }
         // A bookmark carries the mode to come back on, so there is no mode to leave out; ley
         // bookmarks refuses the same call with "a bookmark needs a mode".
         XCTAssertThrowsError(try store.add(name: "No mode", hz: 1, mode: .unspecified)) {
@@ -74,7 +78,8 @@ final class BookmarksTests: XCTestCase {
 
     func testMalformedFileIsAnErrorNotAnEmptyStore() throws {
         let path = tempPath()
-        try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         try Data("{not json".utf8).write(to: URL(fileURLWithPath: path))
         var store = BookmarkStore(path: path)
         XCTAssertThrowsError(try store.load())
@@ -84,7 +89,8 @@ final class BookmarksTests: XCTestCase {
     // refuse until a load succeeds, so nothing writes the whole file back over it.
     func testMalformedFileIsNeverWrittenOver() throws {
         let path = tempPath()
-        try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         let original = Data("{ \"bookmarks\": { \"bm_1\": { half of a file".utf8)
         try original.write(to: URL(fileURLWithPath: path))
 
@@ -94,9 +100,15 @@ final class BookmarksTests: XCTestCase {
         XCTAssertThrowsError(try store.add(name: "New", hz: 146_520_000, mode: .nfm)) {
             XCTAssertEqual($0 as? BookmarkError, .notLoaded(path))
         }
-        XCTAssertThrowsError(try store.remove("New")) { XCTAssertEqual($0 as? BookmarkError, .notLoaded(path)) }
-        XCTAssertThrowsError(try store.save()) { XCTAssertEqual($0 as? BookmarkError, .notLoaded(path)) }
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), original, "the file is byte for byte what it was")
+        XCTAssertThrowsError(try store.remove("New")) {
+            XCTAssertEqual($0 as? BookmarkError, .notLoaded(path))
+        }
+        XCTAssertThrowsError(try store.save()) {
+            XCTAssertEqual($0 as? BookmarkError, .notLoaded(path))
+        }
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: path)), original,
+            "the file is byte for byte what it was")
 
         // Once the file reads, the store writes again.
         try Data("{\"bookmarks\":{}}".utf8).write(to: URL(fileURLWithPath: path))
@@ -120,10 +132,13 @@ final class BookmarksTests: XCTestCase {
         try store.add(name: "WX1", hz: 162_550_000, mode: .nfm)
 
         try FileManager.default.removeItem(atPath: path)
-        try FileManager.default.createDirectory(atPath: path + "/occupied", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: path + "/occupied", withIntermediateDirectories: true)
         XCTAssertThrowsError(try store.save(), "a directory cannot be replaced by a file")
 
-        let left = try FileManager.default.contentsOfDirectory(atPath: dir).filter { $0.hasSuffix(".tmp") }
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir).filter {
+            $0.hasSuffix(".tmp")
+        }
         XCTAssertEqual(left, [], "no temp file was left behind")
     }
 
@@ -133,8 +148,11 @@ final class BookmarksTests: XCTestCase {
         try store.add(name: "A", hz: 146_520_000, mode: .nfm)
         try store.add(name: "B", hz: 146_940_000, mode: .nfm)
         XCTAssertEqual(store.nearest(to: 146_800_000)?.name, "B")
-        XCTAssertEqual(BookmarkStore.defaultPath(environment: ["LEYLINE_BOOKMARKS": "/x/b.json"]), "/x/b.json")
-        let p = BookmarkStore.defaultPath(environment: ["HOME": "/home/u", "XDG_DATA_HOME": "/home/u/.data"])
+        XCTAssertEqual(
+            BookmarkStore.defaultPath(environment: ["LEYLINE_BOOKMARKS": "/x/b.json"]), "/x/b.json")
+        let p = BookmarkStore.defaultPath(environment: [
+            "HOME": "/home/u", "XDG_DATA_HOME": "/home/u/.data",
+        ])
         XCTAssertTrue(p.hasSuffix("/bookmarks.json"), p)
         XCTAssertTrue(p.contains("/home/u"), p)
     }

@@ -30,7 +30,9 @@ public enum SpectrumFold {
     /// frequencies. A run of equal bins counts once, and a peak closer than three bins or a
     /// 128th of the span to a louder one is its shoulder, not a second find. `ley spectrum`'s
     /// `loudestBins`, so both clients report the same peaks.
-    public static func loudestBins(_ bins: [Float], centerHz: UInt64, spanHz: UInt64, n: Int, minDB: Float) -> [Peak] {
+    public static func loudestBins(
+        _ bins: [Float], centerHz: UInt64, spanHz: UInt64, n: Int, minDB: Float
+    ) -> [Peak] {
         guard !bins.isEmpty, n > 0 else { return [] }
         let binWidth = Double(spanHz) / Double(bins.count)
         let left = Double(centerHz) - Double(spanHz) / 2
@@ -58,15 +60,21 @@ public enum SpectrumFold {
     public static func strongest(_ bins: [Float], centerHz: UInt64, spanHz: UInt64) -> Peak? {
         let floor = medianDB(bins)
         guard floor.isFinite else { return nil }
-        return loudestBins(bins, centerHz: centerHz, spanHz: spanHz, n: 1, minDB: floor + peakAboveFloorDB).first
+        return loudestBins(
+            bins, centerHz: centerHz, spanHz: spanHz, n: 1, minDB: floor + peakAboveFloorDB
+        ).first
     }
 
     /// A squelch from one row: the median bin is the floor per bin, scaled to the channel width
     /// by 10·log10(bandwidth / bin width), and the threshold is 10 dB above that, rounded.
     /// `ley tune`'s auto squelch (`go/internal/cli/session.go`, `measureSquelch`). Returns the
     /// threshold and the scaled floor; both NaN on an empty row.
-    public static func autoSquelch(_ bins: [Float], sampleRate: UInt64, bandwidthHz: UInt32) -> (thresholdDB: Double, floorDB: Double) {
-        let floor = channelFloorDB(binFloorDB: Double(medianDB(bins)), bins: bins.count, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
+    public static func autoSquelch(_ bins: [Float], sampleRate: UInt64, bandwidthHz: UInt32) -> (
+        thresholdDB: Double, floorDB: Double
+    ) {
+        let floor = channelFloorDB(
+            binFloorDB: Double(medianDB(bins)), bins: bins.count, sampleRate: sampleRate,
+            bandwidthHz: bandwidthHz)
         guard floor.isFinite else { return (.nan, .nan) }
         return ((floor + 10).rounded(), floor)
     }
@@ -74,7 +82,9 @@ public enum SpectrumFold {
     /// The floor of a channel from the floor of a bin: `floor + 10·log10(bandwidth / bin
     /// width)`, the auto squelch's scaling, which is also what a channel's power is over noise
     /// by. NaN when there is nothing to scale.
-    public static func channelFloorDB(binFloorDB: Double, bins: Int, sampleRate: UInt64, bandwidthHz: UInt32) -> Double {
+    public static func channelFloorDB(
+        binFloorDB: Double, bins: Int, sampleRate: UInt64, bandwidthHz: UInt32
+    ) -> Double {
         guard binFloorDB.isFinite, bins > 0, sampleRate > 0, bandwidthHz > 0 else { return .nan }
         let binWidth = Double(sampleRate) / Double(bins)
         return binFloorDB + 10 * log10(Double(bandwidthHz) / binWidth)

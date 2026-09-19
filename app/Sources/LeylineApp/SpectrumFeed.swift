@@ -105,17 +105,24 @@ final class SpectrumFeed {
             stop()
             return
         }
-        if capture.captureID == subscribedCapture, capture.sampleRate == subscribedRate, task != nil { return }
+        if capture.captureID == subscribedCapture, capture.sampleRate == subscribedRate, task != nil
+        {
+            return
+        }
         stop()
         subscribedCapture = capture.captureID
         subscribedRate = capture.sampleRate
         let id = capture.captureID
         task = Task { [weak self] in
             do {
-                let (desc, rows) = try await connection.fft(capture: id, bins: Self.bins, rowsPerSecond: Self.rowsPerSecond)
+                let (desc, rows) = try await connection.fft(
+                    capture: id, bins: Self.bins, rowsPerSecond: Self.rowsPerSecond)
                 guard let self else { return }
                 self.descriptor = desc
-                log("feed", "fft \(desc.streamID): \(desc.fft.bins) bins, \(desc.fft.rowsPerSecond) rows/s, \(desc.fft.binFormat), centre \(desc.centerHz) span \(desc.spanHz)")
+                log(
+                    "feed",
+                    "fft \(desc.streamID): \(desc.fft.bins) bins, \(desc.fft.rowsPerSecond) rows/s, \(desc.fft.binFormat), centre \(desc.centerHz) span \(desc.spanHz)"
+                )
                 for try await row in rows {
                     if Task.isCancelled { return }
                     self.ingest(row)
@@ -156,7 +163,9 @@ final class SpectrumFeed {
         hold.fold(row.levelsDB)
         let median = SpectrumFold.medianDB(row.levelsDB)
         medianDB = medianDB.isNaN ? median : medianDB + (median - medianDB) * 0.1
-        if floorDB.isNaN || abs(medianDB - floorDB) > Self.floorSlackDB { floorDB = medianDB.rounded() }
+        if floorDB.isNaN || abs(medianDB - floorDB) > Self.floorSlackDB {
+            floorDB = medianDB.rounded()
+        }
         if let rowMax = row.levelsDB.max(), rowMax.isFinite {
             peakDB = peakDB.isNaN ? rowMax : max(rowMax, peakDB - Self.peakDecayDBPerRow)
         }

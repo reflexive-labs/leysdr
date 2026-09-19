@@ -19,13 +19,18 @@ struct SidebarView: View {
                     // A band the radio cannot reach stays listed, disabled, and the hover says
                     // why: a click that could only fail is not offered.
                     let why = session.outOfRangeWords(band)
-                    BandRow(band: band, selected: session.band?.id == band.id, squelchDb: session.channel?.squelchDb, disabled: why != nil)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if why == nil { Task { await session.select(band: band) } } }
-                        .help(why.map { "\(band.name) is \($0)" } ?? "")
+                    BandRow(
+                        band: band, selected: session.band?.id == band.id,
+                        squelchDb: session.channel?.squelchDb, disabled: why != nil
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture { if why == nil { Task { await session.select(band: band) } } }
+                    .help(why.map { "\(band.name) is \($0)" } ?? "")
                 }
                 header("Bookmarks") {
-                    Button { session.bookmarkCurrent() } label: {
+                    Button {
+                        session.bookmarkCurrent()
+                    } label: {
                         Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
                     }
                     .buttonStyle(.plain)
@@ -34,18 +39,23 @@ struct SidebarView: View {
                     .help("Bookmark the tuned frequency (⌘D)")
                 }
                 if session.bookmarks.list.isEmpty {
-                    Text("Nothing saved yet. ＋ keeps the tuned frequency; `ley bookmarks` shows the same list.")
-                        .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
+                    Text(
+                        "Nothing saved yet. ＋ keeps the tuned frequency; `ley bookmarks` shows the same list."
+                    )
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
                 }
                 ForEach(session.bookmarks.list) { b in
-                    BookmarkRow(bookmark: b, tuned: session.tunedHz == b.hz, inSpan: session.visibleRange?.contains(b.hz) ?? false)
-                        .contentShape(Rectangle())
-                        .onTapGesture { session.tune(bookmark: b) }
-                        .contextMenu {
-                            Button("Tune") { session.tune(bookmark: b) }
-                            Button("Remove", role: .destructive) { session.remove(bookmark: b) }
-                        }
+                    BookmarkRow(
+                        bookmark: b, tuned: session.tunedHz == b.hz,
+                        inSpan: session.visibleRange?.contains(b.hz) ?? false
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture { session.tune(bookmark: b) }
+                    .contextMenu {
+                        Button("Tune") { session.tune(bookmark: b) }
+                        Button("Remove", role: .destructive) { session.remove(bookmark: b) }
+                    }
                 }
                 Spacer(minLength: 12)
             }
@@ -75,9 +85,11 @@ struct BandRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(band.name).font(Theme.Font.label)
-                    .foregroundStyle(disabled ? Theme.inkDisabled : selected ? Theme.ink : Theme.inkSecondary)
+                    .foregroundStyle(
+                        disabled ? Theme.inkDisabled : selected ? Theme.ink : Theme.inkSecondary)
                 Spacer()
-                Text(band.modeWord).font(Theme.Font.valueSmall).foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkFaint)
+                Text(band.modeWord).font(Theme.Font.valueSmall).foregroundStyle(
+                    disabled ? Theme.inkDisabled : Theme.inkFaint)
             }
             if selected {
                 Text(detail).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
@@ -92,9 +104,14 @@ struct BandRow: View {
     /// `87.5 – 108 MHz · 200 kHz · sq −28`, one line: the band's range, never the capture's,
     /// with the zeros a person would not say dropped.
     private var detail: String {
-        var parts = ["\(mhz(band.minHz)) – \(mhz(band.maxHz)) MHz", Frequency.width(band.bandwidthHz)]
+        var parts = [
+            "\(mhz(band.minHz)) – \(mhz(band.maxHz)) MHz", Frequency.width(band.bandwidthHz),
+        ]
         if let s = squelchDb {
-            parts.append(s.isNaN ? "sq off" : "sq \(String(Int(s.rounded())).replacingOccurrences(of: "-", with: "−"))")
+            parts.append(
+                s.isNaN
+                    ? "sq off"
+                    : "sq \(String(Int(s.rounded())).replacingOccurrences(of: "-", with: "−"))")
         }
         return parts.joined(separator: " · ")
     }
@@ -114,8 +131,11 @@ struct BookmarkRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle().fill(tuned ? Theme.ground : (inSpan ? Theme.good : Theme.borderStrong)).frame(width: 6, height: 6)
-            Text(bookmark.name).font(Theme.Font.label).foregroundStyle(tuned ? Theme.ground : Theme.inkSecondary).lineLimit(1)
+            Circle().fill(tuned ? Theme.ground : (inSpan ? Theme.good : Theme.borderStrong)).frame(
+                width: 6, height: 6)
+            Text(bookmark.name).font(Theme.Font.label).foregroundStyle(
+                tuned ? Theme.ground : Theme.inkSecondary
+            ).lineLimit(1)
             Spacer()
             Text(Frequency.fieldParts(bookmark.hz).major)
                 .font(Theme.Font.valueSmall)

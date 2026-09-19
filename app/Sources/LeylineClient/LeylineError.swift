@@ -45,8 +45,12 @@ public struct LeylineError: Error, Sendable, Hashable, CustomStringConvertible {
             return
         }
         for bytes in rpc.metadata[binaryValues: Self.trailerKey] {
-            if let detail = try? Leyline_V1_ErrorDetail(serializedBytes: bytes), !detail.code.isEmpty {
-                self.init(code: detail.code, message: detail.message, target: detail.target, status: rpc.code)
+            if let detail = try? Leyline_V1_ErrorDetail(serializedBytes: bytes),
+                !detail.code.isEmpty
+            {
+                self.init(
+                    code: detail.code, message: detail.message, target: detail.target,
+                    status: rpc.code)
                 return
             }
         }

@@ -33,7 +33,9 @@ struct WaterfallView: View {
                         session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
                     },
                     onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
-                    onDrag: { p, ended in if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) } },
+                    onDrag: { p, ended in
+                        if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) }
+                    },
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) },
                     onProblem: { problem = $0 }
                 )
@@ -55,13 +57,19 @@ struct WaterfallView: View {
     }
 
     private func columns(width: CGFloat) -> Columns? {
-        guard let cap = session.capture, let r = session.visibleRange, cap.sampleRate > 0 else { return nil }
-        return Columns(range: r, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate, bins: Int(SpectrumFeed.bins), width: width)
+        guard let cap = session.capture, let r = session.visibleRange, cap.sampleRate > 0 else {
+            return nil
+        }
+        return Columns(
+            range: r, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate,
+            bins: Int(SpectrumFeed.bins), width: width)
     }
 
     /// Where a frequency sits across the capture's span, 0 at its low edge and 1 at its high.
     private func fraction(of hz: UInt64?) -> Float {
-        guard let hz, let cap = session.capture, cap.sampleRate > 0 else { return hz == nil ? 0 : 1 }
+        guard let hz, let cap = session.capture, cap.sampleRate > 0 else {
+            return hz == nil ? 0 : 1
+        }
         let lo = Double(cap.centerHz) - Double(cap.sampleRate) / 2
         return Float(((Double(hz) - lo) / Double(cap.sampleRate)).clamped(to: 0...1))
     }
@@ -70,7 +78,9 @@ struct WaterfallView: View {
     private func overlays(columns: Columns, size: CGSize) -> some View {
         // The tuned channel, continuous with the spectrum's band above.
         if let hz = session.tunedHz, let ch = session.channel {
-            TunedBand(x0: columns.x(of: hz - UInt64(ch.bandwidthHz) / 2), x1: columns.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: size.height)
+            TunedBand(
+                x0: columns.x(of: hz - UInt64(ch.bandwidthHz) / 2),
+                x1: columns.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: size.height)
         }
         TimeAxis(rowsPerPoint: Double(displayScale), height: size.height)
             .allowsHitTesting(false)
@@ -88,7 +98,9 @@ struct TimeAxis: View {
         let tickEvery: CGFloat = CGFloat(5 / secondsPerPoint)
         let ticks = tickEvery > 0 ? Int(height / tickEvery) : 0
         ZStack(alignment: .topTrailing) {
-            Text("now").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary).padding(.trailing, 8).padding(.top, 4)
+            Text("now").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary).padding(
+                .trailing, 8
+            ).padding(.top, 4)
             ForEach(1...max(ticks, 1), id: \.self) { i in
                 if i <= ticks {
                     Text("−\(i * 5) s").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
@@ -123,7 +135,8 @@ struct WaterfallMetalView: NSViewRepresentable {
         let view = InteractiveMetalView(frame: .zero, device: context.coordinator.device)
         view.delegate = context.coordinator
         view.colorPixelFormat = .bgra8Unorm
-        view.clearColor = MTLClearColor(red: 0x0B / 255.0, green: 0x0D / 255.0, blue: 0x0F / 255.0, alpha: 1)
+        view.clearColor = MTLClearColor(
+            red: 0x0B / 255.0, green: 0x0D / 255.0, blue: 0x0F / 255.0, alpha: 1)
         view.preferredFramesPerSecond = Int(SpectrumFeed.rowsPerSecond)
         view.isPaused = false
         view.enableSetNeedsDisplay = false
@@ -168,20 +181,27 @@ final class InteractiveMetalView: MTKView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: ChartMouse.trackingOptions, owner: self, userInfo: nil)
+        let area = NSTrackingArea(
+            rect: bounds, options: ChartMouse.trackingOptions, owner: self, userInfo: nil)
         addTrackingArea(area)
         tracking = area
     }
 
     override func cursorUpdate(with event: NSEvent) { mouse.cursorUpdate() }
-    override func mouseMoved(with event: NSEvent) { mouse.moved(convert(event.locationInWindow, from: nil)) }
+    override func mouseMoved(with event: NSEvent) {
+        mouse.moved(convert(event.locationInWindow, from: nil))
+    }
     override func mouseExited(with event: NSEvent) { mouse.exited() }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         mouse.down(convert(event.locationInWindow, from: nil))
     }
-    override func mouseDragged(with event: NSEvent) { mouse.dragged(convert(event.locationInWindow, from: nil)) }
-    override func mouseUp(with event: NSEvent) { mouse.up(convert(event.locationInWindow, from: nil)) }
+    override func mouseDragged(with event: NSEvent) {
+        mouse.dragged(convert(event.locationInWindow, from: nil))
+    }
+    override func mouseUp(with event: NSEvent) {
+        mouse.up(convert(event.locationInWindow, from: nil))
+    }
     override func scrollWheel(with event: NSEvent) { mouse.scroll(event) }
 }
 
@@ -261,12 +281,16 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
 
     private func render(in view: MTKView) {
         guard let device, let queue, let pipeline, let buffer, buffer.bins > 0,
-              let drawable = view.currentDrawable, let pass = view.currentRenderPassDescriptor else { return }
+            let drawable = view.currentDrawable, let pass = view.currentRenderPassDescriptor
+        else { return }
         if texture == nil || texture?.width != buffer.bins {
             guard let made = makeRingTexture(device: device, bins: buffer.bins) else { return }
             texture = made
             uploaded = 0
-            log("waterfall", "texture \(buffer.bins)×\(WaterfallBuffer.capacity), drawable \(Int(view.drawableSize.width))×\(Int(view.drawableSize.height))")
+            log(
+                "waterfall",
+                "texture \(buffer.bins)×\(WaterfallBuffer.capacity), drawable \(Int(view.drawableSize.width))×\(Int(view.drawableSize.height))"
+            )
         }
         guard let texture else { return }
         upload(from: buffer, into: texture)
@@ -287,7 +311,9 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         u.height = Float(view.drawableSize.height)
         u.rowsPerPixel = 1
 
-        guard let cmd = queue.makeCommandBuffer(), let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+        guard let cmd = queue.makeCommandBuffer(),
+            let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
+        else { return }
         enc.setRenderPipelineState(pipeline)
         enc.setFragmentTexture(texture, index: 0)
         enc.setFragmentBytes(&u, length: MemoryLayout<WaterfallUniforms>.stride, index: 0)
@@ -305,12 +331,15 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     /// ungated retry would ask thirty times a second and the panel would stay dark without a word.
     private func makeRingTexture(device: MTLDevice, bins: Int) -> MTLTexture? {
         guard CFAbsoluteTimeGetCurrent() - lastTextureFailure >= 1 else { return nil }
-        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Uint, width: bins, height: WaterfallBuffer.capacity, mipmapped: false)
+        let d = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r8Uint, width: bins, height: WaterfallBuffer.capacity, mipmapped: false)
         d.usage = [.shaderRead]
         d.storageMode = .managed
         guard let texture = device.makeTexture(descriptor: d) else {
             lastTextureFailure = CFAbsoluteTimeGetCurrent()
-            fail("The waterfall has no texture: Metal refused \(bins)×\(WaterfallBuffer.capacity) bytes on \(device.name).")
+            fail(
+                "The waterfall has no texture: Metal refused \(bins)×\(WaterfallBuffer.capacity) bytes on \(device.name)."
+            )
             return nil
         }
         return texture
@@ -325,7 +354,9 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         for row in from..<count {
             let slot = row % capacity
             buffer.withRow(slot: slot) { ptr in
-                texture.replace(region: MTLRegionMake2D(0, slot, buffer.bins, 1), mipmapLevel: 0, withBytes: ptr, bytesPerRow: buffer.bins)
+                texture.replace(
+                    region: MTLRegionMake2D(0, slot, buffer.bins, 1), mipmapLevel: 0,
+                    withBytes: ptr, bytesPerRow: buffer.bins)
             }
         }
         uploaded = count

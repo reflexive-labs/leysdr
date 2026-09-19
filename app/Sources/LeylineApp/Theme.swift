@@ -42,12 +42,18 @@ enum Theme {
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
     /// SwiftUI-drawn meters; the waterfall shader gets the same stops as floats.
-    static let levelStopsHex: [UInt32] = [0x10262B, 0x14555A, 0x2FB6A3, 0xC9C06A, 0xE8814A, 0xF6E6DA]
+    static let levelStopsHex: [UInt32] = [
+        0x10262B, 0x14555A, 0x2FB6A3, 0xC9C06A, 0xE8814A, 0xF6E6DA,
+    ]
     static let levelStops: [Color] = levelStopsHex.map { Color(hex: $0) }
 
     /// The ramp as RGB triples in [0, 1], for the shader's uniforms.
     static var levelStopsRGB: [SIMD3<Float>] {
-        levelStopsHex.map { SIMD3(Float(($0 >> 16) & 0xFF) / 255, Float(($0 >> 8) & 0xFF) / 255, Float($0 & 0xFF) / 255) }
+        levelStopsHex.map {
+            SIMD3(
+                Float(($0 >> 16) & 0xFF) / 255, Float(($0 >> 8) & 0xFF) / 255,
+                Float($0 & 0xFF) / 255)
+        }
     }
 
     /// The ramp at `frac` in [0, 1], interpolated between stops. A chart names its own cold end
@@ -68,14 +74,17 @@ enum Theme {
     // that changes while you watch it is tabular.
     enum Font {
         /// The tuned frequency in the transport field.
-        static let frequency = SwiftUI.Font.system(size: 29, weight: .medium, design: .monospaced).monospacedDigit()
+        static let frequency = SwiftUI.Font.system(size: 29, weight: .medium, design: .monospaced)
+            .monospacedDigit()
         /// The signal readout.
-        static let readout = SwiftUI.Font.system(size: 21, weight: .medium, design: .monospaced).monospacedDigit()
+        static let readout = SwiftUI.Font.system(size: 21, weight: .medium, design: .monospaced)
+            .monospacedDigit()
         static let body = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
         /// A value beside a label.
         static let value = SwiftUI.Font.system(size: 11, design: .monospaced).monospacedDigit()
-        static let valueSmall = SwiftUI.Font.system(size: 10.5, design: .monospaced).monospacedDigit()
+        static let valueSmall = SwiftUI.Font.system(size: 10.5, design: .monospaced)
+            .monospacedDigit()
         /// A section header: uppercase, tracked (`Theme.sectionTracking`).
         static let section = SwiftUI.Font.system(size: 9.5, weight: .medium, design: .monospaced)
         static let footnote = SwiftUI.Font.system(size: 10.5)
@@ -98,7 +107,9 @@ enum Theme {
 
 extension Color {
     init(hex: UInt32) {
-        self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255)
     }
 }
 
@@ -144,13 +155,23 @@ enum Frequency {
     /// Parses what a person types into the frequency field: `146.52`, `146.52M`, `162550k`,
     /// `1090MHz`, `7.2 MHz`. A bare number is MHz unless it is too large to be one.
     static func parse(_ text: String) -> UInt64? {
-        let s = text.trimmingCharacters(in: .whitespaces).lowercased().replacingOccurrences(of: " ", with: "")
+        let s = text.trimmingCharacters(in: .whitespaces).lowercased().replacingOccurrences(
+            of: " ", with: "")
         var digits = s
         var scale = 1e6
-        if s.hasSuffix("ghz") || s.hasSuffix("g") { scale = 1e9; digits = String(s.dropLast(s.hasSuffix("ghz") ? 3 : 1)) }
-        else if s.hasSuffix("mhz") || s.hasSuffix("m") { scale = 1e6; digits = String(s.dropLast(s.hasSuffix("mhz") ? 3 : 1)) }
-        else if s.hasSuffix("khz") || s.hasSuffix("k") { scale = 1e3; digits = String(s.dropLast(s.hasSuffix("khz") ? 3 : 1)) }
-        else if s.hasSuffix("hz") { scale = 1; digits = String(s.dropLast(2)) }
+        if s.hasSuffix("ghz") || s.hasSuffix("g") {
+            scale = 1e9
+            digits = String(s.dropLast(s.hasSuffix("ghz") ? 3 : 1))
+        } else if s.hasSuffix("mhz") || s.hasSuffix("m") {
+            scale = 1e6
+            digits = String(s.dropLast(s.hasSuffix("mhz") ? 3 : 1))
+        } else if s.hasSuffix("khz") || s.hasSuffix("k") {
+            scale = 1e3
+            digits = String(s.dropLast(s.hasSuffix("khz") ? 3 : 1))
+        } else if s.hasSuffix("hz") {
+            scale = 1
+            digits = String(s.dropLast(2))
+        }
         guard let v = Double(digits), v > 0 else { return nil }
         if scale == 1e6, v >= 30_000 { scale = 1 }  // nobody means 146 520 000 MHz
         let hz = v * scale

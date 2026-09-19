@@ -49,20 +49,20 @@ var targets: [Target] = [
 ]
 
 var products: [Product] = [
-    .library(name: "LeylineClient", targets: ["LeylineClient"]),
+    .library(name: "LeylineClient", targets: ["LeylineClient"])
 ]
 
 #if os(macOS)
-targets.append(
-    .executableTarget(
-        name: "LeylineApp",
-        dependencies: ["LeylineClient"],
-        path: "Sources/LeylineApp",
-        exclude: ["Info.plist"],
-        swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
+    targets.append(
+        .executableTarget(
+            name: "LeylineApp",
+            dependencies: ["LeylineClient"],
+            path: "Sources/LeylineApp",
+            exclude: ["Info.plist"],
+            swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
+        )
     )
-)
-products.append(.executable(name: "LeylineApp", targets: ["LeylineApp"]))
+    products.append(.executable(name: "LeylineApp", targets: ["LeylineApp"]))
 #endif
 
 let package = Package(

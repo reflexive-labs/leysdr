@@ -34,8 +34,10 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
         case stepHz = "step_hz"
     }
 
-    public init(name: String, aliases: [String], minHz: UInt64, maxHz: UInt64, mode: String,
-                bandwidthHz: UInt32, stepHz: UInt32, note: String = "", parts: [String] = []) {
+    public init(
+        name: String, aliases: [String], minHz: UInt64, maxHz: UInt64, mode: String,
+        bandwidthHz: UInt32, stepHz: UInt32, note: String = "", parts: [String] = []
+    ) {
         self.name = name
         self.aliases = aliases
         self.minHz = minHz
@@ -89,8 +91,9 @@ public enum Bands {
     /// The seed file, decoded once. Empty only if the resource is missing, which the tests catch.
     public static let builtIn: [Band] = {
         guard let url = Bundle.module.url(forResource: "bands", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let bands = try? decode(data) else { return [] }
+            let data = try? Data(contentsOf: url),
+            let bands = try? decode(data)
+        else { return [] }
         return bands
     }()
 
@@ -116,7 +119,9 @@ public enum Bands {
 
     /// The mode a newcomer wants at `hz`: the band's, sideband by frequency on HF, NFM when no
     /// band is recognised. `ley tune`'s rule (`go/pkg/leyline/bands.go`, `DefaultMode`).
-    public static func defaultMode(at hz: UInt64, in bands: [Band] = builtIn) -> Leyline_V1_DemodMode {
+    public static func defaultMode(at hz: UInt64, in bands: [Band] = builtIn)
+        -> Leyline_V1_DemodMode
+    {
         band(containing: hz, in: bands)?.mode(at: hz) ?? .nfm
     }
 
@@ -209,7 +214,9 @@ extension Bands {
     /// The bands on either side of `range`, by frequency: the nearest one that ends at or below
     /// its low edge and the nearest that begins at or above its high edge, groups skipped. The
     /// rail names these at its end caps, and a scrub past a cap crosses into them.
-    public static func neighbours(of range: ClosedRange<UInt64>, in bands: [Band] = builtIn) -> (below: Band?, above: Band?) {
+    public static func neighbours(of range: ClosedRange<UInt64>, in bands: [Band] = builtIn) -> (
+        below: Band?, above: Band?
+    ) {
         let plain = bands.filter { !$0.isGroup }
         let below = plain.filter { $0.maxHz <= range.lowerBound }.max { $0.maxHz < $1.maxHz }
         let above = plain.filter { $0.minHz >= range.upperBound }.min { $0.minHz < $1.minHz }
@@ -226,9 +233,13 @@ extension Bands {
     /// that named them so was naming a band 60 MHz away.
     public static func abut(_ range: ClosedRange<UInt64>, _ band: Band) -> Bool {
         let gap: UInt64
-        if band.minHz >= range.upperBound { gap = band.minHz - range.upperBound }
-        else if band.maxHz <= range.lowerBound { gap = range.lowerBound - band.maxHz }
-        else { gap = 0 }
+        if band.minHz >= range.upperBound {
+            gap = band.minHz - range.upperBound
+        } else if band.maxHz <= range.lowerBound {
+            gap = range.lowerBound - band.maxHz
+        } else {
+            gap = 0
+        }
         return gap <= (range.upperBound - range.lowerBound) / 10
     }
 
@@ -240,8 +251,11 @@ extension Bands {
 
     /// Why a band is out of the radio's reach, to follow its name: `below what this radio
     /// tunes (24 – 1766 MHz)`. Nil when it is tunable.
-    public static func outOfRangeWords(_ band: Band, ranges: [Leyline_V1_FrequencyRange]) -> String? {
-        guard !tunable(band, ranges: ranges), let lo = ranges.map(\.minHz).min(), let hi = ranges.map(\.maxHz).max() else { return nil }
+    public static func outOfRangeWords(_ band: Band, ranges: [Leyline_V1_FrequencyRange]) -> String?
+    {
+        guard !tunable(band, ranges: ranges), let lo = ranges.map(\.minHz).min(),
+            let hi = ranges.map(\.maxHz).max()
+        else { return nil }
         let side = band.maxHz < lo ? "below" : band.minHz > hi ? "above" : "outside"
         return "\(side) what this radio tunes (\(mhz(lo)) – \(mhz(hi)) MHz)"
     }

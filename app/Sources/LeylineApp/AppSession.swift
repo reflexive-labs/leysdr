@@ -103,7 +103,9 @@ final class AppSession {
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
     var sink: Leyline_V1_Sink? {
         guard let channelID else { return nil }
-        return state.sinks(of: channelID).first { if case .systemAudio? = $0.kind { true } else { false } }
+        return state.sinks(of: channelID).first {
+            if case .systemAudio? = $0.kind { true } else { false }
+        }
     }
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
@@ -143,15 +145,21 @@ final class AppSession {
     /// a carrier that never stops is the carrier itself and reads 0 (`docs/plans/app.md`,
     /// APP-3); this is the number a newcomer can trust. Nil until the floor is known.
     var overNoiseDB: Double? {
-        guard let m = meter, m.powerDbfs.isFinite, let cap = capture, let ch = channel else { return nil }
-        let floor = SpectrumFold.channelFloorDB(binFloorDB: Double(spectrum.floorDB), bins: Int(SpectrumFeed.bins), sampleRate: cap.sampleRate, bandwidthHz: ch.bandwidthHz)
+        guard let m = meter, m.powerDbfs.isFinite, let cap = capture, let ch = channel else {
+            return nil
+        }
+        let floor = SpectrumFold.channelFloorDB(
+            binFloorDB: Double(spectrum.floorDB), bins: Int(SpectrumFeed.bins),
+            sampleRate: cap.sampleRate, bandwidthHz: ch.bandwidthHz)
         return floor.isFinite ? m.powerDbfs - floor : nil
     }
 
     /// The squelch as a level per bin, or nil when it is off or there is no floor to bound it.
     private var squelchPerBinDB: Float? {
         let feed = spectrum
-        guard let ch = channel, ch.squelchDb.isFinite, let cap = capture, cap.sampleRate > 0, ch.bandwidthHz > 0, !feed.floorDB.isNaN else {
+        guard let ch = channel, ch.squelchDb.isFinite, let cap = capture, cap.sampleRate > 0,
+            ch.bandwidthHz > 0, !feed.floorDB.isNaN
+        else {
             return nil
         }
         let binWidth = Double(cap.sampleRate) / Double(SpectrumFeed.bins)
@@ -168,7 +176,9 @@ final class AppSession {
     var tunableBands: [Band] { bands.filter { Bands.tunable($0, ranges: radioRanges) } }
 
     /// Why a band is out of this radio's reach, to follow its name, or nil.
-    func outOfRangeWords(_ band: Band) -> String? { Bands.outOfRangeWords(band, ranges: radioRanges) }
+    func outOfRangeWords(_ band: Band) -> String? {
+        Bands.outOfRangeWords(band, ranges: radioRanges)
+    }
 
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
     var band: Band? {
@@ -199,15 +209,30 @@ final class AppSession {
         case .idle, .connecting: return ("Connecting to leylined", socketPath)
         case .unavailable(let e, let retry):
             return e.daemonUnreachable
-                ? ("The daemon is not running", "Start it with `ley daemon start`; retrying in \(retry).")
+                ? (
+                    "The daemon is not running",
+                    "Start it with `ley daemon start`; retrying in \(retry)."
+                )
                 : (e.message, "Retrying in \(retry).")
         case .live: break
         }
         if state.devices.allSatisfy({ $0.state == .disconnected }) {
-            return ("No radio is plugged in", "Plug in an RTL-SDR, or attach a recording with `ley devices attach`.")
+            return (
+                "No radio is plugged in",
+                "Plug in an RTL-SDR, or attach a recording with `ley devices attach`."
+            )
         }
-        if capture == nil { return ("Pick a band to listen", "The sidebar's bands set the radio, the mode and the squelch at once.") }
-        if capture?.state == .captureDetached { return ("The radio was unplugged", "Plug it back in and the capture rebinds on its own.") }
+        if capture == nil {
+            return (
+                "Pick a band to listen",
+                "The sidebar's bands set the radio, the mode and the squelch at once."
+            )
+        }
+        if capture?.state == .captureDetached {
+            return (
+                "The radio was unplugged", "Plug it back in and the capture rebinds on its own."
+            )
+        }
         return nil
     }
 
@@ -239,7 +264,13 @@ final class AppSession {
         let wasLive = isLive
         state = m.state
         connection = m.connection
-        if wasLive != isLive { log("session", isLive ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures" : "not live: \(connection)") }
+        if wasLive != isLive {
+            log(
+                "session",
+                isLive
+                    ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures"
+                    : "not live: \(connection)")
+        }
         if let r = requestedHz, r == tunedHz { clearRequested() }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted. One
         // that was never in the mirror goes the same way after 3 s, because the gap between an
@@ -253,7 +284,10 @@ final class AppSession {
                 log("session", "capture \(id) is gone; a new one will be made")
                 dropCapture()
             } else if Date().timeIntervalSince(captureSetAt) > 3 {
-                log("session", "the mirror has no capture \(id) 3 s after the window took it; a new one will be made")
+                log(
+                    "session",
+                    "the mirror has no capture \(id) 3 s after the window took it; a new one will be made"
+                )
                 dropCapture()
             }
         }
@@ -282,7 +316,8 @@ final class AppSession {
         if state.rejections.count != rejectionsSeen {
             rejectionsSeen = state.rejections.count
             if let r = state.rejections.last {
-                lastError = LeylineError(code: r.error.code, message: r.error.message, target: r.error.target)
+                lastError = LeylineError(
+                    code: r.error.code, message: r.error.message, target: r.error.target)
                 log("session", "write \(r.tag) rejected: \(r.error.code) \(r.error.message)")
             }
         }
@@ -331,15 +366,23 @@ final class AppSession {
     private func adopt() {
         guard !busy, !creatingChannel else { return }
         adopted = true
-        if captureID == nil, let cap = state.captures.first(where: { $0.state == .captureActive }) ?? state.captures.first {
+        if captureID == nil,
+            let cap = state.captures.first(where: { $0.state == .captureActive })
+                ?? state.captures.first
+        {
             captureID = cap.captureID
             captureSetAt = Date()
             if channelID == nil, let ch = state.channels(in: cap.captureID).first {
                 channelID = ch.channelID
                 channelSetAt = Date()
             }
-            log("session", "adopted capture \(cap.captureID) at \(cap.centerHz) Hz, \(cap.sampleRate) S/s, channel \(channelID ?? "none")")
-            if channelID == nil, state.channels(in: cap.captureID).isEmpty { Task { await tuneCreating(hz: cap.centerHz) } }
+            log(
+                "session",
+                "adopted capture \(cap.captureID) at \(cap.centerHz) Hz, \(cap.sampleRate) S/s, channel \(channelID ?? "none")"
+            )
+            if channelID == nil, state.channels(in: cap.captureID).isEmpty {
+                Task { await tuneCreating(hz: cap.centerHz) }
+            }
             return
         }
         guard captureID == nil, hasRadio else { return }
@@ -375,15 +418,19 @@ final class AppSession {
             let dev = try pickDevice()
             let rate = Bands.sampleRate(for: band, offered: dev.sampleRates) ?? 2_400_000
             let target = hz ?? band.centerHz
-            let centre = hz == nil ? band.centerHz : captureCentre(for: band, at: target, rate: rate)
+            let centre =
+                hz == nil ? band.centerHz : captureCentre(for: band, at: target, rate: rate)
             let cap = try await ensureCapture(on: dev, centerHz: centre, sampleRate: rate)
             let mode = band.mode(at: target)
             if hz != nil { request(target) }
-            let ch = try await ensureChannel(in: cap, offsetHz: Int64(target) - Int64(centre), mode: mode, bandwidthHz: band.bandwidthHz)
+            let ch = try await ensureChannel(
+                in: cap, offsetHz: Int64(target) - Int64(centre), mode: mode,
+                bandwidthHz: band.bandwidthHz)
             try await ensureSink(on: ch)
             spectrum.resetFolds()
             if band.widthHz > rate {
-                notice = "\(band.name) is \(Frequency.format(band.widthHz)) wide and this radio captures at most \(Frequency.format(rate)); showing that much, centred on \(Frequency.format(centre))"
+                notice =
+                    "\(band.name) is \(Frequency.format(band.widthHz)) wide and this radio captures at most \(Frequency.format(rate)); showing that much, centred on \(Frequency.format(centre))"
             } else {
                 notice = "\(band.name): \(mode.word) at \(Frequency.width(band.bandwidthHz))"
             }
@@ -410,14 +457,22 @@ final class AppSession {
 
     private func pickDevice() throws -> Leyline_V1_DeviceDescriptor {
         if let d = device, d.state != .disconnected { return d }
-        if let d = state.devices.first(where: { $0.state == .available }) ?? state.devices.first(where: { $0.state == .inUse }) { return d }
+        if let d = state.devices.first(where: { $0.state == .available })
+            ?? state.devices.first(where: { $0.state == .inUse })
+        {
+            return d
+        }
         throw LeylineError(code: "DEVICE_NOT_FOUND", message: "No radio is plugged in")
     }
 
-    private func ensureCapture(on dev: Leyline_V1_DeviceDescriptor, centerHz: UInt64, sampleRate: UInt64) async throws -> Leyline_V1_Capture {
+    private func ensureCapture(
+        on dev: Leyline_V1_DeviceDescriptor, centerHz: UInt64, sampleRate: UInt64
+    ) async throws -> Leyline_V1_Capture {
         guard let daemon, let writes else { throw LeylineError.notDialled }
         if var cap = capture, cap.deviceID == dev.deviceID {
-            if cap.sampleRate != sampleRate { _ = await writes.set(.captureSampleRate(sampleRate), target: cap.captureID) }
+            if cap.sampleRate != sampleRate {
+                _ = await writes.set(.captureSampleRate(sampleRate), target: cap.captureID)
+            }
             if cap.centerHz != centerHz { await writes.centerHz(centerHz, capture: cap.captureID) }
             cap.centerHz = centerHz
             cap.sampleRate = sampleRate
@@ -429,7 +484,9 @@ final class AppSession {
         req.sampleRate = sampleRate
         let cap: Leyline_V1_Capture
         do { cap = try await daemon.control.createCapture(req) } catch { throw LeylineError(error) }
-        log("session", "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
+        log(
+            "session",
+            "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
         captureID = cap.captureID
         captureSeen = false
         captureSetAt = Date()
@@ -438,7 +495,9 @@ final class AppSession {
         return cap
     }
 
-    private func ensureChannel(in cap: Leyline_V1_Capture, offsetHz: Int64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32) async throws -> Leyline_V1_Channel {
+    private func ensureChannel(
+        in cap: Leyline_V1_Capture, offsetHz: Int64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32
+    ) async throws -> Leyline_V1_Channel {
         guard let daemon, let writes else { throw LeylineError.notDialled }
         if var ch = channel, ch.captureID == cap.captureID {
             await apply(mode: mode, bandwidthHz: bandwidthHz, to: ch)
@@ -455,7 +514,9 @@ final class AppSession {
         req.bandwidthHz = bandwidthHz
         let ch: Leyline_V1_Channel
         do { ch = try await daemon.control.createChannel(req) } catch { throw LeylineError(error) }
-        log("session", "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
+        log(
+            "session",
+            "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
         channelID = ch.channelID
         channelSeen = false
         channelSetAt = Date()
@@ -478,7 +539,9 @@ final class AppSession {
     /// zeroes its count on each subscription, so a count that went backwards means the rows on
     /// hand are the new capture's and two of them is two of that span's. Three seconds is the
     /// budget, and if it runs out the squelch is left off, which is what `ley tune` leaves.
-    private func measureSquelch(channel ch: Leyline_V1_Channel, sampleRate: UInt64, bandwidthHz: UInt32) async {
+    private func measureSquelch(
+        channel ch: Leyline_V1_Channel, sampleRate: UInt64, bandwidthHz: UInt32
+    ) async {
         guard let writes else { return }
         let start = spectrum.rows
         var fresh = false
@@ -491,10 +554,14 @@ final class AppSession {
             try? await Task.sleep(for: .milliseconds(50))
         }
         guard fresh else {
-            log("session", "no two rows of capture \(ch.captureID) within 3 s; squelch left off, so no station is muted by another band's floor")
+            log(
+                "session",
+                "no two rows of capture \(ch.captureID) within 3 s; squelch left off, so no station is muted by another band's floor"
+            )
             return
         }
-        let (threshold, floor) = SpectrumFold.autoSquelch(spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
+        let (threshold, floor) = SpectrumFold.autoSquelch(
+            spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
         await writes.squelchDb(threshold, channel: ch.channelID)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
@@ -555,7 +622,8 @@ final class AppSession {
         let span = Int64(cap.sampleRate)
         var newCentre = clampCentre(centre, span: span)
         if let b = band {
-            newCentre = b.widthHz > cap.sampleRate
+            newCentre =
+                b.widthHz > cap.sampleRate
                 ? min(max(newCentre, Int64(b.minHz) + span / 2), Int64(b.maxHz) - span / 2)
                 : Int64(cap.centerHz)
         }
@@ -572,7 +640,10 @@ final class AppSession {
             await writes.offsetHz(held - newCentre, channel: ch.channelID)
         }
         if ended {
-            log("tune", "pan capture \(cap.centerHz) -> \(newCentre) Hz, station at \(held) Hz\(held != station ? ", pushed from \(station)" : "")")
+            log(
+                "tune",
+                "pan capture \(cap.centerHz) -> \(newCentre) Hz, station at \(held) Hz\(held != station ? ", pushed from \(station)" : "")"
+            )
             followBand(from: tunedHz, to: UInt64(max(0, held)), channel: ch)
             Task {
                 await confirmed { self.capture?.centerHz == want }
@@ -601,27 +672,44 @@ final class AppSession {
                 target = min(max(target, lo), hi)
                 if Date().timeIntervalSince(lastPan) > 0.3, centreInFlight == nil {
                     lastPan = Date()
-                    let newCentre = clampCentre(target < lo ? centre - span / 8 : centre + span / 8, span: span)
+                    let newCentre = clampCentre(
+                        target < lo ? centre - span / 8 : centre + span / 8, span: span)
                     request(UInt64(max(0, target)))
                     log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
-                    Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
+                    Task {
+                        await retune(
+                            centre: newCentre, offset: target - newCentre, capture: cap.captureID,
+                            channel: ch.channelID)
+                    }
                     followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                     return
                 }
             } else {
-                let newCentre = clampCentre(target < lo ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
+                let newCentre = clampCentre(
+                    target < lo ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
                 request(UInt64(max(0, target)))
                 // One move at a time: while one is in flight the new one waits in the slot and
                 // `retune` performs it next, because two of them leave the coalescer holding
                 // only the last centre and the first offset written against a centre that
                 // never applied.
                 if centreInFlight != nil {
-                    if let waiting = nextRetune { log("tune", "centre \(waiting.centre) Hz superseded before it ran") }
-                    log("tune", "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
-                    nextRetune = (centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID)
+                    if let waiting = nextRetune {
+                        log("tune", "centre \(waiting.centre) Hz superseded before it ran")
+                    }
+                    log(
+                        "tune",
+                        "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
+                    nextRetune = (
+                        centre: newCentre, offset: target - newCentre, capture: cap.captureID,
+                        channel: ch.channelID
+                    )
                 } else {
                     log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
-                    Task { await retune(centre: newCentre, offset: target - newCentre, capture: cap.captureID, channel: ch.channelID) }
+                    Task {
+                        await retune(
+                            centre: newCentre, offset: target - newCentre, capture: cap.captureID,
+                            channel: ch.channelID)
+                    }
                 }
                 followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                 return
@@ -630,14 +718,23 @@ final class AppSession {
         let offset = target - centre
         request(UInt64(max(0, target)))
         Task { await writes.offsetHz(offset, channel: ch.channelID) }
-        if !quiet { log("tune", "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")") }
+        if !quiet {
+            log(
+                "tune",
+                "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")"
+            )
+        }
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
     }
 
     /// A centre inside the radio's tuning range, with half a span to spare on each side.
     private func clampCentre(_ centre: Int64, span: Int64) -> Int64 {
-        guard let r = device?.tuningRanges.first(where: { Int64($0.minHz) - span / 2 <= centre && centre <= Int64($0.maxHz) + span / 2 })
-            ?? device?.tuningRanges.first else { return max(0, centre) }
+        guard
+            let r = device?.tuningRanges.first(where: {
+                Int64($0.minHz) - span / 2 <= centre && centre <= Int64($0.maxHz) + span / 2
+            })
+                ?? device?.tuningRanges.first
+        else { return max(0, centre) }
         return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
     }
 
@@ -654,7 +751,12 @@ final class AppSession {
             let want = UInt64(max(0, move.centre))
             await writes.centerHz(want, capture: move.capture)
             await confirmed { self.capture?.centerHz == want }
-            if self.capture?.centerHz != want { log("tune", "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)") }
+            if self.capture?.centerHz != want {
+                log(
+                    "tune",
+                    "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)"
+                )
+            }
             if nextRetune == nil { await writes.offsetHz(move.offset, channel: move.channel) }
             guard let next = nextRetune else { break }
             nextRetune = nil
@@ -672,13 +774,19 @@ final class AppSession {
         creatingChannel = true
         defer { creatingChannel = false }
         let mode = Bands.defaultMode(at: hz, in: bands)
-        let bw = Bands.band(containing: hz, in: bands).map { $0.mode(at: hz) == mode ? $0.bandwidthHz : mode.defaultBandwidthHz } ?? mode.defaultBandwidthHz
+        let bw =
+            Bands.band(containing: hz, in: bands).map {
+                $0.mode(at: hz) == mode ? $0.bandwidthHz : mode.defaultBandwidthHz
+            } ?? mode.defaultBandwidthHz
         let span = Int64(cap.sampleRate)
         var centre = Int64(cap.centerHz)
         let target = Int64(hz)
         if target < centre - span / 2 + Int64(bw) || target > centre + span / 2 - Int64(bw) {
-            centre = clampCentre(target < centre ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
-            log("tune", "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
+            centre = clampCentre(
+                target < centre ? target + span * 3 / 8 : target - span * 3 / 8, span: span)
+            log(
+                "tune",
+                "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
             centreInFlight = centre
             await writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
             await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
@@ -686,7 +794,8 @@ final class AppSession {
         }
         request(hz)
         do {
-            let ch = try await ensureChannel(in: cap, offsetHz: target - centre, mode: mode, bandwidthHz: bw)
+            let ch = try await ensureChannel(
+                in: cap, offsetHz: target - centre, mode: mode, bandwidthHz: bw)
             try await ensureSink(on: ch)
             await measureSquelch(channel: ch, sampleRate: cap.sampleRate, bandwidthHz: bw)
         } catch {
@@ -704,7 +813,9 @@ final class AppSession {
         guard let now, now.id != was?.id else { return }
         let mode = now.mode(at: hz)
         guard ch.mode != mode || ch.bandwidthHz != now.bandwidthHz else { return }
-        log("tune", "band \(was?.name ?? "none") -> \(now.name): \(mode.word) \(now.bandwidthHz) Hz")
+        log(
+            "tune", "band \(was?.name ?? "none") -> \(now.name): \(mode.word) \(now.bandwidthHz) Hz"
+        )
         notice = "\(now.name): \(mode.word) at \(Frequency.width(now.bandwidthHz))"
         Task { await apply(mode: mode, bandwidthHz: now.bandwidthHz, to: ch) }
     }
@@ -734,12 +845,20 @@ final class AppSession {
                 await confirmed { self.channel?.mode == mode }
                 await writes.bandwidthHz(bandwidthHz, channel: id)
             }
-            await confirmed { self.channel?.mode == mode && self.channel?.bandwidthHz == bandwidthHz }
+            await confirmed {
+                self.channel?.mode == mode && self.channel?.bandwidthHz == bandwidthHz
+            }
             if channel?.mode == mode, channel?.bandwidthHz == bandwidthHz {
-                log("tune", "channel \(id) is \(mode.word) \(bandwidthHz) Hz\(attempt == 1 ? " on the second order" : "")")
+                log(
+                    "tune",
+                    "channel \(id) is \(mode.word) \(bandwidthHz) Hz\(attempt == 1 ? " on the second order" : "")"
+                )
                 return
             }
-            log("tune", "channel \(id) did not confirm \(mode.word) \(bandwidthHz) Hz (\(first ? "width first" : "mode first")); is \(channel?.mode.word ?? "?") \(channel?.bandwidthHz ?? 0)")
+            log(
+                "tune",
+                "channel \(id) did not confirm \(mode.word) \(bandwidthHz) Hz (\(first ? "width first" : "mode first")); is \(channel?.mode.word ?? "?") \(channel?.bandwidthHz ?? 0)"
+            )
         }
     }
 
@@ -750,7 +869,9 @@ final class AppSession {
         guard let cap = capture, let dev = device, let writes else { return }
         let need = UInt64(bandwidthHz) * 5 / 4
         guard cap.sampleRate < need else { return }
-        guard let rate = dev.sampleRates.filter({ $0 >= need }).min() ?? dev.sampleRates.max(), rate > cap.sampleRate else { return }
+        guard let rate = dev.sampleRates.filter({ $0 >= need }).min() ?? dev.sampleRates.max(),
+            rate > cap.sampleRate
+        else { return }
         log("tune", "capture \(cap.sampleRate) -> \(rate) S/s to hold \(bandwidthHz) Hz")
         _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
         spectrum.resetFolds()
@@ -776,7 +897,9 @@ final class AppSession {
 
     func setMode(_ mode: Leyline_V1_DemodMode) {
         guard let ch = channel else { return }
-        let bw = mode.offeredBandwidthsHz.contains(ch.bandwidthHz) ? ch.bandwidthHz : mode.defaultBandwidthHz
+        let bw =
+            mode.offeredBandwidthsHz.contains(ch.bandwidthHz)
+            ? ch.bandwidthHz : mode.defaultBandwidthHz
         log("tune", "mode \(mode.word) chosen, width \(bw) Hz")
         Task { await apply(mode: mode, bandwidthHz: bw, to: ch) }
     }
@@ -848,12 +971,18 @@ final class AppSession {
         // so the switch must wait for that one rather than be dropped on the floor.
         await confirmed(within: 2) { !self.busy }
         guard !busy else {
-            log("session", "device \(device.model) not chosen: a band change was still in flight after 2 s")
+            log(
+                "session",
+                "device \(device.model) not chosen: a band change was still in flight after 2 s")
             return
         }
         let old = capture
         dropCapture()
-        if let b = band { await select(band: b) } else if let b = bands.first(where: { $0.id == "fm" }) { await select(band: b) }
+        if let b = band {
+            await select(band: b)
+        } else if let b = bands.first(where: { $0.id == "fm" }) {
+            await select(band: b)
+        }
         if let old, old.createdBy.clientID == daemon.identity.id {
             var req = Leyline_V1_DestroyCaptureRequest()
             req.captureID = old.captureID
@@ -870,7 +999,9 @@ final class AppSession {
         do {
             try bookmarks.load()
         } catch {
-            lastError = LeylineError(code: "BOOKMARKS_UNREADABLE", message: "bookmarks.json could not be read: \(error)", target: bookmarks.path)
+            lastError = LeylineError(
+                code: "BOOKMARKS_UNREADABLE", message: "bookmarks.json could not be read: \(error)",
+                target: bookmarks.path)
         }
     }
 
@@ -880,10 +1011,13 @@ final class AppSession {
         if let reason = error as? BookmarkError, case .notLoaded(let path) = reason {
             return LeylineError(
                 code: "BOOKMARKS_UNREADABLE",
-                message: "\(path) could not be read, so nothing was written. Fix that file, or move it aside, and the list reloads.",
+                message:
+                    "\(path) could not be read, so nothing was written. Fix that file, or move it aside, and the list reloads.",
                 target: path)
         }
-        return LeylineError(code: "BOOKMARKS_UNWRITABLE", message: "bookmarks.json could not be written: \(error)", target: bookmarks.path)
+        return LeylineError(
+            code: "BOOKMARKS_UNWRITABLE", message: "bookmarks.json could not be written: \(error)",
+            target: bookmarks.path)
     }
 
     /// Reloads when `ley bookmarks` or anyone else writes the file.
@@ -893,7 +1027,8 @@ final class AppSession {
         let fd = open(dir, O_EVTONLY)
         guard fd >= 0 else { return }
         bookmarkWatchFD = fd
-        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename], queue: .main)
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .rename], queue: .main)
         source.setEventHandler { [weak self] in
             MainActor.assumeIsolated { self?.loadBookmarks() }
         }
@@ -928,7 +1063,8 @@ final class AppSession {
         log("tune", "bookmark \(bookmark.name) at \(bookmark.hz) Hz")
         tune(to: bookmark.hz)
         if let ch = channel, bookmark.mode != .unspecified {
-            let bw = bookmark.bandwidthHz == 0 ? bookmark.mode.defaultBandwidthHz : bookmark.bandwidthHz
+            let bw =
+                bookmark.bandwidthHz == 0 ? bookmark.mode.defaultBandwidthHz : bookmark.bandwidthHz
             Task { await apply(mode: bookmark.mode, bandwidthHz: bw, to: ch) }
         }
     }
@@ -940,7 +1076,10 @@ final class AppSession {
 
     /// The loudest peak in the span by `ley spectrum`'s rule; a flat band tunes nothing.
     func centreOnStrongest() {
-        guard let cap = capture, let peak = SpectrumFold.strongest(spectrum.latest, centerHz: cap.centerHz, spanHz: cap.sampleRate) else {
+        guard let cap = capture,
+            let peak = SpectrumFold.strongest(
+                spectrum.latest, centerHz: cap.centerHz, spanHz: cap.sampleRate)
+        else {
             notice = "Nothing in the span is 15 dB above the floor"
             return
         }

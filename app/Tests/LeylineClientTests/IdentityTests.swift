@@ -2,9 +2,10 @@
 
 import Foundation
 import GRPCCore
-@testable import LeylineClient
 import LeylineProto
 import XCTest
+
+@testable import LeylineClient
 
 final class IdentityTests: XCTestCase {
     func testULIDShapeAndOrder() {
@@ -55,12 +56,17 @@ final class IdentityTests: XCTestCase {
     }
 
     func testSocketPathRule() {
-        XCTAssertEqual(SocketPath.default(environment: ["LEYLINE_SOCKET": "/tmp/x.sock"]), "/tmp/x.sock")
+        XCTAssertEqual(
+            SocketPath.default(environment: ["LEYLINE_SOCKET": "/tmp/x.sock"]), "/tmp/x.sock")
         #if os(macOS)
-        XCTAssertEqual(SocketPath.default(environment: ["HOME": "/Users/me"]), "/Users/me/Library/Application Support/Leyline/leyline.sock")
+            XCTAssertEqual(
+                SocketPath.default(environment: ["HOME": "/Users/me"]),
+                "/Users/me/Library/Application Support/Leyline/leyline.sock")
         #else
-        XCTAssertEqual(SocketPath.default(environment: ["XDG_RUNTIME_DIR": "/run/user/1"]), "/run/user/1/leyline.sock")
-        XCTAssertTrue(SocketPath.default(environment: [:]).hasPrefix("/tmp/leyline-"))
+            XCTAssertEqual(
+                SocketPath.default(environment: ["XDG_RUNTIME_DIR": "/run/user/1"]),
+                "/run/user/1/leyline.sock")
+            XCTAssertTrue(SocketPath.default(environment: [:]).hasPrefix("/tmp/leyline-"))
         #endif
     }
 }

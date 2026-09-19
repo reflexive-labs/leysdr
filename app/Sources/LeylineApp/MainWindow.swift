@@ -44,7 +44,9 @@ struct MainWindow: View {
                     // line laid here sat under the hosted view's rounded-out frame.
                     WaterfallView()
                 }
-                if let words = session.emptyWords { EmptyWords(headline: words.headline, detail: words.detail) }
+                if let words = session.emptyWords {
+                    EmptyWords(headline: words.headline, detail: words.detail)
+                }
                 VStack {
                     Spacer()
                     NoticeStrip()
@@ -79,7 +81,9 @@ struct NoticeStrip: View {
 
     var body: some View {
         if let e = session.lastError {
-            line(e.message.isEmpty ? e.code : e.message, colour: Theme.recording) { session.clearError() }
+            line(e.message.isEmpty ? e.code : e.message, colour: Theme.recording) {
+                session.clearError()
+            }
         } else if let n = session.notice {
             line(n, colour: Theme.inkTertiary) { session.clearNotice() }
         }

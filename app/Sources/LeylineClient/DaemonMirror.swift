@@ -64,7 +64,9 @@ public struct MirrorState: Sendable, Equatable {
     public mutating func apply(_ event: Leyline_V1_Event) -> Bool {
         if case .writeRejected(let r) = event.body {
             rejections.append(r)
-            if rejections.count > Self.rejectionsKept { rejections.removeFirst(rejections.count - Self.rejectionsKept) }
+            if rejections.count > Self.rejectionsKept {
+                rejections.removeFirst(rejections.count - Self.rejectionsKept)
+            }
             return true
         }
         if event.seq != 0, event.seq <= seq { return false }
@@ -77,19 +79,37 @@ public struct MirrorState: Sendable, Equatable {
         case .capture(let c):
             // Unset is the destroy tombstone; CAPTURE_DETACHED is a yanked dongle whose capture
             // rebinds when it returns, so only the former leaves the mirror.
-            if c.state == .unspecified { captures.removeAll { $0.captureID == c.captureID } } else { replace(&captures, c, by: \.captureID) }
+            if c.state == .unspecified {
+                captures.removeAll { $0.captureID == c.captureID }
+            } else {
+                replace(&captures, c, by: \.captureID)
+            }
         case .channel(let c):
-            if c.state == .unspecified { channels.removeAll { $0.channelID == c.channelID } } else { replace(&channels, c, by: \.channelID) }
+            if c.state == .unspecified {
+                channels.removeAll { $0.channelID == c.channelID }
+            } else {
+                replace(&channels, c, by: \.channelID)
+            }
         case .sink(let s):
-            if s.state == .unspecified { sinks.removeAll { $0.sinkID == s.sinkID } } else { replace(&sinks, s, by: \.sinkID) }
+            if s.state == .unspecified {
+                sinks.removeAll { $0.sinkID == s.sinkID }
+            } else {
+                replace(&sinks, s, by: \.sinkID)
+            }
         case .playback(let p):
-            if p.state == .unspecified { playbacks.removeAll { $0.playbackID == p.playbackID } } else { replace(&playbacks, p, by: \.playbackID) }
+            if p.state == .unspecified {
+                playbacks.removeAll { $0.playbackID == p.playbackID }
+            } else {
+                replace(&playbacks, p, by: \.playbackID)
+            }
         case .job(let j):
             // Jobs are never tombstoned: a finished job stays listed with its state, which is
             // how a client shows "done" and the resource it produced.
             replace(&jobs, j, by: \.jobID)
         case .anchor(let a):
-            if let i = captures.firstIndex(where: { $0.captureID == a.captureID }) { captures[i].anchor = a }
+            if let i = captures.firstIndex(where: { $0.captureID == a.captureID }) {
+                captures[i].anchor = a
+            }
         case .writeRejected, .none:
             break
         }
@@ -97,15 +117,29 @@ public struct MirrorState: Sendable, Equatable {
     }
 
     private func replace<T>(_ list: inout [T], _ item: T, by id: KeyPath<T, String>) {
-        if let i = list.firstIndex(where: { $0[keyPath: id] == item[keyPath: id] }) { list[i] = item } else { list.append(item) }
+        if let i = list.firstIndex(where: { $0[keyPath: id] == item[keyPath: id] }) {
+            list[i] = item
+        } else {
+            list.append(item)
+        }
     }
 
     // Lookups the views need.
-    public func capture(_ id: String) -> Leyline_V1_Capture? { captures.first { $0.captureID == id } }
-    public func channel(_ id: String) -> Leyline_V1_Channel? { channels.first { $0.channelID == id } }
-    public func device(_ id: String) -> Leyline_V1_DeviceDescriptor? { devices.first { $0.deviceID == id } }
-    public func channels(in capture: String) -> [Leyline_V1_Channel] { channels.filter { $0.captureID == capture } }
-    public func sinks(of channel: String) -> [Leyline_V1_Sink] { sinks.filter { $0.channelID == channel } }
+    public func capture(_ id: String) -> Leyline_V1_Capture? {
+        captures.first { $0.captureID == id }
+    }
+    public func channel(_ id: String) -> Leyline_V1_Channel? {
+        channels.first { $0.channelID == id }
+    }
+    public func device(_ id: String) -> Leyline_V1_DeviceDescriptor? {
+        devices.first { $0.deviceID == id }
+    }
+    public func channels(in capture: String) -> [Leyline_V1_Channel] {
+        channels.filter { $0.captureID == capture }
+    }
+    public func sinks(of channel: String) -> [Leyline_V1_Sink] {
+        sinks.filter { $0.channelID == channel }
+    }
     /// A channel's absolute frequency: its capture's centre plus its offset, or nil when there is
     /// no such frequency. Another client can retune a shared capture below this channel's negative
     /// offset — the channel goes `OUT_OF_CAPTURE` and keeps the offset it was given
@@ -141,7 +175,10 @@ public final class DaemonMirror {
 
     /// `connection` is the dial; `backoff` is how long to wait after a failed attempt, the last
     /// entry repeating (a daemon that is not running is polled every few seconds, not hammered).
-    public init(connection: DaemonConnection, backoff: [Duration] = [.milliseconds(500), .seconds(1), .seconds(2), .seconds(5)]) {
+    public init(
+        connection: DaemonConnection,
+        backoff: [Duration] = [.milliseconds(500), .seconds(1), .seconds(2), .seconds(5)]
+    ) {
         self.connectionToDaemon = connection
         self.backoff = backoff
     }

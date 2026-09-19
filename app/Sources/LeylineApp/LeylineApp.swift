@@ -22,7 +22,9 @@ struct LeylineApp: App {
                 .task { await session.start() }
                 .frame(minWidth: 900, minHeight: 560)
         }
-        .defaultSize(width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height)
+        .defaultSize(
+            width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height
+        )
         .windowToolbarStyle(.unified)
         .commands { TuneCommands(session: session) }
     }
@@ -85,7 +87,8 @@ struct TuneCommands: Commands {
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])
             Button("Zoom Out") { session.zoomOut() }.keyboardShortcut("-", modifiers: [.command])
-            Toggle("Max Hold", isOn: Binding(get: { session.maxHold }, set: { session.maxHold = $0 }))
+            Toggle(
+                "Max Hold", isOn: Binding(get: { session.maxHold }, set: { session.maxHold = $0 }))
         }
     }
 

@@ -3,9 +3,10 @@
 // Last value per (target, parameter); distinct parameters and targets each keep their own; tags
 // climb; a drain leaves nothing.
 
-@testable import LeylineClient
 import LeylineProto
 import XCTest
+
+@testable import LeylineClient
 
 final class PendingWritesTests: XCTestCase {
     func testLastValuePerParameterWins() {
@@ -32,7 +33,8 @@ final class PendingWritesTests: XCTestCase {
         p.set(.offsetHz(5000), target: "chan_2")
         XCTAssertEqual(p.count, 4)
         let out = p.drain()
-        XCTAssertEqual(out.map(\.targetID), ["chan_1", "chan_1", "cap_1", "chan_2"], "oldest key first")
+        XCTAssertEqual(
+            out.map(\.targetID), ["chan_1", "chan_1", "cap_1", "chan_2"], "oldest key first")
         XCTAssertEqual(out[1].squelchDb, -60)
     }
 

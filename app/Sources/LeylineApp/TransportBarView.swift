@@ -52,7 +52,9 @@ struct PlayButton: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        Button { Task { await session.togglePlay() } } label: {
+        Button {
+            Task { await session.togglePlay() }
+        } label: {
             ZStack {
                 Circle().fill(Theme.accent).frame(width: 44, height: 44)
                 Image(systemName: session.isPlaying ? "pause.fill" : "play.fill")
@@ -90,12 +92,14 @@ struct FrequencyField: View {
         Block(header: "Tuning") {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
-                Text(".").font(Theme.Font.frequency).foregroundStyle(hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
+                Text(".").font(Theme.Font.frequency).foregroundStyle(
+                    hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
                 digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
                 // Sub-kHz digits only when there are any: a drag lands between kHz, a keypad never does.
                 if let hz, hz % 1_000 != 0, !focused {
                     Text(Frequency.fieldParts(hz).minor)
-                        .font(Theme.Font.frequency).tracking(Theme.frequencyTracking).foregroundStyle(Theme.inkDisabled)
+                        .font(Theme.Font.frequency).tracking(Theme.frequencyTracking)
+                        .foregroundStyle(Theme.inkDisabled)
                 }
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
@@ -103,7 +107,9 @@ struct FrequencyField: View {
             .padding(.horizontal, 10).padding(.vertical, 5)
             .frame(minWidth: 232, alignment: .trailing)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Theme.accent : Theme.borderFocus))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6).stroke(focused ? Theme.accent : Theme.borderFocus)
+            )
             .contentShape(Rectangle())
             .onTapGesture { begin() }
             .focusable()
@@ -191,8 +197,14 @@ struct FrequencyField: View {
     }
 
     private func handle(_ press: KeyPress) -> KeyPress.Result {
-        if press.key == .return { commit(); return .handled }
-        if press.key == .escape { focused = false; return .handled }
+        if press.key == .return {
+            commit()
+            return .handled
+        }
+        if press.key == .escape {
+            focused = false
+            return .handled
+        }
         return handleEditingKey(press.key, press.characters)
     }
 
@@ -207,20 +219,41 @@ struct FrequencyField: View {
     private func handleEditingKey(_ key: KeyEquivalent, _ characters: String) -> KeyPress.Result {
         if key == .leftArrow {
             if inKhz {
-                if caret > 0 { caret -= 1 } else { inKhz = false; caret = mhz.count }
-            } else if caret > 0 { caret -= 1 }
+                if caret > 0 {
+                    caret -= 1
+                } else {
+                    inKhz = false
+                    caret = mhz.count
+                }
+            } else if caret > 0 {
+                caret -= 1
+            }
             return .handled
         }
         if key == .rightArrow {
             if inKhz {
                 if caret < khz.count { caret += 1 }
-            } else if caret < mhz.count { caret += 1 } else { inKhz = true; caret = 0 }
+            } else if caret < mhz.count {
+                caret += 1
+            } else {
+                inKhz = true
+                caret = 0
+            }
             return .handled
         }
         if key == .delete {
             if inKhz {
-                if caret > 0 { caret -= 1; khz[caret] = "0" } else { inKhz = false; caret = mhz.count }
-            } else if caret > 0 { caret -= 1; mhz.remove(at: caret) }
+                if caret > 0 {
+                    caret -= 1
+                    khz[caret] = "0"
+                } else {
+                    inKhz = false
+                    caret = mhz.count
+                }
+            } else if caret > 0 {
+                caret -= 1
+                mhz.remove(at: caret)
+            }
             return .handled
         }
         guard let c = characters.first else { return .ignored }
@@ -234,7 +267,10 @@ struct FrequencyField: View {
         }
         guard c.isNumber else { return .ignored }
         if inKhz {
-            if caret < khz.count { khz[caret] = c; caret += 1 }
+            if caret < khz.count {
+                khz[caret] = c
+                caret += 1
+            }
         } else if caret < mhz.count {
             mhz[caret] = c
             caret += 1
@@ -259,19 +295,27 @@ struct FrequencyField: View {
         ownWindow = NSApp.keyWindow.map { ObjectIdentifier($0) }
         let own = ownWindow
         log("field", "editing")
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .leftMouseDown, .rightMouseDown, .keyDown,
+        ]) { event in
             // Only the two values the field needs cross into the main actor; an NSEvent is not
             // Sendable and an ObjectIdentifier is, so the window is compared out here.
-            guard let own, let window = event.window, ObjectIdentifier(window) == own else { return event }
+            guard let own, let window = event.window, ObjectIdentifier(window) == own else {
+                return event
+            }
             let type = event.type
             let code = event.keyCode
-            let swallow: Bool = MainActor.assumeIsolated { react(to: type, keyCode: code, blur: blur) }
+            let swallow: Bool = MainActor.assumeIsolated {
+                react(to: type, keyCode: code, blur: blur)
+            }
             return swallow ? nil : event
         }
     }
 
     /// Returns true when the key was the field's and nothing else should see it.
-    private func react(to type: NSEvent.EventType, keyCode: UInt16, blur: FocusState<Bool>.Binding) -> Bool {
+    private func react(to type: NSEvent.EventType, keyCode: UInt16, blur: FocusState<Bool>.Binding)
+        -> Bool
+    {
         switch type {
         case .leftMouseDown, .rightMouseDown:
             log("field", "click ends the edit")
@@ -331,7 +375,8 @@ struct PopupButton<T: Hashable>: View {
             HStack(spacing: 8) {
                 Text(label(pending ?? current)).font(Theme.Font.body).foregroundStyle(Theme.ink)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkMuted)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .frame(width: 106)
@@ -352,8 +397,11 @@ struct ModePopup: View {
 
     var body: some View {
         Block(header: "Mode") {
-            PopupButton(choices: TuneCommands.modes, label: { $0.word }, current: session.channel?.mode ?? .nfm) { session.setMode($0) }
-                .disabled(session.channel == nil)
+            PopupButton(
+                choices: TuneCommands.modes, label: { $0.word },
+                current: session.channel?.mode ?? .nfm
+            ) { session.setMode($0) }
+            .disabled(session.channel == nil)
         }
     }
 }
@@ -366,10 +414,14 @@ struct WidthPopup: View {
         let current = session.channel?.bandwidthHz ?? mode.defaultBandwidthHz
         // The mode's widths in order, and the channel's own if it is not one of them, so the
         // list never reorders under the pointer.
-        let choices = (mode.offeredBandwidthsHz + (mode.offeredBandwidthsHz.contains(current) ? [] : [current])).sorted()
+        let choices =
+            (mode.offeredBandwidthsHz
+            + (mode.offeredBandwidthsHz.contains(current) ? [] : [current])).sorted()
         Block(header: "Width") {
-            PopupButton(choices: choices, label: { Frequency.width($0) }, current: current) { session.setBandwidth($0) }
-                .disabled(session.channel == nil)
+            PopupButton(choices: choices, label: { Frequency.width($0) }, current: current) {
+                session.setBandwidth($0)
+            }
+            .disabled(session.channel == nil)
         }
     }
 }
@@ -385,8 +437,11 @@ struct SignalReadout: View {
         Block(header: "Signal") {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(m.map { $0.powerDbfs.isFinite ? String(format: "%.0f", $0.powerDbfs) : "—" } ?? "—")
-                        .font(Theme.Font.readout).foregroundStyle(Theme.ink)
+                    Text(
+                        m.map { $0.powerDbfs.isFinite ? String(format: "%.0f", $0.powerDbfs) : "—" }
+                            ?? "—"
+                    )
+                    .font(Theme.Font.readout).foregroundStyle(Theme.ink)
                     Text("dBFS").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
                 }
                 Text(session.overNoiseDB.map { String(format: "%.0f dB over noise", $0) } ?? " ")
@@ -427,32 +482,41 @@ struct SquelchTrack: View {
                     // The container: black at the left to the ramp's first stop, the near-black
                     // teal, at the right.
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(LinearGradient(colors: [.black, Theme.levelStops[0]], startPoint: .leading, endPoint: .trailing))
+                        .fill(
+                            LinearGradient(
+                                colors: [.black, Theme.levelStops[0]], startPoint: .leading,
+                                endPoint: .trailing))
                     // The colour region, inset, as long as the level: dark teal at its left to
                     // the ramp's yellow at its right whatever its length, as the design draws it.
-                    LinearGradient(colors: Array(Theme.levelStops[1...3]), startPoint: .leading, endPoint: .trailing)
-                        .frame(width: max(0, levelX - inset))
-                        .clipShape(RoundedRectangle(cornerRadius: 2))
-                        .padding(.vertical, inset)
-                        .offset(x: inset)
+                    LinearGradient(
+                        colors: Array(Theme.levelStops[1...3]), startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: max(0, levelX - inset))
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+                    .padding(.vertical, inset)
+                    .offset(x: inset)
                     Rectangle().fill(Theme.ink).frame(width: 2.5)
-                        .overlay(alignment: .top) { Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2) }
+                        .overlay(alignment: .top) {
+                            Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2)
+                        }
                         .offset(x: markerX - 1.25)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { v in
-                        let d = db(atX: v.location.x, width: w)
-                        dragDb = d
-                        session.setSquelch(d)  // coalesced: one write a tick, the last value wins
-                    }
-                    .onEnded { v in
-                        let d = db(atX: v.location.x, width: w)
-                        dragDb = nil
-                        session.setSquelch(d)
-                    })
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { v in
+                            let d = db(atX: v.location.x, width: w)
+                            dragDb = d
+                            session.setSquelch(d)  // coalesced: one write a tick, the last value wins
+                        }
+                        .onEnded { v in
+                            let d = db(atX: v.location.x, width: w)
+                            dragDb = nil
+                            session.setSquelch(d)
+                        })
             }
             .frame(height: 18)
             HStack {
@@ -471,7 +535,9 @@ struct SquelchTrack: View {
         guard power.isFinite else { return "no signal measured yet" }
         guard squelch.isFinite else { return "open · squelch off" }
         let d = power - squelch
-        return open ? String(format: "open · %.0f dB above the marker", d) : String(format: "muted · %.0f dB below the marker", -d)
+        return open
+            ? String(format: "open · %.0f dB above the marker", d)
+            : String(format: "muted · %.0f dB below the marker", -d)
     }
 
     private func x(of db: Double, width: CGFloat) -> CGFloat {

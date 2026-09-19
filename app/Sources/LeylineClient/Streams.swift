@@ -47,7 +47,8 @@ public enum BulkDecode {
         var out = [Float](repeating: 0, count: count)
         payload.withUnsafeBytes { raw in
             for i in 0..<count {
-                let v = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: 2 * i, as: Int16.self))
+                let v = Int16(
+                    littleEndian: raw.loadUnaligned(fromByteOffset: 2 * i, as: Int16.self))
                 out[i] = Float(v) / 32768
             }
         }
@@ -62,7 +63,8 @@ public enum BulkDecode {
         var out = [Float](repeating: 0, count: count)
         payload.withUnsafeBytes { raw in
             for i in 0..<count {
-                let bits = UInt32(littleEndian: raw.loadUnaligned(fromByteOffset: 4 * i, as: UInt32.self))
+                let bits = UInt32(
+                    littleEndian: raw.loadUnaligned(fromByteOffset: 4 * i, as: UInt32.self))
                 out[i] = Float(bitPattern: bits)
             }
         }
@@ -88,7 +90,9 @@ public struct BulkSubscription: Sendable {
 extension DaemonConnection {
     /// `Bulk.Subscribe` then `Bulk.Stream`, latest-wins on this side as on the daemon's: the
     /// buffer keeps the newest `buffer` frames, so a renderer that falls behind draws the present.
-    public func subscribe(_ request: Leyline_V1_SubscribeRequest, buffer: Int = 8) async throws -> BulkSubscription {
+    public func subscribe(_ request: Leyline_V1_SubscribeRequest, buffer: Int = 8) async throws
+        -> BulkSubscription
+    {
         let descriptor: Leyline_V1_StreamDescriptor
         do { descriptor = try await bulk.subscribe(request) } catch { throw LeylineError(error) }
         var ref = Leyline_V1_StreamRef()
@@ -105,9 +109,15 @@ extension DaemonConnection {
     /// An FFT of a capture's band: `bins` from the daemon's ladder (a power of two), `rowsPerSecond`
     /// as high as the ladder allows, `format` DB_U8 (one byte a bin, plenty for pixels) unless
     /// the caller wants the float. Rows are decoded against the answered descriptor.
-    public func fft(capture: String, bins: UInt32, rowsPerSecond: Double, format: Leyline_V1_FftBinFormat = .dbU8,
-                    accumulation: Leyline_V1_FftAccumulation = .rowSnapshot, policy: Leyline_V1_DeliveryPolicy = .latestWins,
-                    buffer: Int = 8) async throws -> (descriptor: Leyline_V1_StreamDescriptor, rows: AsyncThrowingStream<FFTRow, any Error>) {
+    public func fft(
+        capture: String, bins: UInt32, rowsPerSecond: Double,
+        format: Leyline_V1_FftBinFormat = .dbU8,
+        accumulation: Leyline_V1_FftAccumulation = .rowSnapshot,
+        policy: Leyline_V1_DeliveryPolicy = .latestWins,
+        buffer: Int = 8
+    ) async throws -> (
+        descriptor: Leyline_V1_StreamDescriptor, rows: AsyncThrowingStream<FFTRow, any Error>
+    ) {
         var req = Leyline_V1_SubscribeRequest()
         req.captureID = capture
         req.kind = .fft
@@ -122,9 +132,11 @@ extension DaemonConnection {
             let task = Task {
                 do {
                     for try await frame in sub.frames {
-                        continuation.yield(FFTRow(seq: frame.seq, time: frame.time,
-                                                  levelsDB: BulkDecode.fftLevels(frame.payload, format: answered),
-                                                  gap: frame.hasGap ? frame.gap : nil))
+                        continuation.yield(
+                            FFTRow(
+                                seq: frame.seq, time: frame.time,
+                                levelsDB: BulkDecode.fftLevels(frame.payload, format: answered),
+                                gap: frame.hasGap ? frame.gap : nil))
                     }
                     continuation.finish()
                 } catch {

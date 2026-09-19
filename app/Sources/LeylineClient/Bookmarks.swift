@@ -28,7 +28,10 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         case updatedNs = "updated_ns"
     }
 
-    public init(id: String, name: String, hz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32 = 0, updatedNs: Int64 = 0) {
+    public init(
+        id: String, name: String, hz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32 = 0,
+        updatedNs: Int64 = 0
+    ) {
         self.id = id
         self.name = name
         self.hz = hz
@@ -92,14 +95,18 @@ public struct BookmarkStore: Sendable {
 
     /// Where bookmarks live: `LEYLINE_BOOKMARKS`, else beside `labels.json` under
     /// `~/Library/Application Support/Leyline` (macOS) or `$XDG_DATA_HOME/leyline`.
-    public static func defaultPath(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
+    public static func defaultPath(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String {
         if let p = environment[pathEnv], !p.isEmpty { return p }
         let home = environment["HOME"] ?? NSHomeDirectory()
         #if os(macOS)
-        return home + "/Library/Application Support/Leyline/bookmarks.json"
+            return home + "/Library/Application Support/Leyline/bookmarks.json"
         #else
-        if let dir = environment["XDG_DATA_HOME"], !dir.isEmpty { return dir + "/leyline/bookmarks.json" }
-        return home + "/.local/share/leyline/bookmarks.json"
+            if let dir = environment["XDG_DATA_HOME"], !dir.isEmpty {
+                return dir + "/leyline/bookmarks.json"
+            }
+            return home + "/.local/share/leyline/bookmarks.json"
         #endif
     }
 
@@ -147,15 +154,18 @@ public struct BookmarkStore: Sendable {
     public func save() throws {
         guard loaded else { throw BookmarkError.notLoaded(path) }
         let url = URL(fileURLWithPath: path)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(ProcessInfo.processInfo.processIdentifier).tmp")
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let tmp = url.deletingLastPathComponent().appendingPathComponent(
+            ".\(url.lastPathComponent).\(ProcessInfo.processInfo.processIdentifier).tmp")
         defer { try? FileManager.default.removeItem(at: tmp) }
         try encoded().write(to: tmp, options: .atomic)
         // rename(2) rather than FileManager's replaceItemAt: one step, replacing whatever is
         // there, which is what `go/pkg/bookmarks` does with os.Rename. replaceItemAt unlinks
         // the original first, so a failure there loses the file the temp was meant to protect.
         guard rename(tmp.path, url.path) == 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSFilePathErrorKey: path])
+            throw NSError(
+                domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSFilePathErrorKey: path])
         }
     }
 
@@ -167,7 +177,9 @@ public struct BookmarkStore: Sendable {
     /// Adds a bookmark, or updates the one that already has this name on this frequency.
     /// Does not save.
     @discardableResult
-    public mutating func add(name: String, hz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32 = 0) throws -> Bookmark {
+    public mutating func add(
+        name: String, hz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32 = 0
+    ) throws -> Bookmark {
         guard loaded else { throw BookmarkError.notLoaded(path) }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BookmarkError.emptyName }
@@ -180,7 +192,9 @@ public struct BookmarkStore: Sendable {
             bookmarks[existing.id] = existing
             return existing
         }
-        let b = Bookmark(id: ULID.new(now: now()).string(prefix: "bm_"), name: name, hz: hz, mode: mode, bandwidthHz: bandwidthHz, updatedNs: stamp)
+        let b = Bookmark(
+            id: ULID.new(now: now()).string(prefix: "bm_"), name: name, hz: hz, mode: mode,
+            bandwidthHz: bandwidthHz, updatedNs: stamp)
         bookmarks[b.id] = b
         return b
     }

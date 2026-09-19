@@ -21,7 +21,9 @@ final class ChartMouse {
     /// How far the wheel or the fingers travel for one fine step.
     static let scrollNotch: CGFloat = 20
 
-    static let trackingOptions: NSTrackingArea.Options = [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .cursorUpdate]
+    static let trackingOptions: NSTrackingArea.Options = [
+        .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .cursorUpdate,
+    ]
 
     func cursorUpdate() {
         (downAt == nil ? NSCursor.crosshair : NSCursor.resizeLeftRight).set()
@@ -59,7 +61,8 @@ final class ChartMouse {
     func scroll(_ event: NSEvent) {
         guard event.momentumPhase.isEmpty else { return }
         if event.phase.contains(.began) { scrolled = 0 }
-        scrolled += event.hasPreciseScrollingDeltas
+        scrolled +=
+            event.hasPreciseScrollingDeltas
             ? event.scrollingDeltaY
             : event.scrollingDeltaY * Self.scrollNotch
         guard abs(scrolled) >= Self.scrollNotch else { return }
@@ -81,20 +84,27 @@ final class ChartCatcherView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: ChartMouse.trackingOptions, owner: self, userInfo: nil)
+        let area = NSTrackingArea(
+            rect: bounds, options: ChartMouse.trackingOptions, owner: self, userInfo: nil)
         addTrackingArea(area)
         tracking = area
     }
 
     override func cursorUpdate(with event: NSEvent) { mouse.cursorUpdate() }
-    override func mouseMoved(with event: NSEvent) { mouse.moved(convert(event.locationInWindow, from: nil)) }
+    override func mouseMoved(with event: NSEvent) {
+        mouse.moved(convert(event.locationInWindow, from: nil))
+    }
     override func mouseExited(with event: NSEvent) { mouse.exited() }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         mouse.down(convert(event.locationInWindow, from: nil))
     }
-    override func mouseDragged(with event: NSEvent) { mouse.dragged(convert(event.locationInWindow, from: nil)) }
-    override func mouseUp(with event: NSEvent) { mouse.up(convert(event.locationInWindow, from: nil)) }
+    override func mouseDragged(with event: NSEvent) {
+        mouse.dragged(convert(event.locationInWindow, from: nil))
+    }
+    override func mouseUp(with event: NSEvent) {
+        mouse.up(convert(event.locationInWindow, from: nil))
+    }
     override func scrollWheel(with event: NSEvent) { mouse.scroll(event) }
 }
 
@@ -136,7 +146,10 @@ struct PointerOverlay: View {
                 .allowsHitTesting(false)
             if let p = point {
                 PointerBadge(text: session.pointerWords(hz))
-                    .offset(x: min(max(p.x + 12, 0), size.width - 130), y: min(max(p.y + 14, 0), max(size.height - 28, 0)))
+                    .offset(
+                        x: min(max(p.x + 12, 0), size.width - 130),
+                        y: min(max(p.y + 14, 0), max(size.height - 28, 0))
+                    )
                     .allowsHitTesting(false)
             }
         }
@@ -166,8 +179,12 @@ struct TunedBand: View {
         // The edges are overlaid before the offset: an overlay added after it is placed on the
         // un-shifted frame, at the left of the panel.
         Rectangle().fill(Theme.accent.opacity(0.11))
-            .overlay(alignment: .leading) { Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5) }
-            .overlay(alignment: .trailing) { Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5) }
+            .overlay(alignment: .leading) {
+                Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5)
+            }
+            .overlay(alignment: .trailing) {
+                Rectangle().fill(Theme.accent.opacity(0.8)).frame(width: 1.5)
+            }
             .frame(width: max(2, x1 - x0), height: height)
             .offset(x: x0)
             .allowsHitTesting(false)

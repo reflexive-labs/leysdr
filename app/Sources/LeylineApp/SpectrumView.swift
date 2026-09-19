@@ -44,14 +44,18 @@ struct SpectrumView: View {
                         session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
                     },
                     onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
-                    onDrag: { p, ended in if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) } },
+                    onDrag: { p, ended in
+                        if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) }
+                    },
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) }
                 )
                 if let c = columns {
                     // The tuned channel, the same view the waterfall draws, so the two bands
                     // are one width and meet at the seam.
                     if let hz = rows.tunedHz, let ch = rows.channel {
-                        TunedBand(x0: c.x(of: hz - UInt64(ch.bandwidthHz) / 2), x1: c.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: geo.size.height)
+                        TunedBand(
+                            x0: c.x(of: hz - UInt64(ch.bandwidthHz) / 2),
+                            x1: c.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: geo.size.height)
                     }
                     PointerOverlay(columns: c, size: geo.size, point: pointer)
                 }
@@ -76,7 +80,9 @@ struct SpectrumView: View {
 
         func columns(width: CGFloat) -> Columns? {
             guard let cap = capture, let range, cap.sampleRate > 0 else { return nil }
-            return Columns(range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate, bins: Int(SpectrumFeed.bins), width: width)
+            return Columns(
+                range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate,
+                bins: Int(SpectrumFeed.bins), width: width)
         }
     }
 
@@ -101,7 +107,9 @@ struct SpectrumView: View {
         let floor = rows.floorDB.isNaN ? SpectrumFold.medianDB(latest) : rows.floorDB
         let bottom = floor - Self.belowFloorDB
         let top = floor + Self.aboveFloorDB
-        let columns = Columns(range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate, bins: latest.count, width: size.width)
+        let columns = Columns(
+            range: range, captureCenterHz: cap.centerHz, captureSpanHz: cap.sampleRate,
+            bins: latest.count, width: size.width)
 
         if rows.hold.count == latest.count {
             let path = trace(rows.hold, columns: columns, size: size, bottom: bottom, top: top)
@@ -112,10 +120,14 @@ struct SpectrumView: View {
 
         // The window's two ends, faintly, at the right edge: without them the trace has no
         // scale and the max-hold line means nothing quantitative.
-        ctx.draw(Text(dbLabel(top, unit: true)).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
-                 at: CGPoint(x: size.width - 8, y: 6), anchor: .topTrailing)
-        ctx.draw(Text(dbLabel(bottom, unit: false)).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
-                 at: CGPoint(x: size.width - 8, y: size.height - 5), anchor: .bottomTrailing)
+        ctx.draw(
+            Text(dbLabel(top, unit: true)).font(Theme.Font.valueSmall).foregroundStyle(
+                Theme.inkFaint),
+            at: CGPoint(x: size.width - 8, y: 6), anchor: .topTrailing)
+        ctx.draw(
+            Text(dbLabel(bottom, unit: false)).font(Theme.Font.valueSmall).foregroundStyle(
+                Theme.inkFaint),
+            at: CGPoint(x: size.width - 8, y: size.height - 5), anchor: .bottomTrailing)
     }
 
     /// `−18 dBFS`, `−104`: a real minus sign, the unit on the top label only.
@@ -124,7 +136,9 @@ struct SpectrumView: View {
         return unit ? "\(n) dBFS" : n
     }
 
-    private func trace(_ levels: [Float], columns: Columns, size: CGSize, bottom: Float, top: Float) -> Path {
+    private func trace(_ levels: [Float], columns: Columns, size: CGSize, bottom: Float, top: Float)
+        -> Path
+    {
         var path = Path()
         let w = Int(size.width.rounded(.down))
         guard w > 1, top > bottom else { return path }
@@ -186,7 +200,9 @@ struct MaxHoldChip: View {
 
     var body: some View {
         @Bindable var session = session
-        Button { session.maxHold.toggle() } label: {
+        Button {
+            session.maxHold.toggle()
+        } label: {
             HStack(spacing: 5) {
                 Image(systemName: session.maxHold ? "checkmark.square.fill" : "square")
                     .font(.system(size: 9))

@@ -30,7 +30,9 @@ public struct ClientIdentity: Sendable, Hashable {
     }
 
     /// A fresh identity with a new id.
-    public static func fresh(kind: String = "app", label: String = ProcessInfo.processInfo.processName) -> ClientIdentity {
+    public static func fresh(
+        kind: String = "app", label: String = ProcessInfo.processInfo.processName
+    ) -> ClientIdentity {
         ClientIdentity(id: ULID.new().string(prefix: kind + "_"), kind: kind, label: label)
     }
 
@@ -67,7 +69,13 @@ public struct ULID: Sendable, Hashable, Comparable {
                 var e = state.entropy
                 var i = 9
                 while i >= 0 {
-                    if e[i] == 255 { e[i] = 0; i -= 1 } else { e[i] += 1; break }
+                    if e[i] == 255 {
+                        e[i] = 0
+                        i -= 1
+                    } else {
+                        e[i] += 1
+                        break
+                    }
                 }
                 state.entropy = e
                 return e

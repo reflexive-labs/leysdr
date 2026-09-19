@@ -30,16 +30,21 @@ enum Harness {
     static var fixtures: String {
         if let f = ProcessInfo.processInfo.environment["LEYLINE_FIXTURES"], !f.isEmpty { return f }
         return URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("fixtures").path
     }
 
     /// Starts a daemon and waits until it answers `GetState`. `XCTSkip`s without LEYLINED_BIN or
     /// the fixture (`make fixtures` generates it).
     static func start(fixture name: String = "nfm_tone.cf32") async throws -> DaemonUnderTest {
-        guard let bin = daemonBinary else { throw XCTSkip("set LEYLINED_BIN to run the app's daemon-backed tests (make app-e2e)") }
+        guard let bin = daemonBinary else {
+            throw XCTSkip("set LEYLINED_BIN to run the app's daemon-backed tests (make app-e2e)")
+        }
         let fixture = fixtures + "/" + name
-        guard FileManager.default.fileExists(atPath: fixture) else { throw XCTSkip("fixture missing at \(fixture); run make fixtures") }
+        guard FileManager.default.fileExists(atPath: fixture) else {
+            throw XCTSkip("fixture missing at \(fixture); run make fixtures")
+        }
         // Short: macOS caps a socket path at 104 bytes.
         let dir = "/tmp/ley-app-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -48,8 +53,11 @@ enum Harness {
         FileManager.default.createFile(atPath: log.path, contents: nil)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
-        p.arguments = ["--socket", socket, "--no-hardware", "--log-level", "debug",
-                       "--pidfile", dir + "/leylined.pid", "--store", dir + "/store", "--recordings", dir + "/recordings"]
+        p.arguments = [
+            "--socket", socket, "--no-hardware", "--log-level", "debug",
+            "--pidfile", dir + "/leylined.pid", "--store", dir + "/store", "--recordings",
+            dir + "/recordings",
+        ]
         let handle = try FileHandle(forWritingTo: log)
         p.standardError = handle
         p.standardOutput = handle
@@ -58,7 +66,8 @@ enum Harness {
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if FileManager.default.fileExists(atPath: socket) {
-                let probe = try DaemonConnection(socketPath: socket, identity: .fresh(kind: "cli", label: "probe"))
+                let probe = try DaemonConnection(
+                    socketPath: socket, identity: .fresh(kind: "cli", label: "probe"))
                 defer { probe.close() }
                 if (try? await probe.state()) != nil { return d }
             }
@@ -73,11 +82,14 @@ enum Harness {
             d.process.terminate()
             d.process.waitUntilExit()
         }
-        try? FileManager.default.removeItem(atPath: (d.socketPath as NSString).deletingLastPathComponent)
+        try? FileManager.default.removeItem(
+            atPath: (d.socketPath as NSString).deletingLastPathComponent)
     }
 
     /// Attaches the fixture as a looping file device and returns its descriptor.
-    static func attachFixture(_ d: DaemonUnderTest, via c: DaemonConnection) async throws -> Leyline_V1_DeviceDescriptor {
+    static func attachFixture(_ d: DaemonUnderTest, via c: DaemonConnection) async throws
+        -> Leyline_V1_DeviceDescriptor
+    {
         var req = Leyline_V1_AttachFileDeviceRequest()
         req.path = d.fixture
         req.loop = true
@@ -86,7 +98,9 @@ enum Harness {
 
     /// Polls `condition` on the main actor until it holds or `timeout` passes.
     @MainActor
-    static func eventually(_ timeout: Duration = .seconds(5), _ condition: @MainActor () -> Bool) async -> Bool {
+    static func eventually(_ timeout: Duration = .seconds(5), _ condition: @MainActor () -> Bool)
+        async -> Bool
+    {
         let clock = ContinuousClock()
         let end = clock.now + timeout
         while clock.now < end {
@@ -99,8 +113,11 @@ enum Harness {
 
 /// Asserts that `condition` holds within `timeout`, reporting `message` at the caller's line.
 @MainActor
-func assertEventually(_ message: String, timeout: Duration = .seconds(5), file: StaticString = #filePath, line: UInt = #line,
-                      _ condition: @MainActor () -> Bool) async {
+func assertEventually(
+    _ message: String, timeout: Duration = .seconds(5), file: StaticString = #filePath,
+    line: UInt = #line,
+    _ condition: @MainActor () -> Bool
+) async {
     let held = await Harness.eventually(timeout, condition)
     XCTAssertTrue(held, message, file: file, line: line)
 }

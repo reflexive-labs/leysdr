@@ -15,13 +15,16 @@ struct DeviceChip: View {
 
     var body: some View {
         @Bindable var session = session
-        Button { session.deviceMenuShown.toggle() } label: {
+        Button {
+            session.deviceMenuShown.toggle()
+        } label: {
             // No ground of its own: the toolbar gives every item a glass one, and a chip with
             // a ground inside it was a button in a button.
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
                 Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkMuted)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 4)
         }
@@ -31,7 +34,9 @@ struct DeviceChip: View {
 
     private var name: String {
         if let d = session.device { return d.model.isEmpty ? d.driver : d.model }
-        if let d = session.state.devices.first(where: { $0.state != .disconnected }) { return d.model.isEmpty ? d.driver : d.model }
+        if let d = session.state.devices.first(where: { $0.state != .disconnected }) {
+            return d.model.isEmpty ? d.driver : d.model
+        }
         return session.isLive ? "No radio" : "No daemon"
     }
 
@@ -67,8 +72,10 @@ struct DeviceMenuView: View {
     private func header(_ d: Leyline_V1_DeviceDescriptor) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
-                Circle().fill(d.state == .disconnected ? Theme.recording : Theme.good).frame(width: 7, height: 7)
-                Text(d.model.isEmpty ? d.driver : d.model).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.ink)
+                Circle().fill(d.state == .disconnected ? Theme.recording : Theme.good).frame(
+                    width: 7, height: 7)
+                Text(d.model.isEmpty ? d.driver : d.model).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.ink)
             }
             Text("\(stateWord(d.state))\(d.serial.isEmpty ? "" : " · serial \(d.serial)")")
                 .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkMuted)
@@ -88,7 +95,11 @@ struct DeviceMenuView: View {
         HStack {
             Text("Sample rate").font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
             Spacer()
-            Picker("", selection: Binding(get: { session.capture?.sampleRate ?? 0 }, set: { session.setSampleRate($0) })) {
+            Picker(
+                "",
+                selection: Binding(
+                    get: { session.capture?.sampleRate ?? 0 }, set: { session.setSampleRate($0) })
+            ) {
                 ForEach(d.sampleRates, id: \.self) { r in Text(Frequency.format(r)).tag(r) }
             }
             .labelsHidden()
@@ -98,7 +109,9 @@ struct DeviceMenuView: View {
 
     @ViewBuilder
     private var others: some View {
-        let others = session.state.devices.filter { $0.deviceID != session.device?.deviceID && $0.state != .disconnected }
+        let others = session.state.devices.filter {
+            $0.deviceID != session.device?.deviceID && $0.state != .disconnected
+        }
         if !others.isEmpty {
             Divider().overlay(Theme.border)
             SectionHeader(text: "Choose another device")
@@ -108,7 +121,8 @@ struct DeviceMenuView: View {
                     Task { await session.choose(device: d) }
                 } label: {
                     HStack {
-                        Text(d.model.isEmpty ? d.driver : d.model).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
+                        Text(d.model.isEmpty ? d.driver : d.model).font(Theme.Font.label)
+                            .foregroundStyle(Theme.inkSecondary)
                         Spacer()
                         Text(d.serial).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
                     }
@@ -136,7 +150,12 @@ struct GainControl: View {
             HStack {
                 Text("Gain").font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                 Spacer()
-                Picker("", selection: Binding(get: { auto }, set: { if $0 { session.setGainAuto() } else { session.setGain(db: db) } })) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { auto },
+                        set: { if $0 { session.setGainAuto() } else { session.setGain(db: db) } })
+                ) {
                     // Only the modes the radio has, and the picker is never disabled: a device
                     // that reports auto without supporting it used to leave Manual unreachable.
                     if supportsAuto { Text("Auto").tag(true) }
@@ -152,17 +171,25 @@ struct GainControl: View {
                     if ended { session.setGain(db: newDb) }
                 }
                 HStack {
-                    Text(String(format: "%.0f dB", element.minDb)).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                    Text(String(format: "%.0f dB", element.minDb)).font(Theme.Font.valueSmall)
+                        .foregroundStyle(Theme.inkFaint)
                     Spacer()
-                    Text(auto ? String(format: "auto chose %.1f dB", state?.db ?? 0) : String(format: "%.1f dB", db))
-                        .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+                    Text(
+                        auto
+                            ? String(format: "auto chose %.1f dB", state?.db ?? 0)
+                            : String(format: "%.1f dB", db)
+                    )
+                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
                     Spacer()
-                    Text(String(format: "%.1f", element.maxDb)).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                    Text(String(format: "%.1f", element.maxDb)).font(Theme.Font.valueSmall)
+                        .foregroundStyle(Theme.inkFaint)
                 }
             }
-            Text("Drag to take over. Auto is good enough for strong local signals and often not for weak ones.")
-                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Drag to take over. Auto is good enough for strong local signals and often not for weak ones."
+            )
+            .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -184,16 +211,18 @@ struct GainSlider: View {
             ZStack(alignment: .leading) {
                 Rectangle().fill(Theme.border).frame(height: 2)
                 ForEach(values, id: \.self) { v in
-                    Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 6).offset(x: x(of: v, width: w))
+                    Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 6).offset(
+                        x: x(of: v, width: w))
                 }
                 Circle().fill(dimmed ? Theme.inkMuted : Theme.ink).frame(width: 12, height: 12)
                     .offset(x: x(of: db, width: w) - 6)
             }
             .frame(height: 14)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { v in onChange(snap(value(atX: v.location.x, width: w)), false) }
-                .onEnded { v in onChange(snap(value(atX: v.location.x, width: w)), true) })
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in onChange(snap(value(atX: v.location.x, width: w)), false) }
+                    .onEnded { v in onChange(snap(value(atX: v.location.x, width: w)), true) })
         }
         .frame(height: 14)
     }

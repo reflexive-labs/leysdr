@@ -104,19 +104,26 @@ struct NeighbourButton: View {
             } label: {
                 HStack(spacing: 4) {
                     if side == .below { arrow("arrowtriangle.left.fill") }
-                    Text(abuts ? band.name : Frequency.fieldParts(edge).major).font(Theme.Font.value).lineLimit(1).fixedSize()
+                    Text(abuts ? band.name : Frequency.fieldParts(edge).major).font(
+                        Theme.Font.value
+                    ).lineLimit(1).fixedSize()
                     if side == .above { arrow("arrowtriangle.right.fill") }
                 }
                 .foregroundStyle(Theme.inkFaint)
             }
             .buttonStyle(.plain)
-            .help(abuts ? "\(band.name), \(side == .below ? "below" : "above") this band" : "\(band.name), \(Frequency.format(gap(to: band))) \(side == .below ? "below" : "above") this band")
+            .help(
+                abuts
+                    ? "\(band.name), \(side == .below ? "below" : "above") this band"
+                    : "\(band.name), \(Frequency.format(gap(to: band))) \(side == .below ? "below" : "above") this band"
+            )
         }
     }
 
     private func gap(to band: Band) -> UInt64 {
-        side == .below ? (from.lowerBound > band.maxHz ? from.lowerBound - band.maxHz : 0)
-                       : (band.minHz > from.upperBound ? band.minHz - from.upperBound : 0)
+        side == .below
+            ? (from.lowerBound > band.maxHz ? from.lowerBound - band.maxHz : 0)
+            : (band.minHz > from.upperBound ? band.minHz - from.upperBound : 0)
     }
 
     private func arrow(_ name: String) -> some View {
@@ -182,9 +189,10 @@ struct BandRail: View {
             // frame put the track two thirds of the way down and the bounds off the strip.
             .frame(width: w, height: geo.size.height, alignment: .topLeading)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { v in moved(v, width: w) }
-                .onEnded { v in ended(v, width: w) })
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in moved(v, width: w) }
+                    .onEnded { v in ended(v, width: w) })
         }
     }
 
@@ -197,7 +205,9 @@ struct BandRail: View {
     }
 
     @ViewBuilder
-    private func pill(_ r: ClosedRange<UInt64>, width w: CGFloat, fill: Color, stroke: Color) -> some View {
+    private func pill(_ r: ClosedRange<UInt64>, width w: CGFloat, fill: Color, stroke: Color)
+        -> some View
+    {
         let lo = x(of: max(r.lowerBound, range.lowerBound), width: w)
         let hi = x(of: min(r.upperBound, range.upperBound), width: w)
         if hi > lo {

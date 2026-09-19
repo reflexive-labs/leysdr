@@ -3,11 +3,14 @@
 // The fold, without a daemon: replace by id, tombstones, stale events, rejections.
 
 import LeylineProto
-@testable import LeylineClient
 import XCTest
 
+@testable import LeylineClient
+
 final class MirrorStateTests: XCTestCase {
-    func capture(_ id: String, center: UInt64 = 146_520_000, state: Leyline_V1_CaptureState = .captureActive) -> Leyline_V1_Capture {
+    func capture(
+        _ id: String, center: UInt64 = 146_520_000, state: Leyline_V1_CaptureState = .captureActive
+    ) -> Leyline_V1_Capture {
         var c = Leyline_V1_Capture()
         c.captureID = id
         c.centerHz = center
@@ -16,7 +19,10 @@ final class MirrorStateTests: XCTestCase {
         return c
     }
 
-    func channel(_ id: String, capture: String, offset: Int64 = 100_000, state: Leyline_V1_ChannelState = .channelActive) -> Leyline_V1_Channel {
+    func channel(
+        _ id: String, capture: String, offset: Int64 = 100_000,
+        state: Leyline_V1_ChannelState = .channelActive
+    ) -> Leyline_V1_Channel {
         var ch = Leyline_V1_Channel()
         ch.channelID = id
         ch.captureID = capture
@@ -65,7 +71,9 @@ final class MirrorStateTests: XCTestCase {
         var snap = Leyline_V1_GetStateResponse()
         snap.eventSeq = 20
         var s = MirrorState(snapshot: snap)
-        XCTAssertFalse(s.apply(event(20, .capture(capture("cap_old")))), "at the snapshot's seq: already reflected")
+        XCTAssertFalse(
+            s.apply(event(20, .capture(capture("cap_old")))),
+            "at the snapshot's seq: already reflected")
         XCTAssertFalse(s.apply(event(3, .capture(capture("cap_old")))))
         XCTAssertTrue(s.captures.isEmpty)
         var r = Leyline_V1_WriteRejected()

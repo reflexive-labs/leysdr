@@ -37,7 +37,8 @@ public final class DaemonConnection: Sendable {
             target: .unixDomainSocket(path: path),
             transportSecurity: .plaintext
         )
-        let client = GRPCClient(transport: transport, interceptors: [IdentityInterceptor(identity: identity)])
+        let client = GRPCClient(
+            transport: transport, interceptors: [IdentityInterceptor(identity: identity)])
         self.client = client
         self.control = .init(wrapping: client)
         self.telemetry = .init(wrapping: client)
@@ -81,7 +82,9 @@ public final class DaemonConnection: Sendable {
     /// stream open is what keeps this client's non-persistent channels alive (5 s grace after the
     /// last open stream ends). Buffered without bound: an event dropped here would be a seq gap
     /// the mirror has to repair with another snapshot.
-    public func events(sinceSeq: UInt64? = nil, capture: String? = nil) -> AsyncThrowingStream<Leyline_V1_Event, any Error> {
+    public func events(sinceSeq: UInt64? = nil, capture: String? = nil) -> AsyncThrowingStream<
+        Leyline_V1_Event, any Error
+    > {
         var scope = Leyline_V1_EventScope()
         if let capture { scope.captureID = capture } else { scope.daemon = true }
         if let sinceSeq { scope.sinceSeq = sinceSeq }
@@ -96,7 +99,9 @@ public final class DaemonConnection: Sendable {
     /// `Telemetry.Subscribe` as a stream: meters, squelch edges, detections, sub-audible tones.
     /// Latest-wins on this side too (a bounded buffer, newest kept), which is the plane's own
     /// policy; a `seq` gap is the only trace of a reading missed anywhere.
-    public func telemetry(_ subscription: Leyline_V1_TelemetrySubscription, buffer: Int = 64) -> AsyncThrowingStream<Leyline_V1_TelemetryMsg, any Error> {
+    public func telemetry(_ subscription: Leyline_V1_TelemetrySubscription, buffer: Int = 64)
+        -> AsyncThrowingStream<Leyline_V1_TelemetryMsg, any Error>
+    {
         pump(bufferingPolicy: .bufferingNewest(buffer)) { deliver in
             try await self.telemetry.subscribe(subscription) { response in
                 for try await msg in response.messages { await deliver(msg) }
@@ -109,9 +114,12 @@ public final class DaemonConnection: Sendable {
     /// ends the consumer, with the error mapped to `LeylineError`.
     func pump<M: Sendable>(
         bufferingPolicy: AsyncThrowingStream<M, any Error>.Continuation.BufferingPolicy,
-        _ open: @escaping @Sendable (_ deliver: @escaping @Sendable (M) async -> Void) async throws -> Void
+        _ open:
+            @escaping @Sendable (_ deliver: @escaping @Sendable (M) async -> Void) async throws ->
+            Void
     ) -> AsyncThrowingStream<M, any Error> {
-        let (stream, continuation) = AsyncThrowingStream<M, any Error>.makeStream(bufferingPolicy: bufferingPolicy)
+        let (stream, continuation) = AsyncThrowingStream<M, any Error>.makeStream(
+            bufferingPolicy: bufferingPolicy)
         let task = Task {
             do {
                 try await open { m in continuation.yield(m) }
@@ -134,7 +142,8 @@ struct IdentityInterceptor: ClientInterceptor {
     func intercept<Input: Sendable, Output: Sendable>(
         request: StreamingClientRequest<Input>,
         context: ClientContext,
-        next: (StreamingClientRequest<Input>, ClientContext) async throws -> StreamingClientResponse<Output>
+        next: (StreamingClientRequest<Input>, ClientContext) async throws ->
+            StreamingClientResponse<Output>
     ) async throws -> StreamingClientResponse<Output> {
         var request = request
         request.metadata.addString(identity.id, forKey: ClientIdentity.idKey)
