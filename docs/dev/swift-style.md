@@ -64,18 +64,13 @@ and is in section 13.
 
 **Doc comments are `///`.** Never `/** */`, never a block comment where a doc comment belongs.
 
-**Formatting today: four-space indentation, no semicolons, and comments wrapped at about 100
-columns** as the writing guide wraps paragraphs. Code lines are not wrapped: 214 lines under
-`app/Sources` pass 100 columns and the longest is 198
-(`app/Sources/LeylineApp/AppSession.swift:386`). There is no
-`.swift-format` or `.swiftlint.yml` in the repository and `make lint` covers Go only, so nothing
-enforces any of this.
-
-Adopting swift-format is the right follow-up and is deliberately not done here: take
-`swift-format dump-configuration`'s defaults, change `indentation` to four spaces so the tree is
-not rewritten, and land it as its own commit. Until then do not reformat as part of a feature
-change, because the diff buries the change inside it and on a Mac-only file the container cannot
-compile what it rewrote.
+**Formatting is swift-format's, pinned in `app/.swift-format`**: the toolchain's defaults with
+four-space indentation and 100 columns, adopted 2026-09-19 in one commit of its own. `make
+app-format` rewrites the app package in place and `make app-lint` only reports; run the first
+before a commit that touches Swift there, so a review diff is the change and not the formatter's
+opinion of it. The engine package is not formatted yet: its diff would be large and its
+Accelerate half cannot be compiled here, so that is its own commit on a Mac. Do not reformat
+by hand as part of a feature change either way, because the diff buries the change inside it.
 
 ## 3. Naming
 

@@ -146,9 +146,7 @@ struct IdentityInterceptor: ClientInterceptor {
             StreamingClientResponse<Output>
     ) async throws -> StreamingClientResponse<Output> {
         var request = request
-        request.metadata.addString(identity.id, forKey: ClientIdentity.idKey)
-        request.metadata.addString(identity.kind, forKey: ClientIdentity.kindKey)
-        request.metadata.addString(identity.label, forKey: ClientIdentity.labelKey)
+        request.metadata.add(contentsOf: identity.metadata)
         return try await next(request, context)
     }
 }

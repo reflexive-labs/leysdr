@@ -115,7 +115,8 @@ source lives in `WaterfallShader.swift` and a compile failure is a sentence in t
 than a dark panel (`swift-style.md`, "AppKit and Metal").
 
 In the container and on Linux CI, `make app` builds the façade and `make app-test app-e2e` runs
-both suites against the Linux-built daemon; the SwiftUI target does not exist there. Anything
+both suites against the Linux-built daemon; the SwiftUI target does not exist there. `make app-format` runs swift-format over the package with the
+configuration in `app/.swift-format` (`swift-style.md`, "Files"); run it before a commit. Anything
 under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, the same trap
 `setup.md` records for Accelerate: a green Linux run says nothing about a view.
 

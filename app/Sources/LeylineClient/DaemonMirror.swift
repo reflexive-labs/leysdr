@@ -6,7 +6,7 @@
 //
 // The fold is the one `ley` does (`go/internal/cli/session.go`): every event carries the whole
 // object (invariant 6), so folding is a replace by id, and an object whose `state` is unset is the
-// tombstone -- the one and only signal it is gone (`Capture.state` in control.proto). Reconnect is
+// tombstone — the one and only signal it is gone (`Capture.state` in control.proto). Reconnect is
 // `GetState` then `WatchEvents(since_seq)`; a gap in `seq` means the snapshot fell out of the
 // daemon's retained window, and the fix is another snapshot (the seq-gap rule).
 

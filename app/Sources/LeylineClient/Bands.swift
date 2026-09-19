@@ -193,6 +193,21 @@ extension Leyline_V1_DemodMode {
         default: []
         }
     }
+
+    /// The enum's own name, as the bookmarks file and proto3 JSON spell it: `word` with the
+    /// one difference that raw IQ is `RAW_IQ` on the wire.
+    public var wireName: String {
+        switch self {
+        case .am: "AM"
+        case .nfm: "NFM"
+        case .wfm: "WFM"
+        case .usb: "USB"
+        case .lsb: "LSB"
+        case .cw: "CW"
+        case .rawIq: "RAW_IQ"
+        default: "DEMOD_MODE_UNSPECIFIED"
+        }
+    }
 }
 
 // MARK: The rail

@@ -165,6 +165,14 @@ app-run:
 app-bundle:
 	./scripts/bundle-app.sh $(BUNDLE_ARGS)
 
+# swift-format ships in the toolchain; app/.swift-format pins its defaults at four spaces and 100
+# columns (docs/dev/swift-style.md, "Files"). app-format rewrites, app-lint only reports.
+app-format:
+	cd app && swift format --in-place --recursive Sources Tests Package.swift
+
+app-lint:
+	cd app && swift format lint --strict --recursive Sources Tests Package.swift
+
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 

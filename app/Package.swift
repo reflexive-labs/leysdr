@@ -58,8 +58,7 @@ var products: [Product] = [
             name: "LeylineApp",
             dependencies: ["LeylineClient"],
             path: "Sources/LeylineApp",
-            exclude: ["Info.plist"],
-            swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
+            exclude: ["Info.plist"]
         )
     )
     products.append(.executable(name: "LeylineApp", targets: ["LeylineApp"]))

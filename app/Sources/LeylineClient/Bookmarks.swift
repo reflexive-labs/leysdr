@@ -116,7 +116,7 @@ public struct BookmarkStore: Sendable {
 
     /// Reads the file. A missing file is an empty store, loaded: nobody has bookmarked anything
     /// yet. A malformed one throws and leaves the store unloaded, so the mutators refuse until a
-    /// read succeeds -- otherwise the next save would overwrite what the person meant to keep.
+    /// read succeeds — otherwise the next save would overwrite what the person meant to keep.
     public mutating func load() throws {
         loaded = false
         guard FileManager.default.fileExists(atPath: path) else {
@@ -230,20 +230,4 @@ public struct BookmarkStore: Sendable {
     }
 
     private func distance(_ a: UInt64, _ b: UInt64) -> UInt64 { a > b ? a - b : b - a }
-}
-
-extension Leyline_V1_DemodMode {
-    /// The enum's own name, as the file and proto3 JSON spell it.
-    public var wireName: String {
-        switch self {
-        case .am: "AM"
-        case .nfm: "NFM"
-        case .wfm: "WFM"
-        case .usb: "USB"
-        case .lsb: "LSB"
-        case .cw: "CW"
-        case .rawIq: "RAW_IQ"
-        default: "DEMOD_MODE_UNSPECIFIED"
-        }
-    }
 }
