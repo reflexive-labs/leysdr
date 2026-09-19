@@ -81,6 +81,7 @@ struct BandRow: View {
             }
             if selected {
                 Text(detail).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+                    .lineLimit(1).truncationMode(.tail)
             }
         }
         .padding(.horizontal, 14)
@@ -88,16 +89,22 @@ struct BandRow: View {
         .background(selected ? Theme.selected : Color.clear)
     }
 
-    /// `144.000 – 148.000 · 12.5 kHz · squelch −46`: the band's range, never the capture's.
+    /// `87.5 – 108 MHz · 200 kHz · sq −28`, one line: the band's range, never the capture's,
+    /// with the zeros a person would not say dropped.
     private var detail: String {
-        var parts = ["\(mhz(band.minHz)) – \(mhz(band.maxHz))", Frequency.width(band.bandwidthHz)]
+        var parts = ["\(mhz(band.minHz)) – \(mhz(band.maxHz)) MHz", Frequency.width(band.bandwidthHz)]
         if let s = squelchDb {
-            parts.append(s.isNaN ? "squelch off" : "squelch \(Int(s.rounded()))")
+            parts.append(s.isNaN ? "sq off" : "sq \(String(Int(s.rounded())).replacingOccurrences(of: "-", with: "−"))")
         }
         return parts.joined(separator: " · ")
     }
 
-    private func mhz(_ hz: UInt64) -> String { String(format: "%.3f", Double(hz) / 1e6) }
+    private func mhz(_ hz: UInt64) -> String {
+        var s = String(format: "%.4f", Double(hz) / 1e6)
+        while s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return s
+    }
 }
 
 struct BookmarkRow: View {

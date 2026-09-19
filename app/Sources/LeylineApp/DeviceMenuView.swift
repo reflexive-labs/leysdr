@@ -16,14 +16,14 @@ struct DeviceChip: View {
     var body: some View {
         @Bindable var session = session
         Button { session.deviceMenuShown.toggle() } label: {
+            // No ground of its own: the toolbar gives every item a glass one, and a chip with
+            // a ground inside it was a button in a button.
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
                 Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkFaint)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkMuted)
             }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
+            .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $session.deviceMenuShown, arrowEdge: .bottom) { DeviceMenuView() }

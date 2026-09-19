@@ -81,8 +81,8 @@ enum Theme {
         static let footnote = SwiftUI.Font.system(size: 10.5)
     }
 
-    /// `0.16em` at 9.5 pt.
-    static let sectionTracking: CGFloat = 9.5 * 0.16
+    /// `0.14em` at 9.5 pt; was `0.16em`, brought down a step on 2026-09-19.
+    static let sectionTracking: CGFloat = 9.5 * 0.14
     /// `-0.02em` at 29 pt.
     static let frequencyTracking: CGFloat = 29 * -0.02
 

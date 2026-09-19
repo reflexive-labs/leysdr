@@ -109,6 +109,19 @@ struct SpectrumView: View {
         }
         let live = trace(latest, columns: columns, size: size, bottom: bottom, top: top)
         ctx.stroke(live, with: .color(Theme.ink), lineWidth: 1.15)
+
+        // The window's two ends, faintly, at the right edge: without them the trace has no
+        // scale and the max-hold line means nothing quantitative.
+        ctx.draw(Text(dbLabel(top, unit: true)).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
+                 at: CGPoint(x: size.width - 8, y: 6), anchor: .topTrailing)
+        ctx.draw(Text(dbLabel(bottom, unit: false)).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
+                 at: CGPoint(x: size.width - 8, y: size.height - 5), anchor: .bottomTrailing)
+    }
+
+    /// `−18 dBFS`, `−104`: a real minus sign, the unit on the top label only.
+    private func dbLabel(_ db: Float, unit: Bool) -> String {
+        let n = String(format: "%.0f", db).replacingOccurrences(of: "-", with: "−")
+        return unit ? "\(n) dBFS" : n
     }
 
     private func trace(_ levels: [Float], columns: Columns, size: CGSize, bottom: Float, top: Float) -> Path {

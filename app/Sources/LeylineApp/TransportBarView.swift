@@ -20,7 +20,8 @@ struct TransportBarView: View {
             FrequencyField()
             ModePopup()
             WidthPopup()
-            Rectangle().fill(Theme.border).frame(width: 1).padding(.vertical, 14)
+            // The full height of the bar's content, from the labels' top down.
+            Rectangle().fill(Theme.border).frame(width: 1)
             SignalReadout()
             SquelchTrack()
                 .frame(maxWidth: .infinity)
@@ -40,7 +41,7 @@ struct Block<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 5) {
             SectionHeader(text: header)
             content
         }
@@ -330,12 +331,13 @@ struct PopupButton<T: Hashable>: View {
             HStack(spacing: 8) {
                 Text(label(pending ?? current)).font(Theme.Font.body).foregroundStyle(Theme.ink)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkFaint)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .frame(width: 106)
-            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
+            // A control's ground inside the chrome is the border token; the label is ink and
+            // the caret inkMuted.
+            .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
