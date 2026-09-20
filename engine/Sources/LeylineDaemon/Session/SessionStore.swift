@@ -670,6 +670,14 @@ actor SessionStore {
     func channelEngine(_ id: ChannelID) -> (any ChannelEngine)? { channels[id]?.engine }
 
     /// Channel engines in scope, for telemetry fan-in.
+    /// The capture engines in a scope: one, or every capture the daemon holds.
+    func captureEngines(captureID: CaptureID?) -> [(CaptureID, DefaultCaptureEngine)] {
+        captures.compactMap { id, e in
+            if let c = captureID, id != c { return nil }
+            return (id, e.engine)
+        }
+    }
+
     func channelEngines(captureID: CaptureID?) -> [(ChannelID, any ChannelEngine)] {
         channels.compactMap { id, e in
             if let c = captureID, e.captureID != c { return nil }

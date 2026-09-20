@@ -86,7 +86,12 @@ cold at −60 and hot at 0, which is the guide's one sanctioned use of colour de
 the hue rule of the spectrum and waterfall: green in the working range, amber approaching −6, red
 at the top. The **unlit part is drawn, faintly**: `░` in `Muted`. Every real LED meter shows its
 dark segments, and it is what lets the eye read a level against the scale when nothing is playing.
-A bar at or over 0 dBFS lights `OVER` in `Err` above it and holds it for two seconds.
+`OVER` in `Err` lights at the left of the plot and holds for two seconds while the capture's
+`CaptureLevel` says the radio is clipping (more than one sample in ten thousand at the converter's
+rails in an interval); the header carries the converter's peak as `radio peak`. A band at 0 dBFS
+lights nothing on its own — an audio band at full scale is overdeviation or a hot tap, not a clip —
+except against a daemon that sends no level, where a bar at or over 0 dBFS lights `OVER` above it
+as it did before the daemon measured clipping.
 
 **A shut squelch is not a level.** While `METER` reports `squelch_open` false nothing is passing:
 every ladder draws unlit, the header says `squelch closed`, and the caps stop where they are. The

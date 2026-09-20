@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// leyline.v1.Telemetry: fans channel meters / squelch transitions and capture activity into one
-// sequenced stream per subscriber (sample timebase on every message). Delivery is drop-oldest:
-// records lost before this subscriber drained them -- evicted from the channel's telemetry ring,
-// discarded by the engine's per-subscriber fan-out buffer, or discarded by the merged buffer here --
-// advance `seq` without being sent, so a slow subscriber sees a gap in `seq` for every reading it missed.
+// leyline.v1.Telemetry: fans channel meters / squelch transitions, capture activity and the
+// capture's level into one sequenced stream per subscriber (sample timebase on every message).
+// Delivery is drop-oldest: records lost before this subscriber drained them -- evicted from the
+// channel's telemetry ring, discarded by the engine's per-subscriber fan-out buffer, or discarded
+// by the merged buffer here -- advance `seq` without being sent, so a slow subscriber sees a gap
+// in `seq` for every reading it missed.
 
 import EngineCore
 import Foundation
@@ -16,6 +17,10 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
     let store: SessionStore
     let jobs: JobStore
     static let activityIntervalNs: UInt64 = 1_000_000_000
+    /// How often a subscription looks for a new `CaptureLevel`. The meter publishes four times a
+    /// second in sample time; polling faster than that keeps jitter from skipping a reading, and
+    /// the reading's generation keeps one from going out twice.
+    static let levelPollNs: UInt64 = 100_000_000
     /// Merged-stream depth per subscription before the oldest undelivered item is discarded (and counted).
     static let mergedCapacity = 64
 
@@ -169,6 +174,27 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                                 msg.activity.captureID = cap.captureID
                                 msg.activity.snapshot.lastInteractiveWriteNs = cap.activity.lastInteractiveWriteNs
                                 msg.activity.snapshot.liveAudioSinks = cap.activity.liveAudioSinks
+                                yieldMerged(msg, gap: 0)
+                            }
+                        }
+                    }
+                }
+                if wants(.captureLevel), chanFilter == nil {
+                    group.addTask {
+                        var sent: [CaptureID: UInt64] = [:]
+                        while !Task.isCancelled {
+                            try await Task.sleep(nanoseconds: Self.levelPollNs)
+                            for (id, engine) in await st.captureEngines(captureID: capFilter) {
+                                guard let (reading, generation) = engine.core.level.read(), sent[id] != generation else { continue }
+                                sent[id] = generation
+                                var msg = Leyline_V1_TelemetryMsg()
+                                msg.time = ProtoMapping.sampleTime(SampleTime(captureID: id, sampleIndex: reading.sampleIndex))
+                                msg.captureLevel.captureID = id.string
+                                msg.captureLevel.clippedSamples = reading.clippedSamples
+                                msg.captureLevel.totalSamples = reading.totalSamples
+                                // Digital silence is -inf, which does not survive JSON: floored like
+                                // the meter's audio peak.
+                                msg.captureLevel.peakDbfs = reading.peakDBFS.isInfinite ? -200 : reading.peakDBFS
                                 yieldMerged(msg, gap: 0)
                             }
                         }

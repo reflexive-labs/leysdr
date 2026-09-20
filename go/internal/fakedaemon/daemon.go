@@ -62,6 +62,11 @@ type Options struct {
 	// PLATFORM_UNSUPPORTED, which is what a headless daemon does. It is how a client's fallback
 	// to the machine's own player is tested.
 	NoSystemAudio bool
+	// Clipping, when set, is what the fake's CaptureLevel reports for a
+	// capture: samples at the converter's rails out of the interval's total,
+	// and the peak. nil reports a quarter second of samples with none at a
+	// rail and a -12 dBFS peak, which is a radio with headroom.
+	Clipping func(captureID string) (clipped, total uint64, peakDbfs float64)
 	// RecordGateAt is the schedule the fake's squelch gate follows, in
 	// milliseconds from the start of a recording, alternating open, close,
 	// open, ... Empty keeps the gate open for the whole recording, which is

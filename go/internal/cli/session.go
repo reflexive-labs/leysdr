@@ -78,10 +78,20 @@ type session struct {
 	seq uint64
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
-	// failureNote is what the row the squelch was measured from says is wrong
-	// (failureWords), or "": a signal near full scale, or nothing above the
-	// floor. Printed beside squelchNote, because it was measured with it.
+	// failureNote is what the capture's level and the row the squelch was
+	// measured from say is wrong (failureWords), or "": the radio clipping, or
+	// nothing above the floor. Printed beside squelchNote, because it was
+	// measured with it.
 	failureNote string
+	// failureRow is the row failureNote was read from, kept so the note can be
+	// read again against each CaptureLevel that arrives while the session
+	// runs: the row says what is above the floor, the level says whether the
+	// radio is clipping, and only the level goes on changing.
+	failureRow []float64
+	// level is the capture's newest CaptureLevel, nil until one arrives and for
+	// ever against an older daemon, when the note falls back to the row's own
+	// full-scale rule.
+	level *leylinev1.CaptureLevel
 	// proseToStderr forces say() to stderr even without --json, for verbs
 	// whose stdout carries a stream a person never reads (listen).
 	proseToStderr bool
@@ -780,6 +790,64 @@ func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 // squelchProbeTimeout bounds the wait for the spectrum row auto squelch needs.
 const squelchProbeTimeout = 2 * time.Second
 
+// levelProbeTimeout bounds the wait for the capture's first CaptureLevel once
+// the row is in hand: the daemon sends one a quarter of a second, so two
+// intervals is one missed and one caught, and an older daemon that sends none
+// costs a session this much once.
+const levelProbeTimeout = 600 * time.Millisecond
+
+// watchLevel subscribes to the capture's CaptureLevel and nothing else. The
+// stream's error is not read: a daemon that sends no levels leaves the channel
+// silent, and every reader of it is bounded by something else. A subscription
+// that could not be opened is a nil channel, which blocks the same way.
+func (s *session) watchLevel(ctx context.Context, captureID string) <-chan *leylinev1.TelemetryMsg {
+	msgs, _, err := s.client.WatchTelemetry(ctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_CaptureId{CaptureId: captureID},
+		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_CAPTURE_LEVEL},
+	})
+	if err != nil {
+		return nil
+	}
+	return msgs
+}
+
+// awaitLevel is the first CaptureLevel off a watchLevel channel, or nil when
+// none arrives within wait.
+func awaitLevel(ctx context.Context, msgs <-chan *leylinev1.TelemetryMsg, wait time.Duration) *leylinev1.CaptureLevel {
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-deadline.C:
+			return nil
+		case m, ok := <-msgs:
+			if !ok {
+				return nil
+			}
+			if b, ok := m.Body.(*leylinev1.TelemetryMsg_CaptureLevel); ok {
+				return b.CaptureLevel
+			}
+		}
+	}
+}
+
+// readLevel folds a CaptureLevel into the session and re-reads the failure
+// note against it. It returns the new note and whether it changed: the row
+// is the one the squelch was measured from, the gains are the mirror's, so a
+// radio that starts or stops clipping, or a gain someone moved, changes the
+// words.
+func (s *session) readLevel(level *leylinev1.CaptureLevel) (string, bool) {
+	s.level = level
+	note := failureWords(s.failureRow, level, s.capture.GetGains(), s.device.GetGainElements())
+	if note == s.failureNote {
+		return note, false
+	}
+	s.failureNote = note
+	return note, true
+}
+
 // measureSquelch derives a squelch threshold from one FFT row of the capture:
 // the row's median bin is the noise floor per bin (a median is presentation,
 // the spectrum itself is the daemon's), scaled to the channel bandwidth with
@@ -787,8 +855,12 @@ const squelchProbeTimeout = 2 * time.Second
 // an error when no row arrives within squelchProbeTimeout so callers can
 // leave squelch off and say so.
 func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw uint32) (threshold, floor float64, err error) {
-	sctx, cancel := context.WithTimeout(ctx, squelchProbeTimeout)
+	sctx, cancel := context.WithTimeout(ctx, squelchProbeTimeout+levelProbeTimeout)
 	defer cancel()
+	// The capture's level is asked for first, so its first reading, a quarter
+	// of a second away at most, is usually in hand by the time the row is: it
+	// says whether the radio is clipping, which the row cannot.
+	levels := s.watchLevel(sctx, cap.CaptureId)
 	sub, err := s.client.SubscribeFFT(sctx, cap.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		return 0, 0, fmt.Errorf("no spectrum available (%v)", err)
@@ -801,16 +873,22 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 			return 0, 0, fmt.Errorf("spectrum stream ended before a row arrived")
 		}
 		fr = f
-	case <-sctx.Done():
+	case <-time.After(squelchProbeTimeout):
 		return 0, 0, fmt.Errorf("no spectrum row arrived within %s", squelchProbeTimeout)
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
 	}
 	vals := leyline.DecodeFFTBins(fr.Payload, sub.Descriptor.GetFft().GetBinFormat())
 	if len(vals) == 0 {
 		return 0, 0, fmt.Errorf("spectrum row in an unexpected format")
 	}
 	// The same row answers whether the band is heard at all; a second
-	// subscription would be another wait for the same numbers.
-	s.failureNote = failureWords(vals, cap.GetGains(), s.device.GetGainElements())
+	// subscription would be another wait for the same numbers. The level
+	// answers whether the radio is clipping, and a daemon that sends none
+	// leaves the row's own full-scale rule to say so.
+	s.failureRow = vals
+	s.level = awaitLevel(sctx, levels, levelProbeTimeout)
+	s.failureNote = failureWords(vals, s.level, cap.GetGains(), s.device.GetGainElements())
 	median := medianDb(vals)
 	binWidth := float64(cap.SampleRate) / float64(len(vals))
 	floor = median + 10*math.Log10(float64(bw)/binWidth)

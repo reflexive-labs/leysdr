@@ -57,6 +57,12 @@ type levelsFrame struct {
 	// that announced a closed squelch before then would be guessing.
 	squelchKnown bool
 	tone         *leylinev1.SubAudible
+	// level is the capture's newest CaptureLevel: the OVER authority, and
+	// the peak the header shows. nil until one arrives, and for ever against
+	// an older daemon, when OVER falls back to a bar at full scale.
+	level *leylinev1.CaptureLevel
+	// over is how long the capture's OVER stays lit, latched from level.
+	over time.Duration
 }
 
 // advance moves the frame on by one row. A live meter runs the ballistics
@@ -65,6 +71,7 @@ type levelsFrame struct {
 // squelch moves nothing at all: there is no audio behind it to follow, and a
 // cap left chasing the detector's own noise would hang over a silent channel.
 func (f *levelsFrame) advance(levels []float64, dt time.Duration, watch bool) {
+	f.latchOver(dt, watch)
 	switch {
 	case !watch:
 		for i := range f.bands {
@@ -78,6 +85,28 @@ func (f *levelsFrame) advance(levels []float64, dt time.Duration, watch bool) {
 		}
 		f.rms.update(f.rmsDb, dt)
 		f.peak.update(f.peakDb, dt)
+	}
+}
+
+// latchOver runs the capture's OVER latch off its level: lit for
+// levelsOverHold from the last interval that clipped, whatever the bands
+// read, because a clip is the converter's and not the audio's. A still is
+// lit or not by the interval it has. Without a level the latch stays out and
+// the bars' own full-scale latches are what overRow draws.
+func (f *levelsFrame) latchOver(dt time.Duration, watch bool) {
+	if f.level == nil {
+		f.over = 0
+		return
+	}
+	switch {
+	case clipping(f.level):
+		f.over = levelsOverHold
+	case !watch:
+		f.over = 0
+	case f.over > dt:
+		f.over -= dt
+	default:
+		f.over = 0
 	}
 }
 
@@ -199,7 +228,7 @@ func (v *levelsView) render(f levelsFrame) string {
 		b.WriteString(l + "\n")
 	}
 	var chart strings.Builder
-	if over := v.overRow(bars); over != "" {
+	if over := v.overRow(bars, f); over != "" {
 		chart.WriteString(over + "\n")
 	}
 	for r := range v.height {
@@ -229,6 +258,11 @@ func (v *levelsView) header(f levelsFrame) []string {
 	if f.squelchKnown {
 		segs = append(segs, squelchSeg(v.st, f.squelchOpen))
 	}
+	// The capture's own peak, against the converter's full scale: the number
+	// OVER is read from, and the one that says how much headroom is left.
+	if f.level != nil {
+		segs = append(segs, headerSeg{name: "radio peak ", value: fmt.Sprintf("%.1f dBFS", f.level.GetPeakDbfs())})
+	}
 	// The tone the daemon named, and only that: a meter is read at a glance,
 	// and the measurement behind the name is `ley scope`'s header to carry.
 	if hz := scopeToneHz(f.tone); hz != nil {
@@ -237,12 +271,21 @@ func (v *levelsView) header(f levelsFrame) []string {
 	return packSegments(v.st, segs, v.width)
 }
 
-// overRow lights OVER over every bar that reached full scale, and is absent
-// when none has: a row of blank columns inside a frame reads as the end of one
-// where frames are separated by a blank line.
-func (v *levelsView) overRow(bars []levelsBar) string {
+// overRow lights OVER while the capture's latch is lit, at the left of the
+// plot because a clip is the radio's and not a band's. With no level to read
+// it lights OVER over every bar that reached full scale instead, the rule the
+// meter had before the daemon measured clipping (an older daemon). The row is
+// absent when nothing is lit: a row of blank columns inside a frame reads as
+// the end of one where frames are separated by a blank line.
+func (v *levelsView) overRow(bars []levelsBar, f levelsFrame) string {
 	plot := v.cols()
 	var segs []levelsSeg
+	if f.level != nil {
+		if f.over > 0 {
+			segs = append(segs, levelsSeg{at: levelsGutterW, text: v.st.Err(levelsOverWord), width: len(levelsOverWord)})
+		}
+		return levelsTextRow(segs)
+	}
 	for i, b := range bars {
 		if b.over <= 0 {
 			continue

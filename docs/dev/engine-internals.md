@@ -115,7 +115,10 @@ device (cu8/cf32) ──deliver──▶ convert to cf32 ──▶ BlockRing ─
 ### Conversion
 
 `.cu8 → .cf32`: `(u − 127.5) / 127.5`, done in one vDSP pass (`vDSP_vfltu8` with stride, then
-`vDSP_vsmsa`). Portable kernel does the same loop. `.cs16 → .cf32`: `/32768`.
+`vDSP_vsmsa`). Portable kernel does the same loop. `.cs16 → .cf32`: `/32768`. Before the
+conversion, `deliver` walks the native block once more for the samples at the converter's rails
+and the peak (`Kernels.countAtRails*`, the same plain loop on both platforms), which is where the
+capture's level comes from ("Telemetry service" below).
 
 ### Timebase and anchor
 
@@ -553,6 +556,26 @@ between the DSP thread and the wire shows up as a hole in `seq` (a gap accrued b
 type carries over to the next message sent). The RPC ends when the client cancels
 (`withRPCCancellationHandler` finishes the merged stream — gRPC cancellation is not task
 cancellation) or when the daemon shuts down and finishes the event stream.
+
+`CaptureLevel` is the capture's raw level, and the clipping authority: the loudest FFT bin is a
+proxy that reads near full scale on a strong steady carrier at auto gain when nothing is wrong.
+`CaptureDSPCore.deliver` counts the rails on the native block before the ring (a block the ring
+drops is one the converter still saw): `Kernels.countAtRails{CU8,CS8,CS16,CF32}` walk the block
+once and return the complex samples with I or Q at a rail (a cu8 byte at 0 or 255, cs8 at −128
+or 127, cs16 at the int16 extremes, a cf32 component at or beyond ±1) and the largest component
+magnitude in full-scale units — samples, not components, so a sample with both at a rail is one
+clipped sample and the fraction against `total_samples` is a fraction of time. `CaptureLevelMeter`
+(`DSP/CaptureLevel.swift`) accumulates them in device-thread scalars and publishes one reading per
+`sampleRate / 4` samples (the `BandFloor` cadence) through a seqlock of four atomics, so neither
+side allocates or locks (invariant 4); a stream restart drops the interval in progress with the
+floor. `TelemetryService` polls the meter every 100 ms per capture-scoped subscription and sends a
+reading once, by generation, as `CaptureLevel{clipped_samples, total_samples, peak_dbfs}` with
+`time` at the interval's end (invariant 5); a silent interval's `peak_dbfs` is floored at −200
+like the meter's audio peak. It rides with `CaptureActivity` on capture and daemon scopes, never on
+a channel scope. The clients take the fraction: `ley levels`' OVER and `ley tune`'s failure line
+(`clippingFloor`, one in ten thousand) say the radio is clipping when it is and nothing about
+full scale when it is not, and fall back to the loudest-bin rule only when no `CaptureLevel` arrives
+(an older daemon).
 
 ### Bulk service
 

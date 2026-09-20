@@ -145,6 +145,16 @@ final class KernelParityTests: XCTestCase {
         PortableKernels.convertCU8(u8, to: &pRe, count: n); AccelerateKernels.convertCU8(u8, to: &aRe, count: n); assertClose(pRe, aRe, 1e-5, "cu8")
         PortableKernels.convertCS16(s16, to: &pRe, count: n); AccelerateKernels.convertCS16(s16, to: &aRe, count: n); assertClose(pRe, aRe, 1e-5, "cs16")
         PortableKernels.convertCS8(s8, to: &pRe, count: n); AccelerateKernels.convertCS8(s8, to: &aRe, count: n); assertClose(pRe, aRe, 1e-5, "cs8")
+        // The rail counts are the portable loop on both platforms; the lines exist so a forwarder
+        // that names a symbol wrongly fails here rather than on the Mac's first build.
+        let railsU8 = (PortableKernels.countAtRailsCU8(u8, count: n), AccelerateKernels.countAtRailsCU8(u8, count: n))
+        XCTAssertEqual(railsU8.0.clipped, railsU8.1.clipped, "countAtRailsCU8"); XCTAssertEqual(railsU8.0.peak, railsU8.1.peak, "countAtRailsCU8 peak")
+        let railsS16 = (PortableKernels.countAtRailsCS16(s16, count: n), AccelerateKernels.countAtRailsCS16(s16, count: n))
+        XCTAssertEqual(railsS16.0.clipped, railsS16.1.clipped, "countAtRailsCS16"); XCTAssertEqual(railsS16.0.peak, railsS16.1.peak, "countAtRailsCS16 peak")
+        let railsS8 = (PortableKernels.countAtRailsCS8(s8, count: n), AccelerateKernels.countAtRailsCS8(s8, count: n))
+        XCTAssertEqual(railsS8.0.clipped, railsS8.1.clipped, "countAtRailsCS8"); XCTAssertEqual(railsS8.0.peak, railsS8.1.peak, "countAtRailsCS8 peak")
+        let railsF32 = (PortableKernels.countAtRailsCF32(re, count: n), AccelerateKernels.countAtRailsCF32(re, count: n))
+        XCTAssertEqual(railsF32.0.clipped, railsF32.1.clipped, "countAtRailsCF32"); XCTAssertEqual(railsF32.0.peak, railsF32.1.peak, "countAtRailsCF32 peak")
         let inter = (0 ..< 2 * n).map { Float($0) }
         PortableKernels.deinterleave(inter, re: &pRe, im: &pIm, count: n); AccelerateKernels.deinterleave(inter, re: &aRe, im: &aIm, count: n)
         assertClose(pRe, aRe, 0, "deinterleave re"); assertClose(pIm, aIm, 0, "deinterleave im")

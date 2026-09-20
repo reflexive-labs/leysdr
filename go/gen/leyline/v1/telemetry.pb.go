@@ -37,6 +37,7 @@ const (
 	TelemetryType_DETECTION                  TelemetryType = 3
 	TelemetryType_CAPTURE_ACTIVITY           TelemetryType = 4
 	TelemetryType_SUB_AUDIBLE                TelemetryType = 5
+	TelemetryType_CAPTURE_LEVEL              TelemetryType = 6
 )
 
 // Enum value maps for TelemetryType.
@@ -48,6 +49,7 @@ var (
 		3: "DETECTION",
 		4: "CAPTURE_ACTIVITY",
 		5: "SUB_AUDIBLE",
+		6: "CAPTURE_LEVEL",
 	}
 	TelemetryType_value = map[string]int32{
 		"TELEMETRY_TYPE_UNSPECIFIED": 0,
@@ -56,6 +58,7 @@ var (
 		"DETECTION":                  3,
 		"CAPTURE_ACTIVITY":           4,
 		"SUB_AUDIBLE":                5,
+		"CAPTURE_LEVEL":              6,
 	}
 )
 
@@ -255,6 +258,7 @@ type TelemetryMsg struct {
 	//	*TelemetryMsg_Detection
 	//	*TelemetryMsg_Activity
 	//	*TelemetryMsg_SubAudible
+	//	*TelemetryMsg_CaptureLevel
 	Body          isTelemetryMsg_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -356,6 +360,15 @@ func (x *TelemetryMsg) GetSubAudible() *SubAudible {
 	return nil
 }
 
+func (x *TelemetryMsg) GetCaptureLevel() *CaptureLevel {
+	if x != nil {
+		if x, ok := x.Body.(*TelemetryMsg_CaptureLevel); ok {
+			return x.CaptureLevel
+		}
+	}
+	return nil
+}
+
 type isTelemetryMsg_Body interface {
 	isTelemetryMsg_Body()
 }
@@ -380,6 +393,10 @@ type TelemetryMsg_SubAudible struct {
 	SubAudible *SubAudible `protobuf:"bytes,7,opt,name=sub_audible,json=subAudible,proto3,oneof"`
 }
 
+type TelemetryMsg_CaptureLevel struct {
+	CaptureLevel *CaptureLevel `protobuf:"bytes,8,opt,name=capture_level,json=captureLevel,proto3,oneof"`
+}
+
 func (*TelemetryMsg_Meter) isTelemetryMsg_Body() {}
 
 func (*TelemetryMsg_Squelch) isTelemetryMsg_Body() {}
@@ -389,6 +406,83 @@ func (*TelemetryMsg_Detection) isTelemetryMsg_Body() {}
 func (*TelemetryMsg_Activity) isTelemetryMsg_Body() {}
 
 func (*TelemetryMsg_SubAudible) isTelemetryMsg_Body() {}
+
+func (*TelemetryMsg_CaptureLevel) isTelemetryMsg_Body() {}
+
+// The capture's raw level, four times a second: what the converter saw, as opposed to what any
+// bin reads. clipped_samples counts complex samples with I or Q at the converter's rails in the
+// interval (a cu8 byte at 0 or 255); total_samples is the interval's length in samples, so the
+// fraction is the client's to take. peak_dbfs is the loudest component magnitude in the interval
+// against full scale, floored at -200 for a silent interval because -inf does not survive JSON.
+// A client that wants to know whether the radio is clipping reads this, not the spectrum: a
+// strong steady carrier sits near full scale in its bin all day with nothing wrong.
+type CaptureLevel struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CaptureId      string                 `protobuf:"bytes,1,opt,name=capture_id,json=captureId,proto3" json:"capture_id,omitempty"`
+	ClippedSamples uint64                 `protobuf:"varint,2,opt,name=clipped_samples,json=clippedSamples,proto3" json:"clipped_samples,omitempty"`
+	TotalSamples   uint64                 `protobuf:"varint,3,opt,name=total_samples,json=totalSamples,proto3" json:"total_samples,omitempty"`
+	PeakDbfs       float64                `protobuf:"fixed64,4,opt,name=peak_dbfs,json=peakDbfs,proto3" json:"peak_dbfs,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CaptureLevel) Reset() {
+	*x = CaptureLevel{}
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CaptureLevel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CaptureLevel) ProtoMessage() {}
+
+func (x *CaptureLevel) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CaptureLevel.ProtoReflect.Descriptor instead.
+func (*CaptureLevel) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CaptureLevel) GetCaptureId() string {
+	if x != nil {
+		return x.CaptureId
+	}
+	return ""
+}
+
+func (x *CaptureLevel) GetClippedSamples() uint64 {
+	if x != nil {
+		return x.ClippedSamples
+	}
+	return 0
+}
+
+func (x *CaptureLevel) GetTotalSamples() uint64 {
+	if x != nil {
+		return x.TotalSamples
+	}
+	return 0
+}
+
+func (x *CaptureLevel) GetPeakDbfs() float64 {
+	if x != nil {
+		return x.PeakDbfs
+	}
+	return 0
+}
 
 // A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
 //
@@ -435,7 +529,7 @@ type SubAudible struct {
 
 func (x *SubAudible) Reset() {
 	*x = SubAudible{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -447,7 +541,7 @@ func (x *SubAudible) String() string {
 func (*SubAudible) ProtoMessage() {}
 
 func (x *SubAudible) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[2]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -460,7 +554,7 @@ func (x *SubAudible) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubAudible.ProtoReflect.Descriptor instead.
 func (*SubAudible) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SubAudible) GetChannelId() string {
@@ -572,7 +666,7 @@ type Meter struct {
 
 func (x *Meter) Reset() {
 	*x = Meter{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -584,7 +678,7 @@ func (x *Meter) String() string {
 func (*Meter) ProtoMessage() {}
 
 func (x *Meter) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[3]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -597,7 +691,7 @@ func (x *Meter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Meter.ProtoReflect.Descriptor instead.
 func (*Meter) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{3}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Meter) GetChannelId() string {
@@ -677,7 +771,7 @@ type SquelchTransition struct {
 
 func (x *SquelchTransition) Reset() {
 	*x = SquelchTransition{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -689,7 +783,7 @@ func (x *SquelchTransition) String() string {
 func (*SquelchTransition) ProtoMessage() {}
 
 func (x *SquelchTransition) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[4]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -702,7 +796,7 @@ func (x *SquelchTransition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SquelchTransition.ProtoReflect.Descriptor instead.
 func (*SquelchTransition) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SquelchTransition) GetChannelId() string {
@@ -771,7 +865,7 @@ type Detection struct {
 
 func (x *Detection) Reset() {
 	*x = Detection{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +877,7 @@ func (x *Detection) String() string {
 func (*Detection) ProtoMessage() {}
 
 func (x *Detection) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[5]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +890,7 @@ func (x *Detection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Detection.ProtoReflect.Descriptor instead.
 func (*Detection) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Detection) GetDetectionId() string {
@@ -893,7 +987,7 @@ type CaptureActivityMsg struct {
 
 func (x *CaptureActivityMsg) Reset() {
 	*x = CaptureActivityMsg{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +999,7 @@ func (x *CaptureActivityMsg) String() string {
 func (*CaptureActivityMsg) ProtoMessage() {}
 
 func (x *CaptureActivityMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[6]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +1012,7 @@ func (x *CaptureActivityMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureActivityMsg.ProtoReflect.Descriptor instead.
 func (*CaptureActivityMsg) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CaptureActivityMsg) GetCaptureId() string {
@@ -945,7 +1039,7 @@ type CaptureActivitySnapshot struct {
 
 func (x *CaptureActivitySnapshot) Reset() {
 	*x = CaptureActivitySnapshot{}
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[7]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -957,7 +1051,7 @@ func (x *CaptureActivitySnapshot) String() string {
 func (*CaptureActivitySnapshot) ProtoMessage() {}
 
 func (x *CaptureActivitySnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_telemetry_proto_msgTypes[7]
+	mi := &file_leyline_v1_telemetry_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,7 +1064,7 @@ func (x *CaptureActivitySnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureActivitySnapshot.ProtoReflect.Descriptor instead.
 func (*CaptureActivitySnapshot) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_telemetry_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CaptureActivitySnapshot) GetLastInteractiveWriteNs() int64 {
@@ -1000,7 +1094,7 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"channel_id\x18\x03 \x01(\tH\x00R\tchannelId\x12/\n" +
 	"\x05types\x18\x04 \x03(\x0e2\x19.leyline.v1.TelemetryTypeR\x05typesB\a\n" +
-	"\x05scope\"\xea\x02\n" +
+	"\x05scope\"\xab\x03\n" +
 	"\fTelemetryMsg\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12*\n" +
 	"\x04time\x18\x02 \x01(\v2\x16.leyline.v1.SampleTimeR\x04time\x12)\n" +
@@ -1009,8 +1103,15 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\tdetection\x18\x05 \x01(\v2\x15.leyline.v1.DetectionH\x00R\tdetection\x12<\n" +
 	"\bactivity\x18\x06 \x01(\v2\x1e.leyline.v1.CaptureActivityMsgH\x00R\bactivity\x129\n" +
 	"\vsub_audible\x18\a \x01(\v2\x16.leyline.v1.SubAudibleH\x00R\n" +
-	"subAudibleB\x06\n" +
-	"\x04body\"\x9b\x03\n" +
+	"subAudible\x12?\n" +
+	"\rcapture_level\x18\b \x01(\v2\x18.leyline.v1.CaptureLevelH\x00R\fcaptureLevelB\x06\n" +
+	"\x04body\"\x98\x01\n" +
+	"\fCaptureLevel\x12\x1d\n" +
+	"\n" +
+	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12'\n" +
+	"\x0fclipped_samples\x18\x02 \x01(\x04R\x0eclippedSamples\x12#\n" +
+	"\rtotal_samples\x18\x03 \x01(\x04R\ftotalSamples\x12\x1b\n" +
+	"\tpeak_dbfs\x18\x04 \x01(\x01R\bpeakDbfs\"\x9b\x03\n" +
 	"\n" +
 	"SubAudible\x12\x1d\n" +
 	"\n" +
@@ -1071,14 +1172,15 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\bsnapshot\x18\x02 \x01(\v2#.leyline.v1.CaptureActivitySnapshotR\bsnapshot\"~\n" +
 	"\x17CaptureActivitySnapshot\x129\n" +
 	"\x19last_interactive_write_ns\x18\x01 \x01(\x03R\x16lastInteractiveWriteNs\x12(\n" +
-	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks*\x88\x01\n" +
+	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks*\x9b\x01\n" +
 	"\rTelemetryType\x12\x1e\n" +
 	"\x1aTELEMETRY_TYPE_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05METER\x10\x01\x12\x16\n" +
 	"\x12SQUELCH_TRANSITION\x10\x02\x12\r\n" +
 	"\tDETECTION\x10\x03\x12\x14\n" +
 	"\x10CAPTURE_ACTIVITY\x10\x04\x12\x0f\n" +
-	"\vSUB_AUDIBLE\x10\x05*t\n" +
+	"\vSUB_AUDIBLE\x10\x05\x12\x11\n" +
+	"\rCAPTURE_LEVEL\x10\x06*t\n" +
 	"\x0eSubAudibleKind\x12 \n" +
 	"\x1cSUB_AUDIBLE_KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SUB_AUDIBLE_NONE\x10\x01\x12\x15\n" +
@@ -1100,40 +1202,42 @@ func file_leyline_v1_telemetry_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_telemetry_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_leyline_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_leyline_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_leyline_v1_telemetry_proto_goTypes = []any{
 	(TelemetryType)(0),              // 0: leyline.v1.TelemetryType
 	(SubAudibleKind)(0),             // 1: leyline.v1.SubAudibleKind
 	(*TelemetrySubscription)(nil),   // 2: leyline.v1.TelemetrySubscription
 	(*TelemetryMsg)(nil),            // 3: leyline.v1.TelemetryMsg
-	(*SubAudible)(nil),              // 4: leyline.v1.SubAudible
-	(*Meter)(nil),                   // 5: leyline.v1.Meter
-	(*SquelchTransition)(nil),       // 6: leyline.v1.SquelchTransition
-	(*Detection)(nil),               // 7: leyline.v1.Detection
-	(*CaptureActivityMsg)(nil),      // 8: leyline.v1.CaptureActivityMsg
-	(*CaptureActivitySnapshot)(nil), // 9: leyline.v1.CaptureActivitySnapshot
-	(*SampleTime)(nil),              // 10: leyline.v1.SampleTime
+	(*CaptureLevel)(nil),            // 4: leyline.v1.CaptureLevel
+	(*SubAudible)(nil),              // 5: leyline.v1.SubAudible
+	(*Meter)(nil),                   // 6: leyline.v1.Meter
+	(*SquelchTransition)(nil),       // 7: leyline.v1.SquelchTransition
+	(*Detection)(nil),               // 8: leyline.v1.Detection
+	(*CaptureActivityMsg)(nil),      // 9: leyline.v1.CaptureActivityMsg
+	(*CaptureActivitySnapshot)(nil), // 10: leyline.v1.CaptureActivitySnapshot
+	(*SampleTime)(nil),              // 11: leyline.v1.SampleTime
 }
 var file_leyline_v1_telemetry_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.TelemetrySubscription.types:type_name -> leyline.v1.TelemetryType
-	10, // 1: leyline.v1.TelemetryMsg.time:type_name -> leyline.v1.SampleTime
-	5,  // 2: leyline.v1.TelemetryMsg.meter:type_name -> leyline.v1.Meter
-	6,  // 3: leyline.v1.TelemetryMsg.squelch:type_name -> leyline.v1.SquelchTransition
-	7,  // 4: leyline.v1.TelemetryMsg.detection:type_name -> leyline.v1.Detection
-	8,  // 5: leyline.v1.TelemetryMsg.activity:type_name -> leyline.v1.CaptureActivityMsg
-	4,  // 6: leyline.v1.TelemetryMsg.sub_audible:type_name -> leyline.v1.SubAudible
-	1,  // 7: leyline.v1.SubAudible.kind:type_name -> leyline.v1.SubAudibleKind
-	10, // 8: leyline.v1.SubAudible.first_seen:type_name -> leyline.v1.SampleTime
-	10, // 9: leyline.v1.Detection.first_seen:type_name -> leyline.v1.SampleTime
-	10, // 10: leyline.v1.Detection.last_seen:type_name -> leyline.v1.SampleTime
-	9,  // 11: leyline.v1.CaptureActivityMsg.snapshot:type_name -> leyline.v1.CaptureActivitySnapshot
-	2,  // 12: leyline.v1.Telemetry.Subscribe:input_type -> leyline.v1.TelemetrySubscription
-	3,  // 13: leyline.v1.Telemetry.Subscribe:output_type -> leyline.v1.TelemetryMsg
-	13, // [13:14] is the sub-list for method output_type
-	12, // [12:13] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	11, // 1: leyline.v1.TelemetryMsg.time:type_name -> leyline.v1.SampleTime
+	6,  // 2: leyline.v1.TelemetryMsg.meter:type_name -> leyline.v1.Meter
+	7,  // 3: leyline.v1.TelemetryMsg.squelch:type_name -> leyline.v1.SquelchTransition
+	8,  // 4: leyline.v1.TelemetryMsg.detection:type_name -> leyline.v1.Detection
+	9,  // 5: leyline.v1.TelemetryMsg.activity:type_name -> leyline.v1.CaptureActivityMsg
+	5,  // 6: leyline.v1.TelemetryMsg.sub_audible:type_name -> leyline.v1.SubAudible
+	4,  // 7: leyline.v1.TelemetryMsg.capture_level:type_name -> leyline.v1.CaptureLevel
+	1,  // 8: leyline.v1.SubAudible.kind:type_name -> leyline.v1.SubAudibleKind
+	11, // 9: leyline.v1.SubAudible.first_seen:type_name -> leyline.v1.SampleTime
+	11, // 10: leyline.v1.Detection.first_seen:type_name -> leyline.v1.SampleTime
+	11, // 11: leyline.v1.Detection.last_seen:type_name -> leyline.v1.SampleTime
+	10, // 12: leyline.v1.CaptureActivityMsg.snapshot:type_name -> leyline.v1.CaptureActivitySnapshot
+	2,  // 13: leyline.v1.Telemetry.Subscribe:input_type -> leyline.v1.TelemetrySubscription
+	3,  // 14: leyline.v1.Telemetry.Subscribe:output_type -> leyline.v1.TelemetryMsg
+	14, // [14:15] is the sub-list for method output_type
+	13, // [13:14] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_telemetry_proto_init() }
@@ -1153,6 +1257,7 @@ func file_leyline_v1_telemetry_proto_init() {
 		(*TelemetryMsg_Detection)(nil),
 		(*TelemetryMsg_Activity)(nil),
 		(*TelemetryMsg_SubAudible)(nil),
+		(*TelemetryMsg_CaptureLevel)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1160,7 +1265,7 @@ func file_leyline_v1_telemetry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_telemetry_proto_rawDesc), len(file_leyline_v1_telemetry_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

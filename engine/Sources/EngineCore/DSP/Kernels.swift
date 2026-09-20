@@ -42,6 +42,70 @@ public enum PortableKernels {
         for i in 0 ..< count { dst[i] = Float(src[i]) * k }
     }
 
+    /// The rails, counted where `convertCU8` reads: complex samples with I or Q at 0 or 255, and
+    /// the largest component magnitude in full-scale units (a rail is 1, by the conversion's own
+    /// `(u - 127.5) / 127.5`). One pass; nothing written. `count` is floats, as for the conversion.
+    @inline(__always)
+    public static func countAtRailsCU8(_ src: UnsafePointer<UInt8>, count: Int) -> (clipped: Int, peak: Float) {
+        var clipped = 0
+        var lo: UInt8 = 255, hi: UInt8 = 0
+        var i = 0
+        while i + 1 < count {
+            let a = src[i], b = src[i + 1]
+            if a == 0 || a == 255 || b == 0 || b == 255 { clipped += 1 }
+            lo = Swift.min(lo, Swift.min(a, b))
+            hi = Swift.max(hi, Swift.max(a, b))
+            i += 2
+        }
+        guard count >= 2 else { return (0, 0) }
+        return (clipped, Swift.max(Float(hi) - 127.5, 127.5 - Float(lo)) / 127.5)
+    }
+
+    /// `countAtRailsCU8` for cs8: the rails are -128 and 127, full scale is 128.
+    @inline(__always)
+    public static func countAtRailsCS8(_ src: UnsafePointer<Int8>, count: Int) -> (clipped: Int, peak: Float) {
+        var clipped = 0
+        var peak = 0
+        var i = 0
+        while i + 1 < count {
+            let a = Int(src[i]), b = Int(src[i + 1])
+            if a == -128 || a == 127 || b == -128 || b == 127 { clipped += 1 }
+            peak = Swift.max(peak, Swift.max(Swift.abs(a), Swift.abs(b)))
+            i += 2
+        }
+        return (clipped, Float(peak) / 128)
+    }
+
+    /// `countAtRailsCU8` for cs16: the rails are -32768 and 32767, full scale is 32768.
+    @inline(__always)
+    public static func countAtRailsCS16(_ src: UnsafePointer<Int16>, count: Int) -> (clipped: Int, peak: Float) {
+        var clipped = 0
+        var peak = 0
+        var i = 0
+        while i + 1 < count {
+            let a = Int(src[i]), b = Int(src[i + 1])
+            if a == -32768 || a == 32767 || b == -32768 || b == 32767 { clipped += 1 }
+            peak = Swift.max(peak, Swift.max(Swift.abs(a), Swift.abs(b)))
+            i += 2
+        }
+        return (clipped, Float(peak) / 32768)
+    }
+
+    /// `countAtRailsCU8` for a block already in cf32: a component at or beyond ±1 is at a rail.
+    @inline(__always)
+    public static func countAtRailsCF32(_ src: UnsafePointer<Float>, count: Int) -> (clipped: Int, peak: Float) {
+        var clipped = 0
+        var peak: Float = 0
+        var i = 0
+        while i + 1 < count {
+            let a = Swift.abs(src[i]), b = Swift.abs(src[i + 1])
+            if a >= 1 || b >= 1 { clipped += 1 }
+            peak = Swift.max(peak, Swift.max(a, b))
+            i += 2
+        }
+        return (clipped, peak)
+    }
+
     /// Interleaved cf32 → split re/im. `count` is complex samples.
     @inline(__always)
     public static func deinterleave(_ src: UnsafePointer<Float>, re: UnsafeMutablePointer<Float>, im: UnsafeMutablePointer<Float>, count: Int) {
@@ -285,6 +349,24 @@ public enum AccelerateKernels {
         vDSP_vflt16(src, 1, dst, 1, vDSP_Length(count))
         var scale: Float = 1 / 32768
         vDSP_vsmul(dst, 1, &scale, dst, 1, vDSP_Length(count))
+    }
+
+    // The rail counts are the portable loops on both platforms: vDSP has no compare-and-count, and
+    // the peak alone (vDSP_maxmgv) would be a second pass over a block the count has to walk anyway.
+    public static func countAtRailsCU8(_ src: UnsafePointer<UInt8>, count: Int) -> (clipped: Int, peak: Float) {
+        PortableKernels.countAtRailsCU8(src, count: count)
+    }
+
+    public static func countAtRailsCS8(_ src: UnsafePointer<Int8>, count: Int) -> (clipped: Int, peak: Float) {
+        PortableKernels.countAtRailsCS8(src, count: count)
+    }
+
+    public static func countAtRailsCS16(_ src: UnsafePointer<Int16>, count: Int) -> (clipped: Int, peak: Float) {
+        PortableKernels.countAtRailsCS16(src, count: count)
+    }
+
+    public static func countAtRailsCF32(_ src: UnsafePointer<Float>, count: Int) -> (clipped: Int, peak: Float) {
+        PortableKernels.countAtRailsCF32(src, count: count)
     }
 
     public static func deinterleave(_ src: UnsafePointer<Float>, re: UnsafeMutablePointer<Float>, im: UnsafeMutablePointer<Float>, count: Int) {

@@ -35,6 +35,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
   case detection // = 3
   case captureActivity // = 4
   case subAudible // = 5
+  case captureLevel // = 6
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -49,6 +50,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
     case 3: self = .detection
     case 4: self = .captureActivity
     case 5: self = .subAudible
+    case 6: self = .captureLevel
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -61,6 +63,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
     case .detection: return 3
     case .captureActivity: return 4
     case .subAudible: return 5
+    case .captureLevel: return 6
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -73,6 +76,7 @@ public nonisolated enum Leyline_V1_TelemetryType: SwiftProtobuf.Enum, Swift.Case
     .detection,
     .captureActivity,
     .subAudible,
+    .captureLevel,
   ]
 
 }
@@ -231,6 +235,14 @@ public nonisolated struct Leyline_V1_TelemetryMsg: @unchecked Sendable {
     set {_uniqueStorage()._body = .subAudible(newValue)}
   }
 
+  public var captureLevel: Leyline_V1_CaptureLevel {
+    get {
+      if case .captureLevel(let v)? = _storage._body {return v}
+      return Leyline_V1_CaptureLevel()
+    }
+    set {_uniqueStorage()._body = .captureLevel(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Body: Equatable, Sendable {
@@ -239,12 +251,38 @@ public nonisolated struct Leyline_V1_TelemetryMsg: @unchecked Sendable {
     case detection(Leyline_V1_Detection)
     case activity(Leyline_V1_CaptureActivityMsg)
     case subAudible(Leyline_V1_SubAudible)
+    case captureLevel(Leyline_V1_CaptureLevel)
 
   }
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// The capture's raw level, four times a second: what the converter saw, as opposed to what any
+/// bin reads. clipped_samples counts complex samples with I or Q at the converter's rails in the
+/// interval (a cu8 byte at 0 or 255); total_samples is the interval's length in samples, so the
+/// fraction is the client's to take. peak_dbfs is the loudest component magnitude in the interval
+/// against full scale, floored at -200 for a silent interval because -inf does not survive JSON.
+/// A client that wants to know whether the radio is clipping reads this, not the spectrum: a
+/// strong steady carrier sits near full scale in its bin all day with nothing wrong.
+public nonisolated struct Leyline_V1_CaptureLevel: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var captureID: String = String()
+
+  public var clippedSamples: UInt64 = 0
+
+  public var totalSamples: UInt64 = 0
+
+  public var peakDbfs: Double = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 /// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
@@ -498,7 +536,7 @@ public nonisolated struct Leyline_V1_CaptureActivitySnapshot: Sendable {
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_TelemetryType: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TELEMETRY_TYPE_UNSPECIFIED\0\u{1}METER\0\u{1}SQUELCH_TRANSITION\0\u{1}DETECTION\0\u{1}CAPTURE_ACTIVITY\0\u{1}SUB_AUDIBLE\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TELEMETRY_TYPE_UNSPECIFIED\0\u{1}METER\0\u{1}SQUELCH_TRANSITION\0\u{1}DETECTION\0\u{1}CAPTURE_ACTIVITY\0\u{1}SUB_AUDIBLE\0\u{1}CAPTURE_LEVEL\0")
 }
 
 nonisolated extension Leyline_V1_SubAudibleKind: SwiftProtobuf._ProtoNameProviding {
@@ -581,7 +619,7 @@ nonisolated extension Leyline_V1_TelemetrySubscription: SwiftProtobuf.Message, S
 
 nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TelemetryMsg"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{1}time\0\u{1}meter\0\u{1}squelch\0\u{1}detection\0\u{1}activity\0\u{3}sub_audible\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{1}time\0\u{1}meter\0\u{1}squelch\0\u{1}detection\0\u{1}activity\0\u{3}sub_audible\0\u{3}capture_level\0")
 
   fileprivate class _StorageClass {
     var _seq: UInt64 = 0
@@ -685,6 +723,19 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
             _storage._body = .subAudible(v)
           }
         }()
+        case 8: try {
+          var v: Leyline_V1_CaptureLevel?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .captureLevel(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .captureLevel(v)
+          }
+        }()
         default: break
         }
       }
@@ -724,6 +775,10 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
         guard case .subAudible(let v)? = _storage._body else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
       }()
+      case .captureLevel?: try {
+        guard case .captureLevel(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      }()
       case nil: break
       }
     }
@@ -742,6 +797,51 @@ nonisolated extension Leyline_V1_TelemetryMsg: SwiftProtobuf.Message, SwiftProto
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_CaptureLevel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CaptureLevel"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}clipped_samples\0\u{3}total_samples\0\u{3}peak_dbfs\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.captureID) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.clippedSamples) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.totalSamples) }()
+      case 4: try { try decoder.decodeSingularDoubleField(value: &self.peakDbfs) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.captureID.isEmpty {
+      try visitor.visitSingularStringField(value: self.captureID, fieldNumber: 1)
+    }
+    if self.clippedSamples != 0 {
+      try visitor.visitSingularUInt64Field(value: self.clippedSamples, fieldNumber: 2)
+    }
+    if self.totalSamples != 0 {
+      try visitor.visitSingularUInt64Field(value: self.totalSamples, fieldNumber: 3)
+    }
+    if self.peakDbfs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.peakDbfs, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_CaptureLevel, rhs: Leyline_V1_CaptureLevel) -> Bool {
+    if lhs.captureID != rhs.captureID {return false}
+    if lhs.clippedSamples != rhs.clippedSamples {return false}
+    if lhs.totalSamples != rhs.totalSamples {return false}
+    if lhs.peakDbfs != rhs.peakDbfs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

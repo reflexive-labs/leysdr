@@ -461,8 +461,10 @@ stands in the picture above.
 The scale is a meter's rather than a chart's — 6 dB a row from 0 down to −24 dBFS, then 10 dB a row
 to −60, held whatever the signal does, so a bar of a given height means the same dB tomorrow — and
 the dashed rule across −18 dBFS is the alignment level a speaking voice should sit around. `OVER`
-appears above the ladders when something reaches full scale and stays up for two seconds, because
-a clip is over before you have looked up.
+appears above the ladders when the radio is clipping — the daemon counts the samples at the
+converter's rails, and a band reading full scale is not that — and stays up for two seconds,
+because a clip is over before you have looked up. The header's `radio peak` is the converter's own
+peak, the headroom you have left.
 
 The lit 125 Hz bar above is the picture's whole point. A 100 Hz CTCSS tone falls in that band
 (88 to 177 Hz), and it stands there on `--tap demod`, the detector's own output. Run the same

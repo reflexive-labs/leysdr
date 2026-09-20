@@ -198,6 +198,110 @@ func TestLevelsFrameAdvance(t *testing.T) {
 	}
 }
 
+// OVER is the capture's level, not a band's: while the daemon reports the
+// converter's rails a band at full scale lights nothing, a clipping interval
+// lights OVER at the left of the plot and holds it, and the header carries
+// the radio's peak. Without a level (an older daemon) a bar at full scale is
+// what lights it, as before.
+func TestLevelsOverReadsTheCapture(t *testing.T) {
+	const dt = 50 * time.Millisecond
+	level := func(clipped uint64) *leylinev1.CaptureLevel {
+		return &leylinev1.CaptureLevel{ClippedSamples: clipped, TotalSamples: 600_000, PeakDbfs: -0.4}
+	}
+	v := newLevelsView(ui.Style{Unicode: true}, 80, levelsHeight, false, false)
+	f := levelsTestFrame(v)
+	loud := make([]float64, len(v.bands))
+	for i := range loud {
+		loud[i] = -30
+	}
+	loud[3] = 0.5
+
+	// A clean interval under a band at full scale: a strong signal, not an overload.
+	f.level = level(0)
+	f.advance(loud, dt, true)
+	if out := v.render(f); strings.Contains(out, levelsOverWord) {
+		t.Errorf("a band at full scale lit OVER under a level that shows no clipping:\n%s", out)
+	} else if !strings.Contains(out, "radio peak -0.4 dBFS") {
+		t.Errorf("the header does not carry the radio's peak:\n%s", out)
+	}
+	// One sample at a rail in 600 000 is noise, not an overload.
+	f.level = level(1)
+	f.advance(loud, dt, true)
+	if out := v.render(f); strings.Contains(out, levelsOverWord) {
+		t.Errorf("one rail hit lit OVER:\n%s", out)
+	}
+	// A clipping interval lights it whatever the bands read, and holds it.
+	f.level = level(600)
+	quiet := make([]float64, len(v.bands))
+	for i := range quiet {
+		quiet[i] = -40
+	}
+	f.advance(quiet, dt, true)
+	if f.over != levelsOverHold {
+		t.Fatalf("a clipping interval latched %v of OVER, want %v", f.over, levelsOverHold)
+	}
+	out := v.render(f)
+	if !strings.Contains(out, levelsOverWord) {
+		t.Errorf("a clipping interval did not light OVER:\n%s", out)
+	}
+	if lines := strings.Split(out, "\n"); !strings.HasPrefix(lines[1], strings.Repeat(" ", levelsGutterW)+levelsOverWord) {
+		t.Errorf("OVER is not at the left of the plot:\n%s", out)
+	}
+	f.level = level(0)
+	for range 39 {
+		f.advance(quiet, dt, true)
+	}
+	if f.over <= 0 {
+		t.Errorf("OVER went out after %v, want it to hold %v", 39*dt, levelsOverHold)
+	}
+	f.advance(quiet, dt, true)
+	if f.over != 0 {
+		t.Errorf("OVER is still lit %v after the last clipping interval, want it out", levelsOverHold)
+	}
+	// A still is lit by the interval it has, and not by a band.
+	f.level = level(600)
+	f.advance(loud, dt, false)
+	if f.over <= 0 {
+		t.Errorf("a still of a clipping interval does not light OVER")
+	}
+	f.level = level(0)
+	f.advance(loud, dt, false)
+	if f.over != 0 || strings.Contains(v.render(f), levelsOverWord) {
+		t.Errorf("a still of a clean interval lit OVER for a band at full scale")
+	}
+	// No level at all: the bars' own full-scale rule, and no peak in the header.
+	f.level = nil
+	f.advance(loud, dt, false)
+	out = v.render(f)
+	if !strings.Contains(out, levelsOverWord) {
+		t.Errorf("without a level a band at full scale does not light OVER:\n%s", out)
+	}
+	if strings.Contains(out, "radio peak") {
+		t.Errorf("the header names a peak nobody measured:\n%s", out)
+	}
+}
+
+// Against the daemon: the fake reports a clean radio unless told otherwise,
+// and a clipping one lights OVER on the still with the peak in the header.
+func TestLevelsOverAgainstTheDaemon(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{})
+	out := mustRun(t, sock, "levels", "145.23", "--tap", "demod")
+	if strings.Contains(out, levelsOverWord) {
+		t.Errorf("a clean radio lit OVER:\n%s", out)
+	}
+	if !strings.Contains(out, "radio peak -12.0 dBFS") {
+		t.Errorf("the still does not carry the radio's peak:\n%s", out)
+	}
+	clipping, _ := harness(t, fakedaemon.Options{Clipping: func(string) (uint64, uint64, float64) { return 6000, 600_000, -0.1 }})
+	out = mustRun(t, clipping, "levels", "145.23", "--tap", "demod")
+	if !strings.Contains(out, levelsOverWord) {
+		t.Errorf("a clipping radio did not light OVER:\n%s", out)
+	}
+	if !strings.Contains(out, "radio peak -0.1 dBFS") {
+		t.Errorf("the still does not carry the clipping radio's peak:\n%s", out)
+	}
+}
+
 // The scale is a meter's: 6 dB a row where a voice lives, 10 dB a row down to
 // the floor, held whatever the signal does. The marks are what a person reads
 // a bar against, so each of them must land on a row of its own at the default

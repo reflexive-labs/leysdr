@@ -4,6 +4,13 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The radio's clipping is measured, not inferred. The daemon counts the samples at the
+  converter's rails as each block arrives and reports them four times a second as `CaptureLevel`
+  telemetry (`clipped_samples`, `total_samples`, `peak_dbfs`), so `ley tune`'s line says "The
+  radio is clipping: N of M samples (x.x %) hit the converter's rails" when it is and nothing
+  about full scale when it is not; it read the loudest FFT bin, which sits near full scale on an
+  FM broadcast carrier at auto gain with nothing wrong. `ley levels`' `OVER` reads the same
+  count and its header carries the converter's peak.
 - The Mac app has an inspector: a panel on the right that says what you are hearing in words.
   Signal as one of five words with a bar that agrees with it, tuning as `Centred` or `Off tune ·
   high`, deviation as `Quiet`, `Normal` or `Overdeviating`, time on air, and the last

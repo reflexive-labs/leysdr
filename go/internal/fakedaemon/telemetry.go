@@ -15,7 +15,7 @@ import (
 
 // Subscribe implements Telemetry. Meter at 10 Hz for every active channel in
 // scope, a SquelchTransition when the synthetic signal crosses the threshold,
-// and CaptureActivity at 1 Hz per capture.
+// CaptureActivity at 1 Hz and CaptureLevel at 4 Hz per capture.
 func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.ServerStreamingServer[leylinev1.TelemetryMsg]) error {
 	d := t.d
 	ctx, stop := d.streamContext(srv.Context())
@@ -74,6 +74,7 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 	defer ticker.Stop()
 	// At least one tick, so a Meter cadence slower than a second still has a tick to land on.
 	activityEvery := max(int64(1), int64(time.Second/d.opts.MeterInterval))
+	levelEvery := max(int64(1), int64(levelInterval/d.opts.MeterInterval))
 	var tick int64
 	for {
 		select {
@@ -212,6 +213,26 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 					})
 				}
 			}
+			if tick%levelEvery == 0 && wants(leylinev1.TelemetryType_CAPTURE_LEVEL) && chanFilter == "" {
+				for _, c := range d.captures {
+					if capFilter != "" && c.CaptureId != capFilter {
+						continue
+					}
+					// A quarter second of samples with none at a rail, unless the
+					// test says the radio is clipping. The reading ends at the
+					// capture's current sample, as the daemon's does.
+					clipped, total, peak := uint64(0), c.SampleRate/uint64(time.Second/levelInterval), -12.0
+					if d.opts.Clipping != nil {
+						clipped, total, peak = d.opts.Clipping(c.CaptureId)
+					}
+					out = append(out, &leylinev1.TelemetryMsg{
+						Time: &leylinev1.SampleTime{CaptureId: c.CaptureId, SampleIndex: c.sampleIndex(now)},
+						Body: &leylinev1.TelemetryMsg_CaptureLevel{CaptureLevel: &leylinev1.CaptureLevel{
+							CaptureId: c.CaptureId, ClippedSamples: clipped, TotalSamples: total, PeakDbfs: peak,
+						}},
+					})
+				}
+			}
 			d.mu.Unlock()
 			for _, m := range out {
 				if err := send(m); err != nil {
@@ -221,6 +242,10 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 		}
 	}
 }
+
+// levelInterval is the CaptureLevel cadence: four readings a second, the
+// daemon's own.
+const levelInterval = 250 * time.Millisecond
 
 // syntheticPower is a slow -30..-70 dBFS swell (period 4 s) so squelch
 // transitions actually happen at reasonable thresholds.

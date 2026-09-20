@@ -296,7 +296,7 @@ handed to the field editor past the Tune menu); the toolbar toggle beside the ch
 disclosure rows; that the `Show Inspector` title follows the state; and that the widened
 telemetry subscription is accepted by the daemon and the log fills.
 
-### M2-5 `[ ]` Clipping, measured rather than inferred
+### M2-5 `[x]` Clipping, measured rather than inferred
 
 Found on the Mac 2026-09-20: "a signal is within 3 dB of full scale" popped up on FM broadcast
 at auto gain, where a strong constant-envelope carrier sits near full scale all day and nothing
@@ -308,6 +308,20 @@ line reading it. The failure state becomes "the radio is clipping", named only w
 near-full-scale becomes a number in the inspector's Measurements. Until this lands the client
 rule has hysteresis and gain-aware words (2026-09-20), which stop the flicker and the useless
 "set it to auto", not the false alarm.
+
+Landed 2026-09-20, the daemon's half and `ley`'s: `CaptureDSPCore.deliver` counts the rails on
+the native block as it arrives (`Kernels.countAtRails*`, one pass, before the ring so a dropped
+block still counts), `CaptureLevelMeter` publishes a reading per quarter second of samples
+through a seqlock, and `TelemetryService` sends it as `CaptureLevel` (`CAPTURE_LEVEL = 6`) with
+the interval's end as its time. The count is of complex samples with I or Q at a rail, not of
+components, so the fraction is a fraction of time; the peak is the interval's largest component
+against full scale. `ley levels`' OVER and `ley tune`'s failure line read it (`clippingFloor`,
+one in ten thousand: a single rail hit in 600 000 samples is noise), say "The radio is clipping:
+N of M samples (x.x %) hit the converter's rails" with the gain clause, and say nothing about
+full scale under a clean level whatever the bins read; the loudest-bin rule stays only as the
+fallback for a daemon that sends no level. The fake daemon emits one at 4 Hz with an
+`Options.Clipping` hook. The app's half follows: the façade's failure state re-based on
+`CaptureLevel`, and the near-full-scale number moving to the inspector's Measurements.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 

@@ -22,6 +22,7 @@ enum TelemetryType {
   DETECTION = 3;
   CAPTURE_ACTIVITY = 4;
   SUB_AUDIBLE = 5;
+  CAPTURE_LEVEL = 6;
 }
 
 message TelemetryMsg {
@@ -33,7 +34,22 @@ message TelemetryMsg {
     Detection detection = 5;
     CaptureActivityMsg activity = 6;
     SubAudible sub_audible = 7;
+    CaptureLevel capture_level = 8;
   }
+}
+
+// The capture's raw level, four times a second: what the converter saw, as opposed to what any
+// bin reads. clipped_samples counts complex samples with I or Q at the converter's rails in the
+// interval (a cu8 byte at 0 or 255); total_samples is the interval's length in samples, so the
+// fraction is the client's to take. peak_dbfs is the loudest component magnitude in the interval
+// against full scale, floored at -200 for a silent interval because -inf does not survive JSON.
+// A client that wants to know whether the radio is clipping reads this, not the spectrum: a
+// strong steady carrier sits near full scale in its bin all day with nothing wrong.
+message CaptureLevel {
+  string capture_id = 1;
+  uint64 clipped_samples = 2;
+  uint64 total_samples = 3;
+  double peak_dbfs = 4;
 }
 
 // A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.

@@ -43,6 +43,10 @@ public final class CaptureDSPCore: @unchecked Sendable {
     /// The band's noise floor, read from this capture's own spectrum four times a second and
     /// handed to every channel so its meter's `snrDB` is measured against the band, not itself.
     public let floor = BandFloor()
+    /// The capture's raw level: samples at the converter's rails and the peak, counted on the
+    /// device thread as each block arrives and published a quarter second at a time. The clipping
+    /// authority; the spectrum is not one.
+    public let level = CaptureLevelMeter()
     private let sampleRateBox: Atomic<UInt64>
     private let centerHzBox: Atomic<UInt64>
     private let tableLock = NSLock()
@@ -111,8 +115,10 @@ public final class CaptureDSPCore: @unchecked Sendable {
     /// committed `SampleTime`s keep increasing across the restart.
     public func expectNewAnchor() {
         needsAnchor.store(true, ordering: .relaxed)
-        // The floor goes with the stream it was read from, for the reason the channels reset.
+        // The floor and the level go with the stream they were read from, for the reason the
+        // channels reset.
         floor.reset()
+        level.reset()
     }
 
     /// Capture-timeline index one past the last delivered sample. Diagnostics/tests.
@@ -171,6 +177,23 @@ public final class CaptureDSPCore: @unchecked Sendable {
         let first = time.sampleIndex &+ indexBase.load(ordering: .relaxed)
         lastDeliveredEnd.store(first &+ UInt64(total), ordering: .relaxed)
         if newEpoch { publishAnchor(firstIndex: first, count: total) }
+        // The rails are counted on the native block, before the ring: a block the ring drops is
+        // one the converter still saw, and a clip in it is still a clip.
+        let rails: (clipped: Int, peak: Float)
+        switch buffer.format {
+        case .cf32:
+            rails = Kernels.countAtRailsCF32(buffer.base.assumingMemoryBound(to: Float.self), count: total * 2)
+        case .cu8:
+            rails = Kernels.countAtRailsCU8(buffer.base.assumingMemoryBound(to: UInt8.self), count: total * 2)
+        case .cs8:
+            rails = Kernels.countAtRailsCS8(buffer.base.assumingMemoryBound(to: Int8.self), count: total * 2)
+        case .cs16:
+            rails = Kernels.countAtRailsCS16(buffer.base.assumingMemoryBound(to: Int16.self), count: total * 2)
+        case .f32:
+            rails = (0, 0)  // refused above
+        }
+        level.observe(clipped: rails.clipped, peak: rails.peak, count: total,
+                      endingAt: first &+ UInt64(total), sampleRate: sampleRate)
         var offset = 0
         while offset < total {
             let n = min(Self.blockSize, total - offset)

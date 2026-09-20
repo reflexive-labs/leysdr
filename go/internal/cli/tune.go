@@ -434,6 +434,12 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	if err != nil {
 		return err
 	}
+	// The capture's level, for the failure line: the banner's note was read
+	// against the first reading, and a radio that starts or stops clipping
+	// while the session runs is worth a line. One more subscription, scoped
+	// to the capture, because the level is the capture's and not the
+	// channel's.
+	levels := s.watchLevel(tctx, s.channel.GetCaptureId())
 	// ended handles a stream's end: Ctrl-C and a daemon error are the
 	// caller's; a clean end (the daemon closed the stream, as it does when
 	// shutting down) is said once on stderr and the run stops with exit 0.
@@ -495,6 +501,31 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 					fmt.Fprintln(s.app.Stderr, t.render(s.app.ErrStyle))
 				}
 				opened = nil
+			}
+		case m, ok := <-levels:
+			if !ok {
+				levels = nil
+				continue
+			}
+			if s.app.JSON {
+				if err := s.app.printJSON(m); err != nil {
+					return err
+				}
+				continue
+			}
+			b, ok := m.Body.(*leylinev1.TelemetryMsg_CaptureLevel)
+			if !ok {
+				continue
+			}
+			// Only a change is a line: the level arrives four times a second,
+			// and a radio that is still clipping was already said to be. A
+			// note that cleared is said too, since the banner's still stands.
+			if note, changed := s.readLevel(b.CaptureLevel); changed {
+				clear()
+				if note == "" {
+					note = "The radio has stopped clipping."
+				}
+				fmt.Fprintln(s.app.Stderr, leadWord(s.app.ErrStyle, note))
 			}
 		case ev, ok := <-s.events:
 			if !ok {

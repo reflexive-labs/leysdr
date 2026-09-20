@@ -267,6 +267,10 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	if err != nil {
 		return err
 	}
+	// The capture's level is OVER's authority and the header's peak. Its own
+	// subscription, scoped to the capture: the level is the radio's, not the
+	// channel's, and a channel-scoped stream carries none.
+	levels := s.watchLevel(sctx, s.channel.GetCaptureId())
 	what := audioWhat(s)
 	if o.watch {
 		s.say("metering %s: the %s tap, %g rows a second. Ctrl-C stops. %s\n",
@@ -324,6 +328,14 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			if !o.watch && rows == 0 && time.Since(start) > chartFirstRow {
 				return fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", chartFirstRow.Seconds())
 			}
+		case m, ok := <-levels:
+			if !ok {
+				levels, frame.level = nil, nil
+				continue
+			}
+			if b, ok := m.Body.(*leylinev1.TelemetryMsg_CaptureLevel); ok {
+				frame.level = b.CaptureLevel
+			}
 		case m, ok := <-msgs:
 			if !ok {
 				msgs, frame.tone, frame.squelchKnown = nil, nil, false
@@ -349,6 +361,12 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			// A telemetry stream that has ended is never going to say it, so
 			// the still goes out with the squelch unstated rather than never.
 			if !o.watch && rows == 0 && !frame.squelchKnown && msgs != nil {
+				continue
+			}
+			// The still's OVER is the capture's level, which is a quarter of a
+			// second away at most; a daemon that sends none (an older one) is
+			// waited on this long and then left to the bars' own rule.
+			if !o.watch && rows == 0 && frame.level == nil && levels != nil && time.Since(start) < levelProbeTimeout {
 				continue
 			}
 			bins := leyline.DecodeFFTBins(fr.Payload, fp.GetBinFormat())

@@ -10,19 +10,55 @@ import (
 )
 
 // fullScaleMarginDb is how close to full scale the loudest bin may come before
-// tune says so. A full-scale tone reads 0 dBFS at its bin; 3 dB is one step of
-// an RTL-SDR's gain table, so the words arrive before the clip does.
+// tune says so, when the daemon has not said whether the radio is clipping. A
+// full-scale tone reads 0 dBFS at its bin; 3 dB is one step of an RTL-SDR's
+// gain table, so the words arrive before the clip does.
 const fullScaleMarginDb = 3
 
-// failureWords names what one spectrum row says is wrong, or "" when it says
-// nothing: the loudest bin within fullScaleMarginDb of full scale, or nothing
-// peakAboveFloorDb above the floor (the row's median), with the gain named as
-// the thing to try when it is set by hand to its lowest. The app's
-// FailureState (app/Sources/LeylineClient/FailureState.swift) is the same rule
-// over its held floor and peak, so both clients say the same thing about the
-// same band. A measurement with the thing to try, not a diagnosis: a quiet
-// band and a missing antenna read the same from here.
-func failureWords(bins []float64, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
+// clippingFloor is the fraction of a CaptureLevel interval's samples at the
+// converter's rails above which the radio is clipping. Not zero: an interval
+// is 600 000 samples at 2.4 MSPS, and one of them at a rail is a noise
+// excursion or a spur, not an overload. One in ten thousand is a clip every
+// 4 ms, which is one a listener hears.
+const clippingFloor = 1e-4
+
+// clipping reports whether a CaptureLevel says the radio is clipping: more of
+// the interval's samples at the rails than clippingFloor allows. Nil, or an
+// empty interval, is not clipping, because nothing was measured.
+func clipping(level *leylinev1.CaptureLevel) bool {
+	total := level.GetTotalSamples()
+	if total == 0 {
+		return false
+	}
+	return float64(level.GetClippedSamples())/float64(total) > clippingFloor
+}
+
+// failureWords names what the capture's level and one spectrum row say is
+// wrong, or "" when they say nothing: the radio clipping (the level's rail
+// count), or nothing peakAboveFloorDb above the floor (the row's median), with
+// the gain named as the thing to try when it is set by hand to its lowest.
+// The level is the clipping authority: while one is in hand a bin near full
+// scale is not named at all, because a strong steady carrier sits there all
+// day with nothing wrong. Only without a level (an older daemon) does the
+// loudest bin within fullScaleMarginDb of full scale stand in for it. The
+// app's FailureState (app/Sources/LeylineClient/FailureState.swift) is the
+// same rule, so both clients say the same thing about the same band. A
+// measurement with the thing to try, not a diagnosis: a quiet band and a
+// missing antenna read the same from here.
+func failureWords(bins []float64, level *leylinev1.CaptureLevel, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
+	if clipping(level) {
+		reads := fmt.Sprintf("The radio is clipping: %d of %d samples (%s) hit the converter's rails",
+			level.GetClippedSamples(), level.GetTotalSamples(),
+			percentWords(float64(level.GetClippedSamples())/float64(level.GetTotalSamples())))
+		switch {
+		case gainAtMinimum(gains, elements):
+			return reads + " at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
+		case gainAuto(gains):
+			return reads + " with the gain on auto. Take the gain by hand and lower it."
+		default:
+			return reads + ". Lower the gain."
+		}
+	}
 	if len(bins) == 0 {
 		return ""
 	}
@@ -35,7 +71,7 @@ func failureWords(bins []float64, gains []*leylinev1.GainState, elements []*leyl
 	if math.IsInf(peak, 0) || math.IsNaN(peak) {
 		return ""
 	}
-	if peak >= -fullScaleMarginDb {
+	if level == nil && peak >= -fullScaleMarginDb {
 		reads := fmt.Sprintf("A signal is within %d dB of full scale: the loudest bin reads %.0f dBFS", fullScaleMarginDb, peak)
 		switch {
 		case gainAtMinimum(gains, elements):
@@ -55,6 +91,16 @@ func failureWords(bins []float64, gains []*leylinev1.GainState, elements []*leyl
 		return measured + ", and the gain is at its lowest. Turn it up, or set it to auto."
 	}
 	return measured + ". Check the antenna; FM broadcast is the band most antennas hear."
+}
+
+// percentWords is a fraction as a percentage with one decimal, or two when
+// one would round a fraction just over clippingFloor down to "0.0 %".
+func percentWords(fraction float64) string {
+	pct := fraction * 100
+	if pct < 0.1 {
+		return fmt.Sprintf("%.2f %%", pct)
+	}
+	return fmt.Sprintf("%.1f %%", pct)
 }
 
 // gainAuto reports whether any gain element is on auto: then "lower the gain"
