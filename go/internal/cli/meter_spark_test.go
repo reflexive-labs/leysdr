@@ -51,8 +51,8 @@ func TestMeterHistoryOnTheSignalRow(t *testing.T) {
 	m := &leylinev1.Meter{PowerDbfs: -42, SquelchOpen: true, AudioDbfs: -20, AudioPeakDbfs: -10, SnrDb: math.NaN()}
 	hist := []float64{0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1}
 	for _, width := range []int{60, 80, 160} {
-		plain := meterRenderHistory(ui.Style{Unicode: true, Width: width}, 146_620_000, leylinev1.DemodMode_NFM, m, -60, hist)
-		styled := meterRenderHistory(ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: width}, 146_620_000, leylinev1.DemodMode_NFM, m, -60, hist)
+		plain := meterRenderHistory(ui.Style{Unicode: true, Width: width}, 146_620_000, leylinev1.DemodMode_NFM, m, -60, hist, onAir{})
+		styled := meterRenderHistory(ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: width}, 146_620_000, leylinev1.DemodMode_NFM, m, -60, hist, onAir{})
 		if ui.Strip(styled) != plain {
 			t.Errorf("width %d:\n plain  %q\n styled %q", width, plain, ui.Strip(styled))
 		}
@@ -74,7 +74,7 @@ func TestMeterHistoryOnTheSignalRow(t *testing.T) {
 	}
 	// No history, no cells: the row is what it was before.
 	before := meterRender(ui.Style{Unicode: true, Width: 80}, 146_620_000, leylinev1.DemodMode_NFM, m, -60)
-	if got := meterRenderHistory(ui.Style{Unicode: true, Width: 80}, 146_620_000, leylinev1.DemodMode_NFM, m, -60, nil); got != before {
+	if got := meterRenderHistory(ui.Style{Unicode: true, Width: 80}, 146_620_000, leylinev1.DemodMode_NFM, m, -60, nil, onAir{}); got != before {
 		t.Errorf("a nil history should change nothing:\n%q\n%q", got, before)
 	}
 }
@@ -86,10 +86,10 @@ func TestMeterSinkKeepsHistory(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	sink := &meterSink{w: &out, style: ui.Style{Unicode: true, Width: 100}, tty: true, now: func() time.Time { return now }}
 	m := &leylinev1.Meter{PowerDbfs: -30, SquelchOpen: true, AudioDbfs: -20, AudioPeakDbfs: -10, SnrDb: math.NaN()}
-	sink.line(146_620_000, leylinev1.DemodMode_NFM, m, -60)
+	sink.line(146_620_000, leylinev1.DemodMode_NFM, m, -60, onAir{})
 	now = now.Add(3 * time.Second)
 	quiet := &leylinev1.Meter{PowerDbfs: -85, SquelchOpen: false, AudioDbfs: -60, AudioPeakDbfs: -50, SnrDb: math.NaN()}
-	line := sink.line(146_620_000, leylinev1.DemodMode_NFM, quiet, -60)
+	line := sink.line(146_620_000, leylinev1.DemodMode_NFM, quiet, -60, onAir{})
 	signal := strings.Split(line, "\n")[1]
 	// Three seconds ago was loud (slot 5 of the eight-second span), now is
 	// quiet (slot 7, lifted to the first step because something was

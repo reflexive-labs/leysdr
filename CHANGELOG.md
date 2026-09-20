@@ -4,6 +4,11 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- Transmissions have a clock and a count. `ley tune`'s meter line says `on air 4 s` while the
+  squelch is open, and the line for each transmission that ended begins with the time it started,
+  taken from the capture's anchor rather than the terminal's clock, so a log read later still says
+  when. The Mac app's façade keeps the same log of recent transmissions per channel, with the
+  CTCSS tone each carried, for the inspector M2 adds.
 - A channel's `snr_db` is its power over the band's noise floor at the channel's width, the
   number the Mac app's "over noise" and `ley tune`'s auto squelch already measured for themselves
   from a spectrum row. It was the channel's power over its own running minimum, which on a

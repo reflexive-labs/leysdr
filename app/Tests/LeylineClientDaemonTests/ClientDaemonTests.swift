@@ -6,6 +6,8 @@
 //   - a burst of coalesced writes lands as one confirmed value, and a refused one comes back as
 //     a WriteRejected with its tag;
 //   - an FFT subscription answers a descriptor and rows decode against it;
+//   - a keyed carrier's squelch edges fold into transmissions as long as the fixture keyed them,
+//     and the capture's anchor gives one a wall clock;
 //   - the daemon's error code survives the trip.
 
 import Foundation
@@ -158,6 +160,82 @@ final class ClientDaemonTests: XCTestCase {
             if seen == 3 { break }
         }
         XCTAssertEqual(seen, 3)
+    }
+
+    /// The keyed fixture's transmissions (`fixtures/nfm_keyed.json`: keyed for 1.0 s, 0.5 s and
+    /// 2.0 s with 3 s of floor between, looping) as the log folds them from the daemon's own
+    /// edges, at the -40 dBFS gate the sidecar names and `go/internal/e2e/record_test.go` records
+    /// with. The squelch has 2 dB of hysteresis and no hang, so a close edge's duration is the
+    /// key-down time to within a block; 0.25 s leaves room for the fixture's edges landing
+    /// inside one.
+    @MainActor
+    func testKeyedCarrierFoldsIntoTransmissionsWithAWallClock() async throws {
+        // This test's radio is the keyed fixture, not the tone `setUp` starts on.
+        Harness.stop(daemon)
+        daemon = try await Harness.start(fixture: "nfm_keyed.cf32")
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
+        try await Harness.setSquelch(-40, channel: channel.channelID, via: app, mirror: mirror)
+        await assertEventually("the capture never carried a dated anchor") {
+            (mirror.state.capture(capture.captureID)?.anchor.hostTimeNs ?? 0) != 0
+        }
+
+        let keyedSeconds: [Double] = [1.0, 0.5, 2.0]
+        let tolerance = 0.25
+        func keyed(_ t: Transmission) -> Bool {
+            keyedSeconds.contains { abs(t.seconds - $0) <= tolerance }
+        }
+        var sub = Leyline_V1_TelemetrySubscription()
+        sub.channelID = channel.channelID
+        sub.types = [.squelchTransition, .subAudible]
+        let edges = app.telemetry(sub)
+        let rate = capture.sampleRate
+        let channelID = channel.channelID
+        // The file loops, so the next key-down is at most a file's length away; the deadline
+        // ends the fold with whatever it holds rather than hanging the suite.
+        let folder = Task { () -> (TransmissionLog, Leyline_V1_SampleTime?) in
+            var log = TransmissionLog(channelID: channelID)
+            var last: Leyline_V1_SampleTime?
+            for try await msg in edges {
+                log.fold(msg, captureRate: rate)
+                last = msg.time
+                if log.closed.contains(where: keyed) { break }
+            }
+            return (log, last)
+        }
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(25))
+            folder.cancel()
+        }
+        let (log, last) = try await folder.value
+        deadline.cancel()
+
+        let durations = log.closed.map { String(format: "%.2f", $0.seconds) }
+        XCTAssertTrue(
+            log.closed.contains(where: keyed),
+            "no transmission as long as the fixture keyed one; saw \(durations) s")
+        let transmission = try XCTUnwrap(log.closed.first(where: keyed))
+        XCTAssertEqual(transmission.start.captureID, capture.captureID)
+        XCTAssertGreaterThan(transmission.peakAudioDBFS, -40, "the tone is over the gate")
+        XCTAssertEqual(log.captureRate, 2_400_000)
+        let newest = try XCTUnwrap(last)
+        XCTAssertNil(log.timeOnAir(at: newest), "the fold ended on a close edge")
+
+        let anchor = try XCTUnwrap(mirror.state.capture(capture.captureID)).anchor
+        let started = try XCTUnwrap(
+            SampleClock.wallTime(of: transmission.start, anchor: anchor),
+            "the capture's anchor covers its own transmission")
+        XCTAssertLessThan(
+            abs(started.timeIntervalSinceNow), 120, "on the daemon's clock, minutes ago at most")
+        var elsewhere = transmission.start
+        elsewhere.captureID = "cap_00000000000000000000000000"
+        XCTAssertNil(SampleClock.wallTime(of: elsewhere, anchor: anchor))
     }
 
     func testErrorCodesSurviveTheTrip() async throws {

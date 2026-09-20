@@ -392,12 +392,21 @@ func TestTuneNoDevice(t *testing.T) {
 
 func TestMeterLine(t *testing.T) {
 	m := &leylinev1.Meter{PowerDbfs: -42.4, SquelchOpen: false}
-	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m); got != "146.620 MHz NFM  signal -42 dBFS  muted, waiting for a signal" {
+	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{}); got != "146.620 MHz NFM  signal -42 dBFS  muted, waiting for a signal" {
 		t.Errorf("closed: %q", got)
 	}
 	m.SquelchOpen = true
-	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m); got != "146.620 MHz NFM  signal -42 dBFS  audio" {
+	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{}); got != "146.620 MHz NFM  signal -42 dBFS  audio" {
 		t.Errorf("open: %q", got)
+	}
+	// With the open edge seen, the last word is the time on air; a session
+	// that subscribed mid-transmission has no edge and still says audio.
+	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{known: true, seconds: 4}); got != "146.620 MHz NFM  signal -42 dBFS  on air 4 s" {
+		t.Errorf("on air: %q", got)
+	}
+	m.SquelchOpen = false
+	if got := meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{known: true, seconds: 4}); got != "146.620 MHz NFM  signal -42 dBFS  muted, waiting for a signal" {
+		t.Errorf("a closed squelch has no time on air: %q", got)
 	}
 }
 

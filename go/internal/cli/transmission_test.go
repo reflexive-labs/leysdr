@@ -4,6 +4,7 @@ package cli
 
 import (
 	"math"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +135,139 @@ func TestTuneReportsAFinishedTransmission(t *testing.T) {
 	// The line must carry a duration, not just the word.
 	if !strings.Contains(errOut, " s") {
 		t.Fatalf("want a duration in the transmission line:\n%s", errOut)
+	}
+}
+
+// Time on air is counted from the open edge's sample time to the meter's, at
+// the capture rate, in whole seconds: what a person glances at while the other
+// station talks. Without an open edge there is nothing to count from.
+func TestOnAirSince(t *testing.T) {
+	const rate = 2_400_000
+	opened := &leylinev1.SampleTime{CaptureId: "cap_a", SampleIndex: 10 * rate}
+	at := func(index uint64) *leylinev1.SampleTime {
+		return &leylinev1.SampleTime{CaptureId: "cap_a", SampleIndex: index}
+	}
+	for _, tc := range []struct {
+		name   string
+		opened *leylinev1.SampleTime
+		now    *leylinev1.SampleTime
+		rate   uint64
+		want   onAir
+	}{
+		{"just opened", opened, at(10 * rate), rate, onAir{known: true, seconds: 0}},
+		{"4.9 s in is 4 s", opened, at(10*rate + 4*rate + 2_160_000), rate, onAir{known: true, seconds: 4}},
+		{"a minute and a half", opened, at(10*rate + 90*rate), rate, onAir{known: true, seconds: 90}},
+		{"no open edge seen", nil, at(12 * rate), rate, onAir{}},
+		{"unknown rate", opened, at(12 * rate), 0, onAir{}},
+		{"meter before the edge", opened, at(9 * rate), rate, onAir{}},
+		{"another capture", opened, &leylinev1.SampleTime{CaptureId: "cap_b", SampleIndex: 12 * rate}, rate, onAir{}},
+	} {
+		if got := onAirSince(tc.opened, tc.now, tc.rate); got != tc.want {
+			t.Errorf("%s: got %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The closed transmission's start is reconstructed from the close edge and the
+// duration, and dated only through an anchor that covers it: the same capture,
+// with a host time the daemon actually published.
+func TestTransmissionStart(t *testing.T) {
+	const rate = 2_400_000
+	epoch := time.Date(2026, 9, 20, 15, 4, 0, 0, time.UTC)
+	anchor := &leylinev1.CaptureAnchor{CaptureId: "cap_a", HostTimeNs: epoch.UnixNano(), SampleRate: rate}
+	// Closed 12 s into the capture after 5 s open: it began at 7 s.
+	sq := &leylinev1.SquelchTransition{DurationSamples: 5 * rate, PeakSnrDb: 20, PeakAudioDbfs: -10}
+	closeAt := &leylinev1.SampleTime{CaptureId: "cap_a", SampleIndex: 12 * rate}
+
+	got, ok := transmissionStart(sq, closeAt, anchor)
+	if !ok {
+		t.Fatal("an anchor on the same capture covers the start")
+	}
+	if want := epoch.Add(7 * time.Second); !got.Equal(want) {
+		t.Errorf("start = %v, want %v", got, want)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		sq     *leylinev1.SquelchTransition
+		at     *leylinev1.SampleTime
+		anchor *leylinev1.CaptureAnchor
+	}{
+		{"no anchor", sq, closeAt, nil},
+		{"anchor on another capture", sq, closeAt, &leylinev1.CaptureAnchor{CaptureId: "cap_b", HostTimeNs: epoch.UnixNano(), SampleRate: rate}},
+		{"undated anchor, first block not yet seen", sq, closeAt, &leylinev1.CaptureAnchor{CaptureId: "cap_a", SampleRate: rate}},
+		{"anchor without a rate", sq, closeAt, &leylinev1.CaptureAnchor{CaptureId: "cap_a", HostTimeNs: epoch.UnixNano()}},
+		{"duration runs past the capture's start", &leylinev1.SquelchTransition{DurationSamples: 13 * rate}, closeAt, anchor},
+		{"no close time", sq, nil, anchor},
+	} {
+		if at, ok := transmissionStart(tc.sq, tc.at, tc.anchor); ok {
+			t.Errorf("%s: want no clock, got %v", tc.name, at)
+		}
+	}
+}
+
+// The mirror holds one anchor per capture, the newest the daemon published.
+func TestCaptureAnchorFromTheMirror(t *testing.T) {
+	a := &leylinev1.CaptureAnchor{CaptureId: "cap_a", HostTimeNs: 1, SampleRate: 2_400_000}
+	state := &leylinev1.GetStateResponse{Captures: []*leylinev1.Capture{{CaptureId: "cap_a", Anchor: a}, {CaptureId: "cap_b"}}}
+	if got := captureAnchor(state, "cap_a"); got != a {
+		t.Errorf("cap_a: got %v", got)
+	}
+	if got := captureAnchor(state, "cap_b"); got != nil {
+		t.Errorf("cap_b has no anchor yet, got %v", got)
+	}
+	if got := captureAnchor(state, "cap_c"); got != nil {
+		t.Errorf("cap_c is not in state, got %v", got)
+	}
+	// An Anchor event replaces the one the Capture arrived with.
+	s := &session{state: state, capture: state.Captures[0]}
+	fresh := &leylinev1.CaptureAnchor{CaptureId: "cap_a", HostTimeNs: 2, SampleRate: 2_400_000}
+	s.fold(&leylinev1.Event{Body: &leylinev1.Event_Anchor{Anchor: fresh}})
+	if got := captureAnchor(s.state, "cap_a"); got != fresh {
+		t.Errorf("after the anchor event: got %v, want the fresh anchor", got)
+	}
+	if s.capture.GetAnchor() != fresh {
+		t.Errorf("the session's own capture keeps the fresh anchor too")
+	}
+}
+
+// A dated transmission leads with its clock, in Muted ink that strips to the
+// plain stamp; an undated one begins with the word, as before.
+func TestTransmissionRenderStamp(t *testing.T) {
+	start := time.Date(2026, 9, 20, 15, 4, 5, 0, time.Local)
+	dated := transmission{seconds: 4.2, peakSNR: 26, peakDbfs: -4, start: start}
+	plain := dated.render(ui.Style{})
+	if want := "15:04:05  transmission  4.2 s  peak snr 26 dB  peak -4 dBFS"; plain != want {
+		t.Errorf("dated line:\n got  %q\n want %q", plain, want)
+	}
+	styled := dated.render(ui.Style{Color: true, Unicode: true, Profile: ui.ProfileTrueColor})
+	if ui.Strip(styled) != plain {
+		t.Errorf("styled != plain:\n plain  %q\n styled %q", plain, ui.Strip(styled))
+	}
+	undated := transmission{seconds: 4.2, peakSNR: 26, peakDbfs: -4}
+	if got := undated.render(ui.Style{}); !strings.HasPrefix(got, "transmission  ") {
+		t.Errorf("an undated line begins with the word: %q", got)
+	}
+}
+
+// End to end: the fake daemon dates its captures (the anchor's host time is the
+// moment the capture was created), so a finished transmission's line carries
+// the wall clock it started at, and the meter counts time on air from the
+// open edge it saw.
+func TestTuneDatesATransmissionAndCountsTimeOnAir(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
+	_, errOut := liveTune(t, sock, "transmission", "tune", "146.52", "--no-audio", "--squelch", "-50")
+	stamped := regexp.MustCompile(`(?m)^\d\d:\d\d:\d\d  transmission  `)
+	if !stamped.MatchString(errOut) {
+		t.Errorf("the closed line leads with the start the anchor dates:\n%s", errOut)
+	}
+	// The squelch is open for two of the fake's four-second swell, and the
+	// meter repeats itself once a second off a terminal, so a meter tick lands
+	// while the squelch is open before the close edge does.
+	if !strings.Contains(errOut, "on air ") {
+		t.Errorf("the meter counts time on air while the squelch is open:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "dBFS  audio") {
+		t.Errorf("with the open edge seen, the meter says on air, not audio:\n%s", errOut)
 	}
 }

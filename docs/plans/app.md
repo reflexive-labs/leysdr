@@ -219,7 +219,7 @@ the engine work are built and tested here, against fixtures, with their `ley` mi
 panel waits for its handoff and is built on the Mac. The failure strip's presentation (above)
 is revisited with the panel, which is where "what the numbers say" belongs.
 
-### M2-1 `[ ]` The transmissions log and time on air, in the façade and in `ley`
+### M2-1 `[x]` The transmissions log and time on air, in the façade and in `ley`
 
 What `ley tune` already prints per closed transmission (`go/internal/cli/transmission.go`:
 duration from `duration_samples` at the capture rate, peak SNR, peak audio) becomes a fold both
@@ -231,6 +231,16 @@ covers has no clock. In the façade: `Transmissions.swift`, a value with no daem
 on Linux from synthetic messages and against `nfm_keyed.cf32`. In `ley`: the meter line says
 `on air 4 s` while the squelch is open, and the closed line carries the wall-clock start when
 the anchor covers it. No contract change.
+
+Landed 2026-09-20, both halves. Façade: `Transmissions.swift` (`TransmissionLog`,
+`Transmission`, `OnAir`, `CTCSSTone`) and `SampleClock.swift`, with `TransmissionsTests` and
+`SampleClockTests` on synthetic messages and one e2e test folding `nfm_keyed.cf32`'s keyed
+carrier into dated transmissions. `ley`: `onAirSince`, `transmissionStart` and `anchorCovers`
+beside `render` in `transmission.go`, the meter line ending `on air N s` only when the open edge
+was seen, the session mirror folding `Event_Anchor` into `Capture.anchor` as the Swift mirror
+already did, and one test of both against the fake daemon. Both clients refuse an undated
+anchor (host time 0, what a Capture carries before its first block): a clock the daemon never
+kept is not printed.
 
 ### M2-2 `[d]` Tuning error and deviation in the meter (SV-6)
 

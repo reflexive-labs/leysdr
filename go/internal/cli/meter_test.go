@@ -36,7 +36,7 @@ func TestMeterRenderSurvivesColourOff(t *testing.T) {
 			if ui.Strip(got) != want {
 				t.Errorf("unicode=%v open=%v:\n Strip(styled) = %q\n plain         = %q", unicode, open, ui.Strip(got), want)
 			}
-			if !strings.Contains(want, meterLine(146_620_000, leylinev1.DemodMode_NFM, m)) {
+			if !strings.Contains(want, meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{})) {
 				t.Errorf("the contractual meter string is not inside %q", want)
 			}
 		}
@@ -51,7 +51,7 @@ func TestMeterRenderWidths(t *testing.T) {
 	for _, width := range []int{40, 80, 160} {
 		st := ui.Style{Color: true, Unicode: true, Width: width}
 		line := ui.Strip(meterRender(st, 146_620_000, leylinev1.DemodMode_NFM, m, -60))
-		bare := meterLine(146_620_000, leylinev1.DemodMode_NFM, m)
+		bare := meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{})
 		if got := ui.Visible(line); got > width && got != ui.Visible(bare) {
 			t.Errorf("width %d: line is %d columns: %q", width, got, line)
 		}
@@ -65,7 +65,7 @@ func TestMeterRenderWidths(t *testing.T) {
 		}
 	}
 	// An unknown width (a zero style) is the plain line.
-	if got := meterRender(ui.Style{}, 146_620_000, leylinev1.DemodMode_NFM, m, -60); got != meterLine(146_620_000, leylinev1.DemodMode_NFM, m) {
+	if got := meterRender(ui.Style{}, 146_620_000, leylinev1.DemodMode_NFM, m, -60); got != meterLine(146_620_000, leylinev1.DemodMode_NFM, m, onAir{}) {
 		t.Errorf("unknown width should not draw a bar: %q", got)
 	}
 }
@@ -105,7 +105,7 @@ func TestMeterSinkRedrawIsTTYOnly(t *testing.T) {
 	buf := &bytes.Buffer{}
 	sink := &meterSink{w: buf, style: ui.Style{Width: 80}, tty: false}
 	for i := 0; i < 5; i++ {
-		sink.write(sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, true), math.NaN()))
+		sink.write(sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, true), math.NaN(), onAir{}))
 	}
 	sink.clear()
 	got := buf.String()
@@ -115,13 +115,13 @@ func TestMeterSinkRedrawIsTTYOnly(t *testing.T) {
 	if lines := strings.Count(got, "\n"); lines != 1 {
 		t.Errorf("five ticks inside one second should be one line, got %d: %q", lines, got)
 	}
-	if want := meterLine(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, true)) + "\n"; got != want {
+	if want := meterLine(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, true), onAir{}) + "\n"; got != want {
 		t.Errorf("piped meter = %q, want %q", got, want)
 	}
 	// A tick after the interval is written; the interval itself is not
 	// waited out here, it is moved.
 	sink.last = time.Now().Add(-2 * meterPipeInterval)
-	sink.write(sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-30, true), math.NaN()))
+	sink.write(sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-30, true), math.NaN(), onAir{}))
 	if lines := strings.Count(buf.String(), "\n"); lines != 2 {
 		t.Errorf("a tick a second later should print, got %d lines", lines)
 	}
@@ -133,8 +133,8 @@ func TestMeterSinkRedrawIsTTYOnly(t *testing.T) {
 func TestMeterSinkTerminalRedraw(t *testing.T) {
 	buf := &bytes.Buffer{}
 	sink := &meterSink{w: buf, style: ui.Style{Width: 80}, tty: true}
-	long := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, false), math.NaN())
-	short := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, true), math.NaN())
+	long := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, false), math.NaN(), onAir{})
+	short := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-42.4, true), math.NaN(), onAir{})
 	sink.write(long)
 	sink.write(short)
 	got := buf.String()
@@ -171,7 +171,7 @@ func TestMeterDetailRowsAppearOnAWideTerminal(t *testing.T) {
 		t.Fatalf("want the contract line plus two detail rows, got %d:\n%s", len(lines), got)
 	}
 	// Line 1 stays exactly the contractual meter line: tests and docs pin it.
-	if want := meterLine(146_520_000, leylinev1.DemodMode_NFM, m); lines[0] != want {
+	if want := meterLine(146_520_000, leylinev1.DemodMode_NFM, m, onAir{}); lines[0] != want {
 		t.Errorf("line 1 must be the contract line\n got %q\nwant %q", lines[0], want)
 	}
 	if !strings.Contains(lines[1], "signal") || !strings.Contains(lines[1], "-38 dBFS") {
@@ -252,7 +252,7 @@ func TestMeterSilentAudioReadsQuiet(t *testing.T) {
 func TestMeterSinkTerminalBlockShrinks(t *testing.T) {
 	buf := &bytes.Buffer{}
 	sink := &meterSink{w: buf, style: ui.Style{Width: 100}, tty: true}
-	tall := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterWithAudio(-38, -12, -4, true), -46)
+	tall := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterWithAudio(-38, -12, -4, true), -46, onAir{})
 	if strings.Count(tall, "\n") != 2 {
 		t.Fatalf("want a three-row block to shrink from, got %q", tall)
 	}
@@ -260,7 +260,7 @@ func TestMeterSinkTerminalBlockShrinks(t *testing.T) {
 	rows := strings.Split(tall, "\n")
 	buf.Reset()
 
-	short := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-38, true), math.NaN())
+	short := sink.line(146_620_000, leylinev1.DemodMode_NFM, meterFixture(-38, true), math.NaN(), onAir{})
 	if strings.Contains(short, "\n") {
 		t.Fatalf("want a one-row block to shrink to, got %q", short)
 	}

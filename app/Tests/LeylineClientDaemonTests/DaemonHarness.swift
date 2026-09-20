@@ -20,6 +20,12 @@ struct DaemonUnderTest {
     func logText() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
 }
 
+/// A step of a test's setup that did not happen, named; thrown so the test fails there.
+struct HarnessError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
+
 enum Harness {
     static var daemonBinary: String? {
         let p = ProcessInfo.processInfo.environment["LEYLINED_BIN"] ?? ""
@@ -94,6 +100,26 @@ enum Harness {
         req.path = d.fixture
         req.loop = true
         return try await c.control.attachFileDevice(req)
+    }
+
+    /// Sets a channel's squelch through a coalescer of its own and waits for the mirror to
+    /// confirm it, the way every write is confirmed (invariant 7). NaN turns the squelch off.
+    @MainActor
+    static func setSquelch(
+        _ db: Double, channel: String, via c: DaemonConnection, mirror: DaemonMirror
+    ) async throws {
+        let writes = WriteCoalescer(connection: c, tick: .milliseconds(50))
+        await writes.squelchDb(db, channel: channel)
+        await writes.stop()
+        let landed = await eventually(.seconds(5)) {
+            let got = mirror.state.channel(channel)?.squelchDb ?? .nan
+            return db.isNaN ? got.isNaN : got == db
+        }
+        if !landed {
+            throw HarnessError(
+                "the squelch write never reached the mirror: \(String(describing: await writes.lastError))"
+            )
+        }
     }
 
     /// Polls `condition` on the main actor until it holds or `timeout` passes.

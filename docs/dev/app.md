@@ -12,9 +12,9 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states (`FailureState.swift`) | macOS and Linux |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`) | macOS and Linux |
 | `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`, `MeterFeed`), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
-| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds | both |
+| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
 The package depends on the generated contract (`.package(path: "../swift/LeylineProto")`) and on
@@ -90,6 +90,24 @@ holds the payload rules (`DB_U8` is `round((dB + 120) · 2)`; floats are little-
 divides by 32768) and they match `go/pkg/leyline/bulk.go` bit for bit, tested on both sides.
 The shm ring is not built: the app draws over gRPC first and S1 decides
 (`../plans/build-order.md`, "Closing the core").
+
+**Transmissions and the clock** (`Transmissions.swift`, `SampleClock.swift`). `TransmissionLog`
+is one channel's last fifty transmissions, newest first, folded from the telemetry plane's
+squelch edges and nothing else: the daemon summarises a transmission on the close edge of a
+`SquelchTransition` (`duration_samples` in *capture* samples, the peak SNR and audio level), so
+the log times nothing itself and a client that subscribes mid-transmission still logs the one it
+joined, its start read back from the close edge the way `ley mcp`'s `listen` does. The rules are
+`ley tune`'s (`go/internal/cli/transmission.go`, `subaudible.go`): a close edge with no duration
+is nothing, the CTCSS tone reported while a transmission ran stays with it, the 1 Hz heartbeat
+that repeats a tone is not a new one, and a measurement between two standard tones is no tone at
+all. `onAir` is the open transmission and `timeOnAir(at:)` its length at a `SampleTime`, so the
+view asks with the newest time it has rather than a clock of its own. `SampleClock` is the Swift
+mirror of `leyline.AnchorWallTime` and `RecordWallTime`: a `SampleTime` becomes a `Date` through
+a dated `CaptureAnchor` on the same capture that applies from a sample not past it, drift
+applied as the anchor states it, and nil otherwise (a capture's anchor has host time 0 until its
+first block), because a time nobody anchored is a clock the daemon never kept (invariant 5). The
+mirror keeps each capture's newest anchor on the capture, and the daemon-backed test folds
+`nfm_keyed.cf32` into transmissions as long as the fixture keyed them.
 
 **Failure states** (`FailureState.swift`). What the band's numbers say is wrong, named rather
 than left as a dark waterfall (`../plans/user-stories.md`, V1a): the loudest bin within 3 dB of

@@ -449,6 +449,10 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 		return nil
 	}
 	s.say("%s", s.banner(o))
+	// opened is the open edge of the transmission in progress, so the meter
+	// can count its time on air; nil while the squelch is closed and when the
+	// session subscribed after the edge.
+	var opened *leylinev1.SampleTime
 	for {
 		select {
 		case <-ctx.Done():
@@ -467,7 +471,8 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			switch b := m.Body.(type) {
 			case *leylinev1.TelemetryMsg_Meter:
 				hz, _ := leyline.ChannelFrequency(s.state, s.channel)
-				meter.write(meter.line(hz, s.channel.Mode, b.Meter, s.channel.SquelchDb))
+				air := onAirSince(opened, m.Time, leyline.ChannelCaptureRate(s.state, s.channel))
+				meter.write(meter.line(hz, s.channel.Mode, b.Meter, s.channel.SquelchDb, air))
 			case *leylinev1.TelemetryMsg_SubAudible:
 				// A tone that has appeared or changed is worth a line; the
 				// heartbeat that repeats it is not, so only a change prints.
@@ -477,12 +482,19 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 				}
 			case *leylinev1.TelemetryMsg_Squelch:
 				// A transmission that has ended is a fact worth keeping, so it
-				// scrolls above the meter rather than replacing it. The meter
+				// scrolls above the meter rather than replacing it, dated
+				// through the capture's anchor when one covers it. The meter
 				// redraws itself on its next tick.
+				if b.Squelch.GetOpen() {
+					opened = m.Time
+					break
+				}
 				if t, ok := closedTransmission(b.Squelch, leyline.ChannelCaptureRate(s.state, s.channel)); ok {
+					t.start, _ = transmissionStart(b.Squelch, m.Time, captureAnchor(s.state, s.channel.GetCaptureId()))
 					clear()
 					fmt.Fprintln(s.app.Stderr, t.render(s.app.ErrStyle))
 				}
+				opened = nil
 			}
 		case ev, ok := <-s.events:
 			if !ok {

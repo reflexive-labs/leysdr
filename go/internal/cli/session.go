@@ -375,6 +375,18 @@ func (s *session) fold(ev *leylinev1.Event) {
 		if s.sink != nil && s.sink.SinkId == b.Sink.SinkId {
 			s.sink = b.Sink
 		}
+	case *leylinev1.Event_Anchor:
+		// A capture publishes its anchor with its first block, and again on a
+		// rate change or a rebind, so the one its Capture arrived with is the
+		// stale (or undated) one: the newest is what dates a sample index.
+		for _, c := range s.state.GetCaptures() {
+			if c.GetCaptureId() == b.Anchor.GetCaptureId() {
+				c.Anchor = b.Anchor
+			}
+		}
+		if s.capture != nil && s.capture.CaptureId == b.Anchor.GetCaptureId() {
+			s.capture.Anchor = b.Anchor
+		}
 	}
 }
 
@@ -869,12 +881,22 @@ func (s *session) cleanupFailed(what string, err error) {
 
 // meterLine renders the in-place status line in plain words: the signal
 // level and whether audio is passing. OPEN/CLOSED live in --json only.
-func meterLine(freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter) string {
-	gate := "muted, waiting for a signal"
-	if m.SquelchOpen {
-		gate = "audio"
+func meterLine(freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, air onAir) string {
+	return fmt.Sprintf("%s %s  signal %.0f dBFS  %s", leyline.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, meterGate(m, air))
+}
+
+// meterGate is the meter line's last words: whether audio is passing and, when
+// the open edge was seen, for how long. The count is whole seconds because the
+// line redraws on every meter tick and tenths would only flicker.
+func meterGate(m *leylinev1.Meter, air onAir) string {
+	switch {
+	case !m.GetSquelchOpen():
+		return "muted, waiting for a signal"
+	case air.known:
+		return fmt.Sprintf("on air %d s", air.seconds)
+	default:
+		return "audio"
 	}
-	return fmt.Sprintf("%s %s  signal %.0f dBFS  %s", leyline.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, gate)
 }
 
 // gainString renders a capture's first gain element as "gain auto" / "gain 29.7 dB".

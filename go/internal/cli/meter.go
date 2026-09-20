@@ -35,7 +35,7 @@ const (
 // no marker. With a plain style this is meterLine plus the bar, and with a
 // zero-width style it is meterLine alone.
 func meterRender(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, squelchDb float64) string {
-	return meterRenderHistory(st, freq, mode, m, squelchDb, nil)
+	return meterRenderHistory(st, freq, mode, m, squelchDb, nil, onAir{})
 }
 
 // meterRenderHistory is meterRender with the signal row's sparkline: history
@@ -44,12 +44,11 @@ func meterRender(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev
 // meter with no past yet. It is drawn on the signal detail row, so it needs
 // the width and the audio level that row needs; a narrow terminal keeps the
 // contractual line alone.
-func meterRenderHistory(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, squelchDb float64, history []float64) string {
-	line := meterLine(freq, mode, m)
-	gate := "muted, waiting for a signal"
-	ink := st.Warn
+func meterRenderHistory(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, squelchDb float64, history []float64, air onAir) string {
+	line := meterLine(freq, mode, m, air)
+	gate, ink := meterGate(m, air), st.Warn
 	if m.GetSquelchOpen() {
-		gate, ink = "audio", st.Ok
+		ink = st.Ok
 	}
 	line = strings.TrimSuffix(line, gate) + ink(gate)
 	// The detail rows carry their own signal bar, so the inline one would say
@@ -264,7 +263,7 @@ type meterSink struct {
 // line renders one meter for this sink. The bar belongs to the terminal:
 // off one, every line stands alone in a log and the words are the record, so
 // the meter is exactly the contractual meterLine string.
-func (m *meterSink) line(freq uint64, mode leylinev1.DemodMode, mt *leylinev1.Meter, squelchDb float64) string {
+func (m *meterSink) line(freq uint64, mode leylinev1.DemodMode, mt *leylinev1.Meter, squelchDb float64, air onAir) string {
 	st := m.style
 	if !m.tty {
 		st.Width = 0
@@ -274,7 +273,7 @@ func (m *meterSink) line(freq uint64, mode leylinev1.DemodMode, mt *leylinev1.Me
 		now = m.now()
 	}
 	m.history.add(mt.GetPowerDbfs(), now)
-	return meterRenderHistory(st, freq, mode, mt, squelchDb, m.history.fracs(now))
+	return meterRenderHistory(st, freq, mode, mt, squelchDb, m.history.fracs(now), air)
 }
 
 // write shows one rendered meter, which may be several lines. The first line
