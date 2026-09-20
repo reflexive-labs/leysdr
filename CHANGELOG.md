@@ -4,6 +4,12 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The meter says how far off frequency a transmitter is and how hard it is deviating.
+  `Meter.freq_error_hz` is the FM discriminator's DC over the meter interval, positive when the
+  transmitter sits above the channel, and `deviation_hz` its peak excursion, both read ahead of
+  de-emphasis where a CTCSS tone still stands. NaN outside the FM modes and, for the error, while
+  the squelch is closed. `ley scope --tap demod` names the daemon's number in its header where it
+  measured one from the trace's DC before.
 - Transmissions have a clock and a count. `ley tune`'s meter line says `on air 4 s` while the
   squelch is open, and the line for each transmission that ended begins with the time it started,
   taken from the capture's anchor rather than the terminal's clock, so a log read later still says

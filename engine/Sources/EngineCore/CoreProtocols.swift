@@ -304,8 +304,12 @@ public enum ChannelTelemetry: Sendable {
     /// `audioDBFS`/`audioPeakDBFS` are what the listener hears over the meter interval, measured on
     /// the demodulated block; NaN when there is no audio to measure (a raw-IQ channel, or before the
     /// first block). NaN means "not measured" and is not the same as 0 dBFS, which is very loud.
+    /// `deviationHz`/`freqErrorHz` are the FM discriminator's peak excursion and DC over the same
+    /// interval, in hertz, read ahead of de-emphasis; the DC is the tuning error, positive when
+    /// the transmitter sits above the channel. NaN for every other mode, and `freqErrorHz` NaN
+    /// while the squelch is closed, because noise has no tuning error.
     case meter(time: SampleTime, powerDBFS: Double, snrDB: Double, squelchOpen: Bool,
-               audioDBFS: Double, audioPeakDBFS: Double)
+               audioDBFS: Double, audioPeakDBFS: Double, deviationHz: Double, freqErrorHz: Double)
     /// A squelch edge. `openSamples` and the two peaks summarise the transmission that just ended
     /// and are meaningful on a close edge only (`open == false`); an open edge carries 0 and NaN,
     /// because a transmission still in progress has neither a duration nor a final peak.

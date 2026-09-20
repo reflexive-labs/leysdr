@@ -557,6 +557,15 @@ type Meter struct {
 	// was not measured -- 0 dBFS is a real, very loud level.
 	AudioDbfs     float64 `protobuf:"fixed64,5,opt,name=audio_dbfs,json=audioDbfs,proto3" json:"audio_dbfs,omitempty"`               // RMS over the meter interval
 	AudioPeakDbfs float64 `protobuf:"fixed64,6,opt,name=audio_peak_dbfs,json=audioPeakDbfs,proto3" json:"audio_peak_dbfs,omitempty"` // largest sample in the interval; -inf when digitally silent
+	// FM only, from the calibrated discriminator, read before de-emphasis and
+	// the high-pass because a deviation read off the de-emphasised audio would
+	// be wrong by whatever de-emphasis did to it. NaN for every other mode and
+	// before the first block.
+	DeviationHz float64 `protobuf:"fixed64,7,opt,name=deviation_hz,json=deviationHz,proto3" json:"deviation_hz,omitempty"` // peak deviation over the meter interval
+	// The discriminator's DC over the meter interval is the tuning error:
+	// positive when the transmitter sits above the channel. NaN while the
+	// squelch is closed, because noise has no tuning error.
+	FreqErrorHz   float64 `protobuf:"fixed64,8,opt,name=freq_error_hz,json=freqErrorHz,proto3" json:"freq_error_hz,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -629,6 +638,20 @@ func (x *Meter) GetAudioDbfs() float64 {
 func (x *Meter) GetAudioPeakDbfs() float64 {
 	if x != nil {
 		return x.AudioPeakDbfs
+	}
+	return 0
+}
+
+func (x *Meter) GetDeviationHz() float64 {
+	if x != nil {
+		return x.DeviationHz
+	}
+	return 0
+}
+
+func (x *Meter) GetFreqErrorHz() float64 {
+	if x != nil {
+		return x.FreqErrorHz
 	}
 	return 0
 }
@@ -1005,7 +1028,7 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"first_seen\x18\n" +
 	" \x01(\v2\x16.leyline.v1.SampleTimeR\tfirstSeen\x12#\n" +
-	"\rhops_agreeing\x18\v \x01(\rR\fhopsAgreeing\"\xd2\x01\n" +
+	"\rhops_agreeing\x18\v \x01(\rR\fhopsAgreeing\"\x8d\x02\n" +
 	"\x05Meter\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x1d\n" +
@@ -1015,7 +1038,9 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\fsquelch_open\x18\x04 \x01(\bR\vsquelchOpen\x12\x1d\n" +
 	"\n" +
 	"audio_dbfs\x18\x05 \x01(\x01R\taudioDbfs\x12&\n" +
-	"\x0faudio_peak_dbfs\x18\x06 \x01(\x01R\raudioPeakDbfsJ\x04\b\a\x10\bJ\x04\b\b\x10\t\"\xbf\x01\n" +
+	"\x0faudio_peak_dbfs\x18\x06 \x01(\x01R\raudioPeakDbfs\x12!\n" +
+	"\fdeviation_hz\x18\a \x01(\x01R\vdeviationHz\x12\"\n" +
+	"\rfreq_error_hz\x18\b \x01(\x01R\vfreqErrorHz\"\xbf\x01\n" +
 	"\x11SquelchTransition\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x12\n" +

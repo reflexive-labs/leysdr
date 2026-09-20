@@ -79,7 +79,7 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                     seenHubDropped = nowHubDropped
                     var msg = Leyline_V1_TelemetryMsg()
                     switch t {
-                    case .meter(let time, let power, let snr, let open, let audio, let audioPeak):
+                    case .meter(let time, let power, let snr, let open, let audio, let audioPeak, let deviation, let freqError):
                         guard wants(.meter) else { continue }
                         msg.time = ProtoMapping.sampleTime(time)
                         msg.meter.channelID = id.string
@@ -90,6 +90,10 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         // is floored; NaN passes through untouched and means "not measured".
                         msg.meter.audioDbfs = audio.isInfinite ? -200 : audio
                         msg.meter.audioPeakDbfs = audioPeak.isInfinite ? -200 : audioPeak
+                        // NaN outside the FM modes and, for the error, while the squelch is shut:
+                        // proto3 JSON carries NaN, and 0 Hz would be a claim of perfect tuning.
+                        msg.meter.deviationHz = deviation
+                        msg.meter.freqErrorHz = freqError
                     case .squelch(let time, let open, let openSamples, let peakSNR, let peakPower):
                         guard wants(.squelchTransition) else { continue }
                         msg.time = ProtoMapping.sampleTime(time)

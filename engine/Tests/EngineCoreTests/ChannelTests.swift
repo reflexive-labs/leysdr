@@ -59,7 +59,7 @@ final class ChannelTests: XCTestCase {
         // The survivors are the newest `capacity` records in order; reading does not change the count.
         var got: [UInt64] = []
         for await t in stalled.stream {
-            if case let .meter(time, _, _, _, _, _) = t { got.append(time.sampleIndex) }
+            if case let .meter(time, _, _, _, _, _, _, _) = t { got.append(time.sampleIndex) }
             if got.count == TelemetryHub.capacity { break }
         }
         XCTAssertEqual(got, Array(UInt64(50)..<UInt64(n + 10)), "oldest 50 evicted, newest kept in order")
@@ -421,7 +421,7 @@ final class ChannelTests: XCTestCase {
         var peaks: [Double] = []
         var powers: [Double] = []
         for e in await events.value {
-            if case let .meter(_, power, _, _, a, p) = e, !a.isNaN {
+            if case let .meter(_, power, _, _, a, p, _, _) = e, !a.isNaN {
                 audio.append(a); peaks.append(p); powers.append(power)
             }
         }
@@ -469,13 +469,87 @@ final class ChannelTests: XCTestCase {
         let inBandFloor = noiseDBFS + 10 * log10(Double(bandwidthHz) / Double(rate))
         var meters = 0
         for e in await events.value {
-            guard case let .meter(_, power, snr, _, _, _) = e, !snr.isNaN else { continue }
+            guard case let .meter(_, power, snr, _, _, _, _, _) = e, !snr.isNaN else { continue }
             meters += 1
             XCTAssertGreaterThan(snr, 30, "a -20 dBFS tone over a -60 dBFS band is not 0 dB over noise")
             XCTAssertEqual(snr, power - inBandFloor, accuracy: 2,
                            "snr \(snr) should be power \(power) over the band floor \(inBandFloor) at \(bandwidthHz) Hz")
         }
         XCTAssertGreaterThanOrEqual(meters, 3, "the floor is read on the first block, so nearly every meter carries an SNR")
+    }
+
+    /// `deviationHz` and `freqErrorHz` come off the raw discriminator over the meter interval and
+    /// not off the conditioned audio, whose 300 Hz high-pass has removed the DC and whose
+    /// de-emphasis has changed the excursion. `nfm_tone.json` says what the generator sent, 2.5 kHz
+    /// of deviation at a 1 kHz tone, so a channel on the carrier reads that deviation and no tuning
+    /// error. The sign is established here rather than assumed: a channel placed 1 kHz above the
+    /// carrier leaves the transmitter 1 kHz below the channel and reads -1000 Hz, so positive means
+    /// the transmitter sits above the channel, as `telemetry.proto` says. An AM channel has no
+    /// discriminator and reads NaN for both.
+    ///
+    /// Medians over the run's meters: the first interval carries the channelizer's start-up
+    /// transient as one 20 kHz spike, and the fixture's loop point after a second is another.
+    func testMeterReadsTuningErrorAndDeviationOffTheDiscriminator() async throws {
+        let nfmPath = try nfmTonePath()
+        let amPath = Fixtures.dir + "/am_tone.cf32"
+        guard FileManager.default.fileExists(atPath: amPath) else { throw XCTSkip("am_tone fixture missing") }
+
+        func meters(path: String, config: ChannelConfig) async throws -> (device: FilePlaybackDevice, deviation: [Double], error: [Double]) {
+            let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
+            let capture = DefaultCaptureEngine(device: device, centerHz: UInt64(device.sidecar.centerHz),
+                                               sampleRate: UInt64(device.sidecar.sampleRate))
+            let channel = try await capture.addChannel(config) as! DefaultChannelEngine
+            let collector = AudioCollector()
+            try await channel.attach(collector.sink)
+            let events = Task<[ChannelTelemetry], Never> {
+                var out: [ChannelTelemetry] = []
+                for await t in channel.telemetrySubscription().stream { out.append(t) }
+                return out
+            }
+            try await capture.start()
+            let deadline = Date().addingTimeInterval(10)
+            while collector.count < 48_000, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+            await capture.stop()
+            var deviation: [Double] = [], error: [Double] = []
+            for e in await events.value {
+                guard case let .meter(_, _, _, open, _, _, dev, err) = e else { continue }
+                XCTAssertTrue(open, "the fixtures' tones sit 20 dB over a -40 dB squelch")
+                deviation.append(dev)
+                error.append(err)
+            }
+            return (device, deviation, error)
+        }
+        func median(_ xs: [Double]) -> Double {
+            let s = xs.sorted()
+            return s.isEmpty ? .nan : s[s.count / 2]
+        }
+
+        let onCarrier = try await meters(path: nfmPath, config: ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40))
+        guard case let .object(generator)? = onCarrier.device.sidecar.generator, case let .array(signals)? = generator["signals"],
+              case let .object(signal)? = signals.first, case let .number(sentDeviationHz)? = signal["deviation_hz"] else {
+            return XCTFail("nfm_tone.json names the deviation its generator sent")
+        }
+        XCTAssertGreaterThanOrEqual(onCarrier.deviation.count, 5, "a second of playback is ten meters")
+        XCTAssertFalse(onCarrier.deviation.contains { $0.isNaN }, "an FM channel measures its deviation on every meter")
+        XCTAssertFalse(onCarrier.error.contains { $0.isNaN }, "an open FM channel measures its tuning error on every meter")
+        // 2 % of 2.5 kHz: the peak is the tone's crest plus whatever noise sat on that sample; the
+        // run that set this read 2495-2504 Hz.
+        XCTAssertEqual(median(onCarrier.deviation), sentDeviationHz, accuracy: 50,
+                       "deviation \(onCarrier.deviation) should be the \(sentDeviationHz) Hz the generator sent")
+        // A 100 ms interval holds a hundred cycles of the tone, so its mean is the carrier's offset
+        // to within a fraction of a cycle's worth; the run that set this read within 8 Hz.
+        XCTAssertEqual(median(onCarrier.error), 0, accuracy: 25, "on the carrier the tuning error \(onCarrier.error) is nil")
+
+        let above = try await meters(path: nfmPath, config: ChannelConfig(offsetHz: 101_000, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40))
+        XCTAssertEqual(median(above.error), -1000, accuracy: 25,
+                       "a channel 1 kHz above the carrier has the transmitter 1 kHz below it: \(above.error)")
+        XCTAssertEqual(median(above.deviation), sentDeviationHz, accuracy: 50,
+                       "the deviation is measured about the DC, so an offset does not inflate it: \(above.deviation)")
+
+        let am = try await meters(path: amPath, config: ChannelConfig(offsetHz: -250_000, bandwidthHz: 10_000, mode: .am, squelchDB: -40))
+        XCTAssertGreaterThanOrEqual(am.deviation.count, 5)
+        XCTAssertTrue(am.deviation.allSatisfy(\.isNaN), "AM has no discriminator: \(am.deviation)")
+        XCTAssertTrue(am.error.allSatisfy(\.isNaN), "AM has no tuning error to read: \(am.error)")
     }
 
     /// The close edge of a squelch transition summarises the transmission that just ended: how long

@@ -364,7 +364,8 @@ final class TelemetryHub: @unchecked Sendable {
         case .meter:
             event = .meter(time: rec.time, powerDBFS: Double(rec.powerDBFS), snrDB: Double(rec.snrDB),
                            squelchOpen: rec.squelchOpen,
-                           audioDBFS: Double(rec.audioDBFS), audioPeakDBFS: Double(rec.audioPeakDBFS))
+                           audioDBFS: Double(rec.audioDBFS), audioPeakDBFS: Double(rec.audioPeakDBFS),
+                           deviationHz: Double(rec.deviationHz), freqErrorHz: Double(rec.freqErrorHz))
         case .squelch:
             event = .squelch(time: rec.time, open: rec.squelchOpen, openSamples: rec.openSamples,
                              peakSNRDB: Double(rec.peakSNRDB), peakPowerDBFS: Double(rec.peakPowerDBFS))

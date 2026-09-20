@@ -272,7 +272,7 @@ extension JobStore {
         var readings: [Double] = []
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(Self.autoSquelchMs))
         for await t in subscription.stream {
-            if case .meter(_, let power, _, _, _, _) = t, power.isFinite {
+            if case .meter(_, let power, _, _, _, _, _, _) = t, power.isFinite {
                 readings.append(power)
             }
             if readings.count >= 5 || ContinuousClock.now >= deadline { break }

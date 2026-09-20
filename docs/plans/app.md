@@ -242,7 +242,7 @@ already did, and one test of both against the fake daemon. Both clients refuse a
 anchor (host time 0, what a Capture carries before its first block): a clock the daemon never
 kept is not printed.
 
-### M2-2 `[ ]` Tuning error and deviation in the meter (SV-6)
+### M2-2 `[x]` Tuning error and deviation in the meter (SV-6)
 
 `docs/design/signal-views.md`: "The discriminator's DC *is* the tuning error, and is what feeds
 `freq_error_hz`"; `docs/plans/signal-views.md` deferred `deviation_hz` and `freq_error_hz` to SV-6
@@ -252,6 +252,22 @@ DC and its deviation onto `Meter`, FM and squelch-open only, NaN otherwise, with
 and scope header reading the daemon's number. **Decided 2026-09-20:** the fields take 7 and 8 as the
 signal-views plan intended. The reserved rule exists for fields people depend on and nothing has
 shipped yet; `CLAUDE.md` now says when it starts to bind.
+
+Landed 2026-09-20: `Meter.deviation_hz = 7` and `freq_error_hz = 8`. Engine: a
+`DiscriminatorInterval` (sum, count, high, low; four scalars, no allocation) inside
+`NFMDemodulator` and `WFMDemodulator`, fed from the raw discriminator beside the sub-audible tap,
+taken by `ChannelDSPCore` when it stamps the meter and carried through `ChannelTelemetryRecord`,
+`ChannelTelemetry.meter` and `TelemetryService`. The DC is the tuning error, positive when the
+transmitter sits above the channel; the larger excursion from the DC is the deviation. NaN
+outside the FM modes, and the error NaN while the squelch is closed.
+`ChannelTests.testMeterReadsTuningErrorAndDeviationOffTheDiscriminator` established the sign on
+`nfm_tone.cf32`: on the carrier 2495-2504 Hz of deviation for the generator's 2500 and an error
+within 8 Hz of zero, a channel 1 kHz above the carrier −1000 Hz, and an AM channel NaN for both.
+`ley scope`'s demod-tap header names the daemon's `freq_error_hz` when the meter carries one and
+falls back to the window's DC only for a daemon that sends NaN (`scopeTuningHz`); the fake daemon
+sends both fields off its own tap. `ley tune`'s meter line is unchanged, and `--json` carries the
+fields as it carries the rest of the Meter. The app reads the generated proto and draws neither
+until M2-3.
 
 ### M2-3 `[d]` The inspector panel
 

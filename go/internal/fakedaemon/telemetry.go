@@ -160,10 +160,23 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 						// different measurements of different things.
 						audio, peak = power+6, power+10
 					}
+					// The discriminator the demod tap draws: a 1 kHz sine at
+					// half of full scale riding on demodTapDC, so the meter's
+					// deviation and tuning error are the tap's own numbers in
+					// hertz. NaN outside the FM modes, and the error NaN while
+					// the squelch is shut, as the engine sends them.
+					deviation, freqError := math.NaN(), math.NaN()
+					if fs := float64(leyline.FullScaleDeviationHz(ch.Mode, ch.BandwidthHz)); fs != 0 {
+						deviation = 0.5 * fs
+						if open {
+							freqError = demodTapDC * fs
+						}
+					}
 					out = append(out, &leylinev1.TelemetryMsg{Time: st, Body: &leylinev1.TelemetryMsg_Meter{
 						Meter: &leylinev1.Meter{
 							ChannelId: ch.ChannelId, PowerDbfs: power, SnrDb: power + 90, SquelchOpen: open,
 							AudioDbfs: audio, AudioPeakDbfs: peak,
+							DeviationHz: deviation, FreqErrorHz: freqError,
 						},
 					}})
 				}

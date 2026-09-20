@@ -67,10 +67,67 @@ func emitRaw(_ rawOut: inout SampleBuffer?, from src: UnsafePointer<Float>, coun
 /// Default scratch size: one full capture block, which is the most any channel can hand a demodulator.
 let demodulatorMaxBlock = 16384
 
+/// The raw discriminator over one meter interval, kept by the FM demodulators for `Meter`'s
+/// `freq_error_hz` and `deviation_hz`. The sum and count give the interval's DC, which is the
+/// tuning error; the extremes give the largest excursion from that DC, which is the peak
+/// deviation. Read where the sub-audible tap reads, ahead of de-emphasis and the high-pass,
+/// because a deviation read off the conditioned audio is wrong by whatever the conditioning did to
+/// it. Four plain scalars and no history: `add` is the hot path and `take` runs on the same thread
+/// when the meter is stamped, the way the channel core accumulates the audio level.
+///
+/// Sign: `discriminate` is `arg(x[n]·conj(x[n−1]))`, positive for a positive baseband frequency,
+/// and the channelizer mixes the channel's offset down to zero, so a transmitter above the channel
+/// reads a positive DC. `ChannelTests.testMeterReadsTuningErrorAndDeviationOffTheDiscriminator`
+/// holds that against a channel placed 1 kHz above a fixture's carrier.
+public struct DiscriminatorInterval {
+    /// Hertz per unit of the discriminator's output, fixed by `configure`; 0 until then.
+    var hertzPerUnit: Double = 0
+    private var sum: Double = 0
+    private var count = 0
+    private var high: Float = -.infinity
+    private var low: Float = .infinity
+
+    /// Fold a block of discriminator output in. The sum is a Double because a 100 ms interval at
+    /// 48 kHz is 4800 samples and Float would drift.
+    @inline(__always)
+    mutating func add(_ src: UnsafePointer<Float>, count n: Int) {
+        guard n > 0 else { return }
+        sum += Double(Kernels.mean(src, count: n)) * Double(n)
+        count += n
+        high = Swift.max(high, Kernels.max(src, count: n))
+        low = Swift.min(low, Kernels.min(src, count: n))
+    }
+
+    /// The interval's tuning error and peak deviation in hertz, and the start of the next one.
+    /// Nil when no block ran since the last take.
+    mutating func take() -> (freqErrorHz: Double, deviationHz: Double)? {
+        defer { clear() }
+        guard count > 0 else { return nil }
+        let mean = sum / Double(count)
+        let peak = Swift.max(Double(high) - mean, mean - Double(low))
+        return (mean * hertzPerUnit, peak * hertzPerUnit)
+    }
+
+    mutating func clear() {
+        sum = 0
+        count = 0
+        high = -.infinity
+        low = .infinity
+    }
+}
+
+/// A demodulator whose raw stage is frequency, so its DC is a tuning error and its excursion a
+/// deviation: the FM modes, and nothing else. The channel core takes the interval when it stamps
+/// a meter; a demodulator without this conformance leaves both meter fields NaN.
+public protocol DiscriminatorSource: AnyObject {
+    /// Take and reset the accumulated interval. DSP thread only, allocation-free.
+    func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)?
+}
+
 /// Narrow-band FM: discriminator (full-scale deviation → ±1.0), 300 Hz two-pole high-pass (removes
 /// CTCSS/PL tones and any DC offset), 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, the TIA-603
 /// voice response; transmitters pre-emphasize) with ×2 make-up gain, 1-pole LPF ≈ 4 kHz, output clipped to ±1.
-public final class NFMDemodulator: Demodulator, SubAudibleSource {
+public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorSource {
     public let mode: DemodMode = .nfm
     public private(set) var outputRate: UInt32 = 0
     /// Full scale is what the channel itself can carry, not one fixed number: a 12.5 kHz channel
@@ -108,8 +165,14 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
     private var deemphasisCoefficient: Float = 1
     private var deemphasisState: Float = 0
     private static let deemphasisMakeup: Float = 2
+    /// The meter's view of the discriminator, in the same units the tap and `rawOut` carry.
+    private var interval = DiscriminatorInterval()
 
     public init() {}
+
+    public func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)? {
+        interval.take()
+    }
 
     deinit {
         subScratch1?.deallocate()
@@ -121,6 +184,7 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
         outputRate = inputRate
         fullScaleDeviationHz = Self.fullScaleDeviation(bandwidthHz: bandwidthHz)
         scale = Float(1.0 * Double(inputRate) / (2 * Double.pi * fullScaleDeviationHz))
+        interval.hertzPerUnit = fullScaleDeviationHz
         lpfCoefficient = Kernels.onePoleCoefficient(cutoffHz: 4_000, rate: Double(inputRate))
         let rc = 1 / (2 * Double.pi * 300)
         hpfCoefficient = Float(rc / (rc + 1 / Double(inputRate)))
@@ -185,9 +249,11 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
         discriminate(s, count: n, scale: scale)
-        // Both taps come before every stage that follows: the 300 Hz high-pass below is what makes
-        // CTCSS inaudible, and it is the reason this has to be taken here rather than off the audio.
+        // Every tap comes before every stage that follows: the 300 Hz high-pass below is what makes
+        // CTCSS inaudible and removes the DC the meter reads as a tuning error, and it is the
+        // reason these are taken here rather than off the audio.
         tapSubAudible(s.real, count: n)
+        interval.add(s.real, count: n)
         emitRaw(&rawOut, from: s.real, count: n)
         let out = output.base.assumingMemoryBound(to: Float.self)
         Kernels.onePoleLowPass(s.real, to: out, count: n, coefficient: lpfCoefficient, state: &lpfState)
@@ -224,12 +290,13 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource {
         deemphasisState = 0
         subStage1?.reset()
         subStage2?.reset()
+        interval.clear()
     }
 }
 
 /// Wide-band FM (mono): discriminator at `r1` (±75 kHz → ±0.5), 75 µs de-emphasis,
 /// FIR LPF 15 kHz + decimate by `round(r1 / 48 kHz)`, output clipped to ±1.
-public final class WFMDemodulator: Demodulator {
+public final class WFMDemodulator: Demodulator, DiscriminatorSource {
     public let mode: DemodMode = .wfm
     public private(set) var outputRate: UInt32 = 0
     public let maxBlock = demodulatorMaxBlock
@@ -249,8 +316,14 @@ public final class WFMDemodulator: Demodulator {
     private var scale: Float = 0
     private var deemphasisCoefficient: Float = 1
     private var deemphasisState: Float = 0
+    /// The meter's view of the discriminator at `r1`, before the tap's decimation and its ×2.
+    private var interval = DiscriminatorInterval()
 
     public init() {}
+
+    public func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)? {
+        interval.take()
+    }
 
     public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
@@ -258,6 +331,8 @@ public final class WFMDemodulator: Demodulator {
         decimation = max(1, Int((rate / 48_000).rounded()))
         outputRate = UInt32((rate / Double(decimation)).rounded())
         scale = Float(0.5 * rate / (2 * Double.pi * Self.fullScaleDeviationHz))
+        // The discriminator puts ±75 kHz at ±0.5 (the raw tap doubles it); the meter reads it here.
+        interval.hertzPerUnit = 2 * Self.fullScaleDeviationHz
         deemphasisCoefficient = Float(1 - exp(-1 / (rate * 75e-6)))
         let audioRate = rate / Double(decimation)
         let cutoff = min(15_000, 0.45 * audioRate)
@@ -276,6 +351,7 @@ public final class WFMDemodulator: Demodulator {
         precondition(output.count >= (input.count + decimation - 1) / decimation)
         let n = s.load(input)
         discriminate(s, count: n, scale: scale)
+        interval.add(s.real, count: n)
         emitRawTap(&rawOut, from: s.real, count: n)
         Kernels.onePoleLowPass(s.real, to: s.real, count: n, coefficient: deemphasisCoefficient, state: &deemphasisState)
         let out = output.base.assumingMemoryBound(to: Float.self)
@@ -310,6 +386,7 @@ public final class WFMDemodulator: Demodulator {
         rawFilter?.reset()
         rawActive = false
         deemphasisState = 0
+        interval.clear()
     }
 }
 

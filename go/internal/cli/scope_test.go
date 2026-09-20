@@ -194,8 +194,23 @@ func TestScopeTuningHz(t *testing.T) {
 		{"a 25 kHz NFM channel", 5_000, 0.02, 100},
 		{"WFM", 75_000, -0.01, -750},
 	} {
-		if got := scopeTuningHz(leylinev1.AudioTap_TAP_DEMOD, tc.fullScaleHz, tc.dc); math.Abs(got-tc.want) > 0.001 {
+		if got := scopeTuningHz(leylinev1.AudioTap_TAP_DEMOD, tc.fullScaleHz, tc.dc, math.NaN()); math.Abs(got-tc.want) > 0.001 {
 			t.Errorf("%s at %g of full scale = %.2f Hz, want %.0f", tc.name, tc.dc, got, tc.want)
+		}
+	}
+	// The daemon's own number wins when the meter carries one: it is measured
+	// over the whole meter interval rather than one window, and 0 is a real
+	// answer there, not an absent one.
+	for _, tc := range []struct {
+		name    string
+		meterHz float64
+		want    float64
+	}{
+		{"a daemon that measured -120 Hz", -120, -120},
+		{"a daemon that measured 0 Hz", 0, 0},
+	} {
+		if got := scopeTuningHz(leylinev1.AudioTap_TAP_DEMOD, 2_500, 0.02, tc.meterHz); got != tc.want {
+			t.Errorf("%s: header says %.2f Hz, want %.0f", tc.name, got, tc.want)
 		}
 	}
 	// The audio tap has had the offset taken out of it, and a tap whose
@@ -208,8 +223,11 @@ func TestScopeTuningHz(t *testing.T) {
 		{"the audio tap", leylinev1.AudioTap_TAP_AUDIO, 2_500},
 		{"an amplitude mode", leylinev1.AudioTap_TAP_DEMOD, 0},
 	} {
-		if got := scopeTuningHz(tc.tap, tc.fullScaleHz, 0.02); !math.IsNaN(got) {
+		if got := scopeTuningHz(tc.tap, tc.fullScaleHz, 0.02, math.NaN()); !math.IsNaN(got) {
 			t.Errorf("%s reported a tuning error of %.2f Hz", tc.name, got)
+		}
+		if got := scopeTuningHz(tc.tap, tc.fullScaleHz, 0.02, 50); !math.IsNaN(got) {
+			t.Errorf("%s reported the daemon's tuning error, %.2f Hz, where the tap has none", tc.name, got)
 		}
 	}
 }

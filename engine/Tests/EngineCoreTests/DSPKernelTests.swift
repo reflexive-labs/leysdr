@@ -132,6 +132,7 @@ final class KernelParityTests: XCTestCase {
         AccelerateKernels.maxInPlace(&aMax, other, count: n)
         assertClose(pMax, aMax, 1e-4, "maxInPlace")
         XCTAssertEqual(PortableKernels.max(re, count: n), AccelerateKernels.max(re, count: n), accuracy: 1e-6)
+        XCTAssertEqual(PortableKernels.min(re, count: n), AccelerateKernels.min(re, count: n), accuracy: 1e-6)
         PortableKernels.scaleAdd(re, scale: 2.5, offset: -0.25, to: &pRe, count: n); AccelerateKernels.scaleAdd(re, scale: 2.5, offset: -0.25, to: &aRe, count: n)
         assertClose(pRe, aRe, 1e-4, "scaleAdd")
         PortableKernels.multiply(re, im, to: &pRe, count: n); AccelerateKernels.multiply(re, im, to: &aRe, count: n)

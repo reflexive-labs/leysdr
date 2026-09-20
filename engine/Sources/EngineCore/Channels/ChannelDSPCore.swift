@@ -29,6 +29,13 @@ public struct ChannelTelemetryRecord: Sendable {
     /// both NaN, because there is nothing a listener would hear.
     public var audioDBFS: Float = .nan
     public var audioPeakDBFS: Float = .nan
+    /// The FM discriminator over the meter interval, read ahead of de-emphasis and the high-pass:
+    /// its largest excursion from its DC is the peak deviation, and its DC is the tuning error,
+    /// positive when the transmitter sits above the channel. NaN for every other mode, on a
+    /// squelch record and before the first block; `freqErrorHz` is NaN while the squelch is
+    /// closed as well, because noise has no tuning error.
+    public var deviationHz: Float = .nan
+    public var freqErrorHz: Float = .nan
 }
 
 /// Fixed-capacity telemetry ring plus a "poke" stream that wakes the drain task.
@@ -136,6 +143,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
     /// which have no demodulator stage to tap.
     private let rawOut: SampleStorage?
     private var meter: PowerMeter
+    /// The demodulator again, when its raw stage is frequency (the FM modes): the meter takes the
+    /// discriminator's interval from it. Decided once here so the hot path pays one nil check.
+    private let discriminator: (any DiscriminatorSource)?
     /// The capture's floor (`BandFloor`), or nil for a core run outside a capture, whose `snrDB`
     /// is then NaN. `bandwidthDB` is `10·log10(bandwidth)`, fixed for the life of the core, so a
     /// block's SNR is one atomic load and two subtractions.
@@ -169,6 +179,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
         demodulator = DemodulatorFactory.make(mode: config.mode)
         amDemodulator = demodulator as? AMDemodulator
         ssbDemodulator = demodulator as? SSBDemodulator
+        discriminator = demodulator as? DiscriminatorSource
         try demodulator.configure(inputRate: channelizer.outputRate, bandwidthHz: config.bandwidthHz)
         // Armed after configure, which is what decides the tapped rate, and never changed again for
         // the life of this core: a config change rebuilds it. That is what lets the DSP thread read
@@ -351,6 +362,11 @@ public final class ChannelDSPCore: @unchecked Sendable {
             audioSumSquares = 0
             audioSamples = 0
             audioPeak = 0
+            if let iv = discriminator?.takeDiscriminatorInterval() {
+                rec.deviationHz = Float(iv.deviationHz)
+                // A closed squelch is noise, and the DC of noise is not a tuning error.
+                rec.freqErrorHz = squelch.isOpen ? Float(iv.freqErrorHz) : .nan
+            }
             telemetry.push(rec)
         }
         blocksProcessed.wrappingAdd(1, ordering: .relaxed)

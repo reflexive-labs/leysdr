@@ -228,6 +228,14 @@ public enum PortableKernels {
         return m
     }
 
+    /// Minimum element; `.infinity` for an empty vector.
+    @inline(__always)
+    public static func min(_ src: UnsafePointer<Float>, count: Int) -> Float {
+        var m: Float = .infinity
+        for i in 0 ..< count where src[i] < m { m = src[i] }
+        return m
+    }
+
     /// Periodic-style Hann window `0.5·(1 − cos(2πn/N))`, unnormalised (matches `vDSP_HANN_DENORM`).
     @inline(__always)
     public static func hannWindow(_ dst: UnsafeMutablePointer<Float>, count: Int) {
@@ -421,6 +429,13 @@ public enum AccelerateKernels {
         guard count > 0 else { return -.infinity }
         var m: Float = 0
         vDSP_maxv(src, 1, &m, vDSP_Length(count))
+        return m
+    }
+
+    public static func min(_ src: UnsafePointer<Float>, count: Int) -> Float {
+        guard count > 0 else { return .infinity }
+        var m: Float = 0
+        vDSP_minv(src, 1, &m, vDSP_Length(count))
         return m
     }
 

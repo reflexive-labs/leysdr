@@ -98,12 +98,15 @@ message Meter {
   // was not measured -- 0 dBFS is a real, very loud level.
   double audio_dbfs = 5;       // RMS over the meter interval
   double audio_peak_dbfs = 6;  // largest sample in the interval; -inf when digitally silent
-  // FM only, from the calibrated discriminator; NaN for every other mode.
-  // Reserved here so the numbers are settled; populated when the sub-audible
-  // tap lands, because a deviation read off the de-emphasised audio would be
-  // wrong by whatever de-emphasis did to it.
-  reserved 7;  // deviation_hz
-  reserved 8;  // freq_error_hz
+  // FM only, from the calibrated discriminator, read before de-emphasis and
+  // the high-pass because a deviation read off the de-emphasised audio would
+  // be wrong by whatever de-emphasis did to it. NaN for every other mode and
+  // before the first block.
+  double deviation_hz = 7;   // peak deviation over the meter interval
+  // The discriminator's DC over the meter interval is the tuning error:
+  // positive when the transmitter sits above the channel. NaN while the
+  // squelch is closed, because noise has no tuning error.
+  double freq_error_hz = 8;
 }
 
 // Edge-triggered, exact in sample time — transcript features key on this, not on Meter.

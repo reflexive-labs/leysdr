@@ -280,7 +280,15 @@ row (median bin plus `10·log10(bandwidth / bin width)`; the bin count cancels),
 the clients agree by construction. NaN until a row has been read, which is the first block of a
 stream. Until 2026-09-19 the floor was the channel's own running minimum over 5 s, which on a
 carrier that never stops is the carrier, so a −12 dBFS signal read 0 dB over noise. The squelch
-never reads `snrDB`: it compares power to its threshold in dBFS.
+never reads `snrDB`: it compares power to its threshold in dBFS. The FM demodulators keep a
+`DiscriminatorInterval` (sum, count, high and low of the raw discriminator since the last meter,
+folded in where the sub-audible tap reads, ahead of de-emphasis and the high-pass), and the meter
+takes it: the DC times the hertz per unit is `freqErrorHz`, positive when the transmitter sits
+above the channel (the discriminator is `arg(x[n]·conj(x[n−1]))` and the channelizer mixes the
+offset down to zero), and the larger excursion from that DC is `deviationHz`. Both are NaN for
+every other mode, and `freqErrorHz` is NaN while the squelch is closed, because noise has no
+tuning error. WFM's interval is read at `r1` with 150 kHz per unit, since its discriminator puts
+±75 kHz at ±0.5.
 
 Telemetry records leave the DSP thread through `ChannelTelemetryQueue`, a fixed-capacity (64) ring
 with per-slot seqlock versions. Policy is drop-oldest: a full ring evicts the oldest unread record

@@ -276,7 +276,7 @@ actor DecodeRunner {
         let subscription = lease.engine.telemetrySubscription()
         for await t in subscription.stream {
             if Task.isCancelled { return }
-            if case .meter(_, let power, let snr, _, _, _) = t {
+            if case .meter(_, let power, let snr, _, _, _, _, _) = t {
                 noteMeter(power: power, snr: snr)
             }
         }

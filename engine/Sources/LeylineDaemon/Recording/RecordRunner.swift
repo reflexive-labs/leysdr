@@ -421,7 +421,7 @@ actor RecordRunner: RecordRunning {
             switch t {
             case .squelch(let time, let open, _, _, _):
                 await noteSquelch(open: open, at: time.sampleIndex)
-            case .meter(_, _, _, let open, _, _):
+            case .meter(_, _, _, let open, _, _, _, _):
                 if open != squelchOpen {
                     squelchOpen = open
                     squelchChangedAt = .now

@@ -127,7 +127,7 @@ final class FixtureTests: XCTestCase {
             Task<[(power: Double, open: Bool)], Never> {
                 var out: [(power: Double, open: Bool)] = []
                 for await t in run.1.meterEngine.telemetrySubscription().stream {
-                    if case let .meter(_, power, _, open, _, _) = t { out.append((power, open)) }
+                    if case let .meter(_, power, _, open, _, _, _, _) = t { out.append((power, open)) }
                 }
                 return out
             }

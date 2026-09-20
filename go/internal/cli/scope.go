@@ -420,6 +420,8 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	// Muted until the daemon says otherwise: a view that announced a closed
 	// squelch before the first meter would be guessing at what it cannot see.
 	muted := false
+	// The daemon's own tuning error, NaN until a meter carries one.
+	meterHz := math.NaN()
 	scaler := newScopeScaler(o.scale, interval)
 	frames := 0
 	for {
@@ -432,7 +434,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 			}
 		case m, ok := <-msgs:
 			if !ok {
-				msgs, tone, muted = nil, nil, false
+				msgs, tone, muted, meterHz = nil, nil, false, math.NaN()
 				continue
 			}
 			switch b := m.Body.(type) {
@@ -440,6 +442,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 				tone = b.SubAudible
 			case *leylinev1.TelemetryMsg_Meter:
 				muted = !b.Meter.GetSquelchOpen()
+				meterHz = b.Meter.GetFreqErrorHz()
 			}
 		case fr, ok := <-sub.Frames:
 			if !ok {
@@ -479,7 +482,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 				w.frame(view.render(scopeFrame{
 					samples: samples, tap: tap, windowMs: o.windowMs, scale: scale,
 					peakDbfs: peak, rmsDbfs: rms, fullScaleHz: fullScaleHz,
-					tuningHz: scopeTuningHz(tap, fullScaleHz, dc), what: what, tone: tone,
+					tuningHz: scopeTuningHz(tap, fullScaleHz, dc, meterHz), what: what, tone: tone,
 					// The squelch mutes the audio tap and not the detector, so
 					// it is only the audio trace that needs explaining.
 					muted: muted && tap == leylinev1.AudioTap_TAP_AUDIO,
@@ -545,12 +548,20 @@ func scopeFullScaleHz(ap *leylinev1.AudioParams, ch *leylinev1.Channel) uint32 {
 	return leyline.FullScaleDeviationHz(ch.GetMode(), ch.GetBandwidthHz())
 }
 
-// scopeTuningHz reads a demod tap's DC offset as a tuning error. Only the FM
-// detectors have one: their output is frequency, so a constant offset is a
-// constant frequency error, scaled by the deviation full scale stands for.
-func scopeTuningHz(tap leylinev1.AudioTap, fullScaleHz uint32, dc float64) float64 {
+// scopeTuningHz is the tuning error the demod tap's header names: the daemon's
+// own `freq_error_hz` when the meter carries one, measured on the discriminator
+// over the whole meter interval, and otherwise the window's DC offset read as
+// one. Only the FM detectors have a DC to read: their output is frequency, so a
+// constant offset is a constant frequency error, scaled by the deviation full
+// scale stands for. The fallback is for a daemon that sends NaN, which is an
+// older daemon, a mode that has no discriminator, or a closed squelch; the
+// audio tap has had the offset taken out and reports nothing either way.
+func scopeTuningHz(tap leylinev1.AudioTap, fullScaleHz uint32, dc, meterHz float64) float64 {
 	if tap != leylinev1.AudioTap_TAP_DEMOD || fullScaleHz == 0 {
 		return math.NaN()
+	}
+	if !math.IsNaN(meterHz) {
+		return meterHz
 	}
 	return dc * float64(fullScaleHz)
 }

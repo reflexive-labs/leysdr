@@ -42,7 +42,7 @@ fixture's tone level.
   The inline bar is dropped when they draw, because it repeats the signal row.
 
 **`deviation_hz` and `freq_error_hz` are deferred to SV-6, and their field numbers are `reserved`
-in the proto so the wire does not churn.** Both must come from the raw discriminator, and a
+in the proto so the wire does not churn. Landed 2026-09-20 as the app plan's M2-2.** Both must come from the raw discriminator, and a
 deviation read off the de-emphasised, high-passed audio would be wrong by whatever de-emphasis did
 to it. The tap that makes them correct is SV-6's, so they ship with it rather than being
 approximated here.
