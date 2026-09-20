@@ -36,7 +36,7 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
   and layout, and name the files and behaviours left unverified when handing over
   (`docs/dev/swift-style.md`, "Working as an agent on this repository").
 - `--json` CLI output is the standard proto3 JSON mapping — no custom shapes.
-- Proto changes: additive only within v1; run `protoc` validation in CI; reserved field numbers stay reserved.
+- Proto changes: additive only within v1; run `protoc` validation in CI. Reserved field numbers stay reserved once a field people depend on has been retired; before the first public release a number a plan parked as a placeholder (`Meter` 7 and 8, the signal-views plan) is taken by that plan's item, not skipped.
 - Instrument the sample path with `os_signpost` from the start — the spikes depend on it.
 - Errors: stable machine codes in `ErrorDetail.code`; prose goes in `message`.
 - Licensing: GPL is fine (open-source engine); prefer first-party driver bindings (librtlsdr, libhackrf, vendor SDKs) wrapped behind `RadioDevice`.

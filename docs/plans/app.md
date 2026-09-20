@@ -242,18 +242,16 @@ already did, and one test of both against the fake daemon. Both clients refuse a
 anchor (host time 0, what a Capture carries before its first block): a clock the daemon never
 kept is not printed.
 
-### M2-2 `[d]` Tuning error and deviation in the meter (SV-6)
+### M2-2 `[ ]` Tuning error and deviation in the meter (SV-6)
 
 `docs/design/signal-views.md`: "The discriminator's DC *is* the tuning error, and is what feeds
 `freq_error_hz`"; `docs/plans/signal-views.md` deferred `deviation_hz` and `freq_error_hz` to
 SV-6 and reserved 7 and 8 "so the wire does not churn". `ley scope` derives the tuning error on
 the client from the demod tap's DC today; the daemon computes none. Engine work: the FM
 discriminator's DC and its deviation onto `Meter`, FM and squelch-open only, NaN otherwise, with
-`ley`'s meter line and scope header reading the daemon's number. **Waiting on one decision:**
-`CLAUDE.md` says reserved field numbers stay reserved, and the signal-views plan reserved these
-two precisely so they could be filled at SV-6. Either the two fields take numbers 7 and 8 as
-that plan intended (a design-doc change to CLAUDE.md's sentence), or they take 9 and 10 and 7
-and 8 stay reserved. Nothing else in M2-2 depends on the answer.
+`ley`'s meter line and scope header reading the daemon's number. **Decided 2026-09-20:** the fields take 7 and 8 as the signal-views plan intended. The
+reserved rule exists for fields people depend on and nothing has shipped yet; `CLAUDE.md` now
+says when it starts to bind.
 
 ### M2-3 `[d]` The inspector panel
 
