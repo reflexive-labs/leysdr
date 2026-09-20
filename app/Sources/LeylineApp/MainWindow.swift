@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The window's four regions (docs/design/app-design-handoff.md, "The window"): chrome above and
-// below a two-panel body. The sidebar and the transport bar are fixed; the waterfall takes what
-// is left. The right third of the window does not exist in M1.
+// The window's regions (docs/design/app-design-handoff.md, "The window"): chrome above and
+// below a body of two panels, and a third on the right since M2, the inspector (docs/design/
+// app-design-handoff-m2.md, "The panel"). The sidebar, the inspector and the transport bar are
+// fixed; the waterfall takes what is left. The inspector closes, and the window is complete
+// without it.
 
 import LeylineClient
 import SwiftUI
@@ -17,6 +19,11 @@ struct MainWindow: View {
                     .frame(width: Theme.Layout.sidebarWidth)
                 Rectangle().fill(Theme.border).frame(width: 1)
                 canvas
+                if session.inspectorShown {
+                    Rectangle().fill(Theme.hairline).frame(width: 1)
+                    InspectorView()
+                        .frame(width: Theme.Layout.inspectorWidth)
+                }
             }
             Rectangle().fill(Theme.border).frame(height: 1)
             TransportBarView()
@@ -24,7 +31,10 @@ struct MainWindow: View {
         }
         .background(Theme.ground)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { DeviceChip() }
+            ToolbarItemGroup(placement: .primaryAction) {
+                DeviceChip()
+                InspectorToggle()
+            }
         }
         .toolbarBackground(Theme.chrome, for: .windowToolbar)
         .preferredColorScheme(.dark)
@@ -74,10 +84,10 @@ struct EmptyWords: View {
     }
 }
 
-/// One line about the last thing that happened, the last thing that went wrong, a channel the
-/// capture no longer covers, or what the band's numbers say is wrong (`FailureState`), over the
-/// bottom of the waterfall; a click dismisses it. The last two are the quietest: named, not
-/// alarmed.
+/// One line about the last thing that happened or the last thing that went wrong, over the
+/// bottom of the waterfall; a click dismisses it. What the band's numbers say is wrong and a
+/// channel the capture no longer covers were here in M1 and read in the inspector since M2
+/// (`FailureStrip`), where the owner wanted them (docs/plans/app.md, "Carried out of M1").
 struct NoticeStrip: View {
     @Environment(AppSession.self) private var session
 
@@ -88,12 +98,6 @@ struct NoticeStrip: View {
             }
         } else if let n = session.notice {
             line(n, colour: Theme.inkTertiary) { session.clearNotice() }
-        } else if let words = session.outOfCaptureWords {
-            line(words, colour: Theme.inkSecondary) { session.dismissOutOfCapture() }
-        } else if let f = session.failureShown {
-            line("\(f.headline). \(f.detail)", colour: Theme.inkSecondary) {
-                session.dismissFailure()
-            }
         }
     }
 

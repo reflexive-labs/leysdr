@@ -3,8 +3,11 @@
 // Region 5: the transport bar, in its final layout from the first release (docs/design/
 // app-design-handoff.md, and the design's footer). Every block is a header on one line with
 // its control under it: play, the one editable frequency in the window, mode, width, a
-// divider, the signal readout (M1 only), the squelch track with its words, and volume with the
-// output's name. Absent for good: gain, elapsed time, recording, sample rate.
+// divider, the squelch track with its words, and volume with the output's name. The signal
+// readout stood between the divider and the squelch in M1 and left with M2's inspector, which
+// says the same thing in words (the M1 handoff's one named exception to "nothing moves"); the
+// slot went back to the squelch track. Absent for good: gain, elapsed time, recording, sample
+// rate.
 
 import LeylineClient
 import LeylineProto
@@ -22,7 +25,6 @@ struct TransportBarView: View {
             WidthPopup()
             // The full height of the bar's content, from the labels' top down.
             Rectangle().fill(Theme.border).frame(width: 1)
-            SignalReadout()
             SquelchTrack()
                 .frame(maxWidth: .infinity)
             VolumeControl()
@@ -473,32 +475,6 @@ struct WidthPopup: View {
             }
             .disabled(session.channel == nil)
         }
-    }
-}
-
-/// `−38` with a small `dBFS`, and `26 dB over noise` under it: the meter's power, and that
-/// power over the band's floor at the channel's width (`AppSession.overNoiseDB`). M1 only; the
-/// inspector takes this over in M2.
-struct SignalReadout: View {
-    @Environment(AppSession.self) private var session
-
-    var body: some View {
-        let m = session.meter
-        Block(header: "Signal") {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(
-                        m.map { $0.powerDbfs.isFinite ? String(format: "%.0f", $0.powerDbfs) : "—" }
-                            ?? "—"
-                    )
-                    .font(Theme.Font.readout).foregroundStyle(Theme.ink)
-                    Text("dBFS").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
-                }
-                Text(session.overNoiseDB.map { String(format: "%.0f dB over noise", $0) } ?? " ")
-                    .font(Theme.Font.footnote).foregroundStyle(Theme.good)
-            }
-        }
-        .frame(width: 112, alignment: .leading)
     }
 }
 

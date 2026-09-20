@@ -186,16 +186,28 @@ final class SpectrumFeed {
     }
 }
 
-/// The channel meter, ten times a second, for the signal readout and the squelch track.
+/// One channel's telemetry: the meter ten times a second for the squelch track and the
+/// inspector's readings, and the squelch edges and sub-audible reports folded into a
+/// `TransmissionLog` for the inspector's log and its time on air (docs/design/
+/// app-design-handoff-m2.md, Regions 3 and 4). One subscription per channel, reset with it: the
+/// log is the channel's, and a transmission on the last channel is not one on this. The capture
+/// rate is `duration_samples`' unit and comes from the session's capture, which can change under
+/// a live subscription, so it is taken on every `follow` and not only at subscribe time.
 @MainActor
 @Observable
-final class MeterFeed {
+final class ChannelTelemetryFeed {
     private(set) var meter: Leyline_V1_Meter?
+    private(set) var transmissions: TransmissionLog?
+    /// The newest `SampleTime` any message carried, for `timeOnAir(at:)` and the log's relative
+    /// times: the view asks with the newest time it has rather than a clock of its own.
+    private(set) var newestTime: Leyline_V1_SampleTime?
     private(set) var error: LeylineError?
+    private var captureRate: UInt64 = 0
     private var task: Task<Void, Never>?
     private var channel: String?
 
-    func follow(_ channelID: String?, connection: DaemonConnection?) {
+    func follow(_ channelID: String?, captureRate: UInt64, connection: DaemonConnection?) {
+        self.captureRate = captureRate
         guard let channelID, let connection else {
             stop()
             return
@@ -203,15 +215,16 @@ final class MeterFeed {
         if channelID == channel, task != nil { return }
         stop()
         channel = channelID
+        transmissions = TransmissionLog(channelID: channelID)
         var sub = Leyline_V1_TelemetrySubscription()
         sub.channelID = channelID
-        sub.types = [.meter]
+        sub.types = [.meter, .squelchTransition, .subAudible]
         let stream = connection.telemetry(sub)
         task = Task { [weak self] in
             do {
                 for try await msg in stream {
                     if Task.isCancelled { return }
-                    if case .meter(let m)? = msg.body { self?.meter = m }
+                    self?.fold(msg)
                 }
             } catch {
                 if !Task.isCancelled { self?.error = LeylineError(error) }
@@ -219,10 +232,18 @@ final class MeterFeed {
         }
     }
 
+    private func fold(_ msg: Leyline_V1_TelemetryMsg) {
+        newestTime = msg.time
+        if case .meter(let m)? = msg.body { meter = m }
+        transmissions?.fold(msg, captureRate: captureRate)
+    }
+
     func stop() {
         task?.cancel()
         task = nil
         channel = nil
         meter = nil
+        transmissions = nil
+        newestTime = nil
     }
 }

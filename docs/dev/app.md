@@ -13,7 +13,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 | target | what | builds on |
 |---|---|---|
 | `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`, `MeterFeed`), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
@@ -119,12 +119,27 @@ read the same, and the words say so. The rule is `ley tune`'s (`go/internal/cli/
 which says the same sentence from the row it measured the squelch on, and the two tests share
 their rows. The daemon not running, no radio and an unplugged radio are the mirror's states and
 live in `AppSession.emptyWords`. The session names the state after every row and every mirror
-change, logs each change, and the strip over the waterfall shows it until the numbers change or
-the user closes it (a closed state stays closed until a different one is named). A channel the
+change, logs each change, and the inspector's strip shows it until the numbers change or the
+user closes it (a closed state stays closed until a different one is named); it sat over the
+waterfall in M1. A channel the
 capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or moved the capture) is
 named the same way from the mirror, with the width and centre it would need; the window's own
 rate change never causes it, because `AppSession.setSampleRate` re-places the centre for the
 tuned frequency at the new width and writes centre and rate in one tick.
+
+**The inspector** (`InspectorView.swift`, `InspectorGroups.swift`; the design is
+`../design/app-design-handoff-m2.md`). The panel on the window's right says what you are hearing
+in words, and every word is a presentation of a number the daemon measured: signal from
+`AppSession.overNoiseDB` through `SignalWord`, tuning and deviation from the meter's
+`freq_error_hz` and `deviation_hz` through `TuningWord` and `DeviationWord` (`Reading.swift`,
+where the thresholds live and are tested), time on air and the log of recent transmissions from
+`ChannelTelemetryFeed`, which subscribes one channel's meter, squelch edges and sub-audible
+reports and folds the last two into the façade's `TransmissionLog`. The number is one click away
+under each word, and a row whose measurement is NaN is hidden rather than dashed. Wall clock in
+the log comes through `SampleClock` from the capture's anchor and is relative otherwise. The panel
+keeps no state of its own; its one write is a bookmark's name, through `BookmarkStore`. The
+failure strip reads here since M2, and the transport bar's signal readout left when the panel
+arrived, the M1 handoff's one named exception to "nothing moves".
 
 ## Building and running
 
@@ -161,8 +176,8 @@ The app writes one line per thing the window did (`AppLog.swift`): dialling and 
 state, the capture and channel it made or adopted, every tune with the offset and any centre
 move, band crossings and the mode-and-width pairs they write, every gain write, every rate change
 with the centre it moved to, rejections with the write's tag, the failure state named or cleared,
-the FFT subscription's descriptor and a row count every thirty seconds, and whether the shader
-compiled. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
+the FFT subscription's descriptor and a row count every thirty seconds, whether the shader
+compiled, the inspector shown or hidden, and every bookmark added, renamed or removed. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
 which the Moat container's bind mount sees, so the log of a run on the Mac can be read from the

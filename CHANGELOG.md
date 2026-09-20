@@ -4,6 +4,14 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app has an inspector: a panel on the right that says what you are hearing in words.
+  Signal as one of five words with a bar that agrees with it, tuning as `Centred` or `Off tune ·
+  high`, deviation as `Quiet`, `Normal` or `Overdeviating`, time on air, and the last
+  transmissions on the channel with the time each started, and a click on any word shows the
+  number it came from. The channel's name leads, and a pencil renames it into `bookmarks.json`,
+  so `ley bookmarks` lists the name too. What the band's numbers say is wrong reads here now
+  rather than over the waterfall, and the transport bar's signal readout left with it. `View ▸
+  Show Inspector` (⌥⌘I) and the toolbar's right-hand button close and open it.
 - The meter says how far off frequency a transmitter is and how hard it is deviating.
   `Meter.freq_error_hz` is the FM discriminator's DC over the meter interval, positive when the
   transmitter sits above the channel, and `deviation_hz` its peak excursion, both read ahead of

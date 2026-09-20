@@ -59,6 +59,28 @@ final class BookmarksTests: XCTestCase {
         XCTAssertNil(store.list.first { $0.name == "No mode" })
     }
 
+    func testRenameKeepsTheIdAndFrequency() throws {
+        var store = BookmarkStore(path: tempPath())
+        store.now = { Date(timeIntervalSince1970: 1_700_000_000) }
+        try store.load()
+        let a = try store.add(name: "146.520 MHz", hz: 146_520_000, mode: .nfm, bandwidthHz: 12_500)
+        store.now = { Date(timeIntervalSince1970: 1_700_000_001) }
+        let renamed = try store.renameBookmark(a.id, to: "  N0TEST 2 m Simplex\n")
+        XCTAssertEqual(renamed.id, a.id)
+        XCTAssertEqual(renamed.name, "N0TEST 2 m Simplex", "the name is trimmed")
+        XCTAssertEqual(renamed.hz, 146_520_000)
+        XCTAssertEqual(renamed.mode, .nfm)
+        XCTAssertEqual(renamed.bandwidthHz, 12_500)
+        XCTAssertEqual(renamed.updatedNs, 1_700_000_001_000_000_000, "the stamp moves")
+        XCTAssertEqual(store.list.count, 1, "renamed in place, not added beside")
+        XCTAssertThrowsError(try store.renameBookmark(a.id, to: " ")) {
+            XCTAssertEqual($0 as? BookmarkError, .emptyName)
+        }
+        XCTAssertThrowsError(try store.renameBookmark("bm_nothing", to: "X")) {
+            XCTAssertEqual($0 as? BookmarkError, .noSuchBookmark("bm_nothing", candidates: []))
+        }
+    }
+
     func testRemoveByIdNameOrUniqueLooseName() throws {
         var store = BookmarkStore(path: tempPath())
         try store.load()

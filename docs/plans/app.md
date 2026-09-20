@@ -193,11 +193,14 @@ working: the failure strip itself, carried below as a task rather than fixed in 
 
 ## Carried out of M1
 
-- `[ ]` **The failure strip's presentation.** The words are right and the rule is tested; the
+- `[x]` **The failure strip's presentation.** The words are right and the rule is tested; the
   strip over the bottom of the waterfall is not where the owner wants to read them
   (2026-09-20). Revisit once M2's inspector exists, which carries signal in words and is the
   natural home for "what the numbers say is wrong"; the mirror-state words (out of capture) go
-  with it. Not a rule change: `FailureState` and `ley tune`'s line stay as they are.
+  with it. Not a rule change: `FailureState` and `ley tune`'s line stay as they are. Landed
+  2026-09-20 with M2-3: both read in the inspector's Region 2 (`FailureStrip`), the gain clause
+  as a button that opens the device menu, and `NoticeStrip` keeps only the notice and the last
+  error.
 
 ## The M1 cut
 
@@ -269,12 +272,29 @@ sends both fields off its own tap. `ley tune`'s meter line is unchanged, and `--
 fields as it carries the rest of the Meter. The app reads the generated proto and draws neither
 until M2-3.
 
-### M2-3 `[d]` The inspector panel
+### M2-3 `[x]` The inspector panel
 
 The right third: signal in words (the transport bar's readout leaves with it and the slot
 returns to the layout), tuning error and deviation from M2-2, time on air and the recent
-transmissions from M2-1, and the failure states carried out of M1. Waits for its handoff from
-Claude Design, the way the M1 window did; built on the Mac after M2-1 lands.
+transmissions from M2-1, and the failure states carried out of M1.
+
+Landed 2026-09-20 from `../design/app-design-handoff-m2.md`: `InspectorView.swift` (the toolbar
+toggle, the header, the identity with its inline rename, the failure strip, the reading in
+words with a popover under every word) and `InspectorGroups.swift` (the log, the disclosure
+groups, the number and clock formatting); `Reading.swift` in the façade with the word tables and
+`ReadingTests`; `MeterFeed` widened into `ChannelTelemetryFeed`, one subscription per channel
+for the meter, squelch edges and tones folded into a `TransmissionLog`;
+`BookmarkStore.renameBookmark` for the pencil; the tokens in `Theme.swift`; `View ▸ Show
+Inspector` (⌥⌘I) and `AppSession.inspectorShown`. The exception: the signal readout left the
+transport bar (`SignalReadout` is deleted) and the squelch track has the slot. The strip:
+`NoticeStrip` keeps the notice and the last error; the failure state and the out-of-capture
+words read in the panel. The handoff's "Decided 2026-09-20" records where the tree and the
+design differed. Written in the container, so unverified without a Mac: that the panel compiles
+at all; the layout at 820 pt without a scroll view; the popovers, the dotted underline and the
+ramp-filled bar; the inline rename's focus on appear and its key monitor (space and the arrows
+handed to the field editor past the Tune menu); the toolbar toggle beside the chip; the
+disclosure rows; that the `Show Inspector` title follows the state; and that the widened
+telemetry subscription is accepted by the daemon and the log fills.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 

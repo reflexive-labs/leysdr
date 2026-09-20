@@ -75,7 +75,7 @@ final class AppSession {
 
     // Feeds.
     let spectrum = SpectrumFeed()
-    let meters = MeterFeed()
+    let telemetry = ChannelTelemetryFeed()
 
     // View state that is the window's alone: presentation, never radio truth.
     var maxHold = true
@@ -88,12 +88,21 @@ final class AppSession {
     /// Set by ⌘L: the transport field takes focus and edits in place.
     var frequencyEntryShown = false
     var deviceMenuShown = false
+    /// Whether the inspector is on the window's right (M2 handoff, "The panel"). Remembered in
+    /// the defaults under `inspectorShownKey`, the way the last band is; shown until someone
+    /// closes it, because the default window is sized with it.
+    var inspectorShown =
+        UserDefaults.standard.object(forKey: AppSession.inspectorShownKey) as? Bool
+        ?? true
+    {
+        didSet { UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey) }
+    }
     /// One sentence about the last thing that happened, or nil.
     private(set) var notice: String?
     private(set) var lastError: LeylineError?
     /// What the band's numbers say is wrong, or nil (`FailureState`): named from the feed's
     /// folds after every row and from the mirror when the gains change, and logged when it
-    /// changes. Shown until the numbers change or the user dismisses it.
+    /// changes. Shown in the inspector until the numbers change or the user dismisses it.
     private(set) var failure: FailureState?
     /// The state the user dismissed; it comes back when a different one is named.
     private var dismissedFailure: FailureState?
@@ -103,6 +112,7 @@ final class AppSession {
     private var rejectionsSeen = 0
 
     private static let lastBandKey = "lastBand"
+    private static let inspectorShownKey = "inspectorShown"
 
     // MARK: Derived
 
@@ -119,7 +129,20 @@ final class AppSession {
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
     var displayHz: UInt64? { requestedHz ?? tunedHz }
     var isPlaying: Bool { sink != nil }
-    var meter: Leyline_V1_Meter? { meters.meter }
+    var meter: Leyline_V1_Meter? { telemetry.meter }
+    /// The tuned channel's recent transmissions and the open one, or nil without a channel.
+    var transmissions: TransmissionLog? { telemetry.transmissions }
+    /// How long the open transmission has run, at the newest telemetry time; nil when idle.
+    var timeOnAirSeconds: Double? {
+        guard let now = telemetry.newestTime else { return nil }
+        return transmissions?.timeOnAir(at: now)
+    }
+    /// The bookmark on the tuned frequency, the first by name when there are several: the name
+    /// the inspector leads with, and what its pencil renames.
+    var tunedBookmark: Bookmark? {
+        guard let hz = tunedHz else { return nil }
+        return bookmarks.list.first { $0.hz == hz }
+    }
     var isLive: Bool { if case .live = connection { true } else { false } }
 
     /// The waterfall's cold end: the squelch, as a level per bin, so raising the squelch darkens
@@ -148,18 +171,41 @@ final class AppSession {
         return max(peak - cold, SpectrumFeed.minRangeDB)
     }
 
-    /// The channel's power over the band's floor at the channel's width, the auto squelch's
-    /// scaling. The meter's own `snr_db` is power over the channel's running minimum, which on
-    /// a carrier that never stops is the carrier itself and reads 0 (`docs/plans/app.md`,
-    /// APP-3); this is the number a newcomer can trust. Nil until the floor is known.
-    var overNoiseDB: Double? {
-        guard let m = meter, m.powerDbfs.isFinite, let cap = capture, let ch = channel else {
-            return nil
-        }
+    /// The band's floor at the channel's width, the auto squelch's scaling of the feed's held
+    /// floor. Nil until the floor is known.
+    var channelFloorDB: Double? {
+        guard let cap = capture, let ch = channel else { return nil }
         let floor = SpectrumFold.channelFloorDB(
             binFloorDB: Double(spectrum.floorDB), bins: Int(SpectrumFeed.bins),
             sampleRate: cap.sampleRate, bandwidthHz: ch.bandwidthHz)
-        return floor.isFinite ? m.powerDbfs - floor : nil
+        return floor.isFinite ? floor : nil
+    }
+
+    /// The channel's power over `channelFloorDB`. The meter's own `snr_db` was power over the
+    /// channel's running minimum, which on a carrier that never stops is the carrier itself and
+    /// read 0 (`docs/plans/app.md`, APP-3); the daemon now measures the same floor, and this
+    /// stays the number the window trusts. Nil until the floor is known.
+    var overNoiseDB: Double? {
+        guard let m = meter, m.powerDbfs.isFinite, let floor = channelFloorDB else { return nil }
+        return m.powerDbfs - floor
+    }
+
+    /// The wall clock of a time on the tuned capture, through its anchor and nothing else
+    /// (invariant 5): nil until the anchor is dated, and the inspector then says how long ago
+    /// rather than inventing a clock.
+    func wallTime(of time: Leyline_V1_SampleTime) -> Date? {
+        guard let cap = capture else { return nil }
+        return SampleClock.wallTime(of: time, anchor: cap.anchor)
+    }
+
+    /// Seconds between a time on the tuned capture and the newest telemetry time, or nil when
+    /// the two are not on one timeline.
+    func secondsAgo(_ time: Leyline_V1_SampleTime) -> Double? {
+        guard let now = telemetry.newestTime, let cap = capture, cap.sampleRate > 0,
+            now.captureID == time.captureID, now.captureID == cap.captureID,
+            now.sampleIndex >= time.sampleIndex
+        else { return nil }
+        return Double(now.sampleIndex - time.sampleIndex) / Double(cap.sampleRate)
     }
 
     /// The squelch as a level per bin, or nil when it is off or there is no floor to bound it.
@@ -325,7 +371,7 @@ final class AppSession {
             channelSeen = false
         }
         spectrum.follow(capture, connection: daemon)
-        meters.follow(channelID, connection: daemon)
+        telemetry.follow(channelID, captureRate: capture?.sampleRate ?? 0, connection: daemon)
         nameFailure()
         if let ch = channel, ch.state != .outOfCapture { outOfCaptureDismissed = false }
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
@@ -1141,7 +1187,30 @@ final class AppSession {
         do {
             try bookmarks.add(name: name, hz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
             try bookmarks.save()
+            log("bookmark", "added \(name) at \(hz) Hz")
             notice = "Bookmarked \(name)"
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
+    /// The inspector's pencil: the bookmark on the tuned frequency takes the name, or one is
+    /// made the way `bookmarkCurrent` makes it and named at once. Either way the file is
+    /// written and the watcher reloads it, so the sidebar and `ley bookmarks` see the name too.
+    func renameTuned(to name: String) {
+        guard let ch = channel, let hz = tunedHz else { return }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        do {
+            if let b = tunedBookmark {
+                guard b.name != name else { return }
+                try bookmarks.renameBookmark(b.id, to: name)
+                log("bookmark", "renamed \(b.name) -> \(name) at \(hz) Hz")
+            } else {
+                try bookmarks.add(name: name, hz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
+                log("bookmark", "added \(name) at \(hz) Hz from the inspector")
+            }
+            try bookmarks.save()
         } catch {
             lastError = bookmarkWriteError(error)
         }
@@ -1151,6 +1220,7 @@ final class AppSession {
         do {
             try bookmarks.remove(bookmark.id)
             try bookmarks.save()
+            log("bookmark", "removed \(bookmark.name) at \(bookmark.hz) Hz")
         } catch {
             lastError = bookmarkWriteError(error)
         }
@@ -1189,11 +1259,17 @@ final class AppSession {
     func zoomIn() { zoom = min(zoom * 2, 8) }
     func zoomOut() { zoom = max(zoom / 2, 1) }
 
+    func toggleInspector() {
+        inspectorShown.toggle()
+        log("session", inspectorShown ? "inspector shown" : "inspector hidden")
+    }
+
     func clearNotice() { notice = nil }
     func clearError() { lastError = nil }
 
     /// The failure state the band's numbers show now, from the feed's held floor and peak and
-    /// the capture's gains. A change is one log line, so a strip that appeared can be explained.
+    /// the capture's gains. A change is one log line, so a strip that appeared can be explained
+    /// from the log.
     private func nameFailure() {
         let now: FailureState?
         if let cap = capture, isLive, spectrum.error == nil {
@@ -1219,7 +1295,8 @@ final class AppSession {
         if let d = dismissedFailure, now?.kind != d.kind { dismissedFailure = nil }
     }
 
-    /// Whether the strip shows the failure: not after the user closed it, until a different one.
+    /// Whether the inspector's strip shows the failure: not after the user closed it, until a
+    /// different one.
     var failureShown: FailureState? {
         guard let failure else { return nil }
         if let d = dismissedFailure, d.kind == failure.kind { return nil }

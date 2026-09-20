@@ -194,8 +194,8 @@ protocol method AppKit calls off the actor is `nonisolated` and hops back
 (`app/Sources/LeylineApp/WaterfallView.swift:278`).
 
 **`MainActor.assumeIsolated` is the bridge from a callback already on the main thread**, and it
-appears exactly three times: a `DispatchSource` on `.main`, an `NSEvent` monitor, and
-`MTKViewDelegate.draw(in:)`. If you cannot say in one sentence why the callback is on the main
+appears exactly four times: a `DispatchSource` on `.main`, the two `NSEvent` monitors (the
+transport field's and the inspector's name field's), and `MTKViewDelegate.draw(in:)`. If you cannot say in one sentence why the callback is on the main
 thread, it is not, and `assumeIsolated` will trap.
 
 **Task capture follows the task's lifetime.** A fire-and-forget write inside a `@MainActor`

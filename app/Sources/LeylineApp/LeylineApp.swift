@@ -3,7 +3,8 @@
 // The Mac app: a peer client of the daemon (CLAUDE.md invariant 1). It renders what the mirror
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
 // is M1 of docs/design/app-design-handoff.md: sidebar, spectrum, waterfall, transport bar, the
-// device menu, and a Tune menu that names every gesture (docs/plans/app.md, "The M1 cut").
+// device menu, and a Tune menu that names every gesture (docs/plans/app.md, "The M1 cut"), plus
+// M2's inspector on the right (docs/design/app-design-handoff-m2.md).
 
 import AppKit
 import LeylineClient
@@ -83,6 +84,14 @@ struct TuneCommands: Commands {
                 .keyboardShortcut("d", modifiers: [.command])
             Button(session.isPlaying ? "Pause" : "Play") { Task { await session.togglePlay() } }
                 .keyboardShortcut(.space, modifiers: [])
+        }
+        CommandGroup(after: .sidebar) {
+            // The title is read when the menu is built; as with Play/Pause above, a Commands
+            // body is not promised a re-evaluation, so the toolbar's toggle is the live one.
+            Button(session.inspectorShown ? "Hide Inspector" : "Show Inspector") {
+                session.toggleInspector()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])

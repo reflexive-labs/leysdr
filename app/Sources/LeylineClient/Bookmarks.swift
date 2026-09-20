@@ -199,6 +199,24 @@ public struct BookmarkStore: Sendable {
         return b
     }
 
+    /// Renames the bookmark with this id in place, keeping its frequency, mode and width: the
+    /// inspector's pencil, where `add` would make a second bookmark on the same frequency under
+    /// the new name. Not `rename`, which would shadow the `rename(2)` `save` calls. Does not
+    /// save.
+    @discardableResult
+    public mutating func renameBookmark(_ id: String, to name: String) throws -> Bookmark {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw BookmarkError.emptyName }
+        guard var b = bookmarks[id] else {
+            throw BookmarkError.noSuchBookmark(id, candidates: [])
+        }
+        b.name = name
+        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
+        bookmarks[id] = b
+        return b
+    }
+
     /// Removes by exact id, else exact name, else a case-insensitive name that matches exactly
     /// one bookmark. The argument is trimmed first, as `go/pkg/bookmarks` trims it, so a name
     /// pasted with a trailing space still names its bookmark. Does not save.

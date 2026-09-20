@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The app's colour and type tokens: every value in docs/design/app-design-handoff.md ("Palette",
-// "Type") and nothing a view invents. The names are the handoff's, so a designer and a reader
-// of the code point at the same word. The level ramp shares hue order with the terminal's
+// "Type") and the inspector's few from docs/design/app-design-handoff-m2.md ("Decided
+// 2026-09-20"), and nothing a view invents. The names are the handoffs', so a designer and a
+// reader of the code point at the same word. The level ramp shares hue order with the terminal's
 // (docs/dev/cli-style.md, "3a. The level ramp") and nothing else: this one runs from near-black
 // to cream and assumes the dark ground it owns.
 
@@ -39,6 +40,14 @@ enum Theme {
     static let good = Color(hex: 0x2FB6A3)
     /// Reserved; unused in M1.
     static let recording = Color(hex: 0xB8483C)
+    /// A reading that wants attention without alarm: off tune, overdeviating. The ramp's fourth
+    /// stop, so it never competes with `accent` for the tuned channel.
+    static let caution = Color(hex: 0xC9C06A)
+    /// The failure strip's ground in the inspector (M2 handoff, Region 2): warm, one step off
+    /// the panel, so what the numbers say is wrong reads as a block and not a row.
+    static let warnGround = Color(hex: 0x1F1714)
+    /// The failure strip's edge, the one border in the window that is not grey.
+    static let warnBorder = Color(hex: 0x6B3A28)
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
     /// SwiftUI-drawn meters; the waterfall shader gets the same stops as floats.
@@ -76,9 +85,11 @@ enum Theme {
         /// The tuned frequency in the transport field.
         static let frequency = SwiftUI.Font.system(size: 29, weight: .medium, design: .monospaced)
             .monospacedDigit()
-        /// The signal readout.
-        static let readout = SwiftUI.Font.system(size: 21, weight: .medium, design: .monospaced)
-            .monospacedDigit()
+        /// The channel's name at the top of the inspector: the one thing in the window that is
+        /// a name rather than a number, tracked by `Theme.nameTracking`. The M2 design set it
+        /// in Space Grotesk; no font is bundled (M1 handoff, "Type"), so it is SF at the same
+        /// size and weight.
+        static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
         /// A view's own headline: the band rail's band name, the empty-state headline.
@@ -92,13 +103,20 @@ enum Theme {
             .monospacedDigit()
         /// A section header: uppercase, tracked (`Theme.sectionTracking`).
         static let section = SwiftUI.Font.system(size: 9.5, weight: .medium, design: .monospaced)
+        /// A table's column head over mono rows: the inspector's log.
+        static let columnHead = SwiftUI.Font.system(
+            size: 8.5, weight: .medium, design: .monospaced)
         static let footnote = SwiftUI.Font.system(size: 10.5)
+        /// A clause under a sentence: the failure strip's thing to try.
+        static let aside = SwiftUI.Font.system(size: 11.5)
     }
 
     /// `0.14em` at 9.5 pt; was `0.16em`, brought down a step on 2026-09-19.
     static let sectionTracking: CGFloat = 9.5 * 0.14
     /// `-0.02em` at 29 pt.
     static let frequencyTracking: CGFloat = 29 * -0.02
+    /// `-0.015em` at 21 pt, the channel's name.
+    static let nameTracking: CGFloat = 21 * -0.015
 
     // Layout, from the handoff's window: ratios of a 1360×820 design, fixed where it says so.
     enum Layout {
@@ -106,6 +124,16 @@ enum Theme {
         static let bandRailHeight: CGFloat = 40
         static let spectrumHeight: CGFloat = 150
         static let transportHeight: CGFloat = 88
+        /// The inspector, fixed on the right (M2 handoff, "The panel"); the window is complete
+        /// without it.
+        static let inspectorWidth: CGFloat = 312
+        static let inspectorHeaderHeight: CGFloat = 36
+        /// The label column of the inspector's reading rows.
+        static let readingLabelWidth: CGFloat = 74
+        static let signalBarHeight: CGFloat = 6
+        /// The log's fixed columns; signal fills the rest.
+        static let logTimeWidth: CGFloat = 52
+        static let logLengthWidth: CGFloat = 40
         static let defaultWindow = CGSize(width: 1360, height: 820)
     }
 }
