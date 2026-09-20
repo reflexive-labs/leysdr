@@ -63,7 +63,7 @@ that says `leylined <version>` with the daemon running and "The daemon is not ru
 it, and `ley tune 146.52M` from a terminal puts a row in its channel list. That is the same
 promise the test makes, with a window instead of an assertion.
 
-### APP-2 `[ ]` Layer 0 and spike S1: spectrum, waterfall, click to hear (E.2)
+### APP-2 `[x]` Layer 0 and spike S1: spectrum, waterfall, click to hear (E.2)
 
 The window on launch: the first connected radio's capture (created if none, on the opinionated
 defaults: auto gain, 2.4 MSPS, the preset the user last used or FM broadcast), the spectrum row
@@ -92,8 +92,14 @@ the tuned band on a `Canvas`; `WaterfallView` is an `MTKView` with `Resources/Wa
 (one byte a bin in a ring texture, the loudest bin per pixel column, the six-stop ramp between
 the floor and floor + 60 dB) and owns the mouse; `AppSession.adopt` creates the first capture
 on the last band used or FM broadcast; signposts `row` and `draw` on `com.leyline.app` are the
-client half of S1. Waits for its first build on the Mac (`make app-run`) before the box is
-ticked: the Metal path, the type checker and the layout are all unproven there.
+client half of S1.
+
+Ticked 2026-09-20. The window has been built and run on the owner's Mac since 2026-09-18 (APP-3
+records every change since going through `make app-run`), so the Metal path, the type checker
+and the layout are proven there. The S1 trace was not taken: the owner worked around it on the
+Mac, and the spike's artifact (an Instruments trace and a findings note) is scratched rather
+than owed. The signposts stay in the code for whoever wants the measurement later. The ring
+decision stands where "Decisions" left it: gRPC, and the ring only if a window drops rows.
 
 ### APP-3 `[ ]` Layer 1 controls (E.3)
 
@@ -110,7 +116,9 @@ waterfall, and the device menu with the gain slider (`DeviceMenuView.swift`). Th
 states landed 2026-09-19 (below). Built and running on the owner's Mac from 2026-09-18; every change
 since has gone through `make app-run` there, and the state on 2026-09-19 is a window that hears,
 tunes by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the dB axis
-and the squelch-keyed waterfall. Still open in M1: CHIRP import (APP-4) and the S1 trace (APP-2).
+and the squelch-keyed waterfall. Nothing in M1 is still owed from the code (2026-09-20): CHIRP
+import follows M1 (APP-4), and the S1 trace was scratched (APP-2); what remains is the first-run
+checks each item names.
 
 Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
 `PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s

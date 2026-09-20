@@ -83,8 +83,9 @@ shape since D.13, and it waits behind the app rather than in front of it.
 **Decided not to gate on:**
 
 - **The shm ring.** The daemon answers a ring request with gRPC by design, and a 2048-bin
-  waterfall at 30 rows a second is about 60 KB/s over the socket. The app draws over gRPC first and
-  measures S1; the ring is built if the measurement says so, not before.
+  waterfall at 30 rows a second is about 60 KB/s over the socket. The app draws over gRPC first;
+  the S1 trace was worked around on the Mac rather than taken (2026-09-20, `app.md` APP-2), and
+  the ring is built only if a window drops rows, not before.
 - **Bookmarks, presets, scan lists and CHIRP import.** Interpretation state, client-side, in a
   shared file both `ley` and the app read, on the pattern `go/pkg/labels` set for transmitter
   names (`docs/design/decoders.md`, "The state boundary"). Not daemon state, so not engine work;
