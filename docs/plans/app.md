@@ -186,6 +186,19 @@ rules `ley` applies) and `Bookmarks.swift` (the same file, the same shape, reloa
 directory changes), both tested on Linux. The sidebar renders both. CHIRP import is the open
 half.
 
+Seen on the Mac 2026-09-20, by the owner: the gain slider's level reads back under the
+element's name, a rate change keeps the station inside the capture, the failure strip appears
+and clears, and the stepper steps. M1 holds. One thing came back as not liked rather than not
+working: the failure strip itself, carried below as a task rather than fixed in place.
+
+## Carried out of M1
+
+- `[ ]` **The failure strip's presentation.** The words are right and the rule is tested; the
+  strip over the bottom of the waterfall is not where the owner wants to read them
+  (2026-09-20). Revisit once M2's inspector exists, which carries signal in words and is the
+  natural home for "what the numbers say is wrong"; the mirror-state words (out of capture) go
+  with it. Not a rule change: `FailureState` and `ley tune`'s line stay as they are.
+
 ## The M1 cut
 
 Decided 2026-09-18 from `../design/app-design-handoff.md`, "What M1 is": a window that hears
@@ -195,6 +208,56 @@ from APP-6; the inspector, recording, lifecycle prose and distribution wait. The
 things the handoff settled that the plan had left open: the waterfall runs at 2048 bins and
 30 rows a second (the ladder's ceiling, and what the desktop SDRs do), and pause is the sink
 detached rather than a volume of zero.
+
+## The M2 cut
+
+Decided 2026-09-20 from the handoff's ladder ("M2: the inspector: signal, tuning error, time on
+air, recent transmissions on this channel"). M2 adds the right third of the window and moves
+nothing an earlier step introduced, except signal, which leaves the transport bar as the
+handoff's one named exception (Region 5). The order is data first, panel last: the folds and
+the engine work are built and tested here, against fixtures, with their `ley` mirrors; the
+panel waits for its handoff and is built on the Mac. The failure strip's presentation (above)
+is revisited with the panel, which is where "what the numbers say" belongs.
+
+### M2-1 `[ ]` The transmissions log and time on air, in the façade and in `ley`
+
+What `ley tune` already prints per closed transmission (`go/internal/cli/transmission.go`:
+duration from `duration_samples` at the capture rate, peak SNR, peak audio) becomes a fold both
+clients keep: a ring of the last transmissions on a channel from `SquelchTransition` edges, the
+CTCSS tone `SubAudible` reported during each, and the open one's time on air from its open
+edge's `SampleTime`. Wall clock is derived from the capture's `CaptureAnchor` and nothing else
+(invariant 5; Go's `leyline.AnchorWallTime` gets a Swift mirror), and a transmission no anchor
+covers has no clock. In the façade: `Transmissions.swift`, a value with no daemon in it, tested
+on Linux from synthetic messages and against `nfm_keyed.cf32`. In `ley`: the meter line says
+`on air 4 s` while the squelch is open, and the closed line carries the wall-clock start when
+the anchor covers it. No contract change.
+
+### M2-2 `[d]` Tuning error and deviation in the meter (SV-6)
+
+`docs/design/signal-views.md`: "The discriminator's DC *is* the tuning error, and is what feeds
+`freq_error_hz`"; `docs/plans/signal-views.md` deferred `deviation_hz` and `freq_error_hz` to
+SV-6 and reserved 7 and 8 "so the wire does not churn". `ley scope` derives the tuning error on
+the client from the demod tap's DC today; the daemon computes none. Engine work: the FM
+discriminator's DC and its deviation onto `Meter`, FM and squelch-open only, NaN otherwise, with
+`ley`'s meter line and scope header reading the daemon's number. **Waiting on one decision:**
+`CLAUDE.md` says reserved field numbers stay reserved, and the signal-views plan reserved these
+two precisely so they could be filled at SV-6. Either the two fields take numbers 7 and 8 as
+that plan intended (a design-doc change to CLAUDE.md's sentence), or they take 9 and 10 and 7
+and 8 stay reserved. Nothing else in M2-2 depends on the answer.
+
+### M2-3 `[d]` The inspector panel
+
+The right third: signal in words (the transport bar's readout leaves with it and the slot
+returns to the layout), tuning error and deviation from M2-2, time on air and the recent
+transmissions from M2-1, and the failure states carried out of M1. Waits for its handoff from
+Claude Design, the way the M1 window did; built on the Mac after M2-1 lands.
+
+### M2-4 `[ ]` The lifecycle half of APP-6
+
+The daemon not running and the radio unplugged are already the window's empty words, and an
+unplug is the `CAPTURE_DETACHED` transition the mirror keeps. Left for M2: the app starting the
+daemon, which waits for APP-7's launchd job. Nothing to build until then; recorded so APP-6 is
+not read as untouched.
 
 ### APP-5 `[ ]` Recording from the window (E.5)
 
