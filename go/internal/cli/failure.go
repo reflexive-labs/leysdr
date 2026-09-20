@@ -36,8 +36,15 @@ func failureWords(bins []float64, gains []*leylinev1.GainState, elements []*leyl
 		return ""
 	}
 	if peak >= -fullScaleMarginDb {
-		return fmt.Sprintf("A signal is within %d dB of full scale: the loudest bin reads %.0f dBFS. Lower the gain, or set it to auto, before the radio clips.",
-			fullScaleMarginDb, peak)
+		reads := fmt.Sprintf("A signal is within %d dB of full scale: the loudest bin reads %.0f dBFS", fullScaleMarginDb, peak)
+		switch {
+		case gainAtMinimum(gains, elements):
+			return reads + " at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
+		case gainAuto(gains):
+			return reads + " with the gain on auto. Take the gain by hand and lower it before the radio clips."
+		default:
+			return reads + ". Lower the gain before the radio clips."
+		}
 	}
 	floor := medianDb(bins)
 	if math.IsNaN(floor) || peak-floor >= peakAboveFloorDb {
@@ -48,6 +55,17 @@ func failureWords(bins []float64, gains []*leylinev1.GainState, elements []*leyl
 		return measured + ", and the gain is at its lowest. Turn it up, or set it to auto."
 	}
 	return measured + ". Check the antenna; FM broadcast is the band most antennas hear."
+}
+
+// gainAuto reports whether any gain element is on auto: then "lower the gain"
+// means taking it by hand first, which the sentence says.
+func gainAuto(gains []*leylinev1.GainState) bool {
+	for _, g := range gains {
+		if g.GetAuto() {
+			return true
+		}
+	}
+	return false
 }
 
 // gainAtMinimum reports whether any gain element is set by hand to the lowest

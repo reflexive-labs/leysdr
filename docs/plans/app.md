@@ -296,6 +296,19 @@ handed to the field editor past the Tune menu); the toolbar toggle beside the ch
 disclosure rows; that the `Show Inspector` title follows the state; and that the widened
 telemetry subscription is accepted by the daemon and the log fills.
 
+### M2-5 `[ ]` Clipping, measured rather than inferred
+
+Found on the Mac 2026-09-20: "a signal is within 3 dB of full scale" popped up on FM broadcast
+at auto gain, where a strong constant-envelope carrier sits near full scale all day and nothing
+is wrong. The state infers the ADC's condition from the loudest FFT bin, which is a proxy; the
+honest measurement is the daemon's alone: samples at the rails (a cu8 byte at 0 or 255) counted
+where every block is already converted, reported as capture telemetry (`CaptureLevel`: clipped
+and total samples per interval, and the block's peak), with `ley levels`' OVER and `ley tune`'s
+line reading it. The failure state becomes "the radio is clipping", named only when it is, and
+near-full-scale becomes a number in the inspector's Measurements. Until this lands the client
+rule has hysteresis and gain-aware words (2026-09-20), which stop the flicker and the useless
+"set it to auto", not the false alarm.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged are already the window's empty words, and an

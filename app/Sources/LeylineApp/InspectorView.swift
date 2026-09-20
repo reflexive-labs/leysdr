@@ -248,18 +248,9 @@ struct FailureStrip: View {
                 session.dismissOutOfCapture()
             }
         } else if let f = session.failureShown {
-            block(sentence: f.headline + ".", detail: f.detail, namesGain: namesGain(f)) {
+            block(sentence: f.headline + ".", detail: f.detail, namesGain: f.namesGain) {
                 session.dismissFailure()
             }
-        }
-    }
-
-    /// Whether the state's thing to try is the gain: near full scale always; nothing above the
-    /// floor only when the gain is set by hand to its lowest, else the antenna is named.
-    private func namesGain(_ f: FailureState) -> Bool {
-        switch f {
-        case .nearFullScale: return true
-        case .nothingAboveFloor(_, let gainAtMinimum): return gainAtMinimum
         }
     }
 

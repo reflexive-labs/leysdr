@@ -1276,7 +1276,7 @@ final class AppSession {
             now = FailureState.name(
                 floorDB: spectrum.floorDB, peakDB: spectrum.peakDB, rows: spectrum.heldRows,
                 rowsPerSecond: SpectrumFeed.rowsPerSecond, gains: cap.gains,
-                elements: device?.gainElements ?? [])
+                elements: device?.gainElements ?? [], previous: failure)
         } else {
             now = nil
         }
@@ -1292,7 +1292,9 @@ final class AppSession {
         } else {
             log("failure", "cleared")
         }
-        if let d = dismissedFailure, now?.kind != d.kind { dismissedFailure = nil }
+        // A dismissal outlives the state's clearing: it is forgotten only when a different state
+        // is named, or a state that flickers at its threshold comes back every time it does.
+        if let now, let d = dismissedFailure, now.kind != d.kind { dismissedFailure = nil }
     }
 
     /// Whether the inspector's strip shows the failure: not after the user closed it, until a
