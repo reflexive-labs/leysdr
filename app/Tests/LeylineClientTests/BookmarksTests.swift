@@ -74,6 +74,10 @@ final class BookmarksTests: XCTestCase {
         XCTAssertEqual(b.updatedNs, 1_700_000_001_000_000_000)
         XCTAssertEqual(store.list.count, 1)
         XCTAssertThrowsError(try store.updateBookmark(a.id, mode: .unspecified, bandwidthHz: 0))
+        let moved = try store.updateBookmark(a.id, hz: 146_520_000, mode: .nfm, bandwidthHz: 12_500)
+        XCTAssertEqual(moved.hz, 146_520_000, "replaced where the radio is")
+        XCTAssertEqual(moved.name, "Repeater")
+        XCTAssertEqual(moved.id, a.id)
     }
 
     func testRenameKeepsTheIdAndFrequency() throws {

@@ -67,6 +67,13 @@ struct SidebarView: View {
                         if tuned, session.bookmarkModified {
                             Button("Save mode and width") { session.saveTunedBookmark() }
                         }
+                        // The bookmark points where the radio is: the name stays, the frequency,
+                        // mode and width become the channel's. Only when that is somewhere else.
+                        if let hz = session.tunedHz, hz != b.hz {
+                            Button("Replace with \(Frequency.format(hz))") {
+                                session.replace(bookmark: b)
+                            }
+                        }
                         Button("Remove", role: .destructive) { session.remove(bookmark: b) }
                     }
                 }

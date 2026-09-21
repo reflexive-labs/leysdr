@@ -217,18 +217,20 @@ public struct BookmarkStore: Sendable {
         return b
     }
 
-    /// Gives the bookmark with this id the mode and width it is heard with now, keeping its
-    /// name and frequency: the inspector's "save" on a bookmark whose settings were changed
-    /// after it was tuned. Does not save.
+    /// Gives the bookmark with this id the mode and width it is heard with now, and the
+    /// frequency when one is given, keeping its name: the inspector's "save" on a bookmark whose
+    /// settings were changed after it was tuned, and the sidebar's "replace" on one that should
+    /// point where the radio is (`ley bookmarks move` for the frequency). Does not save.
     @discardableResult
     public mutating func updateBookmark(
-        _ id: String, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32
+        _ id: String, hz: UInt64? = nil, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32
     ) throws -> Bookmark {
         guard loaded else { throw BookmarkError.notLoaded(path) }
         guard mode != .unspecified else { throw BookmarkError.unspecifiedMode }
         guard var b = bookmarks[id] else {
             throw BookmarkError.noSuchBookmark(id, candidates: [])
         }
+        if let hz { b.hz = hz }
         b.modeName = mode.wireName
         b.bandwidthHz = bandwidthHz
         b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)

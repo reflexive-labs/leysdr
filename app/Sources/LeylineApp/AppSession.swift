@@ -1325,6 +1325,24 @@ final class AppSession {
         }
     }
 
+    /// The row's "Replace with …": the bookmark keeps its name and takes the tuned frequency
+    /// with the mode and width it is heard at (the owner's choice over a match within the
+    /// channel's width, 2026-09-21; `ley bookmarks move` is the terminal's).
+    func replace(bookmark: Bookmark) {
+        guard let ch = channel, let hz = tunedHz else { return }
+        do {
+            try bookmarks.updateBookmark(
+                bookmark.id, hz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
+            try bookmarks.save()
+            log(
+                "bookmark",
+                "\(bookmark.name) moved \(bookmark.hz) -> \(hz) Hz, \(ch.mode.word) \(ch.bandwidthHz) Hz"
+            )
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
     /// The channel goes back to the tuned bookmark's saved settings.
     func revertToTunedBookmark() {
         guard let b = tunedBookmark, let ch = channel, b.mode != .unspecified else { return }
