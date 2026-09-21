@@ -88,12 +88,6 @@ final class SpectrumFeed {
     private(set) var medianDB: Float = .nan
     static let floorSlackDB: Float = 4
     private(set) var rows = 0
-    /// Rows folded into the held floor and peak since they were last reset: a retune resets the
-    /// folds without ending the subscription, and a rule about "the last 3 s" counts from there.
-    private(set) var heldRows = 0
-    /// Fires after every row is folded, on the main actor; the session names the failure state
-    /// from the folds here rather than polling them.
-    var onRow: (() -> Void)?
     private(set) var gaps = 0
     private(set) var descriptor: Leyline_V1_StreamDescriptor?
     private(set) var error: LeylineError?
@@ -152,7 +146,6 @@ final class SpectrumFeed {
         subscribedRate = 0
         rows = 0
         gaps = 0
-        heldRows = 0
     }
 
     /// The capture moved: what was held is about another span.
@@ -161,7 +154,6 @@ final class SpectrumFeed {
         floorDB = .nan
         medianDB = .nan
         peakDB = .nan
-        heldRows = 0
     }
 
     private func ingest(_ row: FFTRow) {
@@ -179,10 +171,8 @@ final class SpectrumFeed {
         }
         waterfall.append(row.levelsDB, seq: row.seq)
         rows += 1
-        heldRows += 1
         if row.gap != nil { gaps += 1 }
         if rows % 900 == 0 { log("feed", "\(rows) rows, \(gaps) gaps, floor \(floorDB) dBFS") }
-        onRow?()
     }
 }
 

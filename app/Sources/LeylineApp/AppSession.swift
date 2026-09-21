@@ -341,7 +341,6 @@ final class AppSession {
 
     func start() async {
         guard running == nil else { return }
-        spectrum.onRow = { [weak self] in self?.nameFailure() }
         captureLevel.onLevel = { [weak self] in self?.nameFailure() }
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
@@ -1329,16 +1328,14 @@ final class AppSession {
     func clearNotice() { notice = nil }
     func clearError() { lastError = nil }
 
-    /// The failure state the band's numbers show now, from the feed's held floor and peak and
-    /// the capture's gains. A change is one log line, so a strip that appeared can be explained
+    /// The failure state the radio's numbers show now, from the capture's level and gains. A change is one log line, so a strip that appeared can be explained
     /// from the log.
     private func nameFailure() {
         let now: FailureState?
         if let cap = capture, isLive, spectrum.error == nil {
             now = FailureState.name(
-                level: captureLevel.level, floorDB: spectrum.floorDB, peakDB: spectrum.peakDB,
-                rows: spectrum.heldRows, rowsPerSecond: SpectrumFeed.rowsPerSecond,
-                gains: cap.gains, elements: device?.gainElements ?? [], previous: failure)
+                level: captureLevel.level, gains: cap.gains, elements: device?.gainElements ?? [],
+                previous: failure)
         } else {
             now = nil
         }
@@ -1375,7 +1372,6 @@ extension FailureState {
     fileprivate var kind: Int {
         switch self {
         case .clipping: return 0
-        case .nothingAboveFloor: return 1
         }
     }
 }

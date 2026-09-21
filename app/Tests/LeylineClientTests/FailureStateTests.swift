@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The failure rule on numbers, without a daemon. The quiet rows are the ones
-// `go/internal/cli/failure_test.go` uses, so the two clients are held to one answer; the
-// clipping rule reads the daemon's CaptureLevel on both sides.
+// The failure rule on numbers, without a daemon: clipping from the daemon's CaptureLevel, the
+// same floor `ley tune` applies.
 
 import LeylineProto
 import XCTest
@@ -31,12 +30,10 @@ final class FailureStateTests: XCTestCase {
         }
     }
     private func name(
-        level: Leyline_V1_CaptureLevel? = nil, floor: Float = -64, peak: Float = -30,
-        rows: Int = 90, gains: [Leyline_V1_GainState] = [], previous: FailureState? = nil
+        level: Leyline_V1_CaptureLevel?, gains: [Leyline_V1_GainState] = [],
+        previous: FailureState? = nil
     ) -> FailureState? {
-        FailureState.name(
-            level: level, floorDB: floor, peakDB: peak, rows: rows, rowsPerSecond: 30,
-            gains: gains, elements: [tuner], previous: previous)
+        FailureState.name(level: level, gains: gains, elements: [tuner], previous: previous)
     }
     private func clipping(
         _ clipped: UInt64, total: UInt64 = 600_000, auto: Bool = false, atMinimum: Bool = false
@@ -44,18 +41,11 @@ final class FailureStateTests: XCTestCase {
         .clipping(clipped: clipped, total: total, gainAuto: auto, gainAtMinimum: atMinimum)
     }
 
-    func testAHealthyBandNamesNothing() {
-        XCTAssertNil(name(level: level(clipped: 0), peak: -30))
-        XCTAssertNil(name(peak: -49), "15 dB up is the peak rule's edge, and a peak")
-        XCTAssertNil(name(floor: .nan, peak: .nan), "no rows yet")
-        XCTAssertNil(name(peak: -60, rows: 89), "not quiet for long enough yet")
-        XCTAssertNil(name(peak: 1), "a bin near full scale is not a state; only the rails are")
-    }
-
-    func testClippingIsMeasuredAndComesFirst() {
-        XCTAssertEqual(name(level: level(clipped: 60), peak: -60), clipping(60))
-        XCTAssertNil(
-            name(level: level(clipped: 59), peak: -30), "under one in ten thousand is a stray")
+    func testClippingIsMeasured() {
+        XCTAssertNil(name(level: nil), "no reading yet")
+        XCTAssertNil(name(level: level(clipped: 0)))
+        XCTAssertEqual(name(level: level(clipped: 60)), clipping(60))
+        XCTAssertNil(name(level: level(clipped: 59)), "under one in ten thousand is a stray")
         XCTAssertEqual(
             name(level: level(clipped: 60), gains: [gain(0, auto: true)]), clipping(60, auto: true))
         XCTAssertEqual(
@@ -63,47 +53,13 @@ final class FailureStateTests: XCTestCase {
         XCTAssertNil(name(level: level(clipped: 0, total: 0)), "an empty interval says nothing")
     }
 
-    func testAStateHoldsUntilItsExitThreshold() {
-        // Clipping: named at one in ten thousand, kept down to half that, gone below it.
+    func testTheStateHoldsUntilItsExitThreshold() {
         XCTAssertEqual(name(level: level(clipped: 40), previous: clipping(60)), clipping(40))
         XCTAssertNil(name(level: level(clipped: 29), previous: clipping(60)))
         XCTAssertNil(name(level: level(clipped: 40)), "without a previous state 40 is not named")
-        // Quiet: named under 15 dB over the floor, kept under 18, gone at 18.
-        let quiet = FailureState.nothingAboveFloor(floorDB: -64, gainAtMinimum: false)
-        XCTAssertEqual(name(peak: -47, previous: quiet), quiet)
-        XCTAssertNil(name(peak: -46, previous: quiet))
-        XCTAssertNil(name(peak: -47), "without a previous state 17 dB up is a peak")
-    }
-
-    func testNothingAboveTheFloorNamesTheGainWhenItIsLowest() {
-        XCTAssertEqual(name(peak: -55), .nothingAboveFloor(floorDB: -64, gainAtMinimum: false))
-        XCTAssertEqual(
-            name(peak: -55, gains: [gain(0)]), .nothingAboveFloor(floorDB: -64, gainAtMinimum: true)
-        )
-        XCTAssertEqual(
-            name(peak: -55, gains: [gain(0, auto: true)]),
-            .nothingAboveFloor(floorDB: -64, gainAtMinimum: false),
-            "auto is never at the minimum, whatever it chose")
-        XCTAssertEqual(
-            name(peak: -55, gains: [gain(0.9)]),
-            .nothingAboveFloor(floorDB: -64, gainAtMinimum: false),
-            "one step up the table is not the minimum")
     }
 
     func testTheWordsCarryTheNumberAndTheThingToTry() {
-        let quiet = FailureState.nothingAboveFloor(floorDB: -64, gainAtMinimum: false)
-        XCTAssertEqual(quiet.headline, "Nothing is above the noise")
-        XCTAssertEqual(
-            quiet.detail,
-            "No bin has been 15 dB above the floor (-64 dBFS) for 3 s. Check the antenna; FM broadcast is the band most antennas hear."
-        )
-        XCTAssertFalse(quiet.namesGain)
-        let low = FailureState.nothingAboveFloor(floorDB: -64, gainAtMinimum: true)
-        XCTAssertEqual(
-            low.detail,
-            "No bin has been 15 dB above the floor (-64 dBFS) for 3 s, and the gain is at its lowest. Turn it up, or set it to auto."
-        )
-        XCTAssertTrue(low.namesGain)
         let hot = clipping(300)
         XCTAssertEqual(hot.headline, "The radio is clipping")
         XCTAssertEqual(

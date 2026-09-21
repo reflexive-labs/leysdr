@@ -24,15 +24,18 @@ struct BandRailView: View {
                     NeighbourButton(band: neighbours.below, side: .below, from: rail)
                     BandRail(range: rail)
                     NeighbourButton(band: neighbours.above, side: .above, from: rail)
-                    Text(perColumn(width: geo.size.width))
-                        .font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
-                        .lineLimit(1).fixedSize()
                 } else {
                     Spacer()
                 }
+                // What a column covers rides on the zoom pair's help rather than the header:
+                // beside the inspector the rail had no room for it, and it is a number to know,
+                // not to watch (the owner, 2026-09-21).
+                let columns = perColumn(width: geo.size.width)
                 HStack(spacing: 2) {
                     zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
+                        .help(columns.isEmpty ? "Zoom out" : "Zoom out: \(columns) now")
                     zoomButton("plus") { session.zoomIn() }.disabled(session.zoom >= 8)
+                        .help(columns.isEmpty ? "Zoom in" : "Zoom in: \(columns) now")
                 }
             }
             .padding(.horizontal, 14)
@@ -56,7 +59,7 @@ struct BandRailView: View {
     }
 
     /// `24 kHz per column`: the spectrum spans the same width as this strip, so a column is the
-    /// visible span over that many points.
+    /// visible span over that many points. The zoom pair's help text; no longer drawn.
     private func perColumn(width: CGFloat) -> String {
         guard let r = session.visibleRange, width > 0 else { return "" }
         let hz = Double(r.upperBound - r.lowerBound) / Double(width)

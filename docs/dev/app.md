@@ -109,27 +109,19 @@ first block), because a time nobody anchored is a clock the daemon never kept (i
 mirror keeps each capture's newest anchor on the capture, and the daemon-backed test folds
 `nfm_keyed.cf32` into transmissions as long as the fixture keyed them.
 
-**Failure states** (`FailureState.swift`). What the band's numbers say is wrong, named rather
-than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from the
-daemon's `CaptureLevel` (samples at the converter's rails, one in ten thousand names it;
-`CaptureLevelFeed` subscribes it per capture), or nothing 15 dB above the floor for 3 s, with the
-gain named as the thing to try
-when it is set by hand to its lowest, and on auto says to take the gain by hand first. Until
-2026-09-20 the first state was "a signal within 3 dB of full scale", read off the loudest bin,
-which fired on every FM broadcast station at auto gain; a bin is not a measurement of clipping
-and the state was dropped for the measured one. Each
-state holds until its exit threshold (3 dB past the entry, so a signal hovering at the edge
-does not name and clear it once a second), and a dismissal is forgotten only when a different
-state is named. A pure function over the feed's held floor and peak, the
-capture's gains and the device's gain elements; each state carries the number it was read from
-and one thing to try, and none is a detector (invariant 12): a quiet band and a missing antenna
-read the same, and the words say so. The rule is `ley tune`'s (`go/internal/cli/failure.go`),
-which says the same sentence from the row it measured the squelch on, and the two tests share
-their rows. The daemon not running, no radio and an unplugged radio are the mirror's states and
-live in `AppSession.emptyWords`. The session names the state after every row and every mirror
-change, logs each change, and the inspector's strip shows it until the numbers change or the
-user closes it (a closed state stays closed until a different one is named); it sat over the
-waterfall in M1. A channel the
+**Failure states** (`FailureState.swift`). What the radio's numbers say is wrong, named rather
+than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from
+the daemon's `CaptureLevel` (samples at the converter's rails, one in ten thousand names it, half
+that clears it; `CaptureLevelFeed` subscribes it per capture), with the gain named as the thing
+to try (on auto, take it by hand; at the lowest manual gain, move the antenna). A measured fact
+with its number and one action; not a detector (invariant 12). `ley tune` names the same state
+from the same count (`go/internal/cli/failure.go`), and also says, once, at tune, when nothing
+on the band is 15 dB above the floor; the window named that too until 2026-09-21 and does not
+now, because a quiet band re-named every few seconds distracted more than it told. The daemon
+not running, no radio and an unplugged radio are the mirror's states and live in
+`AppSession.emptyWords`. The session names the state on every level reading and every mirror
+change, logs each change, and the inspector's Region 2 shows it until the count clears or the
+user closes it (a closed state stays closed until a different one is named). A channel the
 capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or moved the capture) is
 named the same way from the mirror, with the width and centre it would need; the window's own
 rate change never causes it, because `AppSession.setSampleRate` re-places the centre for the
