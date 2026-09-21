@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The failure rule on numbers, without a daemon. The rows here are the ones
-// `go/internal/cli/failure_test.go` uses, so the two clients are held to one answer.
+// The failure rule on numbers, without a daemon. The quiet rows are the ones
+// `go/internal/cli/failure_test.go` uses, so the two clients are held to one answer; the
+// clipping rule reads the daemon's CaptureLevel on both sides.
 
 import LeylineProto
 import XCTest
@@ -23,61 +24,68 @@ final class FailureStateTests: XCTestCase {
             $0.auto = auto
         }
     }
+    private func level(clipped: UInt64, total: UInt64 = 600_000) -> Leyline_V1_CaptureLevel {
+        .with {
+            $0.clippedSamples = clipped
+            $0.totalSamples = total
+        }
+    }
     private func name(
-        floor: Float, peak: Float, rows: Int = 90, gains: [Leyline_V1_GainState] = [],
-        previous: FailureState? = nil
+        level: Leyline_V1_CaptureLevel? = nil, floor: Float = -64, peak: Float = -30,
+        rows: Int = 90, gains: [Leyline_V1_GainState] = [], previous: FailureState? = nil
     ) -> FailureState? {
         FailureState.name(
-            floorDB: floor, peakDB: peak, rows: rows, rowsPerSecond: 30, gains: gains,
-            elements: [tuner], previous: previous)
+            level: level, floorDB: floor, peakDB: peak, rows: rows, rowsPerSecond: 30,
+            gains: gains, elements: [tuner], previous: previous)
     }
-    private func hot(_ peak: Float, auto: Bool = false, atMinimum: Bool = false) -> FailureState {
-        .nearFullScale(peakDB: peak, gainAuto: auto, gainAtMinimum: atMinimum)
+    private func clipping(
+        _ clipped: UInt64, total: UInt64 = 600_000, auto: Bool = false, atMinimum: Bool = false
+    ) -> FailureState {
+        .clipping(clipped: clipped, total: total, gainAuto: auto, gainAtMinimum: atMinimum)
     }
 
     func testAHealthyBandNamesNothing() {
-        XCTAssertNil(name(floor: -64, peak: -30))
-        XCTAssertNil(name(floor: -64, peak: -49), "15 dB up is the peak rule's edge, and a peak")
+        XCTAssertNil(name(level: level(clipped: 0), peak: -30))
+        XCTAssertNil(name(peak: -49), "15 dB up is the peak rule's edge, and a peak")
         XCTAssertNil(name(floor: .nan, peak: .nan), "no rows yet")
-        XCTAssertNil(name(floor: -64, peak: -60, rows: 89), "not quiet for long enough yet")
+        XCTAssertNil(name(peak: -60, rows: 89), "not quiet for long enough yet")
+        XCTAssertNil(name(peak: 1), "a bin near full scale is not a state; only the rails are")
     }
 
-    func testNearFullScaleComesFirst() {
-        XCTAssertEqual(name(floor: -64, peak: -3), hot(-3))
-        XCTAssertEqual(name(floor: -64, peak: 1), hot(1))
-        XCTAssertNil(name(floor: -64, peak: -3.5))
+    func testClippingIsMeasuredAndComesFirst() {
+        XCTAssertEqual(name(level: level(clipped: 60), peak: -60), clipping(60))
+        XCTAssertNil(
+            name(level: level(clipped: 59), peak: -30), "under one in ten thousand is a stray")
         XCTAssertEqual(
-            name(floor: -10, peak: -2, rows: 0), hot(-2),
-            "full scale is a fact about one row; it does not wait")
+            name(level: level(clipped: 60), gains: [gain(0, auto: true)]), clipping(60, auto: true))
         XCTAssertEqual(
-            name(floor: -64, peak: -2, gains: [gain(0, auto: true)]), hot(-2, auto: true))
-        XCTAssertEqual(name(floor: -64, peak: -2, gains: [gain(0)]), hot(-2, atMinimum: true))
+            name(level: level(clipped: 60), gains: [gain(0)]), clipping(60, atMinimum: true))
+        XCTAssertNil(name(level: level(clipped: 0, total: 0)), "an empty interval says nothing")
     }
 
     func testAStateHoldsUntilItsExitThreshold() {
-        // Full scale: named at -3, kept down to -6, gone below it.
-        XCTAssertEqual(name(floor: -64, peak: -5, previous: hot(-3)), hot(-5))
-        XCTAssertNil(name(floor: -64, peak: -6.5, previous: hot(-3)))
-        XCTAssertNil(name(floor: -64, peak: -5), "without a previous state -5 is not named")
+        // Clipping: named at one in ten thousand, kept down to half that, gone below it.
+        XCTAssertEqual(name(level: level(clipped: 40), previous: clipping(60)), clipping(40))
+        XCTAssertNil(name(level: level(clipped: 29), previous: clipping(60)))
+        XCTAssertNil(name(level: level(clipped: 40)), "without a previous state 40 is not named")
         // Quiet: named under 15 dB over the floor, kept under 18, gone at 18.
         let quiet = FailureState.nothingAboveFloor(floorDB: -64, gainAtMinimum: false)
-        XCTAssertEqual(name(floor: -64, peak: -47, previous: quiet), quiet)
-        XCTAssertNil(name(floor: -64, peak: -46, previous: quiet))
-        XCTAssertNil(name(floor: -64, peak: -47), "without a previous state 17 dB up is a peak")
+        XCTAssertEqual(name(peak: -47, previous: quiet), quiet)
+        XCTAssertNil(name(peak: -46, previous: quiet))
+        XCTAssertNil(name(peak: -47), "without a previous state 17 dB up is a peak")
     }
 
     func testNothingAboveTheFloorNamesTheGainWhenItIsLowest() {
+        XCTAssertEqual(name(peak: -55), .nothingAboveFloor(floorDB: -64, gainAtMinimum: false))
         XCTAssertEqual(
-            name(floor: -64, peak: -55), .nothingAboveFloor(floorDB: -64, gainAtMinimum: false))
+            name(peak: -55, gains: [gain(0)]), .nothingAboveFloor(floorDB: -64, gainAtMinimum: true)
+        )
         XCTAssertEqual(
-            name(floor: -64, peak: -55, gains: [gain(0)]),
-            .nothingAboveFloor(floorDB: -64, gainAtMinimum: true))
-        XCTAssertEqual(
-            name(floor: -64, peak: -55, gains: [gain(0, auto: true)]),
+            name(peak: -55, gains: [gain(0, auto: true)]),
             .nothingAboveFloor(floorDB: -64, gainAtMinimum: false),
             "auto is never at the minimum, whatever it chose")
         XCTAssertEqual(
-            name(floor: -64, peak: -55, gains: [gain(0.9)]),
+            name(peak: -55, gains: [gain(0.9)]),
             .nothingAboveFloor(floorDB: -64, gainAtMinimum: false),
             "one step up the table is not the minimum")
     }
@@ -89,26 +97,26 @@ final class FailureStateTests: XCTestCase {
             quiet.detail,
             "No bin has been 15 dB above the floor (-64 dBFS) for 3 s. Check the antenna; FM broadcast is the band most antennas hear."
         )
+        XCTAssertFalse(quiet.namesGain)
         let low = FailureState.nothingAboveFloor(floorDB: -64, gainAtMinimum: true)
         XCTAssertEqual(
             low.detail,
             "No bin has been 15 dB above the floor (-64 dBFS) for 3 s, and the gain is at its lowest. Turn it up, or set it to auto."
         )
-        let manual = hot(-2)
-        XCTAssertEqual(manual.headline, "A signal is within 3 dB of full scale")
-        XCTAssertEqual(
-            manual.detail, "The loudest bin reads -2 dBFS. Lower the gain before the radio clips.")
-        XCTAssertTrue(manual.namesGain)
-        XCTAssertEqual(
-            hot(-2, auto: true).detail,
-            "The loudest bin reads -2 dBFS with the gain on auto. Take the gain by hand and lower it before the radio clips."
-        )
-        XCTAssertEqual(
-            hot(-2, atMinimum: true).detail,
-            "The loudest bin reads -2 dBFS at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
-        )
-        XCTAssertFalse(hot(-2, atMinimum: true).namesGain)
-        XCTAssertFalse(quiet.namesGain)
         XCTAssertTrue(low.namesGain)
+        let hot = clipping(300)
+        XCTAssertEqual(hot.headline, "The radio is clipping")
+        XCTAssertEqual(
+            hot.detail, "300 of 600000 samples (0.05 %) hit the converter's rails. Lower the gain.")
+        XCTAssertTrue(hot.namesGain)
+        XCTAssertEqual(
+            clipping(6000, auto: true).detail,
+            "6000 of 600000 samples (1.0 %) hit the converter's rails with the gain on auto. Take the gain by hand and lower it."
+        )
+        XCTAssertEqual(
+            clipping(300, atMinimum: true).detail,
+            "300 of 600000 samples (0.05 %) hit the converter's rails at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
+        )
+        XCTAssertFalse(clipping(300, atMinimum: true).namesGain)
     }
 }

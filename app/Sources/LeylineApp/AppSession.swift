@@ -76,6 +76,7 @@ final class AppSession {
     // Feeds.
     let spectrum = SpectrumFeed()
     let telemetry = ChannelTelemetryFeed()
+    let captureLevel = CaptureLevelFeed()
 
     // View state that is the window's alone: presentation, never radio truth.
     var maxHold = true
@@ -295,6 +296,7 @@ final class AppSession {
     func start() async {
         guard running == nil else { return }
         spectrum.onRow = { [weak self] in self?.nameFailure() }
+        captureLevel.onLevel = { [weak self] in self?.nameFailure() }
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
@@ -372,6 +374,7 @@ final class AppSession {
         }
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(channelID, captureRate: capture?.sampleRate ?? 0, connection: daemon)
+        captureLevel.follow(capture?.captureID, connection: daemon)
         nameFailure()
         if let ch = channel, ch.state != .outOfCapture { outOfCaptureDismissed = false }
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
@@ -1274,9 +1277,9 @@ final class AppSession {
         let now: FailureState?
         if let cap = capture, isLive, spectrum.error == nil {
             now = FailureState.name(
-                floorDB: spectrum.floorDB, peakDB: spectrum.peakDB, rows: spectrum.heldRows,
-                rowsPerSecond: SpectrumFeed.rowsPerSecond, gains: cap.gains,
-                elements: device?.gainElements ?? [], previous: failure)
+                level: captureLevel.level, floorDB: spectrum.floorDB, peakDB: spectrum.peakDB,
+                rows: spectrum.heldRows, rowsPerSecond: SpectrumFeed.rowsPerSecond,
+                gains: cap.gains, elements: device?.gainElements ?? [], previous: failure)
         } else {
             now = nil
         }
@@ -1312,7 +1315,7 @@ extension FailureState {
     /// The case without its numbers, for telling a re-measurement from a change.
     fileprivate var kind: Int {
         switch self {
-        case .nearFullScale: return 0
+        case .clipping: return 0
         case .nothingAboveFloor: return 1
         }
     }

@@ -200,8 +200,15 @@ struct MeasurementsGroup: View {
         let value: String
     }
 
+    /// `0.00 %` of the newest interval's samples at the rails, or `—` before a reading.
+    private var clippedWords: String {
+        guard let l = session.captureLevel.level, l.totalSamples > 0 else { return "—" }
+        return String(format: "%.2f %%", 100 * Double(l.clippedSamples) / Double(l.totalSamples))
+    }
+
     var body: some View {
         let m = session.meter
+        let level = session.captureLevel.level
         let rows = [
             Row(id: "power", value: Measure.dbfs(m?.powerDbfs ?? .nan)),
             Row(id: "floor", value: Measure.dbfs(session.channelFloorDB ?? .nan)),
@@ -210,6 +217,10 @@ struct MeasurementsGroup: View {
             Row(id: "deviation", value: Measure.hz(m?.deviationHz ?? .nan)),
             Row(id: "audio", value: Measure.dbfs(m?.audioDbfs ?? .nan)),
             Row(id: "peak", value: Measure.dbfs(m?.audioPeakDbfs ?? .nan)),
+            // The radio's own level (`CaptureLevel`): where "near full scale" now lives, as a
+            // number rather than a state, and the clipped fraction the failure state is read from.
+            Row(id: "radio peak", value: Measure.dbfs(level?.peakDbfs ?? .nan)),
+            Row(id: "clipped", value: clippedWords),
         ]
         VStack(spacing: 3) {
             ForEach(rows) { row in

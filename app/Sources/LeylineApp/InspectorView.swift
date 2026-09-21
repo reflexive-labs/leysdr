@@ -392,16 +392,18 @@ struct ReadingsView: View {
         let first = log?.closed.last?.start ?? open?.since
         let since = first.flatMap { session.wallTime(of: $0) }
         let clause: String
+        // "10 heard since 16:35": the count is of transmissions, and the word says so.
+        let heard = count == 1 ? "1 heard" : "\(count) heard"
         if count == 0 {
-            clause = "none this session"
+            clause = "none heard this session"
         } else if let since {
-            clause = "\(count) since \(WallClock.hm(since))"
+            clause = "\(heard) since \(WallClock.hm(since))"
         } else {
-            clause = "\(count) this session"
+            clause = "\(heard) this session"
         }
         let state: String
         if let seconds {
-            state = Reading.seconds(seconds)
+            state = "On air " + Reading.seconds(seconds)
         } else {
             state = open == nil ? "Idle" : "On air"
         }

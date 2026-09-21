@@ -12,50 +12,55 @@ import Foundation
 import LeylineProto
 
 public enum FailureState: Sendable, Equatable {
-    /// The loudest bin is within `fullScaleMarginDB` of full scale: the front end is at its
-    /// limit, and the next dB of signal clips. `gainAuto` and `gainAtMinimum` pick the thing to
-    /// try: on auto, take the gain by hand; at the lowest manual gain, the radio cannot be
-    /// turned down and the antenna is what moves.
-    case nearFullScale(peakDB: Float, gainAuto: Bool, gainAtMinimum: Bool)
+    /// Samples at the converter's rails in the daemon's newest `CaptureLevel` interval: the
+    /// radio is clipping, measured rather than read off a bin (plans/app.md, M2-5). `gainAuto`
+    /// and `gainAtMinimum` pick the thing to try: on auto, take the gain by hand and lower it;
+    /// at the lowest manual gain the radio cannot be turned down and the antenna is what moves.
+    case clipping(clipped: UInt64, total: UInt64, gainAuto: Bool, gainAtMinimum: Bool)
     /// Nothing `SpectrumFold.peakAboveFloorDB` above the floor for `quietSeconds`. Deaf, or a
     /// quiet band; when the gain is manual at its minimum, that is the first thing to try.
     case nothingAboveFloor(floorDB: Float, gainAtMinimum: Bool)
 
-    /// How close to full scale the loudest bin may come before the state is named. A full-scale
-    /// tone reads 0 dBFS at its bin (`engine/Sources/EngineCore/DSP/FFT.swift`); 3 dB is one
-    /// gain step on an RTL-SDR's table, so the words arrive before the clip does.
-    public static let fullScaleMarginDB: Float = 3
-    /// Once named, the state holds until the peak has fallen this far below full scale, so a
-    /// signal hovering at the margin does not name and clear it once a second.
-    public static let fullScaleExitDB: Float = 6
+    /// The clipped fraction of an interval that names the state: one sample in ten thousand,
+    /// `ley tune`'s floor too (`go/internal/cli/failure.go`, `clippingFloor`). Not zero, because
+    /// one rail hit in six hundred thousand samples is a stray, not an overload.
+    public static let clippingFloor: Double = 1e-4
+    /// Once named, the state holds until the fraction has fallen to half the floor, so a radio
+    /// hovering at the edge does not name and clear it four times a second.
+    public static let clippingExitFraction: Double = clippingFloor / 2
     /// How long the band must show nothing above the floor before it is said. A held peak that
     /// lets go at 1 dB a second means a burst a few seconds old still counts as something heard.
     public static let quietSeconds: Double = 3
     /// Once named, the quiet state holds until a peak this far above the floor: the peak rule's
-    /// edge plus 3 dB, for the same reason as `fullScaleExitDB`.
+    /// edge plus 3 dB, for the same reason as `clippingExitFraction`.
     public static let quietExitAboveFloorDB: Float = SpectrumFold.peakAboveFloorDB + 3
 
-    /// The state the numbers show, or nil. `floorDB` and `peakDB` are the feed's held floor
-    /// and peak; `rows` is how many rows they were folded from, at `rowsPerSecond`; `previous`
-    /// is the state last named, which the exit thresholds hold on to.
+    /// The state the numbers show, or nil. `level` is the capture's newest `CaptureLevel`, nil
+    /// before the first; `floorDB` and `peakDB` are the feed's held floor and peak; `rows` is
+    /// how many rows they were folded from, at `rowsPerSecond`; `previous` is the state last
+    /// named, which the exit thresholds hold on to.
     public static func name(
-        floorDB: Float, peakDB: Float, rows: Int, rowsPerSecond: Double,
-        gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement],
+        level: Leyline_V1_CaptureLevel?, floorDB: Float, peakDB: Float, rows: Int,
+        rowsPerSecond: Double, gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement],
         previous: FailureState? = nil
     ) -> FailureState? {
-        guard peakDB.isFinite else { return nil }
         let atMinimum = gainAtMinimum(gains: gains, elements: elements)
-        let hot: Float
-        if case .nearFullScale = previous {
-            hot = -fullScaleExitDB
-        } else {
-            hot = -fullScaleMarginDB
+        if let level, level.totalSamples > 0 {
+            let fraction = Double(level.clippedSamples) / Double(level.totalSamples)
+            let floor: Double
+            if case .clipping = previous {
+                floor = clippingExitFraction
+            } else {
+                floor = clippingFloor
+            }
+            if fraction >= floor {
+                return .clipping(
+                    clipped: level.clippedSamples, total: level.totalSamples,
+                    gainAuto: gainAuto(gains: gains), gainAtMinimum: atMinimum)
+            }
         }
-        if peakDB >= hot {
-            return .nearFullScale(
-                peakDB: peakDB, gainAuto: gainAuto(gains: gains), gainAtMinimum: atMinimum)
-        }
-        guard floorDB.isFinite, Double(rows) >= quietSeconds * rowsPerSecond else { return nil }
+        guard peakDB.isFinite, floorDB.isFinite, Double(rows) >= quietSeconds * rowsPerSecond
+        else { return nil }
         let quiet: Float
         if case .nothingAboveFloor = previous {
             quiet = quietExitAboveFloorDB
@@ -87,19 +92,19 @@ public enum FailureState: Sendable, Equatable {
         }
     }
 
-    /// Whether the thing to try is the gain: near full scale unless the gain is already at its
-    /// lowest, and nothing above the floor only when it is.
+    /// Whether the thing to try is the gain: clipping unless the gain is already at its lowest,
+    /// and nothing above the floor only when it is.
     public var namesGain: Bool {
         switch self {
-        case .nearFullScale(_, _, let atMinimum): return !atMinimum
+        case .clipping(_, _, _, let atMinimum): return !atMinimum
         case .nothingAboveFloor(_, let atMinimum): return atMinimum
         }
     }
 
     public var headline: String {
         switch self {
-        case .nearFullScale:
-            return "A signal is within \(Int(Self.fullScaleMarginDB)) dB of full scale"
+        case .clipping:
+            return "The radio is clipping"
         case .nothingAboveFloor:
             return "Nothing is above the noise"
         }
@@ -108,16 +113,19 @@ public enum FailureState: Sendable, Equatable {
     /// The number it was read from and the thing to try.
     public var detail: String {
         switch self {
-        case .nearFullScale(let peak, let auto, let atMinimum):
-            let reads = String(format: "The loudest bin reads %.0f dBFS", peak)
+        case .clipping(let clipped, let total, let auto, let atMinimum):
+            let percent = total > 0 ? 100 * Double(clipped) / Double(total) : 0
+            let reads = String(
+                format: "%llu of %llu samples (%@) hit the converter's rails", clipped, total,
+                percent < 0.1
+                    ? String(format: "%.2f %%", percent) : String(format: "%.1f %%", percent))
             if atMinimum {
                 return reads
                     + " at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
             }
             return auto
-                ? reads
-                    + " with the gain on auto. Take the gain by hand and lower it before the radio clips."
-                : reads + ". Lower the gain before the radio clips."
+                ? reads + " with the gain on auto. Take the gain by hand and lower it."
+                : reads + ". Lower the gain."
         case .nothingAboveFloor(let floor, let gainAtMinimum):
             let measured = String(
                 format: "No bin has been %d dB above the floor (%.0f dBFS) for %d s",

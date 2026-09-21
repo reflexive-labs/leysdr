@@ -203,6 +203,8 @@ final class ChannelTelemetryFeed {
     private(set) var newestTime: Leyline_V1_SampleTime?
     private(set) var error: LeylineError?
     private var captureRate: UInt64 = 0
+    /// The last tone logged, so the heartbeat does not write a line a second.
+    private var lastToneHz: Double = 0
     private var task: Task<Void, Never>?
     private var channel: String?
 
@@ -234,7 +236,30 @@ final class ChannelTelemetryFeed {
 
     private func fold(_ msg: Leyline_V1_TelemetryMsg) {
         newestTime = msg.time
-        if case .meter(let m)? = msg.body { meter = m }
+        switch msg.body {
+        case .meter(let m)?:
+            meter = m
+        case .subAudible(let sa)?:
+            // One line per change of tone, not per heartbeat: what the daemon named, or that it
+            // looked and found nothing, so a missing PL in the log can be explained from here.
+            let now = sa.kind == .subAudibleCtcss ? sa.standardToneHz : 0
+            if now != lastToneHz {
+                lastToneHz = now
+                log(
+                    "telemetry",
+                    now > 0
+                        ? String(
+                            format: "PL %.1f Hz (measured %.1f, dev %.0f Hz, tone/band %.0f dB)",
+                            sa.standardToneHz, sa.toneHz, sa.deviationHz, sa.toneSnrDb)
+                        : "no PL (\(sa.kind))")
+            }
+        case .squelch(let sq)?:
+            if !sq.open, sq.durationSamples > 0 {
+                log("telemetry", "transmission ended after \(sq.durationSamples) samples")
+            }
+        default:
+            break
+        }
         transmissions?.fold(msg, captureRate: captureRate)
     }
 
@@ -245,5 +270,53 @@ final class ChannelTelemetryFeed {
         meter = nil
         transmissions = nil
         newestTime = nil
+    }
+}
+
+/// The capture's raw level four times a second (`CaptureLevel`): samples at the converter's
+/// rails and the peak, the clipping authority the failure state reads (`FailureState`,
+/// plans/app.md M2-5). One subscription per capture, reset with it.
+@MainActor
+@Observable
+final class CaptureLevelFeed {
+    private(set) var level: Leyline_V1_CaptureLevel?
+    private(set) var error: LeylineError?
+    /// Fires after every reading, on the main actor; the session names the failure state from it.
+    var onLevel: (() -> Void)?
+    private var task: Task<Void, Never>?
+    private var capture: String?
+
+    func follow(_ captureID: String?, connection: DaemonConnection?) {
+        guard let captureID, let connection else {
+            stop()
+            return
+        }
+        if captureID == capture, task != nil { return }
+        stop()
+        capture = captureID
+        var sub = Leyline_V1_TelemetrySubscription()
+        sub.captureID = captureID
+        sub.types = [.captureLevel]
+        let stream = connection.telemetry(sub)
+        task = Task { [weak self] in
+            do {
+                for try await msg in stream {
+                    if Task.isCancelled { return }
+                    if case .captureLevel(let l)? = msg.body {
+                        self?.level = l
+                        self?.onLevel?()
+                    }
+                }
+            } catch {
+                if !Task.isCancelled { self?.error = LeylineError(error) }
+            }
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        capture = nil
+        level = nil
     }
 }

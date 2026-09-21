@@ -110,9 +110,14 @@ mirror keeps each capture's newest anchor on the capture, and the daemon-backed 
 `nfm_keyed.cf32` into transmissions as long as the fixture keyed them.
 
 **Failure states** (`FailureState.swift`). What the band's numbers say is wrong, named rather
-than left as a dark waterfall (`../plans/user-stories.md`, V1a): the loudest bin within 3 dB of
-full scale, or nothing 15 dB above the floor for 3 s, with the gain named as the thing to try
-when it is set by hand to its lowest, and on auto says to take the gain by hand first. Each
+than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from the
+daemon's `CaptureLevel` (samples at the converter's rails, one in ten thousand names it;
+`CaptureLevelFeed` subscribes it per capture), or nothing 15 dB above the floor for 3 s, with the
+gain named as the thing to try
+when it is set by hand to its lowest, and on auto says to take the gain by hand first. Until
+2026-09-20 the first state was "a signal within 3 dB of full scale", read off the loudest bin,
+which fired on every FM broadcast station at auto gain; a bin is not a measurement of clipping
+and the state was dropped for the measured one. Each
 state holds until its exit threshold (3 dB past the entry, so a signal hovering at the edge
 does not name and clear it once a second), and a dismissal is forgotten only when a different
 state is named. A pure function over the feed's held floor and peak, the

@@ -323,6 +323,12 @@ fallback for a daemon that sends no level. The fake daemon emits one at 4 Hz wit
 `Options.Clipping` hook. The app's half follows: the façade's failure state re-based on
 `CaptureLevel`, and the near-full-scale number moving to the inspector's Measurements.
 
+App half landed 2026-09-20: `FailureState.clipping` from `CaptureLevel` through a
+`CaptureLevelFeed` per capture (one sample in ten thousand names it, half that clears it, the
+same floor as `ley`'s), the near-full-scale state dropped rather than kept as a fallback (the app
+ships with its daemon), and the radio's peak and clipped fraction as two rows of the inspector's
+Measurements.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged are already the window's empty words, and an
