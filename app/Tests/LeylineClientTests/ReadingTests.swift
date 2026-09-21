@@ -44,7 +44,7 @@ final class ReadingTests: XCTestCase {
         XCTAssertEqual(
             TuningWord(freqErrorHz: 1000, bandwidthHz: 25_000), .centred,
             "1 kHz is within a tenth of a 25 kHz channel")
-        XCTAssertEqual(TuningWord(freqErrorHz: 0, bandwidthHz: 12_500), .centred)
+        XCTAssertEqual(TuningWord(freqErrorHz: 3, bandwidthHz: 12_500), .centred)
         XCTAssertEqual(
             TuningWord(freqErrorHz: 1250, bandwidthHz: 12_500), .centred,
             "exactly a tenth is still centred")
@@ -56,6 +56,10 @@ final class ReadingTests: XCTestCase {
     func testTuningWordIsNilForNaNOrNoBandwidth() {
         XCTAssertNil(TuningWord(freqErrorHz: .nan, bandwidthHz: 12_500))
         XCTAssertNil(TuningWord(freqErrorHz: 100, bandwidthHz: 0))
+        XCTAssertNil(
+            TuningWord(freqErrorHz: 0, bandwidthHz: 12_500),
+            "exactly 0 is a daemon that never set the field, not a centred signal")
+        XCTAssertNil(DeviationWord(deviationHz: 0, mode: .nfm, bandwidthHz: 12_500))
     }
 
     func testTuningWordsPrintAsThePanelDoes() {
@@ -81,7 +85,7 @@ final class ReadingTests: XCTestCase {
         XCTAssertEqual(DeviationWord.quietFraction, 0.4)
         XCTAssertEqual(DeviationWord.overFraction, 1.3)
         // NFM at 12.5 kHz: nominal 2 500 Hz, quiet under 1 000, overdeviating over 3 250.
-        XCTAssertEqual(DeviationWord(deviationHz: 0, mode: .nfm, bandwidthHz: 12_500), .quiet)
+        XCTAssertEqual(DeviationWord(deviationHz: 1, mode: .nfm, bandwidthHz: 12_500), .quiet)
         XCTAssertEqual(DeviationWord(deviationHz: 999, mode: .nfm, bandwidthHz: 12_500), .quiet)
         XCTAssertEqual(
             DeviationWord(deviationHz: 1000, mode: .nfm, bandwidthHz: 12_500), .normal,

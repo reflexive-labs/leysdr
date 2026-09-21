@@ -205,6 +205,8 @@ final class ChannelTelemetryFeed {
     private var captureRate: UInt64 = 0
     /// The last tone logged, so the heartbeat does not write a line a second.
     private var lastToneHz: Double = 0
+    /// Meters folded since the channel was followed, for the thirty-second log line.
+    private var meters = 0
     private var task: Task<Void, Never>?
     private var channel: String?
 
@@ -239,6 +241,19 @@ final class ChannelTelemetryFeed {
         switch msg.body {
         case .meter(let m)?:
             meter = m
+            meters += 1
+            // The meter's numbers every thirty seconds, so a word in the inspector that does not
+            // move can be read against what the daemon sent (a tuning error of exactly 0 is a
+            // daemon built before the field existed).
+            if meters % 300 == 1 {
+                log(
+                    "meter",
+                    String(
+                        format:
+                            "power %.1f dBFS, snr %.1f dB, audio %.1f dBFS, freq error %.0f Hz, deviation %.0f Hz, squelch %@",
+                        m.powerDbfs, m.snrDb, m.audioDbfs, m.freqErrorHz, m.deviationHz,
+                        m.squelchOpen ? "open" : "closed"))
+            }
         case .subAudible(let sa)?:
             // One line per change of tone, not per heartbeat: what the daemon named, or that it
             // looked and found nothing, so a missing PL in the log can be explained from here.

@@ -49,7 +49,10 @@ public enum TuningWord: Sendable, Equatable {
 
     /// nil for NaN (not FM, or the squelch closed: the row is hidden) or a bandwidth of 0.
     public init?(freqErrorHz: Double, bandwidthHz: UInt32) {
-        guard !freqErrorHz.isNaN, bandwidthHz > 0 else { return nil }
+        // Exactly 0 is a field nobody set: a double on the wire carries no absence, an older
+        // daemon sends none, and a measured error is never 0.0 to the last bit. Nil, not
+        // "Centred", or a daemon built before the field would read centred for ever.
+        guard !freqErrorHz.isNaN, freqErrorHz != 0, bandwidthHz > 0 else { return nil }
         if abs(freqErrorHz) <= Self.offTuneFraction * Double(bandwidthHz) {
             self = .centred
         } else {
@@ -91,7 +94,8 @@ public enum DeviationWord: Sendable, Equatable {
 
     /// nil for NaN, no nominal, or a bandwidth of 0.
     public init?(deviationHz: Double, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32) {
-        guard !deviationHz.isNaN, bandwidthHz > 0,
+        // Exactly 0 is a field nobody set (see `TuningWord`): even silence deviates by noise.
+        guard !deviationHz.isNaN, deviationHz != 0, bandwidthHz > 0,
             let nominal = Self.nominalHz(mode: mode, bandwidthHz: bandwidthHz)
         else { return nil }
         let fraction = deviationHz / nominal
