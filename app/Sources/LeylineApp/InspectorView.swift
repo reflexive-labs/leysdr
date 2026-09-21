@@ -259,7 +259,7 @@ struct FailureStrip: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
-                Text(sentence).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                Text(sentence).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9)) }
@@ -309,6 +309,9 @@ struct ReadingsView: View {
     /// own steps are `SignalWord.thresholdsDB`.
     static let readableDB: Double = 12
 
+    /// The deviation the meter shows: fast up, slow down (`DeviationMeter.hold`).
+    @State private var heldDeviationHz: Double = .nan
+
     var body: some View {
         let m = session.meter
         let ch = session.channel
@@ -350,11 +353,14 @@ struct ReadingsView: View {
             HStack(spacing: 10) {
                 SignalBar(fraction: overNoise.map { $0 / Self.signalBarRangeDB } ?? .nan)
                 Text(word?.word ?? "—").reading()
-                    .foregroundStyle(word == nil ? Theme.inkFaint : Theme.ink)
+                    .foregroundStyle(word == nil ? Theme.inkFaint : Theme.inkSecondary)
             }
         }
     }
 
+    /// A centre-zero meter and the word: the marker sits where the transmitter is against the
+    /// channel's width, and the word flips only past a tenth of it. A number that moves at
+    /// 10 Hz wants a needle, not a label that flickers (the owner, 2026-09-21).
     private func tuning(_ word: TuningWord, errorHz: Double, channel ch: Leyline_V1_Channel)
         -> some View
     {
@@ -362,10 +368,20 @@ struct ReadingsView: View {
             "The transmitter sits \(Measure.hz(abs(errorHz))) \(errorHz >= 0 ? "above" : "below") the channel's centre, \(word.isOffTune ? "past" : "within") a tenth of its \(Frequency.width(ch.bandwidthHz)) width."
         let raw = "freq error \(Measure.hz(errorHz, signed: true)) · width \(ch.bandwidthHz) Hz"
         return ReadingRow(label: "Tuning", sentence: sentence, raw: raw) {
-            Text(word.word).reading().foregroundStyle(word.isOffTune ? Theme.caution : Theme.ink)
+            HStack(spacing: 8) {
+                CentreMeter(
+                    fraction: errorHz / Double(ch.bandwidthHz), offCentre: word.isOffTune
+                )
+                .frame(width: Theme.Layout.readingMeterWidth)
+                Text(word.word).reading()
+                    .foregroundStyle(word.isOffTune ? Theme.caution : Theme.inkSecondary)
+            }
         }
     }
 
+    /// A level meter against the mode's nominal, peak-held so speech reads as a swing rather
+    /// than a flicker, with the held number beside it; the tick is the nominal, and the fill
+    /// past it is the caution ink.
     private func deviation(
         _ word: DeviationWord, deviationHz: Double, channel ch: Leyline_V1_Channel
     ) -> some View {
@@ -375,8 +391,20 @@ struct ReadingsView: View {
         let raw =
             "deviation \(Measure.hz(deviationHz)) · nominal \(nominal.map { Measure.hz($0) } ?? "—")"
         return ReadingRow(label: "Deviation", sentence: sentence, raw: raw) {
-            Text(word.word).reading()
-                .foregroundStyle(word == .overdeviating ? Theme.caution : Theme.ink)
+            HStack(spacing: 8) {
+                DeviationMeter(
+                    levelHz: heldDeviationHz.isFinite ? heldDeviationHz : deviationHz,
+                    nominalHz: nominal ?? 1
+                )
+                .frame(width: Theme.Layout.readingMeterWidth)
+                Text(Measure.hz(heldDeviationHz.isFinite ? heldDeviationHz : deviationHz))
+                    .font(Theme.Font.value)
+                    .foregroundStyle(
+                        word == .overdeviating ? Theme.caution : Theme.inkSecondary)
+            }
+        }
+        .onChange(of: deviationHz, initial: true) { _, new in
+            heldDeviationHz = DeviationMeter.hold(heldDeviationHz, new, nominalHz: nominal ?? 1)
         }
     }
 
@@ -423,7 +451,8 @@ struct ReadingsView: View {
             raw = "—"
         }
         return ReadingRow(label: "On air", sentence: sentence, raw: raw) {
-            Text(state).reading().foregroundStyle(seconds == nil ? Theme.inkTertiary : Theme.ink)
+            Text(state).reading()
+                .foregroundStyle(seconds == nil ? Theme.inkTertiary : Theme.inkSecondary)
                 + Text(" · \(clause)").font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
         }
     }
@@ -467,7 +496,7 @@ struct NumberPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(sentence).font(Theme.Font.label).foregroundStyle(Theme.ink)
+            Text(sentence).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(raw).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
         }
@@ -491,6 +520,77 @@ struct SignalBar: View {
                     colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing
                 )
                 .mask(alignment: .leading) { Capsule().frame(width: geo.size.width * f) }
+            }
+        }
+        .frame(height: Theme.Layout.signalBarHeight)
+    }
+}
+
+/// A centre-zero meter: a track with a tick at the middle and a marker at `fraction` of the
+/// track's half-width either side, clamped to the ends. The marker is `inkSecondary` inside the
+/// centred tenth and `caution` past it.
+struct CentreMeter: View {
+    /// Error over bandwidth: ±0.5 is the channel's edge.
+    let fraction: Double
+    let offCentre: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let f = fraction.isFinite ? fraction.clamped(to: -0.5...0.5) : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.border)
+                Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 10)
+                    .offset(x: w / 2 - 0.5)
+                Capsule().fill(offCentre ? Theme.caution : Theme.inkSecondary)
+                    .frame(width: 3, height: 10)
+                    .offset(x: (w * (0.5 + f)).clamped(to: 0...max(0, w - 3)))
+            }
+        }
+        .frame(height: 10)
+    }
+}
+
+/// A level meter for the deviation against the mode's nominal: the track spans one and a half
+/// nominals, the tick is the nominal, the fill is the level ramp to the nominal and `caution`
+/// past it. Drawn from a level the caller holds with `hold`, because deviation follows
+/// syllables and a bar that follows every 100 ms interval is a flicker.
+struct DeviationMeter: View {
+    let levelHz: Double
+    let nominalHz: Double
+
+    /// The meter's span, in nominals.
+    static let spanNominals: Double = 1.5
+    /// How much of the held level is let go per meter interval: ten intervals from full to a
+    /// tenth, the release a VU meter has.
+    static let releasePerInterval: Double = 0.2
+
+    /// Fast up, slow down: the larger of the new level and the held one released a step.
+    static func hold(_ held: Double, _ new: Double, nominalHz: Double) -> Double {
+        guard new.isFinite else { return held }
+        guard held.isFinite else { return new }
+        return Swift.max(new, held - releasePerInterval * nominalHz)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let f =
+                levelHz.isFinite
+                ? (levelHz / (nominalHz * Self.spanNominals)).clamped(to: 0...1) : 0
+            let tick = w / Self.spanNominals
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.border)
+                LinearGradient(
+                    colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing
+                )
+                .mask(alignment: .leading) { Capsule().frame(width: min(w * f, tick)) }
+                if w * f > tick {
+                    Rectangle().fill(Theme.caution).frame(width: w * f - tick)
+                        .offset(x: tick)
+                }
+                Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 10)
+                    .offset(x: tick - 0.5)
             }
         }
         .frame(height: Theme.Layout.signalBarHeight)

@@ -115,32 +115,16 @@ struct LogRow: View {
 struct DisclosureSection: View {
     @Environment(AppSession.self) private var session
     @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
-    @AppStorage("inspector.demodulatorOpen") private var demodulatorOpen = false
 
+    // One group, not the handoff's three: the demodulator's values are the transport bar's and
+    // the device and gain are the header's chip, and a second reading of either was a second
+    // place to look (the owner, 2026-09-21).
     var body: some View {
         VStack(spacing: 0) {
             DisclosureRow(title: "Measurements", hint: "dBFS, Hz", open: $measurementsOpen) {
                 MeasurementsGroup()
             }
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            DisclosureRow(title: "Demodulator", hint: nil, open: $demodulatorOpen) {
-                DemodulatorGroup()
-            }
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            // Opens the device menu rather than duplicating it; the hint is what the menu's
-            // slider shows, auto or the level set by hand.
-            Button {
-                session.deviceMenuShown = true
-            } label: {
-                DisclosureLabel(title: "Device & gain", hint: gainHint, open: false)
-            }
-            .buttonStyle(.plain)
         }
-    }
-
-    private var gainHint: String? {
-        guard let g = session.capture?.gains.first else { return nil }
-        return g.auto ? "auto" : String(format: "%.1f dB", g.db)
     }
 }
 
@@ -230,32 +214,6 @@ struct MeasurementsGroup: View {
                     Text(row.value).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
                 }
             }
-        }
-    }
-}
-
-/// The same values the transport bar edits, as text. De-emphasis is not a channel field in the
-/// contract (it follows the mode inside the engine), so it is not listed as though it were a
-/// setting.
-struct DemodulatorGroup: View {
-    @Environment(AppSession.self) private var session
-
-    var body: some View {
-        let ch = session.channel
-        VStack(spacing: 3) {
-            line("mode", ch.map { $0.mode.word } ?? "—")
-            line("width", ch.map { Frequency.width($0.bandwidthHz) } ?? "—")
-            line(
-                "squelch",
-                ch.map { $0.squelchDb.isFinite ? Measure.dbfs($0.squelchDb) : "off" } ?? "—")
-        }
-    }
-
-    private func line(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
-            Spacer()
-            Text(value).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
         }
     }
 }

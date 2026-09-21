@@ -279,22 +279,22 @@ returns to the layout), tuning error and deviation from M2-2, time on air and th
 transmissions from M2-1, and the failure states carried out of M1.
 
 Landed 2026-09-20 from `../design/app-design-handoff-m2.md`: `InspectorView.swift` (the toolbar
-toggle, the header, the identity with its inline rename, the failure strip, the reading in
-words with a popover under every word) and `InspectorGroups.swift` (the log, the disclosure
-groups, the number and clock formatting); `Reading.swift` in the façade with the word tables and
-`ReadingTests`; `MeterFeed` widened into `ChannelTelemetryFeed`, one subscription per channel
-for the meter, squelch edges and tones folded into a `TransmissionLog`;
-`BookmarkStore.renameBookmark` for the pencil; the tokens in `Theme.swift`; `View ▸ Show
-Inspector` (⌥⌘I) and `AppSession.inspectorShown`. The exception: the signal readout left the
-transport bar (`SignalReadout` is deleted) and the squelch track has the slot. The strip:
-`NoticeStrip` keeps the notice and the last error; the failure state and the out-of-capture
-words read in the panel. The handoff's "Decided 2026-09-20" records where the tree and the
-design differed. Written in the container, so unverified without a Mac: that the panel compiles
-at all; the layout at 820 pt without a scroll view; the popovers, the dotted underline and the
-ramp-filled bar; the inline rename's focus on appear and its key monitor (space and the arrows
-handed to the field editor past the Tune menu); the toolbar toggle beside the chip; the
-disclosure rows; that the `Show Inspector` title follows the state; and that the widened
-telemetry subscription is accepted by the daemon and the log fills.
+toggle, the header, the identity with its inline rename, the failure strip, the reading in words
+with a popover under every word) and `InspectorGroups.swift` (the log, the disclosure groups, the
+number and clock formatting); `Reading.swift` in the façade with the word tables and `ReadingTests`;
+`MeterFeed` widened into `ChannelTelemetryFeed`, one subscription per channel for the meter, squelch
+edges and tones folded into a `TransmissionLog`; `BookmarkStore.renameBookmark` for the pencil; the
+tokens in `Theme.swift`; `View ▸ Show Inspector` (⌥⌘I) and `AppSession.inspectorShown`. The
+exception: the signal readout left the transport bar (`SignalReadout` is deleted) and the squelch
+track has the slot. The strip: `NoticeStrip` keeps the notice and the last error; the failure state
+and the out-of-capture words read in the panel. The handoff's "Decided 2026-09-20" records where the
+tree and the design differed, and "Decided 2026-09-21" what the first day on the Mac changed: meters
+for tuning and deviation, one disclosure group, secondary ink. Written in the container, so
+unverified without a Mac: that the panel compiles at all; the layout at 820 pt without a scroll
+view; the popovers, the dotted underline and the ramp-filled bar; the inline rename's focus on
+appear and its key monitor (space and the arrows handed to the field editor past the Tune menu); the
+toolbar toggle beside the chip; the disclosure rows; that the `Show Inspector` title follows the
+state; and that the widened telemetry subscription is accepted by the daemon and the log fills.
 
 ### M2-5 `[x]` Clipping, measured rather than inferred
 

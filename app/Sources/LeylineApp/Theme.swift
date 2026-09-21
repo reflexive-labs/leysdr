@@ -131,6 +131,8 @@ enum Theme {
         /// The label column of the inspector's reading rows.
         static let readingLabelWidth: CGFloat = 74
         static let signalBarHeight: CGFloat = 6
+        /// The tuning and deviation meters' width, leaving the word or number room beside them.
+        static let readingMeterWidth: CGFloat = 96
         /// The log's fixed columns; signal fills the rest.
         static let logTimeWidth: CGFloat = 52
         static let logLengthWidth: CGFloat = 40
