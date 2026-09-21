@@ -181,11 +181,11 @@ file, `bookmarks.json` and `ley bookmarks` are in the M1 cut; CHIRP import follo
 
 Landed 2026-09-18, the file half: `go/pkg/bookmarks` and `ley bookmarks` (list, add, remove, move,
 `--json`), `Band.StepHz` and `step_hz` in `ley bands --json`, `bands.json` under
-`LeylineClient/Resources` with `make bands-json` and `TestBandsJSONResource` holding it to the
-table (the sidebar's selection and editing model was revised 2026-09-21: the M1 handoff's
-"Decided 2026-09-21: the sidebar"); on the Swift side `Bands.swift` (the seed file decoded, the sideband rule `ley` applies) and `Bookmarks.swift` (the same file, the same shape, reloaded when the
-directory changes), both tested on Linux. The sidebar renders both. CHIRP import is the open
-half.
+`LeylineClient/Resources` with `make bands-json` and `TestBandsJSONResource` holding it to the table
+(the sidebar's selection and editing model was revised 2026-09-21: the M1 handoff's "Decided
+2026-09-21: the sidebar"); on the Swift side `Bands.swift` (the seed file decoded, the sideband rule
+`ley` applies) and `Bookmarks.swift` (the same file, the same shape, reloaded when the directory
+changes), both tested on Linux. The sidebar renders both. CHIRP import is the open half.
 
 Seen on the Mac 2026-09-20, by the owner: the gain slider's level reads back under the
 element's name, a rate change keeps the station inside the capture, the failure strip appears
