@@ -75,7 +75,8 @@ struct PlayButton: View {
 /// overwriting: click or ⌘L puts the caret on the first digit, each digit typed replaces the one
 /// under the caret and moves on, `.` jumps to the kHz digits (dropping whatever MHz digits were
 /// not retyped), Backspace steps back, Enter tunes, Escape or a click anywhere else puts the
-/// daemon's number back. The sub-kHz digits are shown and never typed. The stepper against the
+/// daemon's number back. A fourth digit after the kHz is the hundreds of hertz (GMRS sits on
+/// `462.6125`); below that the digits are shown dimmed and never typed. The stepper against the
 /// right edge does what the Tune menu's arrows do: the band's step, and the fine step with ⇧.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
@@ -98,8 +99,9 @@ struct FrequencyField: View {
                 Text(".").font(Theme.Font.frequency).foregroundStyle(
                     hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
                 digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
-                // Sub-kHz digits only when there are any: a drag lands between kHz, a keypad never does.
-                if let hz, hz % 1_000 != 0, !focused {
+                // Digits under the hundreds of hertz only when there are any: a drag lands
+                // between hertz, a keypad never does.
+                if let hz, hz % 100 != 0, !focused {
                     Text(Frequency.fieldParts(hz).minor)
                         .font(Theme.Font.frequency).tracking(Theme.frequencyTracking)
                         .foregroundStyle(Theme.inkDisabled)
@@ -170,7 +172,7 @@ struct FrequencyField: View {
             return
         }
         mhz = Array(String(hz / 1_000_000))
-        khz = Array(String(format: "%03d", (hz % 1_000_000) / 1_000))
+        khz = Array(Frequency.fieldParts(hz).major.split(separator: ".").last ?? "000")
     }
 
     private func begin() {
@@ -195,8 +197,9 @@ struct FrequencyField: View {
     /// can be finished rather than sending the radio somewhere nobody asked for.
     private func commit() {
         let whole = UInt64(String(mhz)) ?? 0
-        let thousandths = UInt64(String(khz)) ?? 0
-        let hz = whole * 1_000_000 + thousandths * 1_000
+        let thousandths = UInt64(String(khz.prefix(3))) ?? 0
+        let hundreds = khz.count > 3 ? UInt64(String(khz[3])) ?? 0 : 0
+        let hz = whole * 1_000_000 + thousandths * 1_000 + hundreds * 100
         if hz < 500_000 || hz > 6_000_000_000 {
             log("field", "refused \(String(mhz)).\(String(khz))")
             return
@@ -253,7 +256,11 @@ struct FrequencyField: View {
         }
         if key == .delete {
             if inKhz {
-                if caret > 0 {
+                if caret > 3 {
+                    // The fourth digit is optional: deleting it removes it rather than zeroing it.
+                    caret -= 1
+                    khz.removeLast()
+                } else if caret > 0 {
                     caret -= 1
                     khz[caret] = "0"
                 } else {
@@ -279,6 +286,10 @@ struct FrequencyField: View {
         if inKhz {
             if caret < khz.count {
                 khz[caret] = c
+                caret += 1
+            } else if khz.count == 3 {
+                // A fourth digit is the hundreds of hertz; nothing finer is typed.
+                khz.append(c)
                 caret += 1
             }
         } else if caret < mhz.count {

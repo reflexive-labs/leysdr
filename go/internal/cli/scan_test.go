@@ -592,11 +592,11 @@ func TestScanResolvesABandName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley scan gmrs: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut, "462.538 MHz to 467.738 MHz") {
+	if !strings.Contains(errOut, "462.5375 MHz to 467.7375 MHz") {
 		t.Errorf("scan did not sweep the whole GMRS service:\n%s", errOut)
 	}
 	_, errOut, err = run(t, t.Context(), sock, "scan", "gmrs-462")
-	if err != nil || !strings.Contains(errOut, "462.538 MHz to 462.738 MHz") {
+	if err != nil || !strings.Contains(errOut, "462.5375 MHz to 462.7375 MHz") {
 		t.Errorf("ley scan gmrs-462: %v\n%s", err, errOut)
 	}
 }

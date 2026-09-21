@@ -44,7 +44,10 @@ func TestParseFrequency(t *testing.T) {
 
 func TestFormatFrequency(t *testing.T) {
 	cases := map[uint64]string{
-		146_520_000:   "146.520 MHz",
+		146_520_000: "146.520 MHz",
+		462_612_500: "462.6125 MHz",
+		// A measured centre is not a channel plan: three decimals, as its bin can carry.
+		145_397_700:   "145.398 MHz",
 		7_040:         "7.040 kHz",
 		1_200_000_000: "1.200 GHz",
 		500:           "500 Hz",

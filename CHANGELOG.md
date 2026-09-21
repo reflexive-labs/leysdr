@@ -4,6 +4,17 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- A channel written to NFM now looks for a CTCSS tone. The detector was decided when a channel
+  was created and never again, so the Mac app's one channel, which starts on whatever band was
+  last used and follows the mode written to it, never reported a PL after a band change.
+- Frequencies on an exact half-kilohertz print with four decimals: GMRS channel 3 is
+  `462.6125 MHz`, and `462.613` named a channel it is not. A measured centre keeps three, which
+  is what its bin width can honestly carry. The app's tuning field takes a fourth digit after
+  the kHz.
+- The Mac app's inspector reads clipping from the daemon's count rather than the loudest bin, its
+  Measurements group shows the radio's peak and clipped fraction, the "On air" row says how many
+  transmissions were heard and since when in words, and the app log names each tone the daemon
+  reports.
 - The radio's clipping is measured, not inferred. The daemon counts the samples at the
   converter's rails as each block arrives and reports them four times a second as `CaptureLevel`
   telemetry (`clipped_samples`, `total_samples`, `peak_dbfs`), so `ley tune`'s line says "The

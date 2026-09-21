@@ -63,6 +63,13 @@ func FormatFrequency(hz uint64) string {
 	case f >= 999_999_500:
 		return fmt.Sprintf("%.3f GHz", f/1e9)
 	case f >= 999_999.5:
+		// A fourth decimal for a frequency on an exact half-kilohertz: every 12.5 kHz
+		// channel plan has them (GMRS channel 3 is 462.6125 MHz, and three decimals would
+		// round it to a channel it is not), and no measurement lands on one by chance, so
+		// a detection's centre keeps the three decimals its bin width can honestly carry.
+		if hz%1_000 == 500 {
+			return fmt.Sprintf("%.4f MHz", f/1e6)
+		}
 		return fmt.Sprintf("%.3f MHz", f/1e6)
 	case f >= 999.9995:
 		return fmt.Sprintf("%.3f kHz", f/1e3)

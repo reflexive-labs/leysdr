@@ -13,10 +13,10 @@ import (
 
 // The fake monitor's synthetic GMRS carriers, from internal/fakedaemon/monitor.go.
 const (
-	monWeak   = "462.562 MHz" // ch1, 12 dB, isolated: --min-snr 20 hides it, the default keeps it
-	monMedium = "462.600 MHz" // ch17, 21 dB, a real adjacent carrier
-	monStrong = "462.625 MHz" // ch18, 40 dB, the strongest
-	monSkirt  = "462.650 MHz" // ch19, 12 dB: a skirt of ch18, folded by default
+	monWeak   = "462.5625 MHz" // ch1, 12 dB, isolated: --min-snr 20 hides it, the default keeps it
+	monMedium = "462.600 MHz"  // ch17, 21 dB, a real adjacent carrier
+	monStrong = "462.625 MHz"  // ch18, 40 dB, the strongest
+	monSkirt  = "462.650 MHz"  // ch19, 12 dB: a skirt of ch18, folded by default
 )
 
 func monitorOpts() fakedaemon.Options {
@@ -38,7 +38,7 @@ func TestMonitorReportsTransmissions(t *testing.T) {
 		}
 	}
 	// The live feed and the summary are for the person, on stderr.
-	if !strings.Contains(errOut, "watching 462.538 MHz to 462.738 MHz") {
+	if !strings.Contains(errOut, "watching 462.5375 MHz to 462.7375 MHz") {
 		t.Errorf("stderr lacks the watching banner:\n%s", errOut)
 	}
 	if !strings.Contains(errOut, monStrong) {
@@ -225,7 +225,7 @@ func TestMonitorOnAirNeverExceedsHeld(t *testing.T) {
 func TestMonitorBandName(t *testing.T) {
 	sock, _ := harness(t, monitorOpts())
 	out := mustSay(t, sock, "monitor", "gmrs-462", "--for", "1s")
-	if !strings.Contains(out, "watching 462.538 MHz to 462.738 MHz") {
+	if !strings.Contains(out, "watching 462.5375 MHz to 462.7375 MHz") {
 		t.Errorf("a band name should resolve to the GMRS 462 MHz half:\n%s", out)
 	}
 	_, _, err := run(t, t.Context(), sock, "monitor", "gmrs", "--for", "1s")

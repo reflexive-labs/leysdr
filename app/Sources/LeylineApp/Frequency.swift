@@ -7,10 +7,17 @@
 import Foundation
 
 enum Frequency {
-    /// `146.520 MHz`, `88.5 MHz`, `1.766 GHz`: the guide's spelling, a space before the unit.
+    /// `146.520 MHz`, `88.5 MHz`, `462.6125 MHz`, `1.766 GHz`: the guide's spelling, a space
+    /// before the unit.
     static func format(_ hz: UInt64) -> String {
         if hz >= 1_000_000_000 { return String(format: "%.3f GHz", Double(hz) / 1e9) }
-        if hz >= 1_000_000 { return String(format: "%.3f MHz", Double(hz) / 1e6) }
+        // A fourth decimal for a frequency on an exact half-kilohertz: every 12.5 kHz channel
+        // plan has them (GMRS channel 3 is 462.6125 MHz, and three decimals would round it to a
+        // channel it is not), and no measurement lands on one by chance, so a measured centre
+        // keeps the three decimals its bin width can honestly carry. `ley`'s rule.
+        if hz >= 1_000_000 {
+            return String(format: hz % 1_000 == 500 ? "%.4f MHz" : "%.3f MHz", Double(hz) / 1e6)
+        }
         if hz >= 1_000 { return String(format: "%.1f kHz", Double(hz) / 1e3) }
         return "\(hz) Hz"
     }
@@ -19,8 +26,14 @@ enum Frequency {
     static func fieldParts(_ hz: UInt64) -> (major: String, minor: String) {
         let mhz = hz / 1_000_000
         let khz = (hz % 1_000_000) / 1_000
-        let sub = hz % 1_000
-        return (String(format: "%d.%03d", mhz, khz), String(format: "%03d", sub))
+        // The hundreds of hertz are a fourth typed digit (`462.6125`); only the tens and units
+        // are dimmed, and only when they are not zero.
+        let hundreds = (hz % 1_000) / 100
+        let sub = hz % 100
+        let major =
+            hundreds == 0
+            ? String(format: "%d.%03d", mhz, khz) : String(format: "%d.%03d%d", mhz, khz, hundreds)
+        return (major, sub == 0 ? "" : String(format: "%02d", sub))
     }
 
     /// A width as a person says it: `12.5 kHz`, `200 kHz`, `500 Hz`.

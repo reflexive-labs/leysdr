@@ -74,7 +74,10 @@ func TestMonitorReportSparklineFitsAndStrips(t *testing.T) {
 		printMonitorReport(app, o, order, carriers, 10*time.Second)
 		return out.String()
 	}
-	for _, width := range []int{40, 80, 160} {
+	// 81, not 80: a GMRS interstitial (462.6625 MHz) costs the frequency column a fourth
+	// decimal, and the report as laid out needs one column more than 80 to keep ACTIVITY.
+	// At 80 the sparkline is the column dropped, which is the drop order this test pins.
+	for _, width := range []int{40, 81, 160} {
 		plain := render(ui.Style{Unicode: true, Width: width})
 		styled := render(ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: width})
 		if ui.Strip(styled) != plain {
