@@ -1068,6 +1068,11 @@ actor SessionStore {
                         throw EngineError.modeUnsupported(String(describing: m), target: w.targetID)
                     }
                     config.mode = mode
+                    // The tone detector is decided by the mode: on for NFM, the only mode CTCSS is
+                    // sent under, and off otherwise. It was decided at creation only, so a channel
+                    // that started as WFM or AM and was written to NFM never looked for a tone
+                    // (the Mac app keeps one channel across bands and writes the mode).
+                    config.subAudibleDetect = mode == .nfm
                 case .squelchDb(let db)?:
                     guard db.isNaN || (db <= 0 && db >= -200) else {
                         throw EngineError.invalidArgument("squelch must be a dBFS value <= 0 or NaN", target: w.targetID)

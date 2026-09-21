@@ -251,9 +251,8 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 		SquelchDb:   math.NaN(),
 		Agc:         leylinev1.GainMode_AUTO,
 		State:       leylinev1.ChannelState_CHANNEL_ACTIVE,
-		// Sub-audible detection is on for NFM, the only mode CTCSS is sent under. The daemon
-		// decides it when the channel is built and a later mode write does not revisit it, so a
-		// channel that started as NFM keeps looking.
+		// Sub-audible detection is on for NFM, the only mode CTCSS is sent under, and a mode
+		// write re-decides it (writes.go), as the daemon does since 2026-09-20.
 		SubaudibleDetect: mode == leylinev1.DemodMode_NFM,
 		Persistent:       req.Persistent,
 		RequiredHz:       req.RequiredHz,

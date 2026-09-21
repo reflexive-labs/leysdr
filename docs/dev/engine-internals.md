@@ -459,6 +459,8 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
   20 ms. Rejections become `WriteRejected` events with the client tag. `gain` writes target the
   capture's device, and an empty `element` is the first the device lists (`common.proto`); the
   confirmed value comes back in the `Capture.gains` field of the capture event under that name.
+  A `mode` write re-decides `subaudible_detect` (on for NFM, the only mode CTCSS is sent under,
+  off otherwise), so a channel that started in another mode looks for a tone once it is NFM.
   On a channel that is `OUT_OF_CAPTURE` every non-offset write (`bandwidth_hz`, `mode`, `squelch_db`)
   is stored and used by the rebuild when the capture moves back over the channel — the channel stays
   `OUT_OF_CAPTURE` at its absolute frequency; only an `offset_hz` write is checked against the capture

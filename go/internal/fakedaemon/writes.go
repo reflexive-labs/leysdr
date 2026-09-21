@@ -225,6 +225,9 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 				return d.rejectLocked(ci, w.Tag, e)
 			}
 			ch.Mode = p.Mode
+			// The tone detector follows the mode, as the daemon's does: a channel written to NFM
+			// starts looking, one written away from it stops.
+			ch.SubaudibleDetect = p.Mode == leylinev1.DemodMode_NFM
 		case *leylinev1.ParamWrite_SquelchDb:
 			if !math.IsNaN(p.SquelchDb) && (p.SquelchDb > 0 || p.SquelchDb < -200) {
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, "squelch must be a dBFS value <= 0 or NaN"))
