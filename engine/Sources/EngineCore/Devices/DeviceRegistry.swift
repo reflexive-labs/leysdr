@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// DefaultDeviceRegistry: discovers RTL-SDR dongles by polling, hosts file playback devices, and
+// DefaultDeviceRegistry: discovers RTL-SDR and HackRF radios by polling, hosts file playback devices, and
 // hands out stable DeviceIDs keyed by USB identity so replugs keep their id.
 
 import Foundation
@@ -62,8 +62,10 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     private struct Entry {
         var descriptor: DeviceDescriptor
         var device: any RadioDevice
-        /// USB index while the dongle is attached; nil for file devices.
+        /// librtlsdr USB index while an RTL-SDR is attached; nil for every other driver.
         var rtlIndex: UInt32?
+        /// Stable libhackrf serial while a HackRF is attached; nil for other device kinds.
+        var hackrfSerial: String? = nil
         var key: String
         /// How a hosted virtual device arrived; nil for a dongle in this machine's port, which
         /// nobody attached.
@@ -71,6 +73,9 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         /// The dongle is claimed by another program (its probe `rtlsdr_open` failed): reported
         /// `.inUse` with feature `held_externally`, re-probed with backoff until it opens.
         var heldExternally = false
+
+        var isPhysical: Bool { rtlIndex != nil || hackrfSerial != nil }
+        var isVirtual: Bool { !isPhysical }
     }
 
     public let persistPath: String?
@@ -135,6 +140,8 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         "\(serial)|\(driver)"
     }
 
+    static func hackrfIdentityKey(serial: String) -> String { "\(serial)|hackrf" }
+
     /// Returns the stable id for a key, minting and persisting one on first sight.
     private func stableID(for key: String) -> DeviceID {
         if let id = idMap.ids[key] { return id }
@@ -179,7 +186,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         let device = try FilePlaybackDevice(path: path, loop: loop, realtime: realtime)
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: "file", product: provisional.model)
-        if let existing = entries.values.first(where: { $0.key == key && $0.rtlIndex == nil }) {
+        if let existing = entries.values.first(where: { $0.key == key && $0.isVirtual }) {
             return existing.descriptor
         }
         let id = stableID(for: key)
@@ -196,25 +203,25 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     }
 
     /// Whether `id` names a hosted virtual device rather than a dongle in this machine's port
-    /// (`rtlIndex == nil`). A file the daemon plays and a radio served by rtl_tcp are both hosted and
+    /// (no physical-driver identity). A file the daemon plays and a radio served by rtl_tcp are both hosted and
     /// both leave the same way; a dongle leaves when someone pulls it. Non-mutating, so callers can
     /// reject a request before touching any capture.
     public func isDetachableVirtualDevice(id: DeviceID) -> Bool {
         guard let entry = entries[id] else { return false }
-        return entry.rtlIndex == nil
+        return entry.isVirtual
     }
 
     /// How a hosted virtual device arrived, or nil for an id that is not hosted (a dongle, or no
     /// such device). A caller deciding whether a client may detach it needs both this and
     /// `isDetachableVirtualDevice`.
     public func virtualDeviceOrigin(id: DeviceID) -> VirtualDeviceOrigin? {
-        guard let entry = entries[id], entry.rtlIndex == nil else { return nil }
+        guard let entry = entries[id], entry.isVirtual else { return nil }
         return entry.origin
     }
 
     /// Detaches any hosted virtual device (file playback or `attachVirtualDevice`).
     public func detachVirtualDevice(id: DeviceID) async throws {
-        guard let entry = entries[id], entry.rtlIndex == nil else { throw EngineError.deviceNotFound(id.string) }
+        guard let entry = entries[id], entry.isVirtual else { throw EngineError.deviceNotFound(id.string) }
         entries[id] = nil
         await entry.device.close()
         publish(.removed(id))
@@ -232,7 +239,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     public func attachVirtualDevice(_ device: any RadioDevice, origin: VirtualDeviceOrigin = .client) async throws -> VirtualAttachment {
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.virtualIdentityKey(serial: provisional.serial, driver: provisional.driver)
-        if let (id, existing) = entries.first(where: { $0.value.key == key && $0.value.rtlIndex == nil }) {
+        if let (id, existing) = entries.first(where: { $0.value.key == key && $0.value.isVirtual }) {
             // Callers open before attaching, so a second instance of the same identity arrives with a
             // live socket and a reader thread that nothing else holds a reference to: close it here.
             if !(existing.device === device) { await device.close() }
@@ -258,7 +265,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// up, so it stays when the flag goes and the client may detach it. Anything else -- a dongle, a
     /// device a client already owns -- is unchanged.
     public func claimVirtualDevice(id: DeviceID) {
-        guard let entry = entries[id], entry.rtlIndex == nil, entry.origin == .operatorFlag else { return }
+        guard let entry = entries[id], entry.isVirtual, entry.origin == .operatorFlag else { return }
         entries[id]?.origin = .client
     }
 
@@ -287,6 +294,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         entries[id] = entry
         if let v = entry.device as? VirtualDevice { v.setState(state) }
         if let r = entry.device as? RTLSDRDevice { r.setState(state) }
+        if let h = entry.device as? HackRFDevice { h.setState(state) }
         publish(.changed(entry.descriptor))
     }
 
@@ -317,15 +325,19 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         hub.finishAll()
     }
 
-    /// One enumeration pass: diff `RTLSDRDevice.enumerate` against known dongles. The per-device
+    /// One enumeration pass: diff librtlsdr and libhackrf discovery against known radios. The per-device
     /// `rtlsdr_open` probe (tuner type, gain table) runs only for identities never probed
     /// successfully: known dongles keep their cached probe, so idle dongles are not re-initialised
     /// every second and the poll never contends with a capture's own open. A dongle whose probe
     /// open fails (another program holds it) is reported `.inUse` and re-probed with backoff.
     public func poll() async {
         let gate = advanceTickAndProbeGate()
+        let hackrfGate = hackrfProbeGate()
         let claimed = Set(entries.values.compactMap { e -> UInt32? in
             e.descriptor.state == .inUse && !e.heldExternally ? e.rtlIndex : nil
+        })
+        let claimedHackRF = Set(entries.values.compactMap { e -> String? in
+            e.descriptor.state == .inUse && !e.heldExternally ? e.hackrfSerial : nil
         })
         // libusb enumeration plus a probe `rtlsdr_open` blocks for hundreds of milliseconds, and
         // every caller of the registry queues behind the actor while it runs, so it goes off-actor
@@ -335,12 +347,19 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             // unplugged. A failed enumeration therefore leaves the known set untouched until the
             // next tick rather than announcing a device-loss storm.
             let generation = tableGeneration
-            let probes = try await BlockingWork.run { RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate) }
+            let probes = try await BlockingWork.run {
+                let rtl = RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate)
+                let hackrf = try HackRFDevice.enumerate(claimed: claimedHackRF, shouldOpen: hackrfGate)
+                return (rtl, hackrf)
+            }
             // Someone attached, detached or claimed a device while the enumeration ran, so these
             // probes describe a table that no longer exists and `applyProbes` would diff them
             // against the wrong one -- announcing a removal for a dongle that just arrived, say.
             // Dropping the pass costs a second.
-            if tableGeneration == generation { applyProbes(probes) }
+            if tableGeneration == generation {
+                applyProbes(probes.0)
+                applyHackRFProbes(probes.1)
+            }
         } catch {
             DefaultDeviceRegistry.logger.warning("device enumeration failed (\(error)); keeping the known dongles until the next poll")
         }
@@ -370,10 +389,32 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             }
             if closed { skip.insert(DefaultDeviceRegistry.probeSlot(base: base, index: index)) }
         }
+        let frozenSkip = skip
         return { p in
             let base = DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product)
-            return !skip.contains(DefaultDeviceRegistry.probeSlot(base: base, index: p.index))
+            return !frozenSkip.contains(DefaultDeviceRegistry.probeSlot(base: base, index: p.index))
         }
+    }
+
+    /// HackRF equivalent of `advanceTickAndProbeGate`. Device listing itself is non-invasive; the
+    /// gate controls the brief open used to read the board id (needed to distinguish Pro from One).
+    func hackrfProbeGate() -> @Sendable (HackRFProbe) -> Bool {
+        var skip = Set<String>()
+        for (id, entry) in entries {
+            guard let serial = entry.hackrfSerial else { continue }
+            let hackrf = entry.device as? HackRFDevice
+            let closed: Bool
+            if entry.descriptor.state == .inUse && !entry.heldExternally {
+                closed = true
+            } else if entry.heldExternally {
+                closed = probeBackoff[id].map { pollTick < $0.retryAtTick } ?? false
+            } else {
+                closed = hackrf?.probe.probed ?? false
+            }
+            if closed { skip.insert(serial) }
+        }
+        let frozenSkip = skip
+        return { !frozenSkip.contains($0.serial) }
     }
 
     /// Gate key for one physical dongle: identity base plus USB index (the index is what tells two
@@ -385,13 +426,14 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// reads `IN_USE` with `held_externally` and is re-probed with backoff until it opens again.
     /// No-op for virtual devices and for dongles one of our captures already holds.
     public func markHeldExternally(id: DeviceID) {
-        guard var entry = entries[id], entry.rtlIndex != nil, let rtl = entry.device as? RTLSDRDevice,
+        guard var entry = entries[id], entry.isPhysical,
               entry.descriptor.state != .disconnected,
               !(entry.descriptor.state == .inUse && !entry.heldExternally) else { return }
         let first = !entry.heldExternally
         entry.heldExternally = true
         let delay = scheduleReprobe(id: id)
-        rtl.setState(.inUse)
+        (entry.device as? RTLSDRDevice)?.setState(.inUse)
+        (entry.device as? HackRFDevice)?.setState(.inUse)
         var d = entry.descriptor
         d.state = .inUse
         d.features["held_externally"] = .flag(true)
@@ -399,7 +441,8 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         entry.descriptor = d
         entries[id] = entry
         if changed { publish(.changed(d)) }
-        logProbeFailure(d, rc: -3, first: first, nextMs: delay)
+        logProbeFailure(d, call: d.driver == HackRFDevice.driverName ? "hackrf_open_by_serial" : "rtlsdr_open",
+                        rc: -3, first: first, nextMs: delay)
     }
 
     /// Schedules the next probe attempt for a dongle whose open just failed.
@@ -418,7 +461,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// `SessionStore` rebinds detached captures through its normal path; a failure is retried on
     /// the next poll.
     private func reconnectDisconnectedRemotes() {
-        for (id, entry) in entries where entry.rtlIndex == nil && entry.descriptor.state == .disconnected {
+        for (id, entry) in entries where entry.isVirtual && entry.descriptor.state == .disconnected {
             guard let remote = entry.device as? RTLTCPDevice, !reconnecting.contains(id) else { continue }
             reconnecting.insert(id)
             Task { [weak self] in
@@ -491,7 +534,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
                     entry.descriptor = d
                     entries[id] = entry
                     if changed { publish(.changed(d)) }
-                    logProbeFailure(d, rc: rc, first: first, nextMs: delay)
+                    logProbeFailure(d, call: "rtlsdr_open", rc: rc, first: first, nextMs: delay)
                     continue
                 }
                 if entry.heldExternally, DefaultDeviceRegistry.isProbed(probe) {
@@ -547,7 +590,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
                     d.state = .inUse
                     d.features["held_externally"] = .flag(true)
                     entry.descriptor = d
-                    logProbeFailure(d, rc: rc, first: true, nextMs: delay)
+                    logProbeFailure(d, call: "rtlsdr_open", rc: rc, first: true, nextMs: delay)
                 }
                 entries[id] = entry
                 publish(.arrived(d))
@@ -555,11 +598,99 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         }
     }
 
-    private func logProbeFailure(_ d: DeviceDescriptor, rc: Int32, first: Bool, nextMs: Int) {
+    /// Diffs HackRF discovery against the physical HackRF entries. A successful first probe names
+    /// the board (including HackRF Pro); skipped probes preserve that cached capability descriptor.
+    func applyHackRFProbes(_ probes: [HackRFProbe]) {
+        var seen: [String: Int] = [:]
+        var present: [DeviceID: (HackRFProbe, String, Bool)] = [:]
+        for probe in probes {
+            let base = DefaultDeviceRegistry.hackrfIdentityKey(serial: probe.serial)
+            let n = seen[base, default: 0]
+            seen[base] = n + 1
+            let key = n == 0 ? base : "\(base)#\(n)"
+            present[stableID(for: key)] = (probe, key, n > 0)
+        }
+
+        for (id, entry) in entries where entry.hackrfSerial != nil && present[id] == nil {
+            entries[id] = nil
+            probeBackoff[id] = nil
+            (entry.device as? HackRFDevice)?.setState(.disconnected)
+            publish(.removed(id))
+        }
+
+        for (id, (probe, key, collided)) in present {
+            if var entry = entries[id] {
+                guard let hackrf = entry.device as? HackRFDevice else { continue }
+                let ours = entry.descriptor.state == .inUse && !entry.heldExternally
+                if !ours, let rc = probe.openError {
+                    let first = !entry.heldExternally
+                    entry.heldExternally = true
+                    let delay = scheduleReprobe(id: id)
+                    hackrf.setState(.inUse)
+                    var descriptor = hackrf.descriptor
+                    descriptor.state = .inUse
+                    descriptor.features["serial_collision"] = .flag(collided)
+                    descriptor.features["held_externally"] = .flag(true)
+                    let changed = descriptor != entry.descriptor
+                    entry.descriptor = descriptor
+                    entries[id] = entry
+                    if changed { publish(.changed(descriptor)) }
+                    logProbeFailure(descriptor, call: "hackrf_device_list_open", rc: rc,
+                                    first: first, nextMs: delay)
+                    continue
+                }
+                if entry.heldExternally, probe.probed {
+                    entry.heldExternally = false
+                    probeBackoff[id] = nil
+                    hackrf.setState(.available)
+                    DefaultDeviceRegistry.logger.info("HackRF \(entry.descriptor.serial) (\(entry.descriptor.model)) is available again")
+                }
+                if !ours, !hackrf.probe.probed, probe.probed { hackrf.updateProbe(probe) }
+                guard !ours else { continue }
+                var descriptor = hackrf.descriptor
+                descriptor.features["serial_collision"] = .flag(collided)
+                if entry.heldExternally {
+                    descriptor.state = .inUse
+                    descriptor.features["held_externally"] = .flag(true)
+                } else {
+                    descriptor.features["held_externally"] = nil
+                }
+                if descriptor != entry.descriptor {
+                    entry.descriptor = descriptor
+                    entries[id] = entry
+                    publish(.changed(descriptor))
+                }
+            } else {
+                let device = HackRFDevice(probe: probe, id: id)
+                device.setOnStateChange { [weak self] state in
+                    guard let self else { return }
+                    Task { await self.deviceStateChanged(id: id, state: state) }
+                }
+                var descriptor = device.descriptor
+                descriptor.features["serial_collision"] = .flag(collided)
+                var entry = Entry(descriptor: descriptor, device: device, rtlIndex: nil,
+                                  hackrfSerial: probe.serial, key: key)
+                if let rc = probe.openError {
+                    entry.heldExternally = true
+                    let delay = scheduleReprobe(id: id)
+                    device.setState(.inUse)
+                    descriptor.state = .inUse
+                    descriptor.features["held_externally"] = .flag(true)
+                    entry.descriptor = descriptor
+                    logProbeFailure(descriptor, call: "hackrf_device_list_open", rc: rc,
+                                    first: true, nextMs: delay)
+                }
+                entries[id] = entry
+                publish(.arrived(descriptor))
+            }
+        }
+    }
+
+    private func logProbeFailure(_ d: DeviceDescriptor, call: String, rc: Int32, first: Bool, nextMs: Int) {
         if first {
-            DefaultDeviceRegistry.logger.info("dongle \(d.serial) (\(d.model)) could not be opened (rtlsdr_open rc \(rc)): another program holds it (rtl_tcp, SDR++, GQRX?); reported IN_USE, re-checking in \(nextMs / 1000) s (backoff up to \(DefaultDeviceRegistry.probeBackoffMaxMs / 1000) s)")
+            DefaultDeviceRegistry.logger.info("radio \(d.serial) (\(d.model)) could not be opened (\(call) rc \(rc)): another program holds it; reported IN_USE, re-checking in \(nextMs / 1000) s (backoff up to \(DefaultDeviceRegistry.probeBackoffMaxMs / 1000) s)")
         } else {
-            DefaultDeviceRegistry.logger.debug("dongle \(d.serial) still held by another program (rtlsdr_open rc \(rc)); next check in \(nextMs / 1000) s")
+            DefaultDeviceRegistry.logger.debug("radio \(d.serial) still held by another program (\(call) rc \(rc)); next check in \(nextMs / 1000) s")
         }
     }
 }

@@ -9,13 +9,13 @@ so this is a build from source.
 - macOS 26 with Xcode 26 (the Swift 6.2 toolchain). The floor is set by Homebrew's `librtlsdr`,
   which is built for the host OS.
 - Homebrew, Go 1.25 or later.
-- An RTL-SDR (any RTL2832U dongle: R820T, R828D, E4000, FC0012/13 tuners are known to the driver).
+- An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
   No radio? See "Without a radio" below.
 
 ## Build and start
 
 ```sh
-brew install librtlsdr go
+brew install librtlsdr hackrf go
 git clone https://github.com/dpup/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
 export PATH=$PWD/go/bin:$PATH
@@ -37,7 +37,10 @@ MODEL                     STATE      RANGE                    RATES             
 Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
 ```
 
-`ley tune 101.1M --mode wfm` on a local broadcaster is the "is my dongle alive" test. From here,
+`ley tune 101.1M --mode wfm` on a local broadcaster is the "is my radio alive" test. A HackRF
+starts at the same conservative LNA 8 dB / VGA 20 dB defaults as `hackrf_transfer`. While that
+command runs, adjust either stage from another terminal with, for example,
+`ley set gain 16 --element LNA` or `ley set gain 24 --element VGA`. From here,
 [Using `ley`](using-ley.md) walks every task, and [Troubleshooting](troubleshooting.md) covers an
 empty device list, a busy radio and no audio.
 

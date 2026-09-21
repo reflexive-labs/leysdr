@@ -56,6 +56,7 @@ if [ $with_daemon -eq 1 ]; then
   # The GPL engine travels with its licence text and the source offer (docs/decisions/D2-licensing.md).
   cp engine/LICENSE "$out/Contents/Helpers/LICENSE.leylined"
   cp third_party/licenses/librtlsdr.txt "$out/Contents/Helpers/"
+  cp third_party/licenses/libhackrf.txt "$out/Contents/Helpers/"
 fi
 cp LICENSE NOTICE "$out/Contents/Resources/"
 

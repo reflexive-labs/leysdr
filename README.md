@@ -5,7 +5,7 @@ and does all the signal processing; the `ley` command-line tool (Go) drives it o
 using one gRPC contract, `leyline.v1`. Anything else that speaks the contract — a script, an agent,
 a future app — is a peer of the CLI, never a second path into the hardware.
 
-**What works today:** an RTL-SDR plugged into the Mac (or one another machine serves with
+**What works today:** an RTL-SDR or HackRF plugged into the Mac (or an RTL-SDR another machine serves with
 `rtl_tcp`, added by `ley devices attach rtltcp pi.local:1234` and remembered from then on), or an
 IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
 squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
@@ -22,13 +22,13 @@ which serves the same verbs as MCP tools.
 - macOS 26 with Xcode 26 (the Swift 6.2 toolchain). The floor is set by Homebrew's `librtlsdr`,
   which is built for the host OS.
 - Homebrew, Go 1.25 or later.
-- An RTL-SDR (any RTL2832U dongle: R820T, R828D, E4000, FC0012/13 tuners are known to the driver).
+- An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
   No radio? See "Without a radio" below.
 
 ## Install (from source)
 
 ```sh
-brew install librtlsdr go
+brew install librtlsdr hackrf go
 git clone https://github.com/dpup/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
 export PATH=$PWD/go/bin:$PATH
@@ -119,8 +119,8 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 
 Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 
-- Device backends: an RTL-SDR on USB (librtlsdr) and an RTL-SDR another machine serves with
-  `rtl_tcp`. Both are supported, not experiments: the engine tests drive a fake `rtl_tcp` server and
+- Device backends: RTL-SDR and HackRF on USB (librtlsdr/libhackrf), and an RTL-SDR another machine serves with
+  `rtl_tcp`. These are supported, not experiments: the engine tests drive a fake `rtl_tcp` server and
   the e2e attaches one to the real daemon, on both CI hosts.
 - Milestone A (scaffold, daemon lifecycle, fixtures and file playback): done.
 - Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.

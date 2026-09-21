@@ -62,8 +62,8 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
-      - name: librtlsdr (enumerates nothing on the runner; needed to link)
-        run: sudo apt-get update && sudo apt-get install -y librtlsdr-dev
+      - name: SDR host libraries (enumerate nothing on the runner; needed to link)
+        run: sudo apt-get update && sudo apt-get install -y librtlsdr-dev libhackrf-dev
       - name: build + test (portable DSP kernels, fixture round-trips; generates fixtures/)
         run: make swift swift-test
       - name: cross-language e2e (ley driving the Linux-built leylined)
@@ -87,8 +87,8 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
-      - name: librtlsdr
-        run: brew install librtlsdr
+      - name: SDR host libraries
+        run: brew install librtlsdr hackrf
       - name: build + test (Accelerate kernels, parity tests, fixture round-trips; generates fixtures/)
         run: make swift swift-test
       # The Go clients and the UDS contract were proven only on Linux before this step; macOS is

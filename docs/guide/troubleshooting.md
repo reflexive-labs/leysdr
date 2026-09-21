@@ -28,9 +28,11 @@ stopped and a crash is relaunched; `ley daemon install` is how the daemon comes 
 `(no radios found)` with the dongle plugged in. Check, in order:
 
 - Plugged in; try another port or cable.
-- `rtl_test -t` (from `brew install librtlsdr`) sees it. If `rtl_test` sees it and `leylined` does
-  not, the daemon is running against a different `librtlsdr`
+- For RTL-SDR, `rtl_test -t` (from `brew install librtlsdr`) sees it. If `rtl_test` sees it and
+  `leylined` does not, the daemon is running against a different `librtlsdr`
   (`otool -L engine/.build/release/leylined | grep rtlsdr`).
+- For HackRF, `hackrf_info` (from `brew install hackrf`) names the board and firmware. If it does
+  and Leyline does not, check `otool -L engine/.build/release/leylined | grep hackrf`.
 - Nothing else has it open. `DEVICE_BUSY: another program has the device`, or a row showing the
   dongle `IN_USE` with a `0..0dB` gain column while nothing of yours is tuned, means another process
   (SDR++, GQRX, `rtl_tcp`) holds it. Quit that program; the daemon re-checks with a backoff of up to

@@ -5,6 +5,7 @@
 #
 # kind    name                                              licence               file
 system    librtlsdr                                         GPL-2.0-or-later      librtlsdr.txt
+system    libhackrf                                         BSD-3-Clause          libhackrf.txt
 system    libusb                                            LGPL-2.1-or-later     libusb.txt
 go        github.com/aymanbagabas/go-osc52/v2               MIT                   go_github.com_aymanbagabas_go-osc52_v2.txt
 go        github.com/charmbracelet/colorprofile             MIT                   go_github.com_charmbracelet_colorprofile.txt

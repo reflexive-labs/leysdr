@@ -4,6 +4,11 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The engine can now discover and receive from HackRF One and HackRF Pro through libhackrf. It
+  identifies Pro by board id, carries native signed 8-bit IQ at 2–20 MSPS into the existing CS8
+  path, exposes LNA/VGA/RF-amp gain stages, keeps stable ids across replug, and shares the physical
+  device claim/backoff behavior used by RTL-SDR. TX and Pro-specific 16-/4-bit modes remain out of
+  scope; the initial backend uses libhackrf's backwards-compatible receive mode.
 - The Mac app opens a radio at 2.4 MSPS and a fixed 28 dB of gain, and remembers what the device
   menu sets for either; a band change moves the capture's centre and never its rate. The tuner's
   auto mode overloaded on a strong FM station, and the inspector now says when the radio clips.

@@ -7,8 +7,9 @@ cd "$(dirname "$0")/.."
 command -v brew >/dev/null || { echo "Homebrew is required: https://brew.sh" >&2; exit 1; }
 command -v xcrun >/dev/null || { echo "Xcode (or Command Line Tools) is required" >&2; exit 1; }
 
-echo "==> brew deps (librtlsdr + libusb, go)"
+echo "==> brew deps (librtlsdr + HackRF + libusb, go)"
 brew list librtlsdr >/dev/null 2>&1 || brew install librtlsdr
+brew list hackrf >/dev/null 2>&1 || brew install hackrf
 brew list go >/dev/null 2>&1 || brew install go
 
 echo "==> Go clients -> go/bin"

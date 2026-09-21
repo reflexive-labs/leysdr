@@ -99,14 +99,15 @@ There are exactly three kinds of execution context in the engine. Every function
 
 ### Block size
 
-Blocks are 16384 complex samples. `RTLSDRDevice` asks librtlsdr for `buf_len = 32768` bytes
-(`buf_num = 32`), so one USB callback is exactly one slot. The block ring holds 64 slots of cf32
+Ring blocks are 16384 complex samples. `RTLSDRDevice` asks librtlsdr for `buf_len = 32768` bytes
+(`buf_num = 32`), so one USB callback is exactly one slot. A libhackrf callback is larger; capture
+ingest splits it into 16384-sample slots without allocating. The block ring holds 64 slots of cf32
 (8 MiB per capture, ~0.44 s at 2.4 MSPS). `FilePlaybackDevice` delivers the same block size.
 
 ## Capture pipeline
 
 ```
-device (cu8/cf32) ──deliver──▶ convert to cf32 ──▶ BlockRing ──▶ DSP thread
+device (cu8/cs8/cf32) ──deliver──▶ convert to cf32 ──▶ BlockRing ──▶ DSP thread
                                                                    ├─▶ Channel[n]: NCO mix ▶ FIR↓D1 ▶ FIR↓D2 ▶ demod ▶ squelch ▶ sinks
                                                                    ├─▶ SpectrumLadder: window ▶ FFT(N) ▶ |X|² dB ▶ subscribers (rate-limited)
                                                                    └─▶ CaptureTaps: cf32 blocks (IQ recording / IQ bulk stream)
@@ -115,7 +116,8 @@ device (cu8/cf32) ──deliver──▶ convert to cf32 ──▶ BlockRing ─
 ### Conversion
 
 `.cu8 → .cf32`: `(u − 127.5) / 127.5`, done in one vDSP pass (`vDSP_vfltu8` with stride, then
-`vDSP_vsmsa`). Portable kernel does the same loop. `.cs16 → .cf32`: `/32768`. Before the
+`vDSP_vsmsa`). Portable kernel does the same loop. `.cs8 → .cf32`: `/128`; `.cs16 → .cf32`:
+`/32768`. Before the
 conversion, `deliver` walks the native block once more for the samples at the converter's rails
 and the peak (`Kernels.countAtRails*`, the same plain loop on both platforms), which is where the
 capture's level comes from ("Telemetry service" below).
@@ -353,6 +355,30 @@ up; capped to 16384), `actualRate` is `min(requested, 30)`.
   publishes `arrived`/`removed`. IOKit arrival notifications are a later refinement.
   `leylined --no-hardware` never starts the poll: the daemon hosts only what is attached to it
   (file devices, rtl_tcp), for a run that must see nothing but its test radios, such as an eval's.
+
+### HackRFDevice (libhackrf, libusb-backed)
+
+- Enumeration: `hackrf_device_list` supplies stable serials. The registry briefly opens an
+  unclaimed radio once to read its board id, which distinguishes HackRF Pro from the USB-compatible
+  HackRF One, then caches the probe. Claimed devices are listed without opening; another program's
+  claim is reported as `IN_USE` and retried with the same 2–60 s backoff as RTL-SDR.
+- Descriptor: driver `"hackrf"`; HackRF Pro advertises its 100 kHz–6 GHz operating range and other
+  boards the common 1 MHz–6 GHz range. The discrete rates Leyline offers are 2, 2.4, 4, 8, 10,
+  12.5, 16 and 20 MSPS. Native format is `.cs8`, libhackrf's backwards-compatible interleaved
+  signed 8-bit I/Q mode. Gains are three manual elements: `LNA` (0–40 dB, 8 dB step), `VGA`
+  (0–62 dB, 2 dB step), and `AMP` (off or approximately 11 dB). HackRF has no RX AGC and opens
+  at the conservative `hackrf_transfer` defaults of LNA 8 dB, VGA 20 dB and AMP off.
+- Open applies the cached sample rate, frequency and all three gain stages before exposing the
+  handle. `hackrf_start_rx` owns the transfer thread and calls the allocation-free Swift callback;
+  `hackrf_stop_rx` joins it before the borrowed callback state is cleared. Retune and gain changes
+  are live; sample-rate changes refuse while streaming so the capture can stop, change, restart and
+  publish the new anchor.
+- libhackrf's legacy queue is four 262144-byte transfers, or 524288 complex samples. That bound is
+  `inFlightSamples`, so scan settling discards samples the driver requested before a retune.
+- This is receive support only. HackRF hardware is half-duplex and advertises `tx_capable`, but a
+  future transmit implementation composes the separate transmit protocol; `RadioDevice` stays RX.
+  HackRF Pro's extended-precision and half-precision modes are also later work; the basic path is
+  the compatibility mode documented by Great Scott Gadgets.
 
 ### FilePlaybackDevice
 

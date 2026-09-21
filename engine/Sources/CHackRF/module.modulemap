@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+module CHackRF [system] {
+    header "shim.h"
+    link "hackrf"
+    export *
+}

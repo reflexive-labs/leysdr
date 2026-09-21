@@ -1,12 +1,12 @@
-# S3 — USB posture: librtlsdr/libusb now, IOUSBHost later
+# S3 — USB posture: librtlsdr + libhackrf over libusb now, IOUSBHost later
 
 Status: decided for v0 (2026-09-05). Provisional on one point, flagged below.
 
 ## Decision
 
-The RTL-SDR driver binding is **librtlsdr (Homebrew `librtlsdr`, libusb-backed)** wrapped behind
-`RadioDevice` as `RTLSDRDevice`, running **unsandboxed** in a user launchd agent. IOUSBHost is not
-used in v0.
+The USB driver bindings are **librtlsdr** (Homebrew `librtlsdr`) and **libhackrf** (Homebrew
+`hackrf`), both libusb-backed and wrapped behind `RadioDevice`, running **unsandboxed** in a user
+launchd agent. IOUSBHost is not used in v0.
 
 ## Why
 
@@ -21,8 +21,9 @@ used in v0.
 
 ## What this costs
 
-- Homebrew dependency for users (`brew install librtlsdr`). Mitigation: `scripts/bootstrap-mac.sh`
-  and, later, bundling `librtlsdr.dylib` + `libusb` inside the app/daemon bundle with `@rpath`.
+- Homebrew dependencies for users (`brew install librtlsdr hackrf`). Mitigation:
+  `scripts/bootstrap-mac.sh` and, later, bundling the driver dylibs + `libusb` inside the
+  app/daemon bundle with `@rpath`.
 - No hot-plug callbacks from librtlsdr: the registry polls enumeration once a second (cheap:
   descriptor reads only). IOKit `IOServiceAddMatchingNotification` on the RTL vendor/product IDs is
   the obvious refinement and does not change the posture.

@@ -4,6 +4,7 @@
 //
 // Targets:
 //   CRTLSDR        system-library shim over librtlsdr (brew install librtlsdr)
+//   CHackRF         system-library shim over libhackrf (brew install hackrf)
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
 //   TestSupport    fakes shared by both test suites (test-only; no product depends on it)
 //   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
@@ -46,10 +47,17 @@ let package = Package(
             pkgConfig: "librtlsdr",
             providers: [.brew(["librtlsdr"]), .apt(["librtlsdr-dev"])]
         ),
+        .systemLibrary(
+            name: "CHackRF",
+            path: "Sources/CHackRF",
+            pkgConfig: "libhackrf",
+            providers: [.brew(["hackrf"]), .apt(["libhackrf-dev"])]
+        ),
         .target(
             name: "EngineCore",
             dependencies: [
                 "CRTLSDR",
+                "CHackRF",
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/EngineCore"
@@ -87,7 +95,7 @@ let package = Package(
         ),
         .testTarget(
             name: "EngineCoreTests",
-            dependencies: ["EngineCore", "TestSupport"],
+            dependencies: ["EngineCore", "TestSupport", "CHackRF"],
             path: "Tests/EngineCoreTests",
             // The sub-audible taps of real-radio captures (SubAudibleCaptureTests): the 1 kHz
             // discriminator output the detector sees, kept because the captures themselves are
