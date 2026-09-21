@@ -315,6 +315,50 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	start := time.Now()
 	last := start
 	rows := 0
+	// emit draws one frame, and says when the verb is done: a still after its
+	// one row, a watch after --count.
+	emit := func(fr *leylinev1.Frame) (bool, error) {
+		bins := leyline.DecodeFFTBins(fr.Payload, fp.GetBinFormat())
+		now := time.Now()
+		dt := now.Sub(last)
+		last = now
+		levels := make([]float64, len(view.bands))
+		for i, b := range view.bands {
+			levels[i] = levelsBandDb(bins, binHz, b)
+		}
+		frame.advance(levels, dt, o.watch)
+		if s.app.JSON {
+			row := LevelsRow{
+				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), Tap: scopeTapName(tap),
+				Bands:   make([]LevelsBin, len(view.bands)),
+				RmsDbfs: levelsMeasured(frame.rmsDb), PeakDbfs: levelsMeasured(frame.peakDb),
+				SquelchOpen: frame.squelch(),
+			}
+			for i, b := range view.bands {
+				row.Bands[i] = LevelsBin{CenterHz: b.centerHz, Db: levels[i]}
+			}
+			b, err := json.Marshal(row)
+			if err != nil {
+				return false, err
+			}
+			out.Write(b)
+			out.WriteByte('\n')
+		} else {
+			w.frame(view.render(frame), "")
+		}
+		if err := out.Flush(); err != nil {
+			return false, err
+		}
+		rows++
+		if !o.watch || (o.count > 0 && rows >= o.count) {
+			return true, nil
+		}
+		return false, nil
+	}
+	// The frame a still holds while it waits for the capture's level: held,
+	// not dropped, because a playback of a 300 ms part is over before the
+	// probe is, and a frame thrown away then was the only one coming.
+	var held *leylinev1.Frame
 	for {
 		select {
 		case <-ctx.Done():
@@ -322,6 +366,13 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		case <-tick.C:
 			if w != nil {
 				w.idle()
+			}
+			if held != nil && time.Since(start) >= levelProbeTimeout {
+				fr := held
+				held = nil
+				if done, err := emit(fr); done || err != nil {
+					return err
+				}
 			}
 			// A snapshot draws one frame and leaves; waiting for ever with a
 			// blank screen is not a still of anything.
@@ -331,10 +382,17 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		case m, ok := <-levels:
 			if !ok {
 				levels, frame.level = nil, nil
-				continue
-			}
-			if b, ok := m.Body.(*leylinev1.TelemetryMsg_CaptureLevel); ok {
+			} else if b, ok := m.Body.(*leylinev1.TelemetryMsg_CaptureLevel); ok {
 				frame.level = b.CaptureLevel
+			}
+			// The level the still was waiting for, or the stream that was never
+			// going to send one: either way the held frame goes out now.
+			if held != nil && (frame.level != nil || levels == nil) {
+				fr := held
+				held = nil
+				if done, err := emit(fr); done || err != nil {
+					return err
+				}
 			}
 		case m, ok := <-msgs:
 			if !ok {
@@ -367,42 +425,11 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			// second away at most; a daemon that sends none (an older one) is
 			// waited on this long and then left to the bars' own rule.
 			if !o.watch && rows == 0 && frame.level == nil && levels != nil && time.Since(start) < levelProbeTimeout {
+				held = fr
 				continue
 			}
-			bins := leyline.DecodeFFTBins(fr.Payload, fp.GetBinFormat())
-			now := time.Now()
-			dt := now.Sub(last)
-			last = now
-			levels := make([]float64, len(view.bands))
-			for i, b := range view.bands {
-				levels[i] = levelsBandDb(bins, binHz, b)
-			}
-			frame.advance(levels, dt, o.watch)
-			if s.app.JSON {
-				row := LevelsRow{
-					Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(), Tap: scopeTapName(tap),
-					Bands:   make([]LevelsBin, len(view.bands)),
-					RmsDbfs: levelsMeasured(frame.rmsDb), PeakDbfs: levelsMeasured(frame.peakDb),
-					SquelchOpen: frame.squelch(),
-				}
-				for i, b := range view.bands {
-					row.Bands[i] = LevelsBin{CenterHz: b.centerHz, Db: levels[i]}
-				}
-				b, err := json.Marshal(row)
-				if err != nil {
-					return err
-				}
-				out.Write(b)
-				out.WriteByte('\n')
-			} else {
-				w.frame(view.render(frame), "")
-			}
-			if err := out.Flush(); err != nil {
+			if done, err := emit(fr); done || err != nil {
 				return err
-			}
-			rows++
-			if !o.watch || (o.count > 0 && rows >= o.count) {
-				return nil
 			}
 		}
 	}
