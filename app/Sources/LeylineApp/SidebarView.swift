@@ -46,14 +46,27 @@ struct SidebarView: View {
                     .padding(.horizontal, 14).padding(.vertical, 6)
                 }
                 ForEach(session.bookmarks.list) { b in
+                    let tuned = session.tunedHz == b.hz
                     BookmarkRow(
-                        bookmark: b, tuned: session.tunedHz == b.hz,
-                        inSpan: session.visibleRange?.contains(b.hz) ?? false
+                        bookmark: b, selected: tuned, modified: tuned && session.bookmarkModified,
+                        editing: Binding(
+                            get: { session.editingBookmarkID == b.id },
+                            set: {
+                                if !$0, session.editingBookmarkID == b.id {
+                                    session.editingBookmarkID = nil
+                                }
+                            })
                     )
                     .contentShape(Rectangle())
-                    .onTapGesture { session.tune(bookmark: b) }
+                    .onTapGesture {
+                        if session.editingBookmarkID != b.id { session.tune(bookmark: b) }
+                    }
                     .contextMenu {
                         Button("Tune") { session.tune(bookmark: b) }
+                        Button("Rename") { session.editingBookmarkID = b.id }
+                        if tuned, session.bookmarkModified {
+                            Button("Save mode and width") { session.saveTunedBookmark() }
+                        }
                         Button("Remove", role: .destructive) { session.remove(bookmark: b) }
                     }
                 }
@@ -118,25 +131,39 @@ struct BandRow: View {
     }
 }
 
+/// One look for "selected", the band row's: `selected` ground and a `good` dot on the tuned
+/// bookmark, a faint dot on the rest (the in-span meaning the dot carried in M1 was not read
+/// as one; the owner, 2026-09-21). `changed` in `caution` where the frequency was, when the
+/// bookmark's settings and the channel's disagree. The row is an editor while `editing`.
 struct BookmarkRow: View {
     let bookmark: Bookmark
-    let tuned: Bool
-    let inSpan: Bool
+    let selected: Bool
+    let modified: Bool
+    @Binding var editing: Bool
+    @Environment(AppSession.self) private var session
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle().fill(tuned ? Theme.ground : (inSpan ? Theme.good : Theme.borderStrong)).frame(
-                width: 6, height: 6)
-            Text(bookmark.name).font(Theme.Font.label).foregroundStyle(
-                tuned ? Theme.ground : Theme.inkSecondary
-            ).lineLimit(1)
+            Circle().fill(selected ? Theme.good : Theme.borderStrong).frame(width: 6, height: 6)
+            if editing {
+                NameField(initial: bookmark.name, font: Theme.Font.label, editing: $editing) {
+                    session.rename(bookmark: bookmark, to: $0)
+                }
+            } else {
+                Text(bookmark.name).font(Theme.Font.label)
+                    .foregroundStyle(selected ? Theme.ink : Theme.inkSecondary).lineLimit(1)
+            }
             Spacer()
-            Text(Frequency.fieldParts(bookmark.hz).major)
-                .font(Theme.Font.valueSmall)
-                .foregroundStyle(tuned ? Theme.ground : Theme.inkTertiary)
+            if modified {
+                Text("changed").font(Theme.Font.valueSmall).foregroundStyle(Theme.caution)
+            } else {
+                Text(Frequency.fieldParts(bookmark.hz).major)
+                    .font(Theme.Font.valueSmall)
+                    .foregroundStyle(selected ? Theme.inkTertiary : Theme.inkFaint)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
-        .background(tuned ? Theme.accent : Color.clear)
+        .background(selected ? Theme.selected : Color.clear)
     }
 }

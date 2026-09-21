@@ -282,10 +282,30 @@ final class AppSession {
     }
 
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
+    /// Selection reflects state rather than causing it (the M1 handoff, "Decided 2026-09-21"):
+    /// the band is the one the tuned frequency is in, and the clicked one only breaks a tie
+    /// between overlapping bands or stands in before anything is tuned.
     var band: Band? {
-        if let id = selectedBandID, let b = bands.first(where: { $0.id == id }) { return b }
-        return tunedHz.flatMap { Bands.band(containing: $0, in: bands) }
+        let clicked = selectedBandID.flatMap { id in bands.first { $0.id == id } }
+        guard let hz = tunedHz else { return clicked }
+        if let c = clicked, c.contains(hz) { return c }
+        return Bands.band(containing: hz, in: bands)
     }
+
+    /// Whether the tuned bookmark's saved settings and the channel's disagree: the mode, or the
+    /// width when the bookmark names one. The row and the identity say "changed", and a click
+    /// on the bookmark puts its settings back.
+    var bookmarkModified: Bool {
+        guard let b = tunedBookmark, let ch = channel, b.mode != .unspecified else { return false }
+        if b.mode != ch.mode { return true }
+        return b.bandwidthHz != 0 && b.bandwidthHz != ch.bandwidthHz
+    }
+
+    /// The bookmark whose row is an editor right now, after `＋` or Rename.
+    var editingBookmarkID: String?
+    /// Set by `tune(bookmark:)` for the tune it starts, so the band-follow rule does not write
+    /// the band's mode over the bookmark's: one write, the bookmark's.
+    private var tuningBookmark = false
 
     var stepHz: UInt32 { band?.stepHz ?? 12_500 }
     var fineStepHz: UInt32 { band?.fineStepHz ?? 1_000 }
@@ -944,6 +964,12 @@ final class AppSession {
         let was = oldHz.flatMap { Bands.band(containing: $0, in: bands) }
         let now = Bands.band(containing: hz, in: bands)
         if let b = band, !b.contains(hz) { selectedBandID = nil }
+        if tuningBookmark {
+            // The bookmark's saved settings win over the band's defaults, and stand down the
+            // band's write for this tune.
+            tuningBookmark = false
+            return
+        }
         guard let now, now.id != was?.id else { return }
         let mode = now.mode(at: hz)
         guard ch.mode != mode || ch.bandwidthHz != now.bandwidthHz else { return }
@@ -1242,17 +1268,53 @@ final class AppSession {
         bookmarkWatch = source
     }
 
+    /// `＋`: the tuned frequency becomes a bookmark named after itself, and its row opens as an
+    /// editor at once so the name is typed where the bookmark appears.
     func bookmarkCurrent() {
         guard let ch = channel, let hz = tunedHz else { return }
         let name = Frequency.format(hz)
         do {
-            try bookmarks.add(name: name, hz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
+            let b = try bookmarks.add(
+                name: name, hz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
             try bookmarks.save()
             log("bookmark", "added \(name) at \(hz) Hz")
-            notice = "Bookmarked \(name)"
+            editingBookmarkID = b.id
         } catch {
             lastError = bookmarkWriteError(error)
         }
+    }
+
+    /// The sidebar row's editor and the Rename item: the bookmark takes the name in place.
+    func rename(bookmark: Bookmark, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != bookmark.name else { return }
+        do {
+            try bookmarks.renameBookmark(bookmark.id, to: name)
+            try bookmarks.save()
+            log("bookmark", "renamed \(bookmark.name) -> \(name) at \(bookmark.hz) Hz")
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
+    /// The tuned bookmark takes the mode and width it is heard with now.
+    func saveTunedBookmark() {
+        guard let b = tunedBookmark, let ch = channel else { return }
+        do {
+            try bookmarks.updateBookmark(b.id, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
+            try bookmarks.save()
+            log("bookmark", "\(b.name) takes \(ch.mode.word) \(ch.bandwidthHz) Hz")
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
+    /// The channel goes back to the tuned bookmark's saved settings.
+    func revertToTunedBookmark() {
+        guard let b = tunedBookmark, let ch = channel, b.mode != .unspecified else { return }
+        let bw = b.bandwidthHz == 0 ? b.mode.defaultBandwidthHz : b.bandwidthHz
+        log("bookmark", "\(b.name) put back: \(b.mode.word) \(bw) Hz")
+        Task { await apply(mode: b.mode, bandwidthHz: bw, to: ch) }
     }
 
     /// The inspector's pencil: the bookmark on the tuned frequency takes the name, or one is
@@ -1290,6 +1352,7 @@ final class AppSession {
     func tune(bookmark: Bookmark) {
         selectedBandID = nil
         log("tune", "bookmark \(bookmark.name) at \(bookmark.hz) Hz")
+        tuningBookmark = bookmark.mode != .unspecified
         tune(to: bookmark.hz)
         if let ch = channel, bookmark.mode != .unspecified {
             let bw =

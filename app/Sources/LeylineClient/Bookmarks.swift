@@ -217,6 +217,25 @@ public struct BookmarkStore: Sendable {
         return b
     }
 
+    /// Gives the bookmark with this id the mode and width it is heard with now, keeping its
+    /// name and frequency: the inspector's "save" on a bookmark whose settings were changed
+    /// after it was tuned. Does not save.
+    @discardableResult
+    public mutating func updateBookmark(
+        _ id: String, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32
+    ) throws -> Bookmark {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        guard mode != .unspecified else { throw BookmarkError.unspecifiedMode }
+        guard var b = bookmarks[id] else {
+            throw BookmarkError.noSuchBookmark(id, candidates: [])
+        }
+        b.modeName = mode.wireName
+        b.bandwidthHz = bandwidthHz
+        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
+        bookmarks[id] = b
+        return b
+    }
+
     /// Removes by exact id, else exact name, else a case-insensitive name that matches exactly
     /// one bookmark. The argument is trimmed first, as `go/pkg/bookmarks` trims it, so a name
     /// pasted with a trailing space still names its bookmark. Does not save.

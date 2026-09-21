@@ -92,12 +92,26 @@ struct IdentityView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if editing {
-                    NameField(initial: bookmark?.name ?? "", editing: $editing)
+                    NameField(initial: bookmark?.name ?? "", editing: $editing) {
+                        session.renameTuned(to: $0)
+                    }
                 } else {
                     Text(name(bookmark: bookmark, hz: hz))
                         .font(Theme.Font.name).tracking(Theme.nameTracking)
                         .foregroundStyle(hz == nil ? Theme.inkMuted : Theme.ink)
                         .lineLimit(1).truncationMode(.tail)
+                    if session.bookmarkModified {
+                        // The bookmark and the radio disagree: say so, and offer both ways out.
+                        Text("changed").font(Theme.Font.value).foregroundStyle(Theme.caution)
+                        Button("Save") { session.saveTunedBookmark() }
+                            .buttonStyle(.plain).font(Theme.Font.value)
+                            .foregroundStyle(Theme.inkTertiary)
+                            .help("The bookmark takes the mode and width it is heard with now")
+                        Button("Revert") { session.revertToTunedBookmark() }
+                            .buttonStyle(.plain).font(Theme.Font.value)
+                            .foregroundStyle(Theme.inkTertiary)
+                            .help("Back to the bookmark's saved mode and width")
+                    }
                     Spacer(minLength: 0)
                     if hz != nil {
                         Button {
@@ -147,9 +161,11 @@ struct IdentityView: View {
 /// same keys the same way (`FrequencyField.watchClicks`), and as there only scalars cross into
 /// the main actor.
 struct NameField: View {
-    @Environment(AppSession.self) private var session
     let initial: String
+    var font: Font = Theme.Font.name
     @Binding var editing: Bool
+    /// What the name becomes on Return; Escape and a lost focus end the edit without it.
+    let onCommit: (String) -> Void
     @State private var draft = ""
     @State private var monitor: Any?
     /// The window the field was focused in, compared by identity out on the monitor's side.
@@ -159,7 +175,7 @@ struct NameField: View {
     var body: some View {
         TextField("Name", text: $draft)
             .textFieldStyle(.plain)
-            .font(Theme.Font.name)
+            .font(font)
             .foregroundStyle(Theme.ink)
             .focused($focused)
             .onSubmit { commit() }
@@ -177,7 +193,7 @@ struct NameField: View {
     }
 
     private func commit() {
-        session.renameTuned(to: draft)
+        onCommit(draft)
         end()
     }
 

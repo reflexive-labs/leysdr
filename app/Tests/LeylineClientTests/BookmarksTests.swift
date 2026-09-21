@@ -59,6 +59,23 @@ final class BookmarksTests: XCTestCase {
         XCTAssertNil(store.list.first { $0.name == "No mode" })
     }
 
+    func testUpdateKeepsTheNameAndFrequency() throws {
+        var store = BookmarkStore(path: tempPath())
+        store.now = { Date(timeIntervalSince1970: 1_700_000_000) }
+        try store.load()
+        let a = try store.add(name: "Repeater", hz: 146_940_000, mode: .nfm, bandwidthHz: 12_500)
+        store.now = { Date(timeIntervalSince1970: 1_700_000_001) }
+        let b = try store.updateBookmark(a.id, mode: .am, bandwidthHz: 10_000)
+        XCTAssertEqual(b.id, a.id)
+        XCTAssertEqual(b.name, "Repeater")
+        XCTAssertEqual(b.hz, 146_940_000)
+        XCTAssertEqual(b.mode, .am)
+        XCTAssertEqual(b.bandwidthHz, 10_000)
+        XCTAssertEqual(b.updatedNs, 1_700_000_001_000_000_000)
+        XCTAssertEqual(store.list.count, 1)
+        XCTAssertThrowsError(try store.updateBookmark(a.id, mode: .unspecified, bandwidthHz: 0))
+    }
+
     func testRenameKeepsTheIdAndFrequency() throws {
         var store = BookmarkStore(path: tempPath())
         store.now = { Date(timeIntervalSince1970: 1_700_000_000) }
