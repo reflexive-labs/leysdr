@@ -125,10 +125,17 @@ public enum Bands {
         band(containing: hz, in: bands)?.mode(at: hz) ?? .nfm
     }
 
+    /// The least a capture is opened at when the band would fit a narrower one: an RTL-SDR's
+    /// 250 kHz shows one channel and nothing either side of it, too little to tune around in
+    /// (the owner, 2026-09-21). `ley`'s number (`go/pkg/leyline`, `MinCaptureRate`).
+    public static let minCaptureRate: UInt64 = 1_024_000
+
     /// The sample rate a band wants from a radio: the smallest the radio offers that covers the
-    /// band, else the largest there is. `ley`'s rule (`go/internal/cli/band.go`).
+    /// band and is at least `minCaptureRate`, else the largest there is. `ley`'s rule
+    /// (`go/internal/cli/band.go`).
     public static func sampleRate(for band: Band, offered rates: [UInt64]) -> UInt64? {
-        if let fit = rates.filter({ $0 >= band.widthHz }).min() { return fit }
+        let want = Swift.max(band.widthHz, minCaptureRate)
+        if let fit = rates.filter({ $0 >= want }).min() { return fit }
         return rates.max()
     }
 

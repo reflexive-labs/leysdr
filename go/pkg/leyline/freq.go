@@ -277,6 +277,12 @@ func FrequencyHint(input string, hz uint64, ranges []*leylinev1.FrequencyRange) 
 	return ""
 }
 
+// MinCaptureRate is the least a capture is opened at when a band would fit a narrower one:
+// an RTL-SDR's 250 kHz shows one channel and nothing either side of it, too little to tune
+// around in. The app applies the same floor (Bands.minCaptureRate); a --span asked for by
+// hand is still honoured as asked.
+const MinCaptureRate uint64 = 1_024_000
+
 // NearestRate returns the entry of rates closest to want (a tie goes to the
 // higher rate). Empty rates return want unchanged: a device that does not
 // advertise its rates leaves validation to the daemon.

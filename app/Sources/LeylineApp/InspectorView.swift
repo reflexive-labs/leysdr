@@ -358,8 +358,9 @@ struct ReadingsView: View {
         }
     }
 
-    /// A centre-zero meter and the word: the marker sits where the transmitter is against the
-    /// channel's width, and the word flips only past a tenth of it. A number that moves at
+    /// A centre-zero meter and the word: the marker sits where the tuning is against the
+    /// transmitter, the way the waterfall shows it, and the word flips only past a tenth of the
+    /// channel's width. A number that moves at
     /// 10 Hz wants a needle, not a label that flickers (the owner, 2026-09-21).
     private func tuning(_ word: TuningWord, errorHz: Double, channel ch: Leyline_V1_Channel)
         -> some View
@@ -369,8 +370,11 @@ struct ReadingsView: View {
         let raw = "freq error \(Measure.hz(errorHz, signed: true)) · width \(ch.bandwidthHz) Hz"
         return ReadingRow(label: "Tuning", sentence: sentence, raw: raw) {
             HStack(spacing: 8) {
+                // Inverted from the error: the marker is where the tuning sits against the
+                // signal, so it points the way the waterfall's marker does (a transmitter above
+                // the channel has the marker to the left of it).
                 CentreMeter(
-                    fraction: errorHz / Double(ch.bandwidthHz), offCentre: word.isOffTune
+                    fraction: -errorHz / Double(ch.bandwidthHz), offCentre: word.isOffTune
                 )
                 .frame(width: Theme.Layout.readingMeterWidth)
                 Text(word.word).reading()
@@ -551,10 +555,11 @@ struct CentreMeter: View {
     }
 }
 
-/// A level meter for the deviation against the mode's nominal: the track spans one and a half
-/// nominals, the tick is the nominal, the fill is the level ramp to the nominal and `caution`
-/// past it. Drawn from a level the caller holds with `hold`, because deviation follows
-/// syllables and a bar that follows every 100 ms interval is a flicker.
+/// The deviation on the Signal row's own bar (`SignalBar`, the level ramp), with a tick at the
+/// mode's nominal; the track spans one and a half nominals. Drawn from a level the caller
+/// holds with `hold`, because deviation follows syllables and a bar that follows every 100 ms
+/// interval is a flicker. A caution fill past the tick was tried and read as a yellow
+/// background (the owner, 2026-09-21); the number beside the bar carries the caution instead.
 struct DeviationMeter: View {
     let levelHz: Double
     let nominalHz: Double
@@ -580,15 +585,7 @@ struct DeviationMeter: View {
                 ? (levelHz / (nominalHz * Self.spanNominals)).clamped(to: 0...1) : 0
             let tick = w / Self.spanNominals
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.border)
-                LinearGradient(
-                    colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing
-                )
-                .mask(alignment: .leading) { Capsule().frame(width: min(w * f, tick)) }
-                if w * f > tick {
-                    Rectangle().fill(Theme.caution).frame(width: w * f - tick)
-                        .offset(x: tick)
-                }
+                SignalBar(fraction: f)
                 Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 10)
                     .offset(x: tick - 0.5)
             }
