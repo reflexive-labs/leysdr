@@ -118,6 +118,36 @@ final class AppSession {
     /// band's: a band change never moves it (the owner, 2026-09-21), the way the width does.
     static let defaultSampleRate: UInt64 = 2_400_000
     private static let sampleRateKey = "sampleRate"
+    /// The gain a capture the window creates is set to: a fixed mid-table level, not the
+    /// tuner's auto mode. An RTL-SDR's "auto" lets the LNA and mixer chase the signal with the
+    /// last stage fixed, and on a strong local station it overloads (44 % of samples at the
+    /// rails on FM broadcast, 2026-09-21); the desktop SDRs default to a fixed gain for the
+    /// same reason, and the daemon now measures clipping and the strip names it. The device
+    /// menu's choice, auto included, is remembered over this.
+    static let defaultGainDB: Double = 28
+    private static let gainKey = "gain"
+    private static let gainAutoValue = "auto"
+
+    /// The remembered gain for a radio, as a write on its first element: auto if that was
+    /// chosen, else the remembered or default level snapped to the element's table. Nil when the
+    /// radio reports no gain stage.
+    private func preferredGain(for dev: Leyline_V1_DeviceDescriptor) -> Leyline_V1_GainWrite? {
+        guard let el = dev.gainElements.first else { return nil }
+        var w = Leyline_V1_GainWrite()
+        w.element = el.name
+        let stored = UserDefaults.standard.string(forKey: Self.gainKey)
+        if stored == Self.gainAutoValue, el.supportsAuto {
+            w.auto = true
+            return w
+        }
+        let want = stored.flatMap(Double.init) ?? Self.defaultGainDB
+        if !el.validDb.isEmpty {
+            w.db = el.validDb.min { abs($0 - want) < abs($1 - want) } ?? want
+        } else {
+            w.db = want.clamped(to: min(el.minDb, el.maxDb)...max(el.minDb, el.maxDb))
+        }
+        return w
+    }
 
     /// The remembered rate, snapped to what this radio offers (the nearest, so a radio without
     /// the exact number gets its closest rather than a refusal).
@@ -569,6 +599,15 @@ final class AppSession {
         log(
             "session",
             "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
+        // The radio opens in the tuner's auto mode; a capture the window made is set to the
+        // remembered gain at once, so a newcomer's first station is not the one that overloads.
+        if let g = preferredGain(for: dev) {
+            log(
+                "gain",
+                "\(g.element) \(g.auto ? "auto" : String(format: "%.1f dB", g.db)), the remembered default"
+            )
+            await writes.gain(g, capture: cap.captureID)
+        }
         captureID = cap.captureID
         captureSeen = false
         captureSetAt = Date()
@@ -1040,10 +1079,12 @@ final class AppSession {
     // MARK: Device and gain
 
     func setGain(db: Double) {
+        UserDefaults.standard.set(String(db), forKey: Self.gainKey)
         writeGain(String(format: "%.1f dB", db)) { $0.db = db }
     }
 
     func setGainAuto() {
+        UserDefaults.standard.set(Self.gainAutoValue, forKey: Self.gainKey)
         writeGain("auto") { $0.auto = true }
     }
 

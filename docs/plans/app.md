@@ -66,7 +66,8 @@ promise the test makes, with a window instead of an assertion.
 ### APP-2 `[x]` Layer 0 and spike S1: spectrum, waterfall, click to hear (E.2)
 
 The window on launch: the first connected radio's capture (created if none, on the opinionated
-defaults: auto gain, 2.4 MSPS, the preset the user last used or FM broadcast), the spectrum row
+defaults: auto gain, 2.4 MSPS, the preset the user last used or FM broadcast; the gain default
+became a fixed 28 dB on 2026-09-21, below), the spectrum row
 and a Metal waterfall from `fft(capture:bins:rowsPerSecond:)`, a click that creates an NFM
 channel and a system-audio sink. `os_signpost` from the frame's arrival to the draw, matched
 with the daemon's signposts, is S1: p95 under 50 ms antenna to pixels, no dropped rows at 2.4 MSPS
@@ -189,6 +190,18 @@ Seen on the Mac 2026-09-20, by the owner: the gain slider's level reads back und
 element's name, a rate change keeps the station inside the capture, the failure strip appears
 and clears, and the stepper steps. M1 holds. One thing came back as not liked rather than not
 working: the failure strip itself, carried below as a task rather than fixed in place.
+
+Decided 2026-09-21, the radio's two settings. The capture rate is the radio's, not the band's:
+2.4 MSPS unless the device menu set another, remembered, and never moved by a band change. The
+gain a capture the window creates is set to is a fixed 28 dB, the RTL-SDR's mid-table entry,
+not the tuner's auto mode: on the Mac, 89.5 FM at auto gain put 44 % of samples at the
+converter's rails at one sample rate and none at another, because an RTL-SDR's "auto" lets the
+LNA and mixer chase the signal with the last stage fixed and overloads on a strong local station,
+which is why every desktop SDR defaults to a fixed gain. The stories' "auto gain" default was
+written before a strong station had been measured through this dongle; the daemon now measures
+clipping and the strip names it, so a fixed default is the honest one. The device menu's choice,
+auto included, is remembered over it. `ley tune` and the daemon's open are unchanged: the radio
+still opens in auto mode, and a fixed default there is a separate decision.
 
 ## Carried out of M1
 

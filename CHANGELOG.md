@@ -4,6 +4,9 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app opens a radio at 2.4 MSPS and a fixed 28 dB of gain, and remembers what the device
+  menu sets for either; a band change moves the capture's centre and never its rate. The tuner's
+  auto mode overloaded on a strong FM station, and the inspector now says when the radio clips.
 - A channel written to NFM now looks for a CTCSS tone. The detector was decided when a channel
   was created and never again, so the Mac app's one channel, which starts on whatever band was
   last used and follows the mode written to it, never reported a PL after a band change.

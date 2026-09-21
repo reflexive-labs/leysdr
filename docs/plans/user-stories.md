@@ -27,7 +27,7 @@ Ships between CLI and native app; the first constrained rendering client.
 ## V1a — Initial native UI
 The SwiftUI app as a peer client of the same daemon.
 
-UI principle — progressive disclosure (post SDR++ review): three layers. (0) launch → waterfall → click → hear, on opinionated defaults (auto gain, per-mode bandwidth, always-on IQ correction, adaptive FFT — no FFT/window controls exist); (1) listener controls only: frequency, mode, squelch, volume; (2) full parameter inspector for those who know why. Rule: nothing in layer 2 is ever required for layers 0–1 to succeed. The app detects and names failure states (flat noise floor, zero gain, no antenna) instead of sitting silently broken.
+UI principle — progressive disclosure (post SDR++ review): three layers. (0) launch → waterfall → click → hear, on opinionated defaults (a fixed mid-table gain since 2026-09-21, see `app.md`; per-mode bandwidth, always-on IQ correction, adaptive FFT — no FFT/window controls exist); (1) listener controls only: frequency, mode, squelch, volume; (2) full parameter inspector for those who know why. Rule: nothing in layer 2 is ever required for layers 0–1 to succeed. The app detects and names failure states (flat noise floor, zero gain, no antenna) instead of sitting silently broken.
 
 - As a newcomer, I can pick a listening preset (FM Broadcast, NOAA Weather, Airband, 2m Repeaters, Marine VHF) and hear something real within seconds of first launch.
 - As a ham, I can import my CHIRP file and my radio's channel memories become named bookmarks and scan lists.
