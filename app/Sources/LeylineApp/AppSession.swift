@@ -99,8 +99,22 @@ final class AppSession {
         didSet { UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey) }
     }
     /// One sentence about the last thing that happened, or nil.
-    private(set) var notice: String?
-    private(set) var lastError: LeylineError?
+    /// Every message the window shows is a log line (`AppLog.swift`): the notice and the error
+    /// as they are set, the empty words and the out-of-capture words as they change, the
+    /// failure state in `nameFailure`, so a screenshot of a sentence can be found in the log.
+    private(set) var notice: String? {
+        didSet { if let n = notice, n != oldValue { log("shown", "notice: \(n)") } }
+    }
+    private(set) var lastError: LeylineError? {
+        didSet {
+            if let e = lastError, e != oldValue {
+                log("shown", "error: \(e.code) \(e.message.isEmpty ? "" : e.message)")
+            }
+        }
+    }
+    /// The empty words and the out-of-capture words last logged, so a change is one line.
+    private var shownEmptyWords: String?
+    private var shownOutOfCapture: String?
     /// What the band's numbers say is wrong, or nil (`FailureState`): named from the feed's
     /// folds after every row and from the mirror when the gains change, and logged when it
     /// changes. Shown in the inspector until the numbers change or the user dismisses it.
@@ -379,6 +393,7 @@ final class AppSession {
         } catch {
             startupError = LeylineError(error)
             log("session", "could not dial: \(LeylineError(error))")
+            logShownWords()
         }
     }
 
@@ -441,6 +456,7 @@ final class AppSession {
         telemetry.follow(channelID, captureRate: capture?.sampleRate ?? 0, connection: daemon)
         captureLevel.follow(capture?.captureID, connection: daemon)
         nameFailure()
+        logShownWords()
         if let ch = channel, ch.state != .outOfCapture { outOfCaptureDismissed = false }
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
         if state.rejections.count != rejectionsSeen {
@@ -1417,6 +1433,20 @@ final class AppSession {
         // A dismissal outlives the state's clearing: it is forgotten only when a different state
         // is named, or a state that flickers at its threshold comes back every time it does.
         if let now, let d = dismissedFailure, now.kind != d.kind { dismissedFailure = nil }
+    }
+
+    /// One line when the words over the waterfall or the out-of-capture words change, or clear.
+    private func logShownWords() {
+        let empty = emptyWords.map { "\($0.headline). \($0.detail)" }
+        if empty != shownEmptyWords {
+            shownEmptyWords = empty
+            log("shown", empty.map { "words: \($0)" } ?? "words cleared")
+        }
+        let out = outOfCaptureWords
+        if out != shownOutOfCapture {
+            shownOutOfCapture = out
+            log("shown", out.map { "out of capture: \($0)" } ?? "out of capture cleared")
+        }
     }
 
     /// Whether the inspector's strip shows the failure: not after the user closed it, until a

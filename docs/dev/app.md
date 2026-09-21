@@ -175,7 +175,9 @@ under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, 
 The app writes one line per thing the window did (`AppLog.swift`): dialling and the daemon's
 state, the capture and channel it made or adopted, every tune with the offset and any centre
 move, band crossings and the mode-and-width pairs they write, every gain write, every rate change
-with the centre it moved to, rejections with the write's tag, the failure state named or cleared, the meter's numbers every thirty seconds,
+with the centre it moved to, rejections with the write's tag, every message the window shows as it is shown (the notice, the error, the words over
+the waterfall, the out-of-capture words, each under `shown`), the failure state named or cleared,
+the meter's numbers every thirty seconds,
 the FFT subscription's descriptor and a row count every thirty seconds, whether the shader
 compiled, the inspector shown or hidden, and every bookmark added, renamed or removed. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
