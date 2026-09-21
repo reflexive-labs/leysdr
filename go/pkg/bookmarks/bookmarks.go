@@ -53,7 +53,7 @@ type storeFile struct {
 type Store struct {
 	path      string
 	bookmarks map[string]Bookmark
-	// Now is the clock Add stamps with, so a test can hold time still; nil means time.Now.
+	// Now is the clock Add and Move stamp with, so a test can hold time still; nil means time.Now.
 	Now func() time.Time
 }
 
@@ -162,10 +162,46 @@ func (s *Store) Add(name string, hz uint64, mode leylinev1.DemodMode, bandwidthH
 // argument that matches several names is refused with those names rather than removing a guess,
 // because the wrong delete is the one mistake this store cannot undo.
 func (s *Store) Remove(idOrName string) (Bookmark, error) {
+	bm, err := s.resolve(idOrName, "remove")
+	if err != nil {
+		return Bookmark{}, err
+	}
+	delete(s.bookmarks, bm.ID)
+	return bm, s.save()
+}
+
+// Move re-files the bookmark an argument names at another frequency and persists the file. The
+// id, name, mode and width stay -- it is the same bookmark, on a new spot of the dial, which is
+// what a repeater that changed its output or a station kept from a mistyped number needs -- and
+// the stamp moves with it. The argument is resolved the way Remove resolves one.
+//
+// Two names at one frequency are allowed, as Add allows them; one name twice at one frequency is
+// not, because Add folds that case into a single bookmark and a move must not be the way round
+// its rule.
+func (s *Store) Move(idOrName string, hz uint64) (Bookmark, error) {
+	bm, err := s.resolve(idOrName, "move")
+	if err != nil {
+		return Bookmark{}, err
+	}
+	for _, other := range s.bookmarks {
+		if other.ID != bm.ID && other.Hz == hz && other.Name == bm.Name {
+			return Bookmark{}, fmt.Errorf("%q is already kept at %s (%s); remove one of them first",
+				bm.Name, leyline.FormatFrequency(hz), other.ID)
+		}
+	}
+	bm.Hz = hz
+	bm.UpdatedNs = s.now().UnixNano()
+	s.bookmarks[bm.ID] = bm
+	return bm, s.save()
+}
+
+// resolve finds the one bookmark an argument names: an id exactly, failing that a name exactly,
+// failing that a name in any case, provided one bookmark answers to it. The verb is for the
+// refusal when several do, which tells the person to pick one by id.
+func (s *Store) resolve(idOrName, verb string) (Bookmark, error) {
 	arg := strings.TrimSpace(idOrName)
 	if bm, ok := s.bookmarks[arg]; ok {
-		delete(s.bookmarks, arg)
-		return bm, s.save()
+		return bm, nil
 	}
 	var exact, fold []Bookmark
 	for _, bm := range s.List() {
@@ -182,8 +218,7 @@ func (s *Store) Remove(idOrName string) (Bookmark, error) {
 	}
 	switch len(match) {
 	case 1:
-		delete(s.bookmarks, match[0].ID)
-		return match[0], s.save()
+		return match[0], nil
 	case 0:
 		return Bookmark{}, fmt.Errorf("no bookmark called %q; ley bookmarks lists them", idOrName)
 	default:
@@ -191,8 +226,8 @@ func (s *Store) Remove(idOrName string) (Bookmark, error) {
 		for _, bm := range match {
 			names = append(names, fmt.Sprintf("%s (%s)", bm.ID, leyline.FormatFrequency(bm.Hz)))
 		}
-		return Bookmark{}, fmt.Errorf("%q names %d bookmarks; remove one by id: %s",
-			idOrName, len(match), strings.Join(names, ", "))
+		return Bookmark{}, fmt.Errorf("%q names %d bookmarks; %s one by id: %s",
+			idOrName, len(match), verb, strings.Join(names, ", "))
 	}
 }
 

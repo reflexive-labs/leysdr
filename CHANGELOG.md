@@ -61,12 +61,14 @@ Nothing has been released yet. This file starts with everything that exists on `
   re-placed for the tuned frequency at the new width, a width the channel cannot fit is refused
   in words, and a channel another client leaves outside the capture is named in the window.
 - Bookmarks: `ley bookmarks add 146.94 --name "Local repeater"` keeps a frequency, `ley bookmarks`
-  lists what you kept and `ley bookmarks remove` forgets one. They are your data in a JSON file
-  beside the labels store (`$LEYLINE_BOOKMARKS` overrides its path), not daemon state, and the Mac
-  app reads the same file, so a frequency kept from a terminal is in its sidebar. The band table
-  gained a `step_hz` column -- the channel spacing, which is not the bandwidth: airband is 10 kHz
-  wide and spaced 25 kHz -- and the app's seed copy of the table is `bands.json`, the checked-in
-  output of `ley bands --json` that `make bands-json` regenerates and a test holds to the table.
+  lists what you kept, `ley bookmarks move "Local repeater" 147.0` re-files one at another
+  frequency with its name, mode and width intact, and `ley bookmarks remove` forgets one. They
+  are your data in a JSON file beside the labels store (`$LEYLINE_BOOKMARKS` overrides its path),
+  not daemon state, and the Mac app reads the same file, so a frequency kept from a terminal is in
+  its sidebar. The band table gained a `step_hz` column -- the channel spacing, which is not the
+  bandwidth: airband is 10 kHz wide and spaced 25 kHz -- and the app's seed copy of the table is
+  `bands.json`, the checked-in output of `ley bands --json` that `make bands-json` regenerates and
+  a test holds to the table.
 - The Mac app, begun: an `app/` package with the Swift client façade (`LeylineClient`: one
   identity per process, the daemon's state as an observable mirror, coalesced writes, FFT and
   telemetry streams, the bands and bookmarks files, and the folds `ley` already applies: max

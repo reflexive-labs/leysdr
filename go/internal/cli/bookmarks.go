@@ -43,15 +43,17 @@ daemon's: they live in a small JSON file ($LEYLINE_BOOKMARKS overrides its
 path) that the Mac app reads too, so a frequency kept here is in its sidebar
 and one kept there is in this list.
 
-'ley bookmarks add' keeps one and 'ley bookmarks remove' forgets it. A
-bookmark is a name, a frequency, a mode and a bandwidth; nothing is tuned,
-started or measured by any of the three.
+'ley bookmarks add' keeps one, 'ley bookmarks move' re-files it at another
+frequency and 'ley bookmarks remove' forgets it. A bookmark is a name, a
+frequency, a mode and a bandwidth; nothing is tuned, started or measured by
+any of the four.
 
 --json prints an array of {id, name, hz, mode, bandwidth_hz, updated_ns} in
 the same order, the fields the file holds: mode is the contract's spelling
 (NFM), and bandwidth_hz 0 means the mode's usual width.`,
 		Example: `  ley bookmarks                                      # the table
   ley bookmarks add 146.94 --name "Local repeater"   # keep one
+  ley bookmarks move "Local repeater" 147.0          # same bookmark, new frequency
   ley bookmarks remove "Local repeater"              # forget it
   ley bookmarks --json | jq -r '.[] | "\(.hz) \(.name)"'`,
 		GroupID: GroupLooking,
@@ -72,7 +74,7 @@ the same order, the fields the file holds: mode is the contract's spelling
 			return printBookmarkTable(app, list)
 		},
 	}
-	cmd.AddCommand(newBookmarksAddCommand(app), newBookmarksRemoveCommand(app))
+	cmd.AddCommand(newBookmarksAddCommand(app), newBookmarksMoveCommand(app), newBookmarksRemoveCommand(app))
 	return cmd
 }
 
@@ -109,6 +111,30 @@ making a second one.`,
 	cmd.Flags().StringVar(&mode, "mode", "", "how to decode it: nfm, wfm, am, usb, lsb, cw (default: by band, as tune does)")
 	cmd.Flags().StringVar(&bw, "bw", "", "how wide a slice to listen to: a bare number is kHz (12.5), or 200k (default: the mode's usual width)")
 	return cmd
+}
+
+func newBookmarksMoveCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "move <id|name> <frequency|preset>",
+		Short: "Re-file a bookmark at another frequency",
+		Long: `move gives a bookmark a new frequency and keeps everything else: the id,
+the name, the mode and the bandwidth. It is for a repeater that changed its
+output and a number that was typed wrong, where forgetting the bookmark and
+keeping it again would hand it a new id.
+
+The bookmark is named the way remove names one, by id or by name in any
+case, and the frequency is read the way add reads one: a bare number is MHz
+(147.0), a unit is exact (147000k), and a preset name stands for its
+frequency. Moving onto a frequency another bookmark holds is fine; moving
+onto one the same name already holds is refused, because that is one
+bookmark twice.`,
+		Example: `  ley bookmarks move "Local repeater" 147.0
+  ley bookmarks move bm_01J8Z6R9TC7QK3W4M5N6P7Q8R9 146940k`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runBookmarkMove(app, args[0], args[1])
+		},
+	}
 }
 
 func newBookmarksRemoveCommand(app *App) *cobra.Command {
@@ -215,6 +241,31 @@ func runBookmarkRemove(app *App, arg string) error {
 		return app.printArray(bookmarkRow(b))
 	}
 	fmt.Fprintf(app.Stdout, "%s\n", app.Style.Muted(fmt.Sprintf("forgot %s (%s)", b.Name, leyline.FormatFrequency(b.Hz))))
+	return nil
+}
+
+// runBookmarkMove resolves the frequency the way add does, so the bookmark lands where tuning the
+// same argument would; the store resolves the bookmark the way remove does.
+func runBookmarkMove(app *App, arg, freq string) error {
+	t, err := resolveDialTarget(freq, "bookmarks move", `ley bookmarks move "Local repeater" 147.0`, "147.0 (MHz)")
+	if err != nil {
+		return err
+	}
+	store, err := openBookmarks(app)
+	if err != nil {
+		return err
+	}
+	b, err := store.Move(arg, t.Hz)
+	if err != nil {
+		return usageError(err)
+	}
+	if app.JSON {
+		return app.printArray(bookmarkRow(b))
+	}
+	s := app.Style
+	fmt.Fprintf(app.Stdout, "%s  %s  %s  %s\n", b.Name, leyline.FormatFrequency(b.Hz),
+		bookmarkModeName(b), bookmarkBandwidth(s, b))
+	fmt.Fprintf(app.Stdout, "  %s\n", s.Cmd("ley tune "+freq))
 	return nil
 }
 

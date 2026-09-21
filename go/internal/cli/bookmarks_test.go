@@ -114,3 +114,70 @@ func TestBookmarksEmptyJSONAndMissingName(t *testing.T) {
 		t.Errorf("a refused add must leave the store empty, got %q", out)
 	}
 }
+
+// move keeps the bookmark's id, name, mode and width and changes the frequency, in every spelling
+// add reads: bare MHz, a unit, bare Hz. The list shows it at the new spot, and an unknown name
+// is refused the way remove refuses one.
+func TestBookmarksMove(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	mustBookmarks(t, path, "bookmarks", "add", "146.94", "--name", "Local repeater", "--bw", "12.5")
+	mustBookmarks(t, path, "bookmarks", "add", "noaa", "--name", "Weather")
+
+	var before []bookmarkJSON
+	if err := json.Unmarshal([]byte(mustBookmarks(t, path, "--json", "bookmarks")), &before); err != nil {
+		t.Fatal(err)
+	}
+
+	moved := mustBookmarks(t, path, "bookmarks", "move", "local repeater", "147.0")
+	if !strings.Contains(moved, "Local repeater") || !strings.Contains(moved, "147.000 MHz") || !strings.Contains(moved, "nfm") {
+		t.Fatalf("move must confirm what it kept and where:\n%s", moved)
+	}
+	if !strings.Contains(moved, "ley tune 147.0\n") {
+		t.Fatalf("move must end with a command that parses:\n%s", moved)
+	}
+	if out := mustBookmarks(t, path, "bookmarks", "move", "Local repeater", "147500k"); !strings.Contains(out, "147.500 MHz") {
+		t.Fatalf("a unit is exact:\n%s", out)
+	}
+	if out := mustBookmarks(t, path, "bookmarks", "move", "Local repeater", "147600000"); !strings.Contains(out, "147.600 MHz") {
+		t.Fatalf("a bare number over 100 kHz is Hz:\n%s", out)
+	}
+
+	list := mustBookmarks(t, path, "bookmarks")
+	rows := strings.Split(strings.TrimSpace(list), "\n")
+	if len(rows) != 3 || !strings.HasPrefix(rows[1], "Local repeater") || !strings.Contains(rows[1], "147.600 MHz") {
+		t.Fatalf("the list shows the bookmark at its new frequency, in order:\n%s", list)
+	}
+
+	var after []bookmarkJSON
+	if err := json.Unmarshal([]byte(mustBookmarks(t, path, "--json", "bookmarks")), &after); err != nil {
+		t.Fatal(err)
+	}
+	was, is := before[0], after[0]
+	if was.Name != "Local repeater" || is.Name != "Local repeater" {
+		t.Fatalf("before %+v, after %+v", before, after)
+	}
+	if is.ID != was.ID || is.Mode != was.Mode || is.BandwidthHz != 12_500 || is.Hz != 147_600_000 {
+		t.Fatalf("a move keeps the id, mode and width: %+v became %+v", was, is)
+	}
+	if is.UpdatedNs <= was.UpdatedNs {
+		t.Errorf("the stamp must move: %d then %d", was.UpdatedNs, is.UpdatedNs)
+	}
+	if len(after) != 2 || after[1].Name != "Weather" || after[1].Hz != 162_550_000 {
+		t.Errorf("the other bookmark is untouched: %+v", after)
+	}
+
+	out := mustBookmarks(t, path, "--json", "bookmarks", "move", "Weather", "162.4")
+	var one bookmarkJSON
+	if err := json.Unmarshal([]byte(out), &one); err != nil || one.Hz != 162_400_000 || one.ID != after[1].ID {
+		t.Fatalf("move --json prints the record it touched: %v\n%s", err, out)
+	}
+
+	_, _, err := runBookmarks(t, path, "bookmarks", "move", "Guard", "121.5")
+	if err == nil || !strings.Contains(err.Error(), `no bookmark called "Guard"`) {
+		t.Errorf("an unknown name is refused the way remove refuses it, got %v", err)
+	}
+	_, _, err = runBookmarks(t, path, "bookmarks", "move", "Weather", "1,2")
+	if err == nil || !strings.Contains(err.Error(), "147.0") {
+		t.Errorf("a frequency that does not parse shows what one looks like, got %v", err)
+	}
+}

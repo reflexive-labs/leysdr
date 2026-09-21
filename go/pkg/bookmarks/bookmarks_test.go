@@ -159,6 +159,62 @@ func TestRemoveByIDNameAndCase(t *testing.T) {
 	}
 }
 
+// Move keeps the bookmark -- its id, name, mode and width -- and changes only the frequency and
+// the stamp; the argument resolves the way Remove's does, and the same refusal names a bookmark
+// that is not there.
+func TestMoveKeepsTheBookmarkAndChangesTheFrequency(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	s, _ := Open(path)
+	fixed(s)
+	added, err := s.Add("Local repeater", 146_940_000, leylinev1.DemodMode_NFM, 12_500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Now = func() time.Time { return time.Unix(1_758_200_060, 0) }
+	moved, err := s.Move("local REPEATER", 147_000_000)
+	if err != nil {
+		t.Fatalf("move by name, any case: %v", err)
+	}
+	if moved.ID != added.ID || moved.Name != added.Name || moved.Mode != added.Mode || moved.BandwidthHz != added.BandwidthHz {
+		t.Errorf("a move keeps the bookmark: %+v became %+v", added, moved)
+	}
+	if moved.Hz != 147_000_000 {
+		t.Errorf("hz = %d, want 147000000", moved.Hz)
+	}
+	if moved.UpdatedNs != time.Unix(1_758_200_060, 0).UnixNano() {
+		t.Errorf("the stamp must move with the bookmark: %+v", moved)
+	}
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := s2.Get(added.ID); !ok || got != moved || len(s2.List()) != 1 {
+		t.Fatalf("reloaded = %+v (ok=%v, %d bookmarks), want %+v", got, ok, len(s2.List()), moved)
+	}
+	if _, err := s.Move(added.ID, 146_520_000); err != nil {
+		t.Errorf("move by id: %v", err)
+	}
+
+	_, err = s.Move("Weather", 162_550_000)
+	if err == nil || !strings.Contains(err.Error(), `no bookmark called "Weather"`) {
+		t.Errorf("an unknown name is refused the way remove refuses it, got %v", err)
+	}
+	// Another name at the target frequency is fine, as Add allows; the same name there is not,
+	// because Add would have folded the two into one.
+	if _, err := s.Add("Calling", 146_520_000, leylinev1.DemodMode_NFM, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add("Local repeater", 146_940_000, leylinev1.DemodMode_NFM, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Move("Calling", 146_940_000); err != nil {
+		t.Errorf("two names at one frequency are kept: %v", err)
+	}
+	if _, err := s.Move(added.ID, 146_940_000); err == nil {
+		t.Errorf("one name twice at one frequency must be refused")
+	}
+}
+
 // A missing file is an empty store, not an error; a malformed one is an error rather than a
 // silent reset that would lose the list.
 func TestOpenMissingAndMalformed(t *testing.T) {

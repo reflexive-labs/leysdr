@@ -1,0 +1,27 @@
+move gives a bookmark a new frequency and keeps everything else: the id,
+the name, the mode and the bandwidth. It is for a repeater that changed its
+output and a number that was typed wrong, where forgetting the bookmark and
+keeping it again would hand it a new id.
+
+The bookmark is named the way remove names one, by id or by name in any
+case, and the frequency is read the way add reads one: a bare number is MHz
+(147.0), a unit is exact (147000k), and a preset name stands for its
+frequency. Moving onto a frequency another bookmark holds is fine; moving
+onto one the same name already holds is refused, because that is one
+bookmark twice.
+
+Usage:
+  ley bookmarks move <id|name> <frequency|preset> [flags]
+
+Examples:
+  ley bookmarks move "Local repeater" 147.0
+  ley bookmarks move bm_01J8Z6R9TC7QK3W4M5N6P7Q8R9 146940k
+
+Flags:
+  -h, --help   help for move
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

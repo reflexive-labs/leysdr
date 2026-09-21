@@ -54,6 +54,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "bands", args: []string{"bands"}},
 	{path: "bookmarks", args: []string{"bookmarks"}, env: tempBookmarks},
 	{path: "bookmarks add", args: []string{"bookmarks", "add", "146.94", "--name", "Local repeater"}, env: tempBookmarks},
+	{path: "bookmarks move", args: []string{"bookmarks", "move", "Local repeater", "147.0"}, env: seededBookmarks},
 	{path: "bookmarks remove", args: []string{"bookmarks", "remove", "Local repeater"}, env: seededBookmarks},
 	{path: "completion", args: []string{"completion"}, refuse: jsonNoOutput},
 	{path: "completion bash", args: []string{"completion", "bash"}, refuse: jsonNoOutput},
@@ -113,7 +114,8 @@ func tempBookmarks(t *testing.T) map[string]string {
 	return map[string]string{bookmarks.BookmarksEnv: filepath.Join(t.TempDir(), "bookmarks.json")}
 }
 
-// seededBookmarks is tempBookmarks with one bookmark already in it, for the verb that forgets one.
+// seededBookmarks is tempBookmarks with one bookmark already in it, for the verbs that move or
+// forget one.
 func seededBookmarks(t *testing.T) map[string]string {
 	t.Helper()
 	env := tempBookmarks(t)

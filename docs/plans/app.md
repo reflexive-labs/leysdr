@@ -179,7 +179,7 @@ app resource and drift-tested from Go, with the `step_hz` column the handoff add
 state; the daemon never learns a bookmark exists. Split on 2026-09-18 by the handoff: the seed
 file, `bookmarks.json` and `ley bookmarks` are in the M1 cut; CHIRP import follows M1.
 
-Landed 2026-09-18, the file half: `go/pkg/bookmarks` and `ley bookmarks` (list, add, remove,
+Landed 2026-09-18, the file half: `go/pkg/bookmarks` and `ley bookmarks` (list, add, remove, move,
 `--json`), `Band.StepHz` and `step_hz` in `ley bands --json`, `bands.json` under
 `LeylineClient/Resources` with `make bands-json` and `TestBandsJSONResource` holding it to the
 table (the sidebar's selection and editing model was revised 2026-09-21: the M1 handoff's
