@@ -113,6 +113,22 @@ final class AppSession {
     private var rejectionsSeen = 0
 
     private static let lastBandKey = "lastBand"
+    /// The capture rate the window opens a radio at: the plan's default, 2.4 MSPS, until the
+    /// device menu's picker sets another, which is remembered. The radio's setting, not the
+    /// band's: a band change never moves it (the owner, 2026-09-21), the way the width does.
+    static let defaultSampleRate: UInt64 = 2_400_000
+    private static let sampleRateKey = "sampleRate"
+
+    /// The remembered rate, snapped to what this radio offers (the nearest, so a radio without
+    /// the exact number gets its closest rather than a refusal).
+    private func preferredSampleRate(for dev: Leyline_V1_DeviceDescriptor) -> UInt64 {
+        let stored = UInt64(UserDefaults.standard.integer(forKey: Self.sampleRateKey))
+        let want = stored > 0 ? stored : Self.defaultSampleRate
+        guard !dev.sampleRates.isEmpty else { return want }
+        return dev.sampleRates.min {
+            abs(Int64($0) - Int64(want)) < abs(Int64($1) - Int64(want))
+        } ?? want
+    }
     private static let inspectorShownKey = "inspectorShown"
 
     // MARK: Derived
@@ -481,7 +497,10 @@ final class AppSession {
         log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
         do {
             let dev = try pickDevice()
-            let rate = Bands.sampleRate(for: band, offered: dev.sampleRates) ?? 2_400_000
+            // The capture's rate is the radio's setting: an existing capture keeps its own, a
+            // new one opens at the remembered rate. The band only decides where the span sits.
+            let existing = capture.flatMap { $0.deviceID == dev.deviceID ? $0 : nil }
+            let rate = existing?.sampleRate ?? preferredSampleRate(for: dev)
             let target = hz ?? band.centerHz
             let centre =
                 hz == nil ? band.centerHz : captureCentre(for: band, at: target, rate: rate)
@@ -495,7 +514,7 @@ final class AppSession {
             spectrum.resetFolds()
             if band.widthHz > rate {
                 notice =
-                    "\(band.name) is \(Frequency.format(band.widthHz)) wide and this radio captures at most \(Frequency.format(rate)); showing that much, centred on \(Frequency.format(centre))"
+                    "\(band.name) is \(Frequency.format(band.widthHz)) wide and the capture is \(Frequency.format(rate)); showing that much, centred on \(Frequency.format(centre))"
             } else {
                 notice = "\(band.name): \(mode.word) at \(Frequency.width(band.bandwidthHz))"
             }
@@ -535,12 +554,10 @@ final class AppSession {
     ) async throws -> Leyline_V1_Capture {
         guard let daemon, let writes else { throw LeylineError.notDialled }
         if var cap = capture, cap.deviceID == dev.deviceID {
-            if cap.sampleRate != sampleRate {
-                _ = await writes.set(.captureSampleRate(sampleRate), target: cap.captureID)
-            }
+            // The rate is not written here: it is the radio's setting and only the device
+            // menu's picker moves it. A band change moves the centre alone.
             if cap.centerHz != centerHz { await writes.centerHz(centerHz, capture: cap.captureID) }
             cap.centerHz = centerHz
-            cap.sampleRate = sampleRate
             return cap
         }
         var req = Leyline_V1_CreateCaptureRequest()
@@ -1076,11 +1093,12 @@ final class AppSession {
         }
         let want = UInt64(max(0, centre))
         let narrowing = rate < cap.sampleRate
+        UserDefaults.standard.set(Int(rate), forKey: Self.sampleRateKey)
         centreInFlight = Int64(want)
         spectrum.resetFolds()
         log(
             "rate",
-            "\(cap.sampleRate) -> \(rate) S/s, centre \(cap.centerHz) -> \(want) Hz\(tunedHz.map { " for \($0) Hz" } ?? "")"
+            "\(cap.sampleRate) -> \(rate) S/s, remembered; centre \(cap.centerHz) -> \(want) Hz\(tunedHz.map { " for \($0) Hz" } ?? "")"
         )
         Task {
             if narrowing, want != cap.centerHz {

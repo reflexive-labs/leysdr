@@ -181,8 +181,7 @@ file, `bookmarks.json` and `ley bookmarks` are in the M1 cut; CHIRP import follo
 Landed 2026-09-18, the file half: `go/pkg/bookmarks` and `ley bookmarks` (list, add, remove,
 `--json`), `Band.StepHz` and `step_hz` in `ley bands --json`, `bands.json` under
 `LeylineClient/Resources` with `make bands-json` and `TestBandsJSONResource` holding it to the
-table; on the Swift side `Bands.swift` (the seed file decoded, the sideband and sample-rate
-rules `ley` applies) and `Bookmarks.swift` (the same file, the same shape, reloaded when the
+table; on the Swift side `Bands.swift` (the seed file decoded, the sideband rule `ley` applies) and `Bookmarks.swift` (the same file, the same shape, reloaded when the
 directory changes), both tested on Linux. The sidebar renders both. CHIRP import is the open
 half.
 

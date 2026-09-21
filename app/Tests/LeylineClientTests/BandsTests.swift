@@ -66,25 +66,6 @@ final class BandsTests: XCTestCase {
         XCTAssertLessThan(Bands.plain.count, Bands.builtIn.count)
     }
 
-    func testSampleRateIsTheSmallestThatCoversTheBand() {
-        let twoM = Band(
-            name: "2 m amateur", aliases: ["2m"], minHz: 144_000_000, maxHz: 148_000_000,
-            mode: "nfm", bandwidthHz: 12_500, stepHz: 5_000)
-        XCTAssertEqual(
-            Bands.sampleRate(for: twoM, offered: [1_024_000, 2_400_000]), 2_400_000,
-            "nothing covers 4 MHz, so the largest")
-        let noaa = Band(
-            name: "NOAA weather", aliases: ["noaa"], minHz: 162_400_000, maxHz: 162_550_000,
-            mode: "nfm", bandwidthHz: 12_500, stepHz: 25_000)
-        XCTAssertEqual(
-            Bands.sampleRate(for: noaa, offered: [2_400_000, 1_024_000, 250_000]), 1_024_000,
-            "250 kHz would cover 150 kHz of NOAA and show nothing around it: the floor applies")
-        XCTAssertEqual(
-            Bands.sampleRate(for: noaa, offered: [250_000]), 250_000,
-            "a radio that offers nothing above the floor gives what it has")
-        XCTAssertNil(Bands.sampleRate(for: noaa, offered: []))
-    }
-
     func testModeWordsAndWidths() {
         XCTAssertEqual(Leyline_V1_DemodMode.named("nfm"), .nfm)
         XCTAssertEqual(Leyline_V1_DemodMode.named("usb/lsb"), nil)

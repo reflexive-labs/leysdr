@@ -66,9 +66,8 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 		}
 		return nil
 	}
-	// The smallest supported rate that covers the band and is at least MinCaptureRate, or the
-	// largest there is.
-	want := max(b.WidthHz(), leyline.MinCaptureRate)
+	// The smallest supported rate that covers the band, or the largest there is.
+	want := b.WidthHz()
 	var best uint64
 	for _, r := range s.device.SampleRates {
 		if r >= want && (best == 0 || r < best) {
