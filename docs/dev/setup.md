@@ -5,14 +5,14 @@ Everything meets at the checked-in generated code for `leyline.v1`.
 
 ## macOS host (the real thing — needed to talk to an RTL-SDR or HackRF)
 
-Requirements: macOS 26+, Xcode 26 or later (Swift 6.2 toolchain), Homebrew, Go 1.25+. The deployment
-target is macOS 26 because Homebrew builds `librtlsdr` for the host OS; older macOS would need a
-librtlsdr built with a lower `MACOSX_DEPLOYMENT_TARGET`. [Installing Leyline](../guide/install.md) is
+Requirements: macOS 26+, Xcode 26 or later (Swift 6.2 toolchain), Homebrew, Go 1.25+. [Installing Leyline](../guide/install.md) is
 the user's version of this section: the same build, plus the LaunchAgent, a remote dongle over
 `rtl_tcp`, and where the daemon keeps its files.
 
 ```sh
-brew install librtlsdr hackrf go     # both SDR libraries use libusb
+brew install go
+brew install librtlsdr               # only if testing a local RTL-SDR
+brew install hackrf                  # only if testing a local HackRF
 git clone <this repo> leysdr && cd leysdr
 make go                              # → go/bin/ley, go/bin/leyfix
 make swift-release                   # → engine/.build/release/leylined
@@ -93,15 +93,14 @@ check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is t
   on macOS, so nothing under `app/Sources/LeylineApp` is compiled here (the same blind spot as
   Accelerate below). `make app-e2e` needs the same `LD_LIBRARY_PATH` as `make e2e`: the tests
   spawn `leylined` themselves.
-- Swift side: the package builds on Linux with a Swift 6.2 toolchain, `librtlsdr-dev`, and
-  `libhackrf-dev` (`apt install librtlsdr-dev libhackrf-dev`, or zero-device stubs). Accelerate/AVFoundation
+- Swift side: the package builds on Linux with a Swift 6.2 toolchain and no SDR development
+  packages. Accelerate/AVFoundation
   code is compiled out; the portable DSP kernels run the DSP tests and the daemon's control plane
   end to end (`go/internal/e2e` drives a Linux-built `leylined` with `ley`). System audio is
   `PLATFORM_UNSUPPORTED` there by design.
-- A container needs a Swift 6.2 toolchain on `PATH`, librtlsdr and libhackrf headers (real installs,
-  or stub `.so` libraries that report zero devices — enough to link since the container has no hardware),
-  and `protoc`. Running `leylined` against the stub (and therefore `make e2e` / `make check`) needs
-  `LD_LIBRARY_PATH` pointed at the stub's lib directory. A checkout shared with a Mac should run the
+- A container needs a Swift 6.2 toolchain on `PATH` and `protoc`. `make swift-test` compiles tiny
+  mock libraries and proves all four runtime combinations: neither driver, RTL-SDR only, HackRF
+  only, and both. A checkout shared with a Mac should run the
   gate with a scratch install directory (`make check GOBIN=/tmp/ley-bin`) to keep the Linux
   `ley`/`leyfix` out of `go/bin`; `.tools/` and SwiftPM's build products are already per host.
 - A bare `swift test` silently skips the fixture round-trips (`FixtureTests`, `ChannelTests`) when

@@ -132,35 +132,26 @@ final class AppSession {
     /// band's: a band change never moves it (the owner, 2026-09-21), the way the width does.
     static let defaultSampleRate: UInt64 = 2_400_000
     private static let sampleRateKey = "sampleRate"
-    /// The gain a capture the window creates is set to: a fixed mid-table level, not the
-    /// tuner's auto mode. An RTL-SDR's "auto" lets the LNA and mixer chase the signal with the
-    /// last stage fixed, and on a strong local station it overloads (44 % of samples at the
-    /// rails on FM broadcast, 2026-09-21); the desktop SDRs default to a fixed gain for the
-    /// same reason, and the daemon now measures clipping and the strip names it. The device
-    /// menu's choice, auto included, is remembered over this.
+    /// A one-stage radio keeps the app's established fixed first-use gain. Multi-stage radios keep
+    /// their driver's stage-specific defaults until the person moves a control; applying one
+    /// generic number to every stage can make a perfectly healthy radio deaf or overloaded.
     static let defaultGainDB: Double = 28
-    private static let gainKey = "gain"
-    private static let gainAutoValue = "auto"
+    private static let legacyGainKey = "gain"
 
-    /// The remembered gain for a radio, as a write on its first element: auto if that was
-    /// chosen, else the remembered or default level snapped to the element's table. Nil when the
-    /// radio reports no gain stage.
-    private func preferredGain(for dev: Leyline_V1_DeviceDescriptor) -> Leyline_V1_GainWrite? {
-        guard let el = dev.gainElements.first else { return nil }
-        var w = Leyline_V1_GainWrite()
-        w.element = el.name
-        let stored = UserDefaults.standard.string(forKey: Self.gainKey)
-        if stored == Self.gainAutoValue, el.supportsAuto {
-            w.auto = true
-            return w
+    /// Remembered writes for this physical/virtual radio and each of its stages. The old global
+    /// preference migrates only for one-stage radios; feeding an RTL tuner value into a HackRF LNA
+    /// was the coupling this per-stage store is meant to remove.
+    private func preferredGains(for dev: Leyline_V1_DeviceDescriptor) -> [Leyline_V1_GainWrite] {
+        dev.gainElements.compactMap { el in
+            let defaults = UserDefaults.standard
+            let key = GainPreferences.storageKey(deviceID: dev.deviceID, element: el.name)
+            let stored =
+                defaults.string(forKey: key)
+                ?? (dev.gainElements.count == 1 ? defaults.string(forKey: Self.legacyGainKey) : nil)
+            return GainPreferences.write(
+                element: el, storedValue: stored,
+                defaultDB: dev.gainElements.count == 1 ? Self.defaultGainDB : nil)
         }
-        let want = stored.flatMap(Double.init) ?? Self.defaultGainDB
-        if !el.validDb.isEmpty {
-            w.db = el.validDb.min { abs($0 - want) < abs($1 - want) } ?? want
-        } else {
-            w.db = want.clamped(to: min(el.minDb, el.maxDb)...max(el.minDb, el.maxDb))
-        }
-        return w
     }
 
     /// The remembered rate, snapped to what this radio offers (the nearest, so a radio without
@@ -354,7 +345,7 @@ final class AppSession {
         if state.devices.allSatisfy({ $0.state == .disconnected }) {
             return (
                 "No radio is plugged in",
-                "Plug in an RTL-SDR, or attach a recording with `ley devices attach`."
+                "Plug in an RTL-SDR or HackRF, or attach a recording with `ley devices attach`."
             )
         }
         if capture == nil {
@@ -634,12 +625,12 @@ final class AppSession {
         log(
             "session",
             "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
-        // The radio opens in the tuner's auto mode; a capture the window made is set to the
-        // remembered gain at once, so a newcomer's first station is not the one that overloads.
-        if let g = preferredGain(for: dev) {
+        // Restore only values this device/stage has owned before. A new multi-stage radio keeps
+        // the driver's deliberately chosen defaults.
+        for g in preferredGains(for: dev) {
             log(
                 "gain",
-                "\(g.element) \(g.auto ? "auto" : String(format: "%.1f dB", g.db)), the remembered default"
+                "\(g.element) \(g.auto ? "auto" : String(format: "%.1f dB", g.db)), remembered for this radio"
             )
             await writes.gain(g, capture: cap.captureID)
         }
@@ -1119,24 +1110,31 @@ final class AppSession {
 
     // MARK: Device and gain
 
-    func setGain(db: Double) {
-        UserDefaults.standard.set(String(db), forKey: Self.gainKey)
-        writeGain(String(format: "%.1f dB", db)) { $0.db = db }
+    func setGain(element: String, db: Double) {
+        guard let dev = device else { return }
+        UserDefaults.standard.set(
+            String(db),
+            forKey: GainPreferences.storageKey(deviceID: dev.deviceID, element: element))
+        writeGain(element: element, String(format: "%.1f dB", db)) { $0.db = db }
     }
 
-    func setGainAuto() {
-        UserDefaults.standard.set(Self.gainAutoValue, forKey: Self.gainKey)
-        writeGain("auto") { $0.auto = true }
+    func setGainAuto(element: String) {
+        guard let dev = device else { return }
+        UserDefaults.standard.set(
+            GainPreferences.automatic,
+            forKey: GainPreferences.storageKey(deviceID: dev.deviceID, element: element))
+        writeGain(element: element, "auto") { $0.auto = true }
     }
 
-    /// A gain write names the device's first element, as `ley` does (`go/internal/cli/session.go`,
-    /// `applyGain`): the daemon reads an empty element as the first one too, but the confirmed
-    /// state comes back under the element's name and the menu reads it by that name. A radio
-    /// with no gain stage (a recording) has nothing to write to, and says so.
-    private func writeGain(_ words: String, _ fill: (inout Leyline_V1_GainWrite) -> Void) {
+    /// A gain write always names its stage. A radio with no such stage has nothing to write to and
+    /// says so instead of silently changing the first stage.
+    private func writeGain(
+        element elementName: String, _ words: String,
+        _ fill: (inout Leyline_V1_GainWrite) -> Void
+    ) {
         guard let cap = capture, let writes else { return }
-        guard let element = device?.gainElements.first else {
-            notice = "This radio reports no gain stage, so there is nothing to set."
+        guard let element = device?.gainElements.first(where: { $0.name == elementName }) else {
+            notice = "This radio reports no \(elementName) gain stage, so there is nothing to set."
             return
         }
         var w = Leyline_V1_GainWrite()

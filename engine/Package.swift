@@ -3,8 +3,8 @@
 // Leyline engine — SwiftPM package. See docs/dev/engine-internals.md for the module map.
 //
 // Targets:
-//   CRTLSDR        system-library shim over librtlsdr (brew install librtlsdr)
-//   CHackRF         system-library shim over libhackrf (brew install hackrf)
+//   CRTLSDR        optional runtime loader for librtlsdr
+//   CHackRF         optional runtime loader for libhackrf
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
 //   TestSupport    fakes shared by both test suites (test-only; no product depends on it)
 //   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
@@ -41,17 +41,17 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
     ],
     targets: [
-        .systemLibrary(
+        .target(
             name: "CRTLSDR",
             path: "Sources/CRTLSDR",
-            pkgConfig: "librtlsdr",
-            providers: [.brew(["librtlsdr"]), .apt(["librtlsdr-dev"])]
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedLibrary("dl", .when(platforms: [.linux]))]
         ),
-        .systemLibrary(
+        .target(
             name: "CHackRF",
             path: "Sources/CHackRF",
-            pkgConfig: "libhackrf",
-            providers: [.brew(["hackrf"]), .apt(["libhackrf-dev"])]
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedLibrary("dl", .when(platforms: [.linux]))]
         ),
         .target(
             name: "EngineCore",

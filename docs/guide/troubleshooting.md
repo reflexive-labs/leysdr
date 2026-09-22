@@ -28,17 +28,20 @@ stopped and a crash is relaunched; `ley daemon install` is how the daemon comes 
 `(no radios found)` with the dongle plugged in. Check, in order:
 
 - Plugged in; try another port or cable.
-- For RTL-SDR, `rtl_test -t` (from `brew install librtlsdr`) sees it. If `rtl_test` sees it and
-  `leylined` does not, the daemon is running against a different `librtlsdr`
-  (`otool -L engine/.build/release/leylined | grep rtlsdr`).
-- For HackRF, `hackrf_info` (from `brew install hackrf`) names the board and firmware. If it does
-  and Leyline does not, check `otool -L engine/.build/release/leylined | grep hackrf`.
+- For RTL-SDR, install `librtlsdr` and restart the daemon, then check that `rtl_test -t` sees it.
+- For HackRF, install `hackrf` and restart the daemon, then check that `hackrf_info` names the board
+  and firmware.
+- `ley daemon logs` says `RTL-SDR backend unavailable` or `HackRF backend unavailable` once when a
+  native library could not be loaded. The other backend remains usable. Homebrew's standard paths
+  are searched automatically; a nonstandard install can be selected with
+  `LEYLINE_RTLSDR_LIBRARY=/path/to/librtlsdr.dylib` or
+  `LEYLINE_HACKRF_LIBRARY=/path/to/libhackrf.dylib` in the daemon's environment.
 - Nothing else has it open. `DEVICE_BUSY: another program has the device`, or a row showing the
   dongle `IN_USE` with a `0..0dB` gain column while nothing of yours is tuned, means another process
   (SDR++, GQRX, `rtl_tcp`) holds it. Quit that program; the daemon re-checks with a backoff of up to
   60 s (the `usb_claim_interface error` lines in the daemon log are librtlsdr reporting each check),
   or just tune: a capture that opens the dongle clears the flag at once.
-- `ley daemon logs` for driver errors.
+- `ley daemon logs` for other driver errors.
 
 Nooelec dongles often ship with serial `00000001`. Two identical serials get distinct ids by
 enumeration order and a `serial_collision` feature flag; set unique serials with `rtl_eeprom -s`.

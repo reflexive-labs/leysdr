@@ -14,7 +14,8 @@ swift/LeylineProto/           SwiftPM package: generated leyline.v1 messages + g
 
 engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swift 5 language mode),
                               depending on swift/LeylineProto for the contract
-├── Sources/CRTLSDR           system-library shim over librtlsdr (brew install librtlsdr)
+├── Sources/CRTLSDR           optional dlopen shim over librtlsdr
+├── Sources/CHackRF           optional dlopen shim over libhackrf
 ├── Sources/EngineCore        the engine. Proto-free: it never imports LeylineProto.
 │   ├── CoreProtocols.swift   the contract (hand-written)
 │   ├── Identifiers.swift     ULID + prefixed IDs
@@ -311,6 +312,13 @@ subscriber receives rows at ≤ its requested rate; `actualBins` is the nearest 
 up; capped to 16384), `actualRate` is `min(requested, 30)`.
 
 ## Devices
+
+The two local USB libraries are runtime-loaded independently. `leylined` therefore builds and
+starts with neither installed; the registry logs an unavailable backend once and continues with
+the other local driver, `rtl_tcp`, and file playback. `LEYLINE_RTLSDR_LIBRARY` and
+`LEYLINE_HACKRF_LIBRARY` can name an exact library path for tests or non-Homebrew installs. Loading
+is once per process, so installing or replacing a library requires a daemon restart. The
+`sdr-loader-test` gate exercises neither, each alone, and both with mock shared libraries.
 
 ### RTLSDRDevice (librtlsdr, libusb-backed — see docs/decisions/S3-usb-posture.md)
 

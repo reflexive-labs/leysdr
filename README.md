@@ -19,8 +19,7 @@ which serves the same verbs as MCP tools.
 
 ## Requirements
 
-- macOS 26 with Xcode 26 (the Swift 6.2 toolchain). The floor is set by Homebrew's `librtlsdr`,
-  which is built for the host OS.
+- macOS 26 with Xcode 26 (the Swift 6.2 toolchain).
 - Homebrew, Go 1.25 or later.
 - An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
   No radio? See "Without a radio" below.
@@ -28,14 +27,19 @@ which serves the same verbs as MCP tools.
 ## Install (from source)
 
 ```sh
-brew install librtlsdr hackrf go
+brew install go
+brew install librtlsdr                 # for a local RTL-SDR
+brew install hackrf                    # for a local HackRF; install either or both drivers
 git clone https://github.com/dpup/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
 ```
 
-`scripts/bootstrap-mac.sh` runs the same steps. `ley daemon install --bin …` instead of `start`
+`scripts/bootstrap-mac.sh` runs the same steps; pass `--rtl-only` or `--hackrf-only` to install
+just one native driver. The daemon builds and runs if either or both are absent, and logs each
+unavailable backend once while continuing with the others and with `rtl_tcp`/file radios. Restart
+the daemon after installing a missing library. `ley daemon install --bin …` instead of `start`
 writes a LaunchAgent so the daemon starts at login; after that `ley daemon start|stop|status|logs`
 go through launchd. Starting at login, a radio on another machine over `rtl_tcp`, where the daemon
 keeps its files and uninstalling are in [`docs/guide/install.md`](docs/guide/install.md); when

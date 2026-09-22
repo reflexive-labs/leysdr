@@ -21,9 +21,10 @@ launchd agent. IOUSBHost is not used in v0.
 
 ## What this costs
 
-- Homebrew dependencies for users (`brew install librtlsdr hackrf`). Mitigation:
-  `scripts/bootstrap-mac.sh` and, later, bundling the driver dylibs + `libusb` inside the
-  app/daemon bundle with `@rpath`.
+- Homebrew dependencies for each local radio (`brew install librtlsdr` and/or `brew install
+  hackrf`). The daemon runtime-loads them independently, so users install only what their hardware
+  needs and a missing library does not stop the daemon. `scripts/bootstrap-mac.sh` supports either
+  alone; bundling driver dylibs + `libusb` inside the app/daemon remains a later option.
 - No hot-plug callbacks from librtlsdr: the registry polls enumeration once a second (cheap:
   descriptor reads only). IOKit `IOServiceAddMatchingNotification` on the RTL vendor/product IDs is
   the obvious refinement and does not change the posture.

@@ -115,6 +115,12 @@ final class SystemHackRFLibrary: HackRFLibrary, @unchecked Sendable {
 /// transfer thread and receives the library-owned buffer as native signed 8-bit interleaved IQ.
 public final class HackRFDevice: RadioDevice, @unchecked Sendable {
     public static let driverName = "hackrf"
+    /// A missing native library disables only this backend; the daemon and other drivers remain usable.
+    public static var backendAvailable: Bool { leyline_hackrf_available() != 0 }
+    public static var backendLoadError: String? {
+        leyline_hackrf_load_error().map { String(cString: $0) }
+    }
+
     public static let sampleRates: [UInt64] = [
         2_000_000, 2_400_000, 4_000_000, 8_000_000, 10_000_000, 12_500_000, 16_000_000, 20_000_000,
     ]
@@ -189,6 +195,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
 
     static func enumerate(claimed: Set<String>, shouldOpen: @Sendable (HackRFProbe) -> Bool,
                           library: any HackRFLibrary) throws -> [HackRFProbe] {
+        if library is SystemHackRFLibrary, !backendAvailable { return [] }
         let rc = library.initialize()
         guard rc == 0 else {
             throw EngineError.deviceIO("hackrf_init failed: \(library.errorName(rc)) (\(rc))")

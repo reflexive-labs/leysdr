@@ -96,6 +96,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     private var idMap = DeviceIDMap()
     private var pollTask: Task<Void, Never>?
     private var started = false
+    private var reportedMissingBackends = false
     /// Hosted rtl_tcp devices with a reconnect attempt in flight (one per device at a time, so a
     /// poll never stacks attempts behind a 5 s connect timeout).
     private var reconnecting: Set<DeviceID> = []
@@ -331,6 +332,19 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// every second and the poll never contends with a capture's own open. A dongle whose probe
     /// open fails (another program holds it) is reported `.inUse` and re-probed with backoff.
     public func poll() async {
+        if !reportedMissingBackends {
+            reportedMissingBackends = true
+            if !RTLSDRDevice.backendAvailable {
+                let detail = RTLSDRDevice.backendLoadError ?? "library not found"
+                DefaultDeviceRegistry.logger.info(
+                    "RTL-SDR backend unavailable (\(detail)); continuing without local RTL-SDR hardware")
+            }
+            if !HackRFDevice.backendAvailable {
+                let detail = HackRFDevice.backendLoadError ?? "library not found"
+                DefaultDeviceRegistry.logger.info(
+                    "HackRF backend unavailable (\(detail)); continuing without local HackRF hardware")
+            }
+        }
         let gate = advanceTickAndProbeGate()
         let hackrfGate = hackrfProbeGate()
         let claimed = Set(entries.values.compactMap { e -> UInt32? in
@@ -348,8 +362,10 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
             // next tick rather than announcing a device-loss storm.
             let generation = tableGeneration
             let probes = try await BlockingWork.run {
-                let rtl = RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate)
-                let hackrf = try HackRFDevice.enumerate(claimed: claimedHackRF, shouldOpen: hackrfGate)
+                let rtl = RTLSDRDevice.backendAvailable
+                    ? RTLSDRDevice.enumerate(claimed: claimed, shouldOpen: gate) : []
+                let hackrf = HackRFDevice.backendAvailable
+                    ? try HackRFDevice.enumerate(claimed: claimedHackRF, shouldOpen: hackrfGate) : []
                 return (rtl, hackrf)
             }
             // Someone attached, detached or claimed a device while the enumeration ran, so these

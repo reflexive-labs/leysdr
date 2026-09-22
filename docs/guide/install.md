@@ -6,8 +6,7 @@ so this is a build from source.
 
 ## Requirements
 
-- macOS 26 with Xcode 26 (the Swift 6.2 toolchain). The floor is set by Homebrew's `librtlsdr`,
-  which is built for the host OS.
+- macOS 26 with Xcode 26 (the Swift 6.2 toolchain).
 - Homebrew, Go 1.25 or later.
 - An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
   No radio? See "Without a radio" below.
@@ -15,15 +14,20 @@ so this is a build from source.
 ## Build and start
 
 ```sh
-brew install librtlsdr hackrf go
+brew install go
+brew install librtlsdr                 # local RTL-SDR support
+brew install hackrf                    # local HackRF support; either driver is optional
 git clone https://github.com/dpup/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
 ```
 
-`scripts/bootstrap-mac.sh` runs the same steps. `make go` builds the Go clients, `make swift-release`
-the daemon, `make fixtures` the IQ recordings the "Without a radio" section and the test suites use.
+`scripts/bootstrap-mac.sh` runs the same steps; `--rtl-only` or `--hackrf-only` limits it to one
+driver. `make go` builds the Go clients, `make swift-release` the daemon, and `make fixtures` the IQ
+recordings the "Without a radio" section and the test suites use. The native libraries are loaded
+at daemon startup, independently: neither is needed to build, and a missing one does not disable
+the other, `rtl_tcp`, or file playback. Restart the daemon after installing a driver.
 
 Check that the daemon answers and can see your radio. The output below was recorded against the
 contract's fake daemon, so your socket path, model and version will differ:

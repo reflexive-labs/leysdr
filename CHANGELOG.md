@@ -4,6 +4,11 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The RTL-SDR and HackRF native backends are now optional runtime-loaded components. The daemon
+  builds and starts with neither library, logs a missing backend once, and continues with the other
+  backend, `rtl_tcp`, and file playback. CI tests neither, either one alone, and both with mocks.
+  The Mac app exposes every advertised gain stage separately and remembers it per device and stage,
+  while a new multi-stage radio keeps the driver's safe defaults until a control is changed.
 - The engine can now discover and receive from HackRF One and HackRF Pro through libhackrf. It
   identifies Pro by board id, carries native signed 8-bit IQ at 2–20 MSPS into the existing CS8
   path, exposes LNA/VGA/RF-amp gain stages, keeps stable ids across replug, and shares the physical

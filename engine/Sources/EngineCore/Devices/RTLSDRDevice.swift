@@ -41,6 +41,12 @@ public struct RTLSDRProbe: Hashable, Sendable {
 
 /// One RTL2832U dongle. Control methods run on the control plane; `deliver` runs on the USB thread.
 public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
+    /// A missing native library disables only this backend; the daemon and other drivers remain usable.
+    public static var backendAvailable: Bool { leyline_rtlsdr_available() != 0 }
+    public static var backendLoadError: String? {
+        leyline_rtlsdr_load_error().map { String(cString: $0) }
+    }
+
     /// librtlsdr's async queue, passed to `rtlsdr_read_async`. Two bytes per complex sample in
     /// cu8, so this is 524288 samples -- 218 ms at 2.4 MSPS -- of air already captured and not yet
     /// delivered at any moment. `tune` does not flush it; see `inFlightSamples`.
@@ -264,6 +270,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// devices are reported with `tuner == "unknown"` and the caller reuses its cached probe. Never
     /// throws: an unreadable device is likewise reported with `tuner == "unknown"`.
     public static func enumerate(claimed: Set<UInt32> = [], shouldOpen: (RTLSDRProbe) -> Bool = { _ in true }) -> [RTLSDRProbe] {
+        guard backendAvailable else { return [] }
         let count = rtlsdr_get_device_count()
         var out: [RTLSDRProbe] = []
         out.reserveCapacity(Int(count))

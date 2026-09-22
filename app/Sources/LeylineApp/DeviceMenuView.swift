@@ -55,7 +55,9 @@ struct DeviceMenuView: View {
             if let d = session.device {
                 header(d)
                 Divider().overlay(Theme.border)
-                GainControl(device: d)
+                ForEach(d.gainElements, id: \.name) { element in
+                    GainControl(device: d, element: element)
+                }
                 Divider().overlay(Theme.border)
                 sampleRate(d)
             } else {
@@ -92,9 +94,13 @@ struct DeviceMenuView: View {
     }
 
     private func sampleRate(_ d: Leyline_V1_DeviceDescriptor) -> some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Sample rate").font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-            Spacer()
+            Text(
+                "Sets how wide a slice of radio spectrum is captured at once. Higher rates show more spectrum and use more processing."
+            )
+            .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            .fixedSize(horizontal: false, vertical: true)
             Picker(
                 "",
                 selection: Binding(
@@ -103,7 +109,7 @@ struct DeviceMenuView: View {
                 ForEach(d.sampleRates, id: \.self) { r in Text(Frequency.format(r)).tag(r) }
             }
             .labelsHidden()
-            .frame(width: 130)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -133,42 +139,66 @@ struct DeviceMenuView: View {
     }
 }
 
-/// Auto or manual, a slider with detents where the radio has a gain table, and what auto chose
-/// shown at auto's position so taking over does not jump the gain.
+/// One advertised gain stage, named and explained in receiver terms. Continuous/table stages use
+/// a slider; a two-value stage such as HackRF's RF amp uses an honest two-position control.
 struct GainControl: View {
     @Environment(AppSession.self) private var session
     let device: Leyline_V1_DeviceDescriptor
+    let element: Leyline_V1_GainElement
     @State private var dragging: Double?
 
     var body: some View {
-        let element = device.gainElements.first
-        let supportsAuto = element?.supportsAuto ?? false
-        let state = session.capture?.gains.first
-        let auto = state?.auto ?? true
-        let db = dragging ?? state?.db ?? element?.minDb ?? 0
+        let supportsAuto = element.supportsAuto
+        let state = session.capture?.gains.first { $0.element == element.name }
+        let auto = state?.auto ?? supportsAuto
+        let db = dragging ?? state?.db ?? element.minDb
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Gain").font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
+                Text(title)
+                    .font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                 Spacer()
+                if supportsAuto {
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { auto },
+                            set: {
+                                if $0 {
+                                    session.setGainAuto(element: element.name)
+                                } else {
+                                    session.setGain(element: element.name, db: db)
+                                }
+                            })
+                    ) {
+                        Text("Auto").tag(true)
+                        Text("Manual").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+            }
+            Text(description)
+                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .fixedSize(horizontal: false, vertical: true)
+            if let binaryValues {
                 Picker(
                     "",
                     selection: Binding(
-                        get: { auto },
-                        set: { if $0 { session.setGainAuto() } else { session.setGain(db: db) } })
+                        get: {
+                            binaryValues.min { abs($0 - db) < abs($1 - db) } ?? binaryValues[0]
+                        },
+                        set: { session.setGain(element: element.name, db: $0) })
                 ) {
-                    // Only the modes the radio has, and the picker is never disabled: a device
-                    // that reports auto without supporting it used to leave Manual unreachable.
-                    if supportsAuto { Text("Auto").tag(true) }
-                    Text("Manual").tag(false)
+                    Text(binaryLabel(binaryValues[0], low: true)).tag(binaryValues[0])
+                    Text(binaryLabel(binaryValues[1], low: false)).tag(binaryValues[1])
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 130)
-            }
-            if let element {
+            } else {
                 GainSlider(element: element, db: db, dimmed: auto) { newDB, ended in
                     dragging = ended ? nil : newDB
-                    if ended { session.setGain(db: newDB) }
+                    if ended { session.setGain(element: element.name, db: newDB) }
                 }
                 HStack {
                     Text(String(format: "%.0f dB", element.minDb)).font(Theme.Font.valueSmall)
@@ -185,12 +215,48 @@ struct GainControl: View {
                         .foregroundStyle(Theme.inkFaint)
                 }
             }
-            Text(
-                "Drag to take over. Auto is good enough for strong local signals and often not for weak ones."
-            )
-            .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-            .fixedSize(horizontal: false, vertical: true)
+            if supportsAuto {
+                Text(
+                    "Drag to take over. Auto is good enough for strong local signals and often not for weak ones."
+                )
+                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    private var binaryValues: [Double]? {
+        guard !element.supportsAuto, element.validDb.count == 2 else { return nil }
+        return element.validDb.sorted()
+    }
+
+    private var description: String {
+        switch element.name.uppercased() {
+        case "TUNER":
+            "Controls how much the RTL-SDR amplifies the antenna signal. More can reveal weak signals; too much causes distortion."
+        case "LNA":
+            "Amplifies weak signals as they enter the radio. Too much can overload strong signals."
+        case "VGA":
+            "Adjusts the signal again just before it is digitized. Use it to bring up quieter signals."
+        case "AMP":
+            "Switches the extra RF amplifier on or off. On adds about 11 dB and can overload strong signals."
+        default:
+            "Controls how strongly this radio amplifies incoming signals."
+        }
+    }
+
+    private var title: String {
+        switch element.name.uppercased() {
+        case "TUNER": "Receiver gain"
+        default: device.gainElements.count == 1 ? "Gain" : "\(element.name) gain"
+        }
+    }
+
+    private func binaryLabel(_ value: Double, low: Bool) -> String {
+        if element.name.uppercased() == "AMP" {
+            return low ? "Off · 0 dB" : String(format: "On · +%.0f dB", value)
+        }
+        return String(format: "%.1f dB", value)
     }
 }
 
