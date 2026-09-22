@@ -295,7 +295,50 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         try withLock {
             if streaming { throw EngineError.deviceBusy(_descriptor.id.string) }
             let device = try requireDevice()
+            let previousRate = sampleRate
             try check(library.setSampleRate(device, Double(hz)), "hackrf_set_sample_rate")
+            // A rate change needs more than `setFrequency(centerHz)` on HackRF Pro firmware
+            // 2026.01.3:
+            //
+            //  1. Changing the sample clock can leave the tuner offset
+            //     (greatscottgadgets/hackrf#1681).
+            //  2. Firmware commit a5af0ed deliberately ignores a request equal to its remembered
+            //     frequency. That memory survives hackrf_close/open, so merely reopening does not
+            //     make an identical corrective write take effect.
+            //
+            // Force an unmistakably different hardware tune, then restore the requested centre.
+            // One hertz passed the API but did not recover our HackRF Pro; one megahertz is large
+            // enough to reconfigure the tuner while remaining a negligible two-control-write
+            // detour. DefaultCaptureEngine has stopped RX before calling this method.
+            let range = _descriptor.tuningRanges.first { $0.contains(centerHz) }!
+            let delta: UInt64 = 1_000_000
+            let nudgeHz: UInt64
+            if range.maxHz - centerHz >= delta {
+                nudgeHz = centerHz + delta
+            } else if centerHz - range.minHz >= delta {
+                nudgeHz = centerHz - delta
+            } else {
+                nudgeHz = centerHz == range.minHz ? range.maxHz : range.minHz
+            }
+            let nudgeRC = library.setFrequency(device, nudgeHz)
+            let retuneRC = nudgeRC == 0 ? library.setFrequency(device, centerHz) : nudgeRC
+            if retuneRC != 0 {
+                // The rate write already took effect. Roll back in the same safe order—old rate,
+                // genuinely different frequency, old centre—before reporting failure, so the
+                // capture engine can resume its previous stream without inheriting a bad offset.
+                let rollbackRateRC = library.setSampleRate(device, Double(previousRate))
+                let rollbackNudgeRC = library.setFrequency(device, nudgeHz)
+                let rollbackTuneRC = library.setFrequency(device, centerHz)
+                let rollback: String
+                if rollbackRateRC == 0, rollbackNudgeRC == 0, rollbackTuneRC == 0 {
+                    rollback = "previous configuration restored"
+                } else {
+                    rollback = "rollback failed: hackrf_set_sample_rate \(library.errorName(rollbackRateRC)) (\(rollbackRateRC)), frequency nudge \(library.errorName(rollbackNudgeRC)) (\(rollbackNudgeRC)), hackrf_set_freq \(library.errorName(rollbackTuneRC)) (\(rollbackTuneRC))"
+                }
+                throw EngineError.deviceIO(
+                    "hackrf_set_freq after sample-rate change failed: \(library.errorName(retuneRC)) (\(retuneRC)); \(rollback)",
+                    target: _descriptor.id.string)
+            }
             sampleRate = hz
         }
     }

@@ -59,8 +59,13 @@ public actor DefaultCaptureEngine: CaptureEngine {
         // flag to know whether the engine still wants a stream. The catch clears it again.
         started = true
         do {
-            try await device.tune(centerHz: centerHz)
+            // Keep frequency last. HackRF Pro firmware 2026.01.3 can leave the RF tuner at the
+            // wrong offset when its sample clock changes, even though both libhackrf calls report
+            // success. Configuring rate -> frequency makes the final write repair that offset;
+            // frequency -> rate was the cause of apparently strong but wholly garbled NFM audio.
+            // This matches hackrf_transfer's ordering and is harmless for other RadioDevices.
             try await device.setSampleRate(sampleRate)
+            try await device.tune(centerHz: centerHz)
             core.startThread()
             try await beginStreaming()
         } catch {
@@ -243,8 +248,10 @@ public actor DefaultCaptureEngine: CaptureEngine {
         device = newDevice
         deviceIDBox.value = newDevice.descriptor.id
         try await newDevice.open()
-        try await newDevice.tune(centerHz: centerHz)
+        // Preserve start()'s rate-before-frequency invariant after a hot-plug rebound. In
+        // particular, do not let restoring the sample clock be the last write to a HackRF Pro.
         try await newDevice.setSampleRate(sampleRate)
+        try await newDevice.tune(centerHz: centerHz)
         if !core.isRunning { core.startThread() }
         // Marked before the restart for the same reason `start()` does it: the engine owns an open
         // device from here, and `beginStreaming` leaves the device alone unless the engine wants a

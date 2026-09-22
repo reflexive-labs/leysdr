@@ -11,6 +11,7 @@ final class MockHackRFLibrary: HackRFLibrary, @unchecked Sendable {
     var initializeRC: Int32 = 0
     var openRC: Int32 = 0
     var startRC: Int32 = 0
+    var frequencyRCs: [Int32] = []
     private(set) var openedSerials: [String] = []
     private(set) var closes = 0
     private(set) var frequencies: [UInt64] = []
@@ -20,6 +21,7 @@ final class MockHackRFLibrary: HackRFLibrary, @unchecked Sendable {
     private(set) var amps: [UInt8] = []
     private(set) var starts = 0
     private(set) var stops = 0
+    private(set) var controlCalls: [String] = []
     private var callback: hackrf_sample_block_cb_fn?
     private var context: UnsafeMutableRawPointer?
 
@@ -45,11 +47,13 @@ final class MockHackRFLibrary: HackRFLibrary, @unchecked Sendable {
         return 0
     }
     func setFrequency(_ device: OpaquePointer, _ hz: UInt64) -> Int32 {
-        lock.lock(); frequencies.append(hz); lock.unlock()
-        return 0
+        lock.lock(); defer { lock.unlock() }
+        frequencies.append(hz)
+        controlCalls.append("frequency:\(hz)")
+        return frequencyRCs.isEmpty ? 0 : frequencyRCs.removeFirst()
     }
     func setSampleRate(_ device: OpaquePointer, _ hz: Double) -> Int32 {
-        lock.lock(); sampleRates.append(UInt64(hz)); lock.unlock()
+        lock.lock(); sampleRates.append(UInt64(hz)); controlCalls.append("rate:\(UInt64(hz))"); lock.unlock()
         return 0
     }
     func setLNAGain(_ device: OpaquePointer, _ db: UInt32) -> Int32 {
@@ -152,6 +156,10 @@ final class HackRFDeviceTests: XCTestCase {
         try await device.setGain(element: "LNA", value: .db(17))
         try await device.setGain(element: "VGA", value: .db(9))
         try await device.setGain(element: "AMP", value: .db(8))
+        XCTAssertEqual(Array(library.controlCalls.suffix(4)), [
+            "frequency:101100000", "rate:10000000",
+            "frequency:102100000", "frequency:101100000",
+        ], "HackRF Pro must be moved away and back after changing its sample rate")
         XCTAssertEqual(library.frequencies.last, 101_100_000)
         XCTAssertEqual(library.sampleRates.last, 10_000_000)
         XCTAssertEqual(library.lnaGains.last, 16)
@@ -175,6 +183,24 @@ final class HackRFDeviceTests: XCTestCase {
         XCTAssertEqual(library.stops, 1)
         await device.close()
         XCTAssertEqual(library.closes, 1)
+    }
+
+    func testSampleRateRetuneFailureRestoresPreviousConfiguration() async throws {
+        let library = MockHackRFLibrary()
+        let device = HackRFDevice(probe: HackRFProbe(serial: serial, model: "HackRF Pro"),
+                                  id: DeviceID(), library: library)
+        try await device.open()
+        try await device.tune(centerHz: 462_612_500)
+        // Failed post-rate nudge, then a successful nudge + return while rolling back.
+        library.frequencyRCs = [-5, 0, 0]
+
+        await assertCode("DEVICE_IO") { try await device.setSampleRate(20_000_000) }
+        XCTAssertEqual(Array(library.controlCalls.suffix(5)), [
+            "rate:20000000", "frequency:463612500", "rate:2400000",
+            "frequency:463612500", "frequency:462612500",
+        ])
+        XCTAssertEqual(Array(library.sampleRates.suffix(2)), [20_000_000, 2_400_000])
+        await device.close()
     }
 
     func testValidationAndLibraryFailures() async throws {

@@ -17,6 +17,11 @@ final class BurstDevice: RadioDevice, @unchecked Sendable {
     private var index: UInt64 = 0
     private var thread: Thread?
     private let done = DispatchSemaphore(value: 0)
+    private let controlCallsBox = Mutex<[String]>([])
+
+    var controlCalls: [String] {
+        controlCallsBox.withLock { $0 }
+    }
 
     init(blocks: Int, blockSize: Int = 16384) {
         self.blocks = blocks
@@ -26,8 +31,12 @@ final class BurstDevice: RadioDevice, @unchecked Sendable {
 
     func open() async throws {}
     func close() async {}
-    func tune(centerHz: UInt64) async throws {}
-    func setSampleRate(_ hz: UInt64) async throws {}
+    func tune(centerHz: UInt64) async throws {
+        controlCallsBox.withLock { $0.append("frequency:\(centerHz)") }
+    }
+    func setSampleRate(_ hz: UInt64) async throws {
+        controlCallsBox.withLock { $0.append("rate:\(hz)") }
+    }
     func setGain(element: String, value: GainValue) async throws { throw EngineError.gainElementUnknown(element, target: "") }
 
     func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
@@ -61,6 +70,14 @@ final class RecordingTap: CaptureTap, @unchecked Sendable {
 }
 
 final class CaptureTests: XCTestCase {
+    func testStartConfiguresRateBeforeFrequency() async throws {
+        let device = BurstDevice(blocks: 0)
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        try await capture.start()
+        XCTAssertEqual(device.controlCalls, ["rate:2400000", "frequency:100000000"])
+        await capture.stop()
+    }
+
     func testTapReceivesEveryBlockInOrder() async throws {
         let device = BurstDevice(blocks: 200)
         let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
