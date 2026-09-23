@@ -221,6 +221,10 @@ final class ChannelTelemetryFeed {
     /// times: the view asks with the newest time it has rather than a clock of its own.
     private(set) var newestTime: Leyline_V1_SampleTime?
     private(set) var error: LeylineError?
+    /// Fires after every meter, on the main actor, with the message's time in seconds on the
+    /// capture's clock (NaN while the rate is unknown); the session folds the inspector's
+    /// steadied reading from it (`ChannelReading`).
+    var onMeter: ((Leyline_V1_Meter, Double) -> Void)?
     private var captureRate: UInt64 = 0
     /// The last tone logged, so the heartbeat does not write a line a second.
     private var lastToneHz: Double = 0
@@ -261,6 +265,9 @@ final class ChannelTelemetryFeed {
         case .meter(let m)?:
             meter = m
             meters += 1
+            onMeter?(
+                m,
+                captureRate > 0 ? Double(msg.time.sampleIndex) / Double(captureRate) : .nan)
             // The meter's numbers every thirty seconds, so an inspector label that does not
             // change can be checked against what the daemon sent (a tuning error of exactly 0
             // means a daemon built before the field existed).

@@ -2,19 +2,19 @@
 
 // The inspector's lower half (docs/design/app-design-handoff-m2.md, Regions 4 and 5): the log
 // of recent transmissions on the tuned channel, straight from the façade's `TransmissionLog`,
-// and three disclosure groups holding the raw numbers behind the panel's word labels, the
-// demodulator as text, and a link to the device menu. Nothing here controls the radio: the
-// log's rows are not clickable (the shared selection with the waterfall is M3's, and a clickable
-// row that highlights nothing would be misleading), and Demodulator displays what the transport
-// bar edits, not a second set of controls.
+// and the Measurements group holding the raw levels the reading rows do not print. Nothing here
+// controls the radio: the log's rows are not clickable (the shared selection with the waterfall
+// is M3's, and a clickable row that highlights nothing would be misleading).
 
 import Foundation
 import LeylineClient
 import LeylineProto
 import SwiftUI
 
-/// Region 4: a section header, a three-column head, then the rows, newest first, the open one
-/// on `raised` ground with `now` in `accent`. Time is wall clock when the anchor covers it and
+/// Region 4: a section header with the count beside it, a three-column head, then the rows,
+/// newest first, the open one on `raised` ground with `now` in `accent`. The log takes the
+/// height the panel leaves it and shows as many rows as fit, five at least, which is the
+/// handoff's count at its 820 pt window. Time is wall clock when the anchor covers it and
 /// relative (`−2:14`) when it does not; both formats can appear in one list, because the
 /// alternative is a timestamp nobody measured. Tone is not a column: a CTCSS tone the daemon
 /// reported is appended to that row's signal cell in `good`, and a row without one leaves the
@@ -22,26 +22,49 @@ import SwiftUI
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
-    /// Five rows at the design's 820 pt window, the open one included.
-    static let rows = 5
+    static let minRows = 5
+    /// The height above and below the rows: the padding, the section header and the column
+    /// head, rounded up so the count errs toward one row fewer rather than a clipped one.
+    static let chromeHeight: CGFloat = 60
 
     var body: some View {
+        GeometryReader { geo in
+            let fit = Int((geo.size.height - Self.chromeHeight) / Theme.Layout.logRowHeight)
+            content(rows: max(Self.minRows, fit))
+        }
+        .frame(minHeight: Self.chromeHeight + CGFloat(Self.minRows) * Theme.Layout.logRowHeight)
+        .clipped()
+    }
+
+    private func content(rows: Int) -> some View {
         let log = session.transmissions
         let open = log?.onAir
-        let closed = Array((log?.closed ?? []).prefix(Self.rows - (open == nil ? 0 : 1)))
-        VStack(alignment: .leading, spacing: 2) {
-            SectionHeader(text: "Recent on this channel").padding(.bottom, 4)
+        let closed = Array((log?.closed ?? []).prefix(rows - (open == nil ? 0 : 1)))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                SectionHeader(text: "Recent on this channel")
+                Spacer(minLength: 8)
+                if let summary = summary(log) {
+                    Text(summary).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.bottom, 6)
             head
             if let open {
                 LogRow(
                     time: Text("now").foregroundStyle(Theme.accent),
                     length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
-                    signal: signalWord(session.overNoiseDB), tone: open.tone, open: true)
+                    signal: session.channelReading?.signalWord?.word ?? Reading.absent,
+                    tone: open.tone, open: true)
             }
-            ForEach(Array(closed.enumerated()), id: \.offset) { _, t in
+            // Keyed by the start time, so a new transmission adds a row instead of changing
+            // what every row's position means.
+            ForEach(closed, id: \.start) { t in
                 LogRow(
                     time: Text(timeWords(t.start)).foregroundStyle(Theme.inkSecondary),
-                    length: Reading.seconds(t.seconds), signal: signalWord(t.peakSNRDB),
+                    length: Reading.seconds(t.seconds),
+                    signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
                     tone: t.tone, open: false)
             }
             if open == nil, closed.isEmpty {
@@ -67,10 +90,19 @@ struct RecentLog: View {
         .padding(.horizontal, 6).padding(.bottom, 2)
     }
 
-    /// The same five words as the reading, lower-cased for a table cell; `—` before the meter
-    /// warmed up.
-    private func signalWord(_ overNoiseDB: Double?) -> String {
-        SignalWord(overNoiseDB: overNoiseDB)?.word.lowercased() ?? "—"
+    /// `23 since 11:38`: the log's count, the open one included, and the wall clock of the
+    /// oldest transmission it holds when the anchor dates it; otherwise `23 this session`,
+    /// because a wall-clock time is printed only when the daemon's anchor provides one (M2-1's
+    /// rule). nil with nothing logged, where the empty line says so.
+    private func summary(_ log: TransmissionLog?) -> String? {
+        guard let log else { return nil }
+        let count = log.closed.count + (log.onAir == nil ? 0 : 1)
+        guard count > 0 else { return nil }
+        let first = log.closed.last?.start ?? log.onAir?.since
+        if let since = first.flatMap({ session.wallTime(of: $0) }) {
+            return "\(count) since \(WallClock.hm(since))"
+        }
+        return "\(count) this session"
     }
 
     private func timeWords(_ start: Leyline_V1_SampleTime) -> String {
@@ -99,7 +131,8 @@ struct LogRow: View {
             }.font(Theme.Font.valueSmall)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 6).padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .frame(height: Theme.Layout.logRowHeight)
         .background(open ? Theme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
     }
 
@@ -111,9 +144,9 @@ struct LogRow: View {
 }
 
 /// Region 5. Nothing in these groups is required for anything above them to work: the M1
-/// handoff's sentence, kept findable here as the M2 handoff asks. They hold the numbers behind
-/// the panel's word labels, the demodulator as text, and a link to the device menu.
-/// Collapsed by default and remembered, per group, in the defaults.
+/// handoff's sentence, kept findable here as the M2 handoff asks. Measurements holds the raw
+/// levels the reading rows do not print. Collapsed by default and remembered, per group, in the
+/// defaults.
 struct DisclosureSection: View {
     @Environment(AppSession.self) private var session
     @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
@@ -123,7 +156,7 @@ struct DisclosureSection: View {
     // look (the owner, 2026-09-21).
     var body: some View {
         VStack(spacing: 0) {
-            DisclosureRow(title: "Measurements", hint: "dBFS, Hz", open: $measurementsOpen) {
+            DisclosureRow(title: "Measurements", hint: "dBFS", open: $measurementsOpen) {
                 MeasurementsGroup()
             }
         }
@@ -175,9 +208,11 @@ struct DisclosureLabel: View {
     }
 }
 
-/// Every raw number the panel presents as a word, two mono columns, `—` where nothing was
-/// measured. The floor and snr are the window's own (`AppSession.channelFloorDB`,
-/// `overNoiseDB`), the rest the meter's.
+/// The raw levels the reading rows do not print, two mono columns, `—` where nothing was
+/// measured: the channel's power and floor behind Signal's dB over noise, the audio, and the
+/// radio's own level. Signal, Tuning and Deviation print their numbers in their rows since
+/// 2026-09-23, so they are not repeated here. These numbers are unsmoothed, straight from the
+/// meter. The floor is the window's own (`AppSession.channelFloorDB`).
 struct MeasurementsGroup: View {
     @Environment(AppSession.self) private var session
 
@@ -198,9 +233,6 @@ struct MeasurementsGroup: View {
         let rows = [
             Row(id: "power", value: Measure.dbfs(m?.powerDbfs ?? .nan)),
             Row(id: "floor", value: Measure.dbfs(session.channelFloorDB ?? .nan)),
-            Row(id: "snr", value: Measure.db(session.overNoiseDB ?? .nan)),
-            Row(id: "freq error", value: Measure.hz(m?.freqErrorHz ?? .nan, signed: true)),
-            Row(id: "deviation", value: Measure.hz(m?.deviationHz ?? .nan)),
             Row(id: "audio", value: Measure.dbfs(m?.audioDbfs ?? .nan)),
             Row(id: "peak", value: Measure.dbfs(m?.audioPeakDbfs ?? .nan)),
             // The radio's own level (`CaptureLevel`): where "near full scale" now lives, as a

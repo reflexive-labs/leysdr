@@ -128,14 +128,25 @@ enum Theme {
         /// without it.
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
-        /// The label column of the inspector's reading rows.
-        static let readingLabelWidth: CGFloat = 74
-        static let signalBarHeight: CGFloat = 6
-        /// The tuning and deviation meters' width, leaving the word or number room beside them.
-        static let readingMeterWidth: CGFloat = 96
+        /// The inspector's reading rows are four fixed columns (label, meter, word, number), so
+        /// no meter or number moves when a word beside it changes. The handoff's 74 pt label
+        /// column came down to 62 on 2026-09-23 to make room for the number; `Deviation`, the
+        /// longest label, is about 54 pt at `Font.label`.
+        static let readingLabelWidth: CGFloat = 62
+        static let readingMeterWidth: CGFloat = 72
+        /// The gap between a reading's meter and its word.
+        static let readingWordGap: CGFloat = 10
+        /// Wide enough for `+1.2 kHz` in `Font.value`, the longest number a reading prints.
+        static let readingNumberWidth: CGFloat = 54
+        /// A meter's track (`MeterTrack`), and the height of its ticks and needle, which is the
+        /// meter's own height.
+        static let meterTrackHeight: CGFloat = 6
+        static let meterMarkHeight: CGFloat = 10
         /// The log's fixed columns; signal fills the rest.
         static let logTimeWidth: CGFloat = 52
         static let logLengthWidth: CGFloat = 40
+        /// One log row, fixed so the log can count how many fit in the height it is given.
+        static let logRowHeight: CGFloat = 19
         static let defaultWindow = CGSize(width: 1360, height: 820)
     }
 }

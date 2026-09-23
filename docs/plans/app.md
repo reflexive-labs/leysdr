@@ -311,6 +311,15 @@ appear and its key monitor (space and the arrows handed to the field editor past
 toolbar toggle beside the chip; the disclosure rows; that the `Show Inspector` title follows the
 state; and that the widened telemetry subscription is accepted by the daemon and the log fills.
 
+Revised 2026-09-23 after a review of the panel (the handoff's "Decided 2026-09-23"): the reading
+is four fixed columns with the number beside each word and the sentence as a tooltip, the
+popovers are gone, `ChannelReading` in the façade steadies the meters and words (12 tests), one
+`MeterTrack` draws all three meters, Tuning and Deviation hold the last transmission dimmed, the
+squelch is a tick on the Signal bar, On air reads `last heard`, and the log fills the height.
+Not compiled in the container: `MeterTrack.swift`, the reading rows and their widths at 312 pt
+(that `Not audible` fits the word column), the tooltips, the log's row count from its height,
+and the bordered mini buttons under the identity.
+
 ### M2-5 `[x]` Clipping, measured rather than inferred
 
 Found on the Mac 2026-09-20: "a signal is within 3 dB of full scale" popped up on FM broadcast

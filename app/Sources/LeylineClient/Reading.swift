@@ -120,7 +120,7 @@ public enum DeviationWord: Sendable, Equatable {
 
 public enum Reading {
     /// What the panel prints for a number it does not have.
-    static let absent = "—"
+    public static let absent = "—"
 
     /// A duration as the panel prints it: "4.2 s" under a minute, "1:04.2" from a minute (tenths
     /// kept), "—" for NaN, infinite or negative. Rounded to tenths before the minute is split off,

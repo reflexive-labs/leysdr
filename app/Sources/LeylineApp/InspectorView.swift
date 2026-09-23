@@ -2,13 +2,14 @@
 
 // The inspector: the tuned channel as a thing with an identity and a reading, on the window's
 // right (docs/design/app-design-handoff-m2.md, "The panel"). Six regions and no scroll view: a
-// header that says `Channel`, the identity, the failure strip carried out of M1, the reading in
-// words, the log of recent transmissions and the disclosure groups; the last two are in
-// InspectorGroups.swift. Every word label here is derived from a number the daemon measured, and
-// the number is one click away in the popover under it, which is how the app meets invariant
-// 12. The panel keeps no state of its own: it renders the session's copy of the mirror and the
-// telemetry feed's log, and writes one thing, a bookmark's name, through the store both clients
-// own (`AppSession.renameTuned`).
+// header that says `Channel`, the identity, the failure strip carried out of M1, the reading,
+// the log of recent transmissions and the disclosure groups; the last two are in
+// InspectorGroups.swift and the reading's meter in MeterTrack.swift. Every word label here is
+// derived from a number the daemon measured, and the number is printed beside it, which is how
+// the app meets invariant 12. The panel keeps no radio state of its own: it renders the
+// session's copy of the mirror, the telemetry feed's log and the session's steadied reading,
+// and writes one thing, a bookmark's name, through the store both clients own
+// (`AppSession.renameTuned`).
 
 import AppKit
 import LeylineClient
@@ -43,8 +44,8 @@ struct InspectorView: View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
             ReadingsView()
             Rectangle().fill(Theme.hairline).frame(height: 1)
+            // The log takes the height the other regions leave, and fills it with rows.
             RecentLog()
-            Spacer(minLength: 0)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             DisclosureSection()
         }
@@ -100,19 +101,6 @@ struct IdentityView: View {
                         .font(Theme.Font.name).tracking(Theme.nameTracking)
                         .foregroundStyle(hz == nil ? Theme.inkMuted : Theme.ink)
                         .lineLimit(1).truncationMode(.tail)
-                    if session.bookmarkModified {
-                        // The channel's settings differ from the bookmark's: show `changed`, and
-                        // offer Save (update the bookmark) or Revert (restore the channel).
-                        Text("changed").font(Theme.Font.value).foregroundStyle(Theme.caution)
-                        Button("Save") { session.saveTunedBookmark() }
-                            .buttonStyle(.plain).font(Theme.Font.value)
-                            .foregroundStyle(Theme.inkTertiary)
-                            .help("The bookmark takes the mode and width it is heard with now")
-                        Button("Revert") { session.revertToTunedBookmark() }
-                            .buttonStyle(.plain).font(Theme.Font.value)
-                            .foregroundStyle(Theme.inkTertiary)
-                            .help("Back to the bookmark's saved mode and width")
-                    }
                     Spacer(minLength: 0)
                     if hz != nil {
                         Button {
@@ -132,6 +120,22 @@ struct IdentityView: View {
             Text(detail(bookmark: bookmark, hz: hz))
                 .font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1)
+            if session.bookmarkModified, !editing {
+                // The channel's settings differ from the bookmark's: say so on a line of its
+                // own, with Revert (restore the channel) and Save (update the bookmark) as real
+                // buttons. Beside the name they shortened it and read as labels.
+                HStack(spacing: 8) {
+                    Text("Changed from the bookmark").font(Theme.Font.aside)
+                        .foregroundStyle(Theme.caution).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Button("Revert") { session.revertToTunedBookmark() }
+                        .help("Back to the bookmark's saved mode and width")
+                    Button("Save") { session.saveTunedBookmark() }
+                        .help("The bookmark takes the mode and width it is heard with now")
+                }
+                .buttonStyle(.bordered).controlSize(.mini)
+                .padding(.top, 4)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
     }
@@ -309,10 +313,15 @@ struct FailureStrip: View {
     }
 }
 
-/// Region 3: the reading, in words, label in a fixed column. This region must use words even
-/// though the meter carries numbers; the numbers are in the popovers and in Measurements. A row
-/// whose measurement is NaN (tuning outside FM or with the squelch closed, deviation outside FM)
-/// is hidden rather than dashed: a row showing `—` most of the time looks broken.
+/// Region 3: the reading, four rows in four fixed columns (label, meter, word, number), so a
+/// word that changes never moves a meter or a number. The number sits beside its word rather
+/// than one click away in a popover, and the sentence explaining it is the row's tooltip
+/// (decided 2026-09-23, docs/design/app-design-handoff-m2.md). Rows draw from
+/// `AppSession.channelReading`, the meter steadied with ballistics and hysteresis
+/// (`ChannelReading`), and the raw numbers stay in Measurements. Tuning and Deviation show for
+/// the FM modes, which are the only modes that measure them. While the squelch is closed the
+/// two rows stay and hold the last transmission's values dimmed, so the panel does not change
+/// height with every transmission, and you can still see how the last one was tuned.
 struct ReadingsView: View {
     @Environment(AppSession.self) private var session
 
@@ -320,294 +329,224 @@ struct ReadingsView: View {
     /// (`SignalWord.thresholdsDB` last) begins past the middle and a repeater at full quieting
     /// reaches the cream end.
     static let signalBarRangeDB: Double = 40
-    /// The design's copy in the Signal popover ("Voice is fully readable above about 12 dB"),
+    /// The design's copy in the Signal tooltip ("Voice is fully readable above about 12 dB"),
     /// asserted from listening and not measured (M2 handoff, "Open for the owner"); the words'
     /// own steps are `SignalWord.thresholdsDB`.
     static let readableDB: Double = 12
-
-    /// The deviation the meter shows: fast up, slow down (`DeviationMeter.hold`).
-    @State private var heldDeviationHz: Double = .nan
+    /// The deviation meter's span, in nominals: the nominal tick sits at two thirds.
+    static let deviationSpanNominals: Double = 1.5
+    /// How far a held reading (the last transmission's, squelch closed) is dimmed.
+    static let heldOpacity: Double = 0.45
 
     var body: some View {
-        let m = session.meter
+        let reading = session.channelReading
         let ch = session.channel
+        let nominal = ch.flatMap {
+            DeviationWord.nominalHz(mode: $0.mode, bandwidthHz: $0.bandwidthHz)
+        }
         VStack(alignment: .leading, spacing: 8) {
-            signal(overNoise: session.overNoiseDB, meter: m)
-            if let m, let ch,
-                let word = TuningWord(freqErrorHz: m.freqErrorHz, bandwidthHz: ch.bandwidthHz)
-            {
-                tuning(word, errorHz: m.freqErrorHz, channel: ch)
-            }
-            if let m, let ch,
-                let word = DeviationWord(
-                    deviationHz: m.deviationHz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
-            {
-                deviation(word, deviationHz: m.deviationHz, channel: ch)
+            signal(reading)
+            if let ch, let nominal {
+                tuning(reading, channel: ch)
+                deviation(reading, channel: ch, nominalHz: nominal)
             }
             onAir
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
-    private func signal(overNoise: Double?, meter m: Leyline_V1_Meter?) -> some View {
-        let word = SignalWord(overNoiseDB: overNoise)
-        let sentence =
-            overNoise.map {
-                String(
-                    format:
-                        "%.0f dB above the noise floor. Voice is fully readable above about %.0f dB.",
-                    $0, Self.readableDB)
-            }
-            ?? "No signal measured yet: the floor is read from the first spectrum row, and the level from the channel's meter."
-        let raw: String
-        if let m, let floor = session.channelFloorDB {
-            raw = "\(Measure.dbfs(m.powerDbfs)) · floor \(Measure.dbfs(floor))"
+    /// The ramp bar against 0 to 40 dB over the noise, with the squelch as a tick on the same
+    /// scale, so whether a signal is loud enough to open the squelch can be read off one bar.
+    private func signal(_ r: ChannelReading?) -> some View {
+        let overNoise = r?.overNoiseDB ?? .nan
+        let squelch = session.squelchOverNoiseDB
+        let word = r?.signalWord
+        return ReadingRow(
+            label: "Signal", help: signalHelp(overNoise: overNoise, squelch: squelch),
+            number: Measure.db(overNoise)
+        ) {
+            MeterTrack(
+                range: 0...Self.signalBarRangeDB, fill: .ramp, level: overNoise, ticks: [squelch])
+        } word: {
+            Text(word?.word ?? Reading.absent)
+                .foregroundStyle(word == nil ? Theme.inkFaint : Theme.inkSecondary)
+        }
+    }
+
+    private func signalHelp(overNoise: Double, squelch: Double) -> String {
+        guard overNoise.isFinite else {
+            return
+                "No signal measured yet: the floor is read from the first spectrum row, and the level from the channel's meter."
+        }
+        var parts = [
+            "\(Measure.db(overNoise)) above the noise floor. Voice is fully readable above about \(Measure.db(Self.readableDB))."
+        ]
+        if squelch.isFinite {
+            let open = session.meter?.squelchOpen ?? false
+            parts.append(
+                "The tick is the squelch, \(Measure.db(squelch)) over the floor; the channel is \(open ? "above it and heard" : "below it and muted")."
+            )
         } else {
-            raw = "—"
+            parts.append("The squelch is off.")
         }
-        return ReadingRow(label: "Signal", sentence: sentence, raw: raw) {
-            HStack(spacing: 10) {
-                SignalBar(fraction: overNoise.map { $0 / Self.signalBarRangeDB } ?? .nan)
-                Text(word?.word ?? "—").reading()
-                    .foregroundStyle(word == nil ? Theme.inkFaint : Theme.inkSecondary)
-            }
+        if let m = session.meter, let floor = session.channelFloorDB {
+            parts.append("\(Measure.dbfs(m.powerDbfs)) against a floor of \(Measure.dbfs(floor)).")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// A centre-zero needle: it sits where the tuning is against the transmitter, the way the
+    /// waterfall shows it, so a transmitter above the channel puts the needle left of centre.
+    /// The word flips only past a tenth of the channel's width, with hysteresis.
+    private func tuning(_ r: ChannelReading?, channel ch: Leyline_V1_Channel) -> some View {
+        let errorHz = r?.freqErrorHz ?? .nan
+        let word = r?.tuningWord
+        let offTune = word?.isOffTune ?? false
+        let held = !(r?.isLive ?? false)
+        let help: String
+        if errorHz.isFinite, let word {
+            help =
+                "\(held ? "The last transmission sat" : "The transmitter sits") \(Measure.hz(abs(errorHz))) \(errorHz >= 0 ? "above" : "below") the channel's centre, \(word.isOffTune ? "past" : "within") a tenth of its \(Frequency.width(ch.bandwidthHz)) width. The needle is where the tuning sits against the signal, as on the waterfall."
+        } else {
+            help = "Measured while the squelch is open. Nothing has been heard on this channel yet."
+        }
+        return ReadingRow(
+            label: "Tuning", help: help, held: held, number: Measure.hz(errorHz, signed: true)
+        ) {
+            MeterTrack(
+                range: -0.5...0.5, ticks: [0], needle: -errorHz / Double(ch.bandwidthHz),
+                needleInk: offTune ? Theme.caution : Theme.inkSecondary)
+        } word: {
+            // `Off tune` alone: the direction is the needle's side and the number's sign, and
+            // `Off tune · high` does not fit the word column.
+            Text(word.map { $0.isOffTune ? "Off tune" : "Centred" } ?? Reading.absent)
+                .foregroundStyle(
+                    word == nil ? Theme.inkFaint : offTune ? Theme.caution : Theme.inkSecondary)
         }
     }
 
-    /// A centre-zero meter and the word: the marker sits where the tuning is against the
-    /// transmitter, the way the waterfall shows it, and the word flips only past a tenth of the
-    /// channel's width. A value that updates at 10 Hz reads better as a needle than as a
-    /// flickering label (the owner, 2026-09-21).
-    private func tuning(_ word: TuningWord, errorHz: Double, channel ch: Leyline_V1_Channel)
-        -> some View
-    {
-        let sentence =
-            "The transmitter sits \(Measure.hz(abs(errorHz))) \(errorHz >= 0 ? "above" : "below") the channel's centre, \(word.isOffTune ? "past" : "within") a tenth of its \(Frequency.width(ch.bandwidthHz)) width."
-        let raw = "freq error \(Measure.hz(errorHz, signed: true)) · width \(ch.bandwidthHz) Hz"
-        return ReadingRow(label: "Tuning", sentence: sentence, raw: raw) {
-            HStack(spacing: 8) {
-                // Inverted from the error: the marker is where the tuning sits against the
-                // signal, so it points the way the waterfall's marker does (a transmitter above
-                // the channel has the marker to the left of it).
-                CentreMeter(
-                    fraction: -errorHz / Double(ch.bandwidthHz), offCentre: word.isOffTune
-                )
-                .frame(width: Theme.Layout.readingMeterWidth)
-                Text(word.word).reading()
-                    .foregroundStyle(word.isOffTune ? Theme.caution : Theme.inkSecondary)
-            }
-        }
-    }
-
-    /// A level meter against the mode's nominal, peak-held so speech reads as a swing rather
-    /// than a flicker, with the held number beside it; the tick is the nominal, and the fill
-    /// past it is the caution ink.
+    /// The held peak against the mode's nominal (the tick), neutral up to the overdeviation
+    /// limit and caution past it.
     private func deviation(
-        _ word: DeviationWord, deviationHz: Double, channel ch: Leyline_V1_Channel
+        _ r: ChannelReading?, channel ch: Leyline_V1_Channel, nominalHz: Double
     ) -> some View {
-        let nominal: Double? = DeviationWord.nominalHz(mode: ch.mode, bandwidthHz: ch.bandwidthHz)
-        let sentence =
-            "Deviating \(Measure.hz(deviationHz)) against a nominal \(nominal.map { Measure.hz($0) } ?? "—") for \(ch.mode.word) at \(Frequency.width(ch.bandwidthHz))."
-        let raw =
-            "deviation \(Measure.hz(deviationHz)) · nominal \(nominal.map { Measure.hz($0) } ?? "—")"
-        return ReadingRow(label: "Deviation", sentence: sentence, raw: raw) {
-            HStack(spacing: 8) {
-                DeviationMeter(
-                    levelHz: heldDeviationHz.isFinite ? heldDeviationHz : deviationHz,
-                    nominalHz: nominal ?? 1
-                )
-                .frame(width: Theme.Layout.readingMeterWidth)
-                Text(Measure.hz(heldDeviationHz.isFinite ? heldDeviationHz : deviationHz))
-                    .font(Theme.Font.value)
-                    .foregroundStyle(
-                        word == .overdeviating ? Theme.caution : Theme.inkSecondary)
-            }
+        let deviationHz = r?.deviationHz ?? .nan
+        let word = r?.deviationWord
+        let held = !(r?.isLive ?? false)
+        let help: String
+        if deviationHz.isFinite {
+            help =
+                "\(held ? "The last transmission deviated" : "Deviating") \(Measure.hz(deviationHz)) at its peak, against a nominal \(Measure.hz(nominalHz)) for \(ch.mode.word) at \(Frequency.width(ch.bandwidthHz)) (the tick). Past \(Measure.hz(nominalHz * DeviationWord.overFraction)) is overdeviating."
+        } else {
+            help = "Measured while the squelch is open. Nothing has been heard on this channel yet."
         }
-        .onChange(of: deviationHz, initial: true) { _, new in
-            heldDeviationHz = DeviationMeter.hold(heldDeviationHz, new, nominalHz: nominal ?? 1)
+        return ReadingRow(
+            label: "Deviation", help: help, held: held, number: Measure.hz(deviationHz)
+        ) {
+            MeterTrack(
+                range: 0...(nominalHz * Self.deviationSpanNominals),
+                fill: .neutral(cautionAbove: nominalHz * DeviationWord.overFraction),
+                level: deviationHz, ticks: [nominalHz])
+        } word: {
+            Text(word.map(Self.shortWord) ?? Reading.absent)
+                .foregroundStyle(
+                    word == nil
+                        ? Theme.inkFaint
+                        : word == .overdeviating ? Theme.caution : Theme.inkSecondary)
         }
     }
 
-    /// `4.2 s · 23 since 11:38` while the squelch is open, `Idle · 23 since 11:38` when it is
-    /// closed. The count is the log's, the session's first transmission its oldest, and `since`
-    /// is that one's wall clock when the anchor dates it; otherwise `23 this session`, because a
-    /// wall-clock time is printed only when the daemon's anchor provides one (M2-1's rule).
+    /// `Over` for overdeviating, which does not fit the word column; the tooltip says it in
+    /// full.
+    private static func shortWord(_ word: DeviationWord) -> String {
+        word == .overdeviating ? "Over" : word.word
+    }
+
+    /// `Now` in `good` and the seconds in the number column while the squelch is open;
+    /// `Idle · last heard 2 min ago` when it is closed. The count of transmissions is the log's
+    /// header, not this row's.
     private var onAir: some View {
         let log = session.transmissions
         let open = log?.onAir
-        let count = (log?.closed.count ?? 0) + (open == nil ? 0 : 1)
         let seconds = session.timeOnAirSeconds
-        let first = log?.closed.last?.start ?? open?.since
-        let since = first.flatMap { session.wallTime(of: $0) }
-        let clause: String
-        // "10 heard since 16:35": the count is of transmissions, and the word says so.
-        let heard = count == 1 ? "1 heard" : "\(count) heard"
-        if count == 0 {
-            clause = "none heard this session"
-        } else if let since {
-            clause = "\(heard) since \(WallClock.hm(since))"
+        let last = log?.closed.first
+        let clause: String? =
+            open != nil ? nil : last.map { "last heard \(lastHeard($0))" } ?? "nothing heard yet"
+        let help: String
+        if open != nil {
+            help =
+                "The squelch is open: on the air for \(seconds.map { Reading.seconds($0) } ?? "an unknown time")."
+        } else if let last {
+            help =
+                "Idle. The last transmission ran \(Reading.seconds(last.seconds))\(session.wallTime(of: last.end).map { " and ended at \(WallClock.hms($0))" } ?? "")."
         } else {
-            clause = "\(heard) this session"
+            help = "Idle. Nothing has opened the squelch on this channel yet."
         }
-        let state: String
-        if let seconds {
-            state = "On air " + Reading.seconds(seconds)
-        } else {
-            state = open == nil ? "Idle" : "On air"
-        }
-        let sentence: String
-        let raw: String
-        if let open {
-            sentence =
-                "On the air for \(seconds.map { Reading.seconds($0) } ?? "an unknown time"); \(count) logged\(since.map { ", the first at \(WallClock.hms($0))" } ?? " this session")."
-            raw = "open edge at sample \(open.since.sampleIndex) · \(log?.captureRate ?? 0) S/s"
-        } else if let last = log?.closed.first {
-            sentence =
-                "Idle. The last transmission ran \(Reading.seconds(last.seconds)); \(count) logged\(since.map { ", the first at \(WallClock.hms($0))" } ?? " this session")."
-            raw =
-                "last \(Reading.seconds(last.seconds)) · peak \(Measure.db(last.peakSNRDB)) over noise"
-        } else {
-            sentence = "Idle. Nothing has opened the squelch on this channel yet."
-            raw = "—"
-        }
-        return ReadingRow(label: "On air", sentence: sentence, raw: raw) {
+        return HStack(spacing: 0) {
+            ReadingLabel(text: "On air")
             HStack(spacing: 0) {
-                Text(state).reading()
-                    .foregroundStyle(seconds == nil ? Theme.inkTertiary : Theme.inkSecondary)
-                Text(" · \(clause)").font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
-            }
-        }
-    }
-}
-
-extension Text {
-    /// A value in the reading: the dotted underline marks that its number is one click away.
-    func reading() -> Text {
-        font(Theme.Font.label).underline(pattern: .dot, color: Theme.inkFaintest)
-    }
-}
-
-/// A label at the fixed column and a value; a click on the value opens its number.
-struct ReadingRow<Value: View>: View {
-    let label: String
-    let sentence: String
-    let raw: String
-    @ViewBuilder let value: Value
-    @State private var open = false
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 0) {
-            Text(label).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
-                .frame(width: Theme.Layout.readingLabelWidth, alignment: .leading)
-            value
-                .contentShape(Rectangle())
-                .onTapGesture { open = true }
-                .popover(isPresented: $open, arrowEdge: .bottom) {
-                    NumberPopover(sentence: sentence, raw: raw)
+                Text(open == nil ? "Idle" : "Now")
+                    .foregroundStyle(open == nil ? Theme.inkTertiary : Theme.good)
+                if let clause {
+                    Text(" · \(clause)").foregroundStyle(Theme.inkMuted)
                 }
-        }
-    }
-}
-
-/// Two lines: the sentence with the number in it, then the raw measurement in mono. The word
-/// is derived from a number, the number is always one click away, and the popover never claims
-/// more confidence than the measurement supports.
-struct NumberPopover: View {
-    let sentence: String
-    let raw: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(sentence).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(raw).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
-        }
-        .padding(12)
-        .frame(width: 260, alignment: .leading)
-        .background(Theme.chrome)
-    }
-}
-
-/// A 6 pt bar filled with the level ramp over the bar's whole width and clipped at the reading,
-/// so the colour at the bar's end agrees with the word beside it. Empty for NaN.
-struct SignalBar: View {
-    let fraction: Double
-
-    var body: some View {
-        GeometryReader { geo in
-            let f = fraction.isFinite ? fraction.clamped(to: 0...1) : 0
-            ZStack(alignment: .leading) {
-                Capsule().fill(Theme.border)
-                LinearGradient(
-                    colors: Theme.levelStops, startPoint: .leading, endPoint: .trailing
-                )
-                .mask(alignment: .leading) { Capsule().frame(width: geo.size.width * f) }
+            }
+            .font(Theme.Font.label).monospacedDigit().lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if open != nil {
+                Text(Reading.seconds(seconds ?? .nan))
+                    .font(Theme.Font.value).foregroundStyle(Theme.inkTertiary).lineLimit(1)
+                    .frame(width: Theme.Layout.readingNumberWidth, alignment: .trailing)
             }
         }
-        .frame(height: Theme.Layout.signalBarHeight)
+        .contentShape(Rectangle())
+        .help(help)
+    }
+
+    /// `2 min ago` on the capture's clock; the wall clock when the transmission is on another
+    /// timeline but the anchor dates it.
+    private func lastHeard(_ t: Transmission) -> String {
+        if let s = session.secondsAgo(t.end) { return Reading.ago(seconds: s) }
+        if let date = session.wallTime(of: t.end) { return "at \(WallClock.hm(date))" }
+        return "earlier"
     }
 }
 
-/// A centre-zero meter: a track with a tick at the middle and a marker at `fraction` of the
-/// track's half-width either side, clamped to the ends. The marker is `inkSecondary` inside the
-/// centred tenth and `caution` past it.
-struct CentreMeter: View {
-    /// Error over bandwidth: ±0.5 is the channel's edge.
-    let fraction: Double
-    let offCentre: Bool
+/// A reading row's label, in the fixed first column.
+struct ReadingLabel: View {
+    let text: String
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let f = fraction.isFinite ? fraction.clamped(to: -0.5...0.5) : 0
-            ZStack(alignment: .leading) {
-                Capsule().fill(Theme.border)
-                Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 10)
-                    .offset(x: w / 2 - 0.5)
-                Capsule().fill(offCentre ? Theme.caution : Theme.inkSecondary)
-                    .frame(width: 3, height: 10)
-                    .offset(x: (w * (0.5 + f)).clamped(to: 0...max(0, w - 3)))
-            }
-        }
-        .frame(height: 10)
+        Text(text).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
+            .frame(width: Theme.Layout.readingLabelWidth, alignment: .leading)
     }
 }
 
-/// The deviation on the Signal row's own bar (`SignalBar`, the level ramp), with a tick at the
-/// mode's nominal; the track spans one and a half nominals. Drawn from a level the caller
-/// holds with `hold`, because deviation follows syllables and a bar that follows every 100 ms
-/// interval flickers. A caution fill past the tick was tried and read as a yellow
-/// background (the owner, 2026-09-21); the number beside the bar carries the caution instead.
-struct DeviationMeter: View {
-    let levelHz: Double
-    let nominalHz: Double
-
-    /// The meter's span, in nominals.
-    static let spanNominals: Double = 1.5
-    /// How much of the held level is let go per meter interval: ten intervals from full to a
-    /// tenth, the release a VU meter has.
-    static let releasePerInterval: Double = 0.2
-
-    /// Fast up, slow down: the larger of the new level and the held one released a step.
-    static func hold(_ held: Double, _ new: Double, nominalHz: Double) -> Double {
-        guard new.isFinite else { return held }
-        guard held.isFinite else { return new }
-        return Swift.max(new, held - releasePerInterval * nominalHz)
-    }
+/// One reading: the label, then the meter, the word and the number in fixed columns, dimmed
+/// together when `held`. The tooltip is the sentence with the number in it.
+struct ReadingRow<Meter: View, Word: View>: View {
+    let label: String
+    let help: String
+    var held = false
+    let number: String
+    @ViewBuilder let meter: Meter
+    @ViewBuilder let word: Word
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let f =
-                levelHz.isFinite
-                ? (levelHz / (nominalHz * Self.spanNominals)).clamped(to: 0...1) : 0
-            let tick = w / Self.spanNominals
-            ZStack(alignment: .leading) {
-                SignalBar(fraction: f)
-                Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 10)
-                    .offset(x: tick - 0.5)
+        HStack(spacing: 0) {
+            ReadingLabel(text: label)
+            HStack(spacing: 0) {
+                meter.frame(width: Theme.Layout.readingMeterWidth)
+                word.font(Theme.Font.label).lineLimit(1)
+                    .padding(.leading, Theme.Layout.readingWordGap)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(number).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
+                    .lineLimit(1)
+                    .frame(width: Theme.Layout.readingNumberWidth, alignment: .trailing)
             }
+            .opacity(held ? ReadingsView.heldOpacity : 1)
         }
-        .frame(height: Theme.Layout.signalBarHeight)
+        .contentShape(Rectangle())
+        .help(help)
     }
 }

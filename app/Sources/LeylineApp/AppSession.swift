@@ -182,6 +182,15 @@ final class AppSession {
     var displayHz: UInt64? { requestedHz ?? tunedHz }
     var isPlaying: Bool { sink != nil }
     var meter: Leyline_V1_Meter? { telemetry.meter }
+    /// The inspector's reading, steadied (`ChannelReading`): folded from every meter in
+    /// `foldReading`. Presentation only; the raw meter is `meter`.
+    private var reading = ChannelReading()
+    /// The steadied reading for the tuned channel, or nil before its first meter: a reading
+    /// left from the last channel is not shown for this one.
+    var channelReading: ChannelReading? {
+        guard let id = channel?.channelID, reading.channelID == id else { return nil }
+        return reading
+    }
     /// The tuned channel's recent transmissions and the open one, or nil without a channel.
     var transmissions: TransmissionLog? { telemetry.transmissions }
     /// How long the open transmission has run, at the newest telemetry time; nil when idle.
@@ -241,6 +250,21 @@ final class AppSession {
     var overNoiseDB: Double? {
         guard let m = meter, m.powerDbfs.isFinite, let floor = channelFloorDB else { return nil }
         return m.powerDbfs - floor
+    }
+
+    /// Folds one meter into `reading` with the floor and channel it was measured against.
+    private func foldReading(_ m: Leyline_V1_Meter, atSeconds seconds: Double) {
+        guard let ch = channel else { return }
+        reading.fold(
+            m, atSeconds: seconds, channelID: ch.channelID, floorDB: channelFloorDB,
+            mode: ch.mode, bandwidthHz: ch.bandwidthHz)
+    }
+
+    /// The squelch threshold on the signal bar's scale, dB over the channel's floor; NaN with
+    /// the squelch off or before the floor is known.
+    var squelchOverNoiseDB: Double {
+        ChannelReading.squelchOverNoiseDB(
+            squelchDB: channel?.squelchDb ?? .nan, floorDB: channelFloorDB)
     }
 
     /// The wall clock of a time on the tuned capture, through its anchor and nothing else
@@ -368,6 +392,7 @@ final class AppSession {
     func start() async {
         guard running == nil else { return }
         captureLevel.onLevel = { [weak self] in self?.nameFailure() }
+        telemetry.onMeter = { [weak self] m, seconds in self?.foldReading(m, atSeconds: seconds) }
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
