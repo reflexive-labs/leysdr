@@ -353,6 +353,90 @@ same floor as `ley`'s), the near-full-scale state dropped rather than kept as a 
 ships with its daemon), and the radio's peak and clipped fraction as two rows of the inspector's
 Measurements.
 
+### M2-6 `[ ]` The failure strip retired
+
+Seen on the Mac 2026-09-23: a banner flashing in the panel, "weird, hard to read, and not
+useful". The log names two causes. Every band or bookmark switch showed the out-of-capture
+words for 90 ms (`shown: out of capture` / `cleared`, six times in the last minute of the log):
+the window writes the centre first and the channel's offset second, and the mirror's channel
+event between the two reads `OUT_OF_CAPTURE`, so the strip announced a state the window itself
+was in the middle of leaving. And clipping comes in bursts of half a second to two seconds (a
+keyed HT, an FM peak), each of which popped the strip in with no animation and pushed every
+region under it down.
+
+Stepping back: the strip carried two measured facts with one action each, and neither is the
+panel's. Clipping is the radio's problem, and the radio already has a place, the toolbar's chip
+and the device menu with the gain slider in it. Out of capture is the channel's problem, and the
+identity region already has a line under the frequency for a channel's condition (`Changed from
+the bookmark`). So the strip goes, and the facts move to where their fix is:
+
+- **Clipping lives on the device chip.** While the state holds, the chip's dot is `caution` and
+  the name reads `HackRF Pro · clipping`, the suffix in `caution`; the device menu's header
+  carries the sentence (`FailureState.headline` and `detail`) under the state line, and the gain
+  slider is right there. No close control: the words are a state, and they go when it clears.
+- **Out of capture lives in the identity.** One line under the frequency, in `caution`:
+  `Outside the radio's 20.000 MHz around 97.500 MHz`, with a mini bordered `Tune inside`
+  button styled as `Revert` and `Save` are, which re-places the centre on the tuned frequency
+  the way `setSampleRate` does. No close control.
+- **A state is shown only once it has held.** Clipping is raised after the count has been over
+  `clippingFloor` for 1 s of the capture's clock and cleared after 2 s under
+  `clippingExitFraction` (the levels carry `SampleTime`; the hold is in the façade, beside
+  `FailureState.name`, and unit-tested). Out of capture is shown once the mirror has reported it
+  for 1 s. `ley tune`'s line does not change: it prints once per change and cannot flicker.
+- **Gone:** `FailureStrip`, `dismissFailure`, `dismissOutOfCapture`, `dismissedFailure`, the
+  `warnGround` and `warnBorder` tokens if nothing else draws them. The log lines stay: a state
+  still logs when it is raised and when it clears, now after the hold.
+
+Also, because the same session showed no PL on 1 029 GMRS transmissions and the log could not say
+whether the daemon ever reported one: the feed logs the first sub-audible report whether it names
+a tone or not (`lastToneHz` starts unknown, not at 0), and the transmission-ended line says which
+tone the transmission carried or `no tone`.
+
+Docs: `../design/app-design-handoff-m2.md` gets a "Decided 2026-09-24" entry and Region 2 is
+marked retired; `../dev/app.md`'s failure-state paragraph follows.
+
+### M2-7 `[ ]` The audio ladder in the panel
+
+The M2 handoff's open item ("the audio levels meter `ley levels` draws, band by band, in the
+panel"), decided 2026-09-23 by the owner: its own region between the reading and the log, the
+demod tap, octave bands. The stream exists (`docs/design/audio-meters.md`: an FFT subscription
+whose source is a channel, `FftParams.tap`, at most 20 rows a second; the daemon refuses raw
+IQ), `ley levels` reads it, and the Swift client lacks only the call.
+
+- **Façade** (`LeylineClient`): `DaemonConnection.fft(channel:tap:bins:rowsPerSecond:…)`
+  beside `fft(capture:…)`, the same `BulkDecode.fftRows` under it. `BandLevels`, pure and
+  tested, ported from `go/internal/cli/levels_bands.go`: the nine octave centres 63 Hz to 16 kHz
+  with edges a factor √2 either side, a band's level as the power sum of its bins over the Hann
+  window's noise bandwidth (1.5), the band too narrow for a bin reading its centre bin, and
+  −120 dBFS as the floor. `LevelBar`, the ballistics: attack instant, release 20 dB a second, a
+  peak cap that holds 1.5 s then falls 10 dB a second, timed on the sample clock from the rows'
+  `SampleTime` and the capture rate. Tests mirror `TestLevelsBandSumsInPower` and
+  `TestLevelsBallistics`.
+- **Feed** (`AudioLevelsFeed`, the `SpectrumFeed` pattern): follows the tuned channel on the
+  demod tap at 1024 bins and 20 rows a second, latest-wins, one subscription per channel, reset
+  with it, stopped while the inspector is hidden and for a raw IQ channel. Folds each row into
+  nine `LevelBar`s. `rms` and `peak` come off the meter (`audio_dbfs`, `audio_peak_dbfs`), never
+  off a row, as `ley levels` does, so two clients report the same numbers. While the meter says
+  the squelch is closed the bars are reset and stay unlit, because the demod tap carries the
+  discriminator's noise between transmissions.
+- **Region** (`AudioLevelsView`, after Region 3, a hairline either side): a `section` header
+  `Audio`; a plot 64 pt high with a 22 pt dB gutter marked 0, −18 and −60 in `columnHead`
+  `inkFaintest`, the −18 dBFS alignment line dashed across in `border`; eleven bars, the nine
+  bands then a gap then `rms` and `peak`, each bar 14 pt in a 22 pt slot; the scale a meter's,
+  6 dB per step from 0 to −24 and 10 dB per step to −60 (`ley levels`' scale, piecewise linear).
+  The lit part is the level ramp (`Theme.levelStops`, cold at −60, hot at 0), the unlit part is
+  drawn in `border` so the scale reads while nothing plays, the cap is a 1.5 pt `inkSecondary`
+  line. Labels under the bars in `columnHead`: `63 125 250 500 1k 2k 4k 8k 16k`, `rms`, `peak`;
+  the meter's two numbers under the pair in `valueSmall` `inkTertiary`, `—` before a meter. One
+  `Canvas`, redrawn as the feed changes. No `OVER`: clipping is the chip's (M2-6).
+- **The log gives up its spare rows** and keeps its five; at 820 pt everything still fits
+  (header 36, identity ~70, reading ~112, audio ~120, log 155, Measurements 30).
+- **e2e** (`LeylineClientDaemonTests`, `nfm_pl.cf32` on the demod tap): the 125 Hz band (the
+  100 Hz PL) and the 1 kHz band read well over the 8 and 16 kHz bands.
+
+Docs: the M2 handoff gains "Region 3b: audio" and the open item is closed; `../dev/app.md` lists
+the feed; `docs/dev/app.md`'s unverified list names the view, which the container cannot build.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,
