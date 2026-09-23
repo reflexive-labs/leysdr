@@ -1115,6 +1115,7 @@ final class AppSession {
         UserDefaults.standard.set(
             String(db),
             forKey: GainPreferences.storageKey(deviceID: dev.deviceID, element: element))
+        spectrum.resetFolds()
         writeGain(element: element, String(format: "%.1f dB", db)) { $0.db = db }
     }
 
@@ -1123,6 +1124,7 @@ final class AppSession {
         UserDefaults.standard.set(
             GainPreferences.automatic,
             forKey: GainPreferences.storageKey(deviceID: dev.deviceID, element: element))
+        spectrum.resetFolds()
         writeGain(element: element, "auto") { $0.auto = true }
     }
 
@@ -1414,6 +1416,11 @@ final class AppSession {
 
     func zoomIn() { zoom = min(zoom * 2, 8) }
     func zoomOut() { zoom = max(zoom / 2, 1) }
+
+    func clearMaxHold() {
+        spectrum.clearMaxHold()
+        log("spectrum", "max hold cleared")
+    }
 
     func toggleInspector() {
         inspectorShown.toggle()

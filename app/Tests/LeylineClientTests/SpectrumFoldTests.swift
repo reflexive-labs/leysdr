@@ -69,6 +69,10 @@ final class SpectrumFoldTests: XCTestCase {
         XCTAssertEqual(hold.rows, 1)
         hold.reset()
         XCTAssertTrue(hold.levelsDB.isEmpty)
+        XCTAssertEqual(hold.rows, 0)
+        hold.fold([-80, -70])
+        XCTAssertEqual(hold.levelsDB, [-80, -70], "the first row after clear is the new hold")
+        XCTAssertEqual(hold.rows, 1)
     }
 
     func testChannelFloorScalesTheBinFloorToTheWidth() {

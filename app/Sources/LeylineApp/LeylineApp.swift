@@ -98,6 +98,7 @@ struct TuneCommands: Commands {
             Button("Zoom Out") { session.zoomOut() }.keyboardShortcut("-", modifiers: [.command])
             Toggle(
                 "Max Hold", isOn: Binding(get: { session.maxHold }, set: { session.maxHold = $0 }))
+            Button("Clear Max Hold") { session.clearMaxHold() }
         }
     }
 

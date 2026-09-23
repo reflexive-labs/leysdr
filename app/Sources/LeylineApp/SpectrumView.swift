@@ -194,26 +194,41 @@ struct Columns {
     }
 }
 
-/// Max hold is a toggle, not furniture: a chip with the trace's colour and its real name.
+/// Max hold is a toggle, not furniture: a chip with the trace's colour, its real name and a
+/// separate clear action. Hiding the trace does not pretend its accumulated history disappeared.
 struct MaxHoldChip: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        @Bindable var session = session
-        Button {
-            session.maxHold.toggle()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: session.maxHold ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 9))
-                    .foregroundStyle(session.maxHold ? Theme.good : Theme.inkFaint)
-                Rectangle().fill(Theme.good.opacity(0.5)).frame(width: 10, height: 1.5)
-                Text("max hold").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+        HStack(spacing: 0) {
+            Button {
+                session.maxHold.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: session.maxHold ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 9))
+                        .foregroundStyle(session.maxHold ? Theme.good : Theme.inkFaint)
+                    Rectangle().fill(Theme.good.opacity(0.5)).frame(width: 10, height: 1.5)
+                    Text("max hold").font(Theme.Font.valueSmall).foregroundStyle(
+                        Theme.inkTertiary)
+                }
+                .padding(.horizontal, 7).padding(.vertical, 4)
             }
-            .padding(.horizontal, 7).padding(.vertical, 4)
-            .background(Theme.ground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
+            .help(session.maxHold ? "Hide max hold" : "Show max hold")
+
+            Rectangle().fill(Theme.border).frame(width: 1, height: 16)
+
+            Button {
+                session.clearMaxHold()
+            } label: {
+                Text("clear").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+            }
+            .disabled(session.spectrum.hold.rows == 0)
+            .help("Clear max hold")
         }
+        .background(Theme.ground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
         .buttonStyle(.plain)
     }
 }

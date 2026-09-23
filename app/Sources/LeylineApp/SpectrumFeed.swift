@@ -98,6 +98,21 @@ final class SpectrumFeed {
     /// squelch) can tell rows of this span from rows of the one before.
     private(set) var subscribedCapture: String?
     private var subscribedRate: UInt64 = 0
+    /// Gain is part of the picture's calibration. Keep the mirror's stage values so a gain
+    /// change made by this window or another client cannot leave an old max hold over a newly
+    /// scaled live trace.
+    private var subscribedGains: [GainSignature] = []
+
+    private struct GainSignature: Equatable {
+        var element: String
+        var db: Double
+        var auto: Bool
+    }
+
+    private static func gainSignature(_ capture: Leyline_V1_Capture) -> [GainSignature] {
+        capture.gains.map { GainSignature(element: $0.element, db: $0.db, auto: $0.auto) }
+            .sorted { $0.element < $1.element }
+    }
 
     /// Follows `capture`, resubscribing when it or its sample rate changes. Nil stops the feed.
     func follow(_ capture: Leyline_V1_Capture?, connection: DaemonConnection?) {
@@ -105,13 +120,20 @@ final class SpectrumFeed {
             stop()
             return
         }
+        let gains = Self.gainSignature(capture)
         if capture.captureID == subscribedCapture, capture.sampleRate == subscribedRate, task != nil
         {
+            if gains != subscribedGains {
+                subscribedGains = gains
+                resetFolds()
+            }
             return
         }
         stop()
+        resetFolds()
         subscribedCapture = capture.captureID
         subscribedRate = capture.sampleRate
+        subscribedGains = gains
         let id = capture.captureID
         task = Task { [weak self] in
             do {
@@ -144,6 +166,7 @@ final class SpectrumFeed {
         task = nil
         subscribedCapture = nil
         subscribedRate = 0
+        subscribedGains = []
         rows = 0
         gaps = 0
     }
@@ -154,6 +177,11 @@ final class SpectrumFeed {
         floorDB = .nan
         medianDB = .nan
         peakDB = .nan
+    }
+
+    /// Starts a fresh max-hold trace without moving the live trace or recolouring the waterfall.
+    func clearMaxHold() {
+        hold.reset()
     }
 
     private func ingest(_ row: FFTRow) {
