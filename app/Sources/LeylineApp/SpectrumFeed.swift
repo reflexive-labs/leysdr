@@ -344,3 +344,144 @@ final class CaptureLevelFeed {
         level = nil
     }
 }
+
+/// The tuned channel's audio ladder: the spectrum of its demod tap folded into octave bands and
+/// their ballistics (`BandLevels`, `LevelBar`), for the inspector's audio region
+/// (docs/design/app-design-handoff-m2.md, "Region 3b: audio"). One subscription per channel at
+/// 1024 bins and 20 rows a second, `ley levels`' request, latest-wins because a meter wants the
+/// newest row and nothing older; reset with the channel, and stopped while the inspector is
+/// hidden, since nothing draws it, and for a raw-IQ channel, which has no audio and which the
+/// daemon refuses. The pair at the right, rms and peak, is the meter's `audio_dbfs` and
+/// `audio_peak_dbfs`, never a row's, as in `ley levels`, so two clients print the same numbers.
+/// While the meter says the squelch is closed the bars are reset and draw unlit: the demod tap
+/// carries the discriminator's noise between transmissions, and a lit bar would show it as audio.
+@MainActor
+@Observable
+final class AudioLevelsFeed {
+    nonisolated static let bins: UInt32 = 1024
+    static let rowsPerSecond: Double = 20
+    /// Rows waiting to be read. A meter draws the newest; two covers one late main-actor turn.
+    static let buffer = 2
+
+    /// The band bars, nine octaves, then rms and peak. Read through `bars`, which registers the
+    /// view on `folded`: the storage is mutated in place once per row rather than published bar
+    /// by bar, so a row costs one observation and no array copy.
+    @ObservationIgnored private var storage = [LevelBar](
+        repeating: LevelBar(), count: BandLevels.octaveCentresHz.count + 2)
+    private(set) var folded = 0
+    var bars: [LevelBar] {
+        _ = folded
+        return storage
+    }
+    /// The meter's audio level and peak in dBFS, NaN before the first meter.
+    private(set) var rmsDB: Double = .nan
+    private(set) var peakDB: Double = .nan
+    /// The meter's squelch, nil until a meter has arrived: bars fold until the meter says closed.
+    private(set) var squelchOpen: Bool?
+    private(set) var descriptor: Leyline_V1_StreamDescriptor?
+    private(set) var error: LeylineError?
+
+    @ObservationIgnored private var levels = BandLevels()
+    @ObservationIgnored private var binHz: Double = 0
+    @ObservationIgnored private var captureRate: UInt64 = 0
+    @ObservationIgnored private var rows = 0
+    private var task: Task<Void, Never>?
+    private var channel: String?
+    private var mode: Leyline_V1_DemodMode?
+
+    /// Follows `channel` while `shown`. The capture rate is the rows' clock (a row's
+    /// `SampleTime` is on the capture's timeline) and is taken on every call, as
+    /// `ChannelTelemetryFeed` takes it, because it can change under a live subscription. A mode
+    /// change resubscribes: the tap's audio rate, and so the row's axis, belongs to the mode.
+    func follow(
+        _ channel: Leyline_V1_Channel?, captureRate: UInt64, shown: Bool,
+        connection: DaemonConnection?
+    ) {
+        self.captureRate = captureRate
+        guard shown, let channel, channel.mode != .rawIq, let connection else {
+            stop()
+            return
+        }
+        if channel.channelID == self.channel, channel.mode == mode, task != nil { return }
+        stop()
+        self.channel = channel.channelID
+        mode = channel.mode
+        let id = channel.channelID
+        task = Task { [weak self] in
+            do {
+                let (desc, rows) = try await connection.fft(
+                    channel: id, tap: .tapDemod, bins: Self.bins,
+                    rowsPerSecond: Self.rowsPerSecond, buffer: Self.buffer)
+                guard let self else { return }
+                self.descriptor = desc
+                self.binHz = desc.fft.bins > 0 ? Double(desc.spanHz) / Double(desc.fft.bins) : 0
+                log(
+                    "feed",
+                    "audio fft \(desc.streamID) on \(id): \(desc.fft.bins) bins, \(desc.fft.rowsPerSecond) rows/s, \(desc.fft.tap), span \(desc.spanHz) Hz"
+                )
+                for try await row in rows {
+                    if Task.isCancelled { return }
+                    self.ingest(row)
+                }
+                log("feed", "audio fft stream ended after \(self.rows) rows")
+            } catch {
+                if !Task.isCancelled {
+                    self?.error = LeylineError(error)
+                    log("feed", "audio fft stream failed: \(LeylineError(error))")
+                }
+            }
+        }
+    }
+
+    /// The session hands over every meter of the tuned channel (`ChannelTelemetryFeed.onMeter`).
+    /// A closed squelch resets the bars at once, so the ladder goes dark with the speaker.
+    func meterChanged(_ m: Leyline_V1_Meter) {
+        // Only a changed number is published; NaN never equals itself, so it is compared apart.
+        if !(rmsDB == m.audioDbfs || rmsDB.isNaN && m.audioDbfs.isNaN) { rmsDB = m.audioDbfs }
+        if !(peakDB == m.audioPeakDbfs || peakDB.isNaN && m.audioPeakDbfs.isNaN) {
+            peakDB = m.audioPeakDbfs
+        }
+        if squelchOpen != m.squelchOpen { squelchOpen = m.squelchOpen }
+        if !m.squelchOpen { resetBars() }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        channel = nil
+        mode = nil
+        descriptor = nil
+        error = nil
+        rows = 0
+        binHz = 0
+        rmsDB = .nan
+        peakDB = .nan
+        squelchOpen = nil
+        resetBars()
+    }
+
+    /// Every bar back to the floor. Publishes only when a bar was off it, so a closed squelch's
+    /// ten meters a second do not redraw a dark ladder ten times a second.
+    private func resetBars() {
+        guard storage.contains(where: { $0 != LevelBar() }) else { return }
+        for i in storage.indices { storage[i].reset() }
+        levels.reset()
+        folded += 1
+    }
+
+    /// One row into the bars, on the capture's clock: NaN seconds while the rate is unknown,
+    /// which the bars count as no time, so they hold rather than guess.
+    private func ingest(_ row: FFTRow) {
+        rows += 1
+        if rows % 600 == 0 { log("feed", "audio fft: \(rows) rows") }
+        if squelchOpen == false { return }
+        let seconds =
+            captureRate > 0 ? Double(row.time.sampleIndex) / Double(captureRate) : .nan
+        levels.measure(row.levelsDB, binHz: binHz)
+        let n = levels.levelsDB.count
+        for i in 0..<n { storage[i].update(levels.levelsDB[i], atSeconds: seconds) }
+        storage[n].update(rmsDB, atSeconds: seconds)
+        storage[n + 1].update(peakDB, atSeconds: seconds)
+        folded += 1
+    }
+}

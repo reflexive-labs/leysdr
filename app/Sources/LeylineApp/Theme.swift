@@ -147,6 +147,18 @@ enum Theme {
         static let logLengthWidth: CGFloat = 40
         /// One log row, fixed so the log can count how many fit in the height it is given.
         static let logRowHeight: CGFloat = 19
+        /// The inspector's audio ladder (M2 handoff, "Region 3b: audio"): a 64 pt plot beside a
+        /// 22 pt dB gutter, eleven 14 pt bars in 22 pt slots with a gap before rms and peak,
+        /// 272 pt in all inside the panel's 280. The rows under the plot are the labels and the
+        /// meter's two numbers.
+        static let audioPlotHeight: CGFloat = 64
+        static let audioGutterWidth: CGFloat = 22
+        static let audioBarWidth: CGFloat = 14
+        static let audioSlotWidth: CGFloat = 22
+        static let audioPairGap: CGFloat = 8
+        static let audioCapHeight: CGFloat = 1.5
+        static let audioLabelHeight: CGFloat = 14
+        static let audioNumberHeight: CGFloat = 13
         static let defaultWindow = CGSize(width: 1360, height: 820)
     }
 }

@@ -6,6 +6,8 @@
 //   - a burst of coalesced writes lands as one confirmed value, and a refused one comes back as
 //     a WriteRejected with its tag;
 //   - an FFT subscription answers a descriptor and rows decode against it;
+//   - a channel's audio spectrum on the demod tap sums into octave bands where the fixture's
+//     tones are;
 //   - a keyed carrier's squelch edges fold into transmissions as long as the fixture keyed them,
 //     and the capture's anchor gives one a wall clock;
 //   - the daemon's error code survives the trip.
@@ -163,6 +165,58 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertEqual(seen, 3)
     }
 
+    /// The inspector's audio ladder off the real daemon (docs/plans/app.md, M2-7):
+    /// `nfm_pl.cf32` is a 1 kHz tone over a 100.0 Hz PL (`go/cmd/leyfix/catalog.go`), and on
+    /// the demod tap, before the high-pass takes the PL out, both are there: 100 Hz in the 125 Hz
+    /// band (88 to 177 Hz) and the tone in the 1 kHz band, each well over the 8 and 16 kHz bands,
+    /// which hold only the discriminator's noise. Measured 2026-09-23 against the Linux-built
+    /// daemon, the same on three runs: 125 Hz −11.3, 1 kHz 0.0, 8 kHz −49.6 and 16 kHz
+    /// −95.6 dBFS, the first two as `go/internal/e2e/meters_test.go` reads them from `ley
+    /// levels`. 20 dB over the louder of 8 and 16 kHz leaves 18 dB of that 38 dB to spare.
+    @MainActor
+    func testAudioSpectrumBandsReadTheFixturesTones() async throws {
+        // This test's radio is the PL fixture, not the tone `setUp` starts on.
+        Harness.stop(daemon)
+        daemon = try await Harness.start(fixture: "nfm_pl.cf32")
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let presence = Task { for try await _ in app.events() {} }
+        defer { presence.cancel() }
+        let (_, channel) = try await Self.tuneFixture(app, on: daemon)
+
+        let (descriptor, rows) = try await app.fft(
+            channel: channel.channelID, tap: .tapDemod, bins: 1024, rowsPerSecond: 20)
+        XCTAssertEqual(descriptor.kind, .fft)
+        XCTAssertEqual(descriptor.fft.tap, .tapDemod)
+        XCTAssertEqual(descriptor.fft.bins, 1024)
+        XCTAssertEqual(descriptor.fft.binFormat, .dbF32)
+        XCTAssertEqual(descriptor.spanHz, 2 * descriptor.centerHz, "rate/2 over rate/4")
+        let binHz = Double(descriptor.spanHz) / Double(descriptor.fft.bins)
+
+        let seen = BandsSeen()
+        let folder = Task { @MainActor in
+            for try await row in rows {
+                seen.levels.measure(row.levelsDB, binHz: binHz)
+                seen.rows += 1
+            }
+        }
+        defer { folder.cancel() }
+        // Bands in `BandLevels.octaveCentresHz` order: 125 Hz is 1, 1 kHz 4, 8 kHz 7, 16 kHz 8.
+        let margin = 20.0
+        func noise() -> Double { max(seen.levels.levelsDB[7], seen.levels.levelsDB[8]) }
+        await assertEventually(
+            "the 125 Hz and 1 kHz bands never stood 20 dB over the 8 and 16 kHz bands",
+            timeout: .seconds(10)
+        ) {
+            seen.rows > 0 && seen.levels.levelsDB[1] - noise() >= margin
+                && seen.levels.levelsDB[4] - noise() >= margin
+        }
+        let db = seen.levels.levelsDB
+        XCTAssertGreaterThanOrEqual(db[1] - noise(), margin, "125 Hz over the noise; bands \(db)")
+        XCTAssertGreaterThanOrEqual(db[4] - noise(), margin, "1 kHz over the noise; bands \(db)")
+    }
+
     /// The keyed fixture's transmissions (`fixtures/nfm_keyed.json`: keyed for 1.0 s, 0.5 s and
     /// 2.0 s with 3 s of floor between, looping) as the log folds them from the daemon's own
     /// edges, at the -40 dBFS gate the sidecar specifies and `go/internal/e2e/record_test.go`
@@ -274,4 +328,11 @@ final class ClientDaemonTests: XCTestCase {
             return false
         }
     }
+}
+
+/// The newest bands a test's row fold has read, on the main actor where the assertion polls.
+@MainActor
+private final class BandsSeen {
+    var levels = BandLevels()
+    var rows = 0
 }

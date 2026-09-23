@@ -77,6 +77,7 @@ final class AppSession {
     let spectrum = SpectrumFeed()
     let telemetry = ChannelTelemetryFeed()
     let captureLevel = CaptureLevelFeed()
+    let audioLevels = AudioLevelsFeed()
 
     // View state local to the window: presentation only, never radio state.
     var maxHold = true
@@ -98,7 +99,11 @@ final class AppSession {
         UserDefaults.standard.object(forKey: AppSession.inspectorShownKey) as? Bool
         ?? true
     {
-        didSet { UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey) }
+        didSet {
+            UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey)
+            // The audio ladder subscribes only while the panel draws it.
+            followAudioLevels()
+        }
     }
     /// One sentence about the last thing that happened, or nil.
     /// Every message the window shows is also logged (`AppLog.swift`): the notice and the error
@@ -390,7 +395,10 @@ final class AppSession {
     func start() async {
         guard running == nil else { return }
         captureLevel.onLevel = { [weak self] in self?.nameFailure() }
-        telemetry.onMeter = { [weak self] m, seconds in self?.foldReading(m, atSeconds: seconds) }
+        telemetry.onMeter = { [weak self] m, seconds in
+            self?.foldReading(m, atSeconds: seconds)
+            self?.audioLevels.meterChanged(m)
+        }
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
@@ -470,6 +478,7 @@ final class AppSession {
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(channelID, captureRate: capture?.sampleRate ?? 0, connection: daemon)
         captureLevel.follow(capture?.captureID, connection: daemon)
+        followAudioLevels()
         nameFailure()
         logShownWords()
         if let ch = channel, ch.state != .outOfCapture { outOfCaptureDismissed = false }
@@ -1444,6 +1453,13 @@ final class AppSession {
     func clearMaxHold() {
         spectrum.clearMaxHold()
         log("spectrum", "max hold cleared")
+    }
+
+    /// The inspector's audio ladder follows the tuned channel while the panel is shown.
+    private func followAudioLevels() {
+        audioLevels.follow(
+            channel, captureRate: capture?.sampleRate ?? 0, shown: inspectorShown,
+            connection: daemon)
     }
 
     func toggleInspector() {

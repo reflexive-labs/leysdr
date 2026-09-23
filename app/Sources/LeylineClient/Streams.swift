@@ -166,4 +166,33 @@ extension DaemonConnection {
             onTermination: { await sub.unsubscribe() })
         return (sub.descriptor, rows)
     }
+    /// The spectrum of a channel's audio (docs/design/audio-meters.md, "The stream"): rows of dB
+    /// per bin from 0 Hz to half the audio rate, off the tap named. The descriptor answers
+    /// `center_hz` a quarter and `span_hz` half the audio rate, so a bin is `span_hz / bins`
+    /// wide. `rowsPerSecond` is at most 20 and `bins` at most 4096 here, and a raw-IQ channel,
+    /// which has no audio, is refused. DB_F32 by default, the format `ley levels` asks for,
+    /// because bands are power sums and bins quantised to half a dB before the sum would show
+    /// in it.
+    public func fft(
+        channel: String, tap: Leyline_V1_AudioTap, bins: UInt32, rowsPerSecond: Double,
+        format: Leyline_V1_FftBinFormat = .dbF32,
+        policy: Leyline_V1_DeliveryPolicy = .latestWins,
+        buffer: Int = 8
+    ) async throws -> (
+        descriptor: Leyline_V1_StreamDescriptor, rows: AsyncThrowingStream<FFTRow, any Error>
+    ) {
+        var req = Leyline_V1_SubscribeRequest()
+        req.channelID = channel
+        req.kind = .fft
+        req.policy = policy
+        req.fft.bins = bins
+        req.fft.binFormat = format
+        req.fft.rowsPerSecond = rowsPerSecond
+        req.fft.tap = tap
+        let sub = try await subscribe(req, buffer: buffer)
+        let rows = BulkDecode.fftRows(
+            sub.frames, format: sub.descriptor.fft.binFormat, buffer: buffer,
+            onTermination: { await sub.unsubscribe() })
+        return (sub.descriptor, rows)
+    }
 }

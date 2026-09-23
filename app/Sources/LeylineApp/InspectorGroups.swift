@@ -257,6 +257,8 @@ struct MeasurementsGroup: View {
 enum Measure {
     static func dbfs(_ v: Double) -> String { v.isFinite ? "\(fixed(v, 0)) dBFS" : "—" }
     static func db(_ v: Double) -> String { v.isFinite ? "\(fixed(v, 0)) dB" : "—" }
+    /// `−18`: a whole number with no unit, where a column or a slot already names it.
+    static func bare(_ v: Double) -> String { v.isFinite ? fixed(v, 0) : "—" }
 
     /// `+1.1 kHz`, `−250 Hz`, `3.4 kHz`: a hertz reading, with a `+` only where the sign is the
     /// reading (a tuning error).
