@@ -412,7 +412,7 @@ for an opening shorter than `TransmissionLog.shortestSeconds`). The views are no
 the container: the chip, the header's wrapped sentence, the identity line and its button, and
 the out-of-capture wait are unverified until a run on the Mac.
 
-### M2-7 `[ ]` The audio ladder in the panel
+### M2-7 `[x]` The audio ladder in the panel
 
 The M2 handoff's open item ("the audio levels meter `ley levels` draws, band by band, in the
 panel"), decided 2026-09-23 by the owner: its own region between the reading and the log, the
@@ -453,6 +453,33 @@ IQ), `ley levels` reads it, and the Swift client lacks only the call.
 
 Docs: the M2 handoff gains "Region 3b: audio" and the open item is closed; `../dev/app.md` lists
 the feed; `docs/dev/app.md`'s unverified list names the view, which the container cannot build.
+
+Landed 2026-09-24. Façade: `fft(channel:tap:bins:rowsPerSecond:format:policy:buffer:)` on
+`DaemonConnection` in `Streams.swift`, the same `BulkDecode.fftRows` under it and DB_F32 by default,
+as `ley levels` asks; `AudioLevels.swift` with `BandLevels` (the nine octaves, the power sum over
+the window's 1.5 bins of noise bandwidth, the centre-bin fallback, the −120 dBFS floor, filled in
+place so a row allocates nothing past its decode), `LevelScale` (the piecewise scale and the −18
+alignment level) and `LevelBar` (the ballistics, on whatever clock the caller folds with);
+`AudioLevelsTests`, six cases, two of them `TestLevelsBandSumsInPower` and `TestLevelsBallistics`
+with Go's numbers. One difference from Go: a cap's hold summed from row intervals in `Double` ends a
+row early (thirty of 0.05 s is 1.5000000000000002), so the hold has a microsecond of slack where
+Go's `time.Duration` is exact. App: `AudioLevelsFeed` beside the other feeds in
+`SpectrumFeed.swift`, followed from `AppSession.mirrorChanged` and from `inspectorShown`'s `didSet`,
+handed every meter through `telemetry.onMeter`, and resubscribing on a mode change, because the
+tap's audio rate is the mode's; its bars are stored outside Observation and published once per row.
+`AudioLevelsView.swift`, one `Canvas`, placed after `ReadingsView` with a hairline; the `audio*`
+tokens in `Theme.Layout`; `Measure.bare` for the two numbers. The region is about 136 pt against the
+~120 this item estimated, and the panel still comes to about 545 pt. e2e:
+`testAudioSpectrumBandsReadTheFixturesTones` on `nfm_pl.cf32` asks for 20 dB over the louder of 8
+and 16 kHz in both the 125 Hz and the 1 kHz band; against the Linux-built daemon the bands read
+−11.3, 0.0, −49.6 and −95.6 dBFS, the first two as `ley levels` reads them in
+`go/internal/e2e/meters_test.go`. The suite ran against a `leylined` built earlier the same day from
+`main`, not rebuilt from this change, which touches no engine code. Not compiled in the container:
+`AudioLevelsView.swift`, the feed and the session's wiring; the Canvas's layout at 312 pt (the 272
+pt ladder inside the 280 pt of padding), the gutter marks' anchors at the plot's top and bottom, a
+`−120` under the pair overflowing its 22 pt slot, the dashed line's visibility over the unlit
+`border` bars, the gradient's direction, and that the window's subscription starts and stops with
+the panel and the channel.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 

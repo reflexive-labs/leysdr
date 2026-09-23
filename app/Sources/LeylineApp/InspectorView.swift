@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The inspector: the tuned channel as a thing with an identity and a reading, on the window's
-// right (docs/design/app-design-handoff-m2.md, "The panel"). Five regions and no scroll view: a
-// header that says `Channel`, the identity, the reading, the log of recent transmissions and
-// the disclosure groups; the last two are in
-// InspectorGroups.swift and the reading's meter in MeterTrack.swift. Every word label here is
+// right (docs/design/app-design-handoff-m2.md, "The panel"). Six regions and no scroll view: a
+// header that says `Channel`, the identity, the reading, the audio ladder, the log of recent
+// transmissions and the disclosure groups; the ladder is in AudioLevelsView.swift, the last two
+// in InspectorGroups.swift and the reading's meter in MeterTrack.swift. Every word label here is
 // derived from a number the daemon measured, and the number is printed beside it, which is how
 // the app meets invariant 12. The panel keeps no radio state of its own: it renders the
-// session's copy of the mirror, the telemetry feed's log and the session's steadied reading,
-// and writes one thing, a bookmark's name, through the store both clients own
+// session's copy of the mirror, the feeds and the session's steadied reading, and writes one
+// thing, a bookmark's name, through the store both clients own
 // (`AppSession.renameTuned`).
 
 import AppKit
@@ -44,6 +44,8 @@ struct InspectorView: View {
             IdentityView()
             Rectangle().fill(Theme.hairline).frame(height: 1)
             ReadingsView()
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            AudioLevelsView()
             Rectangle().fill(Theme.hairline).frame(height: 1)
             // The log takes the height the other regions leave, and fills it with rows.
             RecentLog()

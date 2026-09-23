@@ -12,9 +12,9 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
-| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock | both |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
 The package depends on the generated contract (`.package(path: "../swift/LeylineProto")`) and on
@@ -84,9 +84,12 @@ on the event; it never treats the write as done.
 **Streams** (`Streams.swift`). `subscribe(_:)` is `Bulk.Subscribe` then `Bulk.Stream`;
 `fft(capture:bins:rowsPerSecond:)` is the FFT of a band decoded to dBFS per bin against the
 descriptor the daemon *answered* (the daemon may not grant what was requested, and DB_U8 decoded
-as DB_F32 does not look obviously wrong). The client-side buffer keeps the newest few frames, which
-is the plane's own latest-wins policy: a renderer that falls behind skips to the newest frame.
-`BulkDecode`
+as DB_F32 does not look obviously wrong). `fft(channel:tap:bins:rowsPerSecond:)` is the same
+stream with a channel as its source: the spectrum of the channel's audio on the tap named, from
+0 Hz to half the audio rate, DB_F32 by default because its bins are summed into bands
+(`../design/audio-meters.md`, "The stream"). The client-side buffer keeps the newest few
+frames, which is the plane's own latest-wins policy: a renderer that falls behind skips to the
+newest frame. `BulkDecode`
 holds the payload rules (`DB_U8` is `round((dB + 120) · 2)`; floats are little-endian; S16
 divides by 32768) and they match `go/pkg/leyline/bulk.go` bit for bit, tested on both sides.
 The shm ring is not built: the app draws over gRPC first and S1 decides
@@ -152,6 +155,15 @@ keeps no state of its own; its one write is a bookmark's name, through `Bookmark
 failure strip read here from M2-3 until M2-6 retired it, and the transport bar's signal readout
 left when the panel arrived, the M1 handoff's one named exception to "nothing moves".
 
+**The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`; the handoff's "Region 3b:
+audio"). Between the reading and the log, the panel draws the meter `ley levels --watch` draws:
+the demod tap's spectrum at 1024 bins and 20 rows a second, one subscription per channel and only
+while the panel is shown, summed into nine octave bands by the façade's `BandLevels` and moved by
+`LevelBar`'s ballistics on the capture's sample clock. Its rms and peak are the meter's
+`audio_dbfs` and `audio_peak_dbfs`, and a closed squelch leaves every bar unlit, because the
+demod tap carries the discriminator's noise between transmissions. The view was written in the
+container and is unverified until it runs on a Mac (`../plans/app.md`, M2-7).
+
 ## Building and running
 
 On the Mac (Xcode 26, the same as the engine):
@@ -189,7 +201,8 @@ move, band crossings and the mode-and-width pairs they write, every gain write, 
 with the centre it moved to, rejections with the write's tag, every message the window shows as it is shown (the notice, the error, the words over
 the waterfall, the out-of-capture words, each under `shown`), the failure state named or cleared,
 the meter's numbers every thirty seconds,
-the FFT subscription's descriptor and a row count every thirty seconds, whether the shader
+the FFT subscription's descriptor and a row count every thirty seconds, the audio ladder's
+subscription, its end or failure and a row count every thirty seconds, whether the shader
 compiled, the inspector shown or hidden, and every bookmark added, renamed or removed. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
