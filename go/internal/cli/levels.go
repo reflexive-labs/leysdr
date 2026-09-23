@@ -21,8 +21,8 @@ import (
 // bins is a 2048-sample window: at a 48 kHz audio rate, 43 ms and 23 Hz a bin,
 // which puts a sub-audible tone in a band of its own rather than in the skirt
 // of the one above it and keeps a transient inside one row at the top rate.
-// Twenty rows a second is as fast as a meter is read, and the daemon will not
-// send more.
+// Twenty rows a second is faster than anyone reads a meter, and the daemon
+// will not send more.
 const (
 	levelsBins    = 1024
 	levelsRateMax = 20
@@ -45,15 +45,15 @@ type LevelsRow struct {
 	Tap         string      `json:"tap"`
 	Bands       []LevelsBin `json:"bands"`
 	// RmsDbfs and PeakDbfs are the daemon's meter. They are null until it has
-	// measured a block, and null whenever it did not measure one: a number
-	// there would be a level nobody reported, and -0 dBFS is a real level.
+	// measured a block, and null whenever it did not measure one: any number
+	// there would be a level the daemon never reported, and even -0 dBFS is a
+	// real level.
 	RmsDbfs  *float64 `json:"rms_dbfs"`
 	PeakDbfs *float64 `json:"peak_dbfs"`
-	// SquelchOpen is the daemon's squelch state at the row, which is what says
-	// whether the bands are a signal or the detector talking to itself. It is
-	// null on the same rule as the pair: the telemetry stream, not the
-	// spectrum, carries it, and false would claim a shut squelch nobody
-	// reported.
+	// SquelchOpen is the daemon's squelch state at the row, which tells whether
+	// the bands show a signal or only detector noise. It is null on the same
+	// rule as the pair: the telemetry stream, not the spectrum, carries it, and
+	// false would report a closed squelch the daemon never reported.
 	SquelchOpen *bool `json:"squelch_open"`
 }
 
@@ -255,8 +255,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// The master pair and the squelch are the daemon's measurements, not the
 	// view's: rms and peak come off the meter, never off the spectrum row, so
 	// two clients watching one channel report the same numbers. The stream's
-	// error is deliberately not read: a telemetry stream that ends takes the
-	// pair and the header's PL with it and leaves the bands drawing.
+	// error is not read: a telemetry stream that ends takes the pair and the
+	// header's PL with it and leaves the bands drawing.
 	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
 		Types: []leylinev1.TelemetryType{
@@ -267,7 +267,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	if err != nil {
 		return err
 	}
-	// The capture's level is OVER's authority and the header's peak. Its own
+	// The capture's level drives OVER and the header's peak. It has its own
 	// subscription, scoped to the capture: the level is the radio's, not the
 	// channel's, and a channel-scoped stream carries none.
 	levels := s.watchLevel(sctx, s.channel.GetCaptureId())
@@ -283,8 +283,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// drawn; the drain owns the mirror, so it starts after the last read of it
 	// and stops before teardown.
 	// The full scale is read from the channel before the drain starts: the drain owns the mirror
-	// from then on, and a channel event folding in while this read ran was the one data race the
-	// detector found in the verb.
+	// from then on, and the race detector flagged a channel event folding in during this read.
 	fullScaleHz := scopeFullScaleHz(nil, s.channel)
 	stopDrain := s.drainEvents()
 	defer stopDrain()
@@ -305,8 +304,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		rmsDb: math.NaN(), peakDb: math.NaN(), tap: tap, what: what,
 		// The bands are dB against full scale, and on the demod tap of an FM
 		// mode full scale is a deviation. The FFT descriptor carries no such
-		// field, so the meter answers it from the channel by the rule the
-		// daemon states in the audio descriptor.
+		// field, so the meter derives it from the channel by the rule the
+		// daemon documents in the audio descriptor.
 		fullScaleHz: fullScaleHz,
 	}
 	for i := range frame.bands {
@@ -315,8 +314,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	start := time.Now()
 	last := start
 	rows := 0
-	// emit draws one frame, and says when the verb is done: a still after its
-	// one row, a watch after --count.
+	// emit draws one frame, and reports when the verb is done: a still after
+	// its one row, a watch after --count.
 	emit := func(fr *leylinev1.Frame) (bool, error) {
 		bins := leyline.DecodeFFTBins(fr.Payload, fp.GetBinFormat())
 		now := time.Now()
@@ -356,8 +355,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		return false, nil
 	}
 	// The frame a still holds while it waits for the capture's level: held,
-	// not dropped, because a playback of a 300 ms part is over before the
-	// probe is, and a frame thrown away then was the only one coming.
+	// not dropped, because a 300 ms playback part ends before the probe
+	// does, and a dropped frame would be the only one.
 	var held *leylinev1.Frame
 	for {
 		select {
@@ -374,8 +373,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 					return err
 				}
 			}
-			// A snapshot draws one frame and leaves; waiting for ever with a
-			// blank screen is not a still of anything.
+			// A snapshot draws one frame and exits; waiting for ever would
+			// leave a blank screen.
 			if !o.watch && rows == 0 && time.Since(start) > chartFirstRow {
 				return fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", chartFirstRow.Seconds())
 			}
@@ -410,14 +409,14 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			if !ok {
 				return levelsEnd(ctx, sub.Err(), rows)
 			}
-			// A still is complete once the daemon has also said whether the
-			// squelch is passing anything: a band level means one thing behind
-			// an open squelch and nothing at all behind a shut one, and the one
-			// frame a snapshot prints has to say which. The meter waits on
-			// nothing but its own rows -- it has later frames to say it in, and
-			// a slow or absent meter must not hold the bands off the screen.
-			// A telemetry stream that has ended is never going to say it, so
-			// the still goes out with the squelch unstated rather than never.
+			// A still is complete once the daemon has also reported whether the
+			// squelch is open: a band level means something behind an open
+			// squelch and nothing behind a closed one, and a snapshot's only
+			// frame has to show which. A --watch meter does not wait: later
+			// frames can show the state, and a slow or absent daemon meter must
+			// not keep the bands off the screen. If the telemetry stream has
+			// ended the squelch state will never arrive, so the still is
+			// printed without it.
 			if !o.watch && rows == 0 && !frame.squelchKnown && msgs != nil {
 				continue
 			}

@@ -59,11 +59,11 @@ message CaptureLevel {
 // client that subscribes mid-transmission has to be told what is already
 // there). Full state every message.
 //
-// The honesty rules this message exists to encode:
+// Rules this message encodes:
 //   - tone_hz is measured; standard_tone_hz is classified, and is 0 when two
 //     standard tones could both explain the measurement. The EIA ladder is
 //     spaced as tightly as 2.3 Hz (67.0/69.3), and snapping to the nearer one
-//     names the wrong tone with a straight face.
+//     would report the wrong tone with no sign of doubt.
 //   - confidence is a STATED SCORE, not a probability:
 //       clamp((tone_snr_db-6)/14) * clamp(1-|tone_hz-standard_tone_hz|/tol)
 //                                 * min(hops_agreeing,3)/3

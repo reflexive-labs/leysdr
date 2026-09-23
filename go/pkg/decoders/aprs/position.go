@@ -104,8 +104,8 @@ func base91(s string) int {
 	return v
 }
 
-// finishComment pulls the things that can hide in a comment -- an altitude, a
-// weather report -- and keeps the rest verbatim.
+// finishComment extracts the fields that can be embedded in a comment -- an
+// altitude, a weather report -- and keeps the rest verbatim.
 func finishComment(rec *leylinev1.DecodeRecord, s string, weather bool) {
 	if i := strings.Index(s, "/A="); i >= 0 && len(s) >= i+9 && allDigits(s[i+3:i+9]) {
 		ft, _ := strconv.Atoi(s[i+3 : i+9])
@@ -174,7 +174,7 @@ func parseLongitude(s string) (float64, bool) {
 }
 
 // ambiguousMinutes reads MMhh with trailing spaces standing for digits the
-// sender withheld, and answers the middle of the range they cover.
+// sender withheld, and returns the middle of the range they cover.
 func ambiguousMinutes(s string) (float64, bool) {
 	digits := []byte(s)
 	blanks := 0

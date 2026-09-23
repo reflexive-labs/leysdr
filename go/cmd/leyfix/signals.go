@@ -164,12 +164,12 @@ func (s *gaussNoise) span() (float64, float64) { return 0, 0 }
 type keySegment struct{ startS, endS float64 }
 
 // keyed gates another source on and off, so the fixture carries transmissions
-// with silence between them rather than a carrier that never stops. It is what
-// a recording's squelch gate is tested against: the file states exactly when it
-// was keyed, and a recording that cuts elsewhere is wrong about the air rather
-// than merely different (docs/design/recording.md, "Testing without hardware").
+// with silence between them rather than a carrier that never stops. A
+// recording's squelch gate is tested against it: the sidecar records exactly
+// when the source was keyed, so a recording that cuts anywhere else fails
+// (docs/design/recording.md, "Testing without hardware").
 //
-// The gating is hard-edged on purpose. A real transmitter's attack is a few
+// The gating is hard-edged. A real transmitter's attack is a few
 // milliseconds and the squelch's own detector is slower than that, so a ramp
 // here would measure the ramp rather than the daemon.
 type keyed struct {
@@ -177,8 +177,8 @@ type keyed struct {
 	rate     float64
 	segments []keySegment
 	// scratch holds the inner source's output for one block. The inner source
-	// keeps its own phase running through the gaps, which is what a transmitter
-	// does not do -- but a recorder cannot tell, and a phase that restarted
+	// keeps its phase running through the gaps. A real transmitter does not,
+	// but the recorder cannot see the difference, and restarting the phase
 	// would put a click at every key-up.
 	scratch []complex128
 }

@@ -249,7 +249,7 @@ func (d *Daemon) QueryRecords(ctx context.Context, q *leylinev1.RecordQuery) (*l
 		if q.GetJobId() != "" && q.GetJobId() != s.jobID {
 			continue
 		}
-		// A job that never heard the transmitter asked for is skipped whole, the way the store
+		// A job with no record from the requested transmitter is skipped whole, the way the store
 		// skips a file whose protocol or span cannot match.
 		if q.GetDeviceId() != "" && !s.hasDevice(q.GetDeviceId()) {
 			continue
@@ -277,8 +277,9 @@ func (d *Daemon) QueryRecords(ctx context.Context, q *leylinev1.RecordQuery) (*l
 	return page, nil
 }
 
-// hasDevice reports whether a kept job heard the transmitter named. The query's device_id names
-// the transmitter, not the radio, so a job is only skipped when none of its records match.
+// hasDevice reports whether a kept job has a record from the named transmitter. The query's
+// device_id names the transmitter, not the radio, so a job is only skipped when none of its
+// records match.
 func (s *storedJob) hasDevice(id string) bool {
 	for _, rec := range s.records {
 		if rec.GetDeviceId() == id {

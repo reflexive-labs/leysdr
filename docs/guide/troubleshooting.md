@@ -18,8 +18,8 @@ follows in brackets (`[DEVICE_BUSY]`). The exit status says which kind of failur
 
 `ley: the Leyline daemon is not running (socket ...). Start it with: ley daemon start` (exit 3)
 means nothing is answering on the socket. `ley daemon start`; if it says a stale socket is in the
-way, `ley daemon stop && ley daemon start`. `ley daemon status` is one line whose first word is
-the answer, and `ley daemon logs` shows why a start failed. Under launchd a clean stop stays
+way, `ley daemon stop && ley daemon start`. `ley daemon status` prints one line whose first word is
+the daemon's state, and `ley daemon logs` shows why a start failed. Under launchd a clean stop stays
 stopped and a crash is relaunched; `ley daemon install` is how the daemon comes back at login
 ([Installing](install.md)).
 
@@ -40,7 +40,7 @@ stopped and a crash is relaunched; `ley daemon install` is how the daemon comes 
   dongle `IN_USE` with a `0..0dB` gain column while nothing of yours is tuned, means another process
   (SDR++, GQRX, `rtl_tcp`) holds it. Quit that program; the daemon re-checks with a backoff of up to
   60 s (the `usb_claim_interface error` lines in the daemon log are librtlsdr reporting each check),
-  or just tune: a capture that opens the dongle clears the flag at once.
+  or tune: a capture that opens the dongle clears the flag at once.
 - `ley daemon logs` for other driver errors.
 
 Nooelec dongles often ship with serial `00000001`. Two identical serials get distinct ids by
@@ -86,7 +86,7 @@ The ones a newcomer meets first:
 | `ley: 2 channels are playing; pick one with --channel: ...` | several channels, none clearly yours | `ley set squelch -40 --channel 2` |
 | `ley: no channel matches "3" (a full id, id prefix, row number or frequency); pick one:` then rows `1  chan_…  146.520 MHz NFM` | the selector fit nothing; the rows are what exists | pick a row number or id from the list |
 | `ley: the radio is on 146.520 MHz with 1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway, or free it with: ley stop --all` | another channel rides on the capture and your frequency is outside its band | `ley tune 101.1 --retune`, or `ley stop all` first |
-| `1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k` (a warning, tune continues) | a bare number is MHz, and 1010 MHz is nothing in particular | `ley tune 1010k` if you meant AM broadcast |
+| `1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k` (a warning, tune continues) | a bare number is MHz, and 1010 MHz is not in any known band | `ley tune 1010k` if you meant AM broadcast |
 | `ley: the radio is busy: another client holds it; ley state shows who, and ley tune reuses a capture when the frequency fits [DEVICE_BUSY]` | another client holds the radio on a band that does not cover your frequency | `ley state` shows who; tune inside its band, or stop it |
 | `ley: no command or topic named "tunee".` with `Did you mean this?` and `tune` (exit 2) | a typo in the verb | take the suggestion; with no near match the topic list and `ley --help` follow instead |
 | `ley: 1 job is recording on this radio (job_01J…); retuning would leave a gap in it. Add --retune to move it anyway (the recording logs the gap), or stop it with: ley jobs cancel job_01J…` | a recording is running on the radio you asked to move | `ley tune … --retune` to accept the gap, or cancel the job |
@@ -99,5 +99,5 @@ The ones a newcomer meets first:
 
 `ley state` is the whole picture: every device, capture, channel and sink the daemon knows, and
 who created each. `ley daemon logs -f` follows the daemon. `ley --socket PATH` talks to a daemon
-on another socket. A bug report should carry `ley version` and `ley daemon status`, which name the
+on another socket. A bug report should carry `ley version` and `ley daemon status`, which identify the
 exact build.

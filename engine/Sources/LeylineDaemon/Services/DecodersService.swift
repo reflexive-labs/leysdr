@@ -2,7 +2,7 @@
 
 // leyline.v1.Decoders: what is installed, the live record stream and the store
 // (docs/design/decoders.md, "Decisions": "Records reach clients on their own service"). A meter
-// reading is a sample of a level and a record is a thing that was said, so this is not telemetry.
+// reading samples a level; a record is a decoded message. Records are not telemetry.
 
 import EngineCore
 import Foundation

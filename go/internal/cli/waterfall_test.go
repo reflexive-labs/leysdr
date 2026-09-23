@@ -90,8 +90,8 @@ func TestWaterfallFitsWidth(t *testing.T) {
 }
 
 // A dropped row draws its own line. Delivery is GAP_MARKED, and a gap that is
-// simply not drawn makes time compress: a reader would see a transmission as
-// shorter than it was, which is the one thing this view exists to report.
+// not drawn compresses time: a transmission would look shorter than it was,
+// and transmission length is what this view shows.
 func TestWaterfallDrawsAGap(t *testing.T) {
 	v := newTestWaterfall(ui.Style{Unicode: true, Width: 80}, 80, 0)
 	got := ui.Strip(v.gapRow(7))
@@ -105,7 +105,7 @@ func TestWaterfallDrawsAGap(t *testing.T) {
 
 // The scale is chosen once and held. If it moved, the same signal would change
 // shade because something else on the band got louder, and two rows could not
-// be compared -- which is the only reason to stack rows in the first place.
+// be compared.
 func TestWaterfallScaleIsHeld(t *testing.T) {
 	v := newTestWaterfall(ui.Style{Unicode: true, Width: 80}, 80, 0)
 	quiet := waterfallBins(1024, -1, 0, 7)
@@ -188,8 +188,8 @@ func TestWaterfallKeySwatchMatchesTheMap(t *testing.T) {
 
 // Against a daemon: waterfall asks for ROW_MAX because a burst shorter than a row must still be
 // drawn, and it says so once the daemon has answered with the looks it took. The claim is the
-// daemon's, not the CLI's -- printing it without asking would be a promise about DSP the client
-// never made.
+// daemon's, not the CLI's: printing it without asking would describe DSP the client does not
+// control.
 func TestWaterfallSaysHowManyLooksARowIs(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, context.Background(), sock, "waterfall", "146.52", "--count", "3", "--width", "60", "--rate", "10")

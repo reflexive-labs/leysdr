@@ -36,7 +36,7 @@ const waterfallRangeDb = 40
 // newest at the bottom, one shaded cell per column of band.
 //
 // The scale is chosen from the first rows and then held. Auto-scaling per row
-// would make the time axis lie: the same signal would change shade because
+// would make rows incomparable: the same signal would change shade because
 // something else on the band got louder, and a reader comparing two rows would
 // be comparing two different scales.
 type waterfallView struct {
@@ -97,7 +97,7 @@ func (v *waterfallView) header(cols int) []string {
 }
 
 // key is the legend: what each shade means, in dB over the floor. Without it
-// the picture is pretty and unreadable.
+// the shades cannot be read as levels.
 func (v *waterfallView) key() []string {
 	g := []rune(v.st.Glyphs().Shade)
 	segs := make([]headerSeg, 0, len(g))
@@ -167,9 +167,8 @@ func (v *waterfallView) gutter(elapsed float64) string {
 }
 
 // gapRow marks rows the daemon dropped. Delivery is GAP_MARKED, and a gap that
-// is simply not drawn makes time silently compress: the reader would see a
-// transmission as shorter than it was, which is the one thing this view exists
-// to report.
+// is not drawn silently compresses time: a transmission would look shorter than
+// it was, and transmission timing is what this view reports.
 func (v *waterfallView) gapRow(rows uint64) string {
 	g := v.st.Glyphs()
 	text := " " + plural(int(rows), "row") + " lost "

@@ -24,16 +24,16 @@ vocabulary of the third; a page for the third never re-explains the first's.
 
 ## Voice
 
-**Say what it does, and why, in the same breath.** A rule without its reason is a rule the next
-person breaks. The reason is usually one clause.
+**Say what it does, and why, in the same breath.** Give the reason with the rule; without it the
+next person will break the rule. The reason is usually one clause.
 
 | avoid | prefer |
 |---|---|
 | Use `--retune` to move the capture. | `tune` refuses to retune a capture other channels ride on, because moving it would silence them; `--retune` says you meant to. |
 | Clients should not ping on every data frame. | The daemon drops a connection that sends more than 200 control frames in 30 s, so a client that pings on every data frame loses every busy stream after about a second. |
 
-**Be honest about what does not exist.** Name what is not implemented and the milestone it waits
-on. A reader who finds the gap before the docs admit it stops trusting the docs.
+**Say what does not exist yet.** Name what is not implemented and the milestone it waits on. A
+reader who hits an undocumented gap stops trusting the docs.
 
 | avoid | prefer |
 |---|---|
@@ -41,31 +41,44 @@ on. A reader who finds the gap before the docs admit it stops trusting the docs.
 | The waterfall shows LoRa packets. | The waterfall is the right instrument, and ours cannot resolve the signal: a symbol is shorter than a row. |
 
 **Numbers are measured, and say where.** Every number in a design doc was measured before it was
-written down, and the doc says how (a fixture, a Monte Carlo run, a real handheld on a date). A
-number without a source is a guess, and a guess is labelled as one.
+written down, and the doc says how (a fixture, a Monte Carlo run, a real handheld on a date). An
+unmeasured number is labelled as a guess.
 
 | avoid | prefer |
 |---|---|
 | A settling time of about 200 ms is enough. | The tuner relocks in under a millisecond; the 218 ms is librtlsdr's USB queue, 32 buffers of 32768 bytes captured at the old frequency and delivered after the new one is set. |
 | The detector is accurate. | At M = 16 looks the threshold is 4.17 dB over the local floor, and against Gaussian noise through the real FFT and floor estimator it produced 0 false detections in 60 sweeps. |
 
-**Never call a peak a signal.** The detector stays honest (invariant 12). A local maximum of one
-row is a *peak*, presentation only; a *detection* is what the detector reports with its floor, its
-SNR and how many looks saw it; a *carrier* is what a person concludes. "Loudest bins" once quoted
-noise as carriers, and that is the failure every word here guards against.
+**Never call a peak a signal.** Invariant 12 limits what the detector may claim. A local maximum
+of one row is a *peak*, presentation only; a *detection* is what the detector reports with its
+floor, its SNR and how many looks saw it; a *carrier* is what a person concludes. An early "loudest bins"
+table reported noise as carriers; these three words exist to prevent that.
 
 **Tell the reader what to type next.** Every error line ends with a command; every guide section
 ends with the next thing to try; every "not yet" names what to use today.
 
-**Recorded, not typed.** A transcript in a code block was produced by running the command, against
+**Transcripts are recorded.** A transcript in a code block was produced by running the command, against
 the contract's fake daemon or a real radio, and the page says which. Ids, model names and levels
 differ on the reader's machine; say so once per page. Never hand-edit a transcript into a shape
 the renderer does not print.
 
 **Plain words, active voice, no sales.** The daemon *drops* the oldest row; it does not "may drop"
 it. Nothing here is seamless, powerful, robust, simple, easy, elegant, blazing or magical; say
-what it does and the reader will decide. Do not compare with other SDR software; describe
-Leyline's approach and stop.
+what it does. Do not compare with other SDR software; describe Leyline's approach and stop.
+
+**No literary register.** The readers are hams and RF hackers; write the way a good datasheet or
+application note reads. Use the standard RF and DSP term (LO, decimation, noise floor, FFT bin,
+USB transfer queue) rather than a metaphor for it. Specifically:
+
+- No aphorisms that restate a rule as a maxim ("a default the user cannot see is a default they
+  cannot change"). State the fact once.
+- No personification. Code, hardware and documents do not promise, admit, lie, stay honest or
+  answer the hand; say what they do ("the label warns that auto gain is poor on weak signals").
+- No "X, not Y" or chiasmus unless the reader would otherwise assume Y.
+- No dramatic framing: "This is the point", "That is the trap", "on purpose", "without apology",
+  bold or italics for emphasis rather than lookup.
+- Prefer the precise verb over "says" and "names": prints, shows, specifies, lists, returns.
+- A sentence that needs two reads is two sentences in normal word order.
 
 **Open with the reader's question.** A section's first sentence names what it answers:
 "`ley spectrum` answers *what is on the air now*. Three things it cannot answer:". A design doc's
@@ -172,7 +185,7 @@ invariants, written as instructions to an agent and used as the review checklist
 
 ## `ley`'s own prose
 
-The CLI is documentation the user cannot avoid, so it follows the tightest rules:
+Every user reads the CLI's output, so it follows the tightest rules:
 
 - An error line reads `ley: <what went wrong>. <what to do next>`, with the daemon's stable code
   in brackets when there is one (`[DEVICE_BUSY]`). The sentence is the verb's own words and is
@@ -180,8 +193,8 @@ The CLI is documentation the user cannot avoid, so it follows the tightest rules
 - Everything meant for a person goes to stderr; stdout is for tables, ids, JSON and rows, so a
   pipe always gets something parseable.
 - A banner states the decisions the verb made and why (`using NFM: 2 m amateur band default`,
-  `Squelch auto → -80 dBFS (10 dB above the band's noise floor)`), because a default the user
-  cannot see is a default they cannot change.
+  `Squelch auto → -80 dBFS (10 dB above the band's noise floor)`), so the user can see a default
+  and override it.
 - Help texts are golden files (`go/internal/cli/testdata/help/`). A wording change is a deliberate,
   reviewed diff, and the guide quotes the help rather than paraphrasing it.
 - A planned verb (`record`, `watch`) exists as a stub that says what is coming and what to use
@@ -196,8 +209,8 @@ about behaviour: `engine: NFM full scale follows the channel's bandwidth`, not
 The body says why, in prose; the tests say what. Every commit is signed off (`git commit -s`).
 
 A code comment says why, and cites the document that owns the rule by path and heading; the code
-says what. A comment that promises behaviour the code does not have is a bug, and the v1 review
-found several, so a comment changes in the same commit as the code it describes.
+says what. A comment that describes behaviour the code does not have is a bug (the v1 review
+found several), so a comment changes in the same commit as the code it describes.
 
 ## Before a documentation change lands
 

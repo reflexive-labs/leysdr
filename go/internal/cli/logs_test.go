@@ -66,8 +66,8 @@ func TestParseLogLine(t *testing.T) {
 		}, true},
 		{
 			// A short tag is not the module repeating itself: "io" ends
-			// "leyline.audio" by accident, and dropping it would lose what the
-			// line came to say.
+			// "leyline.audio" by accident, and dropping it would lose part of
+			// the message.
 			"short source that says something new",
 			"2026-09-09T04:13:01+0000 info leyline.audio: [IO] device stalled",
 			logLine{date: "2026-09-09", clock: "04:13:01", level: "info", label: "leyline.audio", subsys: "audio", msg: "[IO] device stalled"},

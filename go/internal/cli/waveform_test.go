@@ -159,10 +159,10 @@ func TestWaveformBlanksAClosedSquelch(t *testing.T) {
 	}
 }
 
-// The demod tap's DC offset is the tuning error, and an editor's view of a
-// clip shifted off its centre line says nothing the scope's trace does not say
-// better: the offset comes out of the envelope and the levels both, and the
-// slice still reports the offset it removed.
+// The demod tap's DC offset is the tuning error, and the scope already shows
+// it better than a clip shifted off its centre line would: the offset comes
+// out of the envelope and the levels both, and the slice still reports the
+// offset it removed.
 func TestWaveformRemovesTheDemodDC(t *testing.T) {
 	var a waveformAcc
 	a.start(4096, true)

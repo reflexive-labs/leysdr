@@ -3,7 +3,7 @@
 // Region 4: the waterfall. The Metal view draws rows from the feed's ring, newest at the top,
 // one row per display pixel at 30 rows a second; SwiftUI draws what sits over it: the tuned
 // channel, the pointer's hairline and badge, the time axis in seconds. Every gesture is handled
-// by the Metal view (it owns the mouse, through `ChartMouse` like the spectrum) and lands in
+// by the Metal view (it handles the mouse, through `ChartMouse` like the spectrum) and lands in
 // `AppSession.tune(to:)`.
 
 import Foundation
@@ -169,7 +169,7 @@ struct WaterfallMetalView: NSViewRepresentable {
     }
 }
 
-/// An MTKView that owns the mouse through `ChartMouse`, every event handed up as a point in
+/// An MTKView that handles the mouse through `ChartMouse`, every event handed up as a point in
 /// the view's coordinates (origin top-left, points).
 final class InteractiveMetalView: MTKView {
     let mouse = ChartMouse()
@@ -239,7 +239,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     var floorDB: Float = .nan
     var fadeDB: Float = 0
     var rangeDB: Float = SpectrumFeed.fallbackRangeDB
-    /// Why there is no pipeline, in the compiler's or Metal's words; nil when it came up.
+    /// Why there is no pipeline, as the compiler's or Metal's error text; nil when it came up.
     private(set) var problem: String?
     var problemReported = false
     private(set) var frames = 0
@@ -326,9 +326,10 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         signposter.endInterval("draw", state)
     }
 
-    /// The ring texture, or nil while Metal is refusing one. A refusal says so in the window
+    /// The ring texture, or nil while Metal is refusing one. A refusal is reported in the window
     /// once and is retried at most once a second: `draw(in:)` runs at the row rate, so an
-    /// ungated retry would ask thirty times a second and the panel would stay dark without a word.
+    /// ungated retry would ask thirty times a second and the panel would stay dark without an
+    /// error.
     private func makeRingTexture(device: MTLDevice, bins: Int) -> MTLTexture? {
         guard CFAbsoluteTimeGetCurrent() - lastTextureFailure >= 1 else { return nil }
         let d = MTLTextureDescriptor.texture2DDescriptor(

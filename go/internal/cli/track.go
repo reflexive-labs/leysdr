@@ -279,8 +279,8 @@ func trackDecodeFailure(app *App, o trackOptions, err error) error {
 	return err
 }
 
-// trackSilence is the decoder's own entity timeout, which is the only honest answer to "when
-// should a row go". A protocol the daemon has no manifest for keeps the design doc's default.
+// trackSilence is the decoder's own entity timeout, which decides when a row expires. A protocol
+// the daemon has no manifest for keeps the design doc's default.
 func trackSilence(ctx context.Context, c *leyline.Client, protocol string) time.Duration {
 	const fallback = 30 * time.Minute
 	resp, err := c.ListDecoders(ctx)

@@ -5,7 +5,7 @@ import XCTest
 @testable import EngineCore
 
 /// Power of one tone in a block, in dB relative to full scale, by Goertzel over a Hann window.
-/// The window is what keeps a 1 kHz voice tone out of the 80 and 120 Hz answers: at a 20-bin
+/// The window keeps a 1 kHz voice tone out of the 80 and 120 Hz measurements: at a 20-bin
 /// distance its leakage is far below anything being compared here.
 private func tonePowerDB(_ x: [Float], rate: Double, frequency: Double, size: Int) -> Double {
     precondition(x.count >= size)
@@ -30,9 +30,9 @@ private func tonePowerDB(_ x: [Float], rate: Double, frequency: Double, size: In
 private struct TapUnderrun: Error {}
 
 /// The demod tap: what the detector produced, before the conditioning that makes it listenable.
-/// Every assertion here is a thing the audio tap cannot show, which is the reason the tap exists.
+/// Every assertion here checks something the audio tap cannot show.
 final class DemodTapTests: XCTestCase {
-    /// Collect both taps of one fixture channel at once, so the two are the same air.
+    /// Collect both taps of one fixture channel at once, so both see the same signal.
     private func run(fixture name: String, seconds: Double = 0.7) async throws -> (audio: [Float], demod: [Float], rate: Double) {
         let path = Fixtures.dir + "/" + name
         guard FileManager.default.fileExists(atPath: path) else {
@@ -64,7 +64,7 @@ final class DemodTapTests: XCTestCase {
         return (listener.all, scope.all, Double(channel.audioRate))
     }
 
-    /// The CTCSS tone the sidecar names is on the discriminator and inaudible in the audio: the
+    /// The CTCSS tone the sidecar specifies is on the discriminator and inaudible in the audio: the
     /// 300 Hz high-pass that makes it inaudible is exactly what the demod tap is taken before.
     func testNFMDemodTapCarriesThePLTone() async throws {
         let (audio, demod, rate) = try await run(fixture: "nfm_pl.cf32")
@@ -84,15 +84,15 @@ final class DemodTapTests: XCTestCase {
         let heard = tonePowerDB(audio, rate: rate, frequency: 100, size: size)
         // Two cascaded 300 Hz poles put 100 Hz about 20 dB down and the de-emphasis make-up gain
         // hands some 6 dB of that back, so the listener gets the tone about 14 dB under the tap:
-        // on the discriminator it is a signal, in the audio a residue.
+        // it is clearly present on the discriminator and mostly removed from the audio.
         XCTAssertLessThan(heard, tone - 12, "the listener hears \(heard) dB where the tap has \(tone) dB")
     }
 
-    /// AM: the envelope includes the carrier as DC, which is the level a tuning eye wants; the audio
-    /// has it blocked, so its mean is nothing.
+    /// AM: the envelope includes the carrier as DC, which is the level a tuning indicator needs;
+    /// the audio has it blocked, so its mean is near zero.
     func testAMDemodTapKeepsTheCarrierAsDC() async throws {
         let (audio, demod, _) = try await run(fixture: "am_tone.cf32")
-        // The second half only: the DC block and the AGC both start from nothing, and their settling
+        // The second half only: the DC block and the AGC both start from zero, and their settling
         // is a transient of the first block, not a property of either tap.
         func mean(_ x: [Float]) -> Double {
             let tail = x.suffix(x.count / 2)
@@ -104,8 +104,8 @@ final class DemodTapTests: XCTestCase {
         XCTAssertLessThan(abs(mean(audio)), carrier / 20, "audio mean \(mean(audio)) against carrier \(carrier)")
     }
 
-    /// A closed squelch silences the listener and nobody else: between words is when the demod tap
-    /// earns its keep.
+    /// A closed squelch mutes the audio tap only: the demod tap keeps producing between
+    /// transmissions, which is where it is most useful.
     func testClosedSquelchZeroesAudioAndNotTheDemodTap() throws {
         let rate: UInt64 = 240_000
         let core = try ChannelDSPCore(captureRate: rate,
@@ -126,8 +126,8 @@ final class DemodTapTests: XCTestCase {
         XCTAssertTrue(scope.all.contains { abs($0) > 0.1 }, "the detector's output keeps flowing while the squelch is shut")
     }
 
-    /// Nobody watching costs the demodulator nothing: the conditioned block a listener gets is the
-    /// same whether or not a demod sink is attached beside it.
+    /// An attached demod sink does not change the demodulator's output: the conditioned block a
+    /// listener gets is the same whether or not a demod sink is attached beside it.
     func testAudioIsUnchangedByTheTapBeingAvailable() throws {
         let rate: UInt64 = 240_000
         let block = 4096
@@ -185,7 +185,7 @@ final class DemodTapTests: XCTestCase {
         XCTAssertEqual(tapped.map { abs($0) }.max() ?? 0, 0.5, accuracy: 0.1)
     }
 
-    /// A raw-IQ channel has no detector, so there is nothing to tap and the attach says so rather
+    /// A raw-IQ channel has no detector, so there is nothing to tap and the attach fails rather
     /// than serving silence.
     func testRawIQChannelRefusesTheDemodTap() async throws {
         let capture = DefaultCaptureEngine(device: try FilePlaybackDevice(path: Fixtures.dir + "/nfm_pl.cf32", loop: true, realtime: false),

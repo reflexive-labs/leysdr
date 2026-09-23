@@ -8,9 +8,9 @@ import "github.com/dpup/leysdr/go/pkg/decoders/ax25"
 // with a zero stuffed after every five ones, and a 16-bit X.25 FCS (CRC-16-CCITT,
 // polynomial 0x8408, init 0xFFFF, complemented, low byte first). That is bit
 // for bit what pkg/decoders/ax25 already implements, so the deframer, the FCS
-// and the bit-stuffing encoder are reused rather than copied -- there is one
-// HDLC in this repository, not two. The one thing AIS does not share is the
-// payload, which bits.go reads as a big-endian bit field where AX.25 reads
+// and the bit-stuffing encoder are reused rather than copied, so the repository
+// has a single HDLC implementation. AIS does not share the payload format:
+// bits.go reads the payload as a big-endian bit field where AX.25 reads
 // octets; the byte assembly is identical because both send each octet LSB
 // first, so the deframer's bytes are already the AIS octets Parse expects.
 //

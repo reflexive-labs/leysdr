@@ -55,7 +55,8 @@ func packType1(r aisReport) []byte {
 // so the fixture and the decoder share one definition of the modulation.
 //
 // The pattern is one second long and repeats: the two bursts are a few tens of
-// milliseconds of the second, and the rest is the quiet a channel mostly is.
+// milliseconds of the second, and the rest is silence, as on a real channel
+// most of the time.
 type aisPacket struct {
 	rate, carrierHz, devHz, dbfs float64
 	reports                      []aisReport

@@ -2,7 +2,7 @@
 
 // Recording (docs/design/recording.md): the part writer's files, the gate state machine driven
 // with synthetic transitions and no DSP, retention, and the restart repair. The parts that need a
-// radio to hear are `RecordingJobTests`; these need nothing at all.
+// radio signal are `RecordingJobTests`; these need nothing at all.
 
 import EngineCore
 import Foundation
@@ -166,7 +166,7 @@ final class RecordingTests: XCTestCase {
         // The quiet runs from the close transition at 2 s, not from the cut at 3 s.
         XCTAssertTrue(g.advance(to: 3 * rate + rate / 2).isEmpty)
         XCTAssertEqual(g.advance(to: 4 * rate), [.quiet])
-        // Once quiet has ended the job the machine says nothing more.
+        // Once quiet has ended the job the machine emits nothing more.
         XCTAssertTrue(g.advance(to: 10 * rate).isEmpty)
     }
 
@@ -328,8 +328,8 @@ extension RecordingTests {
         XCTAssertThrowsError(try WAVReader(path: dir + "/nothing-here.wav"))
     }
 
-    /// A part a daemon restart left with a zero-length data chunk still plays: the file's own size
-    /// is what it holds, which is the same rule the restart repair follows.
+    /// A part a daemon restart left with a zero-length data chunk still plays: the data length is
+    /// taken from the file's size, which is the same rule the restart repair follows.
     func testTheReaderPlaysAPartLeftWithAPlaceholderLength() throws {
         let dir = try tempDir("rec")
         defer { try? FileManager.default.removeItem(atPath: dir) }

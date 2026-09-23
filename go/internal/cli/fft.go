@@ -24,9 +24,8 @@ const FFTMagic = "LEYF"
 // FloorDb is the row's median bin, computed here rather than sent by the
 // daemon: no floor exists anywhere in the FFT wire contract. It is carried so
 // that `ley fft` and `ley spectrum --json` report the same number for the same
-// row -- two tools disagreeing about where the noise floor is, is how two
-// screens end up contradicting each other. `--format bin` has no room for it
-// and carries none.
+// row; otherwise the two screens would contradict each other. `--format bin`
+// has no room for it and carries none.
 type FFTRow struct {
 	Seq         uint64    `json:"seq"`
 	SampleIndex uint64    `json:"sample_index"`

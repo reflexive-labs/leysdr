@@ -30,7 +30,7 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
 
-// Decoder is the one thing a plugin implements. Feed is called once per frame,
+// Decoder is the interface a plugin implements. Feed is called once per frame,
 // in order, on a single goroutine; emit may be called any number of times
 // during the call and not after it returns.
 //
@@ -185,8 +185,8 @@ func runFramed(ctx context.Context, r io.Reader, w io.Writer,
 			_ = out.Flush()
 			return err
 		}
-		// Flush per frame: a record is a thing that was said, and a client
-		// waiting on the live stream should not wait on the next packet too.
+		// Flush per frame so a client on the live stream gets each record
+		// without waiting for the next packet.
 		if err := out.Flush(); err != nil {
 			return fmt.Errorf("plugin: flush: %w", err)
 		}
@@ -194,9 +194,9 @@ func runFramed(ctx context.Context, r io.Reader, w io.Writer,
 }
 
 // decodePayload turns a frame's bytes into float32 audio. The daemon sends F32
-// little-endian (docs/design/decoders.md, "Transport: stdio"); S16 is handled
-// because AudioParams can name it and a plugin that refused would be lying
-// about the contract it implements.
+// little-endian (docs/design/decoders.md, "Transport: stdio"); S16 is also
+// handled because AudioParams can specify it, and a plugin that rejected it
+// would not implement the whole contract.
 func decodePayload(dst []float32, payload []byte, format leylinev1.AudioSampleFormat) ([]float32, error) {
 	switch format {
 	case leylinev1.AudioSampleFormat_S16:

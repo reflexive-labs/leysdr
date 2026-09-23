@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The mouse on a chart, once: the cursor teaches the gesture, a press that travels is a drag,
-// one that does not is a click, a notch of the wheel is a fine step. The waterfall's Metal view
-// and the spectrum's transparent catcher both forward their events here, so the two panels
-// answer the hand the same way and the pointer's hairline, kept in `AppSession`, shows on both.
+// Mouse handling shared by both charts: the cursor shape indicates the gesture, a press that
+// moves is a drag, one that does not is a click, a notch of the wheel is a fine step. The
+// waterfall's Metal view and the spectrum's transparent catcher both forward their events here,
+// so both charts handle mouse input the same way and the pointer's hairline, kept in
+// `AppSession`, shows on both.
 
 import AppKit
 import SwiftUI
@@ -56,7 +57,7 @@ final class ChartMouse {
 
     // One fine step per notch of travel, because a trackpad reports precise deltas of a point
     // or two and keeps reporting them after the fingers lift: a step per event ran the frequency
-    // away on one flick. Momentum is not a hand on the wheel, so it is ignored, and a mouse
+    // away on one flick. Momentum events are not user input, so they are ignored, and a mouse
     // wheel's line counts as a whole notch.
     func scroll(_ event: NSEvent) {
         guard event.momentumPhase.isEmpty else { return }
@@ -72,8 +73,8 @@ final class ChartMouse {
     }
 }
 
-/// A transparent view over the spectrum that owns the mouse the way the waterfall's Metal view
-/// does, with the same point convention (origin top-left, points).
+/// A transparent view over the spectrum that handles mouse events the way the waterfall's Metal
+/// view does, with the same point convention (origin top-left, points).
 final class ChartCatcherView: NSView {
     let mouse = ChartMouse()
     private var tracking: NSTrackingArea?
@@ -131,7 +132,7 @@ struct ChartCatcher: NSViewRepresentable {
 }
 
 /// The pointer's hairline at its frequency, on whichever chart, and on the chart the pointer
-/// is over, a badge with the value, not the verb.
+/// is over, a badge showing the frequency (not an action hint).
 struct PointerOverlay: View {
     @Environment(AppSession.self) private var session
     let columns: Columns

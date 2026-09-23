@@ -12,7 +12,7 @@ Every frame on both planes carries a sample-indexed timestamp: `(capture_id, sam
 
 - Alignment across streams is exact by construction — an FFT row, a detection, and an audio block from the same capture can be placed on one timeline without clock math in clients.
 - Wall-clock is derived, never carried per-frame. Clients that want it apply the anchor.
-- Recordings store the anchor in metadata, so replayed captures keep a truthful timeline. This is the foundation the V2 DVR and terrain views stand on.
+- Recordings store the anchor in metadata, so replayed captures keep an accurate timeline. This is the foundation the V2 DVR and terrain views stand on.
 
 ## Delivery policy
 
@@ -55,7 +55,7 @@ A gRPC server-stream of typed messages, subscribed with a scope filter (daemon, 
 - **Detection** — from the V0 detector: center frequency, bandwidth, SNR, first/last seen timestamps, optional modulation guess. Emitted during scans and by watch jobs.
 - **Capture activity** — the aggregate signal agents use for don't-disturb: interactive-write recency, live audio sinks. Derived by the daemon from control-plane traffic.
 
-Telemetry messages are full protobuf (unlike bulk payloads) — they are small, and typed schema is the point. All carry the sample timebase. Delivery is drop-oldest with sequence numbers: when a subscriber falls behind, the daemon evicts the oldest unread readings (never the newest) and advances `seq` past each one, so a gap in `seq` is the only trace of a missed meter reading — not an event worth recovering.
+Telemetry messages are full protobuf (unlike bulk payloads) — they are small, and the typed schema is why they exist as a separate plane. All carry the sample timebase. Delivery is drop-oldest with sequence numbers: when a subscriber falls behind, the daemon evicts the oldest unread readings (never the newest) and advances `seq` past each one, so a gap in `seq` is the only trace of a missed meter reading — not an event worth recovering.
 
 Rationale for a separate plane rather than folding into control events: control events describe state someone changed; telemetry describes what the radio observes. Clients almost always want one without the other — the CLI tuning a channel doesn't want 30 Hz meters; a meter widget doesn't want session lifecycle. Separate subscriptions keep both simple.
 

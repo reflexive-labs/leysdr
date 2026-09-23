@@ -40,8 +40,8 @@ type WaveformRow struct {
 	PeakDbfs    float64 `json:"peak_dbfs"`
 	RmsDbfs     float64 `json:"rms_dbfs"`
 	// SquelchOpen is the daemon's own state, taken as open until its first
-	// meter arrives: a view that blanked a column before then would be hiding
-	// signal it has rather than reporting one it does not.
+	// meter arrives: blanking a column before then could hide signal the view
+	// actually received.
 	SquelchOpen bool `json:"squelch_open"`
 }
 
@@ -196,8 +196,8 @@ func (a *waveformAcc) add(v float64) {
 
 // column closes the slice into what the picture and a JSON row are drawn from.
 // The demod tap's DC offset is taken out first -- it is the tuning error, and
-// an editor's view of a clip shifted off its centre line says nothing the
-// scope's trace does not say better -- so the envelope is symmetric about the
+// an editor's view of a clip shifted off its centre line shows nothing the
+// scope's trace does not show better -- so the envelope is symmetric about the
 // centre by construction rather than by drawing.
 func (a *waveformAcc) column(removeDC bool, seconds float64) waveformCol {
 	if a.n == 0 {
@@ -242,8 +242,8 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
 	fullScaleHz := scopeFullScaleHz(ap, s.channel)
-	// The squelch is the daemon's to report and the view's only to draw with.
-	// The stream's error is deliberately not read: a telemetry stream that
+	// The squelch state comes from the daemon; the view only draws with it.
+	// The stream's error is not read: a telemetry stream that
 	// ends leaves the clip drawing, on the last state it knew.
 	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
@@ -306,10 +306,10 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 			}
 		case m, ok := <-msgs:
 			if !ok {
-				// The daemon stopped saying: a header that kept naming the
-				// squelch, and columns kept blank on its account, would be
-				// drawn from a reading nobody is confirming (scope and levels
-				// forget theirs the same way).
+				// The telemetry stream ended: a header that kept showing the
+				// squelch, and columns kept blank because of it, would be
+				// drawn from a stale reading (scope and levels forget theirs
+				// the same way).
 				msgs = nil
 				frame.forgetTelemetry()
 				continue

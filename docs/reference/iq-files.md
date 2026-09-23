@@ -45,8 +45,8 @@ sidecar exists; the engine converts on the fly. Everything Leyline writes is `.c
   the segments in order and in seconds from the start of the file. `leyfix check` verifies them by
   energy in the reference chain, as it does every other expectation.
 - `metadata` is the free-form map that `Resource.metadata` exposes for recordings. A recording's
-  part carries its mode there rather than in an `expect` entry -- it is a recording of something,
-  not a fixture asserting anything -- and `ley play` reads `metadata.mode` to seed the channel.
+  part carries its mode there rather than in an `expect` entry, because a recording asserts
+  nothing about its content, and `ley play` reads `metadata.mode` to seed the channel.
 
 ### A recording's part sidecar
 
@@ -90,16 +90,16 @@ and the channelizer's NCO are exercised.
 | `nfm_pl_69` | NFM voice plus a 69.3 Hz CTCSS tone | detect 69.3, **not** 67.0 |
 | `nfm_hum` | NFM voice plus 100.0 Hz at only 40 Hz deviation | detect **nothing**: this is mains hum |
 | `nfm_pl_only` | keyed carrier with a 123.0 Hz CTCSS tone and no voice | detect 123.0 |
-| `nfm_keyed` | the `nfm_tone` carrier keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between and 1.0 s before the first | a gated recording: `record.segments` states the three transmissions. Always generated at its own length (10.5 s) whatever `--duration` says, because the schedule *is* the fixture: the 3 s gaps are inside the recorder's default 5 s hang and outside a 1 s one, so one file proves both rules |
+| `nfm_keyed` | the `nfm_tone` carrier keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between and 1.0 s before the first | a gated recording: `record.segments` states the three transmissions. Always generated at its own length (10.5 s) whatever `--duration` says, because the timing is what the fixture tests: the 3 s gaps are inside the recorder's default 5 s hang and outside a 1 s one, so one file tests both rules |
 
 ### The sub-audible set
 
-These five exist to keep a CTCSS detector honest, and each one is a specific way of being wrong:
+These five test a CTCSS detector against specific failure modes:
 
 - **`nfm_pl_67` and `nfm_pl_69` are the discrimination pair.** 67.0 and 69.3 Hz are 2.3 Hz apart,
   the tightest spacing on the EIA ladder. A detector whose resolution is one bin width cannot tell
-  them apart, and one that snaps to the nearest standard tone will confidently name the wrong one.
-  Naming the wrong tone is worse than naming none.
+  them apart, and one that snaps to the nearest standard tone will report the wrong one with high
+  confidence. Reporting the wrong tone is worse than reporting none.
 - **`nfm_hum` is the documented false positive.** 50 Hz mains hum lands on exactly 100.0 Hz at its
   second harmonic, is perfectly stable, and passes every frequency test there is -- and 100.0 Hz is
   one of the most common real PL tones. Only the deviation separates them: hum is tens of Hz where a
@@ -108,7 +108,7 @@ These five exist to keep a CTCSS detector honest, and each one is a specific way
 - **`nfm_pl_only` is the start of every transmission**, before anyone speaks: a keyed carrier with a
   tone and nothing else to distinguish it from.
 
-The `sub_audible` block of an `expect` entry records what a detector should say:
+The `sub_audible` block of an `expect` entry records what a detector should report:
 
 ```json
 "sub_audible": {
@@ -120,16 +120,16 @@ The `sub_audible` block of an `expect` entry records what a detector should say:
 ```
 
 The three fixtures carrying a real 700 Hz PL tone expect a much lower **audio** SNR (8 dB, measured
-~11) than `nfm_tone`'s 30. That is a fact about the signal, not a slack expectation: 700 Hz of
+~11) than `nfm_tone`'s 30. The lower threshold comes from the signal, not a loose test: 700 Hz of
 sub-audible deviation is only 11 dB under the 2.5 kHz voice deviation, the 300 Hz high-pass takes
 about 20 dB off it, and de-emphasis then pulls the 1 kHz tone down by another 10 while leaving the
 sub-audible residue alone. `nfm_tone` remains the fixture that pins audio quality; these exist to
 exercise the tone detector.
 
-`detect` is deliberately separate from `tone_hz`: a fixture can carry a tone and still expect no
+`detect` is separate from `tone_hz`: a fixture can carry a tone and still expect no
 detection, which is exactly what `nfm_hum` asserts.
 
 `leyfix check fixtures/` re-reads each fixture and verifies `expect` with a straightforward float64
 reference chain in Go (mix, FIR, decimate, discriminate). It is test tooling, not the engine —
-the engine's Swift fixture tests are the acceptance tests of record — but it proves the fixtures are
-sane on any platform and catches generator regressions in CI.
+the engine's Swift fixture tests are the acceptance tests of record — but it checks the fixtures
+on any platform and catches generator regressions in CI.

@@ -80,7 +80,7 @@ final class PluginProcessTests: XCTestCase {
         // Cancelling a decode job closes the plugin's stdin while the drain may still be handing
         // it a frame. The write used to ask the closed NSFileHandle for its descriptor, which
         // raises an Objective-C exception Swift cannot catch and took the daemon down (DEC-22).
-        // Now a frame after stop is a drop, the same answer as a plugin that stopped reading,
+        // Now a frame after stop is a drop, the same result as a plugin that stopped reading,
         // and a second stop is a no-op rather than a second close.
         let plugin = PluginProcess(name: "fake", executable: fakeDecoderPath(), args: [],
                                    directory: NSTemporaryDirectory())

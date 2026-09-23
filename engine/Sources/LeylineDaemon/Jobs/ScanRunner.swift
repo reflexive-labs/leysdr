@@ -26,7 +26,7 @@ struct ScanHit: Sendable {
 ///
 /// `write` runs on the hot path (invariant 4): it copies into a preallocated slot and returns. All
 /// the analysis -- a local median per bin over 192 reference bins, grouping, moments -- happens on
-/// the sweep's own task, which is where it belongs.
+/// the sweep's own task.
 final class RowCollector: SpectrumSink, @unchecked Sendable {
     /// One collected row. The dB samples live in raw storage rather than a Swift Array because an
     /// Array is copy-on-write: handing a slot's Array to the draining task makes the storage
@@ -150,7 +150,7 @@ enum ScanRunner {
 
     /// Sweeps and returns what it found, calling `onStep` after each one and `onHit` as they are
     /// found. Cancellation stops the sweep and returns the partial answer rather than throwing it
-    /// away: somebody who interrupts a long sweep still wants what it had.
+    /// away: a user who interrupts a long sweep still gets the results so far.
     static func sweep(lease: any CaptureLease, plan: SweepPlan, dwellMs: UInt32,
                       onStep: @Sendable (Progress) async -> Void,
                       onHit: @Sendable (ScanHit) async -> Void) async -> Result
@@ -187,7 +187,7 @@ enum ScanRunner {
         // What each step actually looked at, and how many rows it got. The denominator of the
         // evidence ratio is computed from this at the end rather than accrued as the sweep goes:
         // a signal first seen in step 5 was still looked for by steps 1 to 4, and crediting only
-        // the steps that ran after it appeared is how a half-missed carrier reads 8/8.
+        // the steps that ran after it appeared would make a half-missed carrier read 8/8.
         var looked: [(windows: [SweepPlan.Window], rows: Int)] = []
         var failure: EngineError?
         for (index, step) in plan.steps.enumerated() {
@@ -197,9 +197,9 @@ enum ScanRunner {
             do {
                 try await lease.retune(centerHz: step.centerHz)
             } catch {
-                // The radio went away mid-sweep. Everything found before that is still true, and
-                // has already been published on telemetry; throwing it away here would leave a
-                // subscriber holding detections the Scan denies.
+                // The radio went away mid-sweep. Everything found before that is still valid and
+                // has already been published on telemetry; discarding it here would leave a
+                // subscriber holding detections the Scan does not list.
                 failure = (error as? EngineError) ?? EngineError.deviceIO("\(error)", target: "")
                 break
             }
@@ -218,7 +218,7 @@ enum ScanRunner {
             let pFalse = SpectrumDetect.sweepPFalse(expected: falseAlarmBudget, bins: sub.actualBins,
                                                     rowsPerStep: rowsPerStep, steps: plan.steps.count)
             // A backstop, not the schedule: the step ends when it has its rows. Twice the settle
-            // and dwell plus a second covers a device that is slower than its own arithmetic says.
+            // and dwell plus a second covers a device that is slower than its nominal rate implies.
             let deadline = ContinuousClock.now.advanced(
                 by: .nanoseconds(Int64(2 * (settleNs(settle, rate: plan.sampleRateHz) + dwellNs) + 1_000_000_000)))
 
@@ -232,10 +232,9 @@ enum ScanRunner {
                           row.time.sampleIndex >= believeFrom else { continue }
                     believedRows += 1
                     for raw in [step.low, step.high] {
-                        // A step's window is what the radio can see from there; the answer is
-                        // what was asked for. Without the intersection a narrow request reports
-                        // signals from either side of it, which is a scan answering a question
-                        // nobody put.
+                        // Clip the step's window (what the radio covers from this centre) to
+                        // the requested range. Without the intersection a narrow request reports
+                        // signals from either side of it.
                         let window = raw.clamped(to: plan.covered)
                         guard window.highHz > window.lowHz else { continue }
                         if !stepWindows.contains(window) { stepWindows.append(window) }
@@ -284,8 +283,8 @@ enum ScanRunner {
             if believedRows >= rowsPerStep { stepsDone += 1 }
             await onStep(Progress(step: index + 1, steps: plan.steps.count, found: merged.count))
         }
-        // Every row of every step whose window covered this frequency is a chance the signal had
-        // to appear, whether or not that step found it.
+        // Every row of every step whose window covered this frequency counts as a chance to detect
+        // the signal, whether or not that step found it.
         for i in merged.indices {
             var chances = 0
             for step in looked where step.windows.contains(where: { $0.contains(merged[i].centerHz) }) {

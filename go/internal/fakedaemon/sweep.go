@@ -9,7 +9,7 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
 
-// Where a sweep points the radio, and which part of each span it believes -- the engine's
+// Where a sweep points the radio, and which part of each span it analyses -- the engine's
 // SweepPlan geometry. Two facts drive it: the DC spike sits at the exact capture centre, and the
 // span's outer edges roll off. So a step analyses only the two quarter-bands between guardFraction
 // and edgeFraction either side of centre, and the sweep advances half a window, which puts the
@@ -100,7 +100,7 @@ func planSweep(minHz, maxHz, rate uint64, ranges []*leylinev1.FrequencyRange) *s
 	}
 	seen := map[uint64]bool{}
 	for _, raw := range centers {
-		// Do not tune outside the device's range; a clamped centre still analyses honestly, it
+		// Do not tune outside the device's range; a clamped centre still analyses correctly, it
 		// just overlaps its neighbour more. A clamped run can repeat a centre, and sweeping the
 		// same point twice is wasted dwell.
 		hz := hzAt(math.Max(float64(lowestCenter), math.Min(float64(highestCenter), raw)))
@@ -119,7 +119,7 @@ func planSweep(minHz, maxHz, rate uint64, ranges []*leylinev1.FrequencyRange) *s
 
 // analysedHz is how much of covered at least one window actually looks at. Normally that is all
 // of it -- the geometry is for exactly this -- but a request that falls entirely inside one step's
-// DC guard is a range the sweep cannot see, and reporting nothing found there would be a lie.
+// DC guard is a range the sweep cannot see, and reporting nothing found there would be wrong.
 func (p *sweepPlan) analysedHz() uint64 {
 	var spans []sweepWindow
 	for _, s := range p.steps {

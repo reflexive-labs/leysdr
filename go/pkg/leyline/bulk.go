@@ -28,9 +28,9 @@ const (
 const DBU8Step = 1 / dbU8Scale
 
 // DecodeFFTBins turns an FFT frame's payload into dBFS levels, one per bin.
-// Pass the format from the descriptor the daemon answered with — what the
-// subscriber asked for is a desire, and DB_U8 read as DB_F32 is not obviously
-// wrong to look at. An unrecognised format is read as DB_F32, the wire default.
+// Pass the format from the descriptor the daemon answered with: the daemon may
+// serve a different format from the one requested, and DB_U8 misread as DB_F32
+// does not look obviously wrong. An unrecognised format is read as DB_F32, the wire default.
 func DecodeFFTBins(payload []byte, format leylinev1.FftBinFormat) []float64 {
 	if format == leylinev1.FftBinFormat_DB_U8 {
 		out := make([]float64, len(payload))
@@ -71,7 +71,7 @@ func (h PersistenceHistogram) Peak() uint16 {
 // DecodePersistence reads a persistence payload: bins*levels little-endian
 // uint16 counts, bin-major. Take bins and levels from the descriptor; a payload
 // too short for them is refused rather than read as a smaller frame, because a
-// half-read histogram draws a picture instead of an error.
+// partly read histogram renders as a plausible image instead of failing.
 func DecodePersistence(payload []byte, bins, levels int) (PersistenceHistogram, bool) {
 	if bins <= 0 || levels <= 0 || len(payload) < bins*levels*2 {
 		return PersistenceHistogram{}, false

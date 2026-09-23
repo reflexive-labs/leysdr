@@ -27,15 +27,15 @@ const (
 	maxFFTRows     = 30.0
 	defaultFFTRows = 10.0
 	readerReapWait = 10 * time.Second
-	// An audio spectrum is read as a meter rather than scrolled, so it is served no faster than
-	// the eye follows a bar.
+	// An audio spectrum is read as a meter rather than scrolled, so it is served at no more than
+	// 20 rows a second, about as fast as a bar meter can be read.
 	maxAudioSpectrumRows = 20.0
 	// Every subscription on a tap runs its own transform, and at 48 kHz this is already 5 Hz a
-	// bin over a 171 ms window: finer than a meter is read, and more than the tap should pay for.
+	// bin over a 171 ms window: finer than a meter is read, and more CPU than the tap should spend.
 	maxAudioSpectrumBins = 4096
 
 	minRowsPerSecond = 0.1
-	// The rate the histogram accumulates at, which is as fast as the ladder goes: it wants every
+	// The rate the histogram accumulates at, which is as fast as the ladder goes: it uses every
 	// row it can get, where a person reads a couple of frames a second.
 	ladderRowsPerSecond    = maxFFTRows
 	defaultPersistRows     = 2.0

@@ -19,9 +19,9 @@ func meterFixture(db float64, open bool) *leylinev1.Meter {
 }
 
 // TestMeterRenderSurvivesColourOff is rule 1 of docs/dev/cli-style.md on the
-// screen that matters most: the bar, the marker and every word are there
-// with the ink stripped. Colour is compared at a fixed glyph set, since the
-// alphabet is the reader's terminal, not the emphasis.
+// meter line: the bar, the marker and every word are there with the ink
+// stripped. Colour is compared at a fixed glyph set, since the glyph set
+// depends on the terminal, not on colour.
 func TestMeterRenderSurvivesColourOff(t *testing.T) {
 	for _, unicode := range []bool{false, true} {
 		for _, open := range []bool{false, true} {
@@ -160,9 +160,9 @@ func meterWithAudio(power, audio, peak float64, open bool) *leylinev1.Meter {
 	return &leylinev1.Meter{PowerDbfs: power, SnrDb: 26, SquelchOpen: open, AudioDbfs: audio, AudioPeakDbfs: peak}
 }
 
-// The detail rows say what the radio hears and what the listener hears, which
-// are different questions: a strong unmodulated carrier is loud on the first
-// row and silent on the second.
+// The detail rows show the RF signal level and the demodulated audio level,
+// which differ: a strong unmodulated carrier is loud on the first row and
+// silent on the second.
 func TestMeterDetailRowsAppearOnAWideTerminal(t *testing.T) {
 	m := meterWithAudio(-38, -12, -4, true)
 	got := ui.Strip(meterRender(ui.Style{Unicode: true, Width: 100}, 146_520_000, leylinev1.DemodMode_NFM, m, -46))

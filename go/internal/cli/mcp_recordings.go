@@ -23,9 +23,9 @@ import (
 // file to another tool by path. Samples are never returned through MCP; a path
 // is (docs/design/data-planes.md, "no lossless network stream").
 
-// recordMaxSeconds bounds a recording an agent starts. What an agent begins
-// must end without it: a tool call that leaves a radio recording for ever is a
-// radio nobody else can use and a disk nobody is watching.
+// recordMaxSeconds bounds a recording an agent starts, so it ends on its own:
+// a recording left running for ever holds the radio and fills a disk nobody
+// is watching.
 const recordMaxSeconds = 3600
 
 type recordArgs struct {
@@ -89,8 +89,8 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 		return nil, nil, toolError(recordToolFailure(err))
 	}
 	uri := recordURI(job)
-	// Wait it out: an agent that had to poll a job would spend two calls learning what one can
-	// say. The duration is the bound, with a little slack for the daemon's own teardown.
+	// Wait it out: polling would cost the agent extra calls to learn what one call can return.
+	// The duration is the bound, with a little slack for the daemon's own teardown.
 	final := srv.awaitJob(ctx, job, o.forDur+10*time.Second)
 	if final.GetState() == leylinev1.JobState_FAILED {
 		return nil, nil, toolError(fmt.Errorf("%s", recordFailureDetail(final)))
@@ -127,8 +127,8 @@ func (srv *mcpServer) awaitJob(ctx context.Context, job *leylinev1.Job, bound ti
 	return last
 }
 
-// recordToolFailure keeps the daemon's sentence and names the argument an agent
-// has instead of a flag.
+// recordToolFailure keeps the daemon's message and refers to the tool argument
+// an agent uses instead of a flag.
 func recordToolFailure(err error) error {
 	if leyline.Code(err) == leyline.CodeDeviceBusy {
 		return fmt.Errorf("%s. take_over: true records anyway, and hands the radio back afterwards", leylineMessage(err, "the radio is busy"))
@@ -219,7 +219,7 @@ func (srv *mcpServer) getRecording(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, toolError(err)
 	}
 	// The manifest as the daemon wrote it, with each part's path added: the
-	// samples stay on disk and the agent is handed where they are.
+	// samples stay on disk and the agent gets their paths.
 	doc := map[string]any{"manifest": m, "directory": dir}
 	paths := make([]map[string]any, 0, len(m.Parts))
 	for _, p := range m.Parts {

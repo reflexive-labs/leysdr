@@ -7,7 +7,7 @@
 // and making it retunable would need an oversampled source and a mix-filter-decimate chain, because
 // shifting a 2.4 MSPS fixture by 960 kHz aliases its own carriers back into the analysis windows.
 // See docs/design/scan.md. This device synthesises its band at whatever centre it is asked for,
-// which is the one thing a recording cannot do.
+// which a recording cannot do.
 
 import EngineCore
 import Foundation
@@ -17,9 +17,10 @@ import XCTest
 
 /// A radio that can be tuned anywhere and generates the band it is pointed at.
 ///
-/// It changes what it emits `staleBlocks` after `tune` returns, on purpose: real hardware keeps
-/// tens of USB buffers of already-captured air queued, and a sweep that trusts the frame's centre
-/// frequency attributes that air to the wrong step. Without the delay, hop discard passes trivially.
+/// It changes what it emits `staleBlocks` after `tune` returns: real hardware keeps tens of USB
+/// buffers of already-captured samples queued, and a sweep that trusts the frame's centre
+/// frequency attributes those samples to the wrong step. Without the delay, hop discard passes
+/// trivially.
 final class SyntheticBandDevice: VirtualDevice, @unchecked Sendable {
     struct Carrier {
         var hz: Double
@@ -197,7 +198,7 @@ final class ScanSweepTests: XCTestCase {
             let span = Double(SyntheticBandDevice.rate)
             XCTAssertEqual(Double(scan.config.stepHz),
                            (SweepPlan.edgeFraction - SweepPlan.guardFraction) * span, accuracy: 1)
-            // How finely it looked, stated rather than left for a client to reverse-engineer.
+            // The resolution it used, reported so a client need not derive it.
             XCTAssertEqual(Double(scan.resolutionHz), span / 1024, accuracy: 1)
             // What it actually covered, which for a whole sweep is the range asked for.
             XCTAssertLessThanOrEqual(scan.covered.minHz, 145_100_000)
@@ -215,14 +216,14 @@ final class ScanSweepTests: XCTestCase {
     }
 
     /// The image is 30 dB down and moves with the tuner; the carrier does not. Neither the image
-    /// nor anything else that is not a carrier may reach the answer.
+    /// nor anything else that is not a carrier may appear in the results.
     func testTheIQImageNeverReachesTheAnswer() async throws {
         let carriers = [SyntheticBandDevice.Carrier(hz: 145_400_000, dbfs: -20, widthHz: 12_500)]
         try await withSweepDaemon(carriers) { _, scan in
             let found = scan.detections.map(\.centerHz).sorted()
             XCTAssertTrue(found.contains { $0 > 145_380_000 && $0 < 145_420_000 }, "the carrier is missing: \(found)")
             // Every step plants an image at 2*centre - 145.4 MHz. None of those is a real signal,
-            // and the answer must contain exactly one thing.
+            // and the results must contain exactly one detection.
             XCTAssertEqual(found.count, 1, "an artefact reached the answer: \(found)")
         }
     }
@@ -256,9 +257,9 @@ final class ScanSweepTests: XCTestCase {
         }
     }
 
-    /// A sweep asked for a gain runs at that gain and says so, and the radio goes back to where it
-    /// was afterwards. Without one, two sweeps of a band could differ by whatever the last client
-    /// left the tuner at, and an agent could not tell a quiet band from a deaf receiver.
+    /// A sweep asked for a gain runs at that gain and reports it, and the radio goes back to where
+    /// it was afterwards. Without one, two sweeps of a band could differ by whatever the last
+    /// client left the tuner at, and an agent could not tell a quiet band from a deaf receiver.
     func testTheSweepRunsAtTheGainAskedFor() async throws {
         let carriers = [SyntheticBandDevice.Carrier(hz: 145_400_000, dbfs: -25, widthHz: 12_500)]
         try await withSweepDaemon(carriers, configure: { $0.gain.db = 20 }) { c, scan in

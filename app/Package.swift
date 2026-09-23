@@ -6,7 +6,7 @@
 //   LeylineClient      the Swift client façade over leyline.v1: dial, identity, the observable
 //                      state mirror, the write coalescer, stream helpers. No UI, no DSP; builds
 //                      and is tested on Linux as well as macOS, because the contract it wraps is
-//                      the same one `ley` proves from Go.
+//                      the same one `ley` exercises from Go.
 //   LeylineApp         the SwiftUI app (macOS only): renders what the mirror holds, writes through
 //                      the coalescer, draws the bulk streams. Declared only when the manifest is
 //                      evaluated on macOS, so `swift build` on Linux builds and tests the façade.
@@ -14,7 +14,7 @@
 // The app is a peer client of the daemon (CLAUDE.md invariant 1) and a separate Apache-2.0 work
 // beside the GPL engine (docs/decisions/D2-licensing.md): it depends on the `swift/LeylineProto`
 // package for the generated contract and on the engine package not at all, so nothing GPL is in its
-// graph and nothing in the app can reach around the wire. `make license-check` refuses an
+// graph and the app cannot bypass the wire protocol. `make license-check` refuses an
 // `import EngineCore` under app/.
 import PackageDescription
 

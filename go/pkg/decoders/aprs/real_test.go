@@ -17,8 +17,8 @@ import (
 // 144.39 MHz, 48 kHz S16 mono through the NFM chain. The files are gitignored
 // and the test skips without them. It reports what it found and fails only on
 // an error, never on a count: 144.39 is quiet where the recordings were made,
-// a tone scan says one of the two files carries a single packet and the other
-// carries none, and a test that demanded more would be asserting the weather
+// a tone scan shows one of the two files carries a single packet and the other
+// carries none, and a test that required more would be testing channel traffic
 // rather than the decoder. The measured counts live in the afsk package's doc
 // comment.
 func TestRealCaptureDecodes(t *testing.T) {

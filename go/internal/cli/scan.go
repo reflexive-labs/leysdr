@@ -128,7 +128,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				}
 				o.deviceID = d.DeviceId
 			}
-			// Everything scan says is for a person; the table and the JSON are the machine's.
+			// Scan's prose goes to stderr; stdout carries only the table or the JSON.
 			s.proseToStderr = true
 			return runScan(cmd.Context(), s, o)
 		},
@@ -150,7 +150,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 		return err
 	}
 	if scan == nil {
-		// sweep already said why there is nothing to show.
+		// sweep already printed why there is nothing to show.
 		return nil
 	}
 	if final.State == leylinev1.JobState_CANCELLED && !s.app.JSON {
@@ -165,7 +165,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 
 // sweep starts a once-scan job, follows it to its end and fetches the Scan it produced. A nil
 // Scan with a nil error means the sweep ended with nothing to fetch and the reason was already
-// said on stderr: an interrupted sweep the daemon could not report on in time, or a job that
+// printed on stderr: an interrupted sweep the daemon could not report on in time, or a job that
 // named no scan. `ley scan` prints what comes back; the MCP adapter's scan tool returns it.
 func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
 	cfg := &leylinev1.ScanConfig{
@@ -191,7 +191,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 	}
 	// Interrupted: stop the sweep now rather than waiting for the presence grace -- the next thing
 	// somebody does after Ctrl-C is usually tune -- and then print what it found before it stopped.
-	// A sweep somebody cut short still measured the part that ran.
+	// An interrupted sweep still has valid measurements for the part that ran.
 	read := ctx
 	if ctx.Err() != nil {
 		c, stop := context.WithTimeout(context.Background(), confirmTimeout)
@@ -325,8 +325,8 @@ func scanIDOf(job *leylinev1.Job) (string, error) {
 	return "", errors.New("the daemon named no scan")
 }
 
-// scanFailure turns a failed job into the sentence the user reads. The daemon says why in
-// job.error: the code is what ley branches on, status_detail the sentence a person needs.
+// scanFailure turns a failed job into the error line the user reads. The daemon reports the
+// cause in job.error: ley branches on the code, and status_detail is the human-readable reason.
 func scanFailure(job *leylinev1.Job, st ui.Style) string {
 	detail := job.StatusDetail
 	code := job.GetError().GetCode()
@@ -402,8 +402,8 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 	})
 	st := app.ErrStyle
 	if len(rows) == 0 {
-		// Hiding what was found is not the same answer as finding nothing, and the remedy is not
-		// the same either: a longer dwell will not bring back a row --min-snr filtered out.
+		// Rows hidden by --min-snr get a different message from an empty sweep, because the
+		// remedy differs: a longer dwell will not bring back a row --min-snr filtered out.
 		if hidden := len(scan.Detections); hidden > 0 {
 			fmt.Fprintf(app.Stderr, "%s below %.0f dB, so nothing to show%s\n",
 				plural(hidden, "signal"), o.minSNR, floorPhrase(scan))
@@ -437,16 +437,15 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 	}
 }
 
-// coverageNote says what the sweep actually looked at when that is not what was asked for. A
-// table printed under the heading of a range nobody searched claims coverage that was never
-// measured -- a radio that cannot reach the whole request, a request partly inside the tuner's
-// blind spot, or a sweep somebody stopped.
+// coverageNote prints the range the sweep actually covered when that differs from the request.
+// Without it the table would imply coverage that was never measured. Causes: a radio that cannot
+// reach the whole request, a request partly inside the tuner's blind spot, or a stopped sweep.
 func coverageNote(app *App, scan *leylinev1.Scan, o scanOptions) {
 	c := scan.GetCovered()
 	if c == nil || c.MaxHz <= c.MinHz {
 		return
 	}
-	const slack = 1000 // a rounded edge is not a gap
+	const slack = 1000 // Hz; edge rounding within this is not reported as a gap
 	if c.MinHz <= o.minHz+slack && c.MaxHz+slack >= o.maxHz {
 		return
 	}
@@ -463,7 +462,7 @@ func mapDet(rows []*leylinev1.Detection, f func(*leylinev1.Detection) string) []
 	return out
 }
 
-// widthCell prints the equivalent rectangular width, or says the signal is narrower than the
+// widthCell prints the equivalent rectangular width, or notes the signal is narrower than the
 // analysis can resolve rather than inventing a figure for it.
 func widthCell(d *leylinev1.Detection, scan *leylinev1.Scan) string {
 	res := binWidth(scan)
@@ -481,8 +480,8 @@ func widthCell(d *leylinev1.Detection, scan *leylinev1.Scan) string {
 // constants and the bin count, and got it 25% wrong when either changed.
 func binWidth(scan *leylinev1.Scan) float64 { return float64(scan.GetResolutionHz()) }
 
-// unconfirmedNote names the rows fewer than half their looks saw: a burst, or a fluctuation of
-// the floor that one look caught. The SEEN column says it too, but a reader adding up a band
+// unconfirmedNote lists the rows detected in fewer than half their looks: a burst, or a floor
+// fluctuation that one look caught. The SEEN column shows it too, but a reader adding up a band
 // needs the sentence, and an agent otherwise sweeps again to learn what the column meant.
 func unconfirmedNote(app *App, rows []*leylinev1.Detection) {
 	var weak []string
@@ -498,7 +497,7 @@ func unconfirmedNote(app *App, rows []*leylinev1.Detection) {
 		strings.Join(weak, ", "))
 }
 
-// seenCell is the evidence: how many looks found it, out of how many looked.
+// seenCell is how many looks detected the row, out of how many looks were taken.
 func seenCell(d *leylinev1.Detection) string {
 	if d.LooksPossible == 0 {
 		return "-"
@@ -574,9 +573,9 @@ func floorPhrase(scan *leylinev1.Scan) string {
 	return fmt.Sprintf(", floor %.0f dBFS", median)
 }
 
-// gainPhrase names the gain the sweep ran at. A sweep pins the tuner for its duration -- SNR
-// measured against a moving AGC is not a number -- and two scans of the same band mean the same
-// thing only when they were taken at the same sensitivity, so the number belongs beside the floor.
+// gainPhrase names the gain the sweep ran at. A sweep pins the tuner for its duration, because SNR
+// measured against a moving AGC is meaningless. Two scans of the same band are comparable only at
+// the same gain, so the gain is printed beside the floor.
 func gainPhrase(scan *leylinev1.Scan) string {
 	var parts []string
 	for _, g := range scan.GetGains() {

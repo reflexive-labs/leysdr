@@ -383,7 +383,7 @@ func TestSpectrumColoursByLevel(t *testing.T) {
 }
 
 // The max-hold trace keeps its dim treatment now that the live trace is
-// coloured: what has been is faint scaffolding, what is on the air is hue.
+// coloured: the hold stays faint and the live trace carries the ramp.
 func TestSpectrumMaxHoldStaysDim(t *testing.T) {
 	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
 	v := newSpectrumView(st, 80, 0, true, false)
@@ -489,7 +489,7 @@ func TestSpectrumFrame(t *testing.T) {
 }
 
 // A framed chart still fits the width it was given, in both renderings, and
-// the ink is still nothing but ink.
+// stripping the ink still gives back the plain screen.
 func TestSpectrumFramedFitsWidth(t *testing.T) {
 	bins := spectrumFixture(1024, 640, -21)
 	for _, width := range []int{chartFrameMinWidth, 80, 100, ui.MaxWidth} {
@@ -531,8 +531,9 @@ func TestSpectrumScaleTracksTheData(t *testing.T) {
 	// used to shrink to fit whatever the loudest column was, which on a band
 	// with nothing on it is a noise column a few dB over the median: the row
 	// came out at 1.5 dB, the floor's own 7 dB of spread smeared across five
-	// rows, and an empty band drew as confetti instead of as a line. Reserving
-	// sky nothing reaches is the price of a row coarse enough to draw a floor.
+	// rows, and an empty band drew as scattered cells instead of as a line.
+	// Empty headroom above the band is the cost of a row coarse enough to draw
+	// a floor.
 	if span := v.top - v.bottom; span < spectrumMinSpanDb {
 		t.Fatalf("the scale spans %v dB, under the %v dB that keeps a row coarse", span, spectrumMinSpanDb)
 	}
@@ -559,7 +560,7 @@ func TestSpectrumScaleTracksTheData(t *testing.T) {
 // stepping from band to band is comparing like with like. A band with more
 // dynamic range than the held span gets a coarser row -- 10 rows cannot show
 // 63 dB at 5 dB a row -- but never a finer one, which is the direction that
-// shattered the floor.
+// broke the floor line into scattered cells.
 func TestSpectrumBandsAreComparable(t *testing.T) {
 	st := ui.Style{Unicode: true, Width: 100}
 	dbPerRow := func(bins []float64) float64 {
@@ -585,16 +586,16 @@ func TestSpectrumBandsAreComparable(t *testing.T) {
 
 // A frame with no detection is drawn at the cold end of the ramp and says so
 // in words, so the chart and the peak line never contradict each other and a
-// quiet band never wears the colours of a busy one.
+// quiet band is never drawn in a busy band's colours.
 func TestSpectrumQuietBandReadsQuiet(t *testing.T) {
 	st := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: true, Width: 80}
 	noise := noiseFrame(5, 1024)
 	quiet := newSpectrumView(st, 80, 0, false, false).render(noise, nil, medianDb(noise), fixtureCenterHz, fixtureSpanHz)
 	// A quiet band is held to the cold end of the ramp, but not to a single
-	// ink. Forcing every column to one colour was honest and unreadable: the
-	// chart became a flat field of blue with no shape in it, and the flatness
-	// of the floor, which is the thing a reader checks a quiet band for, could
-	// not be seen. The texture shows; the heat does not.
+	// ink. Forcing every column to one colour made the chart a flat field of
+	// blue with no shape in it, so the flatness of the floor, which is what a
+	// quiet band is checked for, could not be seen. The variation shows; no
+	// column reaches the hot end.
 	inks := map[string]bool{}
 	for params := range inkRuns(quiet) {
 		if strings.HasPrefix(params, "38;2;") {
@@ -811,7 +812,7 @@ func TestSpectrumStemsStayAboveTheFloor(t *testing.T) {
 func TestSpectrumAxisLabelsTheFloor(t *testing.T) {
 	st := ui.Style{Unicode: true, Width: 100}
 	// A live band's shape: a floor around -45 and a carrier 34 dB over it, so
-	// the floor rule sits clear of the first row and earns its label. On a
+	// the floor rule sits clear of the first row and gets its label. On a
 	// fixture whose floor lands on the first row the label is suppressed,
 	// because the axis line right beneath already says the number.
 	bins := spectrumFixture(1024, 512, -11)

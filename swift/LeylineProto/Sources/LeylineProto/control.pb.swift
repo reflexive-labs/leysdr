@@ -552,7 +552,7 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// survives owner disconnect; jobs set this
   public var persistent: Bool = false
 
-  /// Set by jobs: the absolute frequency a channel wants back when its capture moves out from
+  /// Set by jobs: the absolute frequency a channel returns to when its capture moves out from
   /// under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
   /// on it yet.
   public var requiredHz: UInt64 = 0
@@ -569,8 +569,8 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
   /// ignored for every other mode. Detection is reported on the telemetry plane
   /// and never gates audio -- tone squelch is a separate, later decision, and
-  /// field 13 is held for it, because every false negative there is silence the
-  /// user cannot diagnose.
+  /// field 13 is held for it, because a missed tone there would mute audio with
+  /// no visible cause.
   public var subaudibleDetect: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -1127,9 +1127,9 @@ public nonisolated struct Leyline_V1_DaemonInfo: Sendable {
 
 /// A recording the daemon is playing through its own audio device (docs/design/recording.md,
 /// "Playing a recording back"). It is not a sink: a sink is where a *channel's* audio goes, and a
-/// playback has no channel. It is not a job either: nothing is produced and it is over when the
-/// person stops listening. A playback belongs to the client that started it and ends when that
-/// client goes, which is what makes Ctrl-C stop the sound.
+/// playback has no channel. It is not a job either: it produces nothing and ends when playback
+/// stops. A playback belongs to the client that started it and ends when that client disconnects,
+/// so Ctrl-C on `ley play` stops the audio.
 public nonisolated struct Leyline_V1_Playback: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1344,8 +1344,8 @@ public nonisolated struct Leyline_V1_DetachFileDeviceRequest: Sendable {
   public init() {}
 }
 
-/// Where a virtual device's samples come from. Persistence follows intent: a file you play is
-/// ephemeral, a radio you attach is part of the station.
+/// Where a virtual device's samples come from. Persistence follows intent: a played file is
+/// ephemeral; an attached radio is remembered across restarts.
 public nonisolated struct Leyline_V1_DeviceSource: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1398,7 +1398,7 @@ public nonisolated struct Leyline_V1_FileSource: Sendable {
 }
 
 /// A dongle served by rtl_tcp on another machine. The daemon remembers the endpoint across
-/// restarts until DetachDevice forgets it.
+/// restarts until DetachDevice removes it.
 public nonisolated struct Leyline_V1_RtlTcpSource: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for

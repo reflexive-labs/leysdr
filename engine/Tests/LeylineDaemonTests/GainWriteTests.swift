@@ -59,8 +59,8 @@ final class GainWriteDaemonTests: XCTestCase {
         }
     }
 
-    /// A recording has no gain stage, so the empty element resolves to nothing and the refusal says
-    /// so in words rather than naming an element that was never given.
+    /// A recording has no gain stage, so the empty element resolves to nothing and the refusal
+    /// explains that rather than naming an element that was never given.
     func testARadioWithNoGainStageRefusesTheEmptyElement() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in

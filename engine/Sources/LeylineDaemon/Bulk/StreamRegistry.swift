@@ -54,7 +54,7 @@ final class BulkSubscription: @unchecked Sendable {
         }
     }
     func markClosed() { closed.store(true, ordering: .releasing) }
-    /// Whether this stream is fed by a channel tap, and so stops being true the moment the audio
+    /// Whether this stream is fed by a channel tap, and so goes stale the moment the audio
     /// rate under it can move: both the audio stream and the spectrum taken off it describe a rate
     /// their descriptor named, and a client re-subscribes for a fresh one.
     var readsChannelAudio: Bool {
@@ -155,8 +155,8 @@ actor StreamRegistry {
         switch req.kind {
         case .fft:
             let want = req.fft
-            // looks_per_row is an answer, never a request: a client asking for a look count would
-            // be asking the daemon to spend CPU it does not own.
+            // looks_per_row is an answer, never a request: the daemon sets the look count, because
+            // the CPU it costs is shared by every client.
             if want.looksPerRow != 0 {
                 throw EngineError.invalidArgument("looks_per_row is answered by the daemon; leave it 0")
             }
@@ -193,8 +193,8 @@ actor StreamRegistry {
             guard channelID == nil else { throw EngineError.invalidArgument("persistence streams are capture-scoped", target: channelID!.string) }
             let want = req.persistence
             // The scale is the client's to state. A daemon-chosen one would have to appear in the
-            // descriptor before any row had arrived, and a persistence frame on the wrong scale is
-            // not obviously wrong to look at -- so this is refused rather than defaulted.
+            // descriptor before any row had arrived, and a persistence frame on the wrong scale
+            // does not look wrong -- so this is refused rather than defaulted.
             guard want.rangeDb > 0 else {
                 throw EngineError.invalidArgument("persistence needs range_db > 0 and a floor_db; take an FFT row first to find the floor")
             }
@@ -207,8 +207,8 @@ actor StreamRegistry {
             // below can represent -- a denormal rate or an infinite half-life would otherwise
             // overflow the integer conversions. The descriptor answers with what was used.
             let emitRows = DefaultSpectrumLadder.roundRate(want.rowsPerSecond > 0 ? want.rowsPerSecond : 2)
-            // Accumulate as fast as the ladder will go and display slowly: the histogram wants
-            // every row it can get, and a person reads a couple of frames a second.
+            // Accumulate as fast as the ladder will go and display slowly: the histogram takes
+            // every row, while a display needs only a couple of frames a second.
             let ladderRows = DefaultSpectrumLadder.maxRowsPerSecond
             let halfLife = want.halfLifeSeconds > 0
                 ? Swift.min(Swift.max(want.halfLifeSeconds, Self.minHalfLifeSeconds), Self.maxHalfLifeSeconds)
@@ -246,7 +246,7 @@ actor StreamRegistry {
             case .tapAudio: tap = .audio
             case .tapDemod:
                 // No detector on a raw-IQ channel, so there is no stage before the audio to serve;
-                // silence would look like a quiet band rather than the mistake it is.
+                // silence would look like a quiet band and hide the error.
                 guard await ch.config.mode != .rawIQ else {
                     throw EngineError.invalidArgument(
                         "TAP_DEMOD needs a demodulated channel; this one is raw IQ", target: chID.string)
@@ -333,7 +333,7 @@ actor StreamRegistry {
             throw EngineError.invalidArgument("unknown AudioTap \(v)", target: chID.string)
         }
         // A row is one transform of one window, so there is nothing to accumulate over -- but an
-        // enum value the daemon does not know is still a request it cannot answer.
+        // enum value the daemon does not know is still refused.
         if case .UNRECOGNIZED(let v) = want.accumulation {
             throw EngineError.invalidArgument("unknown FftAccumulation \(v)", target: chID.string)
         }

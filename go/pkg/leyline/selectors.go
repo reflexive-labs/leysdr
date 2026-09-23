@@ -52,8 +52,8 @@ func (e *SelectorError) Error() string {
 	return fmt.Sprintf("no %s matches %q; known: %s (%s)", e.Kind, e.Selector, list, e.forms())
 }
 
-// forms names what this kind of selector accepts. A job covers a range rather than sitting at a
-// frequency, so offering one would send the reader looking for a form that cannot work.
+// forms lists the selector forms this kind accepts. A job covers a range rather than sitting at
+// a frequency, so the frequency form is not offered for jobs.
 func (e *SelectorError) forms() string {
 	if e.Kind == "job" {
 		return "a full id, id prefix or row number"
@@ -234,7 +234,7 @@ func ChannelRow(state *leylinev1.GetStateResponse, row int, ch *leylinev1.Channe
 
 // ResolveJob finds a job by id, id prefix, or its row number in the list it was given, which is
 // the list ListJobs returned and `ley jobs` printed. A job has no frequency of its own -- a scan
-// covers a range, and naming one edge of it would pick a job the reader did not point at -- so a
+// covers a range, and matching one edge of it could select a job the user did not mean -- so a
 // frequency selector is not accepted here.
 func ResolveJob(jobs []*leylinev1.Job, sel string) (*leylinev1.Job, error) {
 	ids := make([]string, len(jobs))

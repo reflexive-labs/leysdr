@@ -2,10 +2,10 @@
 
 // The app's colour and type tokens: every value in docs/design/app-design-handoff.md ("Palette",
 // "Type") and the inspector's few from docs/design/app-design-handoff-m2.md ("Decided
-// 2026-09-20"), and nothing a view invents. The names are the handoffs', so a designer and a
-// reader of the code point at the same word. The level ramp shares hue order with the terminal's
+// 2026-09-20"), and nothing a view invents. The names are the handoffs', so the design and the
+// code use the same names. The level ramp shares hue order with the terminal's
 // (docs/dev/cli-style.md, "3a. The level ramp") and nothing else: this one runs from near-black
-// to cream and assumes the dark ground it owns.
+// to cream and assumes the app's own dark ground.
 
 import SwiftUI
 
@@ -40,13 +40,13 @@ enum Theme {
     static let good = Color(hex: 0x2FB6A3)
     /// Reserved; unused in M1.
     static let recording = Color(hex: 0xB8483C)
-    /// A reading that wants attention without alarm: off tune, overdeviating. The ramp's fourth
-    /// stop, so it never competes with `accent` for the tuned channel.
+    /// A reading that needs attention but is not an alarm: off tune, overdeviating. The ramp's
+    /// fourth stop, so it never competes with `accent` for the tuned channel.
     static let caution = Color(hex: 0xC9C06A)
     /// The failure strip's ground in the inspector (M2 handoff, Region 2): warm, one step off
-    /// the panel, so what the numbers say is wrong reads as a block and not a row.
+    /// the panel, so the failure message reads as a block and not a row.
     static let warnGround = Color(hex: 0x1F1714)
-    /// The failure strip's edge, the one border in the window that is not grey.
+    /// The failure strip's edge, the only border in the window that is not grey.
     static let warnBorder = Color(hex: 0x6B3A28)
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
@@ -65,11 +65,11 @@ enum Theme {
         }
     }
 
-    /// The ramp at `frac` in [0, 1], interpolated between stops. A chart names its own cold end
+    /// The ramp at `frac` in [0, 1], interpolated between stops. A chart sets its own cold end
     /// (the noise line) and hot end.
     static func level(_ frac: Double) -> Color {
         // A meter with nothing measured yet hands over NaN, which clamps to itself and traps in
-        // `Int(_:)`; the cold end is what no reading looks like.
+        // `Int(_:)`; no reading maps to the cold end.
         guard frac.isFinite else { return levelStops[0] }
         let stops = levelStopsRGB
         let x = frac.clamped(to: 0...1) * Double(stops.count - 1)
@@ -85,7 +85,7 @@ enum Theme {
         /// The tuned frequency in the transport field.
         static let frequency = SwiftUI.Font.system(size: 29, weight: .medium, design: .monospaced)
             .monospacedDigit()
-        /// The channel's name at the top of the inspector: the one thing in the window that is
+        /// The channel's name at the top of the inspector: the only text in the window that is
         /// a name rather than a number, tracked by `Theme.nameTracking`. The M2 design set it
         /// in Space Grotesk; no font is bundled (M1 handoff, "Type"), so it is SF at the same
         /// size and weight.
@@ -124,7 +124,7 @@ enum Theme {
         static let bandRailHeight: CGFloat = 40
         static let spectrumHeight: CGFloat = 150
         static let transportHeight: CGFloat = 88
-        /// The inspector, fixed on the right (M2 handoff, "The panel"); the window is complete
+        /// The inspector, fixed on the right (M2 handoff, "The panel"); the window works
         /// without it.
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
@@ -148,7 +148,7 @@ extension Color {
     }
 }
 
-/// A section header in the handoff's voice: uppercase, small, tracked, faint.
+/// A section header in the handoff's style: uppercase, small, tracked, faint.
 struct SectionHeader: View {
     let text: String
     var body: some View {

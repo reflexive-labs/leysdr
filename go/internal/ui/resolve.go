@@ -15,7 +15,7 @@ const (
 	// MinWidth is the narrowest layout the renderers target.
 	MinWidth = 40
 	// MaxWidth caps the widest, so a maximised window does not stretch a
-	// chart past the eye.
+	// chart wider than can be read at a glance.
 	MaxWidth = 160
 	// DefaultWidth is the width assumed when nothing reports one.
 	DefaultWidth = 80

@@ -2,12 +2,12 @@
 
 // Region 5: the transport bar, in its final layout from the first release (docs/design/
 // app-design-handoff.md, and the design's footer). Every block is a header on one line with
-// its control under it: play, the one editable frequency in the window, mode, width, a
-// divider, the squelch track with its words, and volume with the output's name. The signal
-// readout stood between the divider and the squelch in M1 and left with M2's inspector, which
-// says the same thing in words (the M1 handoff's one named exception to "nothing moves"); the
-// slot went back to the squelch track. Absent for good: gain, elapsed time, recording, sample
-// rate.
+// its control under it: play, the only editable frequency in the window, mode, width, a
+// divider, the squelch track with its label, and volume with the output's name. The signal
+// readout stood between the divider and the squelch in M1 and moved to M2's inspector, which
+// shows the same thing in words (the only exception the M1 handoff names to "nothing moves");
+// the slot went back to the squelch track. Permanently absent: gain, elapsed time, recording,
+// sample rate.
 
 import LeylineClient
 import LeylineProto
@@ -100,8 +100,8 @@ struct FrequencyField: View {
                 Text(".").font(Theme.Font.frequency).foregroundStyle(
                     hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
                 digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
-                // Digits under the hundreds of hertz only when there are any: a drag lands
-                // between hertz, a keypad never does.
+                // Digits under the hundreds of hertz only when they are non-zero: a drag can
+                // land on any hertz, keypad entry never does.
                 if let hz, hz % 100 != 0, !focused {
                     Text(Frequency.fieldParts(hz).minor)
                         .font(Theme.Font.frequency).tracking(Theme.frequencyTracking)
@@ -195,7 +195,7 @@ struct FrequencyField: View {
     /// Nothing below 500 kHz (AM broadcast starts at 530) or above 6 GHz is a frequency a radio
     /// here can be tuned to, and the keypad makes both easy to type: a `.` into an empty MHz part
     /// followed by three digits reads as 0.500. A refused number keeps the field focused, so it
-    /// can be finished rather than sending the radio somewhere nobody asked for.
+    /// can be finished rather than tuning the radio to an unintended frequency.
     private func commit() {
         let whole = UInt64(String(mhz)) ?? 0
         let thousandths = UInt64(String(khz.prefix(3))) ?? 0
@@ -296,13 +296,13 @@ struct FrequencyField: View {
     }
 
     /// While the field has focus its own window's events are watched directly: SwiftUI hands a
-    /// focusable view its digits but not reliably Return or Escape, and it moves focus for no
-    /// click on a view that takes none. A local monitor sees the whole application, so an event
-    /// of any other window — Escape in the device popover — passes through untouched, and only
-    /// the window that was key when focus began is the field's. Any mouse-down there ends the
-    /// edit (a click on the field itself begins a fresh one through its tap); Return tunes,
-    /// Escape restores, the arrows move the caret and space does nothing, all swallowed so the
-    /// Tune menu's key equivalents do not fire on top of typing.
+    /// focusable view its digits but not reliably Return or Escape, and it does not move focus
+    /// on a click on a view that cannot take focus. A local monitor sees the whole application,
+    /// so an event of any other window — Escape in the device popover — passes through
+    /// untouched, and only the window that was key when focus began is the field's. Any
+    /// mouse-down there ends the edit (a click on the field itself begins a fresh one through
+    /// its tap); Return tunes, Escape restores, the arrows move the caret and space does nothing,
+    /// all swallowed so the Tune menu's key equivalents do not fire on top of typing.
     private func watchClicks() {
         if monitor != nil { return }
         let blur = $focused
@@ -482,9 +482,9 @@ struct WidthPopup: View {
     }
 }
 
-/// A track with a marked threshold: muted left of it, heard right of it, the level as a
+/// A track with a marked threshold: muted left of it, audible right of it, the level as a
 /// ramp-filled bar the height of the track, the marker draggable and written as it moves. The
-/// words are the point.
+/// label text is the primary readout.
 struct SquelchTrack: View {
     @Environment(AppSession.self) private var session
     @State private var dragDB: Double?

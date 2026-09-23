@@ -24,7 +24,7 @@ authentication designed for it (`docs/design/control-plane.md`, "Auth for TCP re
 `LEYLINE_RTLTCP`) makes an outbound, cleartext TCP connection to an `rtl_tcp` server you name, and
 streams raw samples from it. Nothing on that link is authenticated or encrypted; use it on a network
 you trust. An attached endpoint is remembered in `devices.json` beside the socket and reconnected at
-every start until `ley devices detach` forgets it.
+every start until `ley devices detach` removes it.
 
 ## What the daemon reads and writes
 

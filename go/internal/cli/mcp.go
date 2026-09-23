@@ -113,7 +113,7 @@ type mcpServer struct {
 	// recent is when this server last wrote to each capture (a tune, a listen, a snapshot),
 	// by capture id. The daemon's don't-disturb grace refuses a sweep or a decode for a minute
 	// after an interactive write and says "somebody was tuning"; when that somebody was this
-	// server's own earlier call, the refusal protects nobody and the tools skip it.
+	// server's own earlier call, the refusal protects no one and the tools skip it.
 	recentMu sync.Mutex
 	recent   map[string]time.Time
 }
@@ -219,7 +219,7 @@ func (srv *mcpServer) close() {
 // this stream is up: it ends when the agent's conversation does, which is
 // invariant 8's "ephemeral unless explicitly kept" seen from an agent. A
 // stream the daemon closes (a restart) is reopened, since the tools dial
-// afresh and would otherwise work while their channels quietly died.
+// afresh and would otherwise keep working while their channels were torn down.
 func (srv *mcpServer) keepPresence(ctx context.Context) {
 	defer close(srv.presenceDone)
 	for {
@@ -252,8 +252,8 @@ func (srv *mcpServer) keepPresence(ctx context.Context) {
 // environment, prose captured into buffers rather than written to this
 // process's stderr, and plain styles, because the captured prose goes back
 // to the agent as text and an SGR byte there is noise. What ley would have
-// said on stderr -- "using NFM: 2 m amateur band default", the squelch it
-// measured, a retune -- is exactly the decision list an agent needs.
+// printed on stderr -- "using NFM: 2 m amateur band default", the squelch it
+// measured, a retune -- is the list of decisions an agent needs.
 func (srv *mcpServer) toolApp() (*App, *bytes.Buffer, *bytes.Buffer) {
 	var out, errb bytes.Buffer
 	app := &App{
@@ -302,7 +302,7 @@ func protoResult(m proto.Message, text string) (*mcp.CallToolResult, any, error)
 // the JSON as structuredContent with the text beside it, and that is how this
 // server began; but Claude Code hands the model only structuredContent when
 // there is one and drops the content blocks (anthropics/claude-code#55677),
-// so every sentence the tools had to say -- the tune's decisions, the scan's
+// so all the text the tools returned -- the tune's decisions, the scan's
 // table, the squelch that never opened -- reached no agent. Content is what
 // every client shows, so everything goes there. text may be empty: a list an
 // agent reads whole needs no sentence. The text keeps one trailing newline:
@@ -320,7 +320,7 @@ func jsonResult(text string, raw json.RawMessage) *mcp.CallToolResult {
 // composite assembles a structured result out of several messages -- tune's
 // capture, channel and sink; listen_summary's channel and transcript -- each
 // under its own key and each still the proto3 JSON of its message. The keys
-// are the envelope; the values are the contract's.
+// are the envelope; the values follow the contract.
 func composite(parts map[string]any) (json.RawMessage, error) {
 	out := make(map[string]json.RawMessage, len(parts))
 	for k, v := range parts {

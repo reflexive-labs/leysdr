@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 2: the band rail (docs/design/app-design-handoff.md). The radio is one dial, revealed a
-// band at a time: the band's name, its neighbours named at the end caps, a track from one edge
+// Region 2: the band rail (docs/design/app-design-handoff.md). The rail shows one band at a
+// time: the band's name, its neighbours named at the end caps, a track from one edge
 // of the band to the other with the bounds numbered beneath the caps, a pill for the slice on
 // screen, the tuned frequency as an accent tick and every bookmark in the band as a `good` one.
 // A click tunes; a drag moves the region inside the band and leaves the station where it is
-// unless the edge pushes it; the neighbours' names are the way into them. The one number the
-// rail states is what a column of the spectrum covers.
+// unless the edge pushes it; clicking a neighbour's name switches to that band. The only number
+// the rail reports is the width one spectrum column covers.
 
 import LeylineClient
 import SwiftUI
@@ -28,8 +28,8 @@ struct BandRailView: View {
                     Spacer()
                 }
                 // What a column covers rides on the zoom pair's help rather than the header:
-                // beside the inspector the rail had no room for it, and it is a number to know,
-                // not to watch (the owner, 2026-09-21).
+                // beside the inspector the rail had no room for it, and it is reference
+                // information, not something to monitor (the owner, 2026-09-21).
                 let columns = perColumn(width: geo.size.width)
                 HStack(spacing: 2) {
                     zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
@@ -87,11 +87,11 @@ struct BandRailView: View {
 
 enum RailSide { case below, above }
 
-/// What lies past an end cap, faint, pointing the way: the next band's name when it sits
-/// against this one (`Bands.abut`), else the frequency a click would land on, because a band
-/// 60 MHz away is not a neighbour and must not be named as one. The hover names it and says
-/// how far. A click crosses at the near edge either way, so the dial reads on from where this
-/// band ends. Nothing there when there is no band that way the radio can reach.
+/// The faint label past an end cap: the next band's name when it sits against this one
+/// (`Bands.abut`), else the frequency a click would land on, because a band 60 MHz away is not
+/// a neighbour and must not be labelled as one. The hover text gives the target and its
+/// distance. A click crosses at the near edge either way, so tuning continues from where this
+/// band ends. Empty when the radio cannot reach any band in that direction.
 struct NeighbourButton: View {
     @Environment(AppSession.self) private var session
     let band: Band?
@@ -159,7 +159,7 @@ struct BandRail: View {
                 Rectangle().fill(Theme.border).frame(width: w, height: 2).offset(y: Self.trackY - 1)
                 cap(x: 0)
                 cap(x: w)
-                // The region the radio holds, where the hand has it during a drag.
+                // The capture's region, at its dragged position during a drag.
                 if let region = captureRange {
                     pill(region, width: w, fill: Theme.raised, stroke: Theme.borderStrong)
                     // The zoomed window inside it.
@@ -242,7 +242,8 @@ struct BandRail: View {
 
     /// A drag of the region: the centre moves by the pointer's whole translation from where it
     /// began, never past the band's edges, and the station stays put unless the region's edge
-    /// pushes it (`AppSession.pan`). A drag never changes the band; the neighbours' names do.
+    /// pushes it (`AppSession.pan`). A drag never changes the band; clicking a neighbour's name
+    /// does.
     private func moved(_ v: DragGesture.Value, width: CGFloat) {
         guard panned || abs(v.translation.width) >= 3 else { return }
         if dragStartCentre == nil {

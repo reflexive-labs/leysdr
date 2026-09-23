@@ -55,8 +55,8 @@ final class CaptureLevelTests: XCTestCase {
         }
     }
 
-    /// A channel-scoped subscription is about the channel; the capture's level rides with the
-    /// capture's other telemetry, on a capture or daemon scope.
+    /// A channel-scoped subscription carries channel telemetry only; the capture's level is sent
+    /// with the capture's other telemetry, on a capture or daemon scope.
     func testAChannelScopeCarriesNoCaptureLevel() async throws {
         let fixture = fixturePath("nfm_tone.cf32")
         guard FileManager.default.fileExists(atPath: fixture) else {

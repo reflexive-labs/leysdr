@@ -56,7 +56,7 @@ type session struct {
 	// sourceLine, when set, names what is being played instead of the radio it
 	// arrives through: play's second banner line answers "what am I listening
 	// to", where tune's answers "on what radio". A file device has no gain and
-	// no tuning range, so naming the hardware there says nothing.
+	// no tuning range, so the hardware line would tell the user nothing.
 	sourceLine string
 	// channelGone records that another client destroyed the channel this
 	// session was listening to, so the closing line does not also claim to
@@ -78,15 +78,15 @@ type session struct {
 	seq uint64
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
-	// failureNote is what the capture's level and the row the squelch was
-	// measured from say is wrong (failureWords), or "": the radio clipping, or
+	// failureNote is the problem the capture's level and the squelch
+	// measurement row show (failureWords), or "": the radio clipping, or
 	// nothing above the floor. Printed beside squelchNote, because it was
 	// measured with it.
 	failureNote string
 	// failureRow is the row failureNote was read from, kept so the note can be
-	// read again against each CaptureLevel that arrives while the session
-	// runs: the row says what is above the floor, the level says whether the
-	// radio is clipping, and only the level goes on changing.
+	// re-evaluated against each CaptureLevel that arrives while the session
+	// runs: the row shows what is above the floor, the level shows whether the
+	// radio is clipping, and only the level keeps changing.
 	failureRow []float64
 	// level is the capture's newest CaptureLevel, nil until one arrives and for
 	// ever against an older daemon, when the note falls back to the row's own
@@ -575,9 +575,9 @@ func (s *session) checkRange(input string, hz uint64) error {
 // (the audio form) or reads the capture itself (--iq); both are found by the
 // job's own frequency against what the mirror holds.
 //
-// The daemon never refuses a person on a job's behalf -- it degrades the
-// recording and states the gap. The guard lives where the click happens, which
-// for `ley` is here (docs/design/recording.md, "Don't-disturb").
+// The daemon never refuses a user's write on a job's behalf -- it degrades the
+// recording and records the gap. The client that takes the user's action does
+// the check, which for `ley` is here (docs/design/recording.md, "Don't-disturb").
 func (s *session) recordingsOn(captureID string) []*leylinev1.Job {
 	cap := captureByID(s.state, captureID)
 	if cap == nil {
@@ -859,7 +859,7 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 	defer cancel()
 	// The capture's level is asked for first, so its first reading, a quarter
 	// of a second away at most, is usually in hand by the time the row is: it
-	// says whether the radio is clipping, which the row cannot.
+	// shows whether the radio is clipping, which the row cannot.
 	levels := s.watchLevel(sctx, cap.CaptureId)
 	sub, err := s.client.SubscribeFFT(sctx, cap.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {

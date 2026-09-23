@@ -9,13 +9,13 @@ import (
 )
 
 // The error line is "ley: <sentence> [CODE]" and stays that shape: the ink
-// below only tells the eye where the sentence begins, which part is a path it
-// does not have to read, and which part it is meant to type. Everything here
+// below only marks where the sentence begins, which part is a path that can
+// be skipped, and which part is a command to type. Everything here
 // is redundant emphasis -- ui.Strip of any of it is the plain line, byte for
 // byte -- and ExitError.Message itself is never touched, so the tests that
 // inspect it keep inspecting a plain string.
 
-// remedyLeads introduce the "what to do next" clause of the house error
+// remedyLeads introduce the "what to do next" clause of the standard error
 // shape. The clause that follows one of these is a command to type.
 var remedyLeads = []string{
 	"Start it with: ", "start it with: ", "Check with: ", "check with: ",
@@ -76,8 +76,9 @@ func inkCode(st ui.Style, line string) string {
 }
 
 // inkPaths Mutes every parenthetical that holds a filesystem path, such as
-// "(socket /tmp/leyline.sock)" -- the reader is told the path, not asked to
-// read it. Parentheticals that list accepted values are left alone.
+// "(socket /tmp/leyline.sock)" -- the path is there for reference, not as
+// the point of the message. Parentheticals that list accepted values are left
+// alone.
 func inkPaths(st ui.Style, line string) string {
 	var b strings.Builder
 	for {
@@ -103,7 +104,7 @@ func inkPaths(st ui.Style, line string) string {
 }
 
 // inkRemedy gives the trailing "ley …" command of a sentence the Cmd ink, so
-// the one thing to type is the one thing that stands out after a wrap.
+// the command to type stands out even when the line wraps.
 func inkRemedy(st ui.Style, line string) string {
 	best := -1
 	for _, lead := range remedyLeads {
@@ -130,7 +131,7 @@ func inkRemedy(st ui.Style, line string) string {
 }
 
 // inkNotRunning gives the daemon's state words Err ink in the sentence every
-// verb shares. The words carry the meaning; the colour only finds them.
+// verb shares. The words carry the meaning; the colour only highlights them.
 func inkNotRunning(st ui.Style, line string) string {
 	const state = "is not running"
 	if !strings.Contains(line, "the Leyline daemon "+state) {

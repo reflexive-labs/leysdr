@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Who this process is on the wire (docs/dev/engine-internals.md, "Client identity and ownership").
+// Process identity on the wire (docs/dev/engine-internals.md, "Client identity and ownership").
 // gRPC has no connection identity, so every RPC carries three metadata keys and the daemon
 // attributes every event it causes to them. The id is minted once per process, as `ley` mints its
 // `cli_` id, so a window and its coalescer are one client to the daemon.

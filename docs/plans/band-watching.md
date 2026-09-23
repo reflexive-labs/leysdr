@@ -1,7 +1,7 @@
 # Plan: Band Watching
 
-Implements `docs/design/band-watching.md`. Build order is deliberately the inverse of how
-interesting the items are: BW-1 needs no new plane and works at today's row rates, BW-3 needs a
+Implements `docs/design/band-watching.md`. Build order is the reverse of how interesting
+the items are: BW-1 needs no new plane and works at today's row rates, BW-3 needs a
 retention ring and a detector that does not exist yet.
 
 ## BW-1 `[x]` Persistence (`ley phosphor`)
@@ -26,20 +26,20 @@ rates the ladder already serves, because it accumulates over time instead of res
   Named `phosphor` because `persist` collides with `--persistent`, which means something else
   entirely on `ley tune`.
 
-**The shading curve is the feature, and the first cut got it wrong.** A linear normaliser against
-the frame's peak makes persistence useless: the shade ramp has four steps, so anything under a
-quarter of the peak count draws as blank, and a signal present 1% of the time -- exactly what this
-display exists to find -- was invisible. `shadeFor` is `log1p(count)/log1p(peak)`, which keeps a 1%
+**The first cut got the shading curve wrong.** A linear normaliser against the frame's peak makes
+persistence useless: the shade ramp has four steps, so anything under a quarter of the peak count
+draws as blank, and a signal present 1% of the time -- the kind this display is for -- was
+invisible. `shadeFor` is `log1p(count)/log1p(peak)`, which keeps a 1%
 signal at the first step while still putting a permanent one at full brightness. Every phosphor
 display compresses the count for the same reason.
 
 Two smaller corrections: the header reported a row count taken from the frame's sample index, which
-is not a row count and is not on the wire at all (the half-life is the honest statement of the
-window, so the number is gone); and the legend line overflowed a 40-column terminal.
+is not a row count and is not on the wire at all (the half-life already describes the window, so
+the number was removed); and the legend line overflowed a 40-column terminal.
 
 Tests: `TestPhosphorRareSignalStaysVisible` (which asserts the linear version would have failed, so
-it cannot quietly regress), `TestPhosphorDrawsRareAndSteadyAlike`, `TestPhosphorStripsToPlain` at
-40/80/160 in both alphabets, `TestPhosphorRejectsAShortPayload`,
+a return to linear fails the test), `TestPhosphorDrawsRareAndSteadyAlike`,
+`TestPhosphorStripsToPlain` at 40/80/160 in both alphabets, `TestPhosphorRejectsAShortPayload`,
 `TestPhosphorHeaderStatesTheWindow`; and engine-side `PersistenceTests` -- a steady carrier lands in
 one level bucket while noise of the same mean spreads across several, counts decay, counts saturate
 rather than wrap, out-of-range levels clamp instead of dropping.
@@ -71,7 +71,7 @@ useful piece of BW-2, built first because it needs no new plane.
 
 The log carries the occupancy metric BW-2 is built around, one column ahead of it: **ON AIR** is
 the detector's `looks/looks_possible` -- the rows it saw the carrier in, over the rows that could
-have held it -- so it is the fraction of the watch the carrier was truly transmitting. Beside HELD
+have held it -- so it is the fraction of the watch the carrier was transmitting. Beside HELD
 (a first-to-last span) it separates a channel held down from one a strong signal only flickered
 across: an intermod that brackets the whole watch reads a wide HELD and a near-zero ON AIR. This is
 the same per-carrier, never-band-relative measure BW-2 wants, delivered as an event log rather than
@@ -83,9 +83,9 @@ briefly, and `--skirt-db` (default 25) folds a much weaker carrier one channel f
 into it -- a strong transmitter spills into the slots either side, and those are not separate
 transmissions. This is the same class of ambiguity BW-2's occupancy metric guards against, met
 here as adjacent-channel spill rather than a max-versus-median artefact. What each filter hid is
-tallied on stderr, so a hidden carrier never reads as a quiet band.
+tallied on stderr, so a hidden carrier is not mistaken for a quiet band.
 
-**The report folds by proximity, and the first cut did not.** A carrier whose centre wobbles a bin
+**The report folds nearby detections; the first cut did not.** A carrier whose centre wobbles a bin
 between looks arrived under several `detection_id`s and drew several rows for one transmission. The
 CLI now folds by `nearestCarrier`/`mergeTol` with the same tolerance scan uses -- `max(5000,
 min(aBw,bBw)/2)` -- and keeps the strongest reading's centre, so one transmission is one row.
@@ -102,11 +102,11 @@ not hold a busy-fraction against a given channel grid over an hour.
 ## BW-2 `[ ]` Channel occupancy
 
 Same accumulator plus a **given** channel grid (`--channels 902.3M:200k:64` or a named band plan).
-Reports per channel: busy fraction, burst count, longest burst, time since last. A table, not a
-picture, and the only view here that survives being left running for an hour.
+Reports per channel: busy fraction, burst count, longest burst, time since last. The output is a
+table, and this is the only view here that stays useful when left running for an hour.
 
 Inferring channel edges from energy is out: it silently misattributes traffic, which is the class of
-thing invariant 12 exists to stop.
+error invariant 12 prohibits.
 
 **Design input, measured on a real 915 ISM band before building this.** A first cut at the occupancy
 metric compared each channel's *max over its bins* against the *band's median bin*, and reported two
@@ -144,7 +144,7 @@ The only view that shows a LoRa chirp, and by far the largest piece.
   client-issued trigger, because an operator watching a waterfall wants to keep what just happened.
 - The daemon computes the high-resolution spectrogram and serves it as an FFT stream at a non-LIVE
   `StreamPosition` — the first use of that field. Invariant 2 holds; the client renders.
-- Zoom is the feature, not a nicety: 40 rows over a 70 ms SF7 packet is too coarse to show a
+- Zoom is required: 40 rows over a 70 ms SF7 packet is too coarse to show a
   diagonal, and over 10 ms it is four rows a symbol.
 
 ## Decisions
@@ -152,5 +152,5 @@ The only view that shows a LoRa chirp, and by far the largest piece.
 - A new `FftAccumulation` value is the wrong home for persistence: it changes what a row *is*, and
   a persistence frame is 2D where an FFT row is 1D.
 - No LoRa demodulator, no constellation or eye diagram (both meaningless for chirp spread spectrum),
-  and no raising `maxRowsPerSecond`. Needing 4000 rows a second is a different feature, not a
-  bigger number.
+  and no raising `maxRowsPerSecond`. A view that needs 4000 rows a second is a separate feature,
+  not a higher limit.

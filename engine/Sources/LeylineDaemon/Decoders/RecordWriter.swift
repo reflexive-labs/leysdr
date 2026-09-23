@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // One kept job's two files. Records append as they arrive; the sidecar is rewritten whenever the
-// count or the anchors change, so a query sees an honest file even while the job is still running
-// (docs/design/decoders.md, "Decisions": "The store is files").
+// count or the anchors change, so a query sees a sidecar that matches the records even while the
+// job is still running (docs/design/decoders.md, "Decisions": "The store is files").
 
 import EngineCore
 import Foundation
@@ -11,7 +11,7 @@ import Logging
 
 actor RecordWriter {
     /// Records buffered before the bytes reach the file. A crash loses at most this many, and a
-    /// decode job that hears one packet a minute still has its record on disk within a second.
+    /// decode job that decodes one packet a minute still has its record on disk within a second.
     static let flushEvery = 32
     static let flushInterval: Double = 1
 

@@ -262,9 +262,9 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
   }
 
   /// Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
-  /// daemon's own sentence about it. Set only on FAILED; `status_detail` is prose and never carries
-  /// the code, so a client that wants to tell "the radio cannot tune that" from "somebody is using
-  /// it" reads this rather than splitting an English sentence.
+  /// daemon's human-readable description. Set only on FAILED; `status_detail` is prose and never
+  /// carries the code, so a client that wants to tell "the radio cannot tune that" from "somebody
+  /// is using it" reads this rather than splitting an English sentence.
   public var error: Leyline_V1_ErrorDetail {
     get {_storage._error ?? Leyline_V1_ErrorDetail()}
     set {_uniqueStorage()._error = newValue}
@@ -360,9 +360,9 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
   public var deviceID: String = String()
 
   /// The tuner gain to sweep at. A sweep always pins the gain for its whole duration, because SNR
-  /// against a moving AGC is not a number; this says where. `db` pins the element there (the first
-  /// gain element when `element` is empty); `auto` asks the driver where its AGC settles and pins
-  /// that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
+  /// measured against a moving AGC is meaningless; this sets the level. `db` pins the element there
+  /// (the first gain element when `element` is empty); `auto` asks the driver where its AGC settles
+  /// and pins that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
   /// which is why two sweeps of one band could differ by 6 dB of floor. `Scan.gains` reports the
   /// level the sweep ran at either way, and the entry gain is restored when the radio is handed back.
   public var gain: Leyline_V1_GainWrite {
@@ -461,8 +461,8 @@ public nonisolated struct Leyline_V1_RecordConfig: Sendable {
 
 /// Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
 /// go, in time order. Unlike a scan it does not sweep: it parks one capture on the band and runs the
-/// detector continuously, so it never time-shares and cannot miss a transmission that starts while it
-/// is looking elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
+/// detector continuously, so it never time-shares and cannot miss a transmission by being tuned
+/// elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
 /// the client folds them into a transmission log. A band wider than one capture can analyse is
 /// refused with INVALID_ARGUMENT (use scan, which sweeps). This is the band-watching design's
 /// occupancy/burst view (docs/design/band-watching.md), the stationary sibling of ley scan.
@@ -545,7 +545,7 @@ public nonisolated struct Leyline_V1_Transcript: Sendable {
 
   public var segments: [Leyline_V1_ActivitySegment] = []
 
-  /// out-of-capture or daemon downtime; honesty over completeness
+  /// out-of-capture or daemon downtime, listed rather than hidden
   public var coverageGaps: [Leyline_V1_Gap] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -593,7 +593,7 @@ public nonisolated struct Leyline_V1_Scan: @unchecked Sendable {
   }
 
   /// The gain the sweep pinned for its whole duration. A sweep must not run under the tuner's AGC
-  /// -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
+  /// -- the gain moves after every hop and SNR against a moving reference is meaningless -- and a
   /// scan that does not say which gain it ran at cannot be compared with another.
   public var gains: [Leyline_V1_GainState] {
     get {_storage._gains}
@@ -601,7 +601,7 @@ public nonisolated struct Leyline_V1_Scan: @unchecked Sendable {
   }
 
   /// The analysis bin width, in Hz. Every dB in this message -- floor_dbfs, snr_db -- is per bin,
-  /// and a bin's width is what makes those numbers mean anything: a wider bin holds more noise. A
+  /// and those numbers depend on the bin width: a wider bin holds more noise. A
   /// client should print this alongside the floor rather than deriving it from step_hz, which
   /// describes where the radio pointed and not how finely it looked.
   public var resolutionHz: UInt32 {
@@ -611,8 +611,8 @@ public nonisolated struct Leyline_V1_Scan: @unchecked Sendable {
 
   /// What the sweep actually covered. Never wider than config.range, and narrower whenever the
   /// radio could not reach all of it, the request fell partly in the tuner's own blind spot, or the
-  /// sweep was stopped early. A client that reports config.range as though it were searched is
-  /// claiming coverage nobody measured.
+  /// sweep was stopped early. A client must not report config.range as the searched range: part of
+  /// it may never have been measured.
   public var covered: Leyline_V1_FrequencyRange {
     get {_storage._covered ?? Leyline_V1_FrequencyRange()}
     set {_uniqueStorage()._covered = newValue}

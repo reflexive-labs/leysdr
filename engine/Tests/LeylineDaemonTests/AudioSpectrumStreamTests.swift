@@ -84,8 +84,7 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
             XCTAssertEqual(desc.fft.rowsPerSecond, 10)
             XCTAssertEqual(desc.fft.accumulation, .rowSnapshot, "a row is one transform of one window")
             XCTAssertEqual(desc.fft.looksPerRow, 1)
-            // 48 kHz audio: the row runs from 0 Hz to 24 kHz, said in the terms every FFT reader
-            // already understands.
+            // 48 kHz audio: the row runs from 0 Hz to 24 kHz, in the usual FFT terms.
             XCTAssertEqual(desc.centerHz, 12_000)
             XCTAssertEqual(desc.spanHz, 24_000)
             var ref = Leyline_V1_StreamRef()
@@ -112,8 +111,8 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
         }
     }
 
-    /// A raw-IQ channel produces no audio, so there is no spectrum of it to take: the band is what
-    /// a capture-sourced FFT already answers.
+    /// A raw-IQ channel produces no audio, so there is no spectrum of it to take: a
+    /// capture-sourced FFT already covers the band.
     func testRawIQChannelRefusesAnFFT() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in
@@ -130,8 +129,8 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
         }
     }
 
-    /// A row is one transform of one window, so every accumulation the daemon knows is answered
-    /// with the snapshot it actually gets -- and one it does not know is refused, as on the band.
+    /// A row is one transform of one window, so every accumulation the daemon supports is answered
+    /// as the snapshot it actually gets -- and an unknown one is refused, as on the band.
     func testChannelFFTAnswersKnownAccumulationsAndRefusesUnknownOnes() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in
@@ -157,7 +156,7 @@ final class AudioSpectrumStreamDaemonTests: XCTestCase {
     }
 
     /// A capture-rate change re-plans the channel at a new audio rate, so the axis this stream's
-    /// descriptor named is no longer true and the stream ends for a fresh subscription.
+    /// descriptor reported is no longer valid and the stream ends for a fresh subscription.
     func testCaptureRateChangeEndsTheChannelSpectrumStream() async throws {
         try await withDaemon { c in
             let device = RebindableDevice()

@@ -236,10 +236,10 @@ func (d *Daemon) reap(clientID string) {
 	}
 	delete(d.presence, clientID)
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "daemon", Label: "presence"}
-	// A sweep nobody is reading is a radio nobody can use; the daemon's clientGone hook does the
-	// same. A hard-killed `ley scan` must not leave the fake sweeping for ever either. The flag is
-	// all it takes: the sweep ends itself at its next step, writing what it found before the
-	// terminal event goes out, exactly as a CancelJob does.
+	// A sweep with no client reading it holds the radio for nothing; the daemon's clientGone hook
+	// ends it too. A hard-killed `ley scan` must not leave the fake sweeping for ever either.
+	// Setting the flag is enough: the sweep ends itself at its next step, writing what it found
+	// before the terminal event goes out, exactly as a CancelJob does.
 	//
 	// A kept decode job is the exception the design doc states: persistence follows intent, so
 	// `ley decode --job` outlives the terminal that started it and its records stay a resource.
@@ -254,7 +254,8 @@ func (d *Daemon) reap(clientID string) {
 		}
 		d.destroyChannelLocked(id, by)
 	}
-	// The sound belongs to whoever asked for it, which is what makes Ctrl-C in `ley play` stop it.
+	// A playback ends with the client that started it, which is what makes Ctrl-C in `ley play`
+	// stop it.
 	d.reapPlaybacksLocked(clientID)
 }
 
@@ -295,7 +296,7 @@ func (d *Daemon) detachSinkLocked(id string, by *leylinev1.ClientInfo) {
 			}
 		}
 	}
-	// Terminal event: state unset says "gone" (control.proto's SinkState), the
+	// Terminal event: state unset means "gone" (control.proto's SinkState), the
 	// same tombstone a destroyed channel gets.
 	gone := proto.Clone(s).(*leylinev1.Sink)
 	gone.State = leylinev1.SinkState_SINK_STATE_UNSPECIFIED

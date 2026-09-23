@@ -135,7 +135,8 @@ and `ley spectrum --json` emit `{seq, sample_index, center_hz, span_hz, bins, fl
 numbers as numbers), spectrum adding `peaks: [{center_hz, db}]` — the N loudest local maxima of the row,
 presentation only, never called signals. `ley waterfall --json` is the same row plus `looks`, the
 number of looks the daemon folded into it, since the view negotiates ROW_MAX accumulation and a row
-means nothing without it; the map is drawn only when the flag is absent. `ley phosphor --json` is the
+cannot be interpreted without it; the map is drawn only when the flag is absent. `ley phosphor
+--json` is the
 histogram member: one object per frame, `{seq, sample_index, center_hz, span_hz, bins, levels,
 floor_db, range_db, counts}`, where `counts` is the daemon's `bins × levels` grid of little-endian
 uint16 counts, bin-major, base64-encoded (an array of tens of thousands of small integers costs more
@@ -161,7 +162,7 @@ squelch_open}`, where `bands` are the ISO octave centres with their bins summed 
 divided by the window's equivalent noise bandwidth (1.5 for the daemon's Hann window), so a tone
 reads its own level rather than the 1.76 dB the window spread it over. `rms_dbfs`, `peak_dbfs` and
 `squelch_open` come from the daemon's `METER` telemetry and are `null` until it has measured a
-block -- a number there would be a level nobody reported, and -0 dBFS is a real level. The bare
+block -- any number there, even -0 dBFS, would read as a real measured level. The bare
 verb prints one such row and exits; `--watch` prints them as they arrive. `ley waveform --json`
 is one object per column as it completes: `{sample_index, seconds, peak_dbfs, rms_dbfs,
 squelch_open}`, a column being a fixed slice of audio rather than a slice of wall clock, `seconds`
@@ -180,8 +181,8 @@ bands with `parts`, the aliases of the bands it spans). `ley bands <frequency|pr
 --json` is the one place a client-local table answers with a **single object** instead:
 `{hz, band, mode, bandwidth_hz, reason}`, where `band` is one of those entries or `null` and `mode`
 is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`
-does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script asking "what would
-tune do here" came for, and they are always present. Neither verb dials the daemon; `ley help
+does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script needs to predict
+what `tune` would do, and they are always present. Neither verb dials the daemon; `ley help
 presets` is the same data in prose, and `ley presets` (the verb) owns the bare name. `ley
 bookmarks --json` is the third such table and the only one a client writes: an array of
 `{id, name, hz, mode, bandwidth_hz, updated_ns}` ordered by frequency and then name, which are the
@@ -225,8 +226,9 @@ first_ns, last_ns, quiet_s, summary}` (snake_case). `first_ns` and `last_ns` are
 nanoseconds derived through the page's anchors, `0` when no anchor dates the record; `quiet_s` is
 the seconds since the device was last heard; `label` is the user-given name or `""`. `--quiet-since
 D` keeps only devices silent longer than `D` (a device with no datable last-seen is dropped,
-because absence cannot be proven for a record off the timeline); by default the whole store is
-scanned so absence can reach back, and `--since` bounds the scan. `ley label --json` is the sixth:
+because no anchor dates its record); by default the whole store is
+scanned so a long silence can be found, and `--since` bounds the scan. `ley label --json` is the
+sixth:
 a label is user data in a client-side JSON store, not daemon state (`docs/design/decoders.md`, "The
 state boundary"), so it prints one `{device_id, name, protocol, updated_ns}` object -- the record
 set, read or (with `--clear` or an empty name) cleared, `name` empty when the device has none. The
@@ -239,7 +241,8 @@ center_hz, channel, first_s, held_s, on_air_s, looks, looks_possible, peak_snr_d
 on_air_slices}` (snake_case; `channel` the GMRS or preset channel on the frequency or `""` when none; `first_s` and
 `held_s` seconds on the client's own clock, since telemetry latency is sub-second and a radio-check
 log needs no anchor arithmetic; `held_s` is first-to-last span while `on_air_s` is the time actually
-transmitting, `looks`/`looks_possible` being the detector's rows-seen over rows-that-could, so a
+transmitting, `looks`/`looks_possible` being the rows the carrier was detected in over the rows
+that covered it, so a
 flickering intermod reads a wide `held_s` and a tiny `on_air_s`; `peak_snr_db` the strongest the
 carrier was seen; `on_air_slices` eight shares in `[0, 1]`, the carrier's on-air fraction of each
 eighth of the watch oldest first, from the arrival times of the daemon's per-row re-publishes
@@ -261,11 +264,12 @@ a span that wide. There is no `--gain`: a watch runs at the gain the radio is on
 the sweep's. The log
 table (TIME, FREQUENCY, CHANNEL, HELD (s), ON AIR (s), ACTIVITY, PEAK SNR (dB) -- TIME a dimmed
 gutter of first sightings stamped when it changes, CHANNEL present only on a band with named
-channels, HELD the first-to-last span, ON AIR the time truly transmitting from the detector's look
+channels, HELD the first-to-last span, ON AIR the time actually transmitting from the detector's
+look
 counts, ACTIVITY an eight-cell sparkline of when during the watch it was heard with the span it
 covers in the header, the first column dropped on a terminal too narrow for the table, and PEAK SNR
-inked by the level ramp from `--min-snr` upward) is stdout; the live feed announces a carrier the
-first time it clears `--min-snr`, and the summary says once when a carrier's reported frequency,
+coloured by the level ramp from `--min-snr` upward) is stdout; the live feed announces a carrier the
+first time it clears `--min-snr`, and the summary reports once when a carrier's reported frequency,
 its strongest reading, differs from the one the feed printed. the live feed of each carrier as it is
 first heard, and the summary, are stderr. Three filters keep the log readable, each disabled with a
 `0`: `--min-snr` (default 8) drops a carrier whose peak never cleared that many dB over the noise
@@ -280,8 +284,9 @@ occupancy view of which this is the first cut.
 it: the answer is the whole scan, not the steps it took to get there, and progress belongs on
 stderr where a person can see it. Each `Detection` in it carries `looks` and `looksPossible` -- the
 spectrum rows in which it cleared the threshold, out of the rows that covered that frequency -- and
-`floor_dbfs`, the local noise floor its `snr_db` was measured against. Those counts are evidence,
-never a filter: a signal seen once in eight is reported as such rather than dropped, because an
+`floor_dbfs`, the local noise floor its `snr_db` was measured against. Those counts are reported,
+never used as a filter: a signal seen once in eight is reported as such rather than dropped,
+because an
 intermittent transmission is exactly what somebody may be scanning for. `Scan.gains` is the gain the
 sweep pinned for its whole duration, because a scan run at a different gain is a different
 measurement. `--gain dB|auto` says where to pin it (`ScanConfig.gain`, a `GainWrite` on the first
@@ -291,7 +296,7 @@ cannot set fails the job with the daemon's code rather than sweeping at another.
 a wider bin holds more noise -- and `Scan.covered` is the range actually looked at, never wider than
 `config.range` and narrower whenever the radio could not reach all of it, part of the request fell
 in the tuner's own blind spot, or the sweep was stopped early; a client that reported `config.range`
-as searched would be claiming coverage nobody measured. `Scan.config.step_hz` is the advance the
+as searched would claim coverage that was never measured. `Scan.config.step_hz` is the advance the
 daemon chose; there is no `--step`, because the step geometry is what keeps the sweep free of blind
 spots. `ScanConfig.device_id` names the radio when there is more than one. `snr_db` here is *spectral* -- a bin against a spectral floor -- and will not agree
 numerically with `Meter.snr_db`, which is a channel's whole power over the band's floor at the
@@ -300,7 +305,7 @@ Full design, with the measured numbers: `docs/design/scan.md`.
 
 While a sweep holds a radio it is the only thing tuning it: `CreateCapture`, `CreateChannel` and
 centre or rate writes on that capture are refused with the stable code `DEVICE_SWEEPING`, which is
-distinct from `DEVICE_BUSY` precisely so a client does not tell the reader to go looking for another
+distinct from `DEVICE_BUSY` so a client does not tell the user to look for another
 client. Without it a channel created on a capture that is walking a band would be dragged across
 megahertz with no explanation.
 
@@ -309,7 +314,7 @@ so job state is rendered by subscription like every other piece of daemon state 
 A v0 scan job is **not persistent**: it belongs to the connection that started it and the daemon
 cancels it when that connection goes, which is what makes Ctrl-C hand the radio back. Its
 `result_uris` carries `ley://scans/<id>`, which names the scan and is resolved by `Jobs.GetScan`; it
-is deliberately not yet a Resource, because an ad-hoc scan is ephemeral and there is no file. The
+is not yet a Resource, because an ad-hoc scan is ephemeral and there is no file. The
 daemon keeps the last sixteen finished jobs in memory and loses them on restart. A decode job
 started with `--job` (kept) is the exception: it is written to `kept-jobs.json` beside the record
 store and comes back after a restart as the same job, its records appending to the same resource
@@ -319,7 +324,8 @@ output is a file (`Jobs.StartJob(RecordConfig)`, below). `Jobs.StartJob` with a 
 `Jobs.GetTranscript` remain UNIMPLEMENTED until Milestone D.15.
 A running decode job's `status_detail` carries its liveness: "decoding with aprs: 12 records, last
 3 s ago", the first record published at once and a moving count every two seconds after it, so
-`ley jobs` tells a decoder that is hearing things from one that is not. A decoder that is silent
+`ley jobs` distinguishes a decoder that is receiving packets from one that is not. A decoder that
+is silent
 stays `RUNNING`, because silence is not failure (DEC-16 in `docs/plans/decoders.md`).
 `ley jobs --json` prints a `ListJobsResponse` with the jobs in id order, which for ULIDs is the
 order they were started, so the row numbers the table prints are the same from one call to the
@@ -368,8 +374,8 @@ says where on the capture's timeline it starts, and the times nothing was record
 the manifest as `coverage_gaps` (CLAUDE.md invariant 5). The verb runs in the foreground and prints, on stderr, a banner of the decisions **the daemon**
 made rather than the ones asked for — it waits up to two seconds for the manifest so the rate,
 format, gate and radio in it are the real ones — then a live line, then what it recorded; the
-recording's URI is on stdout when it ends. Ctrl-C cancels the job, which finalises the files —
-**a cancelled recording is complete, not damaged** — and `--detach` exits at once with the job id
+recording's URI is on stdout when it ends. Ctrl-C cancels the job, which finalises the files, so
+a cancelled recording is complete and readable; and `--detach` exits at once with the job id
 and the URI for a script.
 
 `ley recordings` lists the store through `Resources.ListResources(RECORDING)`, newest first;
@@ -388,7 +394,7 @@ WAV: it holds what a demodulator already produced, and there is no signal left i
 to decode — attaching it as a radio would put a fictional capture and a fictional mode into
 `ley state`, and demodulating audio gives noise. **The daemon plays it instead**
 (`Control.StartPlayback`), through the same audio device a channel's audio comes out of, so the
-sound is where the radio is, a client on another machine hears it, and `ley play` holds the
+sound comes out on the daemon's machine, and `ley play` holds the
 terminal with a position until Ctrl-C stops it — the same shape as every other listening verb. A
 daemon with no audio device answers `PLATFORM_UNSUPPORTED` and `ley` then hands the file to this
 machine's own player (`$LEYLINE_PLAYER` when set — `afplay`, `mpv`, `vlc` — else `open` on macOS
@@ -427,13 +433,14 @@ The store is a plain directory Finder can open and Spotlight can index:
 `~/Library/Application Support/Leyline/recordings` on macOS, `$XDG_DATA_HOME/leyline/recordings`
 elsewhere, `leylined --recordings PATH` to move it, with `--recordings-cap BYTES` (default 20 GiB)
 and `--recordings-age DAYS` (default 0, never) as its retention. A recording deleted in Finder is
-gone and nothing has to be told: the listing is a scan of the manifests. Retention never removes a
+gone with no further step: the listing is a scan of the manifests. Retention never removes a
 recording whose job is running, and a daemon restart does not resume a recording — the next daemon
 repairs the last part's WAV header from the file's length and closes the manifest with
 `ended_by = restart`.
 
 A radio moved out from under a running recording leaves a gap in it. The daemon never refuses a
-person on a job's behalf: it marks the job `DEGRADED`, closes the open part and records the gap.
+user's retune to protect a job: it marks the job `DEGRADED`, closes the open part and records the
+gap.
 The guard is in the client, so `ley tune` and `ley set freq` refuse a retune of a capture a
 recording is riding on, name the job and `ley jobs cancel`, and go ahead with `--retune`.
 
@@ -473,6 +480,6 @@ tracked by the daemon — after which `auto` becomes a one-field write. Not in v
 roadmap`), because a newcomer who types a planned verb should learn what is coming rather than see
 Cobra's "unknown command". `scan` was one until Milestone D.13, `watch` until D.17 -- the name went
 to the record-watch verb (a decode job with a predicate and a notifier, DEC-9a), the newer spec,
-and the audio-transcript watch that reserved it is D.15's to place -- and `record` until C.12.
+and D.15 will place the audio-transcript watch that had reserved it -- and `record` until C.12.
 
 Deliberate omissions at v0: no remote flags (UDS-only) and no TX verbs.

@@ -62,7 +62,7 @@ func runLabel(app *App, id, name string, setting bool) error {
 		return fmt.Errorf("cannot read the labels file: %w", err)
 	}
 	if setting {
-		// Keep the protocol of an existing label as a note, so clearing then reading is honest and
+		// Keep the protocol of an existing label as a note, so a cleared label still records it and
 		// renaming does not drop where the device was first seen.
 		protocol := ""
 		if prev, ok := store.Get(id); ok {
@@ -87,8 +87,8 @@ func runLabel(app *App, id, name string, setting bool) error {
 	return printLabel(app, id, l.Name)
 }
 
-// printLabel says what a transmitter is now called, in the words the table uses. An empty name is
-// the answer "no name yet", pointing at how to give one.
+// printLabel prints a transmitter's current label, as the table shows it. An empty name prints
+// that there is no label yet and the command that sets one.
 func printLabel(app *App, id, name string) error {
 	s := app.Style
 	if name == "" {

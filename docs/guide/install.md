@@ -84,8 +84,8 @@ ley devices                                # shows driver rtltcp, model "rtl_tcp
 ley devices detach 2                       # the way out: the daemon forgets it
 ```
 
-Attaching is a client asking the running daemon, so nothing needs restarting, and the remembered
-list (`devices.json` beside the socket) survives one. A foreground run started from a terminal can
+Attaching is a request to the running daemon, so nothing needs restarting, and the remembered
+list (`devices.json` beside the socket) survives a daemon restart. A foreground run started from a terminal can
 also be given its radios on the command line:
 
 ```sh

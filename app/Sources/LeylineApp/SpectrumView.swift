@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Region 3: the spectrum. A live trace, a max-hold trace, a 10×4 grid, and the tuned channel as
-// a vertical band. It is a peak display and says so nowhere, because the label would be the
-// detector's word (invariant 12). Every column is the loudest bin under it, so a carrier one
-// bin wide is never lost between two pixels. The mouse works here as on the waterfall, through
-// the same `ChartMouse`, and the pointer's hairline shows on both.
+// a vertical band. It is a peak display but carries no label saying so, because that label
+// would be the detector's word (invariant 12). Every column is the loudest bin under it, so a
+// carrier one bin wide is never lost between two pixels. The mouse works here as on the
+// waterfall, through the same `ChartMouse`, and the pointer's hairline shows on both.
 
 import LeylineClient
 import LeylineProto
@@ -87,7 +87,7 @@ struct SpectrumView: View {
     }
 
     private func draw(in ctx: inout GraphicsContext, size: CGSize, rows: Rows) {
-        // The grid is drawn whether or not there is a row: it is the shape to recognise.
+        // The grid is drawn whether or not there is a row, so the empty chart is recognisable.
         var grid = Path()
         for i in 1..<10 {
             let x = size.width * CGFloat(i) / 10
@@ -194,8 +194,8 @@ struct Columns {
     }
 }
 
-/// Max hold is a toggle, not furniture: a chip with the trace's colour, its real name and a
-/// separate clear action. Hiding the trace does not pretend its accumulated history disappeared.
+/// Max hold is a toggle, not a fixed trace: a chip with the trace's colour, its real name and a
+/// separate clear action. Hiding the trace does not clear its accumulated history.
 struct MaxHoldChip: View {
     @Environment(AppSession.self) private var session
 

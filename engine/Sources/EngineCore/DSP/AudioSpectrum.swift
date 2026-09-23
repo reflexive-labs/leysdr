@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The spectrum of what a channel produces, rather than of the radio it came from: a sliding window
+// The spectrum of a channel's audio output, rather than of the capture IQ: a sliding window
 // over one of the channel's audio taps, Hann-windowed and transformed through the same FFT the
-// ladder uses. It rides the sink table so a channel with nobody watching pays nothing for it.
+// ladder uses. It is attached through the sink table, so a channel with no subscriber pays
+// nothing for it.
 
 import Foundation
 import Synchronization
@@ -10,23 +11,23 @@ import Synchronization
 /// One channel tap's audio spectrum, fanned to a `SpectrumSink` as rows of dBFS per bin from 0 Hz
 /// to half the audio rate.
 ///
-/// It is an `AudioSink` because that is exactly what it consumes: the conditioned block a listener
-/// hears (`.audio`) or the detector's own output (`.demod`), at the channel's audio rate. The
+/// It is an `AudioSink` because it consumes the same input: the conditioned block sent to the
+/// speaker (`.audio`) or the detector's own output (`.demod`), at the channel's audio rate. The
 /// window is `2 × bins` samples, so `bins` rows of real spectrum come out of one complex transform,
 /// and a row is emitted whenever the window has advanced by `rate / rowsPerSecond` samples --
 /// windows overlap when rows come faster than the window is long, and skip samples when they come
-/// slower, which is the honest thing for a meter: each row is the newest window, not a summary.
+/// slower. Each row is the newest window, not an average of the samples since the last row.
 public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
-    /// Fastest rows served. A meter is read by eye, and a row is a whole transform of a window
-    /// several tens of milliseconds long; faster than this buys resolution nobody can see.
+    /// Fastest rows served. A row is a whole transform of a window several tens of milliseconds
+    /// long; a meter updating faster than 20 times a second shows nothing extra.
     public static let maxRowsPerSecond: Double = 20
 
     /// Rows served where the request named no rate, the same number a capture-sourced FFT answers.
     public static let defaultRowsPerSecond: Double = 10
 
     /// Widest row served. Every subscription on a tap runs its own transform, and at 48 kHz a
-    /// 4096-bin row is already 5 Hz a bin over a 171 ms window -- finer than a meter is read, and
-    /// past here the DSP thread pays for resolution nobody looks at.
+    /// 4096-bin row is already 5 Hz a bin over a 171 ms window, finer than a meter display needs.
+    /// Larger transforms cost DSP-thread time for no visible gain.
     public static let maxBins = 4096
 
     /// Round a request to a size the ladder also serves, so every FFT reader's row layout holds;

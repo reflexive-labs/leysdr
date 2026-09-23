@@ -41,9 +41,9 @@ const defaultVersion = "0.1.0-dev"
 var Version = defaultVersion
 
 // A binary built outside the Makefile — `go install ...@v0.2.0` — gets no
-// ldflags, and the literal would then claim a number the module metadata
-// already knows better. Go stamps "(devel)" for a build from a working tree,
-// which says nothing, so that case keeps the literal.
+// ldflags, so the version comes from the module metadata instead of the
+// literal. Go stamps "(devel)" for a build from a working tree, which carries
+// no version, so that case keeps the literal.
 func init() {
 	if Version != defaultVersion {
 		return
@@ -285,10 +285,9 @@ func wrapArgs(cmd *cobra.Command) {
 }
 
 // rootArgs handles `ley <not-a-verb>`, so the root's own RunE only runs for a
-// bare `ley`. It is the CLI's other front door and says what `ley help
-// <not-a-topic>` says: name the failure, then show the way out -- Cobra's
-// "did you mean" when the name is close to a verb, the topic list when it is
-// not, and the command list either way.
+// bare `ley`. It prints what `ley help <not-a-topic>` prints: the failure,
+// then what to try -- Cobra's "did you mean" when the name is close to a
+// verb, the topic list when it is not, and the command list either way.
 func rootArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return nil
@@ -419,7 +418,7 @@ const compCmdName = "completion"
 
 // noJSONErrorf is the refusal a verb with no machine output makes. The flag is
 // a usage error rather than a no-op so a script that pipes the verb through jq
-// fails where it went wrong, and instead names what to run for the same answer.
+// fails at the verb, and instead names the command that gives the same answer.
 func noJSONErrorf(verb, instead string) error {
 	return usageErrorf("%s has no --json output; drop the flag (%s)", verb, instead)
 }
@@ -735,10 +734,10 @@ func ttyRows(f *os.File) int {
 const orientDialTimeout = 300 * time.Millisecond
 
 // runOrientation is the bare `ley`: it shows where things stand and what to
-// type next, styled on a terminal and plain in a pipe — the Long text promises
+// type next, styled on a terminal and plain in a pipe. The Long text documents
 // "run it with no arguments to see where things stand", so `ley | tee log`
-// keeps that promise and `ley --help` stays the verb list. --json is the same
-// question asked by a script, so it answers with `ley state --json`'s snapshot.
+// prints the same screen and `ley --help` stays the verb list. Under --json it
+// prints `ley state --json`'s snapshot.
 // Exit 0 in every state the screen can draw.
 func runOrientation(ctx context.Context, app *App, _ *cobra.Command) error {
 	if app.JSON {
@@ -847,7 +846,7 @@ func renderOrientation(s ui.Style, state *leylinev1.GetStateResponse, err error)
 
 // deviceSummary is one line per device: model, driver, serial and state. The
 // model leads plain, the driver and serial are diagnostics and dim, and the
-// state word takes the ink its meaning calls for.
+// state word is inked by its meaning.
 func deviceSummary(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 	name := d.Model
 	if name == "" {

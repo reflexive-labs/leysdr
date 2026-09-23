@@ -123,7 +123,7 @@ extension JobStore {
             await applyGain(config, capture: made.captureID)
             await applySquelch(config, to: made, gated: config.gate == .squelch, job: id)
         }
-        // Allocating suspends, and a cancel in that window has already answered.
+        // Allocating suspends, and a cancel that arrived in that window has already returned.
         guard jobIsLive(id) else {
             await lease.release()
             return
@@ -173,7 +173,7 @@ extension JobStore {
         let lease: any CaptureIQLease
         if let borrowed {
             // The channel form with RAW_IQ records the named channel's capture, borrowed exactly
-            // as its channel would be: the listener keeps their radio.
+            // as its channel would be: the capture is not retuned.
             guard let capture = await store.captureEngine(borrowed.captureID) else {
                 await finishRecord(id, state: .failed, detail: "that channel's capture is gone",
                                    code: EngineError.Code.captureNotFound)
@@ -246,7 +246,7 @@ extension JobStore {
                               gated: Bool, job: JobID) async
     {
         // 0 dBFS is not a squelch anybody means: proto3 has no "absent" for a double, so an unset
-        // field and a request to mute everything look the same, and the harmless reading wins.
+        // field and a request to mute everything look the same, so 0 is read as unset.
         var want = config.squelchDbfs
         if want == 0 {
             // No level asked for. A continuous recording needs none; a gated one needs one or it
@@ -284,7 +284,7 @@ extension JobStore {
     }
 
     /// How long the auto-squelch measurement listens before giving up. Long enough for several
-    /// meter intervals, short enough that a recording starts when somebody asked for it.
+    /// meter intervals, short enough that the recording starts promptly.
     static let autoSquelchMs = 600
 
     private func applyGain(_ config: Leyline_V1_RecordConfig, capture: CaptureID) async {

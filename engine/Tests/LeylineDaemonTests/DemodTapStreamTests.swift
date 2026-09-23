@@ -116,12 +116,12 @@ final class DemodTapStreamDaemonTests: XCTestCase {
         }
     }
 
-    /// A subscription that says nothing about a tap gets the speaker's audio.
+    /// A subscription that does not specify a tap gets the audio tap (what the speaker plays).
     func testDefaultTapIsAudio() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in
             let (capture, channel) = try await self.fixtureChannel(c, mode: .nfm)
-            // Nothing said about a tap: proto3 default, which is the speaker's audio.
+            // No tap specified: proto3 default, which is the speaker's audio.
             let req = self.audioRequest(capture: capture.captureID, channel: channel.channelID, tap: .tapAudio)
             let desc = try await c.bulk.subscribe(req, metadata: testMetadata)
             XCTAssertEqual(desc.audio.tap, .tapAudio)
@@ -133,7 +133,7 @@ final class DemodTapStreamDaemonTests: XCTestCase {
 
     /// Full scale is the channel's own limit, so the descriptor answers a wide NFM channel with the
     /// ±5 kHz it can carry, both taps of one channel with the same number, and an amplitude mode
-    /// with nothing: a client reads hertz off a tap without a full scale of its own.
+    /// with none: a client reads hertz off a tap without a full scale of its own.
     func testDescriptorCarriesTheChannelsFullScaleDeviation() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in
@@ -165,7 +165,7 @@ final class DemodTapStreamDaemonTests: XCTestCase {
         }
     }
 
-    /// Destroying the channel ends its demod tap: the samples the stream describes stopped existing.
+    /// Destroying the channel ends its demod tap: the stream's sample source is gone.
     func testDestroyingTheChannelEndsTheDemodTapStream() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_pl.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in
@@ -194,11 +194,11 @@ final class DemodTapStreamDaemonTests: XCTestCase {
     }
 
     /// A capture-rate change re-plans the channel at a new audio rate, so the descriptor this
-    /// stream was handed is no longer true and the stream ends for a fresh subscription.
+    /// stream was handed is no longer valid and the stream ends for a fresh subscription.
     func testCaptureRateChangeEndsTheDemodTapStream() async throws {
         try await withDaemon { c in
             // A virtual device rather than the fixture: the rate has to be writable for the
-            // re-plan this is about, and a file plays at the one rate its sidecar names.
+            // re-plan this is about, and a file plays at the one rate its sidecar specifies.
             let device = RebindableDevice()
             let d = try await c.daemon.registry.attachVirtualDevice(device).descriptor
             var cc = Leyline_V1_CreateCaptureRequest()

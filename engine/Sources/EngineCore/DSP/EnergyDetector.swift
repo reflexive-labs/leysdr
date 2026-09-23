@@ -81,7 +81,7 @@ public enum SpectrumDetect {
     /// `guardBins`. Linear power in, linear power out.
     ///
     /// `scratch` must hold at least `2 * referenceBins` floats and is reused for every bin, so
-    /// this allocates nothing. It is deliberately not on the DSP thread: it is roughly
+    /// this allocates nothing. It does not run on the DSP thread: it is roughly
     /// bins x 2 x referenceBins operations, which is fine on a sweep task and is not fine in a
     /// `SpectrumSink.write`.
     public static func localFloor(power: UnsafePointer<Float>, count: Int,
@@ -158,14 +158,14 @@ public enum SpectrumDetect {
         // 145.201 MHz where the generator put 145.200.
         func hz(_ bin: Double) -> Double { lowEdge + bin * binWidth }
 
-        // Believe only the part of the span the sweep asked about, and never the analysis edges.
+        // Search only the part of the span the sweep asked about, and never the analysis edges.
         var first = Int(((Double(believe.lowerBound) - lowEdge) / binWidth).rounded(.down))
         var last = Int(((Double(believe.upperBound) - lowEdge) / binWidth).rounded(.up))
         first = Swift.max(0, first)
         last = Swift.min(count - 1, last)
         // `>=`, the same bound `windowFloorDBFS` uses: a window that rounds to a single bin still
-        // has one bin to search, and reporting a floor for it while never testing it would be the
-        // quiet wrong answer.
+        // has one bin to search, and reporting a floor for it without testing that bin would be a
+        // silent wrong answer.
         guard last >= first else { return [] }
 
         var hits: [Hit] = []

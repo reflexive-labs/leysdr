@@ -11,21 +11,20 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// What somebody else just did, said as a sentence.
+// Changes made by other clients, rendered as sentences.
 //
 // An event carries the whole changed object and never a delta (invariant 6).
-// That is right for the wire and wrong for a person: `ley set mode am` in
+// That suits the wire but is noise on a terminal: `ley set mode am` in
 // another terminal emits a channel event *and* a capture event -- the capture
 // because every interactive write stamps its don't-disturb activity clock --
 // and a state-dump renderer prints both, 26-character ids and all, into the
 // middle of somebody's listening session.
 //
 // The mirror already holds the previous copy of every object, so the client
-// can diff and say what moved. Rendering a diff is presentation; the daemon
-// still sends whole objects and invariant 6 is untouched. The rule for what
-// earns a line is "could the person listening act on it": a retune, a mode,
-// a squelch, their audio going away. An activity timestamp could not, and an
-// id they did not ask for never could.
+// can diff and report what moved. Rendering a diff is presentation; the daemon
+// still sends whole objects and invariant 6 is untouched. A change gets a line
+// only if the listener could act on it: a retune, a mode, a squelch, their
+// audio going away. Activity timestamps and ids do not qualify.
 
 // beforeEvent returns the mirror's copy of the object ev names, from before
 // the event is folded in. It must be called before session.apply. A nil result
@@ -72,8 +71,9 @@ func deviceByID(state *leylinev1.GetStateResponse, id string) *leylinev1.DeviceD
 type change struct{ verb, what string }
 
 // changeLine renders one other-client event as a sentence, and reports whether
-// the session's own channel is gone -- the one change a live verb cannot carry
-// on through. An empty line with ended false means nothing worth saying moved.
+// the session's own channel is gone -- the one change a live verb cannot
+// continue past. An empty line with ended false means nothing worth reporting
+// moved.
 func (s *session) changeLine(before any, ev *leylinev1.Event) (line string, ended bool) {
 	st := s.app.ErrStyle
 	var what []change
@@ -97,8 +97,8 @@ func (s *session) changeLine(before any, ev *leylinev1.Event) (line string, ende
 	return whoChanged(ev.CausedBy) + " " + sentence(what), ended
 }
 
-// whoChanged names the client that caused an event the way a person would
-// refer to it. The id stays in --json, where something might key on it.
+// whoChanged returns a readable name for the client that caused an event. The
+// id stays in --json, where a script might key on it.
 func whoChanged(ci *leylinev1.ClientInfo) string {
 	if ci == nil {
 		return "something"
@@ -201,8 +201,8 @@ func gainChange(was, now []*leylinev1.GainState) string {
 }
 
 // channelChanges lists what moved on a channel. Only this session's own
-// channel is reported field by field: somebody else's squelch is their
-// business, but a channel appearing or leaving the capture we share is not.
+// channel is reported field by field. Other channels' settings are not
+// reported, but a channel joining or leaving the shared capture is.
 func (s *session) channelChanges(was, now *leylinev1.Channel, st ui.Style) ([]change, bool) {
 	ours := s.channel != nil && now.ChannelId == s.channel.ChannelId
 	// The daemon marks a destroyed channel by emitting it one last time with
@@ -294,7 +294,7 @@ func sinkChanges(was, now, ours *leylinev1.Sink, st ui.Style) []change {
 }
 
 // deviceChanges reports the radio this session is listening through leaving or
-// coming back. Other devices plugged in elsewhere are not this session's news.
+// coming back. Other devices are not reported.
 func deviceChanges(was, now, ours *leylinev1.DeviceDescriptor, st ui.Style) []change {
 	if ours == nil || now.DeviceId != ours.DeviceId || was == nil || was.State == now.State {
 		return nil

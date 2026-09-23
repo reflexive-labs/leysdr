@@ -18,7 +18,7 @@ type persistence struct {
 	bins, levels     int
 	floorDB, rangeDB float64
 	rowsPerHalfLife  int
-	// Rows folded into one delivered frame. The histogram wants every row the ladder can give it
+	// Rows folded into one delivered frame. The histogram uses every row the ladder can give it
 	// and a person reads a couple of frames a second, so the two rates are not the same.
 	rowsPerFrame int
 	counts       []uint16

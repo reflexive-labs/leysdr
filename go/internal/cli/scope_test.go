@@ -114,7 +114,7 @@ func TestScopeTraceDrawsTheTone(t *testing.T) {
 	}
 }
 
-// The trigger's whole job: the same tone, reached at any phase of the stream,
+// The trigger's job: the same tone, reached at any phase of the stream,
 // draws the same picture. The free-running comparison is what makes this a
 // test of the trigger rather than of the sine.
 func TestScopeTriggerHoldsAToneStill(t *testing.T) {
@@ -142,8 +142,8 @@ func TestScopeTriggerHoldsAToneStill(t *testing.T) {
 	}
 }
 
-// A signal that does not repeat has no trigger point, and pretending it does
-// would hold a picture still that is not.
+// A signal that does not repeat has no trigger point, so the trace free-runs
+// rather than freezing on a false one.
 func TestScopeTriggerFreeRunsOnNoise(t *testing.T) {
 	buf := make([]float32, 512)
 	for i := range buf {
@@ -382,7 +382,7 @@ func TestScopeUsageErrors(t *testing.T) {
 
 // The timebase under the trace: round steps, four to eight of them, starting
 // at zero and ending at the window the header states. The step table is the
-// point -- an axis that marked 5.7 ms would be arithmetic, not a timebase.
+// point: an axis marked at 5.7 ms would not read as a timebase.
 func TestScopeAxisTicks(t *testing.T) {
 	for _, tc := range []struct {
 		windowMs int
@@ -489,8 +489,8 @@ func TestScopeAutoScaleFitsAndHolds(t *testing.T) {
 	if got := s.next(loud); got != 0.2 {
 		t.Fatalf("a 0.14 tone drew at ±%g, want it snapped up to the 0.2 step", got)
 	}
-	// A hold window of the tone, so the pause arrives at a scale the window
-	// agrees with rather than at one frame's word.
+	// A hold window of the tone, so the pause arrives at a scale set by the
+	// whole window rather than by one frame.
 	for range s.size - 1 {
 		s.next(loud)
 	}
@@ -572,8 +572,8 @@ func TestScopeAutoScaleIgnoresABurstAtSlowRates(t *testing.T) {
 	}
 }
 
-// full and a pinned scale are promises: whatever the signal does, the rows are
-// worth what the gutter says they are worth.
+// With full or a pinned scale the rows never move: whatever the signal does,
+// each row is worth what the gutter shows.
 func TestScopeFixedScalesNeverMove(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -622,7 +622,7 @@ func scopeDrawnRows(rows []string) int {
 	return n
 }
 
-// A pinned scale is a promise made in three places: the header states it, the
+// A pinned scale is shown in three places: the header states it, the
 // gutter names it at the top and the bottom, and the JSON row carries it, so a
 // picture and a row drawn from the same frame mean the same thing.
 func TestScopePinnedScaleNamesItself(t *testing.T) {

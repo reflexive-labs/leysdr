@@ -32,24 +32,24 @@ work.
 | Content packs (see below) | CC-BY-SA or similar, per pack | Data, not code. Decide per source; community contributions likely require share-alike. |
 
 The GPL reaches only what links librtlsdr. Every client is a separate process communicating over
-a documented socket protocol, which on the FSF's reading makes them separate works. This boundary
-was drawn for crash isolation and cross-language freedom; that it is also the licence boundary is
-convenient, not coincidental.
+a documented socket protocol, which on the FSF's reading makes them separate works. The process
+boundary exists for crash isolation and to let clients use any language. It also serves as the
+licence boundary.
 
 Every source file carries an `SPDX-License-Identifier` line matching the table; generated files
 inherit theirs from the `.proto` they came from, so the Apache-2.0 line survives `make proto`.
 
 ## Monetization
 
-**Sell the build, not the bits.** Paid tier is a signed, notarized installer with Sparkle
+**Sell the build; the source stays free.** Paid tier is a signed, notarized installer with Sparkle
 auto-updates, plus access to the curated content layer. Source remains fully available; anyone can
 compile their own. Compiling a Swift daemon with a launchd agent and USB entitlements is enough
 friction that most buyers will pay, and the ones who don't are contributors rather than lost
 revenue. Precedent: Sublime Merge, Dash, and most Mac indie software; hams routinely spend far more
 on hardware than on software.
 
-Not doing: licence keys, feature gating, telemetry-based enforcement, or any DRM. The honour system
-is the model, stated plainly.
+Not doing: licence keys, feature gating, telemetry-based enforcement, or any DRM. Payment works on
+the honour system.
 
 Explicitly out of scope: paid support tiers.
 
@@ -63,9 +63,9 @@ without deciding anything today.
    deters contributors. Inbound-permissive/outbound-copyleft is the middle path and is in
    `CONTRIBUTING.md` before the first outside PR, not after.
 2. **Trademark.** File "Leyline" (intent-to-use, software class) before the repo goes public, after
-   a clearance search; there are existing users in other classes. Open code does not open the
-   name. This is the actual moat: the licence cannot stop someone shipping "Leyline Pro", but the
-   mark can. `TRADEMARK.md` is the policy.
+   a clearance search; there are existing users in other classes. The code licence does not grant
+   use of the name. The licence cannot stop someone shipping "Leyline Pro"; the trademark can.
+   `TRADEMARK.md` is the policy.
 
 Also keep maintained: the `RTLTCPDevice` path, CI-tested as a first-class device backend rather
 than a contingency. It costs a loopback copy (about 4.8 MB/s per radio, a millisecond or two

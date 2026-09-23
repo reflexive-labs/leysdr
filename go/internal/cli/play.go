@@ -110,9 +110,9 @@ needed.`,
 			}
 			if _, err := os.Stat(path); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					// A wrong path is the user's mistake (exit 2), said in plain words. A bare
-					// word with no directory in it may have been meant as a recording, so the
-					// sentence says where those are listed rather than only where files are.
+					// A wrong path is a usage error (exit 2). A bare word with no directory in
+					// it may have been meant as a recording, so the hint also points to where
+					// recordings are listed.
 					hint := "check the path; ley play takes a .cf32 IQ recording (the fixtures/ directory has some)"
 					if !strings.ContainsAny(args[0], "/.") {
 						hint = "check the path. If you meant a recording, " + app.ErrStyle.Cmd("ley recordings") + " lists them by id"
@@ -149,11 +149,11 @@ needed.`,
 			if err != nil {
 				return err
 			}
-			// A live session's prose belongs to the person, not to a script
-			// reading stdout: the meter is already on stderr, and leaving the
-			// banner on stdout split one screen across two streams. Set here
-			// rather than in runTune, because play says its first line before
-			// runTune is reached. Ids stay on stdout in printCreated.
+			// A live session's prose goes to stderr, not to stdout where a script
+			// reads: the meter is already on stderr, and a banner on stdout split
+			// one screen across two streams. Set here rather than in runTune,
+			// because play prints its first line before runTune is reached. Ids
+			// stay on stdout in printCreated.
 			s.proseToStderr = true
 			defer s.close()
 			dev, err := s.client.Control.AttachFileDevice(cmd.Context(), &leylinev1.AttachFileDeviceRequest{Path: path, Loop: loop})
@@ -206,7 +206,7 @@ needed.`,
 				keep = true
 				// The id is machine output and goes to stdout beside the
 				// capture and channel printCreated already printed; the
-				// sentence about it is prose and goes to the person. Without
+				// sentence about it is prose and goes to stderr. Without
 				// the first line a --persistent scrape would lose the device
 				// entirely, since printCreated does not name it.
 				fmt.Fprintf(app.Stdout, "device %s\n", dev.DeviceId)
@@ -286,7 +286,7 @@ func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part in
 	if manifest.Kind != "iq" {
 		return "", playAudioPart(ctx, app, jobID, path, manifest, part)
 	}
-	// Said only once the part is one play will actually tune: a recording that turns out to be
+	// Printed only once the part is one play will actually tune: a recording that turns out to be
 	// audio should not first announce which of its parts it picked.
 	if chose && len(manifest.Parts) > 1 {
 		fmt.Fprintln(app.Stderr, app.ErrStyle.Muted(fmt.Sprintf(
@@ -295,13 +295,13 @@ func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part in
 	return path, nil
 }
 
-// playAudioPart is what "play" means for an audio recording: the file holds what a demodulator
-// already produced, so there is no signal left in it for a channel to tune, and pretending
-// otherwise would put a fictional capture and a fictional mode into `ley state`. What the reader
-// asked for is to hear it, and the machine already has something that can: hand the file over.
+// playAudioPart plays an audio recording. The file holds demodulator output, so there is no
+// signal left in it for a channel to tune, and attaching it as a file device would put a fake
+// capture and mode into `ley state`. Instead the file goes to the daemon's audio output, or to
+// this machine's player.
 //
-// It returns an error either way, because the caller's next step is to tune a pretend radio and
-// there is none here. `errDone` is the one that means it worked.
+// It always returns an error, because the caller's next step is to tune a file device and there
+// is none here. `errDone` means playback worked.
 func playAudioPart(ctx context.Context, app *App, jobID, path string, manifest *leyline.RecordingManifest, part int) error {
 	where := jobID
 	if len(manifest.Parts) > 1 {
@@ -315,8 +315,8 @@ func playAudioPart(ctx context.Context, app *App, jobID, path string, manifest *
 		}
 		return errDone
 	}
-	// The daemon owns the speakers, exactly as it does for a channel's audio, so the sound comes
-	// out where the radio is and this terminal can hold it and stop it.
+	// The daemon owns the speakers, as it does for a channel's audio, so the sound comes out on
+	// the radio's host and this terminal shows progress and can stop it.
 	err := playThroughDaemon(ctx, app, jobID, where, part)
 	if err == nil || !errors.Is(err, errNoDaemonAudio) {
 		return err
@@ -326,8 +326,8 @@ func playAudioPart(ctx context.Context, app *App, jobID, path string, manifest *
 	return playThroughLocalPlayer(app, where, path)
 }
 
-// errNoDaemonAudio is the daemon saying it has no audio device, which is the one refusal that
-// falls back to a local player rather than being reported.
+// errNoDaemonAudio means the daemon has no audio device. It is the only refusal that falls back
+// to a local player rather than being reported.
 var errNoDaemonAudio = errors.New("the daemon has no audio device")
 
 // playThroughDaemon starts a daemon-side playback and holds the terminal until it finishes or
@@ -357,7 +357,7 @@ func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part 
 	return errDone
 }
 
-// playbackLength says how much there is to hear, from the frames the daemon counted.
+// playbackLength renders the playback's duration, from the frames the daemon counted.
 func playbackLength(pb *leylinev1.Playback) string {
 	if pb.GetSampleRate() == 0 || pb.GetSamples() == 0 {
 		return "playing"
@@ -366,7 +366,7 @@ func playbackLength(pb *leylinev1.Playback) string {
 	return forPhrase(time.Duration(secs * float64(time.Second)))
 }
 
-// followPlayback draws the position until the daemon says the playback is over or the reader
+// followPlayback draws the position until the playback leaves the daemon's state or Ctrl-C
 // stops it. The position is the daemon's own count of frames it has pushed, not a clock here.
 func followPlayback(ctx context.Context, app *App, c *leyline.Client, pb *leylinev1.Playback) {
 	progress := newScanProgress(app)
@@ -405,12 +405,12 @@ func clockPhrase(seconds float64) string {
 	return fmt.Sprintf("%d:%02d", total/60, total%60)
 }
 
-// playThroughLocalPlayer is the fallback when the daemon cannot make a sound: hand the file to
+// playThroughLocalPlayer is the fallback when the daemon has no audio device: hand the file to
 // this machine's own player. It returns as soon as the player is launched, because `open` does.
 func playThroughLocalPlayer(app *App, where, path string) error {
 	st := app.ErrStyle
 	// The path is the daemon's. On the same machine that is this machine; pointed at a daemon
-	// somewhere else it is a file that is not here, and saying so beats a player that fails.
+	// somewhere else the file is not here, so report that rather than launch a player that fails.
 	if _, err := os.Stat(path); err != nil {
 		return &friendlyError{msg: fmt.Sprintf(
 			"%s is an audio recording, the daemon has no audio device, and the file is on the daemon's machine rather than this one: %s",

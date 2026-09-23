@@ -96,7 +96,7 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         msg.meter.audioDbfs = audio.isInfinite ? -200 : audio
                         msg.meter.audioPeakDbfs = audioPeak.isInfinite ? -200 : audioPeak
                         // NaN outside the FM modes and, for the error, while the squelch is shut:
-                        // proto3 JSON carries NaN, and 0 Hz would be a claim of perfect tuning.
+                        // proto3 JSON carries NaN, and 0 Hz would read as perfect tuning.
                         msg.meter.deviationHz = deviation
                         msg.meter.freqErrorHz = freqError
                     case .squelch(let time, let open, let openSamples, let peakSNR, let peakPower):

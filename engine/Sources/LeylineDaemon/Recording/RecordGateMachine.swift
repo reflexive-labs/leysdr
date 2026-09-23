@@ -61,15 +61,15 @@ struct RecordGateMachine: Sendable {
         }
     }
 
-    /// A squelch edge, at the sample the channel says it happened.
+    /// A squelch edge, at the sample the channel reports it at.
     mutating func squelch(open: Bool, at sample: UInt64) -> [Action] {
         guard !finished else { return [] }
         if open {
             switch state {
             case .closed:
                 state = .open
-                // The part's first sample is the transition's less the pre-roll: the squelch's own
-                // attack and the syllable under it are what the pre-roll exists to keep.
+                // The part's first sample is the transition's less the pre-roll: the pre-roll keeps
+                // the squelch's own attack and the syllable under it.
                 return [.openPart(startSample: sample >= preRollSamples ? sample - preRollSamples : 0),
                         .squelchOpened(at: sample)]
             case .hanging:

@@ -138,10 +138,10 @@ public nonisolated enum Leyline_V1_DemodMode: SwiftProtobuf.Enum, Swift.CaseIter
 /// is still on them) and for WFM (decimated to the audio rate, before de-emphasis and
 /// the 15 kHz low-pass, so the 19 kHz pilot is visible), the envelope including the
 /// carrier as DC for AM, and the product detector before AGC for USB, LSB and CW. It
-/// keeps flowing while the squelch is closed, because what a transmitter is sending
-/// between words is what it is for, where TAP_AUDIO is zeros there as the speaker
-/// hears. A RAW_IQ channel has no detector, so TAP_DEMOD on one is refused with
-/// INVALID_ARGUMENT rather than served silence.
+/// keeps flowing while the squelch is closed, because the signal between words is
+/// what this tap is for; TAP_AUDIO is zeros there, as the speaker plays it. A RAW_IQ
+/// channel has no detector, so TAP_DEMOD on one is refused with INVALID_ARGUMENT
+/// rather than served silence.
 public nonisolated enum Leyline_V1_AudioTap: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case tapAudio // = 0

@@ -120,7 +120,7 @@ func TestJobsCancelStopsARunningSweep(t *testing.T) {
 
 func TestJobsCancelNamesTheWayOut(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	// Nothing has ever run: the way out is the verb that starts a job, not the list of none.
+	// Nothing has ever run: the hint is the verb that starts a job, not an empty list.
 	_, _, err := run(t, t.Context(), sock, "jobs", "cancel", "1")
 	if err == nil || !strings.Contains(err.Error(), "ley scan") {
 		t.Errorf("a daemon with no jobs should say where one comes from: %v", err)

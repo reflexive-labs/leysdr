@@ -52,8 +52,8 @@ func bandModeName(m leylinev1.DemodMode) string {
 }
 
 // printArray marshals a client-local JSON shape -- an array of table rows, or
-// the single object a band lookup answers with. It is deliberately not
-// printJSON, which takes a proto message: none of this data has one, which is
+// the single object a band lookup answers with. It does not use printJSON,
+// which takes a proto message: none of this data has one, which is
 // the documented exception in docs/reference/cli.md.
 func (a *App) printArray(v any) error {
 	b, err := json.Marshal(v)
@@ -154,9 +154,9 @@ The Mac app reads the same array from a checked-in bands.json (make bands-json).
 }
 
 // printPresetTable renders `ley presets`. Presets are grouped under the band
-// they live in, so the seven near-identical noaa rows read as one offer the
-// eye can skip rather than seven; the frequency the description used to
-// restate is dropped (the FREQUENCY column already says it), and the aliases
+// they live in, so the seven near-identical noaa rows read as one group that
+// is easy to skip; the frequency the description used to restate is dropped
+// (the FREQUENCY column already shows it), and the aliases
 // are Muted because they are the fallback spelling, not the one to type.
 // --json keeps every field, description and all.
 func printPresetTable(app *App, ps []leyline.Preset) error {
@@ -299,12 +299,11 @@ func groupRows(keys []string) ([]int, []string) {
 // with it?" -- the question the table could only answer by making the reader
 // scan fifteen rows and compare ranges in their head.
 //
-// A band alias is checked FIRST, and that is the whole subtlety of this verb.
-// Everywhere else in ley a leading digit means a frequency, so `2m` is 2 MHz;
-// here it would answer "160 m amateur" for the very alias this screen tells you
-// to type. `bands` is the one verb that is about band names, so on it the name
-// wins -- and it says which reading it used, so the other one is a keystroke
-// away rather than a silent wrong answer.
+// A band alias is checked first. Everywhere else in ley a leading digit means
+// a frequency, so `2m` is 2 MHz; here that would answer "160 m amateur" for the
+// alias this screen tells you to type. `bands` is the only verb about band
+// names, so here the name wins, and the output says which reading it used so
+// the user can retype for the other one.
 func runBandLookup(app *App, arg string) error {
 	if b, err := leyline.ResolveBand(arg); err == nil {
 		// Seven aliases are also valid frequencies (2m is 2 MHz), so when the

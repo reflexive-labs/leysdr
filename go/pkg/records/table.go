@@ -12,15 +12,15 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// Entity is one transmitter as the fold has heard it: the newest value of every field it has
-// sent, where it last said it was, when it was first and last heard, and how many records it has
+// Entity is one transmitter as the fold has built it: the newest value of every field it has
+// sent, its last reported position, when it was first and last heard, and how many records it has
 // been in. It is the client-side shape of the design doc's SHAPE_ENTITIES
 // (docs/design/decoders.md, "Decisions"), so a decoder that declares entities needs no
 // daemon-side state for a table to be drawn.
 type Entity struct {
 	DeviceID string
 	Protocol string
-	// Kind and Summary come from the last record: what this station most recently did.
+	// Kind and Summary come from the last record.
 	Kind    string
 	Summary string
 	// Fields is the newest value of every field the station has sent, merged across records: a
@@ -157,7 +157,7 @@ func (t *Table) Expire(now time.Time, silence time.Duration) int {
 }
 
 // Rows returns the entities newest first, ties broken by device id so a redraw of an unchanged
-// table does not reshuffle rows under the reader's eye.
+// table does not reorder rows.
 func (t *Table) Rows() []*Entity {
 	out := make([]*Entity, 0, len(t.entities))
 	for _, e := range t.entities {

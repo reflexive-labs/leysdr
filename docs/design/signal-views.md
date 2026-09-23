@@ -2,8 +2,8 @@
 
 Status: draft. Companion to `data-planes.md` (which owns the plane split this builds on) and
 `docs/dev/cli-style.md` (which owns how any of it is drawn). Covers three related features that all answer
-one question — *what is actually happening on this frequency* — and one shared standard for what an
-honest answer looks like.
+one question — *what is actually happening on this frequency* — and one shared standard for
+reporting only what was measured.
 
 ## Context
 
@@ -14,7 +14,7 @@ honest answer looks like.
 2. **What am I hearing, and how well?** Audio level, deviation, tuning error, and the history of
    transmissions on this channel are not on the wire at all today.
 3. **Who is this repeater for?** A sub-audible CTCSS/PL tone is transmitted with almost every
-   analogue two-way transmission, and the NFM chain currently destroys it one stage after the
+   analogue two-way transmission, and the NFM chain currently removes it one stage after the
    discriminator.
 
 These are one design because they share a plane, a timebase, and an honesty standard, and because
@@ -24,57 +24,58 @@ two of the three are nearly free once the third's groundwork exists.
 
 Measured, not assumed. A waterfall drawn from a real 2.4 MHz capture of the FM broadcast band, at
 100 columns, gives **24 kHz per column**. That is an *activity map*: it shows where energy is and
-when, and it cannot show signal shape or separate 12.5 kHz neighbours. It earns its place below
-about 200 kHz span, and the header must state the per-column bandwidth so the reader knows which
-regime they are in.
+when, and it cannot show signal shape or separate 12.5 kHz neighbours. It is most useful below
+about 200 kHz span, and the header must state the per-column bandwidth so the user knows the
+resolution.
 
-The marginal value over `ley spectrum --watch` is therefore **intermittency alone** — the max-hold
-trace already answers "birdie or real?". That is a narrow claim, and it is the claim the feature
-has to be justified by. It is a real one: in testing, a transmission that keyed up for four seconds
-was invisible in any single spectrum frame and unmistakable in the waterfall.
+The only thing it adds over `ley spectrum --watch` is **intermittency**; the max-hold trace already
+answers "birdie or real?". That is a narrow benefit, but a real one: in testing, a transmission that
+keyed up for four seconds was invisible in any single spectrum frame and unmistakable in the
+waterfall.
 
 ## The snapshot problem
 
 `DefaultSpectrumLadder.process` computes **one unaveraged periodogram per row**, from whichever
 capture block happens to cross `nextDue`. At 2.4 MSPS a 1024-point FFT covers 1024 of the ~600,000
 samples in a 250 ms row: **0.17% of the row**. A 40 ms burst therefore appears in roughly one row in
-six and flickers, which a reader correctly interprets as noise.
+six and flickers, so it looks like noise.
 
-A snapshot waterfall is thus unreliable at precisely the one thing a waterfall is for. This is not a
-rendering problem and cannot be fixed in the client.
+A snapshot waterfall therefore misses short bursts, which are what a waterfall is for. This is not
+a rendering problem and cannot be fixed in the client.
 
 **Decision.** The ladder gains an accumulation mode: one look per capture block (~6.8 ms at
 2.4 MSPS / 16384-sample blocks), capped at 64 looks per row, combined as max-of-looks.
 
 - Cost: 146 FFTs/s of size 1024 rather than 4 — about 7.5 Mflop/s on vDSP.
 - Guarantee: any burst lasting at least one block period lands in at least one look and is drawn at
-  full level. Sub-block bursts stay probabilistic, and the docs say so.
+  full level. Sub-block bursts stay probabilistic, and the docs state this.
 - `MAX` raises the apparent noise floor by roughly 6 dB relative to `SNAPSHOT`, because the maximum
   of N exponential draws is biased upward. The renderer's floor estimate must be computed from the
-  same rows it draws, so the bias cancels rather than painting noise as signal.
-- Default stays `SNAPSHOT`, so `ley spectrum` is byte-identical and nothing pays for this unasked.
+  same rows it draws, so the bias cancels instead of showing noise as signal.
+- Default stays `SNAPSHOT`, so `ley spectrum` is byte-identical and only a client that asks for
+  accumulation pays for it.
 
 ## Drawing the waterfall
 
 The full rules live in `docs/dev/cli-style.md`; the decisions that are specific to this view:
 
 - **One shaded cell per column.** New `ui.Glyphs.Shade` = `" ░▒▓█"`, ASCII `" .:+#"`. These are
-  density textures that tile; the block ramp `▁▂▃` does not — stacked, it reads as scan lines.
+  density textures that tile; the block ramp `▁▂▃` does not — stacked, it looks like scan lines.
   U+2591–2593 are CP437 and have universal font coverage.
-- **Level is double-encoded**: the shade carries it, `ui.Style.Level` hue refines it. This is not
-  decoration. A waterfall whose level lives only in colour is a blank rectangle under `NO_COLOR` or
-  `--ascii`, which fails principle 1 outright. This is why **half-blocks are rejected**: `▀` with a
+- **Level is double-encoded**: the shade carries it, `ui.Style.Level` hue refines it. A waterfall
+  whose level is only in colour is a blank rectangle under `NO_COLOR` or `--ascii`, which fails
+  principle 1. This is why **half-blocks are rejected**: `▀` with a
   foreground and background colour doubles the on-screen time depth, but every cell becomes the same
   glyph and the colour-off rendering carries nothing. It also costs two SGR sequences per cell with
   few mergeable runs, roughly 3× the bytes.
 - **The floor draws as a space**, so the terminal's own background shows through. The same reasoning
-  that made `ley spectrum` a trace rather than a fill: ink only where there is something to say. On
+  that made `ley spectrum` a trace rather than a fill: ink only where there is signal. On
   a real FM capture this paints about 22% of cells instead of 100%.
-- **The scale is held for the whole run.** Auto-scaling per row makes the time axis lie — the same
-  signal would change shade because a different part of the band got louder.
+- **The scale is held for the whole run.** Auto-scaling per row makes the time axis misleading: the
+  same signal would change shade because a different part of the band got louder.
 - **Time runs newest-at-bottom, scrolling, one printed line per row.** No cursor addressing and no
   wrap buffer: it works piped, in scrollback and in tmux, and it composes with everything else `ley`
-  prints. The terminal owns the history; we own one line at a time.
+  prints. The terminal keeps the history; `ley` writes one line at a time.
 - **A gap draws its own row.** Delivery is `GAP_MARKED` (invariant 3); if a dropped row is simply
   not drawn, time silently compresses and the picture is wrong.
 
@@ -82,7 +83,7 @@ The full rules live in `docs/dev/cli-style.md`; the decisions that are specific 
 time so a resize re-renders correctly.
 
 Wire: `StreamKind FFT`, `bin_format DB_U8`, `rows_per_second` = the display rate, `GAP_MARKED`.
-About 4 KB/s. This does not earn the shm bypass; the Mac app's Metal waterfall does.
+About 4 KB/s, too little to need the shm bypass; the Mac app's Metal waterfall does need it.
 
 ## The channel view
 
@@ -90,7 +91,7 @@ About 4 KB/s. This does not earn the shm bypass; the Mac app's Metal waterfall d
 carrying ids, events and NDJSON. Below that width the existing one-line meter is unchanged. No new
 verb.
 
-The centrepiece is not a chart. It is the **transmission table**: the per-event log of what happened
+The main element is the **transmission table**, not a chart: the per-event log of what happened
 on this frequency. That is what a scanner operator actually reads, and it is the cheapest thing on
 this page to build.
 
@@ -115,8 +116,8 @@ appears only above 10% of channel bandwidth.
 
 **Not built: an audio spectrum.** Neither a continuous 0–4 kHz chart nor a broken-axis
 60–260 Hz ∥ 300–3400 Hz variant. The sub-audible band's only real content is one tone, so the chart
-would be a picture of a scalar sitting next to the scalar; and 18 columns cannot separate 67.0 from
-69.3 Hz, so it would draw resolution it does not have while contradicting the number beside it. An
+would only duplicate the number beside it; and 18 columns cannot separate 67.0 from 69.3 Hz, so it
+would imply resolution it does not have and could contradict that number. An
 `AUDIO_FFT` stream stays the additive path if DCS or two-tone paging ever needs it.
 
 ## Sub-audible tones
@@ -125,7 +126,7 @@ would be a picture of a scalar sitting next to the scalar; and 18 columns cannot
 
 `NFMDemodulator.process` calls `discriminate(s, count:scale:)`, which writes the discriminator
 output into `scratch.real`; every stage after that — the 4 kHz low-pass, the 300 Hz high-pass that
-destroys CTCSS, de-emphasis, the limiter — reads from or writes to `out`. **`scratch.real` therefore
+removes CTCSS, de-emphasis, the limiter — reads from or writes to `out`. **`scratch.real` therefore
 still holds the untouched discriminator output when `process` returns.** The tap is free: no change
 to the audio chain, no regression risk, and no reason to relax the high-pass.
 
@@ -135,7 +136,7 @@ The hot path decides nothing.
 
 - **Hot path** (`ChannelDSPCore.process`): two FIR decimation stages (÷12 then ÷4) plus a 20 Hz
   one-pole DC block, writing into a fixed ring. Two FIRs rather than a boxcar: an unfiltered boxcar
-  aliases voice near 1.3 kHz down into the 60–300 Hz band at about −13 dB and fabricates tone
+  aliases voice near 1.3 kHz down into the 60–300 Hz band at about −13 dB and creates false tone
   energy. Cost ≈ 0.6 Mmult/s; the ring is allocated in `configure`.
   The discriminator's DC *is* the tuning error, and is what feeds `freq_error_hz`.
 - **Slow per-channel task**, normal priority, allocates freely: drains the ring, runs the detector,
@@ -165,34 +166,34 @@ spaced as tightly as 2.3 Hz (67.0 / 69.3), so identity comes from a phase-slope 
 at the winning bin, taken across hops. Voice is rejected by requiring that estimate to be *stable*
 for a whole second (eight hops at the tap's 1 kHz): a human pitch contour moves far more than 1 Hz
 per 100 ms, but a synthesised one can hold a vowel still for three hops, and NOAA weather radio's
-announcer was named a PL that way on 2026-09-14 (233.6 Hz, then 241.8, on a station that sends
+announcer was reported as a PL that way on 2026-09-14 (233.6 Hz, then 241.8, on a station that sends
 none). The deviation must hold too, within a ratio of 1.5 across the horizon: a transmitter sends
 its tone at one level, while a voice fundamental's level rises and falls with every syllable. The
 numbers behind both, from the captures, are in `docs/plans/signal-views.md`, SV-13.
 
 ### What honest means here
 
-This is invariant 12 applied to a second detector, and it is the part most likely to be got wrong.
+This is invariant 12 applied to a second detector, and it is the easiest part to get wrong.
 
 - **Report the measured frequency, not a snapped one.** When two standard tones both fall inside
   tolerance, report `tone_hz` and set `standard_tone_hz = 0`. Snapping to "nearest within ±1.5 Hz"
-  on a 2.3 Hz ladder mislabels 67.0 as 69.3 and dresses a guess as a measurement.
+  on a 2.3 Hz ladder mislabels 67.0 as 69.3 and reports a guess as a measurement.
 - **Confidence is a stated score, not a probability.** The formula lives in the proto comment, and
   the raw measurements (`tone_hz`, `deviation_hz`, `tone_snr_db`, `hops_agreeing`) are always
   populated so a client can threshold on them and ignore the score. Shipping a calibrated
   *P(correct)* would require a fixture corpus we do not have; without one, the calibration would
-  itself be the dressed-up guessing the invariant forbids.
+  itself be a guess presented as a measurement, which the invariant forbids.
 - **No lock claim before fixtures.** `fixtures/` gains NFM voice + 100.0 Hz PL, the 67.0/69.3
   discrimination pair at 6/10/20 dB tone-to-band, mains hum with no PL, and PL with no voice.
 - **Documented false positive:** 50 Hz mains hum lands on exactly 100.0 Hz, is stable, and passes
   every frequency test; 100.0 Hz is also one of the most common real PL tones. Only the deviation
   plausibility window rejects it, imperfectly. 60 Hz mains lands at 120 Hz, which is not a standard
-  tone and is rejected cleanly. Say this in the docs rather than papering over it.
+  tone and is rejected cleanly. The user docs must state this.
 - **Documented false positive, closed:** a synthesised voice. NOAA weather radio's announcer holds
   its pitch fundamental, which sits in the 60 to 260 Hz band, still enough for a 400 ms stability
   test and at 200 to 350 Hz of deviation, inside a transmitter's range. The second-long horizon and
-  the deviation-ratio test above are what closed it; the announcer's tap is a committed test
-  fixture (`engine/Tests/EngineCoreTests/Captures/noaa-wx2-auto.f32`) so it stays closed.
+  the deviation-ratio test above fixed it; the announcer's tap is a committed regression
+  fixture (`engine/Tests/EngineCoreTests/Captures/noaa-wx2-auto.f32`).
 - A tone identifies neither a talkgroup nor a person, and a repeater's output tone often differs
   from its input tone.
 
@@ -205,13 +206,14 @@ its broadband sub-audible energy feeds the Goertzel bank.
 
 ### Deliberately deferred: tone squelch
 
-Gating audio on the detector is what operators actually buy CTCSS for, and it is the obvious next
-step. It ships only after the detector has a fixture record, because every false negative is silence
-the user cannot diagnose. `Channel` field 13 is held for `subaudible_squelch_hz`.
+Gating audio on the detector is the main reason operators use CTCSS, and it is the next step. It
+ships only after the detector has a fixture record, because a false negative mutes the audio and the
+user cannot tell why. `Channel` field 13 is held for `subaudible_squelch_hz`.
 
 ## Wire changes
 
-All additive within v1. Field numbers are settled here once, because reserved numbers are forever.
+All additive within v1. Field numbers are settled here once, because a field number can never be
+reused once assigned.
 
 ```protobuf
 // ---- bulk.proto : FftParams (1-3 in use) ----
@@ -277,10 +279,10 @@ floats only — no `String` on the hot path, labels are applied in the mapping l
 Each of 1, 2 and 4 is independently shippable and improves `ley` on its own.
 
 1. **`SquelchTransition` close-side summary + the transmission table.** Three fields the daemon
-   already has, two compares in the hot path, zero DSP. The cheapest real win here.
+   already has, two compares in the hot path, zero DSP. The cheapest useful item here.
 2. **`Meter` fields 5–8 + the two-bar channel view.** vDSP over data already in cache.
-3. **Ladder accumulation.** No user-visible output, which is exactly why it is the one most likely
-   to be skipped. It must land *before* the waterfall, not after.
+3. **Ladder accumulation.** It has no user-visible output, so it is the item most likely to be
+   skipped. It must land *before* the waterfall, not after.
 4. **The scrolling shaded waterfall** (`ley waterfall`) and `ui.Glyphs.Shade`.
 5. **CTCSS fixtures**, then the detector, the `PL` line and `--json`.
 6. **DCS**, same message, no schema change.

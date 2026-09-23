@@ -477,18 +477,18 @@ func (c *Client) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 }
 
 // SubscribeFFT subscribes to the FFT ladder of a capture. bins/rowsPerSecond/format
-// are desires; read the returned Descriptor for what the daemon serves. FFT rows
+// are requests; read the returned Descriptor for what the daemon serves. FFT rows
 // are requested GAP_MARKED so a consumer processing rows (rather than painting
 // them) sees a Gap on the first frame after a drop; audio and IQ stay LATEST_WINS.
 func (c *Client) SubscribeFFT(ctx context.Context, captureID string, bins uint32, rowsPerSecond float64, format leylinev1.FftBinFormat) (*Subscription, error) {
 	return c.SubscribeFFTAccumulated(ctx, captureID, bins, rowsPerSecond, format, leylinev1.FftAccumulation_ROW_SNAPSHOT)
 }
 
-// SubscribeFFTAccumulated is SubscribeFFT with a say in how each row is built.
+// SubscribeFFTAccumulated is SubscribeFFT with control over how each row is built.
 // ROW_SNAPSHOT takes one periodogram per row, which covers a fraction of a
 // percent of it: right for a chart of "now", wrong for anything reading duty
 // cycle. ROW_MAX looks across the whole row, so a burst shorter than a row is
-// still drawn. The descriptor answers with the looks actually taken.
+// still drawn. The descriptor reports the looks actually taken.
 func (c *Client) SubscribeFFTAccumulated(ctx context.Context, captureID string, bins uint32, rowsPerSecond float64,
 	format leylinev1.FftBinFormat, acc leylinev1.FftAccumulation,
 ) (*Subscription, error) {
@@ -525,8 +525,8 @@ func (c *Client) SubscribeAudioSpectrum(ctx context.Context, channelID string, b
 // SubscribePersistence subscribes to a capture's persistence (phosphor)
 // histogram: for each frequency bin, how often each level has been seen lately.
 //
-// floorDb and rangeDb are required and the daemon does not guess them: a
-// histogram on the wrong scale is not obviously wrong to look at. Take one FFT
+// floorDb and rangeDb are required and the daemon has no default for them,
+// because a histogram on the wrong scale does not look obviously wrong. Take one FFT
 // row first to find the floor.
 func (c *Client) SubscribePersistence(ctx context.Context, captureID string, bins, levels uint32,
 	floorDb, rangeDb, halfLifeSeconds, rowsPerSecond float64,
@@ -548,7 +548,7 @@ func (c *Client) SubscribeAudio(ctx context.Context, channelID string, sampleRat
 	return c.SubscribeAudioTap(ctx, channelID, sampleRate, format, leylinev1.AudioTap_TAP_AUDIO)
 }
 
-// SubscribeAudioTap is SubscribeAudio with a say in which stage of the channel
+// SubscribeAudioTap is SubscribeAudio with a choice of which stage of the channel
 // the samples come from. TAP_DEMOD is the detector's output before the audio
 // conditioning, so an NFM stream still carries its CTCSS tone and keeps flowing
 // while the squelch is closed; a RAW_IQ channel has no detector and refuses it.

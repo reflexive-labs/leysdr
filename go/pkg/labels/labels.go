@@ -3,11 +3,11 @@
 // Package labels is the client-side store of the human names a person gives the transmitters a
 // decoder discovers. Labels are user data, not daemon state: the design boundary keeps the
 // registry a deterministic fold over the record log and puts the one piece a fold cannot derive
-// -- what a person decided a device is -- in the client (docs/design/decoders.md, "The state
+// -- the user's name for a device -- in the client (docs/design/decoders.md, "The state
 // boundary" and section 5, "Registry devices"). A label is keyed by device_id alone, because the
-// ids protocols carry (ICAO hex, MMSI, callsign-SSID, Acurite-Tower/2937) are globally meaningful,
-// so "that's the greenhouse" holds whichever decoder next hears it; the protocol is kept only as
-// a note of where it was first named.
+// ids protocols carry (ICAO hex, MMSI, callsign-SSID, Acurite-Tower/2937) are globally unique,
+// so a label applies whichever decoder next receives that device; the protocol is kept only as
+// a note of where it was first labelled.
 package labels
 
 import (

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Delivery to a notification sink (docs/design/decoders.md, "Predicates and delivery"): a record
-// that passes a job's predicate is handed here, and "somewhere" is a webhook, a shell hook or a
+// that passes a job's predicate is handed here, and the sink is a webhook, a shell hook or a
 // macOS user notification. This is off the hot path -- the runner fires it as a detached task so a
 // slow webhook never stalls the reader -- so clarity wins over allocation counting. Every failure
-// is logged and swallowed: a notifier that could fail a job would make a trigger less reliable than
-// no trigger, which is the opposite of what driver C needs.
+// is logged and swallowed: if a failed delivery could fail the job, a job with a trigger would be
+// less reliable than one without, and driver C needs the reverse.
 
 import Foundation
 import LeylineProto

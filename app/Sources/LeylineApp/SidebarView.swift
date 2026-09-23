@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 1: bands and bookmarks (docs/design/app-design-handoff.md). A band is a place to look;
-// a bookmark is a station to return to. Selecting a band configures everything it implies and
-// the expanded row says what that was.
+// Region 1: bands and bookmarks (docs/design/app-design-handoff.md). A band is a frequency
+// range; a bookmark is a saved station. Selecting a band applies all of its settings and the
+// expanded row shows them.
 
 import LeylineClient
 import LeylineProto
@@ -16,8 +16,8 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header("Bands") { EmptyView() }
                 ForEach(session.bands) { band in
-                    // A band the radio cannot reach stays listed, disabled, and the hover says
-                    // why: a click that could only fail is not offered.
+                    // A band the radio cannot reach stays listed, disabled, and the tooltip
+                    // explains why: a click that could only fail is not offered.
                     let why = session.outOfRangeWords(band)
                     BandRow(
                         band: band, selected: session.band?.id == band.id,
@@ -67,8 +67,9 @@ struct SidebarView: View {
                         if tuned, session.bookmarkModified {
                             Button("Save mode and width") { session.saveTunedBookmark() }
                         }
-                        // The bookmark points where the radio is: the name stays, the frequency,
-                        // mode and width become the channel's. Only when that is somewhere else.
+                        // Moves the bookmark to the tuned frequency: the name stays, the
+                        // frequency, mode and width become the channel's. Shown only when the
+                        // tuned frequency differs from the bookmark's.
                         if let hz = session.tunedHz, hz != b.hz {
                             Button("Replace with \(Frequency.format(hz))") {
                                 session.replace(bookmark: b)
@@ -122,7 +123,7 @@ struct BandRow: View {
     }
 
     /// `87.5 – 108 MHz · 200 kHz · sq −28`, one line: the band's range, never the capture's,
-    /// with the zeros a person would not say dropped.
+    /// with trailing zeros dropped.
     private var detail: String {
         var parts = [
             "\(Frequency.mhz(band.minHz)) – \(Frequency.mhz(band.maxHz)) MHz",
@@ -138,7 +139,7 @@ struct BandRow: View {
     }
 }
 
-/// One look for "selected", the band row's: `selected` ground and a `good` dot on the tuned
+/// The same "selected" style as the band row's: `selected` ground and a `good` dot on the tuned
 /// bookmark, a faint dot on the rest (the in-span meaning the dot carried in M1 was not read
 /// as one; the owner, 2026-09-21). `changed` in `caution` where the frequency was, when the
 /// bookmark's settings and the channel's disagree. The row is an editor while `editing`.

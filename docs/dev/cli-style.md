@@ -25,8 +25,8 @@ turned off, or that leaks into a pipe, breaks the second audience silently.
    profile off before any renderer exists. This is decided once at start-up, not per
    call site.
 5. **Restraint.** Six ink roles, one glyph ramp, one level ramp, and a frame only where
-   it earns its width. If everything is emphasised, nothing is. A screen that needs more
-   than three levels of emphasis is a screen that needs restructuring instead.
+   it earns its width. A screen that needs more than three levels of emphasis needs
+   restructuring.
 
 ## 2. Capability model
 
@@ -80,7 +80,7 @@ Six roles. Use the role, never a colour name, at the call site.
 | `Cmd` | cyan | commands the reader is meant to copy and run |
 
 Plain (no role) is the default and carries the primary answer: the frequency, the mode,
-the number the screen exists to report. Emphasis is for finding it, not for being it.
+the number the screen exists to report. Emphasis helps the reader find it.
 
 Rules:
 
@@ -100,23 +100,23 @@ teal at the noise floor, then green, amber, orange, and a salmon red at full sca
 the brand's terminal colours, sampled from the design system's dashboard mock; what the terminal
 ramp shares with the app's is hue order and nothing else, because the app's runs from near-black
 to cream and assumes the dark ground it owns. **The cold end is the
-noise line, not the bottom of the chart**, so hue answers the question a reader actually
-has: how far over the floor is this.
+noise line, not the bottom of the chart**, so hue shows how far a signal is above the
+floor.
 
-**Every chart names its own cold end, and one function does the normalising.** `rampFrac(value,
+**Every chart sets its own cold end, and one function does the normalising.** `rampFrac(value,
 floor, top)` in `internal/cli/chart.go` is the only place a level becomes a ramp fraction. What
 differs is the two references: `spectrum` runs from the noise line to the loudest column the run
 has seen; `levels` from −60 dBFS to full scale, a held scale a meter can be read against;
 `waveform` from silence to the scale on screen, so a quiet passage under `--scale 0.1` still has
-colour in it; `waterfall` from the noise floor over its fixed 40 dB range. One colour, one answer
-in every view: this far above what this chart calls nothing.
+colour in it; `waterfall` from the noise floor over its fixed 40 dB range. In every view, a colour
+means the same distance above that chart's own zero reference.
 
-**The ramp is tuned for a dark terminal, by decision.** We are forbidden from asking which
-ground the reader has (no OSC query, no `HasDarkBackground`), so a ramp cannot adapt; it can only
-choose. The stops adopted on 2026-09-14 clear 3.9:1 or better against black and `#1e1e1e`, and
+**The ramp is tuned for a dark terminal.** Querying the terminal background is forbidden (no
+OSC query, no `HasDarkBackground`), so the ramp cannot adapt and has to target one background.
+The stops adopted on 2026-09-14 clear 3.9:1 or better against black and `#1e1e1e`, and
 between 2.5:1 and 4.2:1 against white and `#fafafa`, with the teal cold end at the low end of
 that. On a light terminal the noise floor, which is the cold end and most of any chart, reads
-faint. That is the accepted cost, taken with both ramps rendered side by side: the ramp before
+faint. That cost was accepted after rendering both ramps side by side: the ramp before
 this one held every stop between 0.18 and 0.26 relative luminance, the one band that clears
 3.2:1 on both grounds, and it read as thin on the dark terminal nearly every reader has. Level is
 carried by height and by texture as well as by hue, which is what keeps a light-terminal chart
@@ -126,10 +126,11 @@ once a saturated `#0000A0`, 1.2:1 on a dark terminal, and most of every chart va
 lower bar exists so that cannot happen again in either direction.
 
 **A quiet band is held to the cold third of the ramp, not to a single ink.** Forcing every
-column to one colour when nothing is detected is honest and unreadable: the chart becomes a
+column to one colour when nothing is detected is accurate but unreadable: the chart becomes a
 flat field with no shape, and the flatness of the floor, which is what a reader checks a quiet
-band for, cannot be seen. Cap the ramp instead: the texture shows, the heat does not. It degrades by
-profile, not by branch: truecolor renders the gradient, 256 renders the nearest cube
+band for, cannot be seen. Cap the ramp instead, so the texture shows but no hot colours appear.
+The ramp degrades with the colour profile, with no separate code path:
+truecolor renders the gradient, 256 renders the nearest cube
 colour, 16 collapses to cyan/green/yellow/bright red/red, and none returns the string
 unchanged. A reader with colour off still has the eight-level block ramp, so level
 survives as height.
@@ -160,8 +161,8 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   `Label`. Columns carry units in the header (`OFFSET (kHz)`), never per cell.
 - **The answer leads.** The first column is what the verb was asked about (model,
   frequency, name), not the id. Ids move right or behind `--wide`. A column that would read
-  the absent glyph on every row is left out (`hideEmpty` on the column): eight dashes are width
-  spent on nothing. An empty table keeps every header, so it still says what a row carries.
+  the absent glyph on every row is left out (`hideEmpty` on the column), because a column of
+  dashes wastes width. An empty table keeps every header, so it still shows what a row holds.
 - **Label blocks** align on a padded left column of `Label` ink, with the value plain
   and any diagnostic (`pid`, `socket`, serial) `Muted` on the same line.
 - **Hierarchy is indentation**, not repeated ids. `ley state` shows device to capture to
@@ -178,37 +179,38 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **Blank lines group**; rules separate sections only when a blank line is not enough.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
-  Filling every cell under a column makes area, not information: a flat noise floor covers
+  Filling every cell under a column adds area without information: a flat noise floor covers
   two whole rows -- some two hundred cells against a carrier's dozen -- so the picture reads
   as one mass whatever is on the air, and the flatness of the floor, which is the thing the
-  reader is checking, has no shape to be seen in. The reference line itself is drawn as a
+  reader is checking, cannot be seen. The reference line itself is drawn as a
   rule and labelled on the axis, so height above it reads directly as margin.
 - **A time-vs-frequency map double-encodes level, and leaves its floor blank.** The cell's texture
-  carries the level and hue refines it. Hue alone is nothing with colour off, so a map whose level
+  carries the level and hue refines it. Hue alone disappears with colour off, so a map whose level
   lives only in colour is a blank rectangle under `NO_COLOR` or `--ascii`. This is why half-blocks
   (`▀` with a foreground and a background colour, two rows of time per cell) are rejected despite
   doubling the time depth: every cell becomes the same glyph. The floor draws as a space so the
   terminal's own background shows through, and the scale is chosen once and held -- a scale that
-  moved per row would make the time axis lie, since the same signal would change shade because
+  moved per row would make the time axis misleading, since the same signal would change shade because
   something else got louder.
 - **A chart's row is held coarse, and its span is not allowed to shrink to fit.** Autoscaling
   to the data is right until the data is noise: a receiver's noise floor spreads about 7 dB
   across the columns, so a scale that fits itself to an empty band gives a 1.5 dB row and
-  smears that floor over five of them as confetti. Hold a minimum span -- for the spectrum,
-  50 dB, a 5 dB row -- and an empty band collapses to one line with seven rows of honest
-  headroom above it. The reserved sky is not waste: it is what makes two bands comparable,
-  because a column of a given height means the same dB on both.
+  scatters that floor over five of them. Hold a minimum span -- for the spectrum, 50 dB, a
+  5 dB row -- and an empty band collapses to one line with seven empty rows of headroom above
+  it. The headroom makes two bands comparable, because a column of a given height means the
+  same dB on both.
 - **A sparkline is eight cells of a real series, on the row it describes.** Drawn with the
   column ramp, oldest on the left, one line and never a chart; `sparkline` and `levelSparkline`
   in `internal/cli/spark.go` are the only renderers. A cell with anything in it is never blank,
-  because the picture exists to show the carrier that keyed once. It is allowed only where every
+  so a carrier that keyed once stays visible. It is allowed only where every
   cell is a measurement the daemon actually made in that slice: `ley monitor`'s ACTIVITY column
   (the share of each eighth of the watch the detector saw the carrier in, from the updates it
   re-publishes each row a carrier is found), the live meter's signal row (the loudest level the
   daemon reported in each of the last eight seconds), and `ley track`'s HEARD column (records per
   eighth of the table's window, one ramp step each, full at eight, so a packet reads the same on
-  every row). `ley scan` has none: a sweep reports counts, and a ramp drawn from a count is
-  invented history (invariant 12). Occupancy takes `Muted` ink, since it is not a level and eight
+  every row). `ley scan` has none: a sweep reports counts, and a ramp drawn from a count would
+  show history the daemon never measured (invariant 12).
+  Occupancy takes `Muted` ink, since it is not a level and eight
   full blocks in the foreground would outshine the numbers beside them; the meter's history takes
   level ink, because it is one. The same series goes out under `--json`
   as numbers (`on_air_slices`, `heard_slices`), the glyphs being the rendering, not the data.
@@ -290,14 +292,14 @@ Rules for callers:
 - `App.table()` styles the header row; individual cells are plain unless they go
   through `Pad`.
 - `session.say` is the prose router and already knows the stream; it applies ink.
-- `printJSON` and `printArray` never see a style. That is the proof that machine
-  output is out of reach.
+- `printJSON` and `printArray` never see a style, so styling cannot reach machine
+  output.
 
 ## 8. Testing rules
 
 - Every screen gets a test that renders it **twice**, once with a plain style and once
-  with `Color: true, Unicode: true`, and asserts `ui.Strip(styled) == plain`. That is
-  the mechanical proof of principle 1.
+  with `Color: true, Unicode: true`, and asserts `ui.Strip(styled) == plain`. This
+  checks principle 1 mechanically.
 - Golden files stay plain: they are captured through a non-terminal writer.
 - Width-dependent renderers are tested at 40, 80 and 160 columns and must never emit a
   line whose `ui.Visible` exceeds the width.

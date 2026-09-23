@@ -5,7 +5,7 @@
 // It keeps the contract of docs/design/decoders.md, "Decisions" ("Transport: stdio") and nothing
 // else: read the varint-delimited StreamDescriptor, then one DecodeRecord per Frame. A frame with
 // an empty payload makes it exit(3), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
-// delays its start, which is how a slow plugin is.
+// delays its start, which is how a slow plugin is tested.
 //
 // Framing is coded here rather than through `BinaryDelimited` because that API takes Foundation
 // `InputStream`/`OutputStream`, which cannot be built from the process's own pipes; the bytes are

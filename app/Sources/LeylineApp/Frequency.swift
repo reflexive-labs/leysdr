@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Every place a frequency becomes text: the transport field's digits, a band's range, a width
-// a person says out loud. One spelling for each shape so two views never disagree about the
-// same hertz (docs/writing-guide.md names the units; this is where the code honours them).
+// All frequency-to-text formatting: the transport field's digits, a band's range, a width in
+// spoken form. One format for each shape so two views never disagree about the same hertz
+// (docs/writing-guide.md specifies the units; this file implements them).
 
 import Foundation
 import LeylineClient
@@ -15,7 +15,7 @@ enum Frequency {
         // A fourth decimal for a frequency on an exact half-kilohertz: every 12.5 kHz channel
         // plan has them (GMRS channel 3 is 462.6125 MHz, and three decimals would round it to a
         // channel it is not), and no measurement lands on one by chance, so a measured centre
-        // keeps the three decimals its bin width can honestly carry. `ley`'s rule.
+        // keeps the three decimals its bin width can resolve. `ley`'s rule.
         if hz >= 1_000_000 {
             return String(format: hz % 1_000 == 500 ? "%.4f MHz" : "%.3f MHz", Double(hz) / 1e6)
         }
@@ -37,9 +37,9 @@ enum Frequency {
         return "\(hz) Hz"
     }
 
-    /// `144`, `87.5`, `462.5375`: MHz to four decimals with the zeros a person would not say
-    /// trimmed off. The sidebar's band list and the band rail's caps both want this shape and
-    /// used to keep their own copies, which drifted (`docs/dev/swift-style.md`, section 13).
+    /// `144`, `87.5`, `462.5375`: MHz to four decimals with trailing zeros trimmed. The
+    /// sidebar's band list and the band rail's caps both use this shape and used to keep their
+    /// own copies, which drifted (`docs/dev/swift-style.md`, section 13).
     static func mhz(_ hz: UInt64) -> String {
         var s = String(format: "%.4f", Double(hz) / 1e6)
         while s.hasSuffix("0") { s.removeLast() }

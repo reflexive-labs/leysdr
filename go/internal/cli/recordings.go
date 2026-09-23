@@ -250,7 +250,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string) 
 	if m.Kind == "audio" && m.Mode != "" {
 		what = m.Mode + " audio"
 	}
-	// One fact per line, led by the word the eye looks for, as `ley tune`'s banner is.
+	// One fact per line, each led by a label word, as `ley tune`'s banner is.
 	fmt.Fprintln(out, leadLabel(s, "Recording", fmt.Sprintf("%s %s, %s",
 		leyline.FormatFrequency(m.FrequencyHz), what, m.Format)))
 	// The manifest's own byte count is the samples; the SIZE column of `ley recordings` is what the
@@ -310,8 +310,8 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string) 
 		fmt.Fprintln(out)
 		_, _ = printColumns(out, tableStyle(app), cols, nil)
 	}
-	// Time nobody recorded, stated rather than hidden inside a file: a recording played back
-	// sounds like the air did (CLAUDE.md invariant 5).
+	// Gaps where nothing was recorded are listed here rather than hidden inside a file, so the
+	// recording's timeline matches the air (CLAUDE.md invariant 5).
 	if len(m.Gaps) > 0 && m.SampleRate > 0 {
 		fmt.Fprintf(out, "\n%s\n", s.Muted(plural(len(m.Gaps), "gap")+" where nothing was recorded:"))
 		for _, g := range m.Gaps {
@@ -328,7 +328,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string) 
 }
 
 // endedByPhrase inks how a recording ended: a recording that ran out of disk or died with its
-// daemon is not the same outcome as one that reached its duration, and the word says which.
+// daemon is not the same outcome as one that reached its duration, and the ink shows which.
 func endedByPhrase(s ui.Style, endedBy string) string {
 	switch endedBy {
 	case "duration", "quiet", "cancelled", "channel ended":
@@ -405,8 +405,8 @@ func runRecordingsPath(ctx context.Context, app *App, ref string, part int) erro
 }
 
 // resolveRecordingID reads the id out of what the user typed: a job id, a URI, or an id prefix
-// matched against the store. A prefix that matches more than one is a usage error naming them,
-// rather than a coin toss.
+// matched against the store. A prefix that matches more than one is a usage error listing them,
+// rather than an arbitrary pick.
 func resolveRecordingID(ctx context.Context, c *leyline.Client, ref string) (string, error) {
 	if id, _, ok := leyline.ParseRecordingURI(ref); ok {
 		return id, nil

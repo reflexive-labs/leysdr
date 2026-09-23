@@ -55,8 +55,8 @@ func TestLevelMonotoneInHue(t *testing.T) {
 		f := float64(i) / steps
 		h := hue(rampRGB(t, f))
 		// The mix is rounded to 8-bit channels, which wobbles the hue by a
-		// fraction of a degree between samples. A fold-back the eye could see
-		// is degrees, not tenths.
+		// fraction of a degree between samples. A visible fold-back would be
+		// whole degrees, not tenths.
 		if h > prev+0.5 {
 			t.Fatalf("hue rose at frac %.3f: %.2f after %.2f, want cold to hot without fold-back", f, h, prev)
 		}

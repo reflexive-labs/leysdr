@@ -93,7 +93,7 @@ func TestPlayWithSidecar(t *testing.T) {
 	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
 		t.Fatalf("play did not detach/tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
 	}
-	// The meter is stderr's: a person's gauge, never a script's stdout.
+	// The meter goes to stderr for the person, never to a script's stdout.
 	if !strings.Contains(errOut, "146.620 MHz AM  signal ") {
 		t.Fatalf("meter line: %s", errOut)
 	}

@@ -46,8 +46,8 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         var nextLook: UInt64 = 0
         var looks: Int = 0
         /// Whether this entry has seen a block yet. An accumulating entry uses it to put its first
-        /// row a whole interval out: a row emitted on the first block would have one look in it and
-        /// would claim to summarise an interval it never saw.
+        /// row a whole interval out: a row emitted on the first block would contain one look and
+        /// would misreport the interval it covers.
         var started = false
         let accumulator: UnsafeMutableBufferPointer<Float>?
         /// Per-entry scratch for `.mean`, which cannot convert in the shared row buffer.
@@ -149,8 +149,8 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
             if e.nextDue > now &+ interval { e.nextDue = now &+ interval }
             let analyzer = analyzers[e.sizeIndex]
 
-            // An accumulating subscriber takes looks between rows, evenly spread: a row is only as
-            // honest about a burst as the fraction of itself it actually looked at, and one
+            // An accumulating subscriber takes periodograms between rows, evenly spread: a row can
+            // only catch a burst in the fraction of its time that was analysed, and one
             // periodogram is 0.17% of a 250 ms row at 2.4 MSPS.
             if let acc = e.accumulator {
                 if !e.started {

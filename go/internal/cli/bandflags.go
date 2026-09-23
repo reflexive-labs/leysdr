@@ -9,11 +9,10 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// bandFlags is the flag-side half of a band view: what the user typed on the
-// way to a picture of a band. `ley spectrum`, `ley waterfall` and `ley
-// phosphor` take the same arguments and read them by the same rules, so the
-// rules live here once and a fourth view inherits them rather than copying
-// them and drifting.
+// bandFlags holds the command-line flags of a band view. `ley spectrum`, `ley
+// waterfall` and `ley phosphor` take the same arguments and parse them by the
+// same rules, so the rules live here once and a new view reuses them instead
+// of copying them.
 type bandFlags struct {
 	bandName     string
 	band         *leyline.Band
@@ -26,10 +25,10 @@ type bandFlags struct {
 	device       string
 }
 
-// bandUsage is what a view calls itself in the messages its arguments produce.
-// The examples and the hints are the verb the reader typed, so they are worth
-// the four fields: a spectrum user told to try `ley waterfall 146.52` has been
-// sent somewhere they were not going.
+// bandUsage holds the per-view text for argument errors. The examples and
+// hints use the command the user typed, so they need their own fields: a
+// spectrum user told to try `ley waterfall 146.52` is sent to the wrong
+// command.
 type bandUsage struct {
 	// verb names the command, as in "give a frequency or --band, not both".
 	verb string
@@ -64,8 +63,8 @@ func (f *bandFlags) parse(app *App, args []string, span string, u bandUsage) err
 		f.freq = t.Hz
 	}
 	if f.bandName != "" {
-		// A band is a range and a positional is a point; asking for both says
-		// two different things about where to put the radio.
+		// A band and a positional frequency each set where to tune the radio,
+		// so giving both is a conflict.
 		if f.freqInput != "" {
 			return usageErrorf("give a frequency or --band, not both: %s %s --band %s", u.verb, f.freqInput, f.bandName)
 		}

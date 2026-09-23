@@ -215,7 +215,7 @@ final class DSPDemodTests: XCTestCase {
         let (audio, _) = try run(mode: .nfm, offsetHz: 100_000, bandwidthHz: 12_500, iq: iq)
         let peak = audio.map(abs).max() ?? 0
         XCTAssertLessThanOrEqual(peak, 1)
-        // Noise still reaches most of full scale after de-emphasis (peaks ≈ 0.85; the clamp is the point).
+        // Noise still reaches most of full scale after de-emphasis (peaks ≈ 0.85; this checks the clamp).
         XCTAssertGreaterThan(peak, 0.5) // the clamp is actually engaging
     }
 

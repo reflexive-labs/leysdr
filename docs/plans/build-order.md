@@ -45,11 +45,11 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `docs/plans/user-
     the dashboard owns its viewport, so its waterfall puts the newest row directly under the spectrum
     with the frequency axis between them, and time flows down the screen. That is the opposite of
     `ley waterfall`, which prints to a scrolling terminal, where newest-at-bottom is the only order
-    that does not fight the scrollback and the axis is reprinted every 20 rows (`waterfallAxisEvery`)
-    because the top of the screen is gone by the time a reader wants it. Two surfaces, two rules;
-    neither is a precedent for the other. Everything else in `docs/dev/cli-style.md` holds here as it
-    does in the scrolling views: the four-step `Shade` ramp rather than half-blocks (a half-block map
-    is a blank rectangle with colour off), the six ink roles, and the level ramp, which since
+    that works with the scrollback and the axis is reprinted every 20 rows (`waterfallAxisEvery`)
+    because the first axis has scrolled off by then. The two layouts are separate decisions;
+    changing one does not change the other. Everything else in `docs/dev/cli-style.md` holds here as
+    it does in the scrolling views: the four-step `Shade` ramp rather than half-blocks (a half-block
+    map is a blank rectangle with colour off), the six ink roles, and the level ramp, which since
     2026-09-14 is the brand's terminal palette (teal to salmon red, tuned for a dark ground) and is
     the same five stops the scrolling views draw with.
 15. Jobs: store, JobRunner respawn, CaptureAllocator with don't-disturb; watch job → ActivitySegments → transcript.
@@ -64,8 +64,8 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `docs/plans/user-
 ## Closing the core (decided 2026-09-17)
 
 The core is good enough when the app's stories have a contract behind them, and they do except for
-two items. Everything else still open in `docs/plans/` is breadth over a contract that has held its
-shape since D.13, and it waits behind the app rather than in front of it.
+two items. Everything else still open in `docs/plans/` adds breadth to a contract that has not
+changed shape since D.13, and it waits until after the app.
 
 **The gate, before E.1 starts:**
 
@@ -95,8 +95,8 @@ shape since D.13, and it waits behind the app rather than in front of it.
   "Deliberately not in v1"). The first thing to reopen when the recordings store hurts, and
   ahead of anything about the audio format. Backlogged behind the app, not forgotten.
 - **D.14, D.15, MCP-8 to MCP-11, DEC-12/13/14/15/19, SV-7, SV-9, BW-2, BW-3, R-21, R-22.**
-  Deferred behind Milestone E. D.14's stated purpose, a constrained consumer negotiating streams,
-  the three terminal live views already prove.
+  Deferred behind Milestone E. The three terminal live views already prove D.14's stated purpose,
+  a constrained consumer negotiating streams.
 
 ## Milestone E — the Mac app
 
@@ -120,7 +120,7 @@ its `ley` mirror.
    named failure states from telemetry (flat floor, zero gain, no antenna).
 4. Bookmarks, presets and CHIRP import over a shared `bookmarks.json`, with `ley bookmarks`;
    the built-in preset table becomes the seed layer of the same list and gains the newcomer
-   presets the V1a story names.
+   presets the V1a story lists.
 5. Recording from the UI and reveal in Finder, over C.12.
 6. Lifecycle: daemon not running, unplug and replug, and the layer 2 inspector last.
 7. Distribution (D4): a notarized bundle carrying `leylined`, `ley` and the decoders, installing

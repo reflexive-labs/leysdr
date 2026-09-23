@@ -23,10 +23,10 @@ public struct ChannelTelemetryRecord: Sendable {
     public var openSamples: UInt64 = 0
     public var peakSNRDB: Float = .nan
     public var peakPowerDBFS: Float = .nan
-    /// What the listener hears over the meter interval, measured on the demodulated block rather
+    /// Audio output level over the meter interval, measured on the demodulated block rather
     /// than on the channel IQ: a strong unmodulated carrier is loud in `powerDBFS` and quiet here.
     /// NaN on a squelch record and before the first block; a raw-IQ channel has no audio and leaves
-    /// both NaN, because there is nothing a listener would hear.
+    /// both NaN.
     public var audioDBFS: Float = .nan
     public var audioPeakDBFS: Float = .nan
     /// The FM discriminator over the meter interval, read ahead of de-emphasis and the high-pass:
@@ -232,8 +232,8 @@ public final class ChannelDSPCore: @unchecked Sendable {
     public var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
 
     /// How many transmissions have ended: one per squelch close edge. The sub-audible task watches
-    /// this to know the signal it has been measuring is over, so the phase history it carries is no
-    /// longer a history of anything. A count rather than a flag because a whole transmission can
+    /// this to learn that the signal it has been measuring has ended and its phase history is
+    /// stale. A count rather than a flag because a whole transmission can
     /// come and go between two of that task's 50 ms polls.
     public var squelchCloseCount: UInt64 { squelchCloses.load(ordering: .relaxed) }
 
@@ -311,8 +311,8 @@ public final class ChannelDSPCore: @unchecked Sendable {
         let wantsRaw = hasDemodSink
         sinkLock.unlock()
         var audio = audioOut.view()
-        // The raw stage costs the demodulator nothing while nobody is watching it: nil here is the
-        // single branch a channel with no scope on it pays.
+        // With no demod-tap sink the raw stage costs one branch: `raw` is nil and the demodulator
+        // skips it.
         var raw: SampleBuffer? = wantsRaw ? rawOut?.view() : nil
         let dsp = Signpost.begin(.demodulate)
         var frames = demodulator.process(iq: iq, audioOut: &audio, rawOut: &raw)
@@ -326,9 +326,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
             audio.count = frames
             out = audio
         }
-        // Squelched: the listener hears silence, and only the listener. The demod tap below carries
-        // the detector's own output whether the squelch is open or shut; `AudioTap` in `bulk.proto`
-        // says what that is for.
+        // Squelched: only the `.audio` output is muted. The demod tap below carries the detector's
+        // own output whether the squelch is open or shut; `AudioTap` in `bulk.proto` documents what
+        // that is for.
         if !squelch.isOpen, frames > 0 {
             Kernels.clear(out.base.assumingMemoryBound(to: Float.self), count: out.format == .cf32 ? frames * 2 : frames)
         }
@@ -374,9 +374,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
 
     /// Start the channel over on a discontinuous stream: filter history, NCO phase, demodulator and
     /// last block power go, and so does the transmission in progress -- its sample count and peaks
-    /// describe the stream before the gap, and a duration that spans dead air is a lie about the
-    /// air. Call it only while no block is in flight (the device is stopped and the DSP thread
-    /// drained); the state it touches belongs to the DSP thread.
+    /// describe the stream before the gap, and a duration that spans the gap would be wrong. Call
+    /// it only while no block is in flight (the device is stopped and the DSP thread drained); the
+    /// state it touches belongs to the DSP thread.
     public func reset() {
         // A squelch that was open ends here rather than silently: the fresh squelch below starts
         // closed, so without this record the close edge never reaches anyone and every watcher of

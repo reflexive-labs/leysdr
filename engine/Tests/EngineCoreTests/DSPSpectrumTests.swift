@@ -199,7 +199,7 @@ extension DSPSpectrumTests {
         return sink.rows.map(\.peakDB)
     }
 
-    /// A burst shorter than a row is what a waterfall exists to show, and one periodogram per row
+    /// A burst shorter than a row is the case a waterfall must show, and one periodogram per row
     /// covers a fraction of a percent of it. MAX looks across the row and finds the burst; SNAPSHOT
     /// only finds it when the row boundary happens to land inside it.
     func testMaxAccumulationCatchesABurstSnapshotMisses() async {
@@ -218,7 +218,7 @@ extension DSPSpectrumTests {
         }
     }
 
-    /// MEAN dilutes a short burst rather than hiding it: it is the honest average of the row, and
+    /// MEAN dilutes a short burst rather than hiding it: it is the plain average of the row, and
     /// it must sit well under the burst's own level and well over the quiet floor.
     func testMeanAccumulationDilutesABurst() async {
         let meaned = await burstRun(accumulation: .mean, blocks: 32, burst: 5 ..< 7)
@@ -229,7 +229,7 @@ extension DSPSpectrumTests {
         }
     }
 
-    /// The looks the daemon takes are an answer, and SNAPSHOT still means exactly one.
+    /// The subscription reports how many looks per row the daemon takes, and SNAPSHOT means one.
     func testSubscriptionReportsItsLooks() async {
         let ladder = DefaultSpectrumLadder()
         let sink = CollectingSpectrumSink()
@@ -272,7 +272,7 @@ extension DSPSpectrumTests {
         floor.observe(block.view(), at: SampleTime(captureID: cap, sampleIndex: 0), spanHz: rate)
         let expectedDensity = noiseDBFS - 10 * log10(Double(rate)) + 0.17
         XCTAssertEqual(Double(floor.densityDBFS), expectedDensity, accuracy: 0.5)
-        // At a channel's width the floor is the in-band noise the fixture generator promises
+        // At a channel's width the floor is the in-band noise the fixture generator specifies
         // (`go/cmd/leyfix/catalog.go`, `inBandFloorDBFS`), to the same 0.17 dB.
         let inBand = noiseDBFS + 10 * log10(12_500 / Double(rate))
         XCTAssertEqual(Double(floor.floorDBFS(bandwidthHz: 12_500)), inBand + 0.17, accuracy: 0.5)

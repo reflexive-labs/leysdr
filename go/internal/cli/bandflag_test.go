@@ -10,9 +10,9 @@ import (
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 )
 
-// A band is a range and a positional is a point. Asking for both says two
-// different things about where to put the radio, so it is a usage error rather
-// than a silent precedence rule.
+// A band is a range and a positional is a point, so the two conflict about
+// where to put the radio. Passing both is a usage error rather than a silent
+// precedence rule.
 func TestBandFlagRefusesAPositionalToo(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, verb := range []string{"spectrum", "waterfall", "phosphor"} {
@@ -86,9 +86,9 @@ func TestBandFlagFittingBandSetsTheCapture(t *testing.T) {
 	_ = c
 }
 
-// A band wider than any rate the radio has is centred and the reader is told
-// how much of it they are actually looking at. Silence would be the wrong
-// answer: the picture would be of a quarter of the band with nothing saying so.
+// A band wider than any rate the radio has is centred, and the output states
+// how much of the band is shown. Without that note the chart would cover a
+// quarter of the band with no warning.
 func TestBandFlagWideBandSaysWhatItShows(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2m", "--width", "80")
@@ -105,8 +105,8 @@ func TestBandFlagWideBandSaysWhatItShows(t *testing.T) {
 	}
 }
 
-// An explicit --span wins over the band's width: someone who said how wide
-// meant it. They are told when it shows less than the whole band.
+// An explicit --span wins over the band's width. The output notes when the
+// span shows less than the whole band.
 func TestBandFlagExplicitSpanWins(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2m", "--span", "250k", "--width", "80")

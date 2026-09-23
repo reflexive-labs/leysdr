@@ -106,8 +106,8 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
     }
 
     /// Plays a recording through the daemon's own audio device (docs/design/recording.md, "Playing
-    /// a recording back"). The daemon owns the speakers, so a client on another machine hears it
-    /// where the radio is and a client on this one needs no player of its own.
+    /// a recording back"). The daemon owns the speakers, so a recording plays where the radio is,
+    /// even for a client on another machine, and a local client needs no player of its own.
     func startPlayback(request: Leyline_V1_StartPlaybackRequest, context: ServerContext) async throws -> Leyline_V1_Playback {
         await store.touchUnary(client)
         return try await mapErrors {
@@ -120,7 +120,7 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
                 throw EngineError.jobNotFound(jobID)
             }
             // Raw samples are tuned, not played: the daemon pushing baseband at an audio device
-            // would be noise, and `ley play` on the file is what hears an IQ recording.
+            // would be noise. An IQ recording is heard by running `ley play` on the file.
             guard manifest.kind != "iq" else {
                 throw EngineError.invalidArgument(
                     "\(jobID) is an IQ recording: those are tuned rather than played. Attach it as a device instead",

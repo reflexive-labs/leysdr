@@ -21,7 +21,7 @@ func fixedOrientClock(t *testing.T) {
 	t.Cleanup(func() { orientNow = old })
 }
 
-// orientStates are the three faces of bare `ley`: no daemon, a daemon with no
+// orientStates are the three states of bare `ley`: no daemon, a daemon with no
 // radio, and a radio with channels playing.
 func orientStates() []struct {
 	name  string

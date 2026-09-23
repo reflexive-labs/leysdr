@@ -28,7 +28,7 @@ final class SpectrumCollector: SpectrumSink, @unchecked Sendable {
     var times: [UInt64] { lock.lock(); defer { lock.unlock() }; return stamps }
 
     /// Power mean of every row collected, back in dB: the rows are independent looks at the same
-    /// tones, and averaging them puts the noise between the peaks where it belongs.
+    /// tones, and averaging them settles the noise between the peaks at its mean level.
     var meanDB: [Double] {
         let rows = all
         guard let bins = rows.first?.count else { return [] }
@@ -78,7 +78,7 @@ final class AudioSpectrumTests: XCTestCase {
     }
 
     /// Invariant 5, on a stream where one block holds several rows: each row is stamped with the
-    /// index of the sample that completed it, so rows from one block name different moments and
+    /// index of the sample that completed it, so rows from one block carry different times and
     /// advance by exactly the hop. Rows that all carried the block's first sample would be the
     /// same instant on the wire.
     func testRowsFromOneBlockAdvanceByTheHop() throws {
@@ -107,7 +107,7 @@ final class AudioSpectrumTests: XCTestCase {
         XCTAssertEqual(collector.count, 5)
     }
 
-    /// Both taps of one fixture channel, as spectra: the same air through the same window, so the
+    /// Both taps of one fixture channel, as spectra: one signal through the same window, so the
     /// only difference between the two is the conditioning between them.
     private func run(fixture name: String, bins: Int = 1024, rows: Int = 8)
         async throws -> (audio: [Double], demod: [Double], rate: Double)
@@ -142,7 +142,7 @@ final class AudioSpectrumTests: XCTestCase {
     }
 
     /// The CTCSS tone is a peak on the discriminator beside the voice tone, and the audio tap's
-    /// 300 Hz high-pass has taken it away: the pair of spectra says which tap a meter is reading.
+    /// 300 Hz high-pass has removed it: the pair of spectra shows which tap a meter is reading.
     func testNFMTapsDifferBelowTheHighPass() async throws {
         let (audio, demod, rate) = try await run(fixture: "nfm_pl.cf32")
         let binHz = rate / 2 / Double(demod.count)
@@ -163,7 +163,7 @@ final class AudioSpectrumTests: XCTestCase {
         XCTAssertEqual(demod[pl], -11, accuracy: 2, "100 Hz reads \(demod[pl]) dBFS on the demod tap")
     }
 
-    /// The AM fixture's tone lands on its own bin, which is the whole claim a level meter makes.
+    /// The AM fixture's tone lands on its own bin, which is all a level meter relies on.
     func testAMToneLandsOnItsBin() async throws {
         let (audio, _, rate) = try await run(fixture: "am_tone.cf32")
         let binHz = rate / 2 / Double(audio.count)

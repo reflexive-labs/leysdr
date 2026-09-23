@@ -173,8 +173,8 @@ func TestCheckEachWideFixture(t *testing.T) {
 	}
 }
 
-// scan_band is the fixture whose placement is the whole point, and it has no
-// expectations to be judged by, so the rate check has to read its carriers.
+// scan_band exists to test carrier placement and has no expectations, so the
+// rate check has to read its carriers.
 func TestScanBandRateBound(t *testing.T) {
 	f := findFixture("scan_band")
 	if f == nil {

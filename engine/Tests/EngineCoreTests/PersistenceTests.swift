@@ -32,9 +32,9 @@ final class PersistenceTests: XCTestCase {
         }
     }
 
-    /// The whole point: a steady carrier piles up in one level bucket, while noise of the same
-    /// average level spreads across several. That difference is what makes an intermittent signal
-    /// visible on a persistence display and invisible on a live spectrum.
+    /// A steady carrier piles up in one level bucket, while noise of the same average level
+    /// spreads across several. That difference makes an intermittent signal visible on a
+    /// persistence display and invisible on a live spectrum.
     func testSteadyCarrierConcentratesAndNoiseSpreads() {
         let a = acc()
         var rng = SystemRandomNumberGenerator()
@@ -55,7 +55,7 @@ final class PersistenceTests: XCTestCase {
     }
 
     /// A signal that stops fades out of the picture. Without decay the display would show an hour
-    /// ago as though it were now, and "usual" would stop meaning anything.
+    /// ago as though it were now, and the display would no longer show typical activity.
     func testCountsDecay() {
         let a = acc(halfLife: 10)
         feed(a, [Float](repeating: -30, count: 8), times: 10)
@@ -70,7 +70,7 @@ final class PersistenceTests: XCTestCase {
     }
 
     /// Counts saturate rather than wrap. A count that rolled over would draw a permanently present
-    /// signal as an empty cell, which is the most misleading thing this could do.
+    /// signal as an empty cell.
     func testCountsSaturate() {
         let a = acc(bins: 1, levels: 4, halfLife: 1_000_000)
         feed(a, [-30], times: 70_000)

@@ -104,7 +104,7 @@ reads; 'ley jobs cancel' is how to stop one.
 // --count, Ctrl-C or the end of the stream.
 func runDecode(ctx context.Context, s *session, o decodeOptions) error {
 	// A friendly name (vessels -> ais) becomes the canonical decoder before anything starts, so the
-	// job, the records and the banner all speak the real name.
+	// job, the records and the banner all use the canonical name.
 	if name, _, err := s.client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
 	}
@@ -154,7 +154,7 @@ func runDecode(ctx context.Context, s *session, o decodeOptions) error {
 	}
 }
 
-// decodeFailure turns the daemon's refusal into the sentence the reader acts on.
+// decodeFailure turns the daemon's refusal into an error that says what to do next.
 func decodeFailure(s *session, o decodeOptions, err error) error {
 	st := s.app.ErrStyle
 	switch leyline.Code(err) {
@@ -171,7 +171,7 @@ func decodeFailure(s *session, o decodeOptions, err error) error {
 }
 
 // leylineMessage is the daemon's own sentence, or fallback when the error carries none. The
-// daemon says why in prose; ley adds the command to type next.
+// daemon's message gives the reason; ley adds the command to type next.
 func leylineMessage(err error, fallback string) string {
 	var le *leyline.Error
 	if errors.As(err, &le) && le.Message != "" {
@@ -180,9 +180,9 @@ func leylineMessage(err error, fallback string) string {
 	return fallback
 }
 
-// decodeBanner states what the job got: the decoder, where it is listening, and the channel and
-// capture the daemon allocated, because a decoder tuned somewhere the reader did not ask for is
-// a decoder that hears nothing.
+// decodeBanner prints what the job was given: the decoder, where it is listening, and the channel
+// and capture the daemon allocated, because a decoder tuned to the wrong frequency decodes
+// nothing.
 func decodeBanner(s *session, job *leylinev1.Job, o decodeOptions) string {
 	st := s.app.ErrStyle
 	where := ""
@@ -240,9 +240,9 @@ func decodeChannel(s *session) *leylinev1.Channel {
 	return best
 }
 
-// printRecord writes one record: the time it arrived, who sent it, what kind of thing it was,
-// and what it said. A fixed layout rather than a table, because the rows arrive one at a time
-// and a table that re-laid itself on every packet could not be read.
+// printRecord writes one record: the time it arrived, the sender, the record kind and its
+// content. A fixed layout rather than a table, because the rows arrive one at a time and a table
+// that re-laid itself on every packet would be unreadable.
 func printRecord(s *session, rec *leylinev1.DecodeRecord) error {
 	if s.app.JSON {
 		return s.app.printJSON(rec)

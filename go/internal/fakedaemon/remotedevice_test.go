@@ -182,13 +182,13 @@ func TestAttachDeviceFileSource(t *testing.T) {
 			t.Errorf("detached file device %s is still listed", d.DeviceId)
 		}
 	}
-	// A source is what makes the request a request.
+	// A request with no source is invalid.
 	if _, err := c.Control.AttachDevice(ctx, &leylinev1.AttachDeviceRequest{}); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("empty source: want INVALID_ARGUMENT, got %v", err)
 	}
 }
 
-// TestDetachDeviceRefusesUSB: a dongle in this machine's USB port is not a client's to remove.
+// TestDetachDeviceRefusesUSB: a client cannot remove a dongle in this machine's USB port.
 func TestDetachDeviceRefusesUSB(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()

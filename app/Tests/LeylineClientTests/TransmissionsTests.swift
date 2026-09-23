@@ -124,7 +124,7 @@ final class TransmissionsTests: XCTestCase {
             tone(.subAudibleCtcss, standard: 100, measured: 100.2, at: 2_640_000), captureRate: rate
         )
         XCTAssertEqual(log, before, "the 1 Hz heartbeat repeats the tone; nothing changes")
-        // Tone loss is silent: the transmission keeps the tone it had.
+        // Tone loss is not logged: the transmission keeps the tone it had.
         before = log
         log.fold(
             tone(.subAudibleNone, standard: 0, measured: .nan, at: 4_000_000), captureRate: rate)
@@ -132,7 +132,7 @@ final class TransmissionsTests: XCTestCase {
         log.fold(edge(open: false, at: 4_800_000, duration: 4_800_000), captureRate: rate)
         XCTAssertEqual(log.closed[0].tone, CTCSSTone(standardHz: 100, measuredHz: 100.2))
 
-        // A measurement between two standard tones is not a tone here: naming one is a guess.
+        // A measurement between two standard tones is not a tone here: picking one is a guess.
         log.fold(edge(open: true, at: 6_000_000), captureRate: rate)
         log.fold(
             tone(.subAudibleCtcss, standard: 0, measured: 68.1, at: 6_240_000), captureRate: rate)

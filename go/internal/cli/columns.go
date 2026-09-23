@@ -23,12 +23,12 @@ type column struct {
 	min int
 	// drop, when above zero, marks the column droppable once the table is
 	// over its width budget: the highest rank goes first. A column with no
-	// rank is information the screen exists to carry and always survives.
+	// rank is essential and is never dropped.
 	drop int
 	// hideEmpty leaves the column out when every row holds the absent
-	// glyph: a column reading "-" eight times out of eight is width spent on
-	// nothing (docs/dev/cli-style.md section 5). An empty table keeps it, so
-	// the header still says what a row would carry.
+	// glyph: a column of nothing but "-" wastes width (docs/dev/cli-style.md
+	// section 5). An empty table keeps it, so the header still shows what a
+	// row would carry.
 	hideEmpty bool
 	// right aligns the column, header included, on its right edge: a numeric
 	// column, whose header carries the unit, so the digits line up and a
@@ -189,7 +189,7 @@ func fit(cols []column, budget int) []int {
 		return widths
 	}
 	// Shrink the flexible columns, widest first, then drop the droppable
-	// ones by rank: cutting a column down to noise helps nobody.
+	// ones by rank: a column cut below its minimum is unreadable.
 	for total(widths) > budget {
 		i := widestFlexible(cols, widths)
 		if i < 0 {
@@ -238,8 +238,8 @@ func widestFlexible(cols []column, widths []int) int {
 	return best
 }
 
-// nextToDrop is the least important visible column, or -1 when only columns
-// the screen cannot do without remain.
+// nextToDrop is the least important visible column, or -1 when only
+// mandatory columns remain.
 func nextToDrop(cols []column, widths []int) int {
 	best, rank := -1, 0
 	for i, c := range cols {

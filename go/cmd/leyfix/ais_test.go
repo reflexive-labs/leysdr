@@ -68,7 +68,7 @@ func TestAISFixtureDecodes(t *testing.T) {
 }
 
 // TestGenerateSkipsAISWhenTooShort checks the guard that keeps a half-second
-// file from claiming records it cannot hold.
+// file from expecting records it cannot hold.
 func TestGenerateSkipsAISWhenTooShort(t *testing.T) {
 	var out bytes.Buffer
 	o := genOptions{out: t.TempDir(), rate: 2_400_000, duration: 0.5, seed: 1}

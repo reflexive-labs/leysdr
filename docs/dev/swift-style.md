@@ -1,7 +1,7 @@
 # Swift style guide
 
 How Leyline's Swift is written: what a file looks like, what things are called, where state
-lives, and which mistakes this codebase has already made and paid for. It covers the engine
+lives, and which mistakes this codebase has already made. It covers the engine
 package, the app package and the tests around both. Read it before writing Swift anywhere in the
 repository, and read section 12 first if you are working from the Linux container, because most
 of the Swift you will touch there is never compiled before you hand the work over.
@@ -52,11 +52,12 @@ judgement, and says "prefer".
 ## 2. Files
 
 **A file opens with SPDX, a blank line, then a `//` block that says what it is and why it
-exists**, citing the document that owns its rules by path and heading. The what is one clause;
-the why earns the lines. `app/Sources/LeylineClient/DaemonMirror.swift:3` is the model: the
+exists**, citing the document that owns its rules by path and heading. State what the file is in
+one clause and spend the remaining lines on why.
+`app/Sources/LeylineClient/DaemonMirror.swift:3` is the model: the
 fold's whole rationale — invariants 6 and 7, the tombstone rule, the seq-gap rule — before a
 single declaration. `WaterfallShader.swift:3` and `Streams.swift:3` are the same shape for a
-shader and a decoder, and `app/Package.swift:3` proves it holds for a manifest.
+shader and a decoder, and `app/Package.swift:3` shows the same shape for a manifest.
 
 **One concern per file, and the leading comment is the test.** If the comment needs two
 paragraphs about two unrelated things, the file is two files. `Theme.swift` holds colours,
@@ -68,8 +69,8 @@ file and `Comparable.clamped(to:)` to `Scale.swift` on 2026-09-19.
 **Formatting is swift-format's, pinned in `app/.swift-format`**: the toolchain's defaults with
 four-space indentation and 100 columns, adopted 2026-09-19 in one commit of its own. `make
 app-format` rewrites the app package in place and `make app-lint` only reports; run the first
-before a commit that touches Swift there, so a review diff is the change and not the formatter's
-opinion of it. The engine package is not formatted yet: its diff would be large and its
+before a commit that touches Swift there, so a review diff contains the change and no formatting
+churn. The engine package is not formatted yet: its diff would be large and its
 Accelerate half cannot be compiled here, so that is its own commit on a Mac. Do not reformat
 by hand as part of a feature change either way, because the diff buries the change inside it.
 
@@ -81,16 +82,16 @@ type, booleans read as assertions. On top of that, this project's own:
 
 - **Types are nouns, and an enum with no cases is the namespace for pure functions.**
   `SpectrumFold`, `Bands`, `BulkDecode`, `Frequency`, `SocketPath` and `WaterfallShader` are all
-  caseless enums holding static functions, which is how the façade says "this has no state".
+  caseless enums holding static functions, which marks them as stateless.
 - **Three verb families, each meaning exactly one thing.** `ensureX` creates the thing if it is
   absent, writes it if it is present, and returns it (`AppSession.swift:473`, `:503`, `:532`).
   `followX` subscribes and resubscribes when the thing it follows changes
   (`app/Sources/LeylineApp/SpectrumFeed.swift:103`, `AppSession.swift:828`). `setX` is one
   coalesced parameter write and nothing else (`AppSession.swift:917` through `:979`). A function
-  that does something else takes a different verb, because these three are read as promises.
+  that does something else takes a different verb, because readers rely on these three meanings.
 - **A unit is part of the name, never a comment.** `centerHz`, `offsetHz`, `bandwidthHz`,
-  `stepHz`, `peakDecayDBPerRow`, `updatedNs`. A bare `frequency`, `width` or `rate` is a review
-  comment: the contract has several of each and they are not interchangeable.
+  `stepHz`, `peakDecayDBPerRow`, `updatedNs`. A bare `frequency`, `width` or `rate` gets flagged in
+  review: the contract has several of each and they are not interchangeable.
 - **Decibels are `DB`, except where the name mirrors a proto field.** `floorDB`, `medianDB`,
   `peakAboveFloorDB`, `rampRangeDB` are the spelling to use. `squelchDb`, `powerDbfs` and
   `WriteCoalescer.squelchDb` keep the generated spelling of `squelch_db` and `power_dbfs`,
@@ -110,31 +111,31 @@ type, booleans read as assertions. On top of that, this project's own:
 comments"). The leading file comment is the largest instance of this rule, and the same applies
 to a three-line note over a guard.
 
-**Doc comments are whole sentences in the writing guide's voice**, the rule and its reason in one
-breath. `SpectrumFold.swift:19` is the shape: the 15 dB constant, why it is 15, and the Go
+**Doc comments are whole sentences in the writing guide's voice**, the rule and its reason
+together. `SpectrumFold.swift:19` is the shape: the 15 dB constant, why it is 15, and the Go
 function it mirrors. There are no `- Parameter` blocks anywhere in `app/`; a parameter that needs
 explaining is explained in the sentence.
 
-**No bullet fragments.** A comment that wants a list of four things wants four sentences or a
-table in the doc it should be citing instead.
+**No bullet fragments.** A comment that needs a list of four things should be four sentences, or
+a table in the doc it cites.
 
 **A number in a comment says where it came from** — a fixture, a measurement, the Go function
-that already decided it — because a number without a source is a guess (`../writing-guide.md`,
-"Voice"). `SpectrumFeed.swift:57` onward names every threshold as a documented `static let`.
+that already decided it — because an unsourced number cannot be checked (`../writing-guide.md`,
+"Voice"). `SpectrumFeed.swift:57` onward defines every threshold as a documented `static let`.
 
 **A rule decided on a date or in a document cites both**, as `cli-style.md`'s ramp stops do —
 especially a finding that only the Mac could have produced, which the container cannot
 rediscover.
 
-**A comment changes in the same commit as the code it describes.** A comment promising behaviour
-the code does not have is a bug, and the v1 review found several.
+**A comment changes in the same commit as the code it describes.** A comment describing behaviour
+the code does not have is a bug; the v1 review found several.
 
 ## 5. State and data flow in the app
 
 **The session is a `@MainActor @Observable final class` whose stored state is `private(set)`.**
 `AppSession.swift:15` declares all three; every mutation is a method on the same class, so there
 is one place to read to learn how a value can change. A view that needs to write takes a binding
-the session exposes deliberately (`AppSession.swift:81`).
+the session exposes for that purpose (`AppSession.swift:81`).
 
 **The mirror is copied, not shared.** `DaemonMirror` is `@MainActor`, imports no UI framework,
 and publishes through `onChange`; `AppSession.mirrorChanged` copies `state` and `connection` out
@@ -149,7 +150,7 @@ whole objects by id on every event (invariant 6).
 **Presentation-only state is allowed and lives on the session**, clearly not from the daemon:
 max hold, zoom, the pointer frequency, which sheet is up (`AppSession.swift:81`). A view's own
 `@State` is for what is transient to that view alone — hover, an in-progress edit — and is always
-`private`. Anything two views agree about is the session's.
+`private`. State that two views share belongs on the session.
 
 **A view previews its own write and reconciles on the event.** `requestedHz`
 (`AppSession.swift:52`) is what the field shows until the daemon confirms the tune, so two quick
@@ -187,7 +188,7 @@ the engine's build to catch one.
 main-actor isolated by inference. Anything inside a view that must not run on the main actor has
 to say so explicitly; nothing in the app currently needs to.
 
-**`nonisolated` states what is already true, and only that.** A constant any context reads is
+**Mark `nonisolated` only what is already safe off the actor.** A constant any context reads is
 `nonisolated` (`SpectrumFeed.swift:57`, read by `Rows.columns(width:)` off the actor); the pure
 folds in `LeylineClient` are free functions on caseless enums and need no isolation at all; a
 protocol method AppKit calls off the actor is `nonisolated` and hops back
@@ -195,8 +196,9 @@ protocol method AppKit calls off the actor is `nonisolated` and hops back
 
 **`MainActor.assumeIsolated` is the bridge from a callback already on the main thread**, and it
 appears exactly four times: a `DispatchSource` on `.main`, the two `NSEvent` monitors (the
-transport field's and the inspector's name field's), and `MTKViewDelegate.draw(in:)`. If you cannot say in one sentence why the callback is on the main
-thread, it is not, and `assumeIsolated` will trap.
+transport field's and the inspector's name field's), and `MTKViewDelegate.draw(in:)`.
+Use it only where the callback is guaranteed to run on the main
+thread; otherwise `assumeIsolated` traps.
 
 **Task capture follows the task's lifetime.** A fire-and-forget write inside a `@MainActor`
 method captures `self` strongly and inherits the actor; the cycle ends when the round trip does
@@ -207,8 +209,8 @@ Inside an `actor`, `Task {}` inherits that actor's isolation, which is why
 
 **A `Task` that owns a stream is paired with `continuation.onTermination`** so ending the
 consumer cancels the RPC (`app/Sources/LeylineClient/DaemonConnection.swift:133`,
-`Streams.swift:146`). A stream left running after its reader is gone is a channel the daemon
-keeps alive for nobody.
+`Streams.swift:146`). A stream left running after its reader is gone keeps a channel alive in the
+daemon with no consumer.
 
 **Express what is true now; resist refactoring.** The Swift migration guide's own rule, and the
 one most at odds with how an agent behaves under an isolation warning: add the isolation the code
@@ -219,7 +221,7 @@ actor restriction, and needs the comment rule 8 asks for.
 
 ## 7. SwiftUI and layout
 
-These are the facts the compiler cannot catch, each one paid for by a fix commit.
+These are the facts the compiler cannot catch, each one learned from a fix commit.
 
 **Read observable state in `body`; hand a closure a value.** Reads inside a `Canvas` drawing
 closure are not tracked by Observation, so a canvas that reached into the session drew the old
@@ -265,8 +267,8 @@ it is drawn inside it. The seam between spectrum and waterfall is a rectangle in
 waterfall, over the Metal view (`WaterfallView.swift:42`).
 
 **The shader is Swift source compiled at launch**, not a `.metal` resource: `swift build` does
-not produce a `default.metallib` the way Xcode does, and a shader that silently fails to load is
-a dark panel with no words. A compile failure is a sentence in the window
+not produce a `default.metallib` the way Xcode does, and a shader that silently fails to load
+leaves a dark panel with no message. A compile failure is shown as a sentence in the window
 (`WaterfallShader.swift:3`, `WaterfallView.swift:243`).
 
 **Uniforms are scalars.** Pack what the shader needs as plain numbers in one struct, so nothing
@@ -295,7 +297,7 @@ clients own the same file (`app/Sources/LeylineClient/Bookmarks.swift:163`).
 
 **Anything under `#if canImport(Accelerate)`, `#if canImport(AppKit)` or `#if os(macOS)` is never
 compiled on Linux.** A vDSP kernel needs its portable twin and a row in `KernelParityTests`, or
-it is untested here and unverified there (`setup.md`, and the same trap `app.md`, "Building and
+it goes untested on both platforms (`setup.md`, and the same trap `app.md`, "Building and
 running" records for views).
 
 **Xcode's type checker is stricter than the Linux one.** A four-term shift chain the container
@@ -308,15 +310,15 @@ they are tested against each other (`BulkDecode` against `go/pkg/leyline/bulk.go
 
 ## 11. Tests
 
-**New tests are XCTest, and their names are claims in sentences.**
+**New tests are XCTest, and each name states the tested behaviour as a sentence.**
 `testTombstoneRemovesAndDetachedStays`, `testMalformedFileIsNeverWrittenOver`,
-`testFFTRowsDecodeAgainstTheAnsweredDescriptor`: the name is the promise, so a failure names the
-broken promise. All 46 cases in `app/Tests` are XCTest. Swift Testing is in the toolchain and
+`testFFTRowsDecodeAgainstTheAnsweredDescriptor`, so a failure's name states the behaviour that
+broke. All 46 cases in `app/Tests` are XCTest. Swift Testing is in the toolchain and
 unused; keep one framework until there is a reason to move all of them, because a `@Test` in an
 XCTest target reports its own zero-test line that nobody reads.
 
 **Logic that can live in `LeylineClient` lives there.** That target is the only Swift in the app
-package Linux compiles, so a rule tested there is a rule the container can prove: the fold, the
+package Linux compiles, so a rule tested there is a rule the container can test: the fold, the
 coalescer's last-value rule, the decoders, the bands and bookmarks files, the spectrum folds.
 
 **A change ships with its test where one is possible.** `make app-test` is the façade alone;
@@ -348,22 +350,22 @@ alignment, overlay before offset, and what a hosted view covers.
 
 **Say what was not compiled.** Name the files and the behaviours that are unverified — layout,
 gestures, the shader — in the hand-off message and in the commit body. The repo's own follow-up
-fixes ("from the Mac", "the first run on the Mac") are what happens when that is left unsaid.
+fixes ("from the Mac", "the first run on the Mac") came from leaving that out.
 
 **Small diffs, and only the change that was asked for.** No speculative abstraction: a layer
-added for a use that has not arrived is a cost the next reader pays for nothing. No reformatting
+added for a use that does not exist yet costs the next reader time for no benefit. No reformatting
 drive-by, for the reason section 2 gives, and a refactor nobody asked for is its own commit.
 
 **Do not fix what you did not break.** `make license-check` is currently red on main for eight Go
-dependency rows the MCP adapter added; that is not a Swift change's business, and repairing it
-inside an unrelated diff hides both. Flag it and move on.
+dependency rows the MCP adapter added. A Swift change should not fix it, and fixing it inside an
+unrelated diff obscures both changes. Flag it and move on.
 
 Commit subjects, bodies and sign-off are in CLAUDE.md and `../writing-guide.md`, "Commit messages
 and comments", not here.
 
 ## 13. To fix
 
-Recorded so they are pending rather than forgotten. None of these is urgent; each is a small
+Recorded here so they are not forgotten. None of these is urgent; each is a small
 commit of its own. The rest of this section's findings were landed on 2026-09-19: frequency
 formatting, `Frequency.parse`, `Theme.swift`'s concerns, the dB suffix, the three inline font
 sizes and `AppSession`'s inlined numbers.
@@ -373,4 +375,4 @@ sizes and `AppSession`'s inlined numbers.
   `hz(atX:)` and `BandRailView`'s `BandRail.x(of:)`/`hz(atX:)` map a `UInt64` frequency instead,
   do not clamp the forward direction, and `BandRail.hz(atX:)` snaps its result to the band
   afterward; folding them into `Scale` would mean adding a clamp neither one has today, which is
-  a behaviour change and wants its own review, not a mechanical rename.
+  a behaviour change and needs its own review, not a mechanical rename.

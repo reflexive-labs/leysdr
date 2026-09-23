@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The words the inspector prints over the meter's numbers (docs/design/app-design-handoff-m2.md,
+// Word labels the inspector shows for the meter's numbers (docs/design/app-design-handoff-m2.md,
 // Region 3 "the reading" and Region 4's relative time form). Each word is a band of a number the
 // façade already holds — `AppSession.overNoiseDB`, `Meter.freq_error_hz`, `Meter.deviation_hz`
 // — and the number stays one click away, so a word is presentation and never a detector
@@ -22,7 +22,7 @@ public enum SignalWord: String, Sendable, CaseIterable, Equatable {
 
     /// The lower edges of the four upper bands, in dB over noise: 3, 8, 14, 22. Asserted from the
     /// design's copy ("Voice is fully readable above about 12 dB"), not measured; the handoff's
-    /// "Open for the owner" says the captures move this table, not the other way round.
+    /// "Open for the owner" says captures should set this table, not the other way round.
     public static let thresholdsDB: [Double] = [3, 8, 14, 22]
 
     /// nil when the number is NaN or nil: a word for a measurement nobody made is not shown.
@@ -134,9 +134,9 @@ public enum Reading {
     }
 
     /// A time before now as the log prints it when no anchor dates it: "−2:14" (a real minus sign
-    /// U+2212, minutes:seconds), "−1:02:14" past an hour; "—" for NaN/negative. A clock the daemon
-    /// never kept is not printed, and this is the form that says so (Region 4, "relative when it
-    /// does not").
+    /// U+2212, minutes:seconds), "−1:02:14" past an hour; "—" for NaN/negative. A wall-clock time
+    /// the daemon never anchored is not printed; this relative form is used instead (Region 4,
+    /// "relative when it does not").
     public static func relative(secondsAgo s: Double) -> String {
         guard s.isFinite, s >= 0 else { return absent }
         let whole = Int(s.rounded())

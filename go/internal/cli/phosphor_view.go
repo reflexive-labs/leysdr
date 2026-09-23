@@ -11,11 +11,11 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// The chart's geometry, deliberately the same as ley spectrum's: frequency
-// across, level up. It is the same picture with a different statistic in each
-// cell, so a reader who knows one knows the other.
+// The chart's geometry matches ley spectrum's: frequency across, level up. It
+// is the same picture with a different statistic in each cell, so the two
+// read the same way.
 const (
-	phosphorHeight  = 12 // chart rows; the level axis is the whole point, so it gets more than spectrum's 10
+	phosphorHeight  = 12 // chart rows; the level axis matters most here, so it gets more than spectrum's 10
 	phosphorGutter  = 10 // level label + " dBFS" + the axis column
 	phosphorMinCols = 10
 )
@@ -76,13 +76,13 @@ func (v *phosphorView) binWidthHz(cols int) uint64 {
 	return uint64(math.Round(float64(v.spanHz) / float64(cols)))
 }
 
-// shadeFor turns a count into a shade. The curve is logarithmic, and that is
-// the whole feature rather than a cosmetic choice.
+// shadeFor turns a count into a shade. The curve is logarithmic; this is
+// essential, not cosmetic.
 //
 // A linear normaliser against the frame's peak makes persistence useless: the
 // shade ramp has four steps, so anything under a quarter of the peak count
-// draws as blank, and a signal present 1% of the time -- exactly the kind this
-// display exists to find -- would be invisible. Every phosphor display
+// draws as blank, and a signal present 1% of the time -- the kind this display
+// is for -- would be invisible. Every phosphor display
 // compresses the count for the same reason. log(1+c)/log(1+peak) keeps a 1%
 // signal visible while still putting a permanent one at full brightness.
 func shadeFor(count, peak uint16) float64 {
@@ -92,7 +92,7 @@ func shadeFor(count, peak uint16) float64 {
 	return math.Log1p(float64(count)) / math.Log1p(float64(peak))
 }
 
-// fmtSeconds is a decay window as a person says it.
+// fmtSeconds renders a decay window in human-readable form.
 func fmtSeconds(s float64) string {
 	if s <= 0 || math.IsNaN(s) {
 		return "-"
@@ -200,8 +200,8 @@ func (v *phosphorView) axis(b *strings.Builder, cols int) {
 	if row := axisLabelRow(phosphorGutter, v.width, marks); row != "" {
 		b.WriteString(v.st.Muted(row) + "\n")
 	}
-	// The legend earns its line only where it fits; a wrapped one would be the
-	// widest thing on screen and say the least.
+	// The legend is drawn only where it fits on one line; wrapped, it would
+	// take the most space for the least information.
 	legend := "shade is how often that frequency sat at that level"
 	if len(legend) > v.width {
 		legend = "shade is how often"

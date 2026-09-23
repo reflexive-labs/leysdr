@@ -18,8 +18,8 @@ app starts.
 > tool. (V1b)
 
 Three consumers, one feature. The playback half exists (`ley play`); this doc is the recording
-half, the `Resources` service that makes `ley://recordings/<id>` real, and the two things a first
-week of use asks for next: recording only while something is on the air, and long recordings in
+half, the `Resources` service that makes `ley://recordings/<id>` real, and the two features users
+are most likely to want next: recording only while something is on the air, and long recordings in
 parts.
 
 ## What a recording is
@@ -47,8 +47,8 @@ This is the shape the semantic-tier doc gives a watch job's transcript, so when 
 watch job its `record_clips` is this sink and this manifest, not a second format.
 
 **Time is never edited.** Silence is not removed from a file; the file is not written while the
-squelch is closed, and each part says where on the capture's timeline it starts. A recording
-that is played back therefore sounds like the air did, with the gaps between parts stated in the
+squelch is closed, and each part records where on the capture's timeline it starts. A recording
+that is played back therefore keeps the original timing, with the gaps between parts stated in the
 manifest rather than hidden inside one file (invariant 5).
 
 ## Files
@@ -162,9 +162,9 @@ The defaults are a guess to be tuned by use; the cap is set so a full IQ recordi
 fits about 18 minutes and audio about 62 hours. Retention runs when a job ends and at daemon
 start, age first then oldest-first by manifest time until under the cap, and it never removes a
 recording whose job is running. A recording a person deletes in Finder is gone: the index
-is a scan of the manifests, as the kept-records index is a scan of its sidecars, so nothing has
-to be told. A job that cannot write because the disk is full ends `FAILED` with what it managed
-to keep, and the detail names the free space and the flag.
+is a scan of the manifests, as the kept-records index is a scan of its sidecars, so nothing else
+needs updating. A job that cannot write because the disk is full ends `FAILED` with what it
+managed to keep, and the detail states the free space and the flag.
 
 ## The wire
 
@@ -222,10 +222,10 @@ message naming the free space; a code a client can branch on is added when a cli
   string: `kind` (`audio`|`iq`), `frequency_hz`, `mode`, `sample_rate`, `format`,
   `duration_ms` (the sum of the parts' durations), `parts`, `started_at_ns`, `ended_at_ns`,
   `ended_by`, `device`. `RECORDS` and `SCAN` are answered too, from the stores that exist, so the
-  service is whole rather than one kind of it; `SNAPSHOT` and `TRANSCRIPT` return nothing until
+  service covers every kind that has a store; `SNAPSHOT` and `TRANSCRIPT` return nothing until
   their milestones.
 - `GetResource(uri)` returns the same `Resource`; `RESOURCE_NOT_FOUND` is not added, the
-  existing `JOB_NOT_FOUND` names the missing recording, since the id is the job's.
+  existing `JOB_NOT_FOUND` reports the missing recording, since the id is the job's.
 - `ResolveLocalPath(uri)` returns the recording's directory for `ley://recordings/<id>` and the
   part's samples file for `ley://recordings/<id>/<part>`. Clients on the same machine open the
   file; nothing is streamed.
@@ -244,7 +244,7 @@ Nothing here runs on the DSP thread except the sink the bulk audio path already 
 
 **A `RecordRunner` actor per job**, beside `DecodeRunner` and built the same way. The channel
 form is the primitive: the runner borrows a channel, registers the job as a dependant so the
-channel's teardown ends the job rather than orphaning a sink, and records what it hears. The
+channel's teardown ends the job rather than orphaning a sink, and records the channel's output. The
 frequency form is that with a different owner: the allocator makes a persistent, job-owned
 channel (a `ChannelLease`, as a decode job gets), the runner records it exactly as a borrowed
 one, and the lease is released when the job ends. There is one runner, one drain and one gate
@@ -301,12 +301,12 @@ recording is a bounded artefact; whoever wanted a longer one starts another, and
 **Don't-disturb.** A record job that created its capture holds it as a scan does, so the
 allocator's `inUse` refuses another job the radio without `take_over`. An interactive client is
 never refused by the daemon (decided 2026-09-17, keeping the control-plane rule that a job never
-blocks a person): the retune-away path above is what happens instead, and the guard lives where
-the click happens. `ley set` and `ley tune` warn when the capture they would move has a running
+blocks a person): the retune-away path above is what happens instead, and the check is in the
+client that retunes. `ley set` and `ley tune` warn when the capture they would move has a running
 recording and need `--retune` to proceed, the same flag that already guards a capture other
 channels ride on; the app confirms before retuning such a capture, since it renders job state
-anyway. The MCP adapter's `tune` already names the listening channels it would disturb; it
-names running recordings the same way.
+anyway. The MCP adapter's `tune` already lists the listening channels it would disturb; it
+lists running recordings the same way.
 
 **Signposts.** The sink and ring writes are already covered (`audioWrite`, `frameRingWrite`).
 The drain adds none: it is not on the sample path.
@@ -333,13 +333,13 @@ ley jobs cancel <id>
   bytes, and for a gated recording whether the squelch is open) until `--for` elapses or Ctrl-C,
   which cancels the job and prints the resource URI. `--detach` starts the job and exits with the
   job id and URI, for a script; `ley jobs cancel` stops it.
-- **The channel form records what you are hearing.** `ley record chan_01J…` names a channel
-  `ley state` lists (the selector `ley scope` takes), so the recording has the mode, bandwidth
-  and squelch you are listening with, and ends when your `ley tune` does. With `--iq` it records
-  that channel's capture.
+- **The channel form records the channel you are listening to.** `ley record chan_01J…` names a
+  channel `ley state` lists (the selector `ley scope` takes), so the recording has the mode,
+  bandwidth and squelch you are listening with, and ends when your `ley tune` does. With `--iq` it
+  records that channel's capture.
 - **`--gate squelch` is the only gate**, and `--pre`, `--hang` and `--stop-after-quiet` need it;
   without it they are a usage error naming the flag. `--iq --gate` is refused with the daemon's
-  sentence.
+  error message.
 - **`--json`** prints the `Job` as each state change arrives, one object per line, as
   `ley decode --json` does; `ley recordings --json` prints `ListResourcesResponse`;
   `ley recordings show --json` prints the manifest; `ley recordings path` prints the path alone
@@ -349,8 +349,8 @@ ley jobs cancel <id>
   capture with a running recording print the recording's id and `ley jobs cancel`, and go ahead
   only with `--retune`. The daemon itself degrades the job and records the gap ("The daemon").
 - **`ley play` takes a URI.** `ley play ley://recordings/<id>` plays part 1 and, when there are
-  more, says so and names `--part`. Playing a part is playing a file; the reader is unchanged.
-  The sidecar's `metadata.mode` seeds the channel as it does for a fixture today.
+  more, prints a note pointing to `--part`. Playing a part is playing a file; the reader is
+  unchanged. The sidecar's `metadata.mode` seeds the channel as it does for a fixture today.
 - **The stub goes.** `record` leaves `Stubs` and `ley help roadmap`; the help golden is
   rewritten, and `docs/reference/cli.md` and `docs/guide/using-ley.md` get their sections.
 
@@ -390,8 +390,8 @@ expectations.
   re-open inside the hang continues the part, hang elapsed closes it, quiet ends the job.
 - A continuous recording of `nfm_tone` for 1 s yields one WAV of 48000 frames within one block,
   and that WAV carries the fixture's own audio expectation: measured 2026-09-18 at 1001.95 Hz and
-  77 dB, against the sidecar's 1 kHz and 30 dB. This is the assertion a recorder that wrote
-  perfectly-formed silence would fail and every structural test would pass.
+  77 dB, against the sidecar's 1 kHz and 30 dB. A recorder that wrote well-formed silence would
+  pass every structural test and fail this one.
 - A gated recording of `nfm_keyed` at −40 dBFS with a 1 s hang yields three parts whose
   `start_sample` and `end_sample`, less the pre-roll and hang, land within one capture block of
   the sidecar's segments. The same recording at the default hang yields one part, since the
@@ -413,25 +413,24 @@ manifests.
 
 **End to end** (`go/internal/e2e/record_test.go`): the real daemon plays `nfm_keyed` on a file
 device; `ley record --gate squelch --hang 1s --for 12s` on it; `ley recordings show --json` has three
-parts; `ley play ley://recordings/<id> --part 3` and `ley levels` hears the tone. And one MCP
+parts; `ley play ley://recordings/<id> --part 3` and `ley levels` shows the tone. And one MCP
 scenario in `evals/scenarios/`: "record ten seconds of radio-a and tell me how many times the
 squelch opened", graded on the answer's count being 3 (from `squelch_opens`, at the default
 hang, where the parts count is 1), `used_tool: record`, and `no_shell`.
 
 ## Playing a recording back
 
-`ley play <file.cf32>` attaches raw samples as a pretend radio and tunes them, which is the right
-answer for IQ and no answer at all for audio: a WAV holds what a demodulator already produced, and
-there is no signal left in it for a channel to decode. Attaching one as a radio would put a
-fictional capture and a fictional mode into `ley state`, and every other view would then describe
-something that is not there.
+`ley play <file.cf32>` attaches raw samples as a file-backed radio and tunes them, which works for
+IQ but not for audio: a WAV holds what a demodulator already produced, and there is no signal left
+in it for a channel to decode. Attaching one as a radio would put a fake capture and mode into
+`ley state`, and every other view would then show a signal that does not exist.
 
 **The daemon plays it** (decided 2026-09-18). The first cut handed the file to the client's own
 player (`open`, `$LEYLINE_PLAYER`), which works on one machine and is wrong in three ways: audio
 comes out of the client rather than the radio's host, where `ley tune`'s does; the path is the
 daemon's, so a remote client is pointed at a file that is not there; and `open` returns the moment
-the player launches, so `ley play` cannot hold the terminal or stop what it started. All three go
-away when the thing that owns the speakers owns the playback.
+the player launches, so `ley play` cannot hold the terminal or stop what it started. Playback in
+the daemon, which owns the audio output, fixes all three.
 
 **A playback is daemon state, not a job and not a sink.** Not a job: a job is a persistent intent
 whose output is a resource (invariant 8), and playing something back produces nothing and is over
@@ -460,7 +459,7 @@ tell "it finished" from "somebody stopped it".
 
 **A playback belongs to the client that started it**, like a non-persistent channel: it stops when
 that client goes, which is what makes Ctrl-C in `ley play` stop the sound. There is no `persistent`
-form, because nobody has asked to leave a recording playing to an empty room.
+form, because nobody has asked to keep a recording playing after the client exits.
 
 **It is the one place the daemon reads a file for audio.** The reader is `WAVReader` (PCM S16
 mono, the only shape `PartWriter` writes), paced against the file's own rate into the same
@@ -475,18 +474,18 @@ case where the file is local anyway, because a headless daemon is usually the on
 
 ## Deliberately not in v1
 
-- **A smaller IQ format.** Deferred, and the reason it was deferred has since been measured away
-  (2026-09-18): both readers already take cu8 (`IQFile.swift`, `go/pkg/iqfile`, and
+- **A smaller IQ format.** Deferred, but measurement has since removed the reason for deferring
+  it (2026-09-18): both readers already take cu8 (`IQFile.swift`, `go/pkg/iqfile`, and
   `FilePlaybackDevice` plays it), so only the write side is missing. And the re-quantising is not
   a loss on the radio this targets: the capture converts cu8 to cf32 as `(u-127.5)/127.5`, a pure
   affine map with nothing applied in between, and inverting it recovers every one of the 256
   levels exactly -- 0 mismatches over all 256 levels and over 8,000,000 real samples of
   `rf-captures/ht-narrow.cu8`. Storing cf32 from an 8-bit dongle is 8 bytes carrying 2 bytes of
   information: 69 GB an hour where 17 GB would do, and a 20 GiB cap that holds 18 minutes instead
-  of 70. The additive change is `iq_format`, and the honest spelling is *the device's native
+  of 70. The additive change is `iq_format`, and the accurate value is *the device's native
   format* (`DeviceDescriptor.nativeFormat` already carries it), which is exact for a cs8 or cs16
   radio too rather than a special case for the RTL-SDR. **This is the first thing to reopen when
-  the store's size hurts**, ahead of anything about the audio format.
+  the store's size becomes a problem**, ahead of anything about the audio format.
 - **Gating IQ.** It needs either a named channel's squelch or the detector. The first is the
   likely answer and is one additive field (`gate_channel_id`) when someone asks for it.
 - **Resuming a recording after a restart.** The watch job resumes (D.15); a recording ends.
@@ -501,21 +500,21 @@ case where the file is local anyway, because a headless daemon is usually the on
   who wants to hear a passage again plays the part again. `Playback.paused` is the additive field
   when somebody asks, and a seek is one more.
 - **Opus or any compressed audio.** Tied to the remote-access milestone, as the data-planes doc
-  says, and measurement (2026-09-18) says the disk is not the reason to want it. On the owner's
+  says, and measurement (2026-09-18) shows disk space is not a reason for it. On the owner's
   own captures, lossless compression buys 25% on NFM transmissions (75% of PCM) and 39% on
   broadcast audio (61%) -- estimated with FLAC's fixed predictors and Rice coding, so real FLAC
   would do a few points better and not more. A radio recording is largely noise, and noise does
   not compress. That is a modest saving for an encoder dependency and for giving up the property
-  WAV was chosen for: every tool reads it and Finder previews it. Opus would buy about fifty
-  times, and makes the recording a lossy copy of what was on the air, which is the wrong trade for
-  the artefact and the right one for the network.
+  WAV was chosen for: every tool reads it and Finder previews it. Opus would save about fifty
+  times, but makes the recording a lossy copy of what was on the air, which suits the network and
+  not a stored recording.
 
   **The gate is the compression.** 85.1% of that 100 s repeater recording is exactly-zero samples
   -- the `.audio` tap while the squelch is closed -- so `--gate squelch` does not compress the
   silence, it never writes it: 6.7x on real traffic, measured, with the per-exchange files and the
   transmission count as well. The first answer to a full disk is the gate, then the IQ format
   above; the audio format is third and small.
-- **A lower audio rate.** NFM voice lives below 3 kHz and the recording runs to 24 kHz, so 16 kHz
+- **A lower audio rate.** NFM voice sits below 3 kHz and the recording runs to 24 kHz, so 16 kHz
   would be three times smaller. It is not free, though: the flat tail up there is real
   discriminator noise, so a lower rate is a lossy choice like Opus rather than a saving, and it is
   where the sub-audible work reads. An `--audio-rate` flag is the additive change; the default

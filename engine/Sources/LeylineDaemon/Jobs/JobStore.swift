@@ -31,7 +31,7 @@ actor JobStore {
         var scan: Leyline_V1_Scan?
         var task: Task<Void, Never>?
         /// The connection that asked for it. When that connection goes, so does the job: a sweep
-        /// nobody is reading is just a radio nobody can use.
+        /// with no reader only ties up the radio.
         var ownerClientID: String
         /// A decode job's runner (audio or IQ), holding its plugin, lease and store writer. Nil for
         /// every other kind.
@@ -180,7 +180,7 @@ actor JobStore {
         do {
             _ = try await startDecode(config: config, by: by, resuming: (id: id, createdAtNs: kept.createdAtNs))
         } catch {
-            // A decoder that is no longer installed, most likely. Said once, then forgotten: the
+            // A decoder that is no longer installed, most likely. Logged once, then dropped: the
             // file is rewritten from what is live, and this is not.
             log.warning("kept job \(kept.jobID) could not be resumed: \(error)")
             persistKept()
@@ -234,13 +234,13 @@ actor JobStore {
             await finish(id, state: .cancelled, detail: "cancelled")
             return entries[id]?.proto
         }
-        // A record job's is the same shape: the open part is closed and the manifest says how it
+        // A record job's is the same shape: the open part is closed and the manifest records how it
         // ended, so a cancelled recording is complete rather than damaged, and that is the normal
         // way an open-ended one stops.
         if let runner = e.record {
             // A daemon going down under a recording is not the client cancelling one, and the
-            // manifest says which: "a recording is a bounded artefact; whoever wanted a longer
-            // one starts another" (docs/design/recording.md).
+            // manifest records which. A restart ends a recording rather than resuming it
+            // (docs/design/recording.md).
             await runner.stop(endedBy: shuttingDown ? "restart" : "cancelled")
             let detail = entries[id].map { $0.proto.statusDetail } ?? ""
             await finish(id, state: entries[id]?.proto.state == .completed ? .completed : .cancelled,
@@ -255,8 +255,8 @@ actor JobStore {
         // Bounded, because the teardown path is not: a task inside `device.open()` or
         // `stopStreaming()` cannot be cancelled and can take seconds of USB work. Past the bound
         // the job is answered as cancelled and the task finishes on its own -- a stale answer to
-        // CancelJob is better than an RPC that never returns, and worse than neither is a daemon
-        // shutdown that hangs on it.
+        // CancelJob is better than an RPC that never returns, and a daemon shutdown must not hang
+        // on it either.
         // Poll the job's own state rather than awaiting the task. `Task.value` is not
         // cancellation-aware, so racing it in a task group does not bound anything: the group
         // still awaits the parked child on the way out, and a measured `withTimeout(1.0)` around
@@ -344,7 +344,7 @@ actor JobStore {
             return
         }
         // The gain the sweep pins at, when the request says. `auto: false` is the write that means
-        // "manual, keep the last level", which for a sweep is the same as saying nothing.
+        // "manual, keep the last level", which for a sweep is the same as leaving gain unset.
         var gain: GainRequest?
         if config.hasGain {
             switch config.gain.value {
@@ -363,15 +363,15 @@ actor JobStore {
             return
         }
         // Allocating suspends -- it creates or borrows a capture -- and a cancel in that window has
-        // already answered. Hand the radio back at once rather than sweeping for a job nobody is
+        // already returned. Hand the radio back at once rather than sweeping for a job nobody is
         // waiting on: the lease is what locks every other client out of the device.
         guard entries[id]?.proto.state == .running else {
             await lease.release()
             return
         }
         if let failure = await lease.pinFailure {
-            // A sweep at a gain other than the one asked for is a different measurement wearing
-            // the requested one's name, so it does not run.
+            // A sweep at a gain other than the one asked for is not the measurement that was
+            // requested, so it does not run.
             await lease.release()
             await finish(id, state: .failed, detail: "the gain asked for could not be set: \(failure.message)", code: failure.code)
             return
@@ -411,8 +411,8 @@ actor JobStore {
         // would let the next scan see a capture that is still leased and be declined, and the
         // await is safe in a cancelled task because release checks no cancellation of its own.
         await lease.release()
-        // A stopped sweep still keeps what it found: somebody who interrupts one wants the
-        // part that ran, and a Scan that says how far it got is honest about the rest.
+        // A stopped sweep still keeps what it found: a user who interrupts one gets the
+        // part that ran, and the Scan records how far it got.
         await store(id, result: result, plan: plan, gains: gains, captureID: captureID)
         if let e = result.failure {
             await finish(id, state: .failed,
@@ -426,8 +426,8 @@ actor JobStore {
         } else if !result.complete {
             // Not stopped: some step ran out of time before it had the rows it planned on, and
             // `stepsDone` counts the ones that succeeded rather than a prefix of them. The scan
-            // ran to the end, so it completed; `covered` says which parts of the range it really
-            // looked at, and the detail says how many steps came up short.
+            // ran to the end, so it completed; `covered` records which parts of the range it really
+            // looked at, and the detail reports how many steps came up short.
             let short = result.steps - result.stepsDone
             await finish(id, state: .completed,
                          detail: "\(result.hits.count) found; \(short) of \(result.steps) steps saw too few rows to trust and were left out")
@@ -493,8 +493,8 @@ actor JobStore {
             }
             return
         }
-        // Allocating suspends, and a cancel in that window has already answered: hand the radio back
-        // rather than watching for a job nobody is waiting on.
+        // Allocating suspends, and a cancel in that window has already returned: hand the radio
+        // back rather than watching for a job nobody is waiting on.
         guard entries[id]?.proto.state == .running else {
             await lease.release()
             return
@@ -514,7 +514,7 @@ actor JobStore {
         let loOff = Double(range.lowerBound) - Double(centre)
         let hiOff = Double(range.upperBound) - Double(centre)
         // Decline before the retune, so a band that cannot fit never moves the radio. INVALID_ARGUMENT
-        // is the honest answer: the request is for a shape one capture cannot hold, and a sweep can.
+        // fits: the request is for a band one capture cannot hold, and a sweep can.
         guard centre > 0, loOff >= guardHz, hiOff <= edgeHz else {
             await lease.release()
             await finish(id, state: .failed,
@@ -634,7 +634,7 @@ actor JobStore {
             await declineDecode(id, allocation)
             return
         }
-        // Allocating suspends, and a cancel in that window has already answered. Hand the radio
+        // Allocating suspends, and a cancel in that window has already returned. Hand the radio
         // back rather than decoding for a job nobody is waiting on.
         guard entries[id]?.proto.state == .running else {
             await lease.release()
@@ -773,7 +773,7 @@ actor JobStore {
         // What was actually looked at, always -- not only when the sweep was cut short. A radio
         // that cannot reach all of a range, a request that falls partly in the tuner's blind spot
         // and a sweep somebody stopped all leave coverage behind, and a client that printed the
-        // request as though it had been searched would be claiming what nobody measured.
+        // request as though it had been searched would claim coverage that was never measured.
         // `stepsDone` is a count of steps that succeeded, not a prefix of them, so the coverage
         // comes from the windows the runner really analysed.
         if let lo = result.covered.first?.lowHz, let hi = result.covered.last?.highHz {
@@ -788,8 +788,8 @@ actor JobStore {
         guard var e = entries[id] else { return }
         guard Self.isLive(e.proto.state) else { return }
         e.proto.state = state
-        // The prose and the machine code go to different fields: `status_detail` is the sentence a
-        // person reads, `error` the code a client branches on.
+        // The prose and the machine code go to different fields: `status_detail` is human-readable
+        // text, `error` the code a client branches on.
         e.proto.statusDetail = detail
         if let code {
             var err = Leyline_V1_ErrorDetail()
@@ -822,7 +822,7 @@ actor JobStore {
         d.looksPossible = h.looksPossible
         d.firstSeen = ProtoMapping.sampleTime(h.firstSeen)
         d.lastSeen = ProtoMapping.sampleTime(h.lastSeen)
-        // Invariant 12: v0 is energy detection and has no opinion about modulation.
+        // Invariant 12: v0 is energy detection and does not classify modulation.
         d.modulationGuess = ""
         d.guessConfidence = 0
         return d
@@ -845,7 +845,7 @@ actor JobStore {
     /// Puts a record job in the table. `keep` is true for every recording: a job that outlives the
     /// client that started it is what `ley record --detach` means, and the foreground form cancels
     /// explicitly on Ctrl-C. Nothing is written to `kept-jobs.json` -- that file resumes decode
-    /// jobs, and a recording is a bounded artefact that ends at a restart rather than resuming
+    /// jobs, and a recording ends at a restart rather than resuming
     /// (docs/design/recording.md, "Retune, detach and restart").
     func setRecordEntry(_ id: JobID, job: Leyline_V1_Job, task: Task<Void, Never>, client: ClientContext) {
         entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil,

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The sub-audible detector against recordings of real radios: the handheld with a 100 Hz PL that
-// the detector must keep naming, and NOAA weather radio, which transmits no CTCSS and whose
+// the detector must keep identifying, and NOAA weather radio, which transmits no CTCSS and whose
 // synthesised announcer once read as one (docs/plans/signal-views.md, SV-13). The captures are
 // large and gitignored, so these tests run only where `LEYLINE_CAPTURES` names the directory that
-// holds them; the committed proof is the 1 kHz tap the same code writes beside them.
+// holds them; the committed test input is the 1 kHz tap the same code writes beside them.
 
 import Foundation
 import XCTest
 @testable import EngineCore
 
 final class SubAudibleCaptureTests: XCTestCase {
-    /// One hop of the detector, as a row a person can read.
+    /// One hop of the detector, as a human-readable row.
     struct Hop {
         let second: Double
         let result: SubAudibleResult
@@ -74,7 +74,7 @@ final class SubAudibleCaptureTests: XCTestCase {
     // MARK: The committed taps
 
     /// The taps kept under Tests/EngineCoreTests/Captures: the detector's own input, 48 KB a
-    /// capture, so the proof runs everywhere the captures cannot go. Each is the 1 kHz tap the
+    /// capture, so the test runs where the captures are not available. Each is the 1 kHz tap the
     /// code above writes, float32 little-endian, full scale 2500 Hz (12.5 kHz NFM).
     static let tapRate = 1000.0
     static let tapFullScale = 2500.0
@@ -90,9 +90,9 @@ final class SubAudibleCaptureTests: XCTestCase {
     }
 
     /// NOAA weather radio transmits no CTCSS. Its synthesised announcer's pitch fundamental sits
-    /// in the 60-260 Hz band and, over three hops, held still enough to be named a tone (233.6 Hz,
-    /// then 241.8) on the owner's radio on 2026-09-14; the capture is that broadcast at gain
-    /// auto. The detector must claim nothing on it, on any hop.
+    /// in the 60-260 Hz band and, over three hops, held steady enough to be classified as a tone
+    /// (233.6 Hz, then 241.8) on the owner's radio on 2026-09-14; the capture is that broadcast at
+    /// gain auto. The detector must report no tone on it, on any hop.
     func testNOAAAnnouncerIsNotATone() throws {
         let tap = try Self.committedTap("noaa-wx2-auto")
         let claimed = Self.hops(over: tap, rate: Self.tapRate, fullScale: Self.tapFullScale).filter(\.result.detected)
@@ -100,10 +100,9 @@ final class SubAudibleCaptureTests: XCTestCase {
             + claimed.prefix(5).map { String(format: "%.1fs %.1f Hz", $0.second, $0.result.standardToneHz) }.joined(separator: ", "))
     }
 
-    /// The other side of the same bargain: the handheld's real 100 Hz PL, with speech on top,
-    /// is still named, and never as anything but 100.0. Over three hops it was named on 48 of 75
-    /// hops and once as 110.9; a second's horizon costs the first hops of each key-up and nothing
-    /// else.
+    /// The counterpart: the handheld's real 100 Hz PL, with speech on top, is still classified,
+    /// and only as 100.0. Over three hops it was classified on 48 of 75 hops and once as 110.9;
+    /// the one-second horizon loses the first hops of each key-up and nothing else.
     func testHandheldPLIsStillNamed() throws {
         let tap = try Self.committedTap("ht-narrow")
         let hops = Self.hops(over: tap, rate: Self.tapRate, fullScale: Self.tapFullScale)

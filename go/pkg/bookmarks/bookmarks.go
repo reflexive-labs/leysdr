@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package bookmarks is the client-side store of the frequencies a person wants to come back to.
-// A bookmark is user data, not daemon state: the daemon never learns one exists, because what
-// somebody decided is worth keeping is not something a fold over captures and channels could
-// derive (docs/design/app-design-handoff.md, "Bands and bookmarks are files"). The file is the
-// one both clients own -- `ley bookmarks` writes it and the Mac app's sidebar reads it -- so a
-// bookmark added from a terminal appears in the window, on the pattern go/pkg/labels set.
+// A bookmark is user data, not daemon state: the daemon never sees bookmarks, because a user's
+// choice of frequencies cannot be derived from captures and channels
+// (docs/design/app-design-handoff.md, "Bands and bookmarks are files"). Both clients share the
+// file -- `ley bookmarks` writes it and the Mac app's sidebar reads it -- so a bookmark added
+// from a terminal appears in the window. go/pkg/labels uses the same pattern.
 package bookmarks
 
 import (
@@ -125,11 +125,11 @@ func (s *Store) List() []Bookmark {
 }
 
 // Add keeps a frequency under a name and persists the file. A name is required: the list is read
-// by a person, and "146.940 MHz" is what the frequency column already says.
+// by a person, and "146.940 MHz" is what the frequency column already shows.
 //
 // Adding the same name at the same frequency updates that bookmark rather than making a second
-// one, so running the same command twice -- the shape a shell history or a script repeats -- is
-// not a way to fill the sidebar with duplicates. Two names at one frequency are kept, because a
+// one, so running the same command twice, as a shell history or a script does, does not fill
+// the sidebar with duplicates. Two names at one frequency are kept, because a
 // repeater and its net are two things a person may want listed separately.
 func (s *Store) Add(name string, hz uint64, mode leylinev1.DemodMode, bandwidthHz uint32) (Bookmark, error) {
 	name = strings.TrimSpace(name)
@@ -158,9 +158,9 @@ func (s *Store) Add(name string, hz uint64, mode leylinev1.DemodMode, bandwidthH
 }
 
 // Remove deletes the bookmark an argument names and persists the file. An id is exact; failing
-// that a name is, and failing that a name in any case, provided one bookmark answers to it. An
+// that a name is, and failing that a name in any case, provided exactly one bookmark matches. An
 // argument that matches several names is refused with those names rather than removing a guess,
-// because the wrong delete is the one mistake this store cannot undo.
+// because the store has no undo for a delete.
 func (s *Store) Remove(idOrName string) (Bookmark, error) {
 	bm, err := s.resolve(idOrName, "remove")
 	if err != nil {
@@ -176,8 +176,7 @@ func (s *Store) Remove(idOrName string) (Bookmark, error) {
 // the stamp moves with it. The argument is resolved the way Remove resolves one.
 //
 // Two names at one frequency are allowed, as Add allows them; one name twice at one frequency is
-// not, because Add folds that case into a single bookmark and a move must not be the way round
-// its rule.
+// not, because Add folds that case into a single bookmark and Move must not bypass that rule.
 func (s *Store) Move(idOrName string, hz uint64) (Bookmark, error) {
 	bm, err := s.resolve(idOrName, "move")
 	if err != nil {
@@ -196,7 +195,7 @@ func (s *Store) Move(idOrName string, hz uint64) (Bookmark, error) {
 }
 
 // resolve finds the one bookmark an argument names: an id exactly, failing that a name exactly,
-// failing that a name in any case, provided one bookmark answers to it. The verb is for the
+// failing that a name in any case, provided exactly one bookmark matches. The verb is for the
 // refusal when several do, which tells the person to pick one by id.
 func (s *Store) resolve(idOrName, verb string) (Bookmark, error) {
 	arg := strings.TrimSpace(idOrName)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Discovery reads files and executes nothing (docs/design/decoders.md, "Decisions": "Manifest: a
-// file, not a flag"), so a broken plugin costs a log line and never the registry.
+// file, not a flag"), so a broken plugin produces a log line and never breaks the registry.
 
 import EngineCore
 import Foundation
@@ -16,7 +16,7 @@ final class DecoderRegistryTests: XCTestCase {
         try writeFakePlugin(in: dir, name: "fake")
         // Does not parse.
         try writeFakePlugin(in: dir, name: "broken", json: "{ this is not json")
-        // Parses, names an executable nobody can find.
+        // Parses, but points at an executable that cannot be found.
         try writeFakePlugin(in: dir, name: "missing", executable: "/nowhere/leydec-missing")
 
         let found = DecoderRegistry(searchPath: [dir]).scan()

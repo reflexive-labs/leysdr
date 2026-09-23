@@ -85,9 +85,10 @@ nothing to detach: unplug it, or free it with 'ley stop --all'.`,
 			if err != nil {
 				return fmt.Errorf("%w. Run: ley devices", err)
 			}
-			// A radio in this machine's USB port is the daemon's to find, not a
-			// client's to remove; the daemon refuses it too, but saying it here
-			// costs a round trip and names the way to free the hardware.
+			// A radio on this machine's USB is discovered by the daemon and
+			// cannot be detached by a client. The daemon refuses it too, but
+			// checking here saves a round trip and lets the error say how to
+			// free the hardware.
 			if d.Driver != "file" && d.Driver != "rtltcp" {
 				return fmt.Errorf("%s is a real radio (%s), not a playback file; free it with: ley stop --all", d.DeviceId, d.Model)
 			}
@@ -154,17 +155,16 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 	return nil
 }
 
-// printDeviceTable renders the devices table. The reader is asking "is my
-// radio usable right now, and if not why not", so MODEL leads and STATE is
-// the next thing the eye reaches; ids and serials are the columns scanned
-// least, so they move behind --wide, where the full id stays verbatim for
-// `ley devices detach`.
+// printDeviceTable renders the devices table. It shows whether each radio is
+// usable now and, if not, why, so MODEL comes first and STATE second; ids and
+// serials are the columns read least, so they move behind --wide, where the
+// full id stays verbatim for `ley devices detach`.
 func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool) {
 	s := tableStyle(app)
 	cols := []column{
-		// MODEL is the answer, so it shrinks only far enough to survive a
-		// pathological name; GAIN and RATES are dropped rather than cut to
-		// noise, and the footer says where they went.
+		// MODEL is the key column, so it shrinks only enough to fit a very
+		// long name; GAIN and RATES are dropped rather than truncated to
+		// nothing, and the footer reports the drop.
 		{head: "MODEL", min: 20},
 		{head: "STATE"},
 		{head: "RANGE"},
@@ -192,8 +192,8 @@ func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool
 			cols[i].cells = append(cols[i].cells, cells[i])
 		}
 	}
-	// --wide is the reader asking for every column, so the width budget is
-	// off there: a dropped id is exactly what they went to --wide to avoid.
+	// --wide requests every column, so the width budget is off there: a
+	// dropped id is what --wide exists to avoid.
 	if wide {
 		s.Width = 0
 	}
@@ -212,14 +212,14 @@ func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool
 	}
 }
 
-// deviceStateCell is the STATE word with the ink its meaning already carries:
-// green available, yellow in use, red disconnected. The word is the whole
-// answer; the colour only helps the eye find it.
+// deviceStateCell is the STATE word inked by meaning: green available, yellow
+// in use, red disconnected. The word carries the meaning; the colour only
+// highlights it.
 func deviceStateCell(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 	text := deviceStateString(d)
 	switch {
-	// A playback file is never plugged in, so DISCONNECTED is its resting
-	// state, not a fault: the word stays, the alarm ink does not.
+	// A playback file is never plugged in, so DISCONNECTED is its normal
+	// state, not a fault: it keeps the word but not the red ink.
 	case d.Driver == "file" && d.State == leylinev1.DeviceState_DISCONNECTED:
 		return s.Muted(text)
 	case heldExternally(d), d.State == leylinev1.DeviceState_IN_USE:
@@ -300,8 +300,8 @@ func runDevicesAttach(cmd *cobra.Command, app *App, kind, endpoint string) error
 	}
 	defer c.Close()
 	// A second attach of one endpoint hands back the radio the daemon already
-	// has, which is the right answer but a different sentence; the list taken
-	// before the call is what tells the two apart, and only the prose needs it.
+	// has, which is correct but needs a different message; the list taken
+	// before the call tells the two cases apart, and only the message uses it.
 	var before []*leylinev1.DeviceDescriptor
 	if !app.JSON {
 		resp, lerr := c.Control.ListDevices(ctx, &leylinev1.ListDevicesRequest{})
@@ -330,7 +330,8 @@ func runDevicesAttach(cmd *cobra.Command, app *App, kind, endpoint string) error
 }
 
 // parseEndpoint splits host:port, which is how an rtl_tcp server is spelled everywhere else (its
-// own command line, the address people paste at each other), with the mistake said in those terms.
+// own command line, the address people paste at each other), and reports a bad value in those
+// terms.
 func parseEndpoint(endpoint string) (string, uint32, error) {
 	host, portText, err := net.SplitHostPort(endpoint)
 	if err != nil || host == "" {
@@ -343,7 +344,7 @@ func parseEndpoint(endpoint string) (string, uint32, error) {
 	return host, uint32(port), nil
 }
 
-// hasDevice reports whether this list already named the device.
+// hasDevice reports whether this list already contains the device.
 func hasDevice(devices []*leylinev1.DeviceDescriptor, id string) bool {
 	for _, d := range devices {
 		if d.GetDeviceId() == id {

@@ -2,8 +2,8 @@
 
 // Sub-audible tone detection (docs/design/signal-views.md, "Sub-audible tones").
 //
-// CTCSS/PL rides under the voice at 67-254 Hz. The NFM chain destroys it one stage after the
-// discriminator, deliberately: a 300 Hz two-pole high-pass is what stops it being audible. The
+// CTCSS/PL sits under the voice at 67-254 Hz. The NFM chain removes it one stage after the
+// discriminator with a 300 Hz two-pole high-pass so the tone is not audible. The
 // discriminator output itself is untouched, so the tap costs nothing and risks no audio regression.
 
 import Foundation
@@ -56,7 +56,7 @@ public struct SubAudibleResult: Sendable, Equatable {
     /// Measured tone frequency, Hz. NaN when nothing was measured.
     public var toneHz: Double = .nan
     /// The standard tone `toneHz` unambiguously is, or 0 when it is not classifiable. Reporting a
-    /// measurement without a classification is honest; snapping a 2.3 Hz ladder is not.
+    /// measurement without a classification is correct; snapping to a 2.3 Hz ladder is a guess.
     public var standardToneHz: Double = 0
     /// Peak deviation the tone was sent at, Hz.
     public var deviationHz: Double = .nan
@@ -171,9 +171,9 @@ public final class SubAudibleDetector {
             havePrev[i] = i == best ? true : havePrev[i]
         }
         guard havePhaseReference else {
-            // The bin only narrows the field: on a 2.3 Hz ladder its nominal centre is a label, not
-            // a reading. With no previous window to measure phase advance against there is no
-            // frequency yet, and nothing the stability test should remember.
+            // The bin only narrows the candidates: on a 2.3 Hz ladder its nominal centre is not a
+            // measurement. With no previous window to measure phase advance against there is no
+            // frequency yet, and nothing to feed the stability test.
             out.reason = "no phase reference yet"
             return out
         }
@@ -230,7 +230,7 @@ public final class SubAudibleDetector {
     /// NFM: a real tone clears its nearest rival by 7.5 dB or more even at 2% deviation, and voice
     /// alone never managed more than 2.
     public static let minSNRDB: Double = 6
-    /// The most the estimate may wander across the horizon.
+    /// The most the estimate may drift across the horizon.
     public static let maxSpreadHz: Double = 0.5
     /// How many hops the estimate and the deviation must hold for before a tone is claimed: at the
     /// tap's 1 kHz and a 128-sample hop, about a second. Measured 2026-09-14 on real captures: over
@@ -244,8 +244,8 @@ public final class SubAudibleDetector {
     public static let maxDeviationRatio: Double = 1.5
 
     /// The standard tone `measured` unambiguously is, or 0. A measurement that two tones could both
-    /// explain is reported as a measurement and nothing more: snapping to the nearer one on a
-    /// 2.3 Hz ladder is a guess wearing the clothes of a reading.
+    /// explain is reported as a measurement only. Snapping to the nearer one on a 2.3 Hz ladder
+    /// would report a guess as a reading.
     public static func classify(_ measured: Double) -> Double {
         var candidates: [Int] = []
         for (i, t) in CTCSS.tones.enumerated() {
@@ -256,9 +256,9 @@ public final class SubAudibleDetector {
     }
 
     /// A stated score in [0, 1], **not** a probability. Calibrating a probability needs a corpus of
-    /// real off-air recordings we do not have, and shipping an uncalibrated one would be exactly the
-    /// dressed-up guessing the honesty invariant forbids. The formula is the contract; a client that
-    /// wants to judge for itself has toneSNRDB, deviationHz and the hop count.
+    /// real off-air recordings we do not have, and an uncalibrated one would present a guess as a
+    /// measurement, which the honesty invariant forbids. The formula is the contract. A client that
+    /// wants its own judgement has toneSNRDB, deviationHz and the hop count.
     public static func confidence(snrDB: Double, measured: Double, standard: Double, hops: Int) -> Double {
         guard standard > 0 else { return 0 }
         let snr = clamp01((snrDB - minSNRDB) / 14)

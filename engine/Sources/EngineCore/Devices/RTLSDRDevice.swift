@@ -498,10 +498,11 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// so any other return means the stream died regardless of `rc`. In particular a pulled dongle
     /// is handled inside librtlsdr's own libusb callback (`dev_lost = 1` + `rtlsdr_cancel_async`),
     /// which unwinds read_async through its normal cancel path and returns 0 (or an incidental
-    /// libusb code). The device stops claiming to stream so `stopStreaming`/`setSampleRate` see the
-    /// truth and `streamError` surfaces it. `thread` stays recorded: the thread still signals
-    /// `joined`, and `stopStreaming` (called by the capture on `.disconnected`) consumes that signal
-    /// and clears it, keeping the semaphores balanced for the next start.
+    /// libusb code). The device clears its streaming state so `stopStreaming`/`setSampleRate`
+    /// see that the stream ended, and `streamError` reports it. `thread` stays recorded: the
+    /// thread still signals `joined`, and `stopStreaming` (called by the capture on
+    /// `.disconnected`) consumes that signal and clears it, keeping the semaphores balanced for the
+    /// next start.
     func readAsyncReturned(_ rc: Int32) {
         let died: Bool = withLock {
             guard !cancelRequested else { return false }

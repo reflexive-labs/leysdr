@@ -15,7 +15,7 @@ import (
 
 // bookmarkJSON is the `--json` shape of `ley bookmarks`: the fields the file holds, plus the id
 // it is filed under. Like presets and bands it is client-local data with no proto message, so it
-// goes out through encoding/json; unlike them, it is the table a person writes.
+// goes out through encoding/json; unlike them, the user edits it.
 type bookmarkJSON struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -29,9 +29,9 @@ func bookmarkRow(b bookmarks.Bookmark) bookmarkJSON {
 	return bookmarkJSON{ID: b.ID, Name: b.Name, Hz: b.Hz, Mode: b.Mode, BandwidthHz: b.BandwidthHz, UpdatedNs: b.UpdatedNs}
 }
 
-// newBookmarksCommand builds `ley bookmarks`, the third client-local table and the only one a
-// person writes. It is one file both clients own: `ley` writes it here and the Mac app's sidebar
-// reads it, so a frequency kept from a terminal is in the window (docs/design/
+// newBookmarksCommand builds `ley bookmarks`, the third client-local table and the only one the
+// user edits. Both clients share one file: `ley` writes it here and the Mac app's sidebar reads
+// it, so a bookmark added from the terminal shows up in the app (docs/design/
 // app-design-handoff.md, "Bands and bookmarks are files").
 func newBookmarksCommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -209,7 +209,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag string) error {
 }
 
 // bookmarkMode applies tune's precedence: --mode, then a preset's own mode, then the band table.
-// The reason is kept so the screen says where an unasked-for mode came from.
+// The reason is kept so the output shows where a mode the user did not pass came from.
 func bookmarkMode(t dialTarget, modeFlag string) (leylinev1.DemodMode, string, error) {
 	if modeFlag != "" {
 		m, reason, err := leyline.ResolveMode(modeFlag, t.Hz)
@@ -269,8 +269,9 @@ func runBookmarkMove(app *App, arg, freq string) error {
 	return nil
 }
 
-// printBookmarkTable renders `ley bookmarks`. The name leads, because it is what the list is for;
-// the id is last and droppable, since remove takes the name whenever one bookmark answers to it.
+// printBookmarkTable renders `ley bookmarks`. The name comes first because users look bookmarks
+// up by name; the id is last and droppable, since remove accepts the name whenever it matches
+// exactly one bookmark.
 func printBookmarkTable(app *App, list []bookmarks.Bookmark) error {
 	s := tableStyle(app)
 	cols := []column{
@@ -304,8 +305,8 @@ func bookmarkModeName(b bookmarks.Bookmark) string {
 }
 
 // bookmarkBandwidth shows what tuning this bookmark would use. A stored 0 is "the mode's usual
-// width", so the width is printed Muted rather than left as a dash: the number is real, it is
-// just not one the person chose.
+// width", so the width is printed Muted rather than left as a dash: the value is real but was
+// not set by the user.
 func bookmarkBandwidth(s ui.Style, b bookmarks.Bookmark) string {
 	if b.BandwidthHz > 0 {
 		return formatBandwidth(b.BandwidthHz)

@@ -304,7 +304,7 @@ func TestSetParameterErrors(t *testing.T) {
 	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "5"); err == nil || !strings.Contains(err.Error(), "dBFS") {
 		t.Errorf("positive squelch should explain the scale: %v", err)
 	}
-	// Out-of-range frequency: device range and the honest reason.
+	// Out-of-range frequency: device range and the reason.
 	_, _, err = run(t, context.Background(), sock, "set", "freq", "5")
 	if err == nil || leyline.Code(err) != leyline.CodeFreqOutOfRange || !strings.Contains(err.Error(), "cannot tune below 24.000 MHz") {
 		t.Errorf("set freq out of range: %v", err)

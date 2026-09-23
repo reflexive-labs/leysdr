@@ -150,7 +150,7 @@ channel's `ChannelDSPCore`: filter history, NCO phase, demodulator, the meter's 
 the transmission in progress all go, and the capture forgets its band floor (`BandFloor.reset`) so
 the first block of the new stream is read for a fresh one. The samples either side of the gap are not continuous, so filtering
 the first blocks against pre-gap history, judging them against a floor measured on the old stream,
-or reporting an open duration that spans the dead air would all describe air that was never heard.
+or reporting an open duration that spans the dead air would all report signal that was never received.
 A squelch that was open when the reset lands gets a close record stamped with the last block the
 channel saw, so the transmission ends on the wire instead of vanishing and the sub-audible detector
 drops the phase history it had been building. The reset needs nothing in flight: the device is
@@ -210,10 +210,10 @@ rate ahead of de-emphasis and the 15 kHz low-pass, for WFM (so the 19 kHz pilot 
 envelope with the carrier still in it as DC for AM; the product detector before AGC for USB, LSB
 and CW; nothing for raw IQ. Both FM stages are scaled so full-scale deviation reads ±1.0 — the
 channel's limit for NFM, 75 kHz for WFM — which makes the block's mean the tuning error in units of
-full-scale deviation. The daemon answers that deviation in the audio descriptor's
+full-scale deviation. The daemon reports that deviation in the audio descriptor's
 `full_scale_deviation_hz` (0 for the amplitude modes), which is what a client multiplies by; no
 client carries a full scale of its own. The callee sets
-`rawOut.count`, because WFM decimates the tap through a filter of its own and answers for its own
+`rawOut.count`, because WFM decimates the tap through a filter of its own and handles its own
 alignment; every buffer either needs is sized in `configure`, so a block nobody is tapping costs a
 nil check.
 
@@ -222,12 +222,12 @@ nil check.
 raw block to `.demod` sinks, and the demodulator is handed a raw buffer only while something asked
 for one, so a channel nobody scopes pays a single branch per block. The squelch's zeroing is part
 of what a listener hears, so it applies to `.audio` sinks alone; the demod tap keeps flowing through a
-closed squelch, which is what makes "what is this transmitter sending between words" answerable.
-Both taps stamp a block with the same `SampleTime` — the capture time the block started — but that
-is the block's time, not a promise that the two are sample-aligned. They are not: WFM's tap runs its
+closed squelch, so a client can see what the transmitter sends between words.
+Both taps stamp a block with the same `SampleTime` — the capture time the block started — but the
+two taps are not sample-aligned. WFM's tap runs its
 own decimator, which is reset alone when a tap attaches mid-stream, so from then on the two block
 counts can differ by one, and the two filters have different group delay (about 0.3 ms) in any case.
-That is within what a scope is for; anything needing the two stages aligned to the sample wants a
+That is acceptable for a scope; anything needing the two stages aligned to the sample needs a
 daemon-side sink, not two subscriptions.
 
 The squelch decision and the power and SNR telemetry still come from the channelized IQ, before
@@ -237,7 +237,7 @@ subscription over the bulk plane.
 
 ### The audio spectrum
 
-A channel tap has a spectrum of its own, and `AudioSpectrumSink` is it: an `AudioSink` like any
+A channel tap has a spectrum of its own, computed by `AudioSpectrumSink`: an `AudioSink` like any
 other, so it rides the same sink table and the same tap rules, and a channel nobody is metering
 does no work for it at all. It keeps a sliding window of `2 × bins` samples of whichever tap it
 asked for, and whenever the window has advanced by `rate / rows_per_second` samples it Hann-windows
@@ -249,7 +249,7 @@ about 0 dBFS at its own bin. Window and scratch are sized at subscribe: the writ
 transforms and calls the `SpectrumSink`, and allocates nothing.
 
 A row rate faster than the window is long overlaps windows, a slower one leaves samples between
-them unlooked-at, and either way the row is the newest window rather than a summary of the interval
+them unused, and either way the row is the newest window rather than a summary of the interval
 it closed — which is what a meter wants, and the reason `accumulation` does not apply here.
 `bins` rounds to a ladder size so every FFT reader's row layout holds, capped at 4096 because every
 subscription on a tap runs its own transform, and rows are capped at 20 a second and default to 10
@@ -259,12 +259,13 @@ with a `channel_id` source; the descriptor answers `center_hz = rate/4` and `spa
 `INVALID_ARGUMENT`, as does an unknown tap, an unknown `accumulation`, or a channel with no audio
 rate yet. Because the stream reads a channel tap, it ends exactly as a bulk audio stream does when
 the audio rate under it can move. Each row is stamped with the index of the sample that completed
-its window, so the rows one block yields name different moments and advance by exactly the hop;
+its window, so the rows one block yields carry different times and advance by exactly the hop;
 a row stamped with its block's first sample would be the same instant as the row before it.
 
-Two things the row is honest about rather than fixed. Bin 0 is DC, and the window puts a DC offset
+Two inaccuracies in the row are documented rather than corrected.
+Bin 0 is DC, and the window puts a DC offset
 there about 6 dB above a tone of the same amplitude, with no mirrored copy of it further up the
-row — only the demod tap carries an offset worth naming (AM's carrier), and bin 0 sits below the
+row — only the demod tap carries an offset worth correcting (AM's carrier), and bin 0 sits below the
 lowest band a meter draws, so nothing is subtracted for it. And a row is emitted from the window as
 it stands when it comes due, so one that spans a retune straddles the two frequencies; at a couple
 of tens of milliseconds the smear is over before the next row, and pausing the meter across a
@@ -403,12 +404,13 @@ A dongle served by osmocom's `rtl_tcp` on another machine, presented as a virtua
 attach one with `Control.AttachDevice{rtl_tcp{host, port}}` (see "Remembered devices"); a foreground
 run can also name endpoints with `leylined --rtltcp host:port` (repeatable; env `LEYLINE_RTLTCP`,
 comma-separated). Both paths go through `DeviceRegistry.attachVirtualDevice`, which identifies a hosted
-virtual device by driver and address alone — an endpoint hosted before it answers cannot name its
-tuner, and the model it would carry must not make it a second radio. A server that cannot be reached
+virtual device by driver and address alone — an endpoint hosted before it responds cannot report
+its tuner, and the model string must not make it appear as a second radio.
+A server that cannot be reached
 at startup is hosted `DISCONNECTED` for the reconnect poll to pick up, never fatal.
 
-This is a supported backend, not a contingency (`docs/decisions/D2-licensing.md` keeps it that way
-on purpose: it is the standing escape hatch should a proprietary daemon ever be required). Its
+This is a supported backend, not a contingency (`docs/decisions/D2-licensing.md` requires this,
+because it is the fallback if a proprietary daemon is ever required). Its
 coverage: `RTLTCPTests` and `RemoteDeviceTests` against `TestSupport`'s fake server, and
 `TestRemoteRadioAgainstRealDaemon` in the e2e, all part of `make check` on both CI hosts.
 
@@ -501,8 +503,8 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
   right away.
 - `AttachDevice`: a `file` source is the `AttachFileDevice` path (ephemeral); an `rtl_tcp` source
   opens an `RTLTCPDevice` with the 5 s connect timeout and hosts it. `AttachFileDevice` and
-  `DetachFileDevice` stay as sugar; `DetachFileDevice` names a file and gets one, so any other device
-  is `DEVICE_NOT_FOUND` there.
+  `DetachFileDevice` stay as sugar; `DetachFileDevice` only matches file devices, so any other
+  device is `DEVICE_NOT_FOUND` there.
 - `DetachDevice`: any device a client attached, file or remote radio, closed with its captures. A
   dongle plugged into this machine is `INVALID_ARGUMENT` ("unplug it"), rejected before anything is
   touched (`DeviceRegistry.isDetachableVirtualDevice`).
@@ -519,23 +521,23 @@ remembered ones, deduplicated on `host:port`, so an endpoint named both ways is 
 dedupes the same way before constructing anything: a second attach of a hosted endpoint returns the
 existing descriptor, and a second attach of an endpoint whose connect is still in flight waits on
 that one rather than opening a second socket. A server that cannot be reached by an attach is
-`DEVICE_IO` naming the endpoint with nothing remembered — a radio never reached is usually a typo.
+`DEVICE_IO` naming the endpoint with nothing remembered — an endpoint that never connects is usually
+a typo.
 Detach and attach can overlap, so the order is fixed: detach drops the device from the session table
 before it forgets the endpoint, and both attach paths re-check the table after their awaits and take
-the line back out if it has gone. Whichever runs last, a radio somebody let go stays gone.
+the line back out if it has gone. Whichever runs last, a detached radio stays detached.
 
 The registry records how each hosted virtual device arrived. A radio named by `--rtltcp` is operator
-configuration: `DetachDevice` refuses it with `INVALID_ARGUMENT` naming the flag, because a detach
-the daemon's own command line would undo at the next start is not a detach. Attaching that endpoint
+configuration: `DetachDevice` refuses it with `INVALID_ARGUMENT` naming the flag, because the
+daemon's command line would re-attach it at the next start. Attaching that endpoint
 over the protocol makes it the client's — the descriptor comes back unchanged, the endpoint is
 remembered, and from then on it persists and detaches like any other.
 
 An endpoint that is unreachable at startup, remembered or flagged, is hosted anyway as a
 `DISCONNECTED` device, so the registry's reconnect poll — which only retries devices it holds —
-brings it in the moment it answers; the log line says the daemon is waiting for it. One dead remote
-never keeps the daemon from serving local dongles. An unreadable `devices.json` is an empty list: a
-daemon that will not serve local dongles because it cannot parse a list of remote ones is worse than
-one that forgets a Pi.
+brings it in as soon as it responds; the log line says the daemon is waiting for it. One dead remote
+never keeps the daemon from serving local dongles. An unreadable `devices.json` is read as an empty
+list: losing the remembered remote endpoints is better than refusing to serve local dongles.
 
 ### Error codes
 
@@ -609,8 +611,8 @@ reading once, by generation, as `CaptureLevel{clipped_samples, total_samples, pe
 `time` at the interval's end (invariant 5); a silent interval's `peak_dbfs` is floored at −200
 like the meter's audio peak. It rides with `CaptureActivity` on capture and daemon scopes, never on
 a channel scope. The clients take the fraction: `ley levels`' OVER and `ley tune`'s failure line
-(`clippingFloor`, one in ten thousand) say the radio is clipping when it is and nothing about
-full scale when it is not, and fall back to the loudest-bin rule only when no `CaptureLevel` arrives
+(`clippingFloor`, one in ten thousand) report clipping only when the count shows it,
+and fall back to the loudest-bin rule only when no `CaptureLevel` arrives
 (an older daemon).
 
 ### Bulk service
@@ -643,12 +645,13 @@ tears the subscription down; a subscription with no `Stream` reader for 10 s is 
 `watch` config and `GetTranscript` still return `UNIMPLEMENTED`. A scan job never touches a capture directly
 (invariant 9): it asks `SessionCaptureAllocator` for a range, and the allocator either hands back a
 `CaptureLease` or a declined result with a reason. Allocation prefers a device with no capture at all
-over borrowing one that has one — creating and destroying disturbs nobody. Borrowing an existing
+over borrowing one that has one, because creating and destroying a capture affects no other
+client. Borrowing an existing
 capture is refused by the don't-disturb check (`inUse`: an owning channel, a live audio sink, or an
 interactive write in the last 60 s) unless the caller passed `take_over`; a leased capture is marked
 *swept* in `SessionStore`, and `refuseIfSwept` rejects interactive `WriteParams`/`CreateChannel` calls
 on it for as long as the lease holds. `SweepPlan.edgeFraction` widens a device's tuning range slightly
-when deciding whether it can hear a request, which is how a `FilePlaybackDevice` — whose "range" is
+when deciding whether it can cover a request, which is how a `FilePlaybackDevice` — whose "range" is
 the single frequency its fixture was recorded at — can still serve a sweep. Releasing a lease that
 created its capture destroys it; releasing one that borrowed an existing capture retunes and re-gains
 it back to what it found and clears swept.
@@ -727,9 +730,9 @@ allocator, which is what hands the radio back when the job ends.
 
 `RecordGateMachine` is the squelch gate and has no clock and no DSP: it is driven by the channel's
 own squelch transitions (through `telemetrySubscription`, never a second reader on the DSP-side
-ring) and by the drain's progress along the capture timeline, and it answers in actions --
+ring) and by the drain's progress along the capture timeline, and it returns actions --
 open a part at *this* sample, note an over, close the part at the close transition plus the hang,
-end the job on quiet. Deciding at frame granularity is the accuracy claim: a cut lands within one
+end the job on quiet. Deciding at frame granularity sets the accuracy: a cut lands within one
 capture block of the transition (16384 samples, 6.8 ms at 2.4 MSPS). Audio arriving while no part
 is open goes into a pre-roll ring allocated once at start, so a part can begin before the squelch
 did. A gated recording with no squelch on its channel measures one from the channel's own meter
@@ -743,7 +746,7 @@ minutes running for ever.
 `PartWriter` owns one open file at a time: a WAV opens with placeholder lengths that are patched
 from the file's own size on close, a cf32 is appended raw, and the part's sidecar and the manifest
 are written when it closes. The manifest is rewritten atomically on every change, so a client
-reading a running recording sees an honest file. `RecordingStore` is the directory
+reading a running recording always sees a consistent file. `RecordingStore` is the directory
 (`--recordings`, default beside the record store), its retention (`--recordings-cap`, default
 20 GiB; `--recordings-age`, default 0) and the restart repair: at boot, any manifest with no
 `ended_by` has its unlisted part files' headers patched from their lengths, those parts joined to
@@ -757,11 +760,11 @@ nothing else -- it walks the chunks rather than assuming the canonical layout, a
 whose length is still the placeholder is read to the end of the file, the same rule the restart
 repair follows. A task reads 20 ms blocks, converts S16 to f32 and pushes them into the same
 `CoreAudioSink` a channel's audio goes to, pacing against the start so jitter never accumulates;
-the sink's ring is the buffer, so a late tick is absorbed rather than heard. There is no DSP
+the sink's ring is the buffer, so a late tick is absorbed without an audible gap. There is no DSP
 thread in this path at all. `SessionStore` owns the table, publishes `Event.playback` and reaps a
 departing client's playbacks beside its channels, which is what makes Ctrl-C in `ley play` stop
 the sound. An IQ part is refused `INVALID_ARGUMENT` (those are tuned), and a host with no
-AVFoundation answers `PLATFORM_UNSUPPORTED` exactly as `AttachSink(system_audio)` does.
+AVFoundation returns `PLATFORM_UNSUPPORTED` exactly as `AttachSink(system_audio)` does.
 
 `Resources` is implemented over these manifests plus the kept-decode store: `ListResources` answers
 `RECORDING` and `RECORDS` from disk and `SCAN` from the jobs the daemon still remembers,

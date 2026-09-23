@@ -86,7 +86,7 @@ message Channel {
   GainMode agc = 7;
   ChannelState state = 8;  // unset on an event is the tombstone; see Capture.state
   bool persistent = 9;           // survives owner disconnect; jobs set this
-  // Set by jobs: the absolute frequency a channel wants back when its capture moves out from
+  // Set by jobs: the absolute frequency a channel returns to when its capture moves out from
   // under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
   // on it yet.
   uint64 required_hz = 10;
@@ -94,8 +94,8 @@ message Channel {
   // Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
   // ignored for every other mode. Detection is reported on the telemetry plane
   // and never gates audio -- tone squelch is a separate, later decision, and
-  // field 13 is held for it, because every false negative there is silence the
-  // user cannot diagnose.
+  // field 13 is held for it, because a missed tone there would mute audio with
+  // no visible cause.
   bool subaudible_detect = 12;
   reserved 13;  // subaudible_squelch_hz
 }
@@ -212,8 +212,8 @@ service Control {
   rpc DetachSink(DetachSinkRequest) returns (Empty);
 
   // Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-  // does for a channel's audio, so a client on another machine hears it where the radio is and a
-  // client on this one needs no player of its own (docs/design/recording.md).
+  // does for a channel's audio, so a recording plays where the radio is, even for a client on
+  // another machine, and a local client needs no player of its own (docs/design/recording.md).
   rpc StartPlayback(StartPlaybackRequest) returns (Playback);
   rpc StopPlayback(StopPlaybackRequest) returns (Empty);
 
@@ -249,9 +249,9 @@ message DaemonInfo {
 }
 // A recording the daemon is playing through its own audio device (docs/design/recording.md,
 // "Playing a recording back"). It is not a sink: a sink is where a *channel's* audio goes, and a
-// playback has no channel. It is not a job either: nothing is produced and it is over when the
-// person stops listening. A playback belongs to the client that started it and ends when that
-// client goes, which is what makes Ctrl-C stop the sound.
+// playback has no channel. It is not a job either: it produces nothing and ends when playback
+// stops. A playback belongs to the client that started it and ends when that client disconnects,
+// so Ctrl-C on `ley play` stops the audio.
 message Playback {
   string playback_id = 1;       // pb_<ulid>
   string resource_uri = 2;      // ley://recordings/<id>/<part>
@@ -297,8 +297,8 @@ message AttachFileDeviceRequest {
 }
 message DetachFileDeviceRequest { string device_id = 1; }
 
-// Where a virtual device's samples come from. Persistence follows intent: a file you play is
-// ephemeral, a radio you attach is part of the station.
+// Where a virtual device's samples come from. Persistence follows intent: a played file is
+// ephemeral; an attached radio is remembered across restarts.
 message DeviceSource {
   oneof source {
     FileSource file = 1;
@@ -312,7 +312,7 @@ message FileSource {
   bool loop = 2;     // wrap at EOF instead of ending the capture
 }
 // A dongle served by rtl_tcp on another machine. The daemon remembers the endpoint across
-// restarts until DetachDevice forgets it.
+// restarts until DetachDevice removes it.
 message RtlTcpSource {
   string host = 1;
   uint32 port = 2;   // 1..65535; rtl_tcp's own default is 1234

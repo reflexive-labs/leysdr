@@ -97,10 +97,10 @@ public protocol RadioDevice: AnyObject, Sendable {
 
     /// The level an element is actually at, in dB, even when it is in auto.
     ///
-    /// `gains` reports `.auto` for an element under AGC, which says how it is being driven and not
-    /// where it ended up. A sweep has to pin the gain -- SNR against a moving reference is not a
-    /// number -- and pinning it at anything other than what AGC had settled on changes the radio's
-    /// sensitivity for the whole scan. nil when the driver cannot say.
+    /// `gains` reports `.auto` for an element under AGC, which is the mode, not the resulting
+    /// level. A sweep has to pin the gain, because SNR against a moving reference is meaningless,
+    /// and pinning it at anything other than what AGC had settled on changes the radio's
+    /// sensitivity for the whole scan. nil when the driver cannot report it.
     func settledGainDB(element: String) async -> Double?
 }
 
@@ -109,7 +109,7 @@ public extension RadioDevice {
     /// asked for when they are asked for it.
     var inFlightSamples: UInt64 { 0 }
 
-    /// A device whose gain is whatever it published.
+    /// Default: the dB level `gains` publishes for the element; nil when it is `.auto` or absent.
     func settledGainDB(element: String) async -> Double? {
         if case .db(let v)? = gains.first(where: { $0.element == element })?.value { return v }
         return nil
@@ -301,7 +301,7 @@ public enum ChannelState: Hashable, Sendable {
 }
 
 public enum ChannelTelemetry: Sendable {
-    /// `audioDBFS`/`audioPeakDBFS` are what the listener hears over the meter interval, measured on
+    /// `audioDBFS`/`audioPeakDBFS` are the audio output level over the meter interval, measured on
     /// the demodulated block; NaN when there is no audio to measure (a raw-IQ channel, or before the
     /// first block). NaN means "not measured" and is not the same as 0 dBFS, which is very loud.
     /// `deviationHz`/`freqErrorHz` are the FM discriminator's peak excursion and DC over the same
@@ -358,8 +358,8 @@ public protocol Demodulator: AnyObject {
     /// before AGC for USB, LSB and CW; nothing for raw IQ, which has no detector. A call that
     /// produces no audio reports zero raw frames too, so a scope never sees the block before it.
     ///
-    /// Passing nil is the whole cost of not listening: everything the raw stage needs was sized in
-    /// `configure`, so this is a branch, never an allocation.
+    /// Passing nil for `rawOut` costs one branch: everything the raw stage needs was sized in
+    /// `configure`, so there is never an allocation.
     func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int
     func reset()
 }
@@ -435,9 +435,9 @@ public enum DeliveryPolicy: Hashable, Sendable {
 /// FileRecorderSink, NullSink. Lossless delivery exists only in FileRecorderSink.
 public protocol AudioSink: AnyObject, Sendable {
     var id: SinkID { get }
-    /// Which stage of the channel's chain this sink is fed. Everything that listens takes `.audio`;
-    /// `.demod` is the detector's output before conditioning, and a sink asking for it is refused on
-    /// a raw-IQ channel, where there is no detector to tap.
+    /// Which stage of the channel's chain this sink is fed. Anything that plays or records audio
+    /// takes `.audio`; `.demod` is the detector's output before conditioning, and a sink asking for
+    /// it is refused on a raw-IQ channel, where there is no detector to tap.
     var tap: AudioTap { get }
     /// Hot path: synchronous, allocation-free. `audio` is real f32 mono (format == .f32).
     ///
@@ -450,16 +450,16 @@ public protocol AudioSink: AnyObject, Sendable {
 }
 
 public extension AudioSink {
-    /// A sink that does not say wants what a listener hears.
+    /// A sink that does not override `tap` receives `.audio`.
     var tap: AudioTap { .audio }
 }
 
 /// Which stage of a channel's chain a sink receives.
 ///
 /// `.audio` is what a speaker gets: after the high-pass, de-emphasis, limiter and AGC, and zeros
-/// while the squelch is closed, exactly as the listener hears it. `.demod` is the detector's own
-/// output before any of that -- a CTCSS tone under NFM voice, the carrier as DC under AM -- and it
-/// keeps flowing while the squelch is closed. `AudioTap` in `bulk.proto` says what that is for.
+/// while the squelch is closed. `.demod` is the detector's own output before any of that -- a
+/// CTCSS tone under NFM voice, the carrier as DC under AM -- and it keeps flowing while the squelch
+/// is closed. `AudioTap` in `bulk.proto` documents what that is for.
 public enum AudioTap: Hashable, Sendable {
     case audio
     case demod
@@ -518,10 +518,10 @@ public enum JobStatus: Sendable {
 /// Allocates captures/channels for jobs under the don't-disturb policy:
 /// prefer idle devices; never retune a capture with recent interactive activity (invariant 9).
 ///
-/// Jobs never name a capture. A watch wants one channel inside whatever capture it can get; a
-/// sweep wants a whole radio to itself for several seconds, which no channel can express -- a
-/// channel's offset is bounded by the sample rate, and a sweep walks megahertz. So the allocator
-/// answers a sweep with a *lease*, which is the only handle a job ever has on tuning.
+/// Jobs never specify a capture. A watch needs one channel inside any capture that covers it. A
+/// sweep needs a whole radio to itself for several seconds, which a channel cannot provide: a
+/// channel's offset is bounded by the sample rate, and a sweep covers megahertz. So the allocator
+/// gives a sweep a *lease*, the only way a job can retune a radio.
 public protocol CaptureAllocator: Sendable {
     func allocate(_ request: AllocationRequest, for job: JobID) async -> AllocationResult
 }
@@ -539,9 +539,8 @@ public struct GainRequest: Sendable, Hashable {
 
 public enum AllocationRequest: Sendable {
     /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, from
-    /// D.15, a watch job) asks for this: it wants to hear one channel and does not care which
-    /// radio serves it. `deviceID` nil means the allocator picks; `takeOver` retunes a capture
-    /// somebody is using.
+    /// D.15, a watch job) asks for this: it needs one demodulated channel from any radio.
+    /// `deviceID` nil means the allocator picks; `takeOver` retunes a capture somebody is using.
     case channel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode, deviceID: DeviceID?, takeOver: Bool)
     /// The whole capture band around a frequency, as cf32, for an IQ decoder that needs the signal
     /// before it is demodulated (docs/design/decoders.md, "Multiplexing"; DecoderSignal SIGNAL_IQ).
@@ -550,10 +549,10 @@ public enum AllocationRequest: Sendable {
     /// the device's default; `deviceID` nil lets the allocator pick; `takeOver` retunes a capture
     /// somebody is using.
     case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool)
-    /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the politeness
+    /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the don't-disturb
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
-    /// `deviceID` nil means the allocator picks; naming one is how a two-radio rig says which.
+    /// `deviceID` nil means the allocator picks; setting one selects the radio on a two-radio rig.
     /// `gain` is where the sweep pins the tuner: a level, or `auto` for where the driver's AGC
     /// settles. nil pins whatever the radio is on, which is what the last client left.
     case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool, gain: GainRequest? = nil)
@@ -590,8 +589,8 @@ public protocol CaptureIQLease: AnyObject, Sendable {
     func release() async
 }
 
-/// A job's exclusive hold on one capture. Retuning through the lease bypasses the write coalescer
-/// deliberately: that path keeps last-value-per-parameter on a 20 ms tick and would silently eat
+/// A job's exclusive hold on one capture. Retuning through the lease bypasses the write coalescer,
+/// because that path keeps last-value-per-parameter on a 20 ms tick and would silently drop
 /// sweep steps.
 public protocol CaptureLease: AnyObject, Sendable {
     var captureID: CaptureID { get }

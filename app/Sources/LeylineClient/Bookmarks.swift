@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Bookmarks: the stations a person wants back, in a file both clients own (docs/design/
+// Bookmarks: saved stations, in a file both clients own (docs/design/
 // app-design-handoff.md, "Bands and bookmarks are files"). Interpretation state, client-side,
 // on the pattern `go/pkg/labels` set and `go/pkg/bookmarks` mirrors: one JSON file beside
 // `labels.json`, a map keyed by id so a write of one entry leaves the rest untouched, read
-// whole and written whole. The daemon never learns a bookmark exists.
+// whole and written whole. The daemon never sees bookmarks.
 
 import Foundation
 import LeylineProto
@@ -65,7 +65,7 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
 
 public enum BookmarkError: Error, Equatable, Sendable {
     case emptyName
-    /// A bookmark carries the mode to come back on, so `.unspecified` is refused rather than
+    /// A bookmark carries the mode to restore, so `.unspecified` is refused rather than
     /// written as `DEMOD_MODE_UNSPECIFIED`, which `ley bookmarks` would then list with no mode.
     case unspecifiedMode
     case malformed(String)
@@ -86,7 +86,7 @@ public struct BookmarkStore: Sendable {
     /// Whether the last `load()` succeeded. Until one has, `add`, `remove` and `save` refuse:
     /// a store that could not read the file does not know what is in it, and `save` writes the
     /// whole file, so writing would lose a list somebody built by hand. `go/pkg/bookmarks`
-    /// says the same thing by returning no store at all from `Open`.
+    /// enforces the same rule by returning no store at all from `Open`.
     public private(set) var loaded = false
     /// The clock the mutators stamp with, so a test can hold time still.
     public var now: @Sendable () -> Date = { Date() }
@@ -116,7 +116,7 @@ public struct BookmarkStore: Sendable {
 
     /// Reads the file. A missing file is an empty store, loaded: nobody has bookmarked anything
     /// yet. A malformed one throws and leaves the store unloaded, so the mutators refuse until a
-    /// read succeeds — otherwise the next save would overwrite what the person meant to keep.
+    /// read succeeds — otherwise the next save would overwrite the user's existing bookmarks.
     public mutating func load() throws {
         loaded = false
         guard FileManager.default.fileExists(atPath: path) else {
@@ -217,10 +217,10 @@ public struct BookmarkStore: Sendable {
         return b
     }
 
-    /// Gives the bookmark with this id the mode and width it is heard with now, and the
+    /// Gives the bookmark with this id the channel's current mode and width, and the
     /// frequency when one is given, keeping its name: the inspector's "save" on a bookmark whose
     /// settings were changed after it was tuned, and the sidebar's "replace" on one that should
-    /// point where the radio is (`ley bookmarks move` for the frequency). Does not save.
+    /// move to the tuned frequency (`ley bookmarks move` for the frequency). Does not save.
     @discardableResult
     public mutating func updateBookmark(
         _ id: String, hz: UInt64? = nil, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32
@@ -240,7 +240,7 @@ public struct BookmarkStore: Sendable {
 
     /// Removes by exact id, else exact name, else a case-insensitive name that matches exactly
     /// one bookmark. The argument is trimmed first, as `go/pkg/bookmarks` trims it, so a name
-    /// pasted with a trailing space still names its bookmark. Does not save.
+    /// pasted with a trailing space still matches its bookmark. Does not save.
     @discardableResult
     public mutating func remove(_ idOrName: String) throws -> Bookmark {
         guard loaded else { throw BookmarkError.notLoaded(path) }

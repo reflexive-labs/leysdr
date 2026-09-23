@@ -2,14 +2,14 @@
 
 Status: implemented. Companion to `scope.md` (the millisecond view, which stays), to
 `signal-views.md` (the spectrum, waterfall and channel views) and to `docs/dev/cli-style.md`, whose
-palette and layout rules every picture here obeys. The point of this document is the visual
-language, because a meter that is honest but dead-looking is not looked at.
+palette and layout rules every picture here follows. This document is mostly about the visual
+design, because an accurate meter that looks static does not get used.
 
 ## Context
 
-The scope shows a few milliseconds and redraws twenty times a second: for a tone that is a still
-picture, for speech it is a strobe. The questions a person asks about audio are answered by two
-other instruments, and audio equipment settled their look decades ago:
+The scope shows a few milliseconds and redraws twenty times a second: for a tone it is a still
+picture, for speech it flickers. Two other displays answer the usual questions about audio, and
+audio equipment standardised their look decades ago:
 
 1. **Level by frequency** — the spectrum-analyser display on a hi-fi or a rack unit: vertical
    bars per octave band, dancing, each with a peak cap that hangs and falls. "Is that voice or
@@ -35,7 +35,7 @@ tone and PL.
 
 Band levels are sums of bins in power, divided by the window's equivalent noise bandwidth (1.5 for
 Hann) and back to dB; that is aggregation over the daemon's row, the same kind of presentation as
-`spectrum`'s peak list, and the client does it. The correction is what makes a band level a level:
+`spectrum`'s peak list, and the client does it. The correction makes the band level a true level:
 a Hann-windowed tone leaks a quarter of its power into each neighbouring bin, so the bins of a band
 add up to about one and a half times what is really in it, and broadband power is spread by the
 same factor. A band too narrow to hold a bin centre -- the low third-octaves against a coarse row --
@@ -68,43 +68,43 @@ Ctrl-C, and `--rate` and `--count` belong to it.
 
 **What is on screen.** Nine octave bands on the ISO centres (`--bands third` gives twenty-five
 at 100 columns and up), and at the right a master pair, `rms` and `peak`, drawn as two more bars
-so the whole thing reads as one instrument. A dB gutter on the left with the marks a meter carries
+so the display looks like one meter. A dB gutter on the left with the marks a meter carries
 (0, −6, −12, −18, −24, −30, −40, −50, −60), the −18 dBFS line drawn across as a dashed `Muted`
-rule: that is the alignment level on every professional meter, and it gives the eye a horizon the
+rule: that is the alignment level on every professional meter, and it gives a reference line the
 way the noise-floor rule does in `spectrum`. Band labels under the bars; the current numbers
-under the master pair, plain ink, because they are the answer.
+under the master pair, plain ink.
 
 **The scale is a meter's, not a chart's.** Fine at the top and coarse at the bottom: 6 dB per
-row from 0 to −24, then 10 dB per row to −60. A voice living at −20 gets four rows of resolution
+row from 0 to −24, then 10 dB per row to −60. A voice at −20 gets four rows of resolution
 where it matters and the floor is still on screen. Held, never fitted to the data (`docs/dev/cli-style.md`
 section 5): a bar of a given height means the same dB tomorrow.
 
 **Bars are LED ladders.** Two cells wide with a one-cell gap (three wide when the width allows),
 built from the column ramp ` ▁▂▃▄▅▆▇█`, so each row carries eight sub-levels and a bar has about a
 hundred positions over its height. The lit part is inked with the **level ramp** (`ui.Style.Level`),
-cold at −60 and hot at 0, which is the guide's one sanctioned use of colour depth and already
+cold at −60 and hot at 0, which is the only use of colour depth the guide allows and already
 the hue rule of the spectrum and waterfall: green in the working range, amber approaching −6, red
-at the top. The **unlit part is drawn, faintly**: `░` in `Muted`. Every real LED meter shows its
-dark segments, and it is what lets the eye read a level against the scale when nothing is playing.
+at the top. The **unlit part is drawn, faintly**: `░` in `Muted`. Real LED meters show their
+dark segments too, and they keep the scale readable when nothing is playing.
 `OVER` in `Err` lights at the left of the plot and holds for two seconds while the capture's
-`CaptureLevel` says the radio is clipping (more than one sample in ten thousand at the converter's
+`CaptureLevel` reports the radio clipping (more than one sample in ten thousand at the converter's
 rails in an interval); the header carries the converter's peak as `radio peak`. A band at 0 dBFS
 lights nothing on its own — an audio band at full scale is overdeviation or a hot tap, not a clip —
 except against a daemon that sends no level, where a bar at or over 0 dBFS lights `OVER` above it
 as it did before the daemon measured clipping.
 
-**A shut squelch is not a level.** While `METER` reports `squelch_open` false nothing is passing:
-every ladder draws unlit, the header says `squelch closed`, and the caps stop where they are. The
-spectrum keeps arriving behind it — on the demod tap it is the detector's own noise — and a lit
-bar would report that as sound. The rows still go out under `--json`, with `squelch_open` on them.
-Between words the squelch is open, which is where the demod tap's PL stands.
+**A closed squelch shows no level.** While `METER` reports `squelch_open` false no audio passes:
+every ladder draws unlit, the header shows `squelch closed`, and the caps stop where they are. The
+spectrum rows keep arriving (on the demod tap they carry the demodulator's noise), and a lit bar
+would show that noise as audio. The rows still go out under `--json`, with `squelch_open` on them.
+Between words the squelch stays open, and the demod tap's PL tone shows there.
 
-**Ballistics are what make it alive.** Attack is instant: a bar rises to the row's value within
-one frame. Release is slow, 20 dB a second, so a syllable leaves a trail the eye can follow instead
-of a flicker. The **peak cap** (`━` in `Label`, drawn at its own sub-row) sits on the highest value
-of the last 1.5 s and then falls at 10 dB a second. These are presentation over the daemon's rows:
-the numbers printed under the master pair are the current row's own values, `--json` carries the
-raw rows, and nothing smoothed is ever reported as a measurement.
+**Ballistics.** Attack is instant: a bar rises to the row's value within one frame. Release is slow,
+20 dB a second, so a syllable leaves a visible trail instead of a flicker. The **peak cap** (`━` in
+`Label`, drawn at its own sub-row) sits on the highest value of the last 1.5 s and then falls at
+10 dB a second. These are presentation over the daemon's rows: the numbers printed under the master
+pair are the current row's own values, `--json` carries the raw rows, and nothing smoothed is ever
+reported as a measurement.
 
 **Degradation.** With colour off the ramp is height and the cap is still bold; with `--ascii` the
 ladder is ` .:-=+*#%`, the unlit segment `.`, the cap `=`, the horizon `- -`. Strip the styling
@@ -131,16 +131,17 @@ terminal like the spectrum chart).
    -10 s       -8 s       -6 s       -4 s       -2 s       -0 s
 ```
 
-Newest at the right under a `Label` playhead, scrolling left. Each column covers its slice of
-the window (`--seconds 10` across 77 columns is 130 ms) and draws the **peak envelope** of that
-slice, symmetric about the centre line, the way an editor draws a clip: filled with block glyphs,
-with half-cell precision at either edge. The column's ink is the level ramp for its peak against
-the scale the frame is drawn at, so the loudest thing on screen is hot and a quiet passage is cold
-before the height says so. A centre rule runs through silence. A squelch-closed slice is **left
+Newest at the right under a `Label` playhead, scrolling left. Each column covers its slice of the
+window (`--seconds 10` across 77 columns is 130 ms) and draws the **peak envelope** of that slice,
+symmetric about the centre line, the way an editor draws a clip: filled with block glyphs, with
+half-cell precision at either edge. The column's ink is the level ramp for its peak against the
+scale the frame is drawn at, so the loudest thing on screen is hot and a quiet passage is cold, in
+addition to the height. A centre rule runs through silence. A squelch-closed slice is **left
 blank**, not drawn at zero: the floor draws as space (guide, section 5), and a gap between
-transmissions then looks like a gap. `--scale` as on the scope, `auto` by default here because the point is the shape. The DC
-offset of the demod tap is removed before drawing (the scope shows it; the editor's view would only
-shift the clip off its centre line), and said in the header.
+transmissions then looks like a gap. `--scale` as on the scope, `auto` by default here because the
+envelope's shape matters more than its absolute level. The DC offset of the demod tap is removed
+before drawing (the scope shows it; the editor's view would only shift the clip off its centre
+line), and the header notes it.
 
 Flags as `scope`, with `--seconds 2..120` in place of `--window` and no trigger.
 

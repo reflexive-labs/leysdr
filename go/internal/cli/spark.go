@@ -19,14 +19,14 @@ const sparkCells = 8
 // question a table cannot answer in a number: was this busy the whole time,
 // or busy once. It is allowed only where every cell is a measurement the
 // daemon actually made in that slice (docs/dev/cli-style.md, section 5); a
-// ramp drawn from a count is invented history.
+// ramp drawn from a count would show history that was never measured.
 //
 // A slice with anything in it is never blank. The ramp rounds to the nearest
 // step, so a fraction under a sixteenth would draw as a space and a carrier
-// that keyed once in a slice would vanish from the very picture that exists
-// to show it. Muted ink: occupancy is not a level, the glyph carries it, and
-// eight full blocks in the terminal's foreground would be the brightest thing
-// on the screen, ahead of the numbers the row exists to report.
+// that keyed once in a slice would disappear from the sparkline. Muted ink:
+// occupancy is not a level, the glyph carries it, and eight full blocks in the
+// terminal's foreground would be the brightest thing on the screen, ahead of
+// the numbers the row exists to report.
 func sparkline(st ui.Style, fracs []float64) string {
 	out := make([]rune, 0, len(fracs))
 	for _, f := range fracs {

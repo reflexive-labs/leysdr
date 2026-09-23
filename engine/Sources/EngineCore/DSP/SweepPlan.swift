@@ -2,9 +2,9 @@
 
 import Foundation
 
-/// Where a sweep points the radio, and which part of each span it believes.
+/// Where a sweep tunes the radio, and which part of each span it analyses.
 ///
-/// Two facts drive the geometry, and neither is negotiable on an RTL-SDR:
+/// Two RTL-SDR properties set the geometry:
 ///
 /// 1. **The DC spike sits at the exact capture centre.** Nothing upstream corrects it -- the
 ///    RTL-SDR path applies only the cu8-to-float conversion -- so the centre bins carry a
@@ -16,15 +16,15 @@ import Foundation
 /// So a step analyses only the two quarter-bands between `guardFraction` and `edgeFraction` of the
 /// span either side of centre, and the sweep advances by `advance` = 2 x (edge - guard) x span
 /// **divided by two**: half a window per step. That is what makes step k+1's lower quarter land
-/// exactly on step k's DC hole, so the hole is covered rather than skipped, and it gives every
-/// frequency in the range at least two looks at two different tuner settings -- which is the only
-/// cheap way to tell a real signal from a tuner spur that moves with the local oscillator.
+/// exactly on step k's DC hole, so the hole is covered rather than skipped. Every frequency in the
+/// range is analysed at least twice, at two different LO settings. That is the cheapest way to
+/// tell a real signal from a tuner spur that moves with the LO.
 ///
-/// The price is twice as many steps as a naive sweep. It buys complete coverage and a free
-/// cross-check; a sweep that skipped 10% of every span while claiming to have covered the band
-/// would be the quiet wrong answer the honesty invariants exist to prevent.
+/// This costs twice as many steps as a naive sweep, and gives complete coverage plus the spur
+/// cross-check. A sweep that skipped 10% of every span while reporting the band as covered would
+/// violate the honesty invariants.
 public struct SweepPlan: Sendable, Equatable {
-    /// A half-open span of frequency the detector is allowed to believe.
+    /// A half-open span of frequency the detector analyses.
     public struct Window: Sendable, Equatable {
         public var lowHz: UInt64
         public var highHz: UInt64
@@ -41,7 +41,7 @@ public struct SweepPlan: Sendable, Equatable {
         }
     }
 
-    /// One tuner position, and the two windows of it the detector is allowed to believe.
+    /// One tuner position, and the two windows of it the detector analyses.
     public struct Step: Sendable, Equatable {
         public var centerHz: UInt64
         /// Below centre, above the DC guard.
@@ -112,10 +112,10 @@ public struct SweepPlan: Sendable, Equatable {
 
         // The ends first: a step whose upper window starts at the bottom of the range, and one
         // whose lower window ends at the top. Without them the outermost slice of what was asked
-        // for would be seen once, by one edge of one step, which is the least trustworthy place
-        // in a span. They are also the whole plan when the range fits inside a single window --
-        // the range is then taken twice at two tuner positions, which is the strongest artefact
-        // cross-check the geometry can buy.
+        // for would be analysed once, by one edge of one step, which is the least reliable part
+        // of a span. They are also the whole plan when the range fits inside a single window --
+        // the range is then analysed at two tuner positions, the strongest artefact cross-check
+        // this geometry allows.
         var centers: [Double] = [Swift.max(0, coverLow - guardHz), coverHigh + guardHz]
         if coverHigh - coverLow > advance {
             // Between them, march by half a window so each step's lower quarter lands on the
@@ -128,8 +128,8 @@ public struct SweepPlan: Sendable, Equatable {
             }
         }
         centers.sort()
-        // Do not tune outside the device's range; a clamped centre still analyses honestly,
-        // it just overlaps its neighbour more.
+        // Do not tune outside the device's range; a clamped centre still analyses correctly
+        // and overlaps its neighbour more.
         // A centre can be lower than half a span -- an HF recording at 1 MHz played at 2.4 MSPS --
         // and the window below it would then be a negative frequency. UInt64(negative Double) is a
         // trap in Swift, not a saturating conversion, so this clamps at DC rather than crashing the
@@ -154,7 +154,7 @@ public struct SweepPlan: Sendable, Equatable {
     /// Normally this is all of it -- that is what the geometry is for. It is not, when the whole
     /// request falls inside one step's DC guard: a radio with a single tuning point (a file
     /// device) has no neighbouring step to cover its hole, so a request within 5% of that point is
-    /// a range the sweep cannot see. Reporting nothing found there would be a lie.
+    /// a range the sweep cannot analyse. Reporting "nothing found" there would be wrong.
     public var analysedHz: UInt64 {
         var spans: [(UInt64, UInt64)] = []
         for s in steps {

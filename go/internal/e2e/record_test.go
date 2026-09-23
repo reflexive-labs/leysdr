@@ -66,7 +66,7 @@ func TestRecordAgainstRealDaemon(t *testing.T) {
 			t.Errorf("part %d: %v overs, want 1 at this hang", i+1, p["squelch_opens"])
 		}
 	}
-	// Time nobody recorded is stated rather than hidden inside a file.
+	// Unrecorded time between parts is listed as coverage gaps rather than padded into a file.
 	if gaps := list(manifest, "coverage_gaps"); len(gaps) != len(segments)-1 {
 		t.Errorf("want a gap between every pair of parts, got %d", len(gaps))
 	}
@@ -157,7 +157,7 @@ func TestRecordIQRoundTripAgainstRealDaemon(t *testing.T) {
 	}
 
 	// The round trip: the part plays back through the same reader a fixture does, and the
-	// channel the daemon makes over it hears the fixture's tone.
+	// channel the daemon makes over it demodulates the fixture's tone.
 	stop, _ := e.startLive("play", uri, "--part", "1", "--no-audio", "--mode", "nfm", "--freq", "146.62", "--json")
 	defer func() { _ = stop() }()
 	st := e.waitChannels(1)

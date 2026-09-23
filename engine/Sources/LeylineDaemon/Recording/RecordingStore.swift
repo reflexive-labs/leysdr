@@ -3,8 +3,8 @@
 // The recordings store: a plain directory Finder can open and Spotlight can index, beside the
 // kept-records store (docs/design/recording.md, "Files"). One directory per recording, named by
 // the job id. There is no index: a listing is a scan of the manifests, exactly as the kept-records
-// index is a scan of its sidecars, so a recording somebody deletes in Finder is simply gone and
-// nothing has to be told.
+// index is a scan of its sidecars, so a recording deleted in Finder drops out of the listing with
+// no index to update.
 
 import EngineCore
 import Foundation
@@ -83,9 +83,8 @@ actor RecordingStore {
             all.removeAll { $0.manifest.startedAtNs < cutoff }
         }
         all.sort { $0.manifest.startedAtNs < $1.manifest.startedAtNs }
-        // The running recordings count against the cap even though they are never dropped: what is
-        // on the disk is what is on the disk, and a cap that ignored them would overrun by exactly
-        // the size of whatever is being written.
+        // The running recordings count against the cap even though they are never dropped: a cap
+        // that ignored them would overrun by the size of whatever is being written.
         var total = entries().reduce(UInt64(0)) { $0 + $1.bytes }
         var index = 0
         while total > capBytes, index < all.count {
@@ -97,10 +96,10 @@ actor RecordingStore {
 
     /// What is left of a recording the last daemon was still writing (docs/design/recording.md,
     /// "Retune, detach and restart"): the part's WAV header is repaired from the file's length and
-    /// the manifest is closed with `ended_by = restart`. A recording is a bounded artefact;
-    /// whoever wanted a longer one starts another.
+    /// the manifest is closed with `ended_by = restart`. The recording is not resumed; a
+    /// longer one needs a new job.
     ///
-    /// Returns the job ids it closed, so the daemon can say so in its log.
+    /// Returns the job ids it closed, so the daemon can log them.
     @discardableResult
     func repairUnfinished() -> [String] {
         var repaired: [String] = []

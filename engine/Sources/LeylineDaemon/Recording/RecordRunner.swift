@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // One record job's moving parts: the channel's audio (or the capture's IQ) into a part file, the
-// squelch's own transitions into the gate, and a manifest that stays honest while it runs
+// squelch's own transitions into the gate, and a manifest kept current while it runs
 // (docs/design/recording.md, "The daemon").
 //
 // Nothing here runs on the DSP thread (invariant 4). The only hot-path code is the sink the bulk
@@ -62,7 +62,7 @@ actor RecordRunner: RecordRunning {
     /// that saw COMPLETED and read the manifest would otherwise race the part still being closed.
     private var pendingEnd: PendingEnd?
 
-    /// `detail` nil means "say what the recording turned out to hold", computed once the last part
+    /// `detail` nil means "describe what the recording holds", computed once the last part
     /// is closed rather than while it is still open.
     private struct PendingEnd {
         var state: Leyline_V1_JobState
@@ -78,7 +78,7 @@ actor RecordRunner: RecordRunning {
     /// Wakes whichever drain is parked, so a deadline or a cancel is acted on at once rather than
     /// at the next block. Set by the loop that owns the ring.
     private var wake: (@Sendable () -> Void)?
-    /// The last squelch state the channel reported, for the liveness sentence.
+    /// The last squelch state the channel reported, for the status detail.
     private var squelchOpen = false
     private var squelchChangedAt: ContinuousClock.Instant = .now
     private var degraded = false
@@ -115,7 +115,7 @@ actor RecordRunner: RecordRunning {
         task = Task { [weak self] in await self?.loop() }
     }
 
-    /// Ends the job: the open part is closed, the manifest says how, and the radio goes back.
+    /// Ends the job: the open part is closed, the manifest records how, and the radio goes back.
     func stop(endedBy reason: String) async {
         task?.cancel()
         wake?()
@@ -174,7 +174,7 @@ actor RecordRunner: RecordRunning {
         let liveness = Task { [weak self] in await self?.followLiveness() }
         let deadline = startDeadline()
         // A continuous recording opens its one part at the first frame; a gated one waits for the
-        // squelch. Either way the part's start is a real sample, never a guess.
+        // squelch. Either way the part starts on a real sample index, not an estimate.
         for await _ in audio.poke {
             if Task.isCancelled || stopped { break }
             while let frame = audio.next(s16: false) {
@@ -197,7 +197,7 @@ actor RecordRunner: RecordRunning {
     /// the drain is the accurate one -- it is the recording's own timeline -- but a radio that
     /// stops delivering (a file device at the end of its file, a dongle unplugged) would leave a
     /// job that asked for five minutes running for ever. Whichever comes first ends it, and the
-    /// manifest still says how much signal it actually holds.
+    /// manifest still records how much signal it actually holds.
     private func startDeadline() -> Task<Void, Never>? {
         guard durationSamples > 0, captureRateHz > 0 else { return nil }
         let seconds = Double(durationSamples) / Double(captureRateHz)
@@ -244,7 +244,7 @@ actor RecordRunner: RecordRunning {
     // MARK: Frames
 
     /// One drained audio frame: the gate is advanced to the frame's end, then the samples go
-    /// wherever the gate left the part. Deciding at frame granularity is the accuracy claim --
+    /// wherever the gate left the part. Decisions are made per frame, so
     /// a cut lands within one capture block of the transition.
     /// The capture's anchor, once it has one. A capture publishes it with its first block, so the
     /// snapshot a job reads while allocating carries a placeholder; this is where the real one
@@ -323,8 +323,9 @@ actor RecordRunner: RecordRunning {
     }
 
     /// A recording that cannot write is over: the job ends FAILED with what it managed to keep,
-    /// rather than running on writing nothing. A full disk says so and names the free space and
-    /// the flag, because that is what the reader does next (docs/design/recording.md, "Retention").
+    /// rather than running on writing nothing. On a full disk the error gives the free space and
+    /// the flag to change, because those are what the user needs next (docs/design/recording.md,
+    /// "Retention").
     /// Returns true when it ended the job.
     private func failIfWriteFailed() async -> Bool {
         guard let failure = await writer.writeFailure else { return false }
@@ -382,7 +383,7 @@ actor RecordRunner: RecordRunning {
             // The part ends at the close transition plus the hang, which the drain may not have
             // reached yet; never past what has actually been written.
             await writer.closePart(endSample: Swift.min(endSample, now))
-            // The gap between this part and the next is time nobody recorded, said out loud.
+            // The gap between this part and the next is not recorded, and is listed as a gap.
             currentPartStart = 0
         case .quiet:
             finish(state: .completed, detail: nil, code: nil, endedBy: "quiet")
@@ -440,7 +441,7 @@ actor RecordRunner: RecordRunning {
     }
 
     /// OUT_OF_CAPTURE degrades the job, closes the open part and records a coverage gap; the
-    /// capture coming back opens a new part. The human is never blocked by a job
+    /// capture coming back opens a new part. A job never blocks the user
     /// (docs/design/control-plane.md): a retune over a recording degrades it, it does not refuse.
     ///
     /// The same loop notices the borrowed channel going away: its owner destroying it ends the job
@@ -568,9 +569,8 @@ actor RecordRunner: RecordRunning {
 }
 
 /// A record job's hold on a channel it did not make (`RecordConfig.channel_id`): the job borrows
-/// what somebody is listening to and leaves it exactly as it found it. Releasing does nothing --
-/// destroying the listener's channel because a recording ended would be the opposite of what
-/// "record what you are hearing" means.
+/// what somebody is listening to and leaves it exactly as it found it. Releasing does nothing:
+/// destroying the listener's channel when a recording ends would cut off their audio.
 final class BorrowedChannelLease: ChannelLease, @unchecked Sendable {
     let channelID: ChannelID
     let captureID: CaptureID

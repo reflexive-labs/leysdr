@@ -52,7 +52,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     defer { if caller == nil { try? FileManager.default.removeItem(atPath: dir) } }
     let socket = dir + "/d.sock"
-    // A test never looks at the station's own plugin directory or writes to its store: both
+    // A test never looks at the host's own plugin directory or writes to its store: both
     // default to somewhere inside the temp directory the daemon is running in.
     let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
                                       presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
@@ -122,7 +122,7 @@ actor EventCollector {
 
     /// Starts watching and returns once the daemon holds the subscription, so anything a test changes
     /// afterwards is guaranteed to reach this collector. Response headers only say the client reached
-    /// the service, which is a weaker promise than the store having the subscriber.
+    /// the service, which is a weaker guarantee than the store having the subscriber.
     static func start(_ control: Leyline_V1_Control.Client<HTTP2ClientTransport.Posix>, daemon: Daemon) async -> EventCollector {
         let before = await daemon.store.subscriberCount
         let c = EventCollector()

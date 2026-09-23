@@ -8,10 +8,10 @@ on a decision.
 ## Context
 
 The core closed on 2026-09-18 (`build-order.md`, "Closing the core"): recording landed as C.12
-and S2 passed on the owner's Mac, so the app is the next thing built rather than the next thing
-argued about. The designs exist in Claude Design and arrive as a handoff, the way the terminal
-visuals did (`../dev/cli-style.md` records how that one was reconciled). This plan is the order
-the app lands in and where each piece of the handoff goes.
+and S2 passed on the owner's Mac, so the app is the next thing to build. The designs exist in Claude
+Design and arrive as a handoff, the way the terminal visuals did (`../dev/cli-style.md` records how
+that one was reconciled). This plan is the order the app lands in and where each piece of the
+handoff goes.
 
 The app is a peer client (`CLAUDE.md`, invariant 1): it links the generated contract and never
 the engine, keeps no state of its own, and every contract addition it needs ships with its `ley`
@@ -30,7 +30,7 @@ mirror so nothing works only from Swift.
   moved to its own package at `swift/LeylineProto`, so the app depends on that and neither client
   depends on the engine package.
 - **Swift 6 language mode.** The engine builds in Swift 5 mode for its history; the app starts
-  in 6, so an actor-isolation mistake is an error here, not a warning to read past.
+  in 6, so an actor-isolation mistake is a compile error here rather than a warning.
 - **The mirror is one `@MainActor` object, and the app's session is the `@Observable` one.**
   Control events are a few a second; folding them where the views read them costs nothing and
   removes a hop per event. The façade imports no UI framework (Linux's Observation library does
@@ -40,8 +40,8 @@ mirror so nothing works only from Swift.
 - **gRPC first, ring later.** The waterfall draws from the gRPC FFT stream, S1 is measured, and
   the shm ring is built if the numbers say so (`build-order.md`, "Decided not to gate on").
 - **The bundle identifier is `com.leyline.app`**, beside the daemon's `com.leyline.daemon`
-  launchd label. Changing it later means a migration of nothing (the app stores nothing yet),
-  so it is a decision only until APP-4's shared file names it.
+  launchd label. Changing it now needs no migration (the app stores nothing yet); it becomes
+  fixed once APP-4's shared file uses it.
 - **Not sandboxed.** Direct, notarized distribution (`D2-licensing.md`, "Distribution
   obligations"); the daemon holds the USB access, and the app reads the socket under
   `~/Library/Application Support/Leyline`.
@@ -51,7 +51,7 @@ mirror so nothing works only from Swift.
 ### APP-1 `[x]` App target and the client façade (E.1)
 
 Landed 2026-09-18: `app/Package.swift`, `LeylineClient` (identity, connection, errors, mirror,
-coalescer, streams), the SwiftUI skeleton (`LeylineApp`: a window naming the daemon's state and
+coalescer, streams), the SwiftUI skeleton (`LeylineApp`: a window showing the daemon's state and
 listing radios and channels, no spectrum), `make app | app-test | app-e2e | app-run |
 app-bundle`, both CI jobs, `scripts/bundle-app.sh`, and the licence gate's two new rules.
 Verified: `make app-test app-e2e` green in the Linux container against the Linux-built daemon,
@@ -60,8 +60,8 @@ second identity creates a channel and the mirror shows it, then drops it on the 
 
 Still to see on the Mac, the first time anyone runs it there: `make app-run` opens a window
 that says `leylined <version>` with the daemon running and "The daemon is not running" without
-it, and `ley tune 146.52M` from a terminal puts a row in its channel list. That is the same
-promise the test makes, with a window instead of an assertion.
+it, and `ley tune 146.52M` from a terminal puts a row in its channel list. That checks the same
+behaviour as the test, in a window instead of an assertion.
 
 ### APP-2 `[x]` Layer 0 and spike S1: spectrum, waterfall, click to hear (E.2)
 
@@ -98,15 +98,15 @@ client half of S1.
 Ticked 2026-09-20. The window has been built and run on the owner's Mac since 2026-09-18 (APP-3
 records every change since going through `make app-run`), so the Metal path, the type checker
 and the layout are proven there. The S1 trace was not taken: the owner worked around it on the
-Mac, and the spike's artifact (an Instruments trace and a findings note) is scratched rather
-than owed. The signposts stay in the code for whoever wants the measurement later. The ring
+Mac, and the spike's artifact (an Instruments trace and a findings note) is dropped, not
+pending. The signposts stay in the code for whoever wants the measurement later. The ring
 decision stands where "Decisions" left it: gRPC, and the ring only if a window drops rows.
 
 ### APP-3 `[ ]` Layer 1 controls (E.3)
 
 Frequency, mode, squelch, volume as Mac controls; drag-to-tune and scroll-to-zoom on the
 waterfall through the coalescer; keyboard shortcuts; the named failure states from telemetry
-(flat floor, zero gain, no antenna), each a sentence and the thing to try. Rule: nothing in
+(flat floor, zero gain, no antenna), each shown as a sentence and one fix to try. Rule: nothing in
 layer 2 is ever required for layers 0 and 1 to succeed (`user-stories.md`, V1a).
 
 Written 2026-09-18 with APP-2: the transport bar (`TransportBarView.swift`: play as the sink
@@ -115,49 +115,49 @@ the signal readout from the channel meter, the squelch track with its words, vol
 output's name from CoreAudio), the Tune menu (`TuneCommands`), click, drag and scroll on the
 waterfall, and the device menu with the gain slider (`DeviceMenuView.swift`). The named failure
 states landed 2026-09-19 (below). Built and running on the owner's Mac from 2026-09-18; every change
-since has gone through `make app-run` there, and the state on 2026-09-19 is a window that hears,
-tunes by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the dB axis
-and the squelch-keyed waterfall. Nothing in M1 is still owed from the code (2026-09-20): CHIRP
-import follows M1 (APP-4), and the S1 trace was scratched (APP-2); what remains is the first-run
-checks each item names.
+since has gone through `make app-run` there, and the state on 2026-09-19 is a window that plays
+audio, tunes by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the
+dB axis and the squelch-keyed waterfall. Nothing in M1 is still owed from the code (2026-09-20):
+CHIRP import follows M1 (APP-4), and the S1 trace was scratched (APP-2); what remains is the
+first-run checks each item lists.
 
 Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
 `PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s
-(`engine/Sources/EngineCore/DSP/Demodulators.swift`), which on a carrier that never stops is
-the carrier and reads `0 dB over noise` under a −12 dBFS signal. The window shows power over
-the band's floor scaled to the channel's width instead (`AppSession.overNoiseDB`, the auto
-squelch's rule); `ley`'s `snr` column showed the meter's number. Landed 2026-09-19: the capture
-reads its own floor (`BandFloor`, the median bin of a 1024-bin row as a density) and every
-channel's meter reports power over that floor at the channel's width, NaN until a row has been
-read (`../dev/engine-internals.md`, "Squelch and meters"). `overNoiseDB` and the meter now agree
-by construction, so the window's code is left as it is.
+(`engine/Sources/EngineCore/DSP/Demodulators.swift`). On a carrier that never stops, that minimum
+is the carrier itself, so the meter reads `0 dB over noise` under a −12 dBFS signal. The window
+shows power over the band's floor scaled to the channel's width instead (`AppSession.overNoiseDB`,
+the auto squelch's rule); `ley`'s `snr` column showed the meter's number. Landed 2026-09-19: the
+capture reads its own floor (`BandFloor`, the median bin of a 1024-bin row as a density) and every
+channel's meter reports power over that floor at the channel's width, NaN until a row has been read
+(`../dev/engine-internals.md`, "Squelch and meters"). `overNoiseDB` and the meter now agree by
+construction, so the window's code is left as it is.
 
 Landed 2026-09-19, the named failure states: `FailureState` in the façade (`../dev/app.md`,
-"Failure states") names what the band's numbers show, from the feed's held floor and peak and
-the capture's gains: a signal within 3 dB of full scale, or nothing 15 dB above the floor for
-3 s, with the gain named as the thing to try when it is set by hand to its lowest. The strip
-over the waterfall says it in a sentence with the number and one thing to try; `ley tune` says
-the same sentence from the row it measured the squelch on, and the MCP tune tool carries it, so
-an agent is told the band is deaf rather than left to read an empty decode as quiet. The daemon
-not running, no radio and an unplugged radio were already the window's empty words. Not
+"Failure states") classifies the band from the feed's held floor and peak and the capture's
+gains: a signal within 3 dB of full scale, or nothing 15 dB above the floor for 3 s. When the
+gain is set by hand to its lowest, raising it is the suggested fix. The strip over the waterfall
+shows one sentence with the number and one fix to try; `ley tune` prints the same sentence from
+the row it measured the squelch on, and the MCP tune tool includes it, so an agent learns the
+receiver is hearing nothing instead of reading an empty decode as a quiet band. The daemon not
+running, no radio and an unplugged radio already had empty-state messages in the window. Not
 compiled in the container: the strip's third branch in `MainWindow.swift` and the session's
 `nameFailure` path; the rule itself is tested on Linux.
 
 Found the same day from the app log: every gain write from the window was refused with
 `GAIN_ELEMENT_UNKNOWN no gain element named ` because the window sent no element, while `ley`
-names the device's first. Fixed on both sides: the daemon now reads an empty element as the
-first the device lists, as `common.proto` promises and the scan allocator already did (a radio
+sends the device's first. Fixed on both sides: the daemon now reads an empty element as the
+first the device lists, as `common.proto` specifies and the scan allocator already did (a radio
 with no gain stage says "this radio reports no gain elements"), the fake daemon does the same,
-and the window names the element and logs the write like a tune. Unverified on the Mac: that the
+and the window sends the element and logs the write like a tune. Unverified on the Mac: that the
 slider's confirmed level now reads back under the element's name.
 
 Found the same evening: a sample-rate change silenced the station. The daemon keeps the capture
 centre on a rate write, so a station placed off-centre (88.5 MHz in a capture centred on
 89.4 MHz, the band's centre) falls out of a narrower capture and the channel goes
-`OUT_OF_CAPTURE`, which the window did not name. Now `setSampleRate` re-places the centre for
+`OUT_OF_CAPTURE`, which the window did not report. Now `setSampleRate` re-places the centre for
 the tuned frequency at the new width and writes centre and rate in one tick (centre first when
-narrowing, rate first when widening), refuses in words a width the channel cannot fit, and the
-strip names an out-of-capture channel when another client causes one. Unverified on the Mac:
+narrowing, rate first when widening), refuses with a message a width the channel cannot fit, and the
+strip reports an out-of-capture channel when another client causes one. Unverified on the Mac:
 the placement and the one-tick order, which `LeylineApp` alone compiles.
 
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
@@ -167,8 +167,8 @@ tuned frequency as ticks, the neighbouring bands named at the caps, a drag that 
 region and pushes the station only from the middle 80 % of it (`AppSession.pan`: centre and
 offset in one tick, because the daemon bounds an offset by the sample rate alone) and stops
 at the band's edges, the neighbours' names crossing into them at the near edge
-(`AppSession.select(band:at:)` places the capture so the edge is inside it), and what a column
-covers as the one resolution the window states.
+(`AppSession.select(band:at:)` places the capture so the edge is inside it), and the span one
+pixel column covers as the only resolution figure the window shows.
 
 ### APP-4 `[ ]` Bookmarks, presets and CHIRP import, with `ley bookmarks` (E.4)
 
@@ -189,18 +189,18 @@ changes), both tested on Linux. The sidebar renders both. CHIRP import is the op
 
 Seen on the Mac 2026-09-20, by the owner: the gain slider's level reads back under the
 element's name, a rate change keeps the station inside the capture, the failure strip appears
-and clears, and the stepper steps. M1 holds. One thing came back as not liked rather than not
-working: the failure strip itself, carried below as a task rather than fixed in place.
+and clears, and the stepper steps. M1 is confirmed. The owner disliked one thing that did work:
+the failure strip itself, carried below as a task rather than fixed in place.
 
-Decided 2026-09-21, the radio's two settings. The capture rate is the radio's, not the band's:
-2.4 MSPS unless the device menu set another, remembered, and never moved by a band change. The
-gain a capture the window creates is set to is a fixed 28 dB, the RTL-SDR's mid-table entry,
-not the tuner's auto mode: on the Mac, 89.5 FM at auto gain put 44 % of samples at the
+Decided 2026-09-21, the radio's two settings. The capture rate belongs to the radio, not the band:
+2.4 MSPS unless the device menu set another, remembered, and never changed by a band change. A
+capture the window creates starts at a fixed 28 dB gain, the RTL-SDR's mid-table entry, not
+the tuner's auto mode: on the Mac, 89.5 FM at auto gain put 44 % of samples at the
 converter's rails at one sample rate and none at another, because an RTL-SDR's "auto" lets the
 LNA and mixer chase the signal with the last stage fixed and overloads on a strong local station,
 which is why every desktop SDR defaults to a fixed gain. The stories' "auto gain" default was
 written before a strong station had been measured through this dongle; the daemon now measures
-clipping and the strip names it, so a fixed default is the honest one. The device menu's choice,
+clipping and the strip reports it, so a fixed default is the right one. The device menu's choice,
 auto included, is remembered over it. `ley tune` and the daemon's open are unchanged: the radio
 still opens in auto mode, and a fixed default there is a separate decision.
 
@@ -217,10 +217,10 @@ still opens in auto mode, and a fixed default there is a separate decision.
 
 ## The M1 cut
 
-Decided 2026-09-18 from `../design/app-design-handoff.md`, "What M1 is": a window that hears
-something. M1 is APP-2, APP-3, the file half of APP-4, and the device menu with its gain control
+Decided 2026-09-18 from `../design/app-design-handoff.md`, "What M1 is": a window that tunes and
+plays audio. M1 is APP-2, APP-3, the file half of APP-4, and the device menu with its gain control
 from APP-6; the inspector, recording, lifecycle prose and distribution wait. The handoff's
-"Deliberately not in M1" is the list of what a reviewer should not find in the window. Two
+"Deliberately not in M1" lists what should not be in the window yet. Two
 things the handoff settled that the plan had left open: the waterfall runs at 2048 bins and
 30 rows a second (the ladder's ceiling, and what the desktop SDRs do), and pause is the sink
 detached rather than a volume of zero.
@@ -229,11 +229,11 @@ detached rather than a volume of zero.
 
 Decided 2026-09-20 from the handoff's ladder ("M2: the inspector: signal, tuning error, time on
 air, recent transmissions on this channel"). M2 adds the right third of the window and moves
-nothing an earlier step introduced, except signal, which leaves the transport bar as the
-handoff's one named exception (Region 5). The order is data first, panel last: the folds and
-the engine work are built and tested here, against fixtures, with their `ley` mirrors; the
-panel waits for its handoff and is built on the Mac. The failure strip's presentation (above)
-is revisited with the panel, which is where "what the numbers say" belongs.
+nothing an earlier step added, except the signal readout, which leaves the transport bar; the
+handoff lists that as its only exception (Region 5). The order is data first, panel last: the folds
+and the engine work are built and tested here, against fixtures, with their `ley` mirrors; the panel
+waits for its handoff and is built on the Mac. The failure strip's presentation (above) is revisited
+with the panel, since the panel is where measurements are explained in words.
 
 ### M2-1 `[x]` The transmissions log and time on air, in the façade and in `ley`
 
@@ -255,8 +255,8 @@ carrier into dated transmissions. `ley`: `onAirSince`, `transmissionStart` and `
 beside `render` in `transmission.go`, the meter line ending `on air N s` only when the open edge
 was seen, the session mirror folding `Event_Anchor` into `Capture.anchor` as the Swift mirror
 already did, and one test of both against the fake daemon. Both clients refuse an undated
-anchor (host time 0, what a Capture carries before its first block): a clock the daemon never
-kept is not printed.
+anchor (host time 0, what a Capture carries before its first block): a time the daemon never
+recorded is not printed.
 
 ### M2-2 `[x]` Tuning error and deviation in the meter (SV-6)
 
@@ -267,7 +267,7 @@ client from the demod tap's DC today; the daemon computes none. Engine work: the
 DC and its deviation onto `Meter`, FM and squelch-open only, NaN otherwise, with `ley`'s meter line
 and scope header reading the daemon's number. **Decided 2026-09-20:** the fields take 7 and 8 as the
 signal-views plan intended. The reserved rule exists for fields people depend on and nothing has
-shipped yet; `CLAUDE.md` now says when it starts to bind.
+shipped yet; `CLAUDE.md` now specifies when it starts to apply.
 
 Landed 2026-09-20: `Meter.deviation_hz = 7` and `freq_error_hz = 8`. Engine: a
 `DiscriminatorInterval` (sum, count, high, low; four scalars, no allocation) inside
@@ -279,7 +279,7 @@ outside the FM modes, and the error NaN while the squelch is closed.
 `ChannelTests.testMeterReadsTuningErrorAndDeviationOffTheDiscriminator` established the sign on
 `nfm_tone.cf32`: on the carrier 2495-2504 Hz of deviation for the generator's 2500 and an error
 within 8 Hz of zero, a channel 1 kHz above the carrier −1000 Hz, and an AM channel NaN for both.
-`ley scope`'s demod-tap header names the daemon's `freq_error_hz` when the meter carries one and
+`ley scope`'s demod-tap header shows the daemon's `freq_error_hz` when the meter carries one and
 falls back to the window's DC only for a daemon that sends NaN (`scopeTuningHz`); the fake daemon
 sends both fields off its own tap. `ley tune`'s meter line is unchanged, and `--json` carries the
 fields as it carries the rest of the Meter. The app reads the generated proto and draws neither
@@ -313,11 +313,11 @@ state; and that the widened telemetry subscription is accepted by the daemon and
 
 Found on the Mac 2026-09-20: "a signal is within 3 dB of full scale" popped up on FM broadcast
 at auto gain, where a strong constant-envelope carrier sits near full scale all day and nothing
-is wrong. The state infers the ADC's condition from the loudest FFT bin, which is a proxy; the
-honest measurement is the daemon's alone: samples at the rails (a cu8 byte at 0 or 255) counted
+is wrong. The state infers the ADC's condition from the loudest FFT bin, which is a proxy; only the
+daemon can measure it directly: samples at the rails (a cu8 byte at 0 or 255) counted
 where every block is already converted, reported as capture telemetry (`CaptureLevel`: clipped
 and total samples per interval, and the block's peak), with `ley levels`' OVER and `ley tune`'s
-line reading it. The failure state becomes "the radio is clipping", named only when it is, and
+line reading it. The failure state becomes "the radio is clipping", reported only when it is, and
 near-full-scale becomes a number in the inspector's Measurements. Until this lands the client
 rule has hysteresis and gain-aware words (2026-09-20), which stop the flicker and the useless
 "set it to auto", not the false alarm.
@@ -330,23 +330,23 @@ the interval's end as its time. The count is of complex samples with I or Q at a
 components, so the fraction is a fraction of time; the peak is the interval's largest component
 against full scale. `ley levels`' OVER and `ley tune`'s failure line read it (`clippingFloor`,
 one in ten thousand: a single rail hit in 600 000 samples is noise), say "The radio is clipping:
-N of M samples (x.x %) hit the converter's rails" with the gain clause, and say nothing about
-full scale under a clean level whatever the bins read; the loudest-bin rule stays only as the
+N of M samples (x.x %) hit the converter's rails" with the gain clause, and print nothing about
+full scale when the level is clean, whatever the bins show; the loudest-bin rule stays only as the
 fallback for a daemon that sends no level. The fake daemon emits one at 4 Hz with an
 `Options.Clipping` hook. The app's half follows: the façade's failure state re-based on
 `CaptureLevel`, and the near-full-scale number moving to the inspector's Measurements.
 
 App half landed 2026-09-20: `FailureState.clipping` from `CaptureLevel` through a
-`CaptureLevelFeed` per capture (one sample in ten thousand names it, half that clears it, the
+`CaptureLevelFeed` per capture (one sample in ten thousand raises it, half that clears it, the
 same floor as `ley`'s), the near-full-scale state dropped rather than kept as a fallback (the app
 ships with its daemon), and the radio's peak and clipped fraction as two rows of the inspector's
 Measurements.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
-The daemon not running and the radio unplugged are already the window's empty words, and an
-unplug is the `CAPTURE_DETACHED` transition the mirror keeps. Left for M2: the app starting the
-daemon, which waits for APP-7's launchd job. Nothing to build until then; recorded so APP-6 is
+The daemon not running and the radio unplugged already have empty-state messages in the window,
+and an unplug is the `CAPTURE_DETACHED` transition the mirror keeps. Left for M2: the app starting
+the daemon, which waits for APP-7's launchd job. Nothing to build until then; recorded so APP-6 is
 not read as untouched.
 
 ### APP-5 `[ ]` Recording from the window (E.5)
@@ -356,7 +356,7 @@ Start and stop over C.12 (`Jobs.StartJob(RecordConfig)`), the job rendered from 
 
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
-The daemon not running (named, with `ley daemon start` offered and, once APP-7 installs the
+The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the
 launchd job, started by the app); unplug and replug as the `CAPTURE_DETACHED` state transition
 it already is; the layer 2 parameter inspector last.
 

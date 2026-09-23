@@ -51,7 +51,7 @@ final class BookmarksTests: XCTestCase {
         XCTAssertThrowsError(try store.add(name: "  ", hz: 1, mode: .nfm)) {
             XCTAssertEqual($0 as? BookmarkError, .emptyName)
         }
-        // A bookmark carries the mode to come back on, so there is no mode to leave out; ley
+        // A bookmark carries the mode to restore, so there is no mode to leave out; ley
         // bookmarks refuses the same call with "a bookmark needs a mode".
         XCTAssertThrowsError(try store.add(name: "No mode", hz: 1, mode: .unspecified)) {
             XCTAssertEqual($0 as? BookmarkError, .unspecifiedMode)
@@ -162,7 +162,7 @@ final class BookmarksTests: XCTestCase {
         XCTAssertEqual(store.list.map(\.name), ["New"])
     }
 
-    // A write that fails leaves no .tmp neighbour for the next run to puzzle over. Turning the
+    // A write that fails leaves no stray .tmp file beside the bookmarks file. Turning the
     // file into a directory after the load is the cheapest way to make the rename fail.
     func testAFailedSaveLeavesNoTempFile() throws {
         let path = tempPath()

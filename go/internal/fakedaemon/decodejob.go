@@ -198,7 +198,7 @@ func captureCovers(c *capture, hz uint64, bw uint32) bool {
 // noSquelch is the channel's squelch: a decoder wants every sample, so nothing is muted.
 var noSquelch = math.NaN()
 
-// fakeStations is the traffic a fake decode job hears: three invented stations, one of each of
+// fakeStations is the traffic a fake decode job emits: three invented stations, one of each of
 // the record forms a client has to render. The callsigns are in the LEYTST- block, which no real
 // amateur licence issues, so a record from the fake can never be mistaken for one off the air.
 var fakeStations = []func(now uint64) *leylinev1.DecodeRecord{
@@ -308,7 +308,7 @@ const (
 
 // finishDecode ends a decode job: the channel goes, the capture goes with it when the job made
 // it, and the terminal Job event goes out last, so a client that sees the job end finds the
-// radio already handed back.
+// radio already released.
 func (d *Daemon) finishDecode(jobID string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

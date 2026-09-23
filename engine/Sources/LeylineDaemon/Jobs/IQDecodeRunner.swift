@@ -51,7 +51,7 @@ actor IQDecodeRunner: DecodeRunning {
     /// The record sequence: 1-based and contiguous per job, so it continues from what a kept
     /// job's store already holds when the job is resumed after a restart (DEC-11).
     private var seq: UInt64
-    /// How much the job has heard, for the detail it publishes while RUNNING (DEC-23).
+    /// Record count and last-record time, for the detail it publishes while RUNNING (DEC-23).
     private var liveness = DecodeLiveness()
     private var task: Task<Void, Never>?
     /// The plugin the drain is feeding. Held outside the actor because the drain runs as its own
@@ -118,7 +118,7 @@ actor IQDecodeRunner: DecodeRunning {
             let status = await runPlugin()
             if Task.isCancelled || stopped { break }
             restarts += 1
-            // A coverage gap the job says out loud. The transcript's own Gap list arrives with D.15.
+            // A coverage gap the job reports. The transcript's own Gap list arrives with D.15.
             await onStatus(.degraded, "the decoder exited (status \(status)); restarting in \(Int(wait)) s (restart \(restarts))")
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, DecodeRunner.maxRestartSeconds)
@@ -212,8 +212,8 @@ actor IQDecodeRunner: DecodeRunning {
                     case .written:
                         lostFrom = nil
                     case .droppedFull:
-                        // The plugin has stopped reading. Drop the frame, keep the gap open, and
-                        // leave the plugin's health to whether it ever reads again.
+                        // The plugin has stopped reading. Drop the frame and keep the gap open;
+                        // not reading is not a failure.
                         if lostFrom == nil { lostFrom = p.sampleStart }
                     }
                 } catch is PluginStalled {
@@ -223,7 +223,7 @@ actor IQDecodeRunner: DecodeRunning {
                     await process.stop()
                     continue
                 } catch {
-                    // The plugin died between the check and the write; the restart loop is on it.
+                    // The plugin died between the check and the write; the restart loop handles it.
                     if lostFrom == nil { lostFrom = p.sampleStart }
                     continue
                 }
@@ -285,7 +285,7 @@ actor IQDecodeRunner: DecodeRunning {
         var d = Leyline_V1_StreamDescriptor()
         d.streamID = streamID
         d.kind = .iq
-        // The one delivery policy a decoder can reason about: what was lost is named (invariant 3).
+        // GAP_MARKED, so the decoder is told what was lost (invariant 3).
         d.policy = .gapMarked
         var iq = Leyline_V1_IqParams()
         iq.sampleRate = lease.sampleRateHz

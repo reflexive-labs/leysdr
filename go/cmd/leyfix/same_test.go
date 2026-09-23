@@ -66,7 +66,7 @@ func TestSAMEFixtureDecodes(t *testing.T) {
 }
 
 // TestGenerateSkipsSAMEWhenTooShort checks the guard that keeps a half-second
-// file from claiming an alert it cannot hold.
+// file from expecting an alert it cannot hold.
 func TestGenerateSkipsSAMEWhenTooShort(t *testing.T) {
 	o := genOptions{out: t.TempDir(), rate: 2_400_000, duration: 0.5, seed: 1, only: []string{"same_alert"}}
 	if err := generate(o, nil); err == nil {

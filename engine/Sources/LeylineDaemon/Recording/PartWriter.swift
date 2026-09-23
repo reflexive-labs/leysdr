@@ -6,7 +6,7 @@
 //
 // A part is the unit `ley play` understands: samples plus a JSON sidecar giving format, rate,
 // centre and the anchor. The manifest is rewritten atomically whenever a part is added or closed,
-// so a client reading a running recording sees an honest file.
+// so a client reading a running recording sees a manifest that matches the parts on disk.
 
 import EngineCore
 import Foundation
@@ -138,8 +138,8 @@ enum WAVHeader {
 actor PartWriter {
     /// The store's cap, checked as parts are closed. A recording that would push the store past it
     /// ends rather than writing a file retention would delete a moment later.
-    /// 2001-01-01. A derived wall clock below this did not come from a radio that knew the time;
-    /// it came from an anchor nobody set.
+    /// 2001-01-01. A derived wall clock below this came from an anchor that was never set, not
+    /// from a real clock.
     static let plausibleEpochNs: Int64 = 978_307_200_000_000_000
 
     nonisolated let directory: String
@@ -162,7 +162,7 @@ actor PartWriter {
     private var closed = false
     /// Set when a write failed: the job is told once and the recording ends with what it kept.
     private(set) var writeFailure: String?
-    /// True when that failure was the disk running out, which is a different sentence and a
+    /// True when that failure was the disk running out, which gets a different message and a
     /// different `ended_by` from a file that would not open.
     private(set) var outOfSpace = false
 
@@ -242,8 +242,8 @@ actor PartWriter {
             if manifest.format == "wav-s16" {
                 let header = WAVHeader.header(sampleRate: UInt32(truncatingIfNeeded: manifest.sampleRate))
                 try h.write(contentsOf: header)
-                // `bytes` is the file's size, header included: it is what a person compares with
-                // what Finder shows, and what the store's cap counts.
+                // `bytes` is the file's size, header included: it matches the size Finder shows,
+                // and it is what the store's cap counts.
                 partBytes = UInt64(header.count)
             }
             handle = h
@@ -316,7 +316,7 @@ actor PartWriter {
             squelchOpens.append(RecordingSquelchOpen(openSample: from, closeSample: endSample))
             pendingOpen = nil
         }
-        // A part with no samples in it has no level: nothing was measured, so nothing is claimed.
+        // A part with no samples in it has no level: nothing was measured, so no level is written.
         let peakDb: Double? = partSamples > 0 ? dbfs(peak) : nil
         let meanDb: Double? = partSamples > 0 ? dbfs((sumSquares / Double(partSamples)).squareRoot()) : nil
         let part = RecordingPart(part: partNumber, file: (path as NSString).lastPathComponent,
@@ -334,7 +334,7 @@ actor PartWriter {
         persist()
     }
 
-    /// Ends the recording: the open part is closed and the manifest says how it ended.
+    /// Ends the recording: the open part is closed and the manifest records how it ended.
     func finish(endedBy: String, endSample: UInt64) {
         guard !closed else { return }
         if handle != nil { closePart(endSample: endSample) }
@@ -353,18 +353,18 @@ actor PartWriter {
         log.warning("\(message)")
     }
 
-    /// Bytes free on the volume the recordings live on, for the sentence a full disk ends with.
-    /// nil when the filesystem will not say.
+    /// Bytes free on the volume the recordings live on, for the message a full-disk ending reports.
+    /// nil when the filesystem does not report it.
     nonisolated func freeBytes() -> UInt64? {
         let attrs = try? FileManager.default.attributesOfFileSystem(forPath: directory)
         return (attrs?[.systemFreeSize] as? NSNumber)?.uint64Value
     }
 
     /// `2026-09-17_14-03-22_146.520MHz_NFM_001.wav`: the wall clock of the part's first sample in
-    /// the local zone, the channel's frequency and mode, and the part number. A person searching
-    /// Finder reads the name; nothing parses it.
+    /// the local zone, the channel's frequency and mode, and the part number. The name is for
+    /// people browsing in Finder; nothing parses it.
     private func partFileName(number: Int, startSample: UInt64) -> String {
-        // A capture whose anchor has no host time -- a fixture, dated from a sidecar that says
+        // A capture whose anchor has no host time -- a fixture, dated from a sidecar that holds
         // zero -- would name every part 1970-01-01, and a few seconds into the file 1969 in any
         // zone west of UTC. The times inside the files stay derived from the anchor (invariant 5);
         // only the name, which nothing parses, falls back to now.
@@ -436,7 +436,7 @@ actor PartWriter {
 }
 
 /// Full-scale decibels for a linear amplitude. Silence is -inf, which JSON cannot hold, so the
-/// floor is the quietest number a 16-bit sample can carry rather than a fiction.
+/// floor is the quietest level a 16-bit sample can represent.
 func dbfs(_ amplitude: Double) -> Double {
     guard amplitude > 0 else { return -120 }
     return Swift.max(-120, 20 * log10(Swift.min(1, amplitude)))

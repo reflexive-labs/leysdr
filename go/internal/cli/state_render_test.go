@@ -277,7 +277,7 @@ func TestStateTreeShowsWhatIsPlaying(t *testing.T) {
 	if ui.Strip(styled) != plain {
 		t.Errorf("stripped ink differs from plain:\n--- plain\n%s\n--- stripped\n%s", plain, ui.Strip(styled))
 	}
-	// Nothing playing is the usual case, and says nothing at all.
+	// Nothing playing is the usual case, and prints nothing at all.
 	st.Playbacks = nil
 	if quiet := renderStateTree(ui.Style{Unicode: true, Width: 80}, st); strings.Contains(quiet, "playing through") {
 		t.Errorf("an idle daemon must not mention playback:\n%s", quiet)

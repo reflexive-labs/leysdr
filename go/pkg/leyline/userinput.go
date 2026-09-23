@@ -195,8 +195,8 @@ func ResolveMode(name string, hz uint64) (mode leylinev1.DemodMode, reason strin
 // the quantisation control.proto describes: a non-empty valid_db table snaps to
 // its nearest entry, otherwise the value is clamped to [min_db, max_db] and, when
 // step_db is positive, rounded onto the step grid from min_db. It is the Go side
-// of EngineCore's GainElement.snapped; a client that predicts a different value
-// than the daemon confirms is a client that reports a write as failed.
+// of EngineCore's GainElement.snapped. If a client predicts a different value
+// from the one the daemon confirms, it reports the write as failed.
 // A nil element passes db through.
 func SnapGain(el *leylinev1.GainElement, db float64) float64 {
 	if el == nil {
@@ -222,7 +222,7 @@ func SnapGain(el *leylinev1.GainElement, db float64) float64 {
 // before a client should call the write unconfirmed. A discrete element lands on
 // a table entry or a step, so the slack is the quantisation itself plus room for
 // the float trip through the wire; an element with neither quantises somewhere
-// the client cannot see, so it gets a dB of rope.
+// the client cannot see, so it gets 1 dB of tolerance.
 func GainTolerance(el *leylinev1.GainElement) float64 {
 	const eps = 0.05
 	switch {

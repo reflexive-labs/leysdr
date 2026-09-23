@@ -58,7 +58,7 @@ func runDecoders(ctx context.Context, app *App) error {
 	return nil
 }
 
-// printDecoderTable renders `ley decoders`. The name leads: it is what `ley decode` is given.
+// printDecoderTable renders `ley decoders`. The name comes first: it is what `ley decode` takes.
 func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 	s := tableStyle(app)
 	cols := []column{
@@ -91,8 +91,8 @@ func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 	}
 }
 
-// decoderFrequencies is where the protocol lives: the recipe's first frequency, and how many
-// others it has, because the first is what `ley decode` tunes without --freq.
+// decoderFrequencies is the recipe's first frequency and how many others it has, because the
+// first is what `ley decode` tunes without --freq.
 func decoderFrequencies(m *leylinev1.DecoderManifest) string {
 	hz := m.GetRecipe().GetFrequenciesHz()
 	if len(hz) == 0 {
@@ -133,7 +133,7 @@ func decoderOutputs(m *leylinev1.DecoderManifest) string {
 	return strings.Join(out, ", ")
 }
 
-// formatBytes renders a store cap the way a person states one.
+// formatBytes renders a store cap in human-readable units.
 func formatBytes(n uint64) string {
 	switch {
 	case n == 0:

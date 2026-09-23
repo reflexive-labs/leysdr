@@ -53,8 +53,8 @@ func TestPlayedSourceSurvivesAThinDescriptor(t *testing.T) {
 }
 
 // The "from another terminal" line must keep offering something that works: a
-// file device refuses every gain write, so offering `ley set gain` there is an
-// invitation to an error.
+// file device refuses every gain write, so offering `ley set gain` there
+// would suggest a command that fails.
 func TestBannerSecondHintFollowsTheDevice(t *testing.T) {
 	radio := &session{capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Db: 30}}}}
 	if got := radio.bannerSecondHint(); got != "ley set gain 30" {

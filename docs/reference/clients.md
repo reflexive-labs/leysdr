@@ -3,7 +3,7 @@
 `ley` is one client of the daemon, not the only way in. Anything that speaks the `leyline.v1`
 contract over the daemon's Unix socket is a peer of the CLI: a script, an agent, a future app. This
 page is what a client author needs to know before the first RPC. The rules come from the design
-docs; this is the short form with the traps first.
+docs; this is the short form, with the common mistakes first.
 
 ## The contract
 
@@ -34,10 +34,10 @@ capture's anchor, never carried per frame ([data planes](../design/data-planes.m
 - **Events carry the whole object, never a delta.** Reconnect is `GetState` plus resume from the
   event `seq`. There is no client-side authoritative state: your own writes are confirmed by events
   like everyone else's ([control plane](../design/control-plane.md)).
-- **Streams drop, and say so.** Delivery is `LATEST_WINS` or `GAP_MARKED`, nothing else; there is
-  no lossless network stream. A gap-marked subscription (FFT rows, IQ) gets a gap record naming
-  the missing sample range before the next frame; latest-wins (audio, meters) exposes gaps through
-  sequence numbers. Anything that must not drop samples belongs in a daemon-side sink.
+- **Streams drop data and mark where.** Delivery is `LATEST_WINS` or `GAP_MARKED`, nothing else;
+  there is no lossless network stream. A gap-marked subscription (FFT rows, IQ) gets a gap record
+  naming the missing sample range before the next frame; latest-wins (audio, meters) exposes gaps
+  through sequence numbers. Anything that must not drop samples belongs in a daemon-side sink.
 - **Errors carry a stable code.** `ErrorDetail.code` is the machine-readable part; the message is
   prose for a person. The daemon serialises the `ErrorDetail` into the trailing metadata key
   `leyline-error-bin`, and the gRPC status it is served with follows one table, "Error codes" in
@@ -56,17 +56,17 @@ generated stubs in `go/gen`.
 ## Testing a client
 
 `go/internal/fakedaemon` is an in-memory implementation of the contract that the `ley` tests run
-against; it tells the daemon's story (busy radios, sweeps, gap marks) without hardware. `make e2e`
-drives a real, locally built `leylined` over a socket, and runs on Linux as well as macOS, so a
-client can be proven against the daemon without a radio: `FilePlaybackDevice` plays IQ fixtures
-through the whole pipeline ([IQ files and fixtures](iq-files.md)).
+against; it reproduces the daemon's behaviour (busy radios, sweeps, gap marks) without hardware.
+`make e2e` drives a real, locally built `leylined` over a socket, and runs on Linux as well as
+macOS, so a client can be tested against the daemon without a radio: `FilePlaybackDevice` plays IQ
+fixtures through the whole pipeline ([IQ files and fixtures](iq-files.md)).
 
 ## `ley --json` as a worked example
 
 Every `ley` verb's `--json` is the proto3 JSON mapping of the messages above (lowerCamelCase keys,
 64-bit integers as strings, one object per line for streams), so watching `ley state --json`,
 `ley tune --json` and `ley set --json` is a quick way to see the contract's shapes with real
-values. The [`ley` reference](cli.md) names the documented exceptions (bulk rows, `ley version`,
+values. The [`ley` reference](cli.md) lists the documented exceptions (bulk rows, `ley version`,
 the client-local tables).
 
 ## Not yet

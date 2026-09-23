@@ -195,7 +195,7 @@ func (d *Daemon) renderLocked(s *stream, c *capture, now time.Time) []byte {
 
 // renderFFTLocked encodes one spectrum row in the negotiated bin format, built the way the
 // subscription asked for: one periodogram under ROW_SNAPSHOT, and otherwise the looks the
-// descriptor promised, spread across the row's interval.
+// descriptor stated, spread across the row's interval.
 func (d *Daemon) renderFFTLocked(c *capture, p *leylinev1.FftParams, now time.Time) []byte {
 	return encodeFFTRow(d.accumulateRowLocked(c, int(p.Bins), now, p), p.BinFormat)
 }
@@ -288,8 +288,8 @@ func (d *Daemon) spectrumRowLocked(c *capture, bins int, now time.Time) []float3
 // tap carries what the detector would hand over before the audio chain cleans it up:
 // the same voice, the sub-audible tone the channel's carrier is sending (the one
 // SUB_AUDIBLE telemetry reports) riding under it, and a DC offset standing in for a
-// tuning error. A client can tell the two taps apart by looking, which is the point
-// of the view they feed.
+// tuning error. The two taps look different, which is what the view they feed
+// exists to show.
 func (d *Daemon) renderAudioLocked(s *stream, p *leylinev1.AudioParams, now time.Time) []byte {
 	tone := 0.0
 	if p.Tap == leylinev1.AudioTap_TAP_DEMOD {
@@ -368,7 +368,7 @@ func (d *Daemon) renderAudioSpectrumLocked(s *stream, c *capture, p *leylinev1.F
 	return encodeFFTRow(audioSpectrumRow(int(p.GetBins()), float64(audioRate(c.GetSampleRate())), pl, now), p.GetBinFormat())
 }
 
-// audioSpectrumRow is a floor with the tones standing on it, over 0 Hz to half the audio rate.
+// audioSpectrumRow is a noise floor with the tones added to it, over 0 Hz to half the audio rate.
 // Levels are the amplitudes the audio payload is built from read as dBFS, a full-scale sine
 // being 0.
 func audioSpectrumRow(bins int, rateHz, plHz float64, now time.Time) []float32 {
@@ -385,7 +385,7 @@ func audioSpectrumRow(bins int, rateHz, plHz float64, now time.Time) []float32 {
 	return row
 }
 
-// addSpectrumTone stands a tone on the row at its bin, spread over the neighbours the way a
+// addSpectrumTone adds a tone to the row at its bin, spread over the neighbours the way a
 // Hann window spreads one: a tone between bins reads up to 1.4 dB low and its neighbour 6 dB
 // down, which is the shape a reader summing bins into bands has to get right.
 func addSpectrumTone(row []float32, binHz, toneHz, db float64) {

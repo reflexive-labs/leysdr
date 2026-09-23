@@ -3,7 +3,7 @@
 // The window's regions (docs/design/app-design-handoff.md, "The window"): chrome above and
 // below a body of two panels, and a third on the right since M2, the inspector (docs/design/
 // app-design-handoff-m2.md, "The panel"). The sidebar, the inspector and the transport bar are
-// fixed; the waterfall takes what is left. The inspector closes, and the window is complete
+// fixed; the waterfall takes what is left. The inspector can be closed, and the window works
 // without it.
 
 import LeylineClient
@@ -40,7 +40,7 @@ struct MainWindow: View {
         .preferredColorScheme(.dark)
     }
 
-    /// Band rail, spectrum and waterfall, or the words for why there is nothing to draw.
+    /// Band rail, spectrum and waterfall, or the message explaining why there is nothing to draw.
     private var canvas: some View {
         VStack(spacing: 0) {
             BandRailView()
@@ -66,8 +66,8 @@ struct MainWindow: View {
     }
 }
 
-/// Where the window stands when there is nothing to draw, in the guide's words: the daemon, a
-/// radio, a capture, and the thing to type.
+/// The empty-state message, worded as in the guide, when there is nothing to draw: no daemon, no
+/// radio, no capture, and what to type.
 struct EmptyWords: View {
     let headline: String
     let detail: String
@@ -85,8 +85,8 @@ struct EmptyWords: View {
 }
 
 /// One line about the last thing that happened or the last thing that went wrong, over the
-/// bottom of the waterfall; a click dismisses it. What the band's numbers say is wrong and a
-/// channel the capture no longer covers were here in M1 and read in the inspector since M2
+/// bottom of the waterfall; a click dismisses it. The band's failure state and a channel the
+/// capture no longer covers were shown here in M1 and have been in the inspector since M2
 /// (`FailureStrip`), where the owner wanted them (docs/plans/app.md, "Carried out of M1").
 struct NoticeStrip: View {
     @Environment(AppSession.self) private var session

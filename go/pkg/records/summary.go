@@ -15,8 +15,8 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
 
-// Summary renders one record as the line `ley decode` and `ley track` print: what the
-// transmitter said, in the words the protocol said it in. The record's `kind` chooses the form;
+// Summary renders one record as the line `ley decode` and `ley track` print, using the
+// protocol's own terms. The record's `kind` chooses the form;
 // a kind nothing here knows falls back to the raw text, which is always kept.
 func Summary(rec *leylinev1.DecodeRecord) string {
 	switch rec.GetKind() {
@@ -37,7 +37,7 @@ func Summary(rec *leylinev1.DecodeRecord) string {
 	return firstNonEmpty(Text(rec, "text"), Text(rec, "comment"), rawText(rec))
 }
 
-// positionSummary is where it is, what symbol it flies, and whatever it had to say about it.
+// positionSummary prints the position, altitude, object name, symbol, course and speed, and comment.
 func positionSummary(rec *leylinev1.DecodeRecord) string {
 	parts := []string{}
 	if p := rec.GetPosition(); p != nil {
@@ -113,7 +113,7 @@ func weatherSummary(rec *leylinev1.DecodeRecord) string {
 	return strings.Join(parts, " ")
 }
 
-// messageSummary reads as the line it is: who it is for, then what it says.
+// messageSummary prints the addressee, then the message text and id.
 func messageSummary(rec *leylinev1.DecodeRecord) string {
 	to, text := Text(rec, "addressee"), Text(rec, "text")
 	if to == "" {

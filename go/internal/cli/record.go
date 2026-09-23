@@ -44,8 +44,7 @@ type recordOptions struct {
 
 // recordAudioDefault backs the hidden `--audio`, which asks for what record already does. It is a
 // package-level flag target rather than a field on the options because nothing downstream reads
-// it: saying "audio" changes nothing, and saying it alongside --iq is the only thing it can mean
-// wrongly.
+// it: --audio alone changes nothing, and the only misuse is combining it with --iq.
 var recordAudioDefault bool
 
 func newRecordCommand(app *App) *cobra.Command {
@@ -111,7 +110,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 			if err := o.resolveChannel(s); err != nil {
 				return err
 			}
-			// Everything record says while it runs is for a person; stdout carries the ids and
+			// Everything record prints while it runs goes to stderr; stdout carries the ids and
 			// the URI a script reads.
 			s.proseToStderr = true
 			return runRecord(cmd.Context(), s, o)
@@ -127,14 +126,14 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	cmd.Flags().BoolVar(&o.listen, "listen", false, "also play what is being recorded through the speakers, so you can hear it go in (not with --iq or --detach)")
 	// Audio is what record writes unless --iq says otherwise, so this asks for the default. It is
 	// accepted because the V0 story spells the pair `--iq` and `--audio`
-	// (docs/plans/user-stories.md) and somebody who read that should not meet "unknown flag".
+	// (docs/plans/user-stories.md) and a user following it should not get "unknown flag".
 	cmd.Flags().BoolVar(&recordAudioDefault, "audio", false, "record demodulated audio (the default; --iq records raw samples instead)")
 	_ = cmd.Flags().MarkHidden("audio")
 	cmd.Flags().BoolVar(&o.detach, "detach", false, "start the recording and exit, printing its job id and URI (for scripts; 'ley jobs cancel' stops it)")
 	cmd.Flags().StringVar(&mode, "mode", "", "how to decode: nfm, wfm, am, usb, lsb, cw (default: by band; ley help modes)")
 	cmd.Flags().StringVar(&bw, "bw", "", "how wide a slice of spectrum to record: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)")
 	// `--bw` is what every other verb calls it and what the help shows; `--bandwidth` is the
-	// spelling docs/design/recording.md uses, kept working and hidden so there is one to read.
+	// spelling docs/design/recording.md uses, kept working but hidden so help shows one spelling.
 	cmd.Flags().StringVar(&bw, "bandwidth", "", "another spelling of --bw")
 	_ = cmd.Flags().MarkHidden("bandwidth")
 	cmd.Flags().StringVar(&squelch, "squelch", "", "mute below this level: auto (default with --gate), off, or a level like -40 (dBFS)")
@@ -145,8 +144,9 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 }
 
 // recordPositional takes the one positional and explains the rest. `ley record 88.5 for 10s` is the
-// slip a shell habit produces, and Cobra's "accepts at most 1 arg(s), received 3" says nothing
-// about what to type instead; a word that is a flag without its dashes is named as one.
+// slip a shell habit produces, and Cobra's "accepts at most 1 arg(s), received 3" does not say
+// what to type instead. A word that matches a flag name without its dashes is reported as that
+// flag.
 func recordPositional(cmd *cobra.Command, args []string) error {
 	if len(args) <= 1 {
 		return nil
@@ -355,9 +355,9 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 	}
 	uri := recordURI(job)
 	// The speakers are this terminal's, attached to the channel the daemon is recording, so what
-	// you hear is what is going into the file rather than a second demodulator's idea of it.
+	// you hear is what is going into the file rather than a second demodulator's output.
 	// Attached before the banner is printed, so the banner reports what happened rather than what
-	// was asked for -- a host with no audio says so, and the line is simply not there.
+	// was asked for: a host with no audio prints a warning and the banner omits the line.
 	playing := false
 	if o.listen {
 		if sink := s.attachRecordAudio(ctx, job, o); sink != "" {
@@ -419,8 +419,8 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 }
 
 // attachRecordAudio puts this terminal's speakers on the channel the recording is writing from,
-// and returns the sink id to take off again. A host with no audio is a warning, not a failure:
-// the recording is the point and it is already running.
+// and returns the sink id to detach afterwards. A host with no audio is a warning, not a failure:
+// the recording is already running and does not depend on the speakers.
 func (s *session) attachRecordAudio(ctx context.Context, job *leylinev1.Job, o recordOptions) string {
 	ch := s.recordChannel(ctx, job, o)
 	if ch == "" {
@@ -494,8 +494,8 @@ func awaitManifest(ctx context.Context, s *session, jobID string) (*leyline.Reco
 	}
 }
 
-// recordManifestWait bounds that: allocating a radio takes a few hundred milliseconds, and a
-// banner nobody can read yet is worse than one stating the request.
+// recordManifestWait bounds that: allocating a radio takes a few hundred milliseconds, and
+// printing the request after this long is better than holding the banner back.
 const recordManifestWait = 2 * time.Second
 
 // recordClosing is the line a finished recording ends with, and what to type next: raw samples
@@ -594,7 +594,7 @@ func recordURI(job *leylinev1.Job) string {
 }
 
 // recordBanner is the first block of a run: what is being recorded, in what, what opens and
-// closes the files, and when it stops. One fact per line led by the word the eye looks for, as
+// closes the files, and when it stops. One fact per line, each led by a label word, as
 // `ley tune`'s banner is. `m` is the manifest the daemon wrote, or nil when it is not there yet.
 func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir string, playing bool) string {
 	st := s.app.ErrStyle
@@ -708,7 +708,7 @@ func recordFailure(s *session, o recordOptions, err error) error {
 	return err
 }
 
-// recordFailureDetail is what a FAILED job says, with its stable code kept.
+// recordFailureDetail is a FAILED job's status detail, with its stable code kept.
 func recordFailureDetail(job *leylinev1.Job) string {
 	detail := job.GetStatusDetail()
 	if code := job.GetError().GetCode(); code != "" {

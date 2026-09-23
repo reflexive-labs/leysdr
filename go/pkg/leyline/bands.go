@@ -20,7 +20,7 @@ type Band struct {
 	// Aliases are what a person types for this band. They exist because the
 	// full names have spaces ("2 m amateur") and are unusable as arguments.
 	//
-	// They are deliberately NOT accepted where a frequency is: `2m`, `20m` and
+	// They are not accepted where a frequency is: `2m`, `20m` and
 	// `160m` already parse as 2, 20 and 160 MHz, so a band name in that
 	// position would silently redefine seven of these fourteen entries. They
 	// are reached through `--band`, which cannot be mistaken for a frequency.
@@ -57,10 +57,9 @@ func (b Band) WidthHz() uint64 { return b.MaxHz - b.MinHz }
 func (b Band) CenterHz() uint64 { return b.MinHz + b.WidthHz()/2 }
 
 // FineStepHz is the fine tuning step: a tenth of the band's channel step, and
-// never below 100 Hz. A tenth is small enough to walk across a channel and
-// large enough that a held key crosses one; below 100 Hz the dial moves by
-// less than a voice channel's drift and the digits change without the sound
-// doing so.
+// never below 100 Hz. A tenth takes ten presses to cross a channel, and a held
+// key still crosses one quickly; below 100 Hz a step is smaller than a voice
+// channel's drift, so the readout changes with no audible difference.
 func (b Band) FineStepHz() uint32 {
 	if b.StepHz/10 < 100 {
 		return 100
@@ -113,8 +112,8 @@ var bands = []Band{
 
 // bandGroups are the services that live in more than one place. `gmrs` is the whole GMRS/FRS
 // service, both halves and the 4.8 MHz between them: what a sweep should cover when somebody
-// asks for "GMRS", and too wide for one capture on an RTL-SDR, so a picture or a watch is told
-// to take a half.
+// asks for "GMRS", and too wide for one capture on an RTL-SDR, so a picture or a watch is
+// refused with a hint to use one half.
 var bandGroups = []Band{
 	{
 		"GMRS",
@@ -158,7 +157,7 @@ func bandKey(s string) string {
 }
 
 // ResolveBand looks a band up by alias or full name, case-insensitively. The
-// error lists the aliases, because a band name is not something anyone guesses.
+// error lists the aliases, because users cannot be expected to guess band names.
 //
 // This is reached only through an explicit `--band`, never where a frequency is
 // accepted: `2m`, `20m` and `160m` already parse as 2, 20 and 160 MHz.

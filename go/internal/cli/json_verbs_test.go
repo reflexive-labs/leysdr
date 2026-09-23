@@ -20,9 +20,9 @@ import (
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
-// jsonVerbCase is one command and what --json owes a script that types it:
-// either machine output on stdout, or a usage error saying so. There is no
-// third answer, and this table is where that is written down.
+// jsonVerbCase is one command and what --json must give a script that types
+// it: either machine output on stdout, or a usage error saying so. Nothing
+// else is allowed.
 type jsonVerbCase struct {
 	// path is the command path under `ley`, as the tree spells it.
 	path string
@@ -278,8 +278,8 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 	}
 }
 
-// The table above is only a rule if it covers the tree, so the tree is walked
-// and every command that runs has to be in it, the root included. The help
+// The table above must cover the whole tree, so the tree is walked and every
+// command that runs has to be in it, the root included. The help
 // topics are left out: they are `ley help <topic>` under another name, print
 // prose whatever the flags, and never reach the daemon.
 func TestJSONVerbTableCoversTheTree(t *testing.T) {

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The store is files (docs/design/decoders.md, "Decisions"): a round trip through the writer and
-// every filter a query can ask for, including the wall-clock bounds the sidecar's anchors answer.
+// every filter a query can ask for, including wall-clock bounds resolved through the sidecar's
+// anchors.
 
 import EngineCore
 import Foundation
@@ -66,7 +67,7 @@ final class RecordStoreTests: XCTestCase {
                                 fromSample: 6_000_000)
         records = [
             record(seq: 4, sample: 6_000_000, device: "B", kind: "position", lat: 51.5072, lon: -0.1276),
-            // Validity is the transmitter's claim on the wall clock and does not go through an
+            // Validity is a wall-clock window the transmitter states and does not go through an
             // anchor, so an "in effect now" record is stated against now.
             record(seq: 5, sample: 8_000_000, device: "A", kind: "alert",
                    validity: (realtimeNs() - 3_600_000_000_000, realtimeNs() + 3_600_000_000_000)),

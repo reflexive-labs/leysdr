@@ -30,7 +30,7 @@ func TestParseUserRange(t *testing.T) {
 	}
 }
 
-// The errors are the value: each one says what to type instead.
+// Each error message suggests what to type instead.
 func TestParseUserRangeErrorsTeach(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"144M", "not a range"},

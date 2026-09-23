@@ -93,8 +93,8 @@ func (s Style) Rule(width int) string {
 	return strings.Repeat(string(s.Glyphs().Rule), width)
 }
 
-// RuleHeavy is Rule drawn with weight: the separator for a break a blank
-// line and a light rule cannot carry, such as the top of a framed chart.
+// RuleHeavy is Rule drawn with weight: the separator for a stronger break than
+// a blank line or a light rule, such as the top of a framed chart.
 func (s Style) RuleHeavy(width int) string {
 	if width <= 0 {
 		return ""

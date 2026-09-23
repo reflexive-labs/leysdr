@@ -44,7 +44,7 @@ final class AppLog: @unchecked Sendable {
         try? handle?.seekToEnd()
     }
 
-    /// `area` is the part of the window that speaks (`session`, `tune`, `feed`, `waterfall`);
+    /// `area` is the part of the window that logs (`session`, `tune`, `feed`, `waterfall`);
     /// the message is one sentence with the numbers in it.
     func log(_ area: String, _ message: String) {
         // Both writes happen under the lock: stderr outside it let two lines interleave.

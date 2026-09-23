@@ -337,7 +337,7 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	return a.awaitDaemon(ctx, f, &child{cmd: cmd, exited: reap(cmd)}, "started leylined")
 }
 
-// startFailure words a failure to launch the daemon binary in the house
+// startFailure formats a failure to launch the daemon binary in the standard
 // shape -- one sentence, then what to do next -- instead of leaking
 // os/exec's "fork/exec <path>: ..." with the path repeated. The three ways
 // to point ley at a binary are the remedy `ley daemon --help` documents.
@@ -457,7 +457,8 @@ func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 		pid := a.ownedPid(ctx, last)
 		if pid == 0 {
 			// No (valid) pidfile: a daemon answering on the socket is still
-			// ours to stop, by the pid it reports. Only silence means not running.
+			// ours to stop, by the pid it reports. Only no answer means not
+			// running.
 			pid = int(last.GetPid())
 		}
 		if pid == 0 {
@@ -507,7 +508,7 @@ func (a *App) printDaemonInfo(ctx context.Context) error {
 
 // ownedPid returns the pidfile's pid when that process is our daemon, 0 when
 // there is none. A pidfile a crashed daemon left behind can name a pid the
-// system has since reused, so the pid must be vouched for: when the socket
+// system has since reused, so the pid must be verified: when the socket
 // answers (info non-nil) the daemon's own DaemonInfo.pid must match; otherwise
 // the process's command name must be leylined. A mismatch removes the stale
 // pidfile so nothing else is ever signalled through it.
@@ -536,7 +537,7 @@ func isDaemonComm(out string) bool {
 // stopTimeout bounds the wait for a signalled daemon to go away.
 const stopTimeout = 5 * time.Second
 
-// stopPid SIGTERMs a pidfile instance (vouched for by ownedPid), waits for it
+// stopPid SIGTERMs a pidfile instance (verified by ownedPid), waits for it
 // to exit, and removes the pidfile.
 func (a *App) stopPid(ctx context.Context, pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
@@ -585,11 +586,10 @@ func isZombie(ctx context.Context, pid int) bool {
 	return st != "" && st[0] == 'Z'
 }
 
-// daemonStatusLine answers the question the verb was asked -- is it up? --
-// with its first word, then the build, the pid, the uptime and the socket.
-// The state is a word before it is a colour, so a pipe or NO_COLOR loses
-// nothing; the socket path is Muted because it is the field a reader checks
-// least and the one that costs the most room.
+// daemonStatusLine prints whether the daemon is running as its first word,
+// then the build, the pid, the uptime and the socket. The state is a word as
+// well as a colour, so a pipe or NO_COLOR loses nothing; the socket path is
+// Muted because it is the field a reader checks least and the widest.
 func daemonStatusLine(st ui.Style, d *leylinev1.DaemonInfo) string {
 	if d == nil {
 		return st.Ok("running") + "  (no info)"

@@ -770,8 +770,8 @@ func (x *FieldHint) GetDescription() string {
 	return ""
 }
 
-// One thing a transmitter said. Promoted fields are present or empty, never invented; everything
-// protocol-specific is in `fields`. Records are immutable: a correction is a new record.
+// One decoded message from a transmitter. Promoted fields are present or empty, never invented;
+// everything protocol-specific is in `fields`. Records are immutable: a correction is a new record.
 type DecodeRecord struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	RecordId string                 `protobuf:"bytes,1,opt,name=record_id,json=recordId,proto3" json:"record_id,omitempty"` // rec_<ulid>, assigned by the daemon
@@ -799,7 +799,7 @@ type DecodeRecord struct {
 	JobId     string `protobuf:"bytes,11,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Seq       uint64 `protobuf:"varint,12,opt,name=seq,proto3" json:"seq,omitempty"`
 	ChannelId string `protobuf:"bytes,13,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	// The protocol's own record type, when it has more than one: APRS says "position", "weather",
+	// The protocol's own record type, when it has more than one: APRS uses "position", "weather",
 	// "telemetry", "message", "status", "object". Empty for a protocol with one kind of record.
 	Kind          string `protobuf:"bytes,14,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1195,8 +1195,8 @@ type DecodeConfig struct {
 	// a trigger fires with no client connected. Stateless: every clause is judged on one record.
 	Predicate *Predicate `protobuf:"bytes,6,opt,name=predicate,proto3" json:"predicate,omitempty"`
 	// Where a record that passes the predicate goes when it fires: a notification, a webhook, a shell
-	// hook. A triggered alert is a channel output going somewhere, and "somewhere" is now a notifier
-	// (docs/design/decoders.md); it is not a parallel delivery path, it rides the same records.
+	// hook. A notifier is a channel output like any other (docs/design/decoders.md), not a parallel
+	// delivery path: it receives the same records.
 	Notify        *NotifyTarget `protobuf:"bytes,7,opt,name=notify,proto3" json:"notify,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1528,7 +1528,7 @@ func (x *GeoTest) GetRadiusM() float64 {
 }
 
 // Where a matching record goes. External delivery happens in the daemon, so a webhook or a shell
-// hook is the daemon reaching out, never a client relaying; a client that wants records subscribes.
+// hook is called by the daemon, never relayed by a client; a client that wants records subscribes.
 type NotifyTarget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Target:
@@ -1870,7 +1870,7 @@ type RecordQuery struct {
 	InEffect bool `protobuf:"varint,9,opt,name=in_effect,json=inEffect,proto3" json:"in_effect,omitempty"`
 	// Exact-value field filters, all of which must match.
 	Fields        []*FieldMatch `protobuf:"bytes,10,rep,name=fields,proto3" json:"fields,omitempty"`
-	Limit         uint32        `protobuf:"varint,11,opt,name=limit,proto3" json:"limit,omitempty"` // 0 = the daemon's default (1000); the page says if it was cut
+	Limit         uint32        `protobuf:"varint,11,opt,name=limit,proto3" json:"limit,omitempty"` // 0 = the daemon's default (1000); the page shows if it was cut
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -292,7 +292,7 @@ func TestRecordAudioPlaysWhatIsBeingRecorded(t *testing.T) {
 	}
 	// This container has no CoreAudio, so the daemon refuses the sink and the run says so
 	// instead of claiming to play; on a Mac the banner carries the Audio line. Either way the
-	// recording is the point and it ran.
+	// recording runs.
 	if !strings.Contains(errOut, "Audio") && !strings.Contains(errOut, "system audio is not available") {
 		t.Errorf("neither playing nor saying why not:\n%s", errOut)
 	}
@@ -313,9 +313,9 @@ func TestRecordAudioPlaysWhatIsBeingRecorded(t *testing.T) {
 	}
 }
 
-// The V0 story spells the pair `ley record --iq` and `--audio`
-// (docs/plans/user-stories.md), so `--audio` has to name what record already writes rather than
-// meeting somebody with "unknown flag". Asking for both is the one way to mean it wrongly.
+// The V0 user story spells the pair `ley record --iq` and `--audio`
+// (docs/plans/user-stories.md), so `--audio` is accepted as the default record already writes
+// rather than failing with "unknown flag". Passing both is a usage error.
 func TestRecordAudioIsTheDefaultSpelledOut(t *testing.T) {
 	sock, dir := recordHarness(t)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--audio", "--for", "300ms"))

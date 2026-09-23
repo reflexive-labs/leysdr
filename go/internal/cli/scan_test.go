@@ -466,8 +466,8 @@ func waitForSweep(t *testing.T, c *leyline.Client, cancel context.CancelFunc, do
 	}
 }
 
-// --gain says where the sweep pins the tuner, and the Scan says it ran there: a sweep at a known
-// gain is the only kind two of which compare. A gain that is not a gain is a usage error before
+// --gain says where the sweep pins the tuner, and the Scan says it ran there: only sweeps at a
+// known gain can be compared. A gain that is not a gain is a usage error before
 // anything is sent; an element the radio lacks fails the job with the daemon's code.
 func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
@@ -500,9 +500,8 @@ func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 	}
 }
 
-// A scan is a measurement, and a measurement is only comparable with another taken the same way.
-// The sweep pins the tuner for its duration and says where, so two scans of a band can be read
-// against each other.
+// Two scans are comparable only if taken at the same gain. The sweep pins the tuner for its
+// duration and reports where, so two scans of a band can be read against each other.
 func TestScanSaysWhatGainItRanAt(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M")
@@ -553,7 +552,7 @@ func TestScanSaysWhatGainItRanAt(t *testing.T) {
 	}
 }
 
-// A sweep does not look at the middle of its own span, because the radio's DC spike lives there,
+// A sweep does not look at the middle of its own span, because the radio's DC spike sits there,
 // and a request that fits entirely inside that hole is a range nothing can see. A file device has
 // one tuning point and so no neighbouring step to cover the hole, which is where this happens:
 // the daemon refuses with BLIND_SPOT rather than reporting an empty band as a quiet one.

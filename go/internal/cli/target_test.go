@@ -74,7 +74,7 @@ func TestResolveDialTargetErrorShapes(t *testing.T) {
 	}
 }
 
-// Bands are deliberately NOT reachable here: `2m` already means 2 MHz, and a
+// Bands are not reachable here: `2m` already means 2 MHz, and a
 // band name in this position would silently redefine it.
 func TestResolveDialTargetDoesNotAcceptBands(t *testing.T) {
 	got, err := resolveDialTarget("2m", "spectrum", "usage", "101.1 (MHz)")

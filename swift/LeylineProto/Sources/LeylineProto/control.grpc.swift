@@ -412,8 +412,8 @@ extension Leyline_V1_Control {
         /// > Source IDL Documentation:
         /// >
         /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-        /// > client on this one needs no player of its own (docs/design/recording.md).
+        /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+        /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
         ///
         /// - Parameters:
         ///   - request: A streaming request of `Leyline_V1_StartPlaybackRequest` messages.
@@ -660,8 +660,8 @@ extension Leyline_V1_Control {
         /// > Source IDL Documentation:
         /// >
         /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-        /// > client on this one needs no player of its own (docs/design/recording.md).
+        /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+        /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
@@ -907,8 +907,8 @@ extension Leyline_V1_Control {
         /// > Source IDL Documentation:
         /// >
         /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-        /// > client on this one needs no player of its own (docs/design/recording.md).
+        /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+        /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
         ///
         /// - Parameters:
         ///   - request: A `Leyline_V1_StartPlaybackRequest` message.
@@ -1781,8 +1781,8 @@ extension Leyline_V1_Control {
         /// > Source IDL Documentation:
         /// >
         /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-        /// > client on this one needs no player of its own (docs/design/recording.md).
+        /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+        /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
@@ -2214,8 +2214,8 @@ extension Leyline_V1_Control {
         /// > Source IDL Documentation:
         /// >
         /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-        /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-        /// > client on this one needs no player of its own (docs/design/recording.md).
+        /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+        /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
@@ -2667,8 +2667,8 @@ extension Leyline_V1_Control.ClientProtocol {
     /// > Source IDL Documentation:
     /// >
     /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-    /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-    /// > client on this one needs no player of its own (docs/design/recording.md).
+    /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+    /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Leyline_V1_StartPlaybackRequest` message.
@@ -3120,8 +3120,8 @@ extension Leyline_V1_Control.ClientProtocol {
     /// > Source IDL Documentation:
     /// >
     /// > Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-    /// > does for a channel's audio, so a client on another machine hears it where the radio is and a
-    /// > client on this one needs no player of its own (docs/design/recording.md).
+    /// > does for a channel's audio, so a recording plays where the radio is, even for a client on
+    /// > another machine, and a local client needs no player of its own (docs/design/recording.md).
     ///
     /// - Parameters:
     ///   - message: request message to send.

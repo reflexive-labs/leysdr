@@ -11,15 +11,15 @@ waveform answers:
 
 1. **What does the mode actually do?** The level meter and the spectrum are the same in every
    mode, because both are measured before demodulation. The difference is in the waveform: an FM
-   voice through the AM detector is a near-flat line with ripple, a carrier in CW is a sine, NFM
-   voice is a voice.
+   voice through the AM detector is a near-flat line with ripple, a carrier in CW is a sine, and
+   NFM voice looks like voice.
 2. **What is under the voice on a 2 m channel?** A CTCSS (PL) tone at 67–254 Hz is transmitted
    with almost every repeater exchange. It never reaches the speaker: the NFM chain high-passes at
    300 Hz before de-emphasis specifically to remove it, and the sub-audible detector reads a tap
    taken *before* that filter. A waveform of what you hear cannot show it. A waveform of the
    discriminator can.
 
-So the view needs two taps, and the second is the one that makes it worth building.
+So the view needs two taps; the second is the main reason to build it.
 
 ## Two taps
 
@@ -31,7 +31,7 @@ So the view needs two taps, and the second is the one that makes it worth buildi
   as DC. For USB/LSB and CW it is the product detector before AGC. For WFM it is the discriminator
   before the 15 kHz audio low-pass, so the 19 kHz stereo pilot is visible at 48 kHz. When the
   squelch is closed the `audio` tap is zeros, as it is for the speaker; the `demod` tap keeps
-  flowing, because "what is the transmitter sending between words" is exactly what it is for.
+  flowing, because it exists to show what the transmitter sends between words.
 
 Both taps are the existing `AUDIO` bulk stream at the channel's audio rate (48 kHz at 2.4 MSPS),
 `S16` or `F32`, `LATEST_WINS`. The wire change is one additive field:
@@ -57,19 +57,19 @@ already uses to drive `SUB_AUDIBLE` telemetry, so the CLI view is testable.
 - One window of samples per frame, drawn as a trace across the terminal width; the vertical axis is
   a fraction of full scale, which on the `demod` tap of an FM mode is the deviation the daemon
   answers in the audio descriptor (±2.5 kHz on a 12.5 kHz NFM channel, ±75 kHz on WFM) and which the
-  header names. Braille cells (2 × 4 dots) on terminals that have them; the `--ascii` set draws with
+  header shows. Braille cells (2 × 4 dots) on terminals that have them; the `--ascii` set draws with
   three levels per cell. Up to 20 frames a second; `--count` bounds it for scripts.
 - `--window` defaults to 40 ms: a syllable of voice, two cycles of 50 Hz, four of a 100 Hz tone.
 - `--trigger auto` (default) starts each frame at a rising zero crossing when the window is
   periodic enough to hold still (a tone, a PL tone between words), else free-runs; `free` never
   triggers. This is presentation, the same as a bench scope's trigger.
-- The header names the channel, mode, tap and window, and the frame's peak and RMS in dBFS. On the
+- The header shows the channel, mode, tap and window, and the frame's peak and RMS in dBFS. On the
   `demod` tap it adds the deviation full scale stands for and the DC offset as a tuning error in
   hertz for FM modes. When the daemon's sub-audible detector has a tone it prints `PL 100.0 Hz
   (measured 100.02 Hz, 18 dB, confidence 0.9)` from the `SUB_AUDIBLE` telemetry. **The number always
   comes from the daemon; the view never estimates the tone itself** (invariant 2 and the
-  detector-stays-honest rule). The picture is the evidence, the header is the daemon's claim, and
-  they can disagree, which is the point.
+  detector-stays-honest rule). The trace shows the raw signal and the header shows the daemon's
+  measurement; they can disagree, and the trace lets you check the measurement.
 - `--json` prints one object per frame, `{seq, sample_index, sample_rate, tap, window_ms,
   peak_dbfs, rms_dbfs, dc, tone_hz}`, with no samples: the samples are `ley listen --format json`.
   `peak`, `rms` and `dc` are frame statistics, presentation over the daemon's stream, like
@@ -80,8 +80,8 @@ already uses to drive `SUB_AUDIBLE` telemetry, so the CLI view is testable.
 - Tune a repeater (NFM), then `ley set mode am` from another terminal: the voice trace collapses to
   a ripple; `ley set mode cw`: a 700 Hz sine while the carrier is up; back to `nfm`: voice.
 - `ley scope --tap demod` on the same channel: the voice rides on a slow undulation, four cycles
-  across the screen at 100 Hz, and the header names it. Between words the undulation is all there
-  is. The trace sits above or below centre by the tuning error.
+  across the screen at 100 Hz, and the header shows the tone. Between words only the undulation
+  remains. The trace sits above or below centre by the tuning error.
 - A broadcast station in WFM on the `demod` tap: the 19 kHz pilot as fine hash on the trace.
 
 ## Later, not now

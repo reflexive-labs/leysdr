@@ -88,8 +88,8 @@ func (c *Client) QueryRecords(ctx context.Context, q *leylinev1.RecordQuery) (*l
 
 // RecordWallTime turns a record's sample time into wall clock through the page's anchors: the
 // newest anchor on the record's capture whose from_sample is not past the record's sample index.
-// It reports false when no anchor covers the record, because a derived time nobody anchored
-// would be a clock this daemon never kept (CLAUDE.md invariant 5).
+// It reports false when no anchor covers the record, because a time without an anchor would not
+// come from any clock the daemon recorded (CLAUDE.md invariant 5).
 func RecordWallTime(rec *leylinev1.DecodeRecord, anchors []*leylinev1.RecordAnchor) (time.Time, bool) {
 	t := rec.GetTime()
 	if t == nil || t.GetCaptureId() == "" {

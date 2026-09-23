@@ -40,7 +40,7 @@ func mustLabels(t *testing.T, sock, labelsPath string, args ...string) string {
 	return out
 }
 
-// TestLabelRoundTrips: a name set is a name read back, --json prints the record, and a clear
+// TestLabelRoundTrips: a name that is set reads back, --json prints the record, and a clear
 // removes it -- all against a temp store, because labels are user data in the client (docs/design/
 // decoders.md, "The state boundary").
 func TestLabelRoundTrips(t *testing.T) {

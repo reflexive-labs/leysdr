@@ -107,23 +107,23 @@ check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is t
   `fixtures/*.cf32` is missing, and a bare `go test ./...` silently skips the `go/internal/e2e`
   package when `LEYLINED_BIN`/`LEY_BIN` are unset — both report the skip only under `-v`. `make
   swift-test` (depends on `fixtures`) and `make e2e` (builds both binaries and sets the env) are the
-  gate; a green bare `test` run proves nothing about either suite.
+  gate; a green bare `test` run does not exercise either suite.
 
 ### What a Linux build cannot check
 
 The container has no Accelerate, so **everything under `#if canImport(Accelerate)` is never
 compiled there**: `AccelerateKernels` in `DSP/Kernels.swift`, the vDSP half of `DSP/FFT.swift`, and
-`KernelParityTests` itself. A green Linux build says nothing about any of it.
+`KernelParityTests` itself. A green Linux build does not check any of it.
 
 This has already cost one broken macOS build: a `dbToPower` kernel used `vvexp10f`, which does not
 exist — it was assumed by analogy with `vvlog10f`, which does. So:
 
 - **Adding a kernel means adding it to `KernelParityTests`.** That test is the only thing that
-  compiles the Accelerate path, and behaviour parity is the second half of what it buys.
+  compiles the Accelerate path, and it also checks behaviour parity.
 - **Prefer an Accelerate symbol already used in the tree** (`grep -o 'vDSP_[a-zA-Z_]*'`). vForce is
   the risky family: only `vvatan2f` and `vvsincosf` are proven here.
 - **A scalar loop is a legitimate answer** when a kernel is off the hot path. `dbToPower` delegates
-  to `PortableKernels` on both platforms and says why in a comment.
+  to `PortableKernels` on both platforms, with a comment explaining why.
 - Two more things a Linux build gets wrong: the Glibc overlay has `Float` overloads of the math
   functions and Darwin's does not (use the `f`-suffixed forms — `powf`, `log10f`, `sinf`), and the
   package builds `swiftLanguageModes: [.v5]`, so an actor-isolation mistake is a warning here and
@@ -141,7 +141,7 @@ exist — it was assumed by analogy with `vvlog10f`, which does. So:
   the vDSP ones the gate is about. The allocations criterion passed as well, at 0.0165 per block:
   `scripts/hot-path-allocations.sh` is the half-minute terminal check (it differences allocation
   counts across two run lengths, so only per-block allocation shows) and is worth running after any
-  change to a kernel or the capture path. Instruments' Allocations track is the authority for
-  *where*, and cannot attach to a SwiftPM binary until it is re-signed with `get-task-allow`; the
+  change to a kernel or the capture path. Instruments' Allocations track shows where an allocation
+  happens, and cannot attach to a SwiftPM binary until it is re-signed with `get-task-allow`; the
   decision note has the command.
 - **S3 USB posture** — decided: `docs/decisions/S3-usb-posture.md` (one host-side check outstanding).

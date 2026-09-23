@@ -75,7 +75,7 @@ final class RTLTCPDeviceTests: XCTestCase {
         let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port, sampleRate: 1_024_000)
         try await dev.open()
         let g = try XCTUnwrap(dev.descriptor.gainElement(named: "TUNER"))
-        // librtlsdr answers { 0 } for a tuner it cannot name; the header count (7) only earns a warning.
+        // librtlsdr answers { 0 } for a tuner it cannot identify; the header count (7) only produces a warning.
         XCTAssertEqual(g.validDB, [0])
         XCTAssertEqual(g.minDB, 0); XCTAssertEqual(g.maxDB, 0)
         XCTAssertEqual(dev.descriptor.model, "rtl_tcp 127.0.0.1:\(server.port) (unknown)")
@@ -397,8 +397,9 @@ final class RTLTCPDeviceTests: XCTestCase {
     }
 
     /// An endpoint hosted before anybody reached it has no tuner to name, so its model reads
-    /// `(unknown)`; the same endpoint once the socket opens names the real tuner. Both are the one
-    /// radio at the one address, and the registry has to say so or the operator ends up with two.
+    /// `(unknown)`; the same endpoint once the socket opens reports the real tuner. Both are the
+    /// same radio at the same address, and the registry must treat them as one or the operator
+    /// sees two.
     func testRegistryHostsOneDevicePerEndpointAcrossFirstOpen() async throws {
         let server = try FakeRTLTCPServer()
         defer { server.stop() }

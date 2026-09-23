@@ -209,10 +209,11 @@ final class ChannelRateRetuneDaemonTests: XCTestCase {
         }
     }
 
-    /// The descriptor is true for the life of the stream, not just its rate. A squelch write moves
-    /// nothing a client holds, so `ley listen` and `ley scope` stay open through it; a bandwidth
-    /// write rescales the NFM detector without moving the audio rate, and every stream that
-    /// answered the old `full_scale_deviation_hz` ends so a client reads hertz off the new one.
+    /// The descriptor stays valid for the life of the stream, not just its rate. A squelch write
+    /// changes nothing a client holds, so `ley listen` and `ley scope` stay open through it; a
+    /// bandwidth write rescales the NFM detector without moving the audio rate, and every stream
+    /// that reported the old `full_scale_deviation_hz` ends so a client reads hertz off the new
+    /// one.
     func testBandwidthWriteThatMovesFullScaleEndsAudioStreams() async throws {
         try await withDaemon { c in
             let device = RebindableDevice()
@@ -259,7 +260,7 @@ final class ChannelRateRetuneDaemonTests: XCTestCase {
             XCTAssertEqual(heardDesc.audio.fullScaleDeviationHz, 2_500, "a 12.5 kHz channel answers +/-2.5 kHz")
             XCTAssertEqual(scopeDesc.audio.fullScaleDeviationHz, 2_500)
 
-            // A squelch write leaves the descriptor true, so nothing ends.
+            // A squelch write leaves the descriptor valid, so nothing ends.
             try await self.write(c, tag: 1, target: channel.channelID) { $0.squelchDb = -40 }
             try await Task.sleep(nanoseconds: 200_000_000)
             XCTAssertFalse(heardEnded.value, "a squelch write does not end the audio stream")

@@ -198,7 +198,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
     }
 
-    /// Whether a capture centred at `centerHz` running at `rate` hears `frequencyHz` at all: the
+    /// Whether a capture centred at `centerHz` running at `rate` covers `frequencyHz` at all: the
     /// frequency inside [centre - rate/2, centre + rate/2]. An IQ decoder takes the whole span, so
     /// this is the reuse test rather than the channel-fit `SessionStore.fits`.
     private func spanCovers(centerHz: UInt64, rate: UInt64, frequencyHz: UInt64) -> Bool {
@@ -282,7 +282,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         var candidates: [(Leyline_V1_DeviceDescriptor, Leyline_V1_Capture?)] = []
         for d in state.devices where d.state != .disconnected {
             if let want = wanted, d.deviceID != want.string { continue }
-            // What a capture on this device can hear, not just where it can point: a capture
+            // What a capture on this device can cover, not just where it can point: a capture
             // centred at the edge of the tuning range still covers half a span either side of it,
             // which is how a file device -- whose range is the single point its recording was made
             // at -- can serve a sweep at all. The same fractions the plan uses.
@@ -366,8 +366,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return nil
     }
 
-    /// Names a client by what it is rather than by the label it chose: "ley is listening" reads as
-    /// nonsense to somebody who typed `ley`.
+    /// Describes a client by its kind rather than the label it chose: "ley is listening" makes no
+    /// sense to a user who typed `ley`.
     private func who(_ ci: Leyline_V1_ClientInfo) -> String {
         switch ci.kind {
         case "cli": return "a terminal"
@@ -455,7 +455,7 @@ actor SessionCaptureLease: CaptureLease {
     private var entryGains: [GainState] = []
     private var pinned: [GainState] = []
     /// Why a requested gain could not be applied, for the job to fail with. A sweep that ran at
-    /// some other gain than the one asked for would be a measurement under a different name.
+    /// some other gain than the one asked for would report a measurement nobody requested.
     private(set) var pinFailure: EngineError?
     private var released = false
     private let log = Logger(label: "leyline.jobs.lease")
@@ -493,7 +493,7 @@ actor SessionCaptureLease: CaptureLease {
     }
 
     /// Freezes the tuner's gain for the sweep. Under AGC the gain moves after every hop and SNR
-    /// measured against a moving reference is not a number. `requested` says where to pin: a
+    /// measured against a moving reference is meaningless. `requested` sets where to pin: a
     /// level, or auto for where the driver settles; nil pins the gain the radio is on.
     func pinGain(device: (any RadioDevice)?, requested: GainRequest? = nil) async {
         entryGains = await engine.snapshot.gains
@@ -511,8 +511,8 @@ actor SessionCaptureLease: CaptureLease {
         }
         for g in await engine.snapshot.gains where g.value == .auto {
             // Where AGC actually settled, so the sweep is exactly as sensitive as the radio was a
-            // moment ago. Only when the driver cannot say does this fall back to the middle of the
-            // element's range, which is a guess and is 20 dB from the truth on a quiet band.
+            // moment ago. Only when the driver cannot report it does this fall back to the middle
+            // of the element's range, an estimate that can be 20 dB off on a quiet band.
             let level = await device?.settledGainDB(element: g.element) ?? midpoint(element: g.element)
             do {
                 try await engine.setGain(element: g.element, value: .db(level))
@@ -523,7 +523,7 @@ actor SessionCaptureLease: CaptureLease {
         pinned = await engine.snapshot.gains
     }
 
-    /// Where to freeze when the driver will not say what auto settled on: the middle of the
+    /// Where to freeze when the driver does not report where auto settled: the middle of the
     /// element's range. Never the minimum, which deafens the radio.
     private func midpoint(element: String) -> Double {
         guard let d = gainElements.first(where: { $0.name == element }) else { return 0 }
@@ -586,8 +586,8 @@ actor SessionChannelLease: ChannelLease {
         released = true
         try? await store.destroyChannelChecked(id: channelID, by: owner)
         // Only when nothing else is listening on it. Another job may have put its own channel in
-        // the capture this one opened, and a radio taken out from under it would be worse than a
-        // capture that outlives its maker by a moment.
+        // the capture this one opened, and destroying the capture under that channel is worse than
+        // letting the capture briefly outlive the job that created it.
         guard await store.channelEngines(captureID: captureID).isEmpty else { return }
         if createdCapture {
             await store.destroyCapture(id: captureID, by: .daemon)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The façade against the real daemon. Each test is one of the app's promises:
+// The façade against the real daemon. Each test covers one behaviour the app relies on:
 //   - another client's change reaches the mirror (the CLI changes the tuning, the UI reflects it),
 //     and its tombstone leaves it;
 //   - a burst of coalesced writes lands as one confirmed value, and a refused one comes back as
@@ -107,7 +107,7 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertEqual(
             mirror.state.frequencyHz(of: mirror.state.channel(channel.channelID)!), 146_670_000)
 
-        // Out of the capture (2.4 MSPS spans ±1.2 MHz): refused, and the refusal names the tag.
+        // Out of the capture (2.4 MSPS spans ±1.2 MHz): refused, and the refusal carries the tag.
         let tag = await writes.offsetHz(5_000_000, channel: channel.channelID)
         await assertEventually("no WriteRejected for the bad offset") {
             mirror.state.rejections.contains { $0.tag == tag }
@@ -164,10 +164,10 @@ final class ClientDaemonTests: XCTestCase {
 
     /// The keyed fixture's transmissions (`fixtures/nfm_keyed.json`: keyed for 1.0 s, 0.5 s and
     /// 2.0 s with 3 s of floor between, looping) as the log folds them from the daemon's own
-    /// edges, at the -40 dBFS gate the sidecar names and `go/internal/e2e/record_test.go` records
-    /// with. The squelch has 2 dB of hysteresis and no hang, so a close edge's duration is the
-    /// key-down time to within a block; 0.25 s leaves room for the fixture's edges landing
-    /// inside one.
+    /// edges, at the -40 dBFS gate the sidecar specifies and `go/internal/e2e/record_test.go`
+    /// records with. The squelch has 2 dB of hysteresis and no hang, so a close edge's duration
+    /// is the key-down time to within a block; 0.25 s leaves room for the fixture's edges
+    /// landing inside one.
     @MainActor
     func testKeyedCarrierFoldsIntoTransmissionsWithAWallClock() async throws {
         // This test's radio is the keyed fixture, not the tone `setUp` starts on.

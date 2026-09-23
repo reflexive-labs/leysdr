@@ -22,8 +22,8 @@ const (
 // spectrumQuietRampCap is how much of the ramp a band with no detection may
 // use. A quiet band's loudest column is only a few dB over its median, so
 // keying the ramp to that span unmodified would paint noise texture red and
-// dress an empty band up as a busy one. Forcing every column to the single
-// coldest ink instead would be honest but unreadable: the chart would become
+// make an empty band look busy. Forcing every column to the single coldest
+// ink instead would be accurate but unreadable: the chart would become
 // one flat field of teal with no shape in it. Capping the ramp keeps both --
 // the texture is visible as teal through green, and nothing is ever warm.
 const spectrumQuietRampCap = 0.34
@@ -145,9 +145,9 @@ func (v *spectrumView) updateHold(colDb []float64) {
 	}
 }
 
-// note is what the status line should say about the scale, if anything: a
-// frozen scale that had to move is the one thing a watcher must be told, or
-// two frames are not comparable.
+// note is what the status line should show about the scale, if anything. A
+// frozen scale that had to move is always reported, because otherwise two
+// frames look comparable when they are not.
 func (v *spectrumView) note() string {
 	if !v.rescaled {
 		return ""
@@ -211,8 +211,8 @@ func (v *spectrumView) rescale(colDb []float64, floor float64) {
 	low := percentileDb(colDb, 10)
 	bottom := math.Floor(math.Min(v.noise-spectrumFloorPadDb, low)/5) * 5
 	// The scale spans at least spectrumMinSpanDb whatever the data does, which
-	// fixes the row at 5 dB or coarser. That is the whole trick: a receiver's
-	// noise floor spreads about 7 dB across the columns, so at 5 dB a row it
+	// fixes the row at 5 dB or coarser. A receiver's noise floor spreads
+	// about 7 dB across the columns, so at 5 dB a row it
 	// collapses into one or two and reads as a line, while at a finer step the
 	// same floor would smear over several rows and read as confetti. Holding
 	// the span also makes two bands comparable: a column of the same height

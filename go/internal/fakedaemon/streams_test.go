@@ -399,7 +399,7 @@ func TestStreamHasOneReaderAtATime(t *testing.T) {
 
 // A malformed gain level is refused before the element's table is searched: every comparison in
 // the snap is false for a NaN, so the write would otherwise be reported applied at the first entry
-// in the table -- 0 dB on this radio, which is deaf.
+// in the table -- 0 dB on this radio, the lowest gain.
 func TestGainWriteMustBeFinite(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
@@ -585,7 +585,7 @@ func sumCounts(h []uint16) int {
 
 // Accumulation is answered and applied. A snapshot row is one look; a mean or a max is built from
 // the looks the descriptor states, and a max reads higher than a snapshot of the same band --
-// which is the whole reason a burst-hunting view asks for one.
+// which is why a view hunting bursts asks for one.
 func TestFFTAccumulation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
@@ -750,8 +750,8 @@ func f32Payload(t *testing.T, b []byte) []float64 {
 	return out
 }
 
-// toneLevel is the amplitude of hz in x, by correlation (a Goertzel would answer
-// the same question with less arithmetic and more explaining).
+// toneLevel is the amplitude of hz in x, by correlation (a Goertzel filter would be
+// cheaper but needs more explanation).
 func toneLevel(x []float64, hz, rate float64) float64 {
 	var re, im float64
 	for i, v := range x {

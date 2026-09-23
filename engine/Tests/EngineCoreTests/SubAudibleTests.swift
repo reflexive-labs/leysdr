@@ -76,8 +76,8 @@ final class SubAudibleTests: XCTestCase {
         }
     }
 
-    /// The hard pair: 67.0 and 69.3 are 2.3 Hz apart, and naming the wrong one is worse than
-    /// naming none. This is the test the whole design of the detector exists to pass.
+    /// The hard pair: 67.0 and 69.3 are 2.3 Hz apart, and reporting the wrong one is worse than
+    /// reporting none. The detector's design is driven by this case.
     func testDiscriminatesTheClosestPair() {
         let low = run(toneHz: 67.0, devHz: 700)
         let high = run(toneHz: 69.3, devHz: 700)
@@ -96,7 +96,7 @@ final class SubAudibleTests: XCTestCase {
 
     /// 50 Hz mains hum lands on exactly 100.0 Hz, is perfectly stable, and passes every frequency
     /// test there is. 100.0 is also one of the commonest real PL tones. Only its deviation tells
-    /// them apart, and this is the fixture that proves the deviation gate does its job.
+    /// them apart, and this fixture tests the deviation gate.
     func testMainsHumIsNotReportedAsATone() {
         // Hum with no voice, the design's fixture: with voice on top, which hop's winning bin is
         // the hum and which is voice leakage decides whether the deviation gate or the stability
@@ -107,7 +107,7 @@ final class SubAudibleTests: XCTestCase {
     }
 
     /// A measurement two standard tones could both explain is reported as a measurement and nothing
-    /// more. Snapping to the nearer one on a 2.3 Hz ladder is a guess wearing a reading's clothes.
+    /// more. Snapping to the nearer one on a 2.3 Hz ladder would present a guess as a reading.
     func testAmbiguousMeasurementIsNotClassified() {
         // Halfway between 67.0 and 69.3.
         XCTAssertEqual(SubAudibleDetector.classify(68.15), 0)
@@ -135,8 +135,8 @@ final class SubAudibleTests: XCTestCase {
     }
 
     /// The first window of a run has nothing to measure phase advance against, and the winning
-    /// bin's nominal ladder value is a label rather than a reading. Reporting it would name a tone
-    /// on evidence the detector's whole design says is not enough.
+    /// bin's nominal ladder value is a label rather than a reading. Reporting it would classify a
+    /// tone on less evidence than the detector requires.
     func testFirstWindowHasNothingToMeasure() {
         let d = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
         let s = discriminatorSamples(count: 512, rate: rate, fullScale: fullScale,
@@ -160,7 +160,7 @@ final class SubAudibleTests: XCTestCase {
                                      toneHz: 100, toneDevHz: 700, voice: true, noise: 0.01, seed: 5)
         _ = d.analyse(s, fullScaleDeviationHz: fullScale)
         // Without the reset the second window measures against the first: a frequency, and the
-        // start of a horizon that will name the tone once it has held for a second.
+        // start of a horizon that will classify the tone once it has held for a second.
         let carried = d.analyse(s, fullScaleDeviationHz: fullScale)
         XCTAssertFalse(carried.toneHz.isNaN, "a phase reference should produce a measurement: \(carried.reason)")
         XCTAssertTrue(carried.reason.contains("settling"), "one hop is not a tone yet: \(carried.reason)")
@@ -175,7 +175,7 @@ final class SubAudibleTests: XCTestCase {
 
     /// The tolerance a classification is granted is the one confidence scores against. When they
     /// disagree, a measurement `classify` accepts can still score near zero for being far from the
-    /// tone -- which reads as doubt the detector does not actually have.
+    /// tone -- which understates the detector's actual confidence.
     func testConfidenceUsesTheTonesOwnTolerance() {
         // 203.5's nearest neighbour is 210.7, 7.2 Hz away, so 40% of that gap is 2.88 Hz and the
         // tighter 1% term wins: the tolerance here is 2.035 Hz.
@@ -184,8 +184,8 @@ final class SubAudibleTests: XCTestCase {
         XCTAssertEqual(SubAudibleDetector.classify(measured), standard, "the measurement must be classifiable")
         let c = SubAudibleDetector.confidence(snrDB: 30, measured: measured, standard: standard, hops: 5)
         // A fixed tolerance taken from the tightest gap in the ladder (0.4 * 2.3 Hz = 0.92 Hz)
-        // would put this measurement outside tolerance and score it 0, which is doubt the detector
-        // does not have.
+        // would put this measurement outside tolerance and score it 0, understating the
+        // detector's confidence.
         XCTAssertGreaterThan(c, 0.4, "confidence \(c) understates a cleanly resolved tone")
         XCTAssertLessThan(c, SubAudibleDetector.confidence(snrDB: 30, measured: standard, standard: standard, hops: 5))
     }
@@ -193,7 +193,7 @@ final class SubAudibleTests: XCTestCase {
 
 /// The tap is taken from the discriminator, before the 300 Hz high-pass that makes CTCSS
 /// inaudible. These tests run a real NFM signal through the real demodulator and check the tone
-/// survives the tap and does not survive the audio -- which is the whole reason the tap exists.
+/// survives the tap and does not survive the audio -- which is why the tap exists.
 final class SubAudibleTapTests: XCTestCase {
     /// Build a channel-rate NFM signal carrying voice and a sub-audible tone.
     private func nfmIQ(rate: Double, count: Int, toneHz: Double, subHz: Double, subDevHz: Double) -> SampleStorage {
@@ -253,7 +253,7 @@ final class SubAudibleTapTests: XCTestCase {
         XCTAssertEqual(result.standardToneHz, 100.0, "classified \(result.standardToneHz)")
 
         // And the audio must not: the 300 Hz high-pass is what makes CTCSS sub-audible, and this
-        // is the measurement that says the tap was necessary rather than convenient.
+        // measurement shows the tap is necessary.
         let toneEnergy = energyAt(audioAll, rate: Double(rate), hz: 100)
         let voiceEnergy = energyAt(audioAll, rate: Double(rate), hz: 1000)
         XCTAssertLessThan(toneEnergy, voiceEnergy * 0.05,

@@ -7,13 +7,13 @@ import Foundation
 import Logging
 
 /// `devices.json` beside the socket: the endpoints of every rtl_tcp radio a client attached, so a
-/// station survives a restart the way the radios plugged into the machine do. A file a client plays
-/// is not here -- persistence follows intent (CLAUDE.md invariant 8), and a file is a thing you
-/// looked at once.
+/// remote radio survives a restart the way the radios plugged into the machine do. A file a client
+/// plays is not here: persistence follows intent (CLAUDE.md invariant 8), and playing a file is a
+/// one-off.
 ///
 /// The file is rewritten on every change and read once at startup. It is advisory: a missing or
 /// unreadable file means an empty list, because a daemon that cannot serve local dongles because it
-/// could not parse a list of remote ones is worse than one that forgets a Pi.
+/// could not parse the list of remote ones is worse than one that loses a remote radio's endpoint.
 actor RememberedDevices {
     struct Endpoint: Codable, Equatable, Sendable {
         var host: String

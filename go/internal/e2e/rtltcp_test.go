@@ -78,9 +78,9 @@ func (s *rtlTCPServer) serve(conn net.Conn) {
 	}
 	// Commands are 5 bytes each, but nothing here depends on which: read until the daemon hangs up.
 	go func() { _, _ = io.Copy(io.Discard, conn) }()
-	// Quiet cu8 noise around the zero level (127.5), which is what a dongle on an antenna hears
-	// with nothing on frequency. Digital silence would be simpler but has no noise floor, and a
-	// radio whose spectrum is empty is a radio the squelch cannot be measured from.
+	// Quiet cu8 noise around the zero level (127.5), which is what a dongle on an antenna receives
+	// with nothing on frequency. Digital silence would be simpler but has no noise floor, and the
+	// squelch cannot be measured without one.
 	chunk := make([]byte, 16384)
 	noise := uint32(1)
 	start := time.Now()
@@ -114,7 +114,7 @@ func (s *rtlTCPServer) stop() {
 }
 
 // rememberedEndpoints reads devices.json beside the daemon's socket: the list it re-attaches at
-// startup, and the only proof that an attach outlives the client that asked for it.
+// startup, and the only way to check that an attach outlives the client that asked for it.
 func (e *env) rememberedEndpoints() []map[string]any {
 	e.t.Helper()
 	raw, err := os.ReadFile(filepath.Join(filepath.Dir(e.socket), "devices.json"))
@@ -161,7 +161,7 @@ func TestRemoteRadioAgainstRealDaemon(t *testing.T) {
 		t.Fatalf("an attached radio nobody is using is available: %v", dev)
 	}
 
-	// And remembers it: this is what survives a restart.
+	// It is also written to devices.json, which survives a restart.
 	remembered := e.rememberedEndpoints()
 	if len(remembered) != 1 || remembered[0]["host"] != "127.0.0.1" || remembered[0]["port"] != float64(server.port()) {
 		t.Fatalf("devices.json after attach: %v", remembered)
@@ -181,7 +181,7 @@ func TestRemoteRadioAgainstRealDaemon(t *testing.T) {
 		t.Fatalf("unexpected capture %v", capture)
 	}
 	// Wait for the first telemetry line on this capture's timebase rather than a fixed pause: a
-	// loaded machine can take longer than a guess, and an idle one need not wait at all.
+	// loaded machine can take longer than any fixed pause, and an idle one need not wait at all.
 	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(tuneOut.out.String(), `"captureId":"`+capID+`"`); {
 		if time.Now().After(deadline) {
 			_ = stopTune()

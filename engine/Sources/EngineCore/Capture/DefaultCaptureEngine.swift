@@ -108,7 +108,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
         // stopped device left behind to finish going through it. A quiet ring returns at once; a
         // busy one can outlast the wait, which is bounded and reports that it gave up.
         let drained = await core.drainPending()
-        // Each await here is a seam another actor method can slip through: `stop()` and
+        // Another actor method can run at each await here (actor reentrancy): `stop()` and
         // `setSampleRate` both reach the same device. If the engine no longer wants a stream, or
         // someone else already started one, leave the device alone.
         guard started, !streaming else { return }
@@ -175,7 +175,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     }
 
     /// One attempt to bring the stream back after a failed rate change; on failure the capture is
-    /// marked detached so `snapshot` tells the truth about a device that no longer streams.
+    /// marked detached so `snapshot` reports that the device no longer streams.
     private func restoreStreamingOrDetach() async {
         do {
             try await beginStreaming()

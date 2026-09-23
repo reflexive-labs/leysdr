@@ -52,7 +52,7 @@ const (
 	CodeInternal            = "INTERNAL"
 
 	// Transport-level codes: no daemon mints these, but a call that never reached
-	// the daemon still has to name what happened.
+	// the daemon still needs a code.
 	CodeNotFound         = "NOT_FOUND"
 	CodeUnavailable      = "UNAVAILABLE"
 	CodeCanceled         = "CANCELED"
@@ -202,8 +202,8 @@ func codeForGRPC(c codes.Code) string {
 
 // GRPCCode maps a stable machine code to the gRPC status it is served with,
 // entry for entry with the table in docs/dev/engine-internals.md — the fake daemon
-// serves through here and leylined through its own switch, so both answer a
-// retry interceptor the same way. Every code codeForGRPC can produce round-trips
+// serves through here and leylined through its own switch, so both return the
+// same status to a retry interceptor. Every code codeForGRPC can produce round-trips
 // back to the code it came from, so an Error parsed off the wire and re-served
 // keeps its status.
 func GRPCCode(code string) codes.Code {

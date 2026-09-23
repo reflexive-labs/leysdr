@@ -444,7 +444,7 @@ func TestMCPSnapshot(t *testing.T) {
 			t.Error("no_image still drew a picture")
 		}
 	}
-	// The bins are on request: the floor and the peaks are the result, the numbers a page.
+	// The bins are sent only on request: the result is the floor and the peaks.
 	raw = resultJSON(bare)
 	var bareRow SpectrumRow
 	_ = json.Unmarshal(raw, &bareRow)
@@ -757,7 +757,7 @@ func TestSnapshotSaysTheLevelAtTheFrequency(t *testing.T) {
 	}
 }
 
-// The daemon's remedies name ley verbs; the tool's name its own.
+// The daemon's remedies cite ley verbs; the tool rewrites them to cite MCP tools.
 func TestScanToolFailureNamesTheTools(t *testing.T) {
 	err := scanToolFailure(&ExitError{Message: "all of that range sits on the DC spike; a scan does not look there. ley spectrum draws that span instead, DC spike and all"})
 	if !strings.Contains(err.Error(), "snapshot draws that span instead") || strings.Contains(err.Error(), "ley spectrum") {
@@ -964,8 +964,8 @@ func TestMCPRecordFindAndGet(t *testing.T) {
 	dir := t.TempDir()
 	h := newMCPHarnessWith(t, fakedaemon.Options{RecordingsDir: dir})
 
-	// What an agent starts must end without it: the schema makes duration_s required, so a call
-	// without one never reaches the daemon.
+	// A recording an agent starts must end on its own: the schema makes duration_s required, so
+	// a call without one never reaches the daemon.
 	if res := h.call(t, "record", map[string]any{"target": "146.52"}); !res.IsError ||
 		!strings.Contains(resultText(res), "duration_s") {
 		t.Fatalf("a recording with no duration: %s", resultText(res))

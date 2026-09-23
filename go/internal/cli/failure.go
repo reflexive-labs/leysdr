@@ -12,14 +12,14 @@ import (
 // fullScaleMarginDb is how close to full scale the loudest bin may come before
 // tune says so, when the daemon has not said whether the radio is clipping. A
 // full-scale tone reads 0 dBFS at its bin; 3 dB is one step of an RTL-SDR's
-// gain table, so the words arrive before the clip does.
+// gain table, so the warning appears before the radio clips.
 const fullScaleMarginDb = 3
 
 // clippingFloor is the fraction of a CaptureLevel interval's samples at the
 // converter's rails above which the radio is clipping. Not zero: an interval
 // is 600 000 samples at 2.4 MSPS, and one of them at a rail is a noise
 // excursion or a spur, not an overload. One in ten thousand is a clip every
-// 4 ms, which is one a listener hears.
+// 4 ms, which is audible.
 const clippingFloor = 1e-4
 
 // clipping reports whether a CaptureLevel says the radio is clipping: more of
@@ -33,18 +33,18 @@ func clipping(level *leylinev1.CaptureLevel) bool {
 	return float64(level.GetClippedSamples())/float64(total) > clippingFloor
 }
 
-// failureWords names what the capture's level and one spectrum row say is
-// wrong, or "" when they say nothing: the radio clipping (the level's rail
-// count), or nothing peakAboveFloorDb above the floor (the row's median), with
-// the gain named as the thing to try when it is set by hand to its lowest.
+// failureWords describes what the capture's level and one spectrum row show is
+// wrong, or "" when nothing is: the radio clipping (the level's rail count),
+// or nothing peakAboveFloorDb above the floor (the row's median), suggesting
+// the gain when it is set by hand to its lowest.
 // The level is the clipping authority: while one is in hand a bin near full
 // scale is not named at all, because a strong steady carrier sits there all
 // day with nothing wrong. Only without a level (an older daemon) does the
 // loudest bin within fullScaleMarginDb of full scale stand in for it. The
 // app's FailureState (app/Sources/LeylineClient/FailureState.swift) is the
-// same rule, so both clients say the same thing about the same band. A
-// measurement with the thing to try, not a diagnosis: a quiet band and a
-// missing antenna read the same from here.
+// same rule, so both clients report the same band the same way. It reports a
+// measurement and a suggestion, not a diagnosis: a quiet band and a missing
+// antenna look the same from here.
 func failureWords(bins []float64, level *leylinev1.CaptureLevel, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
 	if clipping(level) {
 		reads := fmt.Sprintf("The radio is clipping: %d of %d samples (%s) hit the converter's rails",

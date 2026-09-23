@@ -15,7 +15,7 @@ private actor Completion {
 final class DaemonLifecycleTests: XCTestCase {
     /// Teardown stops the listener before it hands back captures and devices, so serving ends while
     /// the rest of teardown is still running. The stop path has to let that work finish: cancelling
-    /// it when serving returns leaves a sweep holding a capture lease nobody will take back.
+    /// it when serving returns leaves a sweep holding a capture lease that is never released.
     func testTeardownFinishesAfterServingReturns() async throws {
         let listener = AsyncStream<Void>.makeStream()
         let stop = AsyncStream<Void>.makeStream()

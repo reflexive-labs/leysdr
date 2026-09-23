@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package e2e runs the real leylined daemon against the ley CLI over a temp UDS.
-// It is the living proof of the cross-language contract (CLAUDE.md): skipped
+// It is the end-to-end test of the cross-language contract (CLAUDE.md): skipped
 // unless LEYLINED_BIN and LEY_BIN point at built binaries.
 package e2e
 
@@ -86,7 +86,7 @@ func setup(t *testing.T, daemonArgs ...string) (*env, *exec.Cmd) {
 
 // runFor runs a ley verb with a deadline, SIGINT-ing it when the deadline passes, and returns
 // whatever it wrote. It is how a watch that is meant to find nothing is tested: it cannot finish
-// on its own, so the test stops it and asserts on the silence.
+// on its own, so the test stops it and asserts that it printed nothing.
 func (e *env) runFor(d time.Duration, args ...string) (string, error) {
 	cmd := exec.Command(e.ley, append([]string{"--socket", e.socket}, args...)...)
 	var stdout, stderr bytes.Buffer
@@ -140,8 +140,8 @@ func (e *env) state() map[string]any {
 }
 
 // repoVersion is the root VERSION file, the one number `make version` stamps
-// into the daemon. Reading it keeps this assertion off a literal that a release
-// bump would have to remember to visit.
+// into the daemon. Reading it means a release bump does not have to edit this
+// test.
 func repoVersion(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile("../../../VERSION")
@@ -486,7 +486,7 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 	}
 	for _, w := range want {
 		// Within a bin (2.344 kHz at 2.4 MSPS over 1024 bins) for a narrow carrier: the centroid
-		// really is that good, and a looser bound would let a half-bin offset back in unnoticed.
+		// is that accurate, and a looser bound would let a half-bin offset back in unnoticed.
 		// A wide FM carrier's centroid wanders with its own modulation, so it gets a twentieth of
 		// its width instead.
 		best, bestDiff, bestWidth := uint64(0), uint64(math.MaxUint64), uint64(0)
@@ -511,12 +511,12 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 	if len(list(scan, "noiseFloor")) == 0 {
 		t.Errorf("no noise floor segments: %v", scan)
 	}
-	// The sweep pinned the gain, and said which.
+	// The sweep pinned the gain and reported the value.
 	if gains := list(scan, "gains"); len(gains) == 0 {
 		t.Logf("no gains pinned (a file device has none), which is honest for this radio")
 	}
 
-	// The radio is free again: the sweep gave back what it borrowed.
+	// The radio is free again: the sweep released its capture.
 	st := e.state()
 	if caps := list(st, "captures"); len(caps) != 0 {
 		t.Errorf("the sweep left a capture behind: %v", caps)
@@ -570,7 +570,7 @@ func TestJobsAgainstRealDaemon(t *testing.T) {
 		t.Errorf("cancel changed a finished job: %v", done)
 	}
 
-	// The verb's reason to exist: a sweep somebody else started, stopped from here. The dwell is
+	// The main use of the verb: stop a sweep that another client started. The dwell is
 	// long enough that the sweep is certain to still be running when the second terminal looks.
 	stop, live := e.startLive("scan", "145.0M..147.0M", "--dwell", "2000")
 	running := e.waitJob("RUNNING")
@@ -582,7 +582,7 @@ func TestJobsAgainstRealDaemon(t *testing.T) {
 	if err := stop(); err != nil {
 		t.Errorf("ley scan did not end cleanly after the job was cancelled: %v\nstderr: %s", err, live.errOut.String())
 	}
-	// And the radio is free: a cancelled sweep hands back what it borrowed.
+	// And the radio is free: a cancelled sweep releases its capture.
 	if caps := list(e.state(), "captures"); len(caps) != 0 {
 		t.Errorf("the cancelled sweep left a capture behind: %v", caps)
 	}

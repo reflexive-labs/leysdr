@@ -87,8 +87,8 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 		GroupID: GroupAdjusting,
 		Args:    cobra.ArbitraryArgs,
 		// Cobra would read "-40" as a flag; parsing is disabled here and
-		// parseNegativeSafe does it instead. Confined to set on purpose:
-		// it is the only verb whose positionals are commonly negative.
+		// parseNegativeSafe does it instead. Only set does this: it is the
+		// only verb whose positionals are commonly negative.
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, raw []string) error {
 			args, err := parseNegativeSafe(cmd, raw)
@@ -275,10 +275,10 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 			}
 		}
 	}
-	// Three objects, three groups: a reader who changes gain has to see that
-	// it belongs to the radio and moves every channel on it, not just this
-	// one. Values the radio cannot offer are Muted, so the settings actually
-	// in force carry the weight.
+	// One group per object (channel, radio, speakers): a user changing gain
+	// needs to see that it belongs to the radio and moves every channel on
+	// it, not just this one. Values the radio cannot offer are Muted, so the
+	// settings in force stand out.
 	st := s.app.Style
 	fmt.Fprintf(s.app.Stdout, "%s %s on %s\n", st.Label("channel"), st.Muted(ch.ChannelId), model)
 	settingRow(s.app, "frequency", freq, true)

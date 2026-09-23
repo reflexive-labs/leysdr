@@ -146,7 +146,7 @@ func printRecordTable(app *App, page *leylinev1.RecordPage) {
 }
 
 // recordTime is the record's wall clock through the page's anchors. A record no anchor covers
-// shows the absent glyph: a time nobody anchored would be a clock ley invented.
+// shows the absent glyph: without an anchor, any wall-clock time ley printed would be made up.
 func recordTime(rec *leylinev1.DecodeRecord, anchors []*leylinev1.RecordAnchor) string {
 	at, ok := leyline.RecordWallTime(rec, anchors)
 	if !ok {

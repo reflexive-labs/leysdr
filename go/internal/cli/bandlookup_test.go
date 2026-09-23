@@ -17,8 +17,8 @@ func bandsOut(t *testing.T, args ...string) (string, string) {
 	return out, errOut
 }
 
-// The question the table could only answer by making the reader scan fifteen
-// rows: what is this frequency, and what will tune do with it?
+// A frequency lookup answers directly what the table needs a scan of fifteen
+// rows for: which band a frequency is in, and what tune does with it.
 func TestBandsLookupByFrequency(t *testing.T) {
 	out, _ := bandsOut(t, "146.52")
 	for _, want := range []string{"146.520 MHz", "2 m amateur", "144.000 MHz to 148.000 MHz", "nfm", "12.5 kHz", "2m"} {
@@ -26,7 +26,7 @@ func TestBandsLookupByFrequency(t *testing.T) {
 			t.Errorf("want %q in:\n%s", want, out)
 		}
 	}
-	// A screen ends with what to do next.
+	// The screen ends with the next command.
 	if !strings.Contains(out, "ley spectrum --band 2m") {
 		t.Errorf("want the next step:\n%s", out)
 	}
@@ -45,8 +45,8 @@ func TestBandsLookupResolvesTheSideband(t *testing.T) {
 	}
 }
 
-// This is the one verb where a band name beats a frequency, because it is the
-// verb about band names. Answering "160 m amateur" for `ley bands 2m` -- the
+// This is the only verb where a band name beats a frequency, because the verb
+// is about band names. Answering "160 m amateur" for `ley bands 2m` -- the
 // alias this very screen tells you to type -- would send the reader to the
 // wrong band entirely.
 func TestBandsLookupPrefersTheBandName(t *testing.T) {
@@ -57,11 +57,11 @@ func TestBandsLookupPrefersTheBandName(t *testing.T) {
 	if strings.Contains(out, "160 m amateur") {
 		t.Errorf("2m must not be read as 2 MHz:\n%s", out)
 	}
-	// And it says which reading it took, so the other is a keystroke away.
+	// stderr shows which reading it took, so the user can type the other.
 	if !strings.Contains(errOut, "reading \"2m\" as the band") || !strings.Contains(errOut, "2.000 MHz") {
 		t.Errorf("an argument that reads both ways must say which was taken:\n%s", errOut)
 	}
-	// An alias that is not also a frequency says nothing.
+	// An alias that is not also a frequency prints no note.
 	if _, quiet := bandsOut(t, "fm"); strings.Contains(quiet, "reading") {
 		t.Errorf("fm is unambiguous and needs no note:\n%s", quiet)
 	}

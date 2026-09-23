@@ -31,7 +31,7 @@ func TestResolveBandByAliasAndName(t *testing.T) {
 	}
 }
 
-// A band name is not something anyone guesses, so the error has to teach.
+// Users cannot be expected to guess band names, so the error suggests or lists them.
 func TestResolveBandErrorsTeach(t *testing.T) {
 	_, err := ResolveBand("2mm")
 	if err == nil {

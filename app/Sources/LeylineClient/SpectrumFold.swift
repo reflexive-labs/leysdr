@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Folds over FFT rows the window needs, each the same rule `ley` applies so the two clients
-// name the same bin and land on the same squelch (docs/design/app-design-handoff.md, Region 3
+// report the same bin and land on the same squelch (docs/design/app-design-handoff.md, Region 3
 // "Max hold", Region 4 "Centre on Strongest Signal", Region 1 "the squelch is measured").
 // Presentation only: a median is a fold over one row, the spectrum itself is the daemon's
 // (invariant 2), and nothing here is a detector (invariant 12).
@@ -41,7 +41,7 @@ public enum SpectrumFold {
             if v < minDB { continue }
             if i > 0, bins[i - 1] >= v { continue }
             if i + 1 < bins.count, bins[i + 1] > v { continue }
-            // A span reaching below 0 Hz puts a bin's centre there; 0 is the honest floor.
+            // A span reaching below 0 Hz puts a bin's centre there; 0 Hz is the lower clamp.
             let hz = max(0, (left + (Double(i) + 0.5) * binWidth).rounded())
             peaks.append(Peak(centerHz: UInt64(hz), db: v))
         }
@@ -93,7 +93,7 @@ public enum SpectrumFold {
 
 /// The loudest level seen per bin since the last reset: the spectrum's max-hold trace. A
 /// fold over rows the app already has; it resets when the capture moves or the bin count
-/// changes, because a hold across two different spans is a lie about both.
+/// changes, because a hold across two different spans is wrong for both.
 public struct MaxHold: Sendable {
     public private(set) var levelsDB: [Float] = []
     public private(set) var rows = 0

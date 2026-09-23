@@ -3,11 +3,11 @@
 // The named failure state (docs/plans/user-stories.md, V1a: the app "detects and names failure
 // states instead of sitting silently broken"): the radio clipping, read from the daemon's
 // `CaptureLevel` and the capture's gains, a measured fact with its number and the thing to try,
-// not a detector (CLAUDE.md, invariant 12). `ley tune` names the same state from the same count
+// not a detector (CLAUDE.md, invariant 12). `ley tune` reports the same state from the same count
 // (`go/internal/cli/failure.go`). "Nothing above the noise" was a state here until 2026-09-21
-// and is `ley tune`'s one-time line alone now: in a window it named a quiet band every few
-// seconds and distracted more than it told (the owner). The daemon not running, no radio and an
-// unplugged radio are the mirror's states and belong to the window's empty words, not here.
+// and is now only `ley tune`'s one-time line: in a window it flagged a quiet band every few
+// seconds and distracted more than it helped (the owner). The daemon not running, no radio and
+// an unplugged radio are the mirror's states and belong to the window's empty-state message.
 
 import Foundation
 import LeylineProto
@@ -15,20 +15,20 @@ import LeylineProto
 public enum FailureState: Sendable, Equatable {
     /// Samples at the converter's rails in the daemon's newest `CaptureLevel` interval: the
     /// radio is clipping, measured rather than read off a bin (plans/app.md, M2-5). `gainAuto`
-    /// and `gainAtMinimum` pick the thing to try: on auto, take the gain by hand and lower it;
-    /// at the lowest manual gain the radio cannot be turned down and the antenna is what moves.
+    /// and `gainAtMinimum` pick the thing to try: on auto, switch to manual gain and lower it;
+    /// at the lowest manual gain the radio cannot be turned down, so the antenna has to change.
     case clipping(clipped: UInt64, total: UInt64, gainAuto: Bool, gainAtMinimum: Bool)
 
-    /// The clipped fraction of an interval that names the state: one sample in ten thousand,
+    /// The clipped fraction of an interval that triggers the state: one sample in ten thousand,
     /// `ley tune`'s floor too (`go/internal/cli/failure.go`, `clippingFloor`). Not zero, because
     /// one rail hit in six hundred thousand samples is a stray, not an overload.
     public static let clippingFloor: Double = 1e-4
-    /// Once named, the state holds until the fraction has fallen to half the floor, so a radio
-    /// hovering at the edge does not name and clear it four times a second.
+    /// Once raised, the state holds until the fraction has fallen to half the floor, so a radio
+    /// hovering at the edge does not raise and clear it four times a second.
     public static let clippingExitFraction: Double = clippingFloor / 2
 
     /// The state the numbers show, or nil. `level` is the capture's newest `CaptureLevel`, nil
-    /// before the first; `previous` is the state last named, which the exit threshold holds on
+    /// before the first; `previous` is the state last reported, which the exit threshold holds on
     /// to.
     public static func name(
         level: Leyline_V1_CaptureLevel?, gains: [Leyline_V1_GainState],
@@ -45,12 +45,12 @@ public enum FailureState: Sendable, Equatable {
             gainAtMinimum: gainAtMinimum(gains: gains, elements: elements))
     }
 
-    /// Whether any gain element is on auto: then "lower the gain" means taking it by hand first.
+    /// Whether any gain element is on auto: then "lower the gain" means switching to manual first.
     public static func gainAuto(gains: [Leyline_V1_GainState]) -> Bool {
         gains.contains { $0.auto }
     }
 
-    /// Whether any gain element is set by hand to the lowest level it offers: the bottom of its
+    /// Whether any gain element is set manually to the lowest level it offers: the bottom of its
     /// table, or its minimum. Auto is never at the minimum, whatever level it chose.
     public static func gainAtMinimum(
         gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement]

@@ -142,7 +142,7 @@ func TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spectrum: %v\n%s\n%s", err, out, errOut)
 	}
-	// No cursor-up at all: every one would be a lie about where the block is.
+	// No cursor-up at all: each one would move to the wrong line.
 	if strings.Contains(out, "\x1b[") && strings.Contains(out, "A") {
 		for _, seq := range []string{"\x1b[1A", "\x1b[19A", "\x1b[20A"} {
 			if strings.Contains(out, seq) {
@@ -150,7 +150,7 @@ func TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen(t *testing.T) {
 			}
 		}
 	}
-	// And the reason is said, once, so a scrolling chart does not read as a bug.
+	// The reason is printed once, so a scrolling chart does not look like a bug.
 	if !strings.Contains(errOut, "scrolls instead of redrawing") {
 		t.Errorf("want the reason on stderr:\n%s", errOut)
 	}

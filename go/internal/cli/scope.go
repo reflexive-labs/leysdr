@@ -20,8 +20,8 @@ import (
 )
 
 // What the window may be, in milliseconds. Below five there is less than a
-// cycle of anything a radio carries; above five hundred a frame is slower than
-// the eye and the trace stops being a picture of now.
+// cycle of anything a radio carries; above five hundred a window spans too long
+// to read as a live trace.
 const (
 	scopeWindowMin = 5
 	scopeWindowMax = 500
@@ -56,8 +56,8 @@ type scopeScale struct {
 	fixed float64
 }
 
-// scopeFull is the whole range the tap can carry: a trace that grows is a
-// signal that grew and never a scale that moved under it.
+// scopeFull is the whole range the tap can carry. The scale is fixed, so a
+// taller trace always means a stronger signal.
 var scopeFull = scopeScale{fixed: 1}
 
 // parseScopeScale reads the --scale flag: the two words, or a number in the
@@ -78,8 +78,8 @@ func parseScopeScale(s string) (scopeScale, error) {
 	return scopeScale{fixed: v}, nil
 }
 
-// named says whether the header states the scale. Full scale is the rule the
-// view is read by, so it is worth a word only once something has changed it.
+// named reports whether the header shows the scale. Full scale is the
+// default, so the header shows the scale only when it differs.
 func (s scopeScale) named() bool { return s.auto || s.fixed != 1 }
 
 // labelWidth is how many columns the gutter reserves for its labels. Auto
@@ -97,8 +97,8 @@ func (s scopeScale) labelWidth() int {
 	return w
 }
 
-// scopeScaleLabel writes a scale the way the gutter and the header do: as few
-// digits as say it, because the gutter is read, not measured.
+// scopeScaleLabel writes a scale the way the gutter and the header do: with
+// as few digits as needed, so the gutter reads at a glance.
 func scopeScaleLabel(v float64) string { return fmt.Sprintf("%+g", v) }
 
 // scopeScaler carries the auto scale between frames: the peaks of the frames
@@ -116,9 +116,9 @@ type scopeScaler struct {
 }
 
 func newScopeScaler(sc scopeScale, interval time.Duration) *scopeScaler {
-	// Two frames is the shortest window a fit can mean anything in: one frame
-	// has nothing to disagree with a burst, so at a frame rate slow enough
-	// that a second holds a single frame the window runs long instead.
+	// Two frames is the shortest useful fit window: with one frame, a burst
+	// sets the scale on its own. At a frame rate slow enough that a second
+	// holds a single frame, the window runs longer than a second instead.
 	size := scopeScaleMinHold
 	if interval > 0 {
 		size = max(int(math.Round(scopeScaleHold.Seconds()/interval.Seconds())), scopeScaleMinHold)
@@ -127,11 +127,10 @@ func newScopeScaler(sc scopeScale, interval time.Duration) *scopeScaler {
 }
 
 // next is the scale to draw a window of this peak at: the pinned one, or the
-// hold window's percentile snapped up to a step the gutter can name. Snapping
-// up is what keeps a fitted trace inside the rows: it is never clipped, only
-// drawn coarser than the signal deserves. A peak above the fit is drawn
-// clamped, which is the honest picture of a spike the rest of the second
-// disagrees with.
+// hold window's percentile snapped up to the next scale step. Snapping up keeps
+// a fitted trace inside the rows: it is never clipped, only drawn at a coarser
+// scale than it needs. A peak above the fit is drawn clamped, since it is a
+// spike the rest of the second does not share.
 func (s *scopeScaler) next(peak float64) float64 {
 	if !s.scale.auto {
 		return s.scale.fixed
@@ -171,7 +170,7 @@ func scopePercentile(sorted []float64, p float64) float64 {
 }
 
 // scopePeak is the window's largest excursion either side of zero, which is
-// what the auto scale is fitted to; the header's peak is the same number said
+// what the auto scale is fitted to; the header's peak is the same number shown
 // as a level.
 func scopePeak(samples []float32) float64 {
 	peak := 0.0
@@ -184,7 +183,7 @@ func scopePeak(samples []float32) float64 {
 }
 
 // ScopeRow is one JSON row of `ley scope --json`: the frame's statistics and
-// what the daemon says is under them, never the samples -- those are `ley
+// the daemon's tone report for them, never the samples -- those are `ley
 // listen --format json`. Bulk frames have no proto message, so this shape is
 // part of the documented bulk-row exception to the proto3 rule; see
 // docs/reference/cli.md. Seq and SampleIndex name the daemon frame the window
@@ -198,9 +197,8 @@ type ScopeRow struct {
 	PeakDbfs    float64 `json:"peak_dbfs"`
 	RmsDbfs     float64 `json:"rms_dbfs"`
 	DC          float64 `json:"dc"`
-	// Scale is the vertical scale the frame was drawn at, so a row says what
-	// the picture beside it meant: 1 at full scale, the fitted step under
-	// --scale auto.
+	// Scale is the vertical scale the frame was drawn at: 1 at full scale, the
+	// fitted step under --scale auto.
 	Scale float64 `json:"scale"`
 	// ToneHz is the sub-audible tone the daemon named, or its measurement when
 	// it named none; it is absent until the daemon has reported one, because a
@@ -374,10 +372,10 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
 	fullScaleHz := scopeFullScaleHz(ap, s.channel)
-	// The tone and the squelch are the daemon's to report; the view only carries
-	// them. The stream's error is deliberately not read: both are garnish on the
-	// picture, so a telemetry stream that ends takes the header's PL and its
-	// squelch line with it and leaves the trace running.
+	// The tone and the squelch come from the daemon; the view only displays
+	// them. The stream's error is not read: both are optional extras, so a
+	// telemetry stream that ends removes the header's PL and its squelch line
+	// and leaves the trace running.
 	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
 		Types: []leylinev1.TelemetryType{
@@ -417,8 +415,8 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	interval := time.Duration(float64(time.Second) / o.rate)
 	var tone *leylinev1.SubAudible
 	var last time.Time
-	// Muted until the daemon says otherwise: a view that announced a closed
-	// squelch before the first meter would be guessing at what it cannot see.
+	// Not muted until the daemon reports a closed squelch: announcing one
+	// before the first meter arrives would be a guess.
 	muted := false
 	// The daemon's own tuning error, NaN until a meter carries one.
 	meterHz := math.NaN()
@@ -594,8 +592,8 @@ const (
 // scopeTrigger picks where the drawn window starts, so a repeating signal
 // holds still from frame to frame instead of sliding across the screen: the
 // latest rising crossing that still leaves a full window, when the crossings
-// are evenly enough spaced to be a period. Anything else free-runs, which is
-// the honest picture of a signal that does not repeat.
+// are evenly enough spaced to be a period. Anything else free-runs, as a
+// bench scope does on a signal that does not repeat.
 func scopeTrigger(buf []float32, window int) int {
 	free := len(buf) - window
 	if free <= 0 {

@@ -254,7 +254,7 @@ func syntheticPower(now time.Time) float64 {
 	return -50 + 20*math.Sin(2*math.Pi*phase)
 }
 
-// subAudibleReport is what the detector concluded about one window. A tone it is unwilling to
+// subAudibleReport is what the detector concluded about one window. A tone it does not
 // report leaves every measured field NaN: "not measured" is not the same as zero, and only
 // deviation separates a real 100.0 Hz PL from 50 Hz mains hum, so the fake sends a deviation a
 // transmitter would.

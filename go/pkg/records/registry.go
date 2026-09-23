@@ -11,15 +11,15 @@ import (
 )
 
 // Device is one discovered transmitter in the registry: a stable id, when it was first and last
-// heard, how many records it has been in, and what it last said. It is the client-side shape of
-// the design doc's SHAPE_REGISTRY (docs/design/decoders.md, section 5, "Registry devices"):
+// heard, how many records it has been in, and its newest record's kind and summary. It is the
+// client-side shape of the design doc's SHAPE_REGISTRY (docs/design/decoders.md, section 5, "Registry devices"):
 // discovered transmitters with stable ids, first seen, last seen and an observation count,
 // derived from the record log. The user-given name is not here -- a label is user data held in the
 // labels store, joined in by the verb, not derived by the fold (the state boundary).
 type Device struct {
 	DeviceID string
 	Protocol string
-	// Kind and Summary come from the newest record: what this transmitter most recently did.
+	// Kind and Summary come from the newest record.
 	Kind    string
 	Summary string
 	// FirstSeen and LastSeen are on the capture timeline, the timebase every record carries; the
@@ -94,8 +94,8 @@ func (r *Registry) Apply(rec *leylinev1.DecodeRecord) *Device {
 }
 
 // Rows returns the devices last-heard first, ties broken by device id so a redraw does not
-// reshuffle rows under the reader's eye. A device with no wall time sorts to the end, because a
-// row that cannot be dated cannot claim to be the most recent.
+// reorder rows. A device with no wall time sorts to the end, because a row that cannot be dated
+// cannot count as the most recent.
 func (r *Registry) Rows() []*Device {
 	out := make([]*Device, 0, len(r.devices))
 	for _, d := range r.devices {

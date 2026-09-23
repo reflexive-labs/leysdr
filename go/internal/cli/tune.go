@@ -181,11 +181,11 @@ moves it anyway.`,
 			if err != nil {
 				return err
 			}
-			// A live session's prose belongs to the person, not to a script
-			// reading stdout: the meter is already on stderr, and leaving the
-			// banner on stdout split one screen across two streams. Set here
-			// rather than in runTune, because play says its first line before
-			// runTune is reached. Ids stay on stdout in printCreated.
+			// A live session's prose goes to stderr, not to stdout where a script
+			// reads: the meter is already on stderr, and a banner on stdout split
+			// one screen across two streams. Set here rather than in runTune,
+			// because play prints its first line before runTune is reached. Ids
+			// stay on stdout in printCreated.
 			s.proseToStderr = true
 			defer s.close()
 			if s.device, err = pickDevice(s.state, o.device); err != nil {
@@ -231,7 +231,7 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 // prints the ids; the MCP adapter's tune tool stops here.
 func (s *session) bringUp(ctx context.Context, o *tuneOptions) error {
 	// An impossible frequency fails before any decision is announced, so the
-	// error is the whole story. The capture centre is what the device tunes.
+	// error is the only output. The capture centre is what the device tunes.
 	target := o.freq
 	if o.captureCenter != 0 {
 		target = o.captureCenter
@@ -354,7 +354,7 @@ func (s *session) banner(o *tuneOptions) string {
 	if s.app.JSON || s.proseToStderr {
 		st = s.app.ErrStyle
 	}
-	// One fact per line, each led by the word the eye looks for. The lines
+	// One fact per line, each led by a label word. The lines
 	// are not padded into a column because three golden substrings pin
 	// "Squelch <value>" and "<device>, gain auto" with single spaces; the
 	// leading word carries Label ink instead.
@@ -363,8 +363,8 @@ func (s *session) banner(o *tuneOptions) string {
 		s.bannerSource(st),
 		leadWord(st, squelch),
 	}
-	// What the squelch's row said is wrong, when it said anything: the one
-	// line a newcomer with no antenna or a hot front end needs to read.
+	// The problem the squelch measurement row showed, if any. This is the
+	// line a newcomer with no antenna or an overloaded front end most needs.
 	if s.failureNote != "" {
 		lines = append(lines, leadWord(st, s.failureNote))
 	}
@@ -377,7 +377,7 @@ func (s *session) banner(o *tuneOptions) string {
 
 // bannerSource is the banner's second line: the radio, or what is being played
 // through it. A recording has no gain and no tuning range, so "Radio
-// FilePlaybackDevice, no gain control" spends a line saying nothing.
+// FilePlaybackDevice, no gain control" would be a wasted line.
 func (s *session) bannerSource(st ui.Style) string {
 	if s.sourceLine == "" {
 		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, gainString(s.capture)))
@@ -390,9 +390,9 @@ func (s *session) bannerSource(st ui.Style) string {
 	return leadLabel(st, "Playing", line)
 }
 
-// bannerSecondHint keeps the "from another terminal" line offering something
-// that works. A file device refuses every gain write, so offering `ley set gain`
-// there is an invitation to an error.
+// bannerSecondHint keeps the "from another terminal" line suggesting a command
+// that works. A file device refuses every gain write, so `ley set gain` there
+// would fail.
 func (s *session) bannerSecondHint() string {
 	if len(s.capture.GetGains()) == 0 {
 		return "ley set mode am"
@@ -406,7 +406,7 @@ func leadLabel(st ui.Style, label, value string) string {
 }
 
 // leadWord inks the first word of a ready-made sentence, so a line whose
-// wording is pinned by a golden still leads with the word the eye wants.
+// wording is pinned by a golden still starts with a Label-inked word.
 func leadWord(st ui.Style, sentence string) string {
 	i := strings.IndexByte(sentence, ' ')
 	if i <= 0 {
@@ -442,7 +442,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	levels := s.watchLevel(tctx, s.channel.GetCaptureId())
 	// ended handles a stream's end: Ctrl-C and a daemon error are the
 	// caller's; a clean end (the daemon closed the stream, as it does when
-	// shutting down) is said once on stderr and the run stops with exit 0.
+	// shutting down) is reported once on stderr and the run stops with exit 0.
 	ended := func(what string, err error) error {
 		clear()
 		if ctx.Err() != nil {
@@ -517,9 +517,9 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			if !ok {
 				continue
 			}
-			// Only a change is a line: the level arrives four times a second,
-			// and a radio that is still clipping was already said to be. A
-			// note that cleared is said too, since the banner's still stands.
+			// Only a change prints a line: the level arrives four times a
+			// second, and a radio that is still clipping was already reported.
+			// A note that clears is printed too, since the banner still shows it.
 			if note, changed := s.readLevel(b.CaptureLevel); changed {
 				clear()
 				if note == "" {

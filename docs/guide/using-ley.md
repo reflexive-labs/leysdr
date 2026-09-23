@@ -15,11 +15,11 @@ station picked out of a capture (frequency, mode, squelch); a **sink** is where 
 
 ## Orientation: bare `ley`
 
-Run `ley` with no arguments. It prints where things stand and the next two or three commands
-chosen from that state — coloured on a terminal, the same words plain when piped, so `ley | tee
-log` says what a screenshot would; `ley --help` is the command list and `--json` prints exactly
-what `ley state --json` prints. The screen exits 0 in every state, including "daemon not
-running"; `ley --json` fails the way `ley state --json` does when there is no daemon to ask.
+Run `ley` with no arguments. It prints where things stand and the next two or three commands chosen
+from that state — coloured on a terminal, the same words plain when piped, so `ley | tee log`
+records what a screenshot would show; `ley --help` is the command list and `--json` prints exactly
+what `ley state --json` prints. The screen exits 0 in every state, including "daemon not running";
+`ley --json` fails the way `ley state --json` does when there is no daemon to ask.
 
 ```console
 $ ley
@@ -51,7 +51,7 @@ Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11
 ley devices --wide  adds DRIVER, SERIAL, ID
 ```
 
-MODEL and STATE lead because they are the answer to "is my radio usable"; RANGE is what the radio
+MODEL and STATE come first because they show whether the radio is usable; RANGE is what the radio
 can tune, RATES is how wide a band it can take in at once, and GAIN lists the amplifier stages
 `ley set gain` adjusts. `ley devices --wide` adds the driver, serial and full device id (and any
 column too wide for the terminal), and `--json` always carries all of them. Row numbers from this
@@ -79,9 +79,9 @@ reached is usually a typo. A radio that drops later is not an error: it goes DIS
 daemon reconnects when it answers again. Attaching an endpoint twice is not an error either; the
 second time prints the radio the daemon already has.
 
-The daemon keeps running after you close the terminal; `ley daemon status` says whether it is
+The daemon keeps running after you close the terminal; `ley daemon status` reports whether it is
 answering (exit 3 when not), `ley daemon stop` stops it, and on macOS `ley daemon install`
-starts it at login. Status is one line whose first word is the answer:
+starts it at login. Status is one line whose first word is the daemon's state:
 
 ```console
 $ ley daemon status
@@ -98,7 +98,7 @@ backlog ends before it follows.
 
 Give `tune` a frequency. A bare number is MHz; add a unit to be exact (`1010k`, `146520000`);
 or give a preset name (`noaa`, `calling`, `marine16`, `guard` — `ley help presets`). Everything
-else is chosen for you and printed, so a wrong guess is visible rather than silent.
+else is chosen for you and printed, so you can see a wrong choice.
 
 ```console
 $ ley tune 146.52
@@ -117,11 +117,11 @@ What was decided, and how to override it:
   on airband, and so on; outside every band it is NFM and says so. `--mode` overrides; `fm`
   picks WFM on the broadcast band and NFM elsewhere, `ssb` picks USB at and above 10 MHz and LSB
   below. `ley help modes` explains which one to use where.
-- **Squelch** (mute the audio while the signal is weaker than a level) defaults to `auto` for
-  voice modes: `tune` reads one row of the daemon's spectrum, takes the band's noise floor and
-  sits 10 dB above it. `--squelch -50` sets a level (dBFS: 0 is the loudest the radio can hear,
-  the floor depends on gain; the banner prints it), `--squelch off` never mutes. If no spectrum row arrives
-  within two seconds squelch stays off and the banner says so. `ley help squelch`.
+- **Squelch** (mute the audio while the signal is weaker than a level) defaults to `auto` for voice
+  modes: `tune` reads one row of the daemon's spectrum, takes the band's noise floor and sets the
+  threshold 10 dB above it. `--squelch -50` sets a level (dBFS: 0 is the loudest the radio can hear,
+  the floor depends on gain; the banner prints it), `--squelch off` never mutes. If no spectrum row
+  arrives within two seconds squelch stays off and the banner says so. `ley help squelch`.
 - **Bandwidth** (`--bw`, a bare number is kHz) has the mode's usual value. **Volume**
   (`--volume 50%`) defaults to 100% for every mode. Gain starts on auto; `ley help gain`.
 
@@ -129,7 +129,7 @@ The last line is a live meter: on a terminal a bar scaled from -90 dBFS to 0 wit
 the squelch threshold, then the signal level and whether audio is playing or `muted, waiting for
 a signal`. It is written to stderr and redrawn in place; redirected or piped it loses the bar and
 prints one whole line a second instead, so a `tee`d session stays readable. Ctrl-C stops, removes
-the channel and says what became of the radio (exit 0).
+the channel and reports what happened to the radio (exit 0).
 
 ```console
 $ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try noaa2..7
@@ -171,7 +171,7 @@ $ ley set freq 146.62
 frequency 146.520 MHz → 146.620 MHz on channel 1 (NFM)
 ```
 
-Note the gain line: you asked for 30, the radio has 29.7, and that is what is printed. The
+In the gain line, you asked for 30, the radio has 29.7, and that is what is printed. The
 parameters are `freq` (or `frequency`), `mode`, `bw` (or `filter`), `squelch`, `gain` (with
 `--element` for radios that have more than one stage) and `volume`; `ley set --help` lists the
 forms each accepts. A wrong parameter name or value is refused before anything reaches the
@@ -185,7 +185,7 @@ made when there is exactly one such, and `set` says which; otherwise it lists th
 ## 4. See the band
 
 `spectrum` draws the band as a bar chart — left to right is frequency, taller is louder — and
-names the loudest bins, with how far the strongest sits above the noise, so you can read a
+lists the loudest bins, with how far the strongest sits above the noise, so you can read a
 frequency straight off. Without a frequency it shows the band the radio is already tuned to,
 which is the useful form while `tune` is running.
 
@@ -228,8 +228,8 @@ this radio can do to 200.000 kHz`); when the radio is already capturing at a dif
 `spectrum` exits 2 naming the current width — drop `--span`, ask for that width, or free the
 radio with `ley stop all`. When it draws a capture that is already tuned somewhere else it
 says which centre it is showing (`showing the capture at 146.520 MHz, which covers
-146.000 MHz`). The loudest bins are just that — only bins at least 15 dB above the
-floor are named, one entry per carrier rather than a padded five, and a quiet band says
+146.000 MHz`). The loudest bins are only that: only bins at least 15 dB above the
+floor are listed, one entry per carrier rather than a padded five, and a quiet band says
 `peak    nothing above the floor; the band looks quiet` (and draws the chart cold to match);
 `spectrum` does not call them signals or guess bandwidths; `ley scan` (section 5) is the verb
 that does, with a threshold calibrated to a false-alarm rate rather than to a constant. `--watch` holds the dB scale for the run
@@ -241,7 +241,7 @@ stderr before giving up.
 
 ## 5. Find what is on a band
 
-`ley spectrum` draws a band and names its loudest bins. `ley scan` answers the next question:
+`ley spectrum` draws a band and lists its loudest bins. `ley scan` answers the next question:
 sweep a range, and list the carriers that are really there.
 
 ```console
@@ -257,14 +257,14 @@ FREQUENCY    WIDTH            SNR (dB)  SEEN  BAND
 ```
 
 The sweep runs in the daemon, which owns the radio for the few seconds it takes. It will not
-interrupt somebody who is listening: it says who has the radio instead, and `--take-over` is how
-you insist. The radio goes back where it was afterwards, at the gain it was on.
+interrupt somebody who is listening: it reports who has the radio instead, and `--take-over`
+overrides that. The radio goes back where it was afterwards, at the gain it was on.
 
-**`SEEN` is the evidence.** 8/8 means the signal was there every time scan looked at that
-frequency; 1/8 means it caught one burst. Nothing is hidden on that count -- an intermittent packet
-is exactly what you might be scanning for -- so read it rather than trusting a row on its own. What
-a scan finds is what is sitting on the band while it looks; for how busy a frequency is over time,
-`ley phosphor` is the picture.
+**`SEEN` is how often it was detected.** 8/8 means the signal was there every time scan looked at
+that frequency; 1/8 means it caught one burst. No row is filtered out on that count -- an
+intermittent packet is exactly what you might be scanning for -- so read it rather than trusting a
+row on its own. What a scan finds is what is sitting on the band while it looks; for how busy a
+frequency is over time, use `ley phosphor`.
 
 **`WIDTH` is an equivalent rectangular width**: the width a flat signal with the same spread would
 have. It does not grow with signal strength the way the width of a peak above a threshold does, and
@@ -272,10 +272,10 @@ below the analysis resolution it says `under 2.344 kHz` rather than quoting a nu
 measure.
 
 **The floor is per bin**, and that is why it reads far lower than the level `ley tune`'s meter shows
-for the same air: a voice channel is thousands of bins wide, and each bin holds a thousandth of the
-noise. The threshold over it is not a constant -- it is computed from how many spectrum rows were
-averaged and how many bins the sweep looked at, so that a whole sweep is expected to invent about a
-tenth of a false signal. `docs/design/scan.md` has the measurements.
+for the same signal: a voice channel is thousands of bins wide, and each bin holds a thousandth of
+the noise. The threshold over it is not a constant -- it is computed from how many spectrum rows
+were averaged and how many bins the sweep looked at, so that a whole sweep produces on average about
+0.1 false signals. `docs/design/scan.md` has the measurements.
 
 `--band 2m` sweeps a named band; a range positional never takes a band name, because `2m` is 2 MHz
 everywhere else in `ley`. `--dwell 1000` looks longer at each stop and finds weaker signals.
@@ -297,8 +297,8 @@ job_01JB2M3K4P5Q6R7S8T9V0WXYZA cancelled
 
 ## 6. Watch a band over time
 
-`spectrum` and `scan` both answer "what is here right now". Two more views trade that snapshot for
-history, and answer different questions.
+`spectrum` and `scan` both show what is on the band right now. Two more views show history
+instead, and answer different questions.
 
 **`ley waterfall`** draws the band as a scrolling map: left to right is frequency, down the screen
 is time, newest row at the bottom, a denser cell for a stronger signal. It is the only view that
@@ -324,9 +324,9 @@ means usual, faint means it happens but rarely. That answers *what is here that 
 signal that transmits for 80 ms once a minute is invisible on a live spectrum and obvious here,
 because the display accumulates over time instead of trying to catch the moment — a steady carrier
 piles into one thin line, noise spreads into a band, an intermittent burst leaves a faint mark
-exactly where it lives. Counts fade on a half-life (`--half-life`, seconds, default 20) so "usual"
-means "usual lately", not "at some point since you started" — the header states the window. Reach
-for it when you suspect something is on a band but never see it: ISM and paging bands, telemetry,
+at its frequency. Counts fade on a half-life (`--half-life`, seconds, default 20) so "usual"
+means "usual lately", not "at some point since you started" — the header states the window. Use
+it when you suspect something is on a band but never see it: ISM and paging bands, telemetry,
 anything bursty.
 
 ```console
@@ -337,23 +337,22 @@ $ ley phosphor 144.39 --span 250k       # narrow in on one channel
 
 Both share `spectrum`'s device and framing flags (`--span`, `--band`, `--bins`, `--device`,
 `--retune`, `--width`) plus `--rate` (rows or redraws a second) and `--count` (stop after N, default
-runs until Ctrl-C). Neither calls out carriers by name the way `scan` does — they are pictures to
-read, not a list to act on.
+runs until Ctrl-C). Neither lists carriers the way `scan` does.
 
 ## 7. See the waveform
 
-`ley scope` draws what the demodulator made: one window of samples a frame, fitted to the signal top
+`ley scope` draws the demodulator's output: one window of samples a frame, fitted to the signal top
 to bottom, redrawn where it stands. It answers two questions the level meter and the spectrum
 cannot, because both of those are measured before demodulation. The first is *what does this mode
 actually do* — FM voice through the AM detector is a flat line with ripple, a carrier in CW is a
-sine, NFM voice is a voice, and `ley set mode am` from another terminal changes the picture while
-you watch. The second needs the other tap.
+sine, NFM voice looks like voice, and `ley set mode am` from another terminal changes the picture
+while you watch. The second needs the other tap.
 
 `--tap audio` (the default) is what the speakers get, after the high-pass, de-emphasis and gain
 control. `--tap demod` is the detector's own output before any of that, and on an NFM channel that
 is where the CTCSS (PL) tone lives: the audio chain high-passes at 300 Hz precisely to remove it,
 so a picture of what you hear cannot show it. The demod tap also keeps drawing while the squelch is
-closed — *what is the transmitter sending between words* is what it is for — and its DC offset is
+closed, so you can see what the transmitter sends between words, and its DC offset is
 the tuning error, which the header reads out in hertz against the deviation the top of the trace
 stands for. That deviation is the channel's own, which the header names: a 12.5 kHz NFM channel
 cannot carry more than ±2.5 kHz, a 25 kHz one goes to ±5 kHz, and WFM is broadcast's ±75 kHz.
@@ -375,31 +374,31 @@ PL 100.0 Hz (measured 100.12 Hz, 18 dB, confidence 0.9)
       0 ms        2 ms           4 ms           6 ms           8 ms        10 ms
 ```
 
-The header is the daemon's claim: the tone comes from the same sub-audible detector `ley tune`
-prints, and `scope` never estimates one itself, so the picture and the number can disagree — which
-is the reason both are on screen. Both scales are drawn: the gutter down the left is the
-vertical one, the fit the header names (hertz are the header's tuning line), and the rule beneath
-the trace is milliseconds from the start of the frame out to the window length.
-`--window` (5 to 500 ms, default 40) is the timebase: 40 ms is a syllable of voice, four cycles of
-a 100 Hz tone, and a narrower window spreads a 1 kHz note out into a wave. `--trigger auto` starts
-each frame at a rising zero crossing when the window repeats steadily, which holds a tone still;
-`--trigger free` lets the trace run. On a terminal without
-UTF-8, or with `--ascii`, the same trace is drawn with three levels per character.
+The header's values come from the daemon: the tone comes from the same sub-audible detector `ley
+tune` prints, and `scope` never estimates one itself, so the picture and the number can disagree,
+and both are shown so you can compare them. Both scales are drawn: the gutter down the left is the
+vertical one, the scale the header shows (hertz are the header's tuning line), and the rule beneath
+the trace is milliseconds from the start of the frame out to the window length. `--window` (5 to 500
+ms, default 40) is the timebase: 40 ms is a syllable of voice, four cycles of a 100 Hz tone, and a
+narrower window spreads a 1 kHz note out into a wave. `--trigger auto` starts each frame at a rising
+zero crossing when the window repeats steadily, which holds a tone still; `--trigger free` lets the
+trace run. On a terminal without UTF-8, or with `--ascii`, the same trace is drawn with three levels
+per character.
 
-Looking at speech is what the default scale is for. `--scale auto` fits the trace to the signal:
-the loudest the last second held bar its top tenth, with a little headroom, snapped to a round
+The default scale is for looking at speech. `--scale auto` fits the trace to the loudest level of
+the last second, ignoring its top tenth of samples, with a little headroom, snapped to a round
 number (0.02, 0.05, 0.1, 0.2, 0.5 or 1) so the gutter stays readable. Reading the percentile
 rather than the peak is what keeps the picture still through a squelch tail — one frame several
 times full scale draws clamped rather than shrinking the next second of speech to a dot — and the
 second of hold is what keeps it from resizing between syllables. `--scale full` draws the whole
 range the tap can carry instead, which on the demod tap is the channel's whole deviation: a
 narrow handheld fills that trace, because full scale there is the ±2.5 kHz its own channel can
-carry rather than a number the mode was assigned. `--scale 0.2` pins it for good. Use `--window 250
+carry rather than a number the mode was assigned. `--scale 0.2` fixes it at 0.2. Use `--window 250
 --trigger free` to watch the envelope of speech, the shape of the words; `--window 40` with the
 trigger left alone to hold a tone still enough to count its cycles.
 
-On the audio tap a closed squelch draws a flat line, because a flat line is what the speaker gets.
-The view says so under the header — `squelch closed: the audio tap is muted; --tap demod shows what
+On the audio tap a closed squelch draws a flat line, because a flat line is what the speaker gets. A
+note under the header explains it — `squelch closed: the audio tap is muted; --tap demod shows what
 the detector hears` — because a flat trace beneath a header that still names a PL tone otherwise
 reads as "the tone is there but my voice is not". Nothing is printed on the demod tap, which the
 squelch does not silence.
@@ -418,11 +417,11 @@ reported a tone. The samples themselves are
 ## 8. Hear it with your eyes
 
 `ley scope` draws one window of samples — a syllable, a few cycles. Two more views take the same
-audio at the two scales either side of it. `ley levels` is the band meter off the front of a rack
-unit: what the sound is made of right now, band by band. `ley waveform` is the clip view: when
+audio at the two scales either side of it. `ley levels` is an octave-band meter like the one on the
+front of a rack unit: the level in each band right now. `ley waveform` is level over time: when
 something came through, over seconds or minutes. Neither opens the speakers, both take a frequency,
-a preset or a channel id, and both read the daemon's own audio spectrum and meter — the numbers are
-the daemon's, the shaping is the screen's.
+a preset or a channel id, and both read the daemon's own audio spectrum and meter — the numbers come
+from the daemon, and only the peak-hold and decay are done on screen.
 
 ```console
 $ ley levels 145.23 --tap demod
@@ -444,13 +443,13 @@ $ ley levels 145.23 --tap demod
                                                              -50   -46 dBFS
 ```
 
-Nine ladders on the ISO octave centres audio equipment has used for decades, and the master pair —
+Nine ladders on the standard ISO octave centres, and the master pair —
 rms and peak, from the daemon's meter — set apart at the right. That is one still: the bare verb
 draws the bands as one row measured them and exits, the way `ley spectrum` does. `ley levels 145.23
 -w` is the meter itself, redrawn twenty times a second until Ctrl-C. There a cap hangs above each
 bar at the loudest of the last second and a half before it falls, and the bars rise the instant the
 level does and fall at 20 dB a second, so a syllable leaves a trail you can read after it has gone.
-That shaping is the picture's: the two numbers under the master pair are the current row's own, and
+That shaping is display-only: the two numbers under the master pair are the current row's own, and
 `--json` carries the rows before any of it.
 
 While the daemon's squelch is shut every ladder is drawn unlit and the header says `squelch
@@ -458,7 +457,7 @@ closed`. Nothing is coming through, and the detector keeps putting out noise beh
 that a lit bar would report as sound. Between words the squelch is open, which is why the PL still
 stands in the picture above.
 
-The scale is a meter's rather than a chart's — 6 dB a row from 0 down to −24 dBFS, then 10 dB a row
+The scale is fixed, like a meter's — 6 dB a row from 0 down to −24 dBFS, then 10 dB a row
 to −60, held whatever the signal does, so a bar of a given height means the same dB tomorrow — and
 the dashed rule across −18 dBFS is the alignment level a speaking voice should sit around. `OVER`
 appears above the ladders when the radio is clipping — the daemon counts the samples at the
@@ -466,10 +465,10 @@ converter's rails, and a band reading full scale is not that — and stays up fo
 because a clip is over before you have looked up. The header's `radio peak` is the converter's own
 peak, the headroom you have left.
 
-The lit 125 Hz bar above is the picture's whole point. A 100 Hz CTCSS tone falls in that band
+The lit 125 Hz bar above is the CTCSS tone. A 100 Hz tone falls in that band
 (88 to 177 Hz), and it stands there on `--tap demod`, the detector's own output. Run the same
 command with `--tap audio` — what the speakers get — and that bar drops out of sight: the audio
-chain high-passes at 300 Hz precisely to remove it. Voice lives in the 250 Hz to 2 kHz bars, hiss
+chain high-passes at 300 Hz precisely to remove it. Voice falls in the 250 Hz to 2 kHz bars, hiss
 in the 4 kHz and up, mains hum in the 63 Hz one. `--bands third` draws twenty-five third-octave
 bands instead of nine, on a terminal at least 100 columns wide.
 
@@ -500,16 +499,16 @@ is the centre rule, which is what a live but quiet channel looks like.
 
 `--seconds` sets how much the picture holds, 2 to 120, default 10; a wider terminal buys resolution
 rather than more time. `--scale auto`, the default, fits the trace to the signal the way `scope`
-does, and `--scale 0.2` pins it where you want it. The colour is read against whatever the scale
-came out at — the `scale ±n` in the header says what full colour means — so the loudest thing on
-screen is hot and a quiet passage under `--scale 0.1` still has colour in it. On `--tap demod` the
-DC offset — the tuning error — is taken out before the envelope is drawn and the header says how
-much, because otherwise a mistuned channel draws its whole clip off centre.
+does, and `--scale 0.2` fixes it at 0.2. The colour is read against whatever the scale came out at —
+the `scale ±n` in the header shows what full colour means — so the loudest thing on screen is hot
+and a quiet passage under `--scale 0.1` still has colour in it. On `--tap demod` the DC offset — the
+tuning error — is taken out before the envelope is drawn and the header says how much, because
+otherwise a mistuned channel draws its whole clip off centre.
 
 Both views carry their frames raw. `ley levels --json` prints one object per spectrum row, before
 any of the ballistics: `{seq, sample_index, tap, bands: [{center_hz, db}], rms_dbfs, peak_dbfs,
 squelch_open}`, where `rms_dbfs`, `peak_dbfs` and `squelch_open` are `null` until the daemon has
-measured a block, because a level nobody reported is not a level. `ley waveform --json` prints one object per column as it completes,
+measured a block. `ley waveform --json` prints one object per column as it completes,
 `{sample_index, seconds, peak_dbfs, rms_dbfs, squelch_open}`, carrying the same slice the picture
 would have drawn at that width — which is what makes `ley waveform --seconds 120 --json` a way to
 log when a repeater was busy without drawing anything at all.
@@ -519,7 +518,7 @@ log when a repeater was busy without drawing anything at all.
 A capture is a wide slice of the band (2.4 MHz on an RTL-SDR), so one radio can feed several
 channels at once. `--persistent` leaves a channel running after the command exits and prints
 the ids scripts need; a second `tune` inside the same band reuses the capture instead of
-fighting for the device.
+claiming the device again.
 
 ```console
 $ ley tune 146.52 --persistent --no-audio
@@ -569,7 +568,7 @@ for its own).
 
 `ley state` draws that as a tree — each radio, the captures on it, the channels in each capture
 and the sinks under each channel — so the relationship is the indentation and no id is repeated
-as a column. Ids print whole on the dim line under the thing they name, ready to copy:
+as a column. Ids print whole on the dim line under the object they identify, ready to copy:
 
 ```console
 $ ley state
@@ -617,9 +616,9 @@ channels.
 
 ## 11. Record what you hear
 
-`ley record` writes what the radio hears to files the daemon keeps. It is a job, so it outlives
+`ley record` writes the received signal to files the daemon keeps. It is a job, so it outlives
 the terminal that started it, and what it writes is a resource: `ley recordings` lists them and
-`ley recordings path` says where they are.
+`ley recordings path` prints where they are.
 
 ```console
 $ ley record 146.52 --for 2m
@@ -637,8 +636,8 @@ ley://recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
 The banner states what the daemon decided rather than what you asked for, so a recording of the
 wrong thing is caught in the first line and not in the file. `--listen` plays it through the
 speakers while it records, so you can hear what is going into the file without a second command. The URI on stdout is what a script
-keeps; everything else is for you. Ctrl-C stops the job and leaves the recording **complete rather
-than damaged** — the file is closed properly and the manifest says it was cancelled. `--detach`
+keeps; everything else is for you. Ctrl-C stops the job and leaves a complete recording, not a
+damaged one: the file is closed properly and the manifest says it was cancelled. `--detach`
 starts it and exits, printing the id `ley jobs cancel` takes.
 
 Recording a busy channel continuously fills a disk with silence, so `--gate squelch` records only
@@ -654,13 +653,13 @@ Until     10 min with nothing on the air
 Left running; ley jobs cancel 1 stops it
 ```
 
-The squelch it names is the one it measured from the channel's own noise floor, the way
+The squelch it shows is the one it measured from the channel's own noise floor, the way
 `ley tune` does; `--squelch -40` sets one yourself.
 
 The pauses *between overs* stay inside one file (`--hang`, 5 s by default) and half a second
 before each key-up is kept (`--pre`), so an exchange plays back whole. Silence is never edited out
-of a file: the gaps between files are stated in the manifest instead, so what you play back
-sounds like the air did.
+of a file: the gaps between files are stated in the manifest instead, so playback keeps the
+original timing within each file.
 
 `--iq` records the radio's raw samples instead of demodulated audio — the format another tool
 reads, and what `ley play` tunes back. It is large (about 19 MB a second at 2.4 MSPS), so it is
@@ -694,7 +693,7 @@ $ ley play job_01J8
 $ ley play job_01J8 --part 2      # or any other part
 ```
 
-`ley play` works on either kind, and does the right thing for each: an IQ recording is tuned back
+`ley play` works on either kind: an IQ recording is tuned back
 as if it were a radio, and an audio recording is played by the daemon through the same speakers
 `ley tune` uses — a WAV holds what the demodulator already produced, and there is no signal left
 in it to tune. Either way Ctrl-C stops it. (If the daemon has no audio device, `ley play` hands
@@ -703,11 +702,11 @@ the file to your own player instead and says so.)
 Moving the radio while a recording runs leaves a gap in it, so `ley tune` and `ley set freq`
 refuse and name the job; `--retune` goes ahead, and the recording logs the gap rather than
 failing. The daemon drops the oldest recordings when the store passes its cap (20 GiB by
-default); deleting one in Finder is enough, and nothing has to be told.
+default); you can delete one in Finder without telling the daemon.
 
 ## 12. Decode what is being said
 
-`ley decode` answers *what are the packets on this frequency saying*. The daemon runs a decoder,
+`ley decode` shows what the packets on a frequency contain. The daemon runs a decoder,
 a separate program that turns a channel's audio into typed records, and `decode` prints one
 line per record. `ley decoders` lists what is installed and where each one listens:
 
@@ -723,8 +722,8 @@ A decoder carries its own recipe (the frequency, the mode, the bandwidth), so `d
 tune flags. APRS is the first one: position, weather, telemetry, status and message packets that
 amateur stations send on 144.390 MHz in North America (`--freq 144.8` is the European
 allocation). The transcripts in this section were recorded against the real daemon playing the
-`aprs_afsk` fixture, three packets from three test stations, because 144.39 MHz was quiet where
-the author sat; on the air the stations are real and the lines look the same.
+`aprs_afsk` fixture, three packets from three test stations, because 144.39 MHz was quiet at
+the author's location; on the air the stations are real and the lines look the same.
 
 ```console
 $ ley decode aprs --count 3
@@ -741,7 +740,7 @@ received, the station's callsign and SSID, the kind of record, and a summary of 
 decoder extracted and the raw bytes it decoded them from.
 
 Ctrl-C stops decoding and hands the radio back. `--job` keeps the decoder running after `ley`
-exits and stores what it hears, which is how "what passed overnight" gets answered:
+exits and stores the records, so you can see later what was decoded overnight:
 
 ```console
 $ ley decode aprs --job --count 1
@@ -757,14 +756,14 @@ more records matched than were returned; --limit asks for more
 
 `ley records` searches everything kept jobs have stored: `--protocol`, `--since 1h`,
 `--device-id`, `--kind`, `--near 37.76,-122.42 --radius 10km`, and `--in-effect` for records
-whose validity window contains now. The store lives in a plain directory `ley decoders` names,
+whose validity window contains now. The store lives in a plain directory `ley decoders` prints,
 and it is trimmed to a size and an age the daemon was started with.
 
 `ley track` is the other view of the same records: a table with one row per station, kept up to
 date as packets arrive and dropped after the decoder's silence timeout, the way an aircraft
 display works. It starts the decoder for you, so `ley track aprs` is one command; if a decoder is
 already running for the protocol it renders that one rather than starting a second on the radio,
-and `ley track aprs --attach` only folds an existing one without touching the radio. The table is
+and `ley track aprs --attach` only displays an existing one without touching the radio. The table is
 computed in `ley` from the record stream, so a second terminal running it sees exactly the same
 table; the daemon keeps no station list of its own.
 
@@ -778,8 +777,8 @@ LEYTST-3  now         1            ▁      -                   test status
 ```
 
 HEARD is SEEN spread over time: eight cells covering the window a row lives for, one ramp step per
-packet in each, so a station that beacons every few minutes fills a row of low cells and one that
-spoke once shows a single mark at the moment it did. The header says what a cell covers.
+packet in each, so a station that beacons every few minutes fills a row of low cells and one heard
+once shows a single mark at that time. The header shows what a cell covers.
 
 `ley devices-seen` is the longer memory: one row per transmitter the kept records have ever heard,
 with how many times, and how long ago it was first and last on the air. Where `ley track` is the
@@ -797,14 +796,13 @@ LEYTST-3              aprs      status   3     2 s    now   fake daemon, monitor
 ```
 
 `ley label <device-id> <name>` gives a transmitter a human name, `ley label <device-id>` reads it
-back, and `--clear` removes it. Labels are your data, so they live in a small JSON file in your
-config directory (`$LEYLINE_LABELS` overrides the path) and outlive any job -- the registry is a
-fold over the records, and the one thing a fold cannot work out is what you decided a device is.
-`--quiet-since 48h` is the absence question: it shows only the transmitters *not* heard within the
-last two days, which is how you notice a soil probe whose battery died rather than a soil probe that
-is merely quiet right now. By default `devices-seen` scans the whole store so absence can reach as
-far back as it goes; `--since` bounds the scan to a window and `--protocol` narrows it to one
-decoder.
+back, and `--clear` removes it. Labels are stored in a small JSON file in your config directory
+(`$LEYLINE_LABELS` overrides the path) and outlive any job: the registry is computed from the
+records, and a name you chose cannot be computed from them. `--quiet-since 48h` shows only the
+transmitters *not* heard within the last two days, so a soil probe with a dead battery shows up and
+one that is only quiet for the moment does not. By default `devices-seen` scans the whole store, so
+it can find transmitters silent since the oldest record; `--since` bounds the scan to a window and
+`--protocol` narrows it to one decoder.
 
 ### Wait for one thing: `ley watch`
 
@@ -831,9 +829,9 @@ filters on position. `--notify` hands each match to a macOS notification (bare `
 webhook (`--notify=webhook:URL`), or a shell command (`--notify=shell:CMD`) with the record's JSON
 on its input.
 
-`ley watch` stays attached and streams the matches, like `decode`. The point of a watch, though, is
-that it keeps working with nobody watching: `--detach` leaves the job running in the daemon after
-`ley` exits, so the notifier fires headless. Stop it with `ley jobs cancel`.
+`ley watch` stays attached and streams the matches, like `decode`. A watch is most useful
+unattended: `--detach` leaves the job running in the daemon after `ley` exits, so the notifier fires
+headless. Stop it with `ley jobs cancel`.
 
 A SAME record carries a validity window, the span the alert is in effect, so `ley records
 --in-effect` lists only alerts that have not expired.
@@ -860,7 +858,7 @@ for a program that speaks the contract directly.
   sinks, activity. Read it instead of scraping tables.
 - **`ley fft`** is the number feed behind `spectrum`: rows of bin levels across the band,
   `--rate` times a second, `--count` rows or until Ctrl-C, `--format json` or `bin`. `spectrum
-  --json` emits one row with a `floor_db` and a `peaks` list (which is as long as the evidence:
+  --json` emits one row with a `floor_db` and a `peaks` list (only peaks that clear the threshold:
   often one entry, sometimes none). These rows are bulk data with no proto message, so their
   shape (`{seq, sample_index, center_hz, span_hz, bins, floor_db}`) is the one documented
   exception to the proto3 rule. `fft` rows are delivered gap-marked: when the daemon had to
@@ -886,8 +884,8 @@ for a program that speaks the contract directly.
   returning the verb's `--json` shape and a short summary. `claude mcp add leyline -- ley mcp`
   registers it in Claude Code; other clients take `{"command": "ley", "args": ["mcp"]}`. What an
   agent tunes ends when its conversation does unless it asks to keep it. The
-  [MCP adapter reference](../reference/mcp.md) is every tool and what it hands an agent.
-- **Be explicit about the rest.** A voice channel squelches whatever the output looks like:
+  [MCP adapter reference](../reference/mcp.md) documents every tool and what it returns to an agent.
+- **Be explicit about the rest.** A voice channel is squelched with `--json` too:
   `tune --json` and `tune --persistent` measure the floor too and print the threshold on stderr
   with the run's other decisions (`--squelch off` keeps the channel open). Pass `--mode`
   explicitly rather than relying on band defaults, and give frequencies with a unit (`146.52M`).

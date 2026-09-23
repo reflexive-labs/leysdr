@@ -17,7 +17,7 @@ import Synchronization
 ///
 /// The floor was the channel's own running minimum until 2026-09-19, and on a carrier that
 /// never stops the minimum is the carrier, so a -12 dBFS signal read `0 dB over noise`
-/// (`docs/plans/app.md`, APP-3). The band's median is honest about a steady carrier because a
+/// (`docs/plans/app.md`, APP-3). The band's median is not raised by a steady carrier, because a
 /// carrier occupies a few bins of the band and the median ignores them.
 public final class BandFloor: @unchecked Sendable {
     /// Bins in the transform the floor is read from. The density does not depend on the count

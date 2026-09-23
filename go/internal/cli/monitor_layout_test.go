@@ -66,7 +66,7 @@ func TestMonitorReportLayout(t *testing.T) {
 	if !strings.HasPrefix(lines[1], "0:01  88.505 MHz") || !strings.HasPrefix(lines[2], "      88.650 MHz") || !strings.HasPrefix(lines[3], "0:30  88.309 MHz") {
 		t.Errorf("time gutter should stamp on change only:\n%s", plain)
 	}
-	// A sub-second hold reads "<1", not a rounded nothing and not prose.
+	// A sub-second hold reads "<1", not a value rounded to 0 and not prose.
 	if !strings.Contains(lines[3], " <1 ") {
 		t.Errorf("a sub-second HELD should read <1: %q", lines[3])
 	}

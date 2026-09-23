@@ -10,9 +10,9 @@ scenario or reads a run; the adapter itself is [`docs/reference/mcp.md`](../refe
 Every scenario's truth is known before the agent starts, because the radios are recordings: the
 sweep fixture has carriers at 145.2, 145.6, 146.4 and 146.8 MHz, the APRS fixture carries three
 stations, the NOAA capture has no PL tone and the handheld's has one at 100 Hz. Nothing depends on
-what is on the air, so a run is reproducible and two runs compare; what varies is the agent. The
-recordings go in under neutral names (`radio-a`), with a sidecar that says nothing but format,
-rate and centre, because a fixture's filename and description are the answer key.
+what is on the air, so a run is reproducible and two runs are comparable; only the agent varies.
+The recordings go in under neutral names (`radio-a`), with a sidecar that holds only format, rate
+and centre, because a fixture's filename and description would give away the answer.
 
 ## Running
 
@@ -47,20 +47,20 @@ Each run makes `evals/runs/<timestamp>/<scenario>/` (gitignored) holding:
 - `messages.jsonl`: the agent's stream, one JSON object a line, untouched.
 - `prompt.md`, `mcp.json`, `leylined.log`, `radios/`: what the agent was given, how it was pointed
   at the daemon (`ley mcp` with the run's socket and `--log` on the run's log, so `daemon_logs`
-  reads this daemon and not the machine's), what the daemon said, and the recordings under their
+  reads this daemon and not the machine's), the daemon's log, and the recordings under their
   neutral names.
 - `result.json`: the verdicts and the metrics (tool calls by tool, host calls, tool errors, turns,
   duration, cost).
 - `socket.txt`, only when the run directory's path is too long for a Unix socket (about 100
-  bytes): the daemon's socket went in a short temp directory instead, and this says where.
+  bytes): the daemon's socket went in a short temp directory instead, and this file records where.
 
 The summary table at the end has one line a scenario: passed, failed, tool calls, host calls,
-cost. A scenario whose fixture is not on the machine is skipped and says so; a harness failure (the
+cost. A scenario whose fixture is not on the machine is skipped with a message; a harness failure (the
 daemon would not start) is an error, not a failed check.
 
 ## A scenario
 
-One YAML file under `evals/scenarios/`. `leyeval check` parses them all and says what each
+One YAML file under `evals/scenarios/`. `leyeval check` parses them all and prints what each
 grades without running anything.
 
 ```yaml
@@ -128,9 +128,9 @@ parameter.
 | `survey-2m` | `scan_band` idle | the four carriers are found with `scan` and called carriers, not services |
 | `aprs-stations` | `aprs_afsk` tuned | the three stations come from a decoder's records, with positions |
 | `dont-disturb` | `nfm_tone` with a channel listening | asked to look elsewhere, the agent reports the refusal and who is listening, and never takes over first |
-| `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works, the band is quiet. (Its first version put a strong tone under the job and called it quiet; the agent measured the tone, saw no records and called the decoder broken, which was the right answer to the wrong scenario) |
+| `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works, the band is quiet. (Its first version put a strong tone under the job and called it quiet; the agent measured the tone, saw no records and called the decoder broken, which was a correct reading of a faulty scenario) |
 | `pl-tone-absent` | `rf-captures/noaa-wx2-auto` (local) | no PL is reported on a station that sends none |
-| `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is named |
+| `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is reported |
 | `record-squelch-opens` | `nfm_keyed` tuned | a gated recording is made and the three transmissions counted. The count comes from the manifest's `squelch_opens`, not from the part count: at the default 5 s hang the fixture's 3 s gaps keep all three overs in one part, so an agent that counts parts answers 1 |
 
 Not yet: a restart mid-task (the daemon killed and restarted while the agent works, which should

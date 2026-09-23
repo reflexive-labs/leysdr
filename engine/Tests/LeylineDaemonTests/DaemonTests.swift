@@ -39,7 +39,7 @@ final class DaemonTests: XCTestCase {
                 XCTAssertEqual((error as? RPCError)?.code, .unimplemented)
             }
             // Resources is implemented (C.12). An idle daemon holds none, and an empty list is the
-            // true answer rather than an error.
+            // correct answer rather than an error.
             let resources = try await c.resources.listResources(Leyline_V1_ListResourcesRequest(), metadata: testMetadata)
             XCTAssertTrue(resources.resources.isEmpty)
         }
@@ -123,7 +123,7 @@ final class DaemonTests: XCTestCase {
 
             // system_audio AttachSink -> PLATFORM_UNSUPPORTED on Linux. On macOS it succeeds when an
             // output device exists; a headless runner fails AVAudioEngine.start with DEVICE_IO, which is
-            // the sink's honest answer, not a contract failure.
+            // the sink's correct error, not a contract failure.
             var sinkReq = Leyline_V1_AttachSinkRequest()
             sinkReq.channelID = channel.channelID
             sinkReq.sink.systemAudio = Leyline_V1_SystemAudioSink()
@@ -1075,7 +1075,7 @@ final class DetachFileDeviceDaemonTests: XCTestCase {
             XCTAssertEqual(capture.state, .captureActive)
 
             // Hosted virtual device that is not file playback (driver "test"): DetachFileDevice
-            // names a file and gets one, even though DetachDevice would take this.
+            // accepts only file devices and refuses it, even though DetachDevice would take this.
             var detach = Leyline_V1_DetachFileDeviceRequest()
             detach.deviceID = d.id.string
             do {

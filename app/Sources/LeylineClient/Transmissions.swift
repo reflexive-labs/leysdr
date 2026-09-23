@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The transmissions log: what one channel's squelch edges turned out to be, folded from the
+// The transmissions log: one channel's squelch edges paired into transmissions, folded from the
 // telemetry plane with no daemon and no clock in it (docs/plans/app.md, "The M2 cut", M2-1).
 // The daemon summarises a transmission on the close edge of a `SquelchTransition` (its length
 // in capture samples, the peaks it reached), so the log keeps the last ones without timing
 // anything itself, and the tone under each is the CTCSS `SubAudible` reported while it ran. The
 // rules are `ley tune`'s (`go/internal/cli/transmission.go`: a close edge with no duration is
-// nothing; `subaudible.go`: the 1 Hz heartbeat repeats a tone and is not a new one, and a tone's
-// loss is silent), and the start of a transmission whose open edge was never seen is read back
+// ignored; `subaudible.go`: the 1 Hz heartbeat repeats a tone and is not a new one, and a tone's
+// loss is not logged), and the start of a transmission whose open edge was never seen is read back
 // from the close edge the way `listenSummary.apply` does (`go/internal/cli/mcp_tools.go`), so a
 // client that subscribes mid-transmission still logs it. Every time here is a `SampleTime` on
 // the capture's timeline (invariant 5); `SampleClock` turns one into a wall clock, when an
@@ -16,9 +16,9 @@
 import Foundation
 import LeylineProto
 
-/// A CTCSS tone the daemon classified: `standardHz` is the EIA tone it named, `measuredHz` what
-/// it measured. A measurement two standard tones could both explain is not a tone here, because
-/// naming one would be a guess (`proto/leyline/v1/telemetry.proto`, `SubAudible`).
+/// A CTCSS tone the daemon classified: `standardHz` is the EIA tone it reported, `measuredHz`
+/// what it measured. A measurement two standard tones could both explain is not a tone here,
+/// because picking one would be a guess (`proto/leyline/v1/telemetry.proto`, `SubAudible`).
 public struct CTCSSTone: Sendable, Equatable {
     public var standardHz: Double
     public var measuredHz: Double
@@ -28,7 +28,7 @@ public struct CTCSSTone: Sendable, Equatable {
         self.measuredHz = measuredHz
     }
 
-    /// The tone a `SubAudible` names, or nil: only CTCSS, and only when it was classified.
+    /// The tone a `SubAudible` reports, or nil: only CTCSS, and only when it was classified.
     public init?(_ sa: Leyline_V1_SubAudible) {
         guard sa.kind == .subAudibleCtcss, sa.standardToneHz > 0 else { return nil }
         self.init(standardHz: sa.standardToneHz, measuredHz: sa.toneHz)
@@ -78,7 +78,7 @@ public struct TransmissionLog: Sendable, Equatable {
     }
 
     /// Folds one message in. `captureRate` is the capture's sample rate, which is
-    /// `duration_samples`' unit; 0 means unknown, which costs the duration and nothing else.
+    /// `duration_samples`' unit; 0 means unknown, which loses the duration and nothing else.
     public mutating func fold(_ msg: Leyline_V1_TelemetryMsg, captureRate: UInt64) {
         switch msg.body {
         case .squelch(let sq) where sq.channelID == channelID:
@@ -104,7 +104,7 @@ public struct TransmissionLog: Sendable, Equatable {
                 at: 0)
             if closed.count > Self.capacity { closed.removeLast(closed.count - Self.capacity) }
         case .subAudible(let sa) where sa.channelID == channelID:
-            // A heartbeat repeats the tone and a loss says nothing: the tone a transmission had
+            // A heartbeat repeats the tone and a loss changes nothing: the tone a transmission had
             // stays with it. Only a classified CTCSS report is a tone at all.
             guard let heard = CTCSSTone(sa) else { return }
             if onAir != nil {

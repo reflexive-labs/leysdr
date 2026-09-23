@@ -105,7 +105,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// The scale is the client's to state, so find it the same way a one-shot
+	// The client must supply the scale, so find it the same way a one-shot
 	// ley spectrum does: take a row and read its floor. The daemon will not
 	// guess, because a histogram on the wrong scale is not obviously wrong to
 	// look at, and by the time the descriptor is written no row has arrived.
@@ -235,7 +235,7 @@ func phosphorRows(ctx context.Context, app *App, desc *leylinev1.StreamDescripto
 			if !ok {
 				return spectrumEnd(ctx, "persistence", sub.Err(), n)
 			}
-			// A frame too short for the grid the descriptor promised is
+			// A frame too short for the grid the descriptor specifies is
 			// dropped rather than half-read, as the chart drops it.
 			if bins <= 0 || levels <= 0 || len(fr.Payload) < bins*levels*2 {
 				continue

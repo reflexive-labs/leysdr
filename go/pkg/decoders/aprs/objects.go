@@ -8,8 +8,8 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
 
-// parseObject reads ;NAME_____*DDHHMMz followed by a position. The star says
-// the object is live and an underscore says it has been killed; the name is
+// parseObject reads ;NAME_____*DDHHMMz followed by a position. A star marks
+// the object live and an underscore marks it killed; the name is
 // exactly nine characters, padded with spaces.
 func parseObject(rec *leylinev1.DecodeRecord, s string) {
 	rec.Kind = KindObject
@@ -29,7 +29,7 @@ func parseObject(rec *leylinev1.DecodeRecord, s string) {
 	}
 	kind := rec.Kind
 	parsePosition(rec, trimTimestamp(s[10:]))
-	// parsePosition names the record for what it found; an object carrying
+	// parsePosition sets the record kind from what it parsed; an object carrying
 	// weather is still weather, but an object carrying a plain position is an
 	// object rather than a position report.
 	if rec.Kind == KindPosition {
@@ -38,7 +38,7 @@ func parseObject(rec *leylinev1.DecodeRecord, s string) {
 }
 
 // parseItem reads )NAME! or )NAME_ followed by a position. The name runs three
-// to nine characters and the terminator says whether the item is live.
+// to nine characters and the terminator shows whether the item is live.
 func parseItem(rec *leylinev1.DecodeRecord, s string) {
 	rec.Kind = KindItem
 	end := -1

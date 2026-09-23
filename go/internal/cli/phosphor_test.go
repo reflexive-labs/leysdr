@@ -51,8 +51,8 @@ func bandHistogram(bins, levels int) []byte {
 
 // The reason the shading curve is logarithmic. A linear normaliser against the
 // frame's peak makes a 1%-duty signal draw as blank, because the shade ramp has
-// four steps and 1% is far under the first. That would defeat the entire
-// feature: rare-but-real is exactly what persistence is for.
+// four steps and 1% is far under the first. Rare but real signals are what
+// the persistence display exists to show.
 func TestPhosphorRareSignalStaysVisible(t *testing.T) {
 	if got := shadeFor(10, 1000); got < 0.25 {
 		t.Errorf("a 1%% signal must reach the first shade step, got %.3f", got)
@@ -80,7 +80,7 @@ func TestPhosphorRareSignalStaysVisible(t *testing.T) {
 	}
 }
 
-// The whole claim of the display, end to end: a carrier that is always there
+// End to end: a carrier that is always there
 // and a signal that is rarely there both appear, and a frequency that has never
 // carried anything stays blank.
 func TestPhosphorDrawsRareAndSteadyAlike(t *testing.T) {

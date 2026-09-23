@@ -150,7 +150,7 @@ final class IQFrameTap: CaptureTap, @unchecked Sendable {
         guard iq.format == .cf32 else { return }
         // A block bigger than a slot is truncated, so the frame spans only the samples that fit:
         // reporting the block's full count would credit the client samples it never received and
-        // slide its sample-index arithmetic off the timeline with nothing to show for it.
+        // shift its sample-index arithmetic off the timeline.
         let bytes = min(iq.byteCount, ring.slotBytes)
         ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(bytes / 8)) { dst in
             dst.copyMemory(from: UnsafeRawPointer(iq.base), byteCount: bytes)
@@ -162,9 +162,9 @@ final class IQFrameTap: CaptureTap, @unchecked Sendable {
 }
 
 /// Persistence path: every ladder row is folded into a `PersistenceAccumulator`, and a snapshot of
-/// the whole histogram is emitted at the subscriber's own rate. Accumulate fast, display slow --
-/// the two rates are independent, which is the point: the histogram sees every row the ladder
-/// produces while a person reads a couple of frames a second.
+/// the whole histogram is emitted at the subscriber's own rate. The two rates are independent: the
+/// histogram takes every row the ladder produces while the display needs only a couple of frames a
+/// second.
 ///
 /// Every frame is the entire state, so LATEST_WINS costs a subscriber nothing but freshness.
 final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
@@ -187,7 +187,8 @@ final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
         if !started {
             started = true
             // The first frame waits an interval: emitting on the first row would send a histogram
-            // with a single row in it, which reads as a spectrum rather than as a persistence.
+            // with a single row in it, which looks like one spectrum row rather than a persistence
+            // display.
             nextEmit = now &+ emitInterval
             return
         }

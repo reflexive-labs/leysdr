@@ -508,8 +508,8 @@ public nonisolated struct Leyline_V1_FieldHint: Sendable {
   public init() {}
 }
 
-/// One thing a transmitter said. Promoted fields are present or empty, never invented; everything
-/// protocol-specific is in `fields`. Records are immutable: a correction is a new record.
+/// One decoded message from a transmitter. Promoted fields are present or empty, never invented;
+/// everything protocol-specific is in `fields`. Records are immutable: a correction is a new record.
 public nonisolated struct Leyline_V1_DecodeRecord: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -606,7 +606,7 @@ public nonisolated struct Leyline_V1_DecodeRecord: @unchecked Sendable {
     set {_uniqueStorage()._channelID = newValue}
   }
 
-  /// The protocol's own record type, when it has more than one: APRS says "position", "weather",
+  /// The protocol's own record type, when it has more than one: APRS uses "position", "weather",
   /// "telemetry", "message", "status", "object". Empty for a protocol with one kind of record.
   public var kind: String {
     get {_storage._kind}
@@ -762,8 +762,8 @@ public nonisolated struct Leyline_V1_DecodeConfig: Sendable {
   public mutating func clearPredicate() {self._predicate = nil}
 
   /// Where a record that passes the predicate goes when it fires: a notification, a webhook, a shell
-  /// hook. A triggered alert is a channel output going somewhere, and "somewhere" is now a notifier
-  /// (docs/design/decoders.md); it is not a parallel delivery path, it rides the same records.
+  /// hook. A notifier is a channel output like any other (docs/design/decoders.md), not a parallel
+  /// delivery path: it receives the same records.
   public var notify: Leyline_V1_NotifyTarget {
     get {_notify ?? Leyline_V1_NotifyTarget()}
     set {_notify = newValue}
@@ -875,7 +875,7 @@ public nonisolated struct Leyline_V1_GeoTest: Sendable {
 }
 
 /// Where a matching record goes. External delivery happens in the daemon, so a webhook or a shell
-/// hook is the daemon reaching out, never a client relaying; a client that wants records subscribes.
+/// hook is called by the daemon, never relayed by a client; a client that wants records subscribes.
 public nonisolated struct Leyline_V1_NotifyTarget: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1058,7 +1058,7 @@ public nonisolated struct Leyline_V1_RecordQuery: Sendable {
   /// Exact-value field filters, all of which must match.
   public var fields: [Leyline_V1_FieldMatch] = []
 
-  /// 0 = the daemon's default (1000); the page says if it was cut
+  /// 0 = the daemon's default (1000); the page shows if it was cut
   public var limit: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

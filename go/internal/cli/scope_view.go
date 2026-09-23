@@ -34,7 +34,7 @@ var brailleDots = [2][4]byte{
 }
 
 // scopeFrame is one window as the view draws it: the samples, the statistics
-// taken over them, and what the daemon says is under them.
+// taken over them, and what the daemon reports about them.
 type scopeFrame struct {
 	samples  []float32
 	tap      leylinev1.AudioTap
@@ -52,8 +52,8 @@ type scopeFrame struct {
 	// what names the channel: its frequency and mode.
 	what string
 	// tone is the daemon's sub-audible report, nil until it has made one. The
-	// view never estimates a tone itself: the picture is the evidence and the
-	// header is the daemon's claim, and they are allowed to disagree.
+	// view never estimates a tone itself: the trace shows the samples and the
+	// header shows the daemon's report, and the two may disagree.
 	tone *leylinev1.SubAudible
 	// muted says the daemon's squelch is closed on a tap that the squelch
 	// silences, which is why the trace is flat under a header that may still
@@ -168,8 +168,8 @@ func scopeMutedNote(width int) []string {
 	return []string{what, where}
 }
 
-// scopeToneText is the daemon's sub-audible claim as one phrase: the tone it
-// named, then the measurement it named it from.
+// scopeToneText is the daemon's sub-audible report as one phrase: the tone it
+// identified, then the measurement it identified it from.
 func scopeToneText(sa *leylinev1.SubAudible) string {
 	if sa == nil || sa.Kind != leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS {
 		return ""

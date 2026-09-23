@@ -246,7 +246,7 @@ public actor DefaultChannelEngine: ChannelEngine {
     }
 
     /// The capture's stream restarted: the samples either side of the gap are not continuous, so the
-    /// core starts clean instead of filtering the first blocks against pre-gap history and judging
+    /// core starts clean instead of filtering the first blocks against pre-gap history and testing
     /// them against a noise floor measured on the old stream.
     public func captureStreamRestarted() async {
         slot.load()?.reset()

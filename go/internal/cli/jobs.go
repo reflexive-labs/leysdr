@@ -67,8 +67,8 @@ func runJobs(ctx context.Context, app *App, wide bool) error {
 }
 
 // newJobsCancelCommand stops one job. Cancelling a job that has already finished is not an
-// error -- the reader asked for it to be stopped and it is stopped -- so it prints the state the
-// daemon reports and exits 0.
+// error, since the job is stopped either way, so it prints the state the daemon reports and
+// exits 0.
 func newJobsCancelCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel <job>",
@@ -110,9 +110,9 @@ can be given as its id, an unambiguous id prefix, or its row number in
 	}
 }
 
-// printJobTable renders the jobs table. The reader is asking "what is the daemon doing, and is it
-// done yet", so WHAT and STATE lead; the id is the column nobody reads until they want to name a
-// job, and a row number names one just as well, so it moves behind --wide.
+// printJobTable renders the jobs table. It shows what the daemon is doing and whether it is done,
+// so WHAT and STATE come first; the id is only needed to refer to a job, and a row number does
+// that too, so it moves behind --wide.
 func printJobTable(app *App, jobs []*leylinev1.Job, wide bool) {
 	s := tableStyle(app)
 	cols := []column{
@@ -140,8 +140,7 @@ func printJobTable(app *App, jobs []*leylinev1.Job, wide bool) {
 			cols[i].cells = append(cols[i].cells, cells[i])
 		}
 	}
-	// --wide is the reader asking for every column, and a cut id is exactly what they went there
-	// to avoid.
+	// --wide requests every column, and a truncated id is what --wide exists to avoid.
 	if wide {
 		s.Width = 0
 	}
@@ -182,14 +181,14 @@ func jobRange(j *leylinev1.Job) string {
 		return rangesPhrase([]*leylinev1.FrequencyRange{sc.Scan.GetRange()})
 	}
 	// A decode job listens on one frequency, not a range; a job on the decoder's own recipe has
-	// no frequency of its own, and saying "recipe" is honest where a number would be invented.
+	// no frequency of its own, so it shows "recipe" rather than an invented number.
 	if dec, ok := j.GetConfig().(*leylinev1.Job_Decode); ok {
 		if hz := dec.Decode.GetFrequencyHz(); hz > 0 {
 			return leyline.FormatFrequency(hz)
 		}
 		return "recipe"
 	}
-	// A recording is on one frequency too, or on somebody else's channel, which names itself.
+	// A recording is on one frequency too, or on somebody else's channel, shown by its id.
 	if rec, ok := j.GetConfig().(*leylinev1.Job_Record); ok {
 		if hz := rec.Record.GetFrequencyHz(); hz > 0 {
 			return leyline.FormatFrequency(hz)

@@ -72,7 +72,7 @@ type Glyphs struct {
 	// Marker points at a frequency or a squelch threshold under an axis.
 	Marker rune
 	// Shade is the waterfall's density ramp, empty first then four levels. A
-	// waterfall carries level by hue, and hue alone is nothing with colour off,
+	// waterfall carries level by hue, and hue alone is lost with colour off,
 	// so the cell's texture has to carry it too. These tile; the block ramp
 	// does not -- stacked in a grid, `▁▂▃` reads as scan lines rather than as
 	// density.

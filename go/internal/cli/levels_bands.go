@@ -11,7 +11,7 @@ import (
 // The bands a meter carries, on the ISO centres audio equipment has used for
 // decades: nine octaves across the audible range, and the third-octave set for
 // a screen wide enough to draw twenty-five bars. The narrow set is the six
-// speech lives in, which is what survives when the width takes the rest.
+// bands that cover speech, used when the terminal is too narrow for the rest.
 var (
 	levelsOctaveHz = []float64{63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000}
 	levelsNarrowHz = []float64{125, 250, 500, 1000, 2000, 4000}
@@ -43,8 +43,8 @@ func levelsBands(centres []float64, edge float64) []levelsBand {
 	return out
 }
 
-// levelsBandLabel names a band the way an equaliser does: hertz below a
-// kilohertz, kilohertz above it, and as few digits as say which band it is.
+// levelsBandLabel labels a band the way an equaliser does: hertz below a
+// kilohertz, kilohertz above it, with the fewest digits that identify the band.
 func levelsBandLabel(hz float64) string {
 	if hz < 1000 {
 		return fmt.Sprintf("%g", hz)
@@ -61,10 +61,10 @@ func levelsBandLabel(hz float64) string {
 const levelsWindowEnbw = 1.5
 
 // levelsBandDb is the level of one band of a spectrum row: the bins whose
-// centres fall inside it, summed in power, corrected for the window and said
-// in dB again. Levels are energy, and energy adds where dB do not, so a band
-// of two equal bins reads 3 dB over either of them -- which is what the band
-// actually carries.
+// centres fall inside it, summed in power, corrected for the window and
+// converted back to dB. Levels are energy, and energy adds where dB do not, so
+// a band of two equal bins reads 3 dB over either of them -- which is what the
+// band actually carries.
 //
 // A band narrower than a bin still has a level: the bin its centre falls in,
 // because a meter with a blank bar at 63 Hz would read as silence there rather
@@ -106,7 +106,7 @@ func levelsBandDb(bins []float64, binHz float64, b levelsBand) float64 {
 // The meter's scale: fine where the working range is, coarse below it. Six dB
 // a row from 0 to -24 gives a voice at -20 four rows of resolution; ten dB a
 // row from there keeps the floor on screen at all. It is held, never fitted to
-// the data, so a bar of a given height means the same dB tomorrow.
+// the data, so a given bar height always means the same dB.
 const (
 	levelsTopDb     = 0.0
 	levelsKneeDb    = -24.0
@@ -116,9 +116,9 @@ const (
 	levelsHorizonDb = -18.0
 )
 
-// levelsMarks are the numbers the gutter writes: what a meter is read against,
-// -18 dBFS among them because that is the alignment level every professional
-// meter carries and the horizon the eye reads the rest against.
+// levelsMarks are the scale marks printed in the gutter. -18 dBFS is among
+// them because it is the standard alignment level on professional meters, and
+// the meter draws it as a reference rule.
 var levelsMarks = []float64{0, -6, -12, -18, -24, -30, -40, -50, -60}
 
 // levelsRows is the scale in its own units, where one unit is one row of the
@@ -134,19 +134,19 @@ func levelsRows(db float64) float64 {
 // levelsFrac is a level as a fraction of the meter's height, 0 at the floor
 // and 1 at full scale. The meter's cold end is levelsFloorDb rather than a
 // noise line, because a meter is read against a scale that does not move.
-// Anything outside the scale is drawn at its end: a bar that ran off the top
-// would say less than a bar pinned to it. The piecewise ruler is applied
-// first, so a mark and a bar of the same level land in the same place.
+// Anything outside the scale is drawn at its end, so a level above full scale
+// shows as a full bar. The piecewise ruler is applied first, so a mark and a
+// bar of the same level land in the same place.
 func levelsFrac(db float64) float64 {
 	return rampFrac(levelsRows(db), levelsRows(levelsFloorDb), levelsRows(levelsTopDb))
 }
 
-// Ballistics: what makes a meter alive rather than a bar chart that flickers.
-// Attack is instant, so a bar never lags the sound; release is slow enough
-// that a syllable leaves a trail the eye can follow. The cap hangs on the
-// loudest of the last second and a half and then sinks, which is how a person
-// reads a peak off a moving bar. All of it is presentation over the daemon's
-// rows: nothing smoothed is ever reported as a measurement.
+// Ballistics: the smoothing that keeps the meter from flickering like a raw
+// bar chart. Attack is instant, so a bar never lags the sound; release is slow
+// enough that a syllable's decay stays visible. The peak cap holds the loudest
+// level of the last second and a half and then falls, so a peak can be read
+// off a moving bar. All of it is presentation over the daemon's rows: nothing
+// smoothed is ever reported as a measurement.
 const (
 	levelsReleaseDbPerS = 20.0
 	levelsCapHold       = 1500 * time.Millisecond
@@ -171,8 +171,8 @@ func levelsStill(db float64) levelsBar {
 		db = scopeMinDbfs
 	}
 	b := levelsBar{db: db, cap: scopeMinDbfs}
-	// An overload is a fact about the row, not a trail: the latch exists to
-	// hold a flash long enough to read, and a still is already still.
+	// An overload belongs to the row: the latch holds a brief flash long
+	// enough to read, which a still does not need.
 	if db >= levelsTopDb {
 		b.over = levelsOverHold
 	}
@@ -180,7 +180,7 @@ func levelsStill(db float64) levelsBar {
 }
 
 // newLevelsBar starts a bar at silence, so the first frame rises to the signal
-// rather than falling out of a level nobody measured.
+// rather than falling from a level that was never measured.
 func newLevelsBar() levelsBar {
 	return levelsBar{db: scopeMinDbfs, cap: scopeMinDbfs}
 }

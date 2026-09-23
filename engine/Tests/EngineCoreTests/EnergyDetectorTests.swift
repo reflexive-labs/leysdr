@@ -219,7 +219,7 @@ final class EnergyDetectorTests: XCTestCase {
     }
 
     /// Bins outside the window the sweep asked about are used for the floor and never reported:
-    /// that is how the DC spike and the rolled-off edges stay out of the answer.
+    /// that is how the DC spike and the rolled-off edges stay out of the results.
     func testNothingOutsideTheBelievedWindowIsReported() {
         let p = SpectrumDetect.sweepPFalse(expected: 0.1, bins: bins, rowsPerStep: 4, steps: 7)
         let believe = (center + 200_000) ... (center + 400_000)

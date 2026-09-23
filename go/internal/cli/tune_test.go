@@ -345,7 +345,7 @@ func TestTunePresetsAndErrors(t *testing.T) {
 	if err == nil || leyline.Code(err) != leyline.CodeFreqOutOfRange {
 		t.Fatalf("expected FREQ_OUT_OF_RANGE, got %v", err)
 	}
-	// The error is the whole story: no decision lines or warnings before it.
+	// The error is the only output: no decision lines or warnings before it.
 	if strings.Contains(out, "using ") || strings.Contains(errOut, "not a band I know") {
 		t.Errorf("decisions printed before the range check failed:\n%s\n%s", out, errOut)
 	}
@@ -453,8 +453,8 @@ func TestTuneShowsTheTone(t *testing.T) {
 	}
 }
 
-// And a frequency that carries no tone says nothing: a channel that never had one must not
-// narrate its absence.
+// A frequency that carries no tone prints no tone line: a channel that never had one must not
+// report the absence.
 func TestTuneSaysNothingWithoutATone(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	// The detector still reports, so this waits for its answer rather than for a silence that

@@ -90,7 +90,7 @@ func TestBandsOrderedAndDisjoint(t *testing.T) {
 }
 
 // GMRS is two halves and a group: `gmrs` is the whole service for a sweep, with the halves
-// named as its parts; each half answers to its own name and to what people called it before.
+// named as its parts; each half resolves by its own name and by its older aliases.
 func TestResolveBandGMRS(t *testing.T) {
 	for _, name := range []string{"gmrs", "GMRS"} {
 		b, err := ResolveBand(name)

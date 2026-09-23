@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The bulk plane from the client side (docs/design/data-planes.md). Frames carry descriptor-shaped
-// bytes, and the descriptor the daemon *answered* is the only thing a frame is read against: what
-// was asked for is a wish, and DB_U8 read as DB_F32 is not obviously wrong to look at. These
+// bytes, and a frame is decoded only against the descriptor the daemon returned: the daemon may
+// not grant what was requested, and DB_U8 read as DB_F32 does not look obviously wrong. These
 // decoders are the Swift half of the same contract `go/pkg/leyline/bulk.go` implements, so every
 // client reads a spectrum on the scale the daemon wrote it.
 
@@ -89,7 +89,7 @@ public struct BulkSubscription: Sendable {
 
 extension DaemonConnection {
     /// `Bulk.Subscribe` then `Bulk.Stream`, latest-wins on this side as on the daemon's: the
-    /// buffer keeps the newest `buffer` frames, so a renderer that falls behind draws the present.
+    /// buffer keeps the newest `buffer` frames, so a renderer that falls behind skips ahead.
     public func subscribe(_ request: Leyline_V1_SubscribeRequest, buffer: Int = 8) async throws
         -> BulkSubscription
     {

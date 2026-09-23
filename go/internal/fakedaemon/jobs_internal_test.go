@@ -6,7 +6,7 @@ import "testing"
 
 // The sentences a finished sweep ends on, as JobStore writes them: a plain count, the clipping
 // note when the radio could not reach all of the range, and the steps whose rows were too few to
-// be believed and so are missing from the coverage.
+// be reliable and so are missing from the coverage.
 func TestCompletedDetail(t *testing.T) {
 	for _, tc := range []struct {
 		found, stepsDone, steps int

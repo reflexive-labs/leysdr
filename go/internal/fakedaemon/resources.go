@@ -19,7 +19,7 @@ import (
 // Resources over the same manifests the fake's record jobs write, plus the kept
 // decode jobs the record store holds. Every kind that has a store is answered
 // rather than one kind of it, and a kind that has no store yet returns an empty
-// list -- "there are none" is the true answer, not an error
+// list -- none exist, so that is not an error
 // (docs/design/recording.md, "The wire").
 
 // ListResources implements Resources.
@@ -153,8 +153,7 @@ func recordingResource(j *fakeJob) *leylinev1.Resource {
 }
 
 // matchesResourceFilter is exact-string equality on every key given: an unknown
-// key matches nothing, which is the honest answer to a question about a field
-// the resource does not have.
+// key matches nothing, because the resource does not have that field.
 func matchesResourceFilter(r *leylinev1.Resource, filter map[string]string) bool {
 	for k, want := range filter {
 		if r.GetMetadata()[k] != want {
@@ -300,8 +299,8 @@ func (d *Daemon) endPlaybackLocked(id string, by *leylinev1.ClientInfo) {
 	d.emit(by, tomb)
 }
 
-// reapPlaybacksLocked ends the playbacks of a client that has gone: the sound belongs to whoever
-// asked for it. Caller holds the lock.
+// reapPlaybacksLocked ends the playbacks of a client that has gone: a playback ends with the
+// client that started it. Caller holds the lock.
 func (d *Daemon) reapPlaybacksLocked(clientID string) {
 	for id, p := range d.playbacks {
 		if p.owner == clientID {

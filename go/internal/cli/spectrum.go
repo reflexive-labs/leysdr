@@ -18,7 +18,8 @@ import (
 )
 
 // spectrumPeaks is the most peaks the chart's peak block and the JSON peaks
-// array carry. Fewer is normal: the list is as long as the evidence.
+// array carry. Fewer is normal: the list holds only bins that clear the peak
+// threshold.
 const spectrumPeaks = 5
 
 // Peak is one entry of `ley spectrum --json`'s peaks: a loud bin's centre.
@@ -201,8 +202,8 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 
 // spectrumEnd turns the end of the FFT stream into an exit. A stream that
 // closed before producing anything is a failure the user must be told about,
-// not a silent success. The view names itself, so a reader is sent back to the
-// verb they actually ran.
+// not a silent success. The message names the view, so the user is pointed
+// back to the verb they actually ran.
 func spectrumEnd(ctx context.Context, view string, err error, rows int) error {
 	if ctx.Err() != nil {
 		return nil

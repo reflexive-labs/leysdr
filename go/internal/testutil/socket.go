@@ -15,7 +15,7 @@ const maxSocketPath = 100
 
 // SocketPath returns a path for a Unix-domain socket named base in a fresh
 // temporary directory that is removed when the test ends. t.TempDir() is
-// avoided on purpose: it embeds the test name, and on macOS the result can
+// not used: it embeds the test name, and on macOS the result can
 // exceed the sun_path limit, which surfaces as "connect: invalid argument".
 func SocketPath(t testing.TB, base string) string {
 	t.Helper()

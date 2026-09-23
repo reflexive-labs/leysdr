@@ -67,7 +67,7 @@ final class Daemon: @unchecked Sendable {
     let config: Config
     let registry: DefaultDeviceRegistry
     let store: SessionStore
-    /// rtl_tcp endpoints the station keeps across restarts.
+    /// rtl_tcp endpoints the daemon keeps across restarts.
     let remembered: RememberedDevices
     let streams: StreamRegistry
     let jobs: JobStore
@@ -164,8 +164,8 @@ final class Daemon: @unchecked Sendable {
         // before anything new is written to it.
         await jobs.records.retain()
         // A recording the last daemon was still writing is closed rather than resumed: the part's
-        // WAV header is repaired from the file's length and the manifest says `restart`. A
-        // recording is a bounded artefact (docs/design/recording.md, "Retune, detach and restart").
+        // WAV header is repaired from the file's length and the manifest records `restart`. A
+        // restart ends a recording (docs/design/recording.md, "Retune, detach and restart").
         await jobs.repairRecordings()
         await attachRemoteDongles()
         await store.startDeviceMirror()
@@ -180,7 +180,7 @@ final class Daemon: @unchecked Sendable {
         do { try await server.serve() } catch { served = error }
         // The listener stops at the top of `shutdown()`, long before the captures and devices go,
         // so the socket and pidfile wait for teardown to finish: while those paths exist a second
-        // daemon takes itself for the live one and races this one for the radios.
+        // daemon treats this one as live instead of racing it for the radios.
         await teardown.wait()
         try? FileManager.default.removeItem(atPath: config.socketPath)
         if let pid = config.pidfile { try? FileManager.default.removeItem(atPath: pid) }
@@ -189,11 +189,11 @@ final class Daemon: @unchecked Sendable {
 
     /// Opens and attaches every rtl_tcp source the daemon starts with: the `--rtltcp` flags first,
     /// then the endpoints remembered from earlier attaches, deduplicated on `host:port` so an
-    /// endpoint named both ways is opened once and belongs to the flag, which is what makes it the
-    /// operator's rather than a client's. A server that cannot be reached is hosted anyway, as a
-    /// `DISCONNECTED` device the registry's reconnect poll keeps calling: one dead remote never
-    /// keeps the daemon from serving local dongles, and a Pi that is merely off joins the moment it
-    /// answers.
+    /// endpoint named both ways is opened once and belongs to the flag, so it counts as the
+    /// operator's configuration rather than a client's. A server that cannot be reached is hosted
+    /// anyway, as a `DISCONNECTED` device the registry's reconnect poll keeps calling: one dead
+    /// remote never keeps the daemon from serving local dongles, and a remote that is powered off
+    /// attaches as soon as it responds.
     func attachRemoteDongles() async {
         var seen: Set<String> = []
         let flagged = config.rtltcp.map { (endpoint: $0, origin: VirtualDeviceOrigin.operatorFlag) }
@@ -208,7 +208,7 @@ final class Daemon: @unchecked Sendable {
             } catch {
                 reached = false
                 // The reconnect poll only retries devices the registry holds, so hosting this one
-                // disconnected is what gives it a way back.
+                // disconnected lets it reconnect.
                 device.setState(.disconnected)
                 log.warning("rtl_tcp \(ep.host):\(ep.port) is not answering (\(error)); hosting it and waiting")
             }

@@ -19,7 +19,7 @@ func fixed(s *Store) *Store {
 	return s
 }
 
-// A bookmark added is a bookmark a fresh open reads back, with the shape the app parses: keyed by
+// A fresh open reads back an added bookmark, with the shape the app parses: keyed by
 // a bm_ ULID, the mode spelled as the enum names it, and a bandwidth of 0 for "the mode's default".
 func TestAddReloadAndFileShape(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bookmarks.json")
@@ -102,7 +102,7 @@ func TestAddIsIdempotentOnNameAndFrequency(t *testing.T) {
 	}
 }
 
-// A name is required, and so is a mode: neither has an honest default here.
+// A name is required, and so is a mode: neither has a sensible default here.
 func TestAddRefusesAnEmptyNameOrMode(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "bookmarks.json"))
 	if _, err := s.Add("  ", 146_940_000, leylinev1.DemodMode_NFM, 0); err == nil {

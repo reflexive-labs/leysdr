@@ -13,7 +13,7 @@ public enum GainPreferences {
     }
 
     /// Turns a stored preference into a write for exactly one advertised stage. A nil preference
-    /// deliberately produces no write, leaving a multi-stage driver's safe defaults untouched.
+    /// produces no write, leaving a multi-stage driver's safe defaults untouched.
     public static func write(
         element: Leyline_V1_GainElement, storedValue: String?, defaultDB: Double? = nil
     ) -> Leyline_V1_GainWrite? {

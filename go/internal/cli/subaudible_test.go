@@ -34,8 +34,8 @@ func TestSubAudibleReportsOnlyChanges(t *testing.T) {
 	}
 }
 
-// A channel that never had a tone does not narrate its absence: the daemon says
-// SUB_AUDIBLE_NONE every heartbeat on every NFM channel in the world.
+// A channel that never had a tone prints nothing about it: the daemon sends
+// SUB_AUDIBLE_NONE every heartbeat on every NFM channel.
 func TestSubAudibleSilenceIsNotNarrated(t *testing.T) {
 	var tr subAudibleTracker
 	for i := 0; i < 5; i++ {
@@ -48,7 +48,7 @@ func TestSubAudibleSilenceIsNotNarrated(t *testing.T) {
 	}
 }
 
-// A tone that stops is silent too: the line that named it is the record, and a
+// A tone that stops prints nothing either: the line that reported it stands, and a
 // transmission that keys down mid-listen would otherwise print a departure
 // notice on every channel it touches.
 func TestSubAudibleToneLossIsSilent(t *testing.T) {
@@ -66,8 +66,8 @@ func TestSubAudibleToneLossIsSilent(t *testing.T) {
 }
 
 // A measurement two standard tones could both explain is reported as a
-// measurement and said to be unclassifiable. Naming one of them would be a
-// guess wearing a reading's clothes.
+// measurement and said to be unclassifiable. Naming one of them would present
+// a guess as a reading.
 func TestSubAudibleUnclassifiedSaysSo(t *testing.T) {
 	var tr subAudibleTracker
 	line, ok := tr.line(ctcss(0, 68.15, 700, 20), ui.Style{})

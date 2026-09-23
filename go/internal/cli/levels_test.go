@@ -391,8 +391,8 @@ func TestLevelsBallistics(t *testing.T) {
 	if b.db != -3 || b.cap != -3 {
 		t.Errorf("a louder row left the bar at %.1f/%.1f, want -3 both", b.db, b.cap)
 	}
-	// Full scale latches OVER for two seconds, because a flash too short to
-	// read is the same as no warning at all.
+	// Full scale latches OVER for two seconds, because a shorter flash is
+	// too brief to read.
 	b.update(0.5, frame)
 	if b.over != levelsOverHold {
 		t.Errorf("a row at full scale latched %v of OVER, want %v", b.over, levelsOverHold)
@@ -465,8 +465,8 @@ func TestLevelsBandSumsInPower(t *testing.T) {
 	}
 }
 
-// The band labels are the centres an equaliser writes, not the numbers a
-// computer would.
+// The band labels are written the way an equaliser labels its bands (1k,
+// 1.25k), not as raw hertz.
 func TestLevelsBandLabels(t *testing.T) {
 	for _, tc := range []struct{ hz, want string }{
 		{"63", "63"}, {"1000", "1k"}, {"1250", "1.25k"}, {"16000", "16k"},
@@ -589,8 +589,8 @@ func TestLevelsWatchDrawsBeforeTheFirstMeter(t *testing.T) {
 }
 
 // A squelch shut over the fake's signal: the header says so and every ladder
-// is unlit, because the spectrum still arriving behind a shut squelch is not
-// sound anybody heard.
+// is unlit, because the spectrum still arriving behind a shut squelch never
+// reaches the audio output.
 func TestLevelsSquelchClosedAgainstTheDaemon(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod", "--squelch", "-10")
@@ -646,8 +646,8 @@ func TestLevelsJSONRows(t *testing.T) {
 		if pl := row.Bands[1]; pl.CenterHz != 125 || pl.Db < row.Bands[2].Db {
 			t.Errorf("row %d has no PL standing in the 125 Hz band: %+v", i, row.Bands)
 		}
-		// The master pair is the daemon's meter, which a row that arrived
-		// before the first one has nothing to say about.
+		// The master pair is the daemon's meter, so a row that arrived
+		// before the first meter has no value for it.
 		if row.RmsDbfs == nil || row.PeakDbfs == nil {
 			continue
 		}
@@ -714,8 +714,8 @@ func TestLevelsRefusedOnRawIQ(t *testing.T) {
 	}
 }
 
-// The terminal's height is the limit, never the choice: a meter taller than
-// the screen cannot be redrawn in place.
+// The terminal's height caps the meter but does not set it: a meter taller
+// than the screen cannot be redrawn in place.
 func TestLevelsFitHeight(t *testing.T) {
 	if got := levelsFitHeight(levelsHeight, 0, false); got != levelsHeight {
 		t.Errorf("an unknown terminal height gave %d rows, want the %d asked for", got, levelsHeight)
@@ -734,7 +734,7 @@ func TestLevelsFitHeight(t *testing.T) {
 	}
 }
 
-// What the clamp promises is that the whole block --watch redraws — the meter,
+// The clamp guarantees that the whole block --watch redraws — the meter,
 // its frame and the status line under it — still leaves the row of headroom a
 // redraw in place needs.
 func TestLevelsFitHeightLeavesRoomToRedraw(t *testing.T) {

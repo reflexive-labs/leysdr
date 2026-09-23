@@ -19,8 +19,8 @@ import (
 // The shape is what matters, not the DSP: a RUNNING job, Detection messages on the telemetry
 // plane as carriers come and go, and a COMPLETED job when the duration elapses (or CANCELLED).
 
-// monitorCarriers is the synthetic band a watch hears: carriers on GMRS channels so the channel
-// labels show, one weak enough for --min-snr to hide. Deliberately not derived from any FFT --
+// monitorCarriers is the synthetic band a watch reports: carriers on GMRS channels so the channel
+// labels show, one weak enough for --min-snr to hide. They are not derived from any FFT --
 // the CLI test is about the transmission log, not the detector.
 type monitorSig struct {
 	hz   uint64

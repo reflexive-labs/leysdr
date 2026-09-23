@@ -1,9 +1,9 @@
 # Plan: v1.0 — what a release shared with other people is missing
 
-Status: gap analysis of `main` at `36adcb8`, 2026-09-10. Measured against the promises of record —
+Status: gap analysis of `main` at `36adcb8`, 2026-09-10. Measured against the documents of record —
 `docs/plans/user-stories.md`, `docs/plans/build-order.md`, the `leyline.v1` protos and `docs/reference/cli.md` —
 by reading the code and running the suites, not by trusting the status sections of README.md or the
-plan files (which, it turns out, disagree with each other). Every claim below has a `path:line` or a
+plan files (which disagree with each other). Every claim below has a `path:line` or a
 test name behind it; the raw per-item evidence is long and lives in the review run, this file keeps
 the conclusions.
 
@@ -18,9 +18,9 @@ dashboard and no MCP adapter. The engine and CLI are in good shape: seven of the
 implemented and tested, most against the real daemon; the audio story works but has no automated
 proof, and `--json` is broken on two verbs. Both suites pass here, with one flaky engine test and
 fixture-gated tests that skip until `make fixtures`. What is not in good shape is everything a
-stranger meets before the code:
+new user meets before the code:
 
-- **No licence.** Two documents call the project open source; no file grants anyone anything, and
+- **No licence.** Two documents call the project open source; no file grants a licence, and
   `leylined` links GPL-2.0 librtlsdr, so binary distribution carries obligations nothing satisfies.
 - **No version.** `0.1.0-dev` is hard-coded twice (`go/internal/cli/root.go:30`,
   `engine/Sources/LeylineDaemon/Server.swift:12`), nothing stamps a build, there is no git remote and
@@ -32,7 +32,7 @@ stranger meets before the code:
 - **The README quickstart does not work as written** from a clean clone: `ley` is not on PATH,
   `leylined` is not found without `--bin`, and `fixtures/nfm_tone.cf32` does not exist until
   `make fixtures`.
-- **The CLI has outrun its own contract.** `ley waterfall` and `ley phosphor` are polished, tested
+- **The CLI is ahead of its documentation.** `ley waterfall` and `ley phosphor` are polished, tested
   verbs that appear in no user-facing document, and both silently ignore `--json`, which breaks the
   V0 story "every verb has `--json`".
 - **Two of the three advertised clients do not exist.** README.md:3 and CLAUDE.md describe a SwiftUI
@@ -41,17 +41,17 @@ stranger meets before the code:
   that would notice — `go/internal/e2e` — skip themselves unless two environment variables name the
   binaries, and CI runs them only on Linux.
 - **No authentication, by design.** Anything that can open the socket controls the radio
-  (`docs/design/control-plane.md`: local UDS trusts the user account). Right for one Mac; it has to be
-  said where the contract is read, and it bears on any cut that adds an agent.
+  (`docs/design/control-plane.md`: local UDS trusts the user account). That is fine for one Mac, but
+  it has to be documented where the contract is read, and it bears on any cut that adds an agent.
 
 ## Decisions needed
 
 **D1 — What v1.0 is.** The stories define V0 (engine + CLI), V0.5 (TUI), V1a (app), V1b (MCP). The
-honest options for a first public release:
+realistic options for a first public release:
 
 | cut | contains | sizes the unbuilt part at |
 |---|---|---|
-| (a) engine + `ley` | V0 complete: recording lands (C.12, done 2026-09-18), the docs tell the truth, it installs | the release plumbing |
+| (a) engine + `ley` | V0 complete: recording lands (C.12, done 2026-09-18), the docs are accurate, it installs | the release plumbing |
 | (a′) = (a) + the terminal dashboard | V0.5; the three live views exist and the rest is composition and an event loop over the client-library move in LIB-1 | + M–L |
 | (b) = (a) + MCP adapter | the agent story, which is the positioning (`docs/plans/user-stories.md` "spectrum explorer … agents"); six of the nine MCP tools can be written against today's daemon | + L (adapter, after the client-library move in LIB-1) |
 | (c) = (b) + durable watch jobs | the "watch 146.52 for an hour" story; needs the job store, respawn, transcript (D.15) | + XL |
@@ -77,9 +77,9 @@ and Apache-2.0 Swift packages, which rules out GPLv2-only; the contract, the gen
 client library, `ley`, the adapter and the app are Apache-2.0, so the GPL reaches exactly what links
 librtlsdr and every client stays a separate work. Revenue is the notarized build plus a curated
 content layer (R-22), not withheld source; no licence keys, no private repo. Contributions are inbound
-Apache-2.0 with DCO sign-off (`CONTRIBUTING.md`); the name is the moat (`TRADEMARK.md`, D3). Landed:
-`LICENSE`, `engine/LICENSE`, `NOTICE`, `third_party/licenses/`, SPDX headers everywhere,
-`make license-check` in the gate and CI. REL-1 and REL-2 are closed by it.
+Apache-2.0 with DCO sign-off (`CONTRIBUTING.md`); the name is what the project protects
+(`TRADEMARK.md`, D3). Landed: `LICENSE`, `engine/LICENSE`, `NOTICE`, `third_party/licenses/`, SPDX
+headers everywhere, `make license-check` in the gate and CI. REL-1 and REL-2 are closed by it.
 
 **D3 — The name.** `docs/plans/archive/planning-phase.md:32`: "USPTO check on 'Leyline' before first public
 release." Not recorded as done. The name is now in the proto package, the launchd label
@@ -181,13 +181,13 @@ below has each).
 Accepted but ignored (a caller gets no warning):
 
 - `ScanConfig.step_hz` — both daemons overwrite it with their own plan and report it back
-  (`JobStore.swift:248`, `fakedaemon/jobs.go:91`); it is an output field wearing an input's name.
+  (`JobStore.swift:248`, `fakedaemon/jobs.go:91`); it is an output field with an input's name.
 - `Channel.required_hz` — stored and echoed, read by nobody; its consumer is the unbuilt watch job.
 - `AttachFileDeviceRequest.path` — the proto says it may be a `ley://recordings/<id>` URI; neither
   daemon parses `ley://`.
 - `Bulk.Subscribe.transport = SHM_RING` — silently answered with `GRPC` rather than refused.
 
-Unimplemented, and the proto says so or should: `StreamPosition.at_sample` / `at_host_time_ns`,
+Unimplemented, and the proto documents it or should: `StreamPosition.at_sample` / `at_host_time_ns`,
 `Sink.file` (`SessionStore.swift:651`), `Sink.stream` via `AttachSink` (deliberate: use
 `Bulk.Subscribe`), `StreamKind.DECODED`, `Jobs.StartJob` watch and record, `ScanConfig.recurring`,
 `Jobs.GetTranscript`, the entire `Resources` service. `Job.result_uris` carries `ley://scans/<id>`
@@ -201,7 +201,7 @@ Error codes `BLIND_SPOT`, `NO_DEVICE`, `FAILED_PRECONDITION`, `INTERNAL` are emi
 and have no constant in `errors.go`; `scan.go:274` matches two of them as bare strings.
 
 **Fake-vs-daemon divergences.** The fake is what every CLI test runs against, so each of these is a
-CLI behaviour proven against the wrong answer:
+CLI behaviour tested against the wrong response:
 
 1. `Bulk.Subscribe(PERSISTENCE)` has no case in the fake (`bulk.go:135-172`); `ley phosphor` has zero
    end-to-end coverage.
@@ -213,10 +213,10 @@ CLI behaviour proven against the wrong answer:
 5. `Channel.subaudible_detect` is true for every NFM channel in the daemon (`SessionStore.swift:593`),
    never set by the fake.
 6. `Detection.first_seen` / `last_seen` are nil in the fake; `looks`/`looks_possible` hard-coded 4/4.
-7. `Scan.gains` is empty in the fake; the proto argues at length that a scan without its gain is not
-   comparable.
+7. `Scan.gains` is empty in the fake; the proto comment explains at length that a scan without its
+   gain is not comparable.
 8. Don't-disturb: the fake checks channels and live audio but not a recent interactive write
-   (`jobs.go:106-108` admits it); `ley scan` without `--take-over` against a recently-touched radio
+   (`jobs.go:106-108` notes this); `ley scan` without `--take-over` against a recently-touched radio
    is untested.
 9. `DeviceDescriptor.features`: the fake advertises `bias_tee`, `direct_sampling`, `tx_capable`; the
    real driver emits only `held_externally`, `serial_collision`, `tuner`.
@@ -234,7 +234,8 @@ CLI behaviour proven against the wrong answer:
   as presets.
 - **V1b MCP**: no server, no tool registry, no PNG rendering, no generator. Six of nine tools could be
   written today; `start_job(watch|record)`, `get_transcript`, `find_recordings` cannot. The band
-  labelling and scan interpretation the adapter would add are trapped in `go/internal/cli`.
+  labelling and scan interpretation the adapter would add exist only in `go/internal/cli`, which
+  other modules cannot import.
 - **LIB-1**: `go/pkg/leyline` has the transport and the vocabulary (frequency, squelch, gain, band,
   preset, selector parsing; stable codes; socket discovery) but none of the behaviour: bringing a
   capture up, creating a channel, measuring auto squelch, following a job, folding events into a
@@ -264,8 +265,8 @@ CLI behaviour proven against the wrong answer:
 | REL-17 | trademark check outstanding (D3) | |
 | REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`aa88c59`) | — |
 | REL-19 | `engine/launchd/com.leyline.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
-| REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails well; stubs are honest | — |
-| REL-24 | the repo root speaks to an agent (CLAUDE.md, moat.yaml) and not to a person | |
+| REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails with a clear message; stubs say they are unimplemented | — |
+| REL-24 | the repo root is written for an agent (CLAUDE.md, moat.yaml), not a person | |
 | REL-26 | S1/S2 never measured on hardware (D5) | |
 | REL-27 | the audio path (`CoreAudioSink.swift`, all of it under `canImport(AVFoundation)`) has no automated proof anywhere; the headline story rests on a Mac acceptance run (R-17) | yes |
 | REL-28 | `ley phosphor` has never run against any daemon in a test: the fake lacks the PERSISTENCE stream (R-14) | yes |
@@ -288,7 +289,8 @@ CLI behaviour proven against the wrong answer:
 - `docs/plans/user-stories.md` names every V0 verb `sdr …`; the binary has been `ley` since the naming
   decision in `docs/plans/archive/planning-phase.md` §5.
 - `docs/design/semantic-tier.md` and `docs/reference/cli.md` state the CLI verbs are "generated from the
-  protos"; `go/internal/cli` is hand-written cobra. True claim: mapped one-to-one, by discipline.
+  protos"; `go/internal/cli` is hand-written cobra. Accurate wording: mapped one-to-one, by
+  convention.
 - CLAUDE.md:9, `docs/plans/archive/planning-phase.md:32`, `docs/reference/cli.md:153`: "Bubble Tea TUI"; no bubbletea.
 - `docs/reference/cli.md:174-183` documents the grpc-go ping / swift-nio GOAWAY landmine every third-party
   client will hit; it belongs where a client author looks first, not at the end of the CLI contract.
@@ -296,7 +298,7 @@ CLI behaviour proven against the wrong answer:
 ## Work list
 
 Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason, `[d]` waits on a decision above.
-Sizes: S under a day, M a few days, L a week or two. "Sonnet"/"Opus"/"owner" says who does it: the
+Sizes: S under a day, M a few days, L a week or two. "Sonnet"/"Opus"/"owner" shows who does it: the
 mechanical items go to the smaller model, the scoped code changes to the larger one, and the
 measurements and decisions to the person with the hardware. The review findings from the same pass
 get their own list, `docs/plans/archive/v1-review-fixes.md`, written when the review returns; they land first.
@@ -313,9 +315,9 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 - `docs/plans/user-stories.md`: the persona line says "an RTL-SDR or HackRF"; only RTL-SDR (USB or
   `rtl_tcp`) and IQ files are supported, and there is no HackRF driver.
 - `docs/dev/engine-internals.md`: the module map lists `Jobs/` (JobStore, ScanRunner,
-  SessionCaptureAllocator), `S2Throughput/`, and every file under `DSP/`; the Services line says
+  SessionCaptureAllocator), `S2Throughput/`, and every file under `DSP/`; the Services line lists
   what is implemented (scan jobs) and what is not (watch, record, transcript, Resources); the test
-  line says which tests need macOS (`KernelParityTests`, anything under `canImport(Accelerate)` or
+  line states which tests need macOS (`KernelParityTests`, anything under `canImport(Accelerate)` or
   `canImport(AVFoundation)`) rather than the whole target.
 - `sdr://` → `ley://` in the three design docs; `sdr <verb>` → `ley <verb>` in the user stories;
   "generated from the protos" → "mapped one-to-one from the protos" wherever the CLI is described;
@@ -324,9 +326,9 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
   `docs/plans/archive/planning-phase.md` §6 and point at the decision note.
 - `docs/dev/setup.md`: replace the `/home/moatuser` paragraph with the generic recipe (a Swift 6.2
   toolchain, librtlsdr headers or a stub `.so` that reports zero devices, `protoc`; `LD_LIBRARY_PATH`
-  at the stub for `make e2e`) with no personal paths; say that a bare `swift test` skips the fixture
-  round-trips and a bare `go test ./...` skips the e2e package (both visibly only under `-v`), which is
-  why `make swift-test` and `make e2e` are the gate.
+  at the stub for `make e2e`) with no personal paths; state that a bare `swift test` skips the
+  fixture round-trips and a bare `go test ./...` skips the e2e package (both visibly only under
+  `-v`), which is why `make swift-test` and `make e2e` are the gate.
 - `docs/plans/archive/engine-review-fixes.md` and `docs/plans/archive/cli-review-fixes.md` headers: the review reports were
   ephemeral; the `#N` numbers are kept because the commit messages cite them.
 - Delete `engine/launchd/com.leyline.daemon.plist.template` (REL-19): `ley daemon install` writes
@@ -375,7 +377,8 @@ The e2e half of this item is closed: `TestCLIAgainstRealDaemon`'s 0.42 s failure
 its message on the fourth logged run — the DB_U8 and DB_F32 spectrum rows' peak bins two apart —
 and it was the assertion, not the daemon: the fixture's tone is frequency-modulated at ±2.5 kHz, so
 its peak wanders a bin either side between two rows taken at different moments, and the tolerance
-was one bin. It is now the sweep's reach. The Swift failure below is the one still unnamed.
+was one bin. The tolerance is now the sweep's reach. The Swift failure below has still not been
+caught with its message.
 
 Seen on the Linux box after R-4 and never reproduced: one Swift test failed once in a full
 `swift test` run that overlapped a `make race` (six later runs, four of them under the same load,
@@ -383,8 +386,8 @@ were green; the failure line was filtered out of the log, so the test is unnamed
 `TestCLIAgainstRealDaemon` failed twice in under half a second, each time seconds after a lint and
 a rebuild had loaded the machine (four later runs of the same pair were green; the message was
 lost the same way). Both look like start-up races under load rather than product bugs. The gate
-now keeps failure lines; the next occurrence will name itself. If either shows on the Mac, keep
-the whole log and file it against this item.
+now keeps failure lines; the next occurrence will show the test's name. If either shows on the Mac,
+keep the whole log and file it against this item.
 
 ### R-5 `[x]` Every verb answers `--json` or refuses it (M, Opus)
 
@@ -396,7 +399,7 @@ the whole log and file it against this item.
   base64-encoded like `ley listen`'s `pcm`. Both are documented in `docs/reference/cli.md` as members of
   the bulk-row exception.
 - `ley help --json` and `ley completion --json` reject the flag with the same usage error (exit 2)
-  `ley daemon logs --json` uses, and the doc says so.
+  `ley daemon logs --json` uses, and the doc states this.
 - A table-driven test walks the cobra tree from the root and asserts every leaf either emits valid
   JSON on stdout under `--json` (against the fake) or exits 2 with the documented message — so the
   V0 story cannot regress silently again.
@@ -407,8 +410,8 @@ A `.cf32` without a sidecar is refused by the daemon (`DEVICE_IO: cannot stat si
 `go/internal/cli/play.go:30` says a missing sidecar is not an error. Additive
 `AttachFileDeviceRequest` fields (`sample_rate`, `center_hz`, `format`) used only when no sidecar
 exists; `ley play --rate` joins `--freq`; the fake mirrors; the error for a bare file without `--rate`
-names the flag. Not required for the cut but it is what "play IQ files back" means to someone with an
-`rtl_sdr` capture.
+mentions the flag. Not required for the cut but it is what "play IQ files back" means to someone
+with an `rtl_sdr` capture.
 
 ### R-7 `[d]` LICENSE and NOTICE (S; after D2)
 
@@ -424,7 +427,7 @@ install, a quickstart that works from a clean clone (`make go swift-release fixt
 transcripts that match what the renderers print (record them against the daemon or the fake rather
 than paraphrasing), the docs map, a status section that agrees with `docs/plans/build-order.md`, licence
 (placeholder until D2), and where to report problems (the module path already names
-`github.com/dpup/leysdr`). The GOAWAY/ping note for client authors is linked, not buried.
+`github.com/dpup/leysdr`). The GOAWAY/ping note for client authors is linked from the README.
 
 ### R-9 `[x]` CONTRIBUTING, SECURITY, CHANGELOG (S)
 
@@ -447,15 +450,15 @@ features the design added:
 
 - **Not `AttachSink(file)`.** A recording is a job's output, so `Jobs.StartJob(RecordConfig)` is the
   only way to make one and `AttachSink(file)` stays refused: a sink attached to somebody's channel
-  dies with that channel's owner and leaves a file nothing indexes, while a job goes through the
+  ends with that channel's owner and leaves a file nothing indexes, while a job goes through the
   allocator, outlives its client and produces a resource. There is no `FileSink` in
   `EngineCore/Sinks`; `LeylineDaemon/Recording/` holds the runner, the gate, the part writer and
   the store.
 - **The squelch gate and parts.** `--gate squelch` writes one file per exchange and `--part D` cuts
-  long recordings on a timer, because a first week of use asks for both; the manifest states the
-  coverage gaps rather than editing silence out of a file.
+  long recordings on a timer, because both are needed in the first week of use; the manifest states
+  the coverage gaps rather than editing silence out of a file.
 - As sketched: the store directory with retention, `Resources` (which also answers `RECORDS` and
-  `SCAN`, so the service is whole rather than one kind of it), `ley record` / `ley recordings` /
+  `SCAN`, so the service covers every kind, not one), `ley record` / `ley recordings` /
   `ley recordings show` / `ley recordings path`, and `ley play` on a `ley://` URI.
 
 ### R-12 `[x]` MCP adapter (L, Opus; after D1 and R-13)
@@ -497,7 +500,7 @@ the DC guard). Split into two commits if it helps: bulk/telemetry parity, then j
 - `go/pkg/leyline/errors.go` gains constants for every code the daemon emits (`BLIND_SPOT`,
   `NO_DEVICE`, `FAILED_PRECONDITION`, `INTERNAL`); `scan.go:274` uses them; a test asserts the Go list
   and the engine's `EngineError` codes are the same set.
-- Proto comments say what the daemons do: `ScanConfig.step_hz` is chosen by the daemon and a request
+- Proto comments document what the daemons do: `ScanConfig.step_hz` is chosen by the daemon and a request
   value is ignored; `Channel.required_hz` is read only by watch jobs, not yet implemented;
   `Transport.SHM_RING` is answered with `GRPC` in v0; `AttachFileDeviceRequest.path` accepts
   filesystem paths only in v0; `Sink.stream` is refused by `AttachSink` in v0 (use `Bulk.Subscribe`);
@@ -538,12 +541,12 @@ nothing off macOS), so the S1/S2 Instruments runs in R-16 can see the whole path
 recorded with `rtl_sdr`, gitignored) is the first real capture the views were checked against, and
 it pins facts no synthesised fixture carries: the no-carrier noise at 4.8× full scale either side of
 a transmission, a 305 Hz PL deviation, speech peaking at the narrow-mode limit. Give such files a
-home: a `fixtures/hardware/` directory with sidecars whose `description` says radio, distance, gain
-and mode; e2e and engine tests that use one skip with a named reason when it is absent; `docs/
-docs/reference/iq-files.md` says how to record one (`ley daemon stop`, `rtl_sdr -f <100 kHz off the channel> -s
-2400000 -g 0 -n 24000000`, the sidecar, `ley play … --freq`). The first tests: the waveform's
-blank-when-squelched rule over a real key-up, and `levels` reading the PL band within 2 dB of the
-value measured here.
+home: a `fixtures/hardware/` directory with sidecars whose `description` records radio, distance,
+gain and mode; e2e and engine tests that use one skip with a named reason when it is absent; `docs/
+docs/reference/iq-files.md` explains how to record one (`ley daemon stop`, `rtl_sdr -f <100 kHz off
+the channel> -s 2400000 -g 0 -n 24000000`, the sidecar, `ley play … --freq`). The first tests: the
+waveform's blank-when-squelched rule over a real key-up, and `levels` reading the PL band within 2
+dB of the value measured here.
 
 ### R-22 `[ ]` The content layer needs a specification before pricing (M, owner + Opus)
 
@@ -553,7 +556,7 @@ decoder recipe bundles, listening presets, CHIRP mappings, regional frequency da
 versioned and updated (in-app fetch versus git), which packs are free and which paid, how the
 community submits and who curates, and the licence per pack (data, not code: CC-BY-SA or similar,
 decided per source). The daemon-side home for the data is D6 (bookmarks live in the daemon), so the
-document also says which pack contents become daemon state and which stay files.
+document also specifies which pack contents become daemon state and which stay files.
 
 ### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
 
@@ -568,19 +571,19 @@ drives over the one protocol; this should be too.
   existing `AttachFileDevice` stays and becomes sugar over the new RPC; the oneof is where any later
   network source lands without another RPC.
 - Persistence follows intent: a file you play is ephemeral, a radio you attach is part of the
-  station. The daemon writes attached remotes to `devices.json` beside its socket and re-attaches
-  them at startup; `DetachDevice` forgets. No flag: attach adds, detach removes, and it survives
-  restarts like everything else the daemon owns. `--rtltcp` can stay for foreground dev runs but is
-  no longer the documented path.
+  station setup and persists. The daemon writes attached remotes to `devices.json` beside its socket
+  and re-attaches them at startup; `DetachDevice` forgets. No flag: attach adds, detach removes, and
+  it survives restarts like everything else the daemon owns. `--rtltcp` can stay for foreground dev
+  runs but is no longer the documented path.
 - CLI: `ley devices attach rtltcp pi.local:1234`, pairing with the `detach` that exists; `--watch`
   sees the arrival because device events exist. Attach connects once with the existing 5 s timeout
-  and, if the host cannot be reached, fails naming the host and remembers nothing (a radio never
-  reached is usually a typo). A later drop goes `DISCONNECTED` and the registry's reconnect-on-poll
-  brings it back, which is already built.
+  and, if the host cannot be reached, fails with an error naming the host and remembers nothing (a
+  radio never reached is usually a typo). A later drop goes `DISCONNECTED` and the registry's
+  reconnect-on-poll brings it back, which is already built.
 - Fake and e2e: the fake accepts any `rtl_tcp` source and manufactures the descriptor; the e2e
   attaches the engine tests' fake `rtl_tcp` server.
 - Attach dedupes on host and port before connecting, which closes the duplicate-attach leak the
-  review found (q-swift-control-3) for good.
+  review found (q-swift-control-3).
 
 Remote *control* of the daemon (a TCP listener with authentication) is a separate milestone and
 this does not touch it. Discovery (Bonjour) is not worth it yet: `rtl_tcp` does not advertise.

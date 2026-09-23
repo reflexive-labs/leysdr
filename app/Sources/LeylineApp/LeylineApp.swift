@@ -3,7 +3,7 @@
 // The Mac app: a peer client of the daemon (CLAUDE.md invariant 1). It renders what the mirror
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
 // is M1 of docs/design/app-design-handoff.md: sidebar, spectrum, waterfall, transport bar, the
-// device menu, and a Tune menu that names every gesture (docs/plans/app.md, "The M1 cut"), plus
+// device menu, and a Tune menu that lists every gesture (docs/plans/app.md, "The M1 cut"), plus
 // M2's inspector on the right (docs/design/app-design-handoff-m2.md).
 
 import AppKit
@@ -41,7 +41,7 @@ final class Activation: NSObject, NSApplicationDelegate {
     }
 }
 
-/// The menu bar is the reference for every tuning gesture: the canvas never explains itself
+/// The menu bar is the reference for every tuning gesture: the canvas shows no gesture hints
 /// (docs/design/app-design-handoff.md, "Tuning").
 struct TuneCommands: Commands {
     let session: AppSession
@@ -49,7 +49,7 @@ struct TuneCommands: Commands {
     var body: some Commands {
         // The arrows and space belong to the frequency field while it is being typed into, and
         // it keeps them itself: its event monitor swallows them (TransportBarView.swift,
-        // `watchClicks`), because a Commands body is not promised a re-evaluation when the
+        // `watchClicks`), because a Commands body is not guaranteed to re-evaluate when the
         // session's frequencyEntryShown changes.
         CommandMenu("Tune") {
             Button("Tune Up") { session.step(1) }
@@ -87,7 +87,7 @@ struct TuneCommands: Commands {
         }
         CommandGroup(after: .sidebar) {
             // The title is read when the menu is built; as with Play/Pause above, a Commands
-            // body is not promised a re-evaluation, so the toolbar's toggle is the live one.
+            // body is not guaranteed to re-evaluate, so the toolbar's toggle is the live one.
             Button(session.inspectorShown ? "Hide Inspector" : "Show Inspector") {
                 session.toggleInspector()
             }

@@ -12,9 +12,9 @@ establish.
 All three thresholds are cleared by a wide margin. Milestone E may commit the Mac app to Swift on
 top of this engine.
 
-The question this spike really asked was whether Swift can hold a DSP loop without ARC traffic, a
+The risk this spike tested was whether Swift can hold a DSP loop without ARC traffic, a
 copy-on-write firing inside a kernel, or an existential box in something that reads as a plain
-loop. The answer is that it can, in this engine, as written: ten times the DSP work costs eleven
+loop. It can, in this engine as written: ten times the DSP work costs eleven
 more allocations across a whole run.
 
 ## What was measured
@@ -38,8 +38,8 @@ NFM channel, `NullSink`.
 12 791 300 096 samples through the channelizer and demodulator in ten and a half minutes, and the
 NFM channel produced 48 193 audio frames a second throughout — the 48 kHz the 20 MSPS capture
 decimates to, so the chain ran end to end rather than the source spinning against a stalled DSP
-thread. Received equals processed: no block was dropped, which is the same statement `overruns: 0`
-makes from the ring's side.
+thread. Received equals processed, so no block was dropped; `overruns: 0` shows the same from the
+ring's side.
 
 **Headroom.** 19.4% of one core leaves 80.6% of that core, and about 2% of the machine. The run is
 real time by construction (12.79 G samples at 20 MSPS is 639.6 s, which is the wall clock it took),
@@ -68,7 +68,7 @@ the run is ten minutes and closes the gap properly.
 ```
 
 The first phase differences two run lengths, so one-off startup work cancels and only what scales
-with blocks survives: 0.0165 per block, one per sixty. The absolute numbers say it more plainly --
+with blocks survives: 0.0165 per block, one per sixty. The absolute numbers show the same thing:
 a path allocating once per block would have put about 32 000 allocations into the longer run on its
 own, and the whole process made 2 457.
 
@@ -91,10 +91,9 @@ The 21.5 a second is timers and runtime housekeeping; it does not move when the 
 the work. The sample path allocates nothing.
 
 **What this does not establish.** The count is process-wide rather than attributed to a thread or a
-symbol. That mattered while there was a residual to explain; there is none, so there is nothing to
-attribute. Instruments' allocations track stays the authority for *where* if the screen ever fails
--- it is what names a call tree -- and the screen is what runs on every change, in half a minute,
-which an Instruments pass never will.
+symbol. With no residual left to explain, attribution is not needed. If the screen ever fails, use
+Instruments' allocations track to find the call tree. The screen takes half a minute and runs on
+every change; an Instruments pass does not.
 
 ## What is still open
 
@@ -102,24 +101,24 @@ which an Instruments pass never will.
 than the allocations: this was measured on an M4 Max where the criterion names a base M-series (see
 "Headroom" above). If a base part is ever to hand, the run is ten minutes.
 
-The Instruments route is kept below because it is the criterion's named tool and the one that says
-*where* rather than *whether*. It is not needed to close the gate.
+The Instruments route is kept below because it is the criterion's named tool and the only one that
+attributes allocations to a call site. It is not needed to close the gate.
 
-**An Instruments pass for attribution.** The harness cannot check this itself and says so in its
-own output.
+**An Instruments pass for attribution.** The harness cannot check this itself, and its output
+states that.
 
 **The throughput run above cannot stand in for it, and the arithmetic says why.** A block is 16 384
 samples, which is 819 us of wall clock at 20 MSPS; the DSP thread spent 159 us of that (the 19.4%
 above), leaving 660 us of slack. A malloc costs on the order of 80 ns, so *a thousand allocations
 per block* would take 80 us -- under 10% of the budget -- and produce no overrun, no dropped block
-and no shortfall against the offered rate. The comfortable margin is exactly what would hide the
-failure. Nothing else in the tree covers it either: the hot-path rule is stated in about ten source
+and no shortfall against the offered rate. The large margin would hide that failure.
+Nothing else in the tree covers it either: the hot-path rule is stated in about ten source
 comments and verified by no test.
 
-This is also the criterion the spike most exists for. That vDSP can carry 20 MSPS was never much in
-doubt; what a Swift engine has to be proven innocent of is ARC retain/release traffic, a
-copy-on-write that fires inside a loop, or an existential box in something that reads as a plain
-kernel. The allocations track is what shows those, and it is the evidence the all-Swift decision
+This is also the main criterion for the spike. That vDSP can carry 20 MSPS was never much in doubt.
+The risk in a Swift engine is ARC retain/release traffic, a copy-on-write that fires inside a loop,
+or an existential box in something that reads as a plain kernel.
+The allocations track is what shows those, and it is the evidence the all-Swift decision
 rests on.
 
 **Read the call tree, not a generation.** Generation analysis ("mark generation", the heapshot
@@ -134,9 +133,8 @@ to the sample path, transient ones included.
 about half a minute, and needs no Instruments at all. It interposes the allocator, runs the harness
 twice at two durations, and differences the counts: whatever a process allocates at startup and in
 its control plane cancels, and what is left is the allocation that *scales with blocks processed*,
-which is exactly what invariant 4 forbids. It prints allocations per block and a verdict. Use it as
-the screen and on every change; Instruments remains the authority and is what says *where* when the
-screen fails.
+which is what invariant 4 forbids. It prints allocations per block and a verdict. Use it as the
+screen on every change; when the screen fails, use Instruments to find where the allocation is.
 
 **Instruments cannot attach to a SwiftPM binary as built.** SwiftPM ad-hoc signs without
 `com.apple.security.get-task-allow`, so profiling fails to attach to the process. Re-sign it first:
@@ -157,9 +155,8 @@ Then:
 
 1. Record, for **seconds, not ten minutes**. Ten minutes is the *sustained throughput* criterion
    and has been met; an allocation on a per-block path appears at once, and the harness's own
-   default of ten seconds is about 12 200 blocks at 20 MSPS, which is thoroughly representative.
-   That default is the convenient part: the run needs **no arguments**, so pointing Instruments at
-   it is three clicks.
+   default of ten seconds is about 12 200 blocks at 20 MSPS, which is enough. The run needs **no
+   arguments**, so launching it from Instruments takes three clicks.
 
    ```sh
    cd engine && echo "$(swift build -c release --show-bin-path)/s2-throughput"
@@ -193,7 +190,7 @@ Generations are still worth two clicks as a secondary check: mark one about 30 s
 is steady, and another near the end. Nothing should be growing between them either.
 
 **The host.** The machine and macOS version this ran on are not recorded here yet; the release
-checklist's habit is to name them, and a throughput number without the chip it was measured on
+checklist records them, and a throughput number without the chip it was measured on
 cannot be compared with the next one.
 
 ## What this costs, and what would reopen it
@@ -206,4 +203,5 @@ cannot be compared with the next one.
   dropped samples). This is headroom for the HackRF and Airspy class of radio on the roadmap, not a
   rate the shipped daemon reaches. At 2.4 MSPS the same path costs roughly a tenth of this.
 - What would reopen it: a demodulator or a stage added to the sample path, a move off Accelerate,
-  or the allocations pass above failing. A failure there is still a stop, not a tuning exercise.
+  or the allocations pass above failing. A failure there still stops the all-Swift decision; it is
+not fixed by tuning.

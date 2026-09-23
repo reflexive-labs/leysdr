@@ -15,8 +15,8 @@ import (
 
 // The live meter's bar spans meterFloorDbfs to 0 dBFS, the range a receiver
 // reports: a signal at the floor draws nothing, a clipping one fills the bar.
-// The floor is fixed rather than measured so the bar does not re-scale under
-// the reader while they watch it.
+// The floor is fixed rather than measured so the bar does not re-scale while
+// it is being watched.
 const meterFloorDbfs = -90.0
 
 // Bar sizing. The bar leads the line, so it keeps one column whatever the
@@ -51,8 +51,8 @@ func meterRenderHistory(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *l
 		ink = st.Ok
 	}
 	line = strings.TrimSuffix(line, gate) + ink(gate)
-	// The detail rows carry their own signal bar, so the inline one would say
-	// the same thing twice; the words keep the first line on their own.
+	// The detail rows carry their own signal bar, so the inline one would
+	// duplicate it; the first line keeps only the words.
 	if rows := meterDetail(st, m, squelchDb, history); rows != "" {
 		return line + "\n" + rows
 	}
@@ -65,11 +65,11 @@ func meterRenderHistory(st ui.Style, freq uint64, mode leylinev1.DemodMode, m *l
 
 // meterDetailMinWidth is the narrowest terminal that gets the detail rows.
 // Under it the contractual line and its bar are the whole meter: two more rows
-// of half-width bars would say less than the words already do.
+// of half-width bars would add less than the words already show.
 const meterDetailMinWidth = 60
 
-// meterDetail is the rows under the meter line: what the radio hears and what
-// the listener hears, which are different questions. A strong unmodulated
+// meterDetail is the rows under the meter line: the signal level at the radio
+// and the audio level the listener gets, which differ. A strong unmodulated
 // carrier is loud on the first and silent on the second.
 //
 // It draws only when the daemon actually measured an audio level. NaN means
@@ -132,7 +132,7 @@ func fmtMeterDb(db float64) string {
 // meterBarSize is how many columns are left for the bar once the meter line
 // is drawn, capped at meterBarWidth. An unknown width, or a line that
 // already fills the terminal, yields no bar rather than a wrapped line: the
-// words are the meter, the bar is the polish.
+// text carries the reading, and the bar is optional.
 func meterBarSize(st ui.Style, lineWidth int) int {
 	if st.Width <= 0 {
 		return 0
@@ -190,7 +190,7 @@ const meterHistorySpan = sparkCells * time.Second
 
 // meterHistory is the meter's recent past: every level the daemon reported
 // in the last meterHistorySpan, so the sparkline is drawn from measurements
-// rather than from a decay the terminal invented.
+// rather than from a decay the client makes up.
 type meterHistory struct {
 	at []time.Time
 	db []float64

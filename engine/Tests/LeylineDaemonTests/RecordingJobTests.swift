@@ -202,7 +202,7 @@ final class RecordingJobTests: XCTestCase {
             let want = Double(manifest.sampleRate)
             XCTAssertEqual(Double(manifest.parts[0].samples), want, accuracy: want * 0.05,
                            "about a second of audio at \(manifest.sampleRate) Hz")
-            // The file on disk is the header plus the frames it says it holds.
+            // The file on disk is the header plus the frames the header declares.
             let file = dir + "/" + started.jobID + "/" + manifest.parts[0].file
             let size = try FileManager.default.attributesOfItem(atPath: file)[.size] as? NSNumber
             XCTAssertEqual(size?.uint64Value, UInt64(WAVHeader.bytes) + manifest.parts[0].samples * 2)
@@ -340,7 +340,7 @@ final class RecordingJobTests: XCTestCase {
                 let endS = Double(part.endSample) / rate - 1.0 // the hang is after the key-down
                 XCTAssertEqual(endS, want.end, accuracy: 0.15, "part \(i + 1) ends at the key-down")
             }
-            // Time nobody recorded is stated rather than hidden inside one file (invariant 5).
+            // Unrecorded time is listed rather than hidden inside one file (invariant 5).
             XCTAssertEqual(manifest.coverageGaps.count, segments.count - 1,
                            "a gap between every pair of parts")
         }
@@ -413,8 +413,8 @@ final class RecordingJobTests: XCTestCase {
     // MARK: What the files actually hold
 
     /// A recorder that wrote perfectly-formed silence would pass every structural test there is.
-    /// This is the one that would catch it: the WAV a recording of `nfm_tone` produced carries the
-    /// 1 kHz tone at the SNR the fixture's own sidecar promises for that channel.
+    /// This test catches that: the WAV a recording of `nfm_tone` produced carries the 1 kHz tone
+    /// at the SNR the fixture's own sidecar specifies for that channel.
     func testARecordedWAVHoldsTheFixturesTone() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -440,9 +440,9 @@ final class RecordingJobTests: XCTestCase {
         }
     }
 
-    /// The IQ sibling: the samples a recording wrote are still the band that went in, so a part
-    /// can be handed to another tool and mean something. `scan_band` carries four carriers at
-    /// known offsets, and they have to survive the round trip through the ring and the file.
+    /// The IQ counterpart: the samples a recording wrote are still the band that went in, so a
+    /// part is usable in another tool. `scan_band` carries four carriers at known offsets, and
+    /// they have to survive the round trip through the ring and the file.
     func testARecordedIQPartHoldsTheCarriersThatWentIn() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -478,8 +478,8 @@ final class RecordingJobTests: XCTestCase {
 
     /// The daemon owns the speakers, so a recording plays where the radio is. This container has
     /// no CoreAudio, so what is asserted here is the contract either way: an IQ recording is
-    /// refused because those are tuned, a recording nobody made is not found, and a host with no
-    /// audio says PLATFORM_UNSUPPORTED rather than failing some other way.
+    /// refused because those are tuned, a nonexistent recording is not found, and a host with no
+    /// audio returns PLATFORM_UNSUPPORTED rather than failing some other way.
     func testPlaybackRefusesWhatItCannotPlay() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -518,8 +518,8 @@ final class RecordingJobTests: XCTestCase {
             e = try XCTUnwrap(got)
             XCTAssertEqual(e.code, .invalidArgument)
 
-            // An audio recording is playable; on a host with no audio device the daemon says so
-            // rather than pretending, which is the answer `ley` falls back on.
+            // An audio recording is playable; on a host with no audio device the daemon returns an
+            // error rather than faking playback, and `ley` falls back on that error.
             var audio = Leyline_V1_RecordConfig()
             audio.frequencyHz = recordFrequencyHz
             audio.mode = .nfm
@@ -633,7 +633,7 @@ final class RecordingJobTests: XCTestCase {
     /// than orphaning a sink, and the recording is complete (docs/design/recording.md, "The wire":
     /// "the job borrows the channel and does not own it").
     ///
-    /// The retune sibling of this -- a capture moved out from under a recording, which degrades
+    /// The retune counterpart of this -- a capture moved out from under a recording, which degrades
     /// the job and logs the gap -- needs a radio that can be tuned somewhere else, and a file
     /// device's tuning range is the single frequency its fixture was recorded at. It is covered by
     /// the client-side guard's test in `go/internal/cli` and on a real dongle by the release

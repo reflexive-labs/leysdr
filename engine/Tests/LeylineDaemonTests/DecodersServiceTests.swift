@@ -20,7 +20,7 @@ final class DecodersServiceTests: XCTestCase {
             try? FileManager.default.removeItem(atPath: storeDir)
         }
         try writeFakePlugin(in: plugins, recipe: (144_390_000, 15_000))
-        // Parses, names nothing runnable: listed nowhere, and fatal nowhere either.
+        // Parses, but specifies nothing runnable: not listed, and not fatal either.
         try writeFakePlugin(in: plugins, name: "broken", executable: "/nowhere/leydec-broken")
         try await withDaemon(decoderSearchPath: [plugins], storePath: storeDir) { c in
             let out = try await c.decoders.listDecoders(Leyline_V1_ListDecodersRequest(), metadata: testMetadata)

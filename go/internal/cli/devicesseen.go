@@ -134,8 +134,8 @@ func runDevicesSeen(ctx context.Context, app *App, o devicesSeenOptions) error {
 }
 
 // selectDevices applies --quiet-since: with it, only transmitters silent for longer than the
-// window survive, and one with no datable last-seen is dropped because absence cannot be proven
-// for a device that was never placed on the timeline.
+// window survive, and one with no datable last-seen is dropped because its quiet time cannot be
+// computed without a wall time.
 func selectDevices(devices []*records.Device, quiet time.Duration, now time.Time) []*records.Device {
 	if quiet <= 0 {
 		return devices
@@ -150,8 +150,8 @@ func selectDevices(devices []*records.Device, quiet time.Duration, now time.Time
 	return out
 }
 
-// printDevicesTable renders `ley devices-seen`: who, the name you gave them, how often, and how
-// long ago they were first and last heard.
+// printDevicesTable renders `ley devices-seen`: the transmitter, its label, how often it was heard,
+// and how long ago it was first and last heard.
 func printDevicesTable(app *App, devices []*records.Device, store *labels.Store, now time.Time, quiet bool) {
 	s := tableStyle(app)
 	cols := []column{
@@ -188,8 +188,8 @@ func deviceLabel(store *labels.Store, id string) string {
 	return ""
 }
 
-// deviceAge is how long ago a wall time was, or the absent glyph when no anchor dated it: an age
-// ley did not derive would be a clock it invented (CLAUDE.md invariant 5).
+// deviceAge is how long ago a wall time was, or the absent glyph when no anchor dated it: ley
+// does not make up times it cannot derive from an anchor (CLAUDE.md invariant 5).
 func deviceAge(at, now time.Time) string {
 	if at.IsZero() {
 		return "-"

@@ -17,8 +17,8 @@ import (
 
 // TestMetersAgainstRealDaemon reads the audio meters off the daemon's own spectrum tap. The band
 // levels come out of Swift's FFT and the squelch state out of its meter telemetry, so only the
-// real daemon can say whether the Go views name the same signal the recording carries: the 100 Hz
-// CTCSS tone standing in the 125 Hz band before the audio chain, and gone from it after.
+// real daemon can say whether the Go views show the same signal the recording carries: the 100 Hz
+// CTCSS tone present in the 125 Hz band before the audio chain, and gone from it after.
 func TestMetersAgainstRealDaemon(t *testing.T) {
 	e, _ := setup(t)
 	pl, err := filepath.Abs("../../../fixtures/nfm_pl.cf32")
@@ -35,8 +35,8 @@ func TestMetersAgainstRealDaemon(t *testing.T) {
 	chanID := list(st, "channels")[0].(map[string]any)["channelId"].(string)
 
 	// nfm_pl.cf32 is a 1 kHz voice tone over a 100.0 Hz PL, and 100 Hz falls in the 125 Hz octave
-	// band (88..177 Hz). Before the audio chain both stand; the two bands are the loudest of the
-	// nine.
+	// band (88..177 Hz). Before the audio chain both tones are present; the two bands are the
+	// loudest of the nine.
 	demod := levelsBands(t, e, chanID, "demod")
 	got := twoLoudest(demod)
 	if got != [2]float64{125, 1000} && got != [2]float64{1000, 125} {

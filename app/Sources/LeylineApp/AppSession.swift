@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// What every view reaches for: the daemon's state copied out of the mirror on every change, the
+// Shared state for every view: the daemon's state copied out of the mirror on every change, the
 // coalescer that writes through it, the two feeds, the bands and bookmarks files, and every
 // action the window performs. Nothing here is authoritative (CLAUDE.md invariant 7): a view
 // renders `state` and its own writes come back as events like everyone else's. One identity per
@@ -25,7 +25,7 @@ final class AppSession {
     private var mirror: DaemonMirror?
     private var running: Task<Void, Never>?
 
-    // The window's own selection: which capture it shows and which channel it hears. Ids only;
+    // The window's own selection: which capture it shows and which channel it plays. Ids only;
     // the objects are always read back from `state`.
     private(set) var captureID: String?
     private(set) var channelID: String?
@@ -64,7 +64,7 @@ final class AppSession {
     private var creatingChannel = false
     private var lastPan = Date.distantPast
     /// Where a rail drag is taking the centre, until the capture's event carries it: the rail
-    /// draws its pill there so the region moves with the hand, not a tick behind it.
+    /// draws its pill there so the region tracks the drag instead of lagging one event behind.
     private(set) var panCentre: Int64?
 
     // Files both clients own.
@@ -78,7 +78,7 @@ final class AppSession {
     let telemetry = ChannelTelemetryFeed()
     let captureLevel = CaptureLevelFeed()
 
-    // View state that is the window's alone: presentation, never radio truth.
+    // View state local to the window: presentation only, never radio state.
     var maxHold = true
     var zoom = 1
     /// The frequency under the pointer on either chart, so the hairline shows on both; nil when
@@ -99,9 +99,9 @@ final class AppSession {
         didSet { UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey) }
     }
     /// One sentence about the last thing that happened, or nil.
-    /// Every message the window shows is a log line (`AppLog.swift`): the notice and the error
-    /// as they are set, the empty words and the out-of-capture words as they change, the
-    /// failure state in `nameFailure`, so a screenshot of a sentence can be found in the log.
+    /// Every message the window shows is also logged (`AppLog.swift`): the notice and the error
+    /// when set, the empty-state and out-of-capture messages when they change, and the failure
+    /// state in `nameFailure`, so any message in a screenshot can be found in the log.
     private(set) var notice: String? {
         didSet { if let n = notice, n != oldValue { log("shown", "notice: \(n)") } }
     }
@@ -112,16 +112,16 @@ final class AppSession {
             }
         }
     }
-    /// The empty words and the out-of-capture words last logged, so a change is one line.
+    /// The empty-state and out-of-capture messages last logged, so a change logs one line.
     private var shownEmptyWords: String?
     private var shownOutOfCapture: String?
-    /// What the band's numbers say is wrong, or nil (`FailureState`): named from the feed's
+    /// The problem the band's levels indicate, or nil (`FailureState`): computed from the feed's
     /// folds after every row and from the mirror when the gains change, and logged when it
-    /// changes. Shown in the inspector until the numbers change or the user dismisses it.
+    /// changes. Shown in the inspector until the levels change or the user dismisses it.
     private(set) var failure: FailureState?
-    /// The state the user dismissed; it comes back when a different one is named.
+    /// The state the user dismissed; the strip returns when a different state is detected.
     private var dismissedFailure: FailureState?
-    /// The out-of-capture words were closed; they return once the channel has been back inside.
+    /// The out-of-capture message was closed; it returns once the channel has been back inside.
     private var outOfCaptureDismissed = false
     private var busy = false
     private var rejectionsSeen = 0
@@ -134,7 +134,7 @@ final class AppSession {
     private static let sampleRateKey = "sampleRate"
     /// A one-stage radio keeps the app's established fixed first-use gain. Multi-stage radios keep
     /// their driver's stage-specific defaults until the person moves a control; applying one
-    /// generic number to every stage can make a perfectly healthy radio deaf or overloaded.
+    /// generic number to every stage can leave a working radio insensitive or overloaded.
     static let defaultGainDB: Double = 28
     private static let legacyGainKey = "gain"
 
@@ -198,18 +198,19 @@ final class AppSession {
     var isLive: Bool { if case .live = connection { true } else { false } }
 
     /// The waterfall's cold end: the squelch, as a level per bin, so raising the squelch darkens
-    /// the noise and what is heard is what has colour, the way the desktop SDRs tie the waterfall
-    /// minimum to the floor. The squelch is a channel power over the channel's width; per bin it
-    /// is `squelch − 10·log10(bandwidth / bin width)`, the auto squelch's own scaling in reverse.
+    /// the noise and only signals above the squelch are coloured, the way desktop SDRs tie the
+    /// waterfall minimum to the floor. The squelch is a channel power over the channel's width;
+    /// per bin it is `squelch − 10·log10(bandwidth / bin width)`, the auto squelch's own scaling
+    /// in reverse.
     /// With the squelch off, or before a floor is known, the feed's floor plus its headroom.
     var rampFloorDB: Float {
         squelchPerBinDB ?? spectrum.rampFloorDB
     }
 
-    /// How far below the cold end the waterfall fades to the ground, when the cold end is the
-    /// squelch: what the squelch silences goes dark rather than sitting at the ramp's first
-    /// stop, so the picture says what is heard. Nothing with the squelch off, where the cold
-    /// end is a headroom over the noise and the noise is meant to stay a faint teal.
+    /// How far below the cold end the waterfall fades to the background, when the cold end is
+    /// the squelch: anything below the squelch goes dark rather than sitting at the ramp's first
+    /// stop. Zero with the squelch off, where the cold end is a headroom over the noise and the
+    /// noise stays a faint teal.
     static let squelchFadeDB: Float = 6
     var rampFadeDB: Float { squelchPerBinDB == nil ? 0 : Self.squelchFadeDB }
 
@@ -235,16 +236,16 @@ final class AppSession {
 
     /// The channel's power over `channelFloorDB`. The meter's own `snr_db` was power over the
     /// channel's running minimum, which on a carrier that never stops is the carrier itself and
-    /// read 0 (`docs/plans/app.md`, APP-3); the daemon now measures the same floor, and this
-    /// stays the number the window trusts. Nil until the floor is known.
+    /// read 0 (`docs/plans/app.md`, APP-3); the daemon now measures the same floor, and the
+    /// window still uses this value. Nil until the floor is known.
     var overNoiseDB: Double? {
         guard let m = meter, m.powerDbfs.isFinite, let floor = channelFloorDB else { return nil }
         return m.powerDbfs - floor
     }
 
     /// The wall clock of a time on the tuned capture, through its anchor and nothing else
-    /// (invariant 5): nil until the anchor is dated, and the inspector then says how long ago
-    /// rather than inventing a clock.
+    /// (invariant 5): nil until the anchor is dated, and the inspector then shows elapsed time
+    /// instead of a guessed wall-clock time.
     func wallTime(of time: Leyline_V1_SampleTime) -> Date? {
         guard let cap = capture else { return nil }
         return SampleClock.wallTime(of: time, anchor: cap.anchor)
@@ -273,7 +274,7 @@ final class AppSession {
         return max(perBin, feed.floorDB - 10)
     }
 
-    /// What the radio in hand can tune: the capture's device, else the first connected one.
+    /// The radio whose tuning range applies: the capture's device, else the first connected one.
     private var radioRanges: [Leyline_V1_FrequencyRange] {
         (device ?? state.devices.first { $0.state != .disconnected })?.tuningRanges ?? []
     }
@@ -328,7 +329,7 @@ final class AppSession {
         return (centre - width / 2)...(centre + width / 2)
     }
 
-    /// Where the window stands, in the guide's words, when there is nothing to draw.
+    /// The empty-state message, worded as in the guide, shown when there is nothing to draw.
     var emptyWords: (headline: String, detail: String)? {
         if let e = startupError { return ("Could not dial the daemon", e.message) }
         switch connection {
@@ -460,7 +461,7 @@ final class AppSession {
         }
     }
 
-    /// Forgets the capture, and the channel with it: a channel without its capture is nothing.
+    /// Forgets the capture, and the channel with it: a channel cannot exist without its capture.
     /// The window then makes new ones, because `adopt` runs again.
     private func dropCapture() {
         captureID = nil
@@ -533,8 +534,8 @@ final class AppSession {
 
     // MARK: Bands
 
-    /// The band's centre and rate on the radio, its mode and width on the channel, a sink so it
-    /// is heard, and a squelch measured from the floor. Creates what does not exist and writes
+    /// The band's centre and rate on the radio, its mode and width on the channel, a sink for
+    /// audio, and a squelch measured from the floor. Creates what does not exist and writes
     /// what does (docs/design/app-design-handoff.md, Region 1). With `hz`, the band arrives
     /// tuned there rather than at its centre, and the capture sits where that frequency is
     /// inside it: a drag past the rail's end cap lands on the neighbour's near edge.
@@ -625,8 +626,8 @@ final class AppSession {
         log(
             "session",
             "created capture \(cap.captureID) on \(dev.model) at \(centerHz) Hz, \(sampleRate) S/s")
-        // Restore only values this device/stage has owned before. A new multi-stage radio keeps
-        // the driver's deliberately chosen defaults.
+        // Restore only values previously written for this device/stage. A new multi-stage radio
+        // keeps the driver's defaults.
         for g in preferredGains(for: dev) {
             log(
                 "gain",
@@ -744,11 +745,11 @@ final class AppSession {
     /// Every gesture ends here. Inside the capture it is one `offset_hz` write. Outside it the
     /// centre moves first and the offset follows once the capture's event confirms the move:
     /// the two in one tick land in the daemon's order, and an offset applied against the old
-    /// centre is a frequency nobody asked for, which then moves again. A click, a step or a
+    /// centre tunes a frequency nobody asked for, which then moves again. A click, a step or a
     /// typed frequency puts the target an eighth of the span in from the edge it arrived
     /// through. A drag held past the edge pans the capture an eighth of the span at a time, no
-    /// faster than every 300 ms, so the picture moves under the pointer at a pace a hand can
-    /// follow rather than a span per event.
+    /// faster than every 300 ms, so the display pans at a followable rate rather than a span
+    /// per event.
     func tune(to hz: UInt64, dragging: Bool = false) {
         place(hz, panning: dragging, quiet: dragging)
     }
@@ -802,8 +803,8 @@ final class AppSession {
         }
     }
 
-    /// A drag held past the capture's edge pans at most this often, so the picture moves under
-    /// the pointer at a pace a hand can follow rather than a span per event.
+    /// A drag held past the capture's edge pans at most this often, so the display pans at a
+    /// followable rate rather than a span per event.
     static let panRateLimitSeconds: TimeInterval = 0.3
     /// Where a click, a step or a typed frequency lands when the capture must re-centre: this
     /// many eighths of the span in from the edge it arrived through, so the new tuning is not
@@ -965,8 +966,8 @@ final class AppSession {
         }
     }
 
-    /// Crossing into another band takes that band's mode and width, because nobody chooses a
-    /// demodulator to hear a station; inside one band the channel keeps whatever was chosen.
+    /// Crossing into another band takes that band's mode and width, so the user does not have to
+    /// pick a demodulator per band; inside one band the channel keeps whatever was chosen.
     private func followBand(from oldHz: UInt64?, to hz: UInt64, channel ch: Leyline_V1_Channel) {
         let was = oldHz.flatMap { Bands.band(containing: $0, in: bands) }
         let now = Bands.band(containing: hz, in: bands)
@@ -1128,8 +1129,8 @@ final class AppSession {
         writeGain(element: element, "auto") { $0.auto = true }
     }
 
-    /// A gain write always names its stage. A radio with no such stage has nothing to write to and
-    /// says so instead of silently changing the first stage.
+    /// A gain write always names its stage. A radio without that stage reports an error instead
+    /// of silently changing the first stage.
     private func writeGain(
         element elementName: String, _ words: String,
         _ fill: (inout Leyline_V1_GainWrite) -> Void
@@ -1151,7 +1152,7 @@ final class AppSession {
     /// the window re-places the centre for the tuned frequency at the new width, as a band
     /// change does, and writes centre and rate in one tick: centre first when narrowing and rate
     /// first when widening, so the channel fits at each step the daemon applies. A width the
-    /// channel cannot fit at all is refused here, in words.
+    /// channel cannot fit at all is refused here with a message.
     func setSampleRate(_ rate: UInt64) {
         guard let cap = capture, let writes, rate != cap.sampleRate else { return }
         guard centreInFlight == nil else {
@@ -1199,7 +1200,7 @@ final class AppSession {
 
     /// The tuned channel lies outside the capture, silent: another client narrowed or moved the
     /// capture (the window's own writes keep the station inside). The daemon holds the channel
-    /// at its frequency until the capture covers it again, and the words say what would.
+    /// at its frequency until the capture covers it again, and the message says how to fix it.
     var outOfCaptureWords: String? {
         guard !outOfCaptureDismissed, let ch = channel, ch.state == .outOfCapture,
             let cap = capture, let hz = tunedHz
@@ -1215,7 +1216,7 @@ final class AppSession {
     func choose(device: Leyline_V1_DeviceDescriptor) async {
         guard let daemon, device.deviceID != capture?.deviceID else { return }
         // `select(band:)` returns without doing anything while another band change is in flight,
-        // so the switch must wait for that one rather than be dropped on the floor.
+        // so the switch must wait for that one rather than be dropped.
         await confirmed(within: 2) { !self.busy }
         guard !busy else {
             log(
@@ -1252,8 +1253,8 @@ final class AppSession {
         }
     }
 
-    /// What a refused bookmark write says. The unloaded case is the one worth spelling out: the
-    /// file is still whatever it was, so the line names it and says nothing was written.
+    /// The message for a refused bookmark write. The unloaded case gets its own wording: the
+    /// file is unchanged, so the message gives its path and says nothing was written.
     private func bookmarkWriteError(_ error: any Error) -> LeylineError {
         if let reason = error as? BookmarkError, case .notLoaded(let path) = reason {
             return LeylineError(
@@ -1313,7 +1314,7 @@ final class AppSession {
         }
     }
 
-    /// The tuned bookmark takes the mode and width it is heard with now.
+    /// The tuned bookmark takes the channel's current mode and width.
     func saveTunedBookmark() {
         guard let b = tunedBookmark, let ch = channel else { return }
         do {
@@ -1326,7 +1327,7 @@ final class AppSession {
     }
 
     /// The row's "Replace with …": the bookmark keeps its name and takes the tuned frequency
-    /// with the mode and width it is heard at (the owner's choice over a match within the
+    /// with the channel's current mode and width (the owner's choice over a match within the
     /// channel's width, 2026-09-21; `ley bookmarks move` is the terminal's).
     func replace(bookmark: Bookmark) {
         guard let ch = channel, let hz = tunedHz else { return }
@@ -1430,8 +1431,8 @@ final class AppSession {
     func clearNotice() { notice = nil }
     func clearError() { lastError = nil }
 
-    /// The failure state the radio's numbers show now, from the capture's level and gains. A change is one log line, so a strip that appeared can be explained
-    /// from the log.
+    /// The current failure state, from the capture's level and gains. A change logs one line, so
+    /// any strip that appeared can be traced in the log.
     private func nameFailure() {
         let now: FailureState?
         if let cap = capture, isLive, spectrum.error == nil {
@@ -1442,7 +1443,7 @@ final class AppSession {
             now = nil
         }
         guard now != failure else { return }
-        // A state re-named with a new number is the same state: keep the dismissal, skip the log.
+        // The same state with a new number is not a change: keep the dismissal, skip the log.
         if let now, let was = failure, now.kind == was.kind {
             failure = now
             return
@@ -1454,11 +1455,12 @@ final class AppSession {
             log("failure", "cleared")
         }
         // A dismissal outlives the state's clearing: it is forgotten only when a different state
-        // is named, or a state that flickers at its threshold comes back every time it does.
+        // is detected, or a state that flickers at its threshold would reappear on every flicker.
         if let now, let d = dismissedFailure, now.kind != d.kind { dismissedFailure = nil }
     }
 
-    /// One line when the words over the waterfall or the out-of-capture words change, or clear.
+    /// Logs one line when the waterfall's empty-state message or the out-of-capture message
+    /// changes or clears.
     private func logShownWords() {
         let empty = emptyWords.map { "\($0.headline). \($0.detail)" }
         if empty != shownEmptyWords {

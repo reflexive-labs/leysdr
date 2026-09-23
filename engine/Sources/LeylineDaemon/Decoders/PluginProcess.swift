@@ -110,7 +110,7 @@ struct PluginStalled: Error {}
 ///
 /// The frame is atomic on the wire or it is dropped: if the pipe cannot take its first byte the
 /// whole frame is dropped and reported (`droppedFull`); once a byte has gone the frame must finish
-/// or the length prefix and the body it promised part company, so a stall past `deadlineSeconds`
+/// or the length prefix no longer matches the bytes that follow, so a stall past `deadlineSeconds`
 /// mid-frame throws `PluginStalled` and the plugin is replaced rather than fed a torn stream.
 @discardableResult
 func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Double = 2.0) throws -> PluginWrite {
@@ -199,8 +199,8 @@ final class PluginProcess: @unchecked Sendable {
         }
         startReaders()
         // The write end is non-blocking so a plugin that stops reading cannot wedge the runner's
-        // drain task (DEC-16). The descriptor is small and read at once, so a drop there is the
-        // plugin refusing its own input -- treat it as a failure to start.
+        // drain task (DEC-16). The descriptor is small and read at once, so a drop there means the
+        // plugin is not reading its input -- treat it as a failure to start.
         let wfd = inPipe.fileHandleForWriting.fileDescriptor
         let flags = fcntl(wfd, F_GETFL, 0)
         if flags >= 0 { _ = fcntl(wfd, F_SETFL, flags | O_NONBLOCK) }

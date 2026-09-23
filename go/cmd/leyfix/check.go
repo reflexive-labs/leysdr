@@ -156,9 +156,9 @@ func checkExpect(x []complex128, rate float64, e iqfile.Expect) (bool, string) {
 
 // checkRecord verifies a keyed fixture's own answer key: the channel's power
 // crosses the stated squelch threshold exactly where the sidecar says it was
-// keyed, and nowhere else. The fixture claims the segments, so this is what
-// keeps that claim honest -- a recording test graded against a fixture whose
-// keying had drifted would fail the daemon for the generator's mistake.
+// keyed, and nowhere else. The sidecar lists the segments and this check
+// verifies them: a recording test graded against a fixture whose keying had
+// drifted would fail the daemon for the generator's mistake.
 func checkRecord(res *channelResult, e *iqfile.RecordExpect, offsetS float64) (bool, string) {
 	if len(res.iq) == 0 {
 		return false, "record: no channel samples"

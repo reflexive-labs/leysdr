@@ -1,8 +1,8 @@
 # Release checklist
 
 What a tag means: the automated gate is green on both hosts *and* one person has done the pass below
-on a Mac with an RTL-SDR plugged in. The gate cannot hear audio or see USB, so the manual pass is not
-optional.
+on a Mac with an RTL-SDR plugged in. The gate does not test audio output or real USB hardware, so
+the manual pass is not optional.
 
 ## Mechanical
 
@@ -48,17 +48,17 @@ Run each with the release binaries (`make go swift-release`, `export PATH=$PWD/g
       audible, `ley stop all` frees the radio.
 - [ ] Record-then-play: `ley record <the same repeater> --iq --for 20s`, then
       `ley play "$(ley recordings path <id> --part 1)"` — the station is audible again from the
-      file. `ley recordings show <id>` names the radio and the gain it was made at.
+      file. `ley recordings show <id>` shows the radio and the gain it was made at.
 - [ ] Gated recording on a live repeater: `ley record <repeater> --gate squelch --for 5m`, key up
       twice with a pause between. One part per exchange, the pauses inside it, and
-      `ley recordings show` says how many times the squelch opened. Note the pre-roll and hang that
+      `ley recordings show` reports how many times the squelch opened. Note the pre-roll and hang that
       felt right against `docs/design/recording.md`'s open question, which is where the numbers get
       measured.
 - [ ] `open -R "$(ley recordings path <id>)"` reveals the recording in Finder, and QuickTime plays
       the WAV.
 - [ ] Ctrl-C in a `tune` session hands the radio back (`ley state` shows no channel); a hard kill of
       the terminal does the same within about five seconds. Ctrl-C in a `ley record` session leaves
-      the recording complete: `ley recordings show` says `cancelled` and the last part plays.
+      the recording complete: `ley recordings show` shows `cancelled` and the last part plays.
 - [ ] `ley daemon uninstall` stops the daemon and removes the LaunchAgent.
 
 Record the machine, macOS version, dongle and date at the bottom of the release notes.

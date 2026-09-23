@@ -6,10 +6,10 @@ import Foundation
 import LeylineProto
 import XCTest
 
-/// What the bulk plane promises about the last bytes of a stream: a frame spans exactly the samples
-/// it carries, and audio produced while the source is closing still reaches the reader.
+/// What the bulk plane guarantees about the last bytes of a stream: a frame spans exactly the
+/// samples it carries, and audio produced while the source is closing still reaches the reader.
 final class BulkStreamDrainTests: XCTestCase {
-    /// A block too big for a slot is truncated, so the frame must claim only what it carries --
+    /// A block too big for a slot is truncated, so the frame must report only what it carries --
     /// otherwise the client's sample-index arithmetic drifts by the samples that never arrived.
     func testIQTapReportsOnlyTheSamplesItSent() {
         let slotSamples = 64

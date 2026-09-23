@@ -16,10 +16,10 @@ import (
 //	2026-09-09T04:12:54+0000 info leyline.daemon: [LeylineDaemon] listening on ...
 //
 // On a terminal `ley daemon logs` re-lays that into columns (the clock, the
-// level, one subsystem token, then the message) so the level -- the thing a
-// reader scans for -- has an anchor. Piped, the log is passed through
+// level, one subsystem token, then the message) so the level, which is what
+// readers scan for, sits in a fixed column. Piped, the log is passed through
 // byte-for-byte, and any line that does not parse is passed through here too:
-// ley must never eat a line it did not understand.
+// ley never drops a line it cannot parse.
 type logLine struct {
 	date, clock, level, label, subsys, msg string
 }
@@ -56,7 +56,7 @@ func parseLogLine(s string) (logLine, bool) {
 	l := logLine{date: date, clock: clock, level: strings.ToLower(level)}
 	rest = strings.TrimLeft(rest, " ")
 	// The label ("leyline.daemon:", or "leyline.daemon :") names the
-	// subsystem; only its last segment earns a column.
+	// subsystem; only its last segment gets a column.
 	if tok, after, cut := strings.Cut(rest, " "); cut {
 		switch {
 		case strings.HasSuffix(tok, ":") && isLogLabel(strings.TrimSuffix(tok, ":")):
@@ -69,7 +69,7 @@ func parseLogLine(s string) (logLine, bool) {
 	}
 	// swift-log's "[source]" is the module the line came from, which in this
 	// daemon repeats the label ("LeylineDaemon" beside "leyline.capture").
-	// Drop it only when it does, so a source that says something new lives.
+	// Drop it only when it does, so a source that adds information is kept.
 	if strings.HasPrefix(rest, "[") {
 		if i := strings.Index(rest, "]"); i > 0 && repeatsLabel(rest[1:i], l.label) {
 			rest = strings.TrimLeft(rest[i+1:], " ")
@@ -223,9 +223,9 @@ func lastSegment(s string) string {
 	return s
 }
 
-// repeatsLabel reports whether a bracketed source says what the label
-// already said: it names the same thing, or one of the label's segments,
-// once case and punctuation are set aside.
+// repeatsLabel reports whether a bracketed source repeats the label: it names
+// the same thing, or one of the label's segments, once case and punctuation
+// are set aside.
 func repeatsLabel(src, label string) bool {
 	for _, seg := range strings.Split(label, ".") {
 		if sameIdentity(src, seg) {

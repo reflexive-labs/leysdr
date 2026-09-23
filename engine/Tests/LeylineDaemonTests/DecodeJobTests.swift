@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // A decode job end to end against a file device and the fake decoder: what the daemon stamps on a
-// record, what `keep` writes, what cancel hands back, and what a plugin that dies costs
+// record, what `keep` writes, what cancel hands back, and what happens when a plugin dies
 // (docs/design/decoders.md, "Decisions": "A decode job is a job").
 
 import EngineCore
@@ -16,7 +16,7 @@ import XCTest
 let decodeFrequencyHz: UInt64 = 146_620_000
 
 final class DecodeJobTests: XCTestCase {
-    /// Attaches nfm_tone on a loop, so the job has something to hear for as long as it runs.
+    /// Attaches nfm_tone on a loop, so the job has something to decode for as long as it runs.
     private func attachFixture(_ c: DaemonClients) async throws {
         var attach = Leyline_V1_AttachFileDeviceRequest()
         attach.path = fixturePath("nfm_tone.cf32")
@@ -218,9 +218,9 @@ final class DecodeJobTests: XCTestCase {
         }
     }
 
-    /// A running job says how much it has heard (DEC-23): the first record at once, the count
-    /// afterwards on the liveness timer, so `ley jobs` tells a working decoder from a silent one
-    /// without anyone subscribing to its records.
+    /// A running job reports how many records it has produced (DEC-23): the first record at once,
+    /// the count afterwards on the liveness timer, so `ley jobs` tells a working decoder from a
+    /// silent one without anyone subscribing to its records.
     func testARunningJobSaysHowMuchItHasHeard() async throws {
         let plugins = try makeTempDir("decoders")
         defer { try? FileManager.default.removeItem(atPath: plugins) }
@@ -281,7 +281,7 @@ final class DecodeJobTests: XCTestCase {
             before = try await c.decoders.queryRecords(q, metadata: testMetadata).records.count
             XCTAssertGreaterThanOrEqual(before, 3)
         }
-        // The daemon is gone; the file names the job it was running.
+        // The daemon is gone; the file lists the job it was running.
         let kept = try XCTUnwrap(FileManager.default.contents(atPath: store + "/kept-jobs.json"))
         XCTAssertTrue(String(decoding: kept, as: UTF8.self).contains(jobID), "kept-jobs.json should name the job")
 
@@ -319,7 +319,7 @@ final class DecodeJobTests: XCTestCase {
             ref.jobID = jobID
             _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
         }
-        // Cancelled by a client, not by a shutdown: the file no longer names it.
+        // Cancelled by a client, not by a shutdown: the file no longer lists it.
         let after = try XCTUnwrap(FileManager.default.contents(atPath: store + "/kept-jobs.json"))
         XCTAssertFalse(String(decoding: after, as: UTF8.self).contains(jobID), "a cancelled job is not resumed")
     }

@@ -144,8 +144,8 @@ func tapTarget(cmd *cobra.Command, f *tuneFlags, verb, arg string, tuneFlagNames
 		return "", nil, err
 	}
 	// A verb that taps a channel opens no speakers, and without an explicit
-	// --squelch the channel passes everything through: the samples the caller
-	// asked for are the whole point, and a muted stage hands back zeros.
+	// --squelch the channel passes everything through: the caller wants the
+	// samples, and a squelched stage returns zeros.
 	f.noAudio, f.volume = true, "1"
 	if o, err = f.parse(arg, hz, def); err != nil {
 		return "", nil, err

@@ -56,8 +56,8 @@ type ControlClient interface {
 	AttachSink(ctx context.Context, in *AttachSinkRequest, opts ...grpc.CallOption) (*Sink, error)
 	DetachSink(ctx context.Context, in *DetachSinkRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-	// does for a channel's audio, so a client on another machine hears it where the radio is and a
-	// client on this one needs no player of its own (docs/design/recording.md).
+	// does for a channel's audio, so a recording plays where the radio is, even for a client on
+	// another machine, and a local client needs no player of its own (docs/design/recording.md).
 	StartPlayback(ctx context.Context, in *StartPlaybackRequest, opts ...grpc.CallOption) (*Playback, error)
 	StopPlayback(ctx context.Context, in *StopPlaybackRequest, opts ...grpc.CallOption) (*Empty, error)
 	WriteParams(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ParamWrite, WriteSummary], error)
@@ -263,8 +263,8 @@ type ControlServer interface {
 	AttachSink(context.Context, *AttachSinkRequest) (*Sink, error)
 	DetachSink(context.Context, *DetachSinkRequest) (*Empty, error)
 	// Play a recording through the daemon's own audio device. The daemon owns the speakers, as it
-	// does for a channel's audio, so a client on another machine hears it where the radio is and a
-	// client on this one needs no player of its own (docs/design/recording.md).
+	// does for a channel's audio, so a recording plays where the radio is, even for a client on
+	// another machine, and a local client needs no player of its own (docs/design/recording.md).
 	StartPlayback(context.Context, *StartPlaybackRequest) (*Playback, error)
 	StopPlayback(context.Context, *StopPlaybackRequest) (*Empty, error)
 	WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error

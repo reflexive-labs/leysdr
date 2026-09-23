@@ -32,8 +32,8 @@ var chartViews = []struct {
 }
 
 // A terminal wide enough gets the picture in the frame `ley spectrum` draws,
-// with the header above it: the chart and the axis it is read against are one
-// object, and what the view is looking at is prose.
+// with the header above it: the frame encloses the chart and its axis, and the
+// header describing what the view shows is prose outside it.
 func TestLiveViewsCarryTheChartFrame(t *testing.T) {
 	const width = 100
 	for _, tc := range chartViews {

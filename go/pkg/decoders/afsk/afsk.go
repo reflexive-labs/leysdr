@@ -22,14 +22,15 @@
 // -1 dB, 86/100 at -2 dB and 12/100 at -4 dB; at 12 kHz, where the same number
 // means 6 dB more noise in band, 100/100 at +6 dB and 79/100 at +4 dB. 0 dB at
 // 48 kHz is 13 dB of Eb/N0, and non-coherent FSK needs about 12.3 dB to hold a
-// 500-bit frame together, so this chain stops about a decibel short of the
-// theoretical wall.
+// 500-bit frame together, so this chain is about a decibel short of the
+// theoretical limit.
 //
 // Against the owner's 144.39 MHz captures (rf-captures/aprs_144390_auto.s16 and
 // aprs_144390_g40.s16, 180 s each, 2026-09-12) it recovers the one packet the
 // auto-gain file contains, a N0CALL-1 position beacon, and none from the
-// fixed-gain file, which a tone scan says carries none. 144.39 is quiet where
-// the capture was made; the count is what the channel held, not a score.
+// fixed-gain file, which a tone scan shows carries none. 144.39 is quiet where
+// the capture was made, so the count reflects channel traffic, not decoder
+// sensitivity.
 package afsk
 
 import "math"
@@ -41,8 +42,8 @@ const (
 	BaudHz  = 1200.0
 )
 
-// Options tune the receive chain. Zero values are not defaults; use
-// DefaultOptions and change what you mean to change.
+// Options tune the receive chain. Zero values are not defaults; start from
+// DefaultOptions and override only the fields you need.
 type Options struct {
 	// PreEmphasis is the single-zero coefficient of y = x - k*x[-1], the
 	// +6 dB/octave tilt that undoes the NFM chain's de-emphasis. 0 disables it.
@@ -60,7 +61,7 @@ type Options struct {
 	SmoothBits float64
 	// DCBits is the time constant, in bit times, of a slow mean subtracted from
 	// the discriminator; 0 turns it off, which is the default. Tracking the mean
-	// costs more than it buys: Normalize already removes a level or twist
+	// makes decoding worse: Normalize already removes a level or twist
 	// imbalance, and the tracker follows unbalanced data instead, which cost
 	// about 10 dB of sensitivity when it was measured with it on.
 	DCBits float64
@@ -121,7 +122,7 @@ type Demodulator struct {
 
 // New builds a demodulator for an audio rate between 8 kHz and 96 kHz. The daemon's channel rate
 // is about 48 kHz and depends on the capture rate (49.2 kHz at 3.2 MSPS), so the bound is a sanity
-// check on the descriptor, not a promise about which rates were measured.
+// check on the descriptor; not every rate in the range has been measured.
 func New(rate float64) *Demodulator { return NewWith(rate, DefaultOptions()) }
 
 // NewWith builds a demodulator with explicit options.
@@ -156,8 +157,8 @@ func NewWith(rate float64, o Options) *Demodulator {
 	return d
 }
 
-// Reset clears the demodulator's state. A gap in the stream invalidates
-// everything the bit clock believes.
+// Reset clears the demodulator's state. A gap in the stream invalidates the
+// correlator history, the filters and the bit clock's phase.
 func (d *Demodulator) Reset() {
 	for i := range d.hist {
 		d.hist[i] = 0

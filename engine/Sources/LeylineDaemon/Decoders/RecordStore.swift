@@ -4,8 +4,8 @@
 // is files"). A kept job's records go to `<store>/records/<job_id>.records` as varint-delimited
 // DecodeRecords, beside `<job_id>.json` holding the job's config, the decoder's name and version,
 // and every CaptureAnchor that was in force while it ran. A query scans the sidecars, skips the
-// files that cannot match, and filters the rest in memory. There is no index, and there will be a
-// SQLite one when a query is measured to be slow, not before.
+// files that cannot match, and filters the rest in memory. There is no index; a SQLite one is
+// worth adding only once a query is measured to be slow.
 
 import EngineCore
 import Foundation
@@ -219,7 +219,7 @@ extension RecordStore {
     /// The file's wall-clock span against the query's bounds. The lower bound is when the job
     /// started; the upper is when its records file was last written.
     private func spanCanMatch(_ s: RecordSidecar, _ q: Leyline_V1_RecordQuery) -> Bool {
-        // The bounds are generous on purpose: this only decides which files to open, and the exact
+        // The bounds are wide: this only decides which files to open, and the exact
         // test is per record. The lower bound is the earliest clock the job knew -- which is an
         // anchor's, not the job's creation time, because a fixture's timeline can be anywhere.
         if q.untilNs != 0 {

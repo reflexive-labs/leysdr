@@ -128,8 +128,8 @@ func TestDecodeStopsAnEphemeralJob(t *testing.T) {
 	}
 }
 
-// TestDecodeJobOutlivesTheClient: --job is the reader saying the records matter more than this
-// terminal, so the job keeps running after ley exits and says how to stop it.
+// TestDecodeJobOutlivesTheClient: with --job the job keeps running after ley exits, and the
+// output says how to stop it.
 func TestDecodeJobOutlivesTheClient(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -162,8 +162,8 @@ func TestDecodeJobOutlivesTheClient(t *testing.T) {
 	}
 }
 
-// Every decode screen must read the same with colour off: the words carry the meaning and the
-// ink only helps the eye find it (docs/dev/cli-style.md, section 1).
+// Every decode screen must read the same with colour off: the words carry the meaning and
+// colour is only emphasis (docs/dev/cli-style.md, section 1).
 func TestDecodeScreensSurviveColourOff(t *testing.T) {
 	page := &leylinev1.RecordPage{
 		Records: []*leylinev1.DecodeRecord{{
@@ -184,8 +184,8 @@ func TestDecodeScreensSurviveColourOff(t *testing.T) {
 	table.Apply(page.Records[0])
 	table.Apply(page.Records[1])
 
-	// Colour is compared at a fixed glyph set: the alphabet is the reader's
-	// terminal, not the emphasis, and the track table now draws ramp glyphs.
+	// Colour is compared at a fixed glyph set: the glyph set depends on the
+	// terminal, not on colour, and the track table now draws ramp glyphs.
 	render := func(styled bool) string {
 		var out, errb bytes.Buffer
 		app := &App{Stdout: &out, Stderr: &errb, IsTTY: func() bool { return false }}

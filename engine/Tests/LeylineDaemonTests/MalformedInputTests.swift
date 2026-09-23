@@ -94,8 +94,8 @@ final class MalformedInputDaemonTests: XCTestCase {
     }
 
     /// An `AudioTap` value from a contract this daemon has never seen is refused rather than
-    /// served as the default: a client asking for a stage nobody here can produce must be told so,
-    /// not handed the speaker's audio under another name.
+    /// served as the default: a client asking for a stage this daemon cannot produce gets an
+    /// error, not the speaker's audio under another name.
     func testUnknownAudioTapIsRejected() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in
@@ -218,7 +218,7 @@ final class MalformedInputDaemonTests: XCTestCase {
 
     /// A channel-sourced FFT is negotiated on the same params as the band's, so the same absurd
     /// values arrive on it: every one of them is clamped to something the daemon can serve, and the
-    /// descriptor says what that was.
+    /// descriptor reports the served value.
     func testAbsurdChannelSpectrumParamsClamp() async throws {
         guard FileManager.default.fileExists(atPath: fixturePath("nfm_tone.cf32")) else { throw XCTSkip("fixture missing") }
         try await withDaemon { c in

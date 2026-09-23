@@ -152,7 +152,7 @@ func TestFileDeviceEOFDetaches(t *testing.T) {
 		}
 	}
 	// A detached capture still negotiates a stream: the daemon's registry asks whether the capture
-	// exists, not what state it is in, and a stream with no source behind it simply has no frames.
+	// exists, not what state it is in, and a stream with no source behind it has no frames.
 	if _, err := c.SubscribeFFT(ctx, cap.CaptureId, 256, 50, leylinev1.FftBinFormat_DB_U8); err != nil {
 		t.Errorf("subscribing to a detached capture: %v", err)
 	}

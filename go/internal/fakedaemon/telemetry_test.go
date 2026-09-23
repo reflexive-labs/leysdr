@@ -108,7 +108,7 @@ func TestSlowMeterIntervalStillTicks(t *testing.T) {
 }
 
 // A channel with no squelch is open from the moment it exists, so a subscriber that arrives later
-// is mid-transmission. The daemon forwards only edges its engine crossed, and has nothing to say
+// is mid-transmission. The daemon forwards only edges its engine crossed, and reports nothing
 // about a transmission that opened before anyone was listening.
 func TestNoSquelchTransitionOnFirstTick(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})

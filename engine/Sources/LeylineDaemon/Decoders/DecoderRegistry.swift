@@ -14,7 +14,7 @@ import Logging
 import SwiftProtobuf
 
 struct DecoderRegistry: Sendable {
-    /// One decoder as found on disk: what it says about itself, where it was found, and the
+    /// One decoder as found on disk: its manifest, the directory it was found in, and the
     /// program the daemon would spawn.
     struct Installed: Sendable {
         var manifest: Leyline_V1_DecoderManifest

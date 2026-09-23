@@ -91,7 +91,7 @@ func TestDecodeJobStampsAndNumbersRecords(t *testing.T) {
 			t.Errorf("record %d is not on the capture's timeline: %v", i, rec.GetTime())
 		}
 	}
-	// Cancelling gives the radio back: the channel and the capture the job made both go.
+	// Cancelling releases the radio: the channel and the capture the job made both go.
 	if _, err := c.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: job.JobId}); err != nil {
 		t.Fatal(err)
 	}

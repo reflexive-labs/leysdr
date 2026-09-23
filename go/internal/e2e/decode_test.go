@@ -140,8 +140,8 @@ func ndjson(t *testing.T, s string) []map[string]any {
 }
 
 // Driver C end to end (docs/plans/decoders.md, DEC-9): the real daemon decodes a SAME weather
-// alert, a predicate keeps only the county asked for, and a shell notifier fires with the record
-// -- the trigger a watch exists to raise. A non-matching county fires nothing.
+// alert, a predicate keeps only the county asked for, and a shell notifier fires with the record.
+// A non-matching county fires nothing.
 func TestWatchSameCountyAgainstRealDaemon(t *testing.T) {
 	decoders := os.Getenv("LEYLINE_DECODERS")
 	if decoders == "" {
@@ -198,7 +198,7 @@ func TestWatchSameCountyAgainstRealDaemon(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// A county the alert does not name: no record within a bounded wait, and the notifier is silent.
+	// A county the alert does not name: no record within a bounded wait, and no notifier fires.
 	miss := filepath.Join(t.TempDir(), "miss.txt")
 	ctxOut, _ := e.runFor(6*time.Second, "watch", "same", "--county", "48113",
 		"--notify=shell:printf hit >> "+miss, "--json", "--count", "1")

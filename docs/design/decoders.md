@@ -19,9 +19,9 @@ transmitting*. Records answer *here is what it said*.
 
 ## 2. Design drivers
 
-Five reference use cases, chosen for maximum spread. Every interface decision below traces to at
-least one; implementations must satisfy all five. A to C were the original pressure-test set; D and
-E were added later, and D is the first build.
+Five reference use cases, chosen to differ from each other as much as possible. Every interface
+decision below traces to at least one; implementations must satisfy all five. A to C were the
+original pressure-test set; D and E were added later, and D is the first build.
 
 **A. ADS-B (1090 MHz).** High rate (hundreds of messages a second), fragmentary. A position message
 carries no callsign; a callsign message carries no altitude; CPR position decoding pairs even and
@@ -49,7 +49,7 @@ because it exercises the contract end to end with no new concepts, which is why 
 **E. FT8 (HF; the WSPR/FT4/JS8 family).** Slot-synchronised weak-signal digital. Breaks an
 assumption the other drivers share: FT8 is aligned to 15-second UTC slots, and the decoder needs a
 complete slot of audio aligned to wall clock before it can produce anything. This is the only
-driver that makes `CaptureAnchor` accuracy load-bearing: sample-indexed time is still the record
+driver where `CaptureAnchor` accuracy matters: sample-indexed time is still the record
 timebase, but the anchor must be good enough to cut slots correctly. One 2.5 kHz channel yields
 dozens of records per slot, each with callsign, grid locator and SNR, so records are inherently
 geographic and `validity` windows apply. The implementation is a slot-buffering wrapper around an
@@ -67,7 +67,7 @@ as a delivery path, and two plugin input modes. A single use case would have rev
 ## 3. The state boundary
 
 **Decode state lives in the decoder. Interpretation state lives in the client library. The daemon
-is a radio, not a database with a radio attached.**
+does not keep interpretation state.**
 
 - **Decode state** is whatever is required to emit a correct record at all: CPR even/odd pairing,
   fragment reassembly, CRC checks, dedupe windows. A late-subscribing client can never reconstruct
@@ -86,9 +86,9 @@ exist.
 The one carve-out: predicates that genuinely require track history ("alert when an aircraft
 descends below 3000 ft" needs a prior altitude) may use a plugin-declared aggregator hosted in the
 daemon, but only when a job explicitly asks for a stateful predicate. Opt-in and per job. The
-daemon never keeps entity tables by default. "Just cache the aircraft table in the daemon, it is
-simpler" is the wrong answer and is rejected in review; if a feature seems to need it, the fix is
-a client-side fold or an explicit stateful-predicate job.
+daemon never keeps entity tables by default. Caching the aircraft table in the daemon looks
+simpler but is rejected in review; if a feature seems to need it, use a client-side fold or an
+explicit stateful-predicate job.
 
 ## 4. Record model
 
@@ -133,7 +133,7 @@ records only.
 
 Out of process, one process per running decoder. Crash isolation is one reason; the other is that
 mature GPL C tools (`rtl_433`, `dump1090`, `dumpvdl2`, `multimon-ng`, `direwolf`) can then be
-wrapped as first-class citizens rather than reimplemented. The engine is GPL, so linkage is not
+wrapped as full plugins rather than reimplemented. The engine is GPL, so linkage is not
 the constraint; a separate process is.
 
 ### Manifest (static, shipped with the plugin)
@@ -156,7 +156,7 @@ the constraint; a separate process is.
 - The plugin emits framed records back. Framing is length-prefixed protobuf, the same contract
   discipline as everywhere else.
 - Plugin crash: the daemon restarts it with backoff, logs a gap in the job's coverage record, and
-  never takes the daemon down. Honest gaps, per the transcript precedent.
+  never takes the daemon down. The gap is recorded, per the transcript precedent.
 - Plugins never touch hardware, never retune, and never see the control plane. They receive
   samples and emit records.
 - Wrapped third-party binaries run behind a thin adapter that translates their native output into
@@ -180,8 +180,8 @@ must work with no client connected (driver C).
 
 Delivery adds a **notification sink** beside the existing sink kinds (`system-audio`, `stream`,
 `file`). Targets: a macOS user notification, a webhook, a shell hook. A triggered alert is a
-channel output going somewhere, and "somewhere" is now also a notifier. There is no parallel
-delivery path.
+channel output going to a sink, and a notifier is one more sink. There is no parallel delivery
+path.
 
 ## 8. Record store
 
@@ -223,22 +223,22 @@ Four families, all reading from the record store rather than streaming packets:
    spatial bounds and validity. The highest-value tool; agents are good at it.
 2. **`identify_signal`**: measured characteristics (bandwidth, burst timing, symbol rate estimate,
    spectral shape, modulation guess with confidence) plus a snapshot image. The agent reasons
-   toward a candidate protocol and proposes a decoder. It must not overclaim: the honest-detector
-   invariant applies.
+   toward a candidate protocol and proposes a decoder. It must not claim more than was measured:
+   the honest-detector invariant applies.
 3. **Enrichment**: `lookup_identity` mapping ICAO hex to registration and type, MMSI to vessel,
    callsign to licence, `device_id` to user label. External lookups happen adapter-side, never in
    the daemon.
 4. **`start_decode_job`**: durable monitoring with a predicate, on the existing job machinery. The
-   agent supplies the meaning of "interesting"; the daemon supplies durability.
+   agent supplies the predicate; the daemon keeps the job running.
 
-The composite tool, built deliberately: **`whats_out_there`** sweeps a range, detects,
-characterises, tries matching decoders and returns a labelled inventory. It is a new capability
-rather than a wrapper, and the demonstration that sells the project.
+The composite tool: **`whats_out_there`** sweeps a range, detects, characterises, tries matching
+decoders and returns a labelled inventory. It is a new capability rather than a wrapper, and the
+project's main demonstration.
 
 ## 10. Constraints and boundaries
 
 - **Decode only what is in the clear.** No decryption of protected traffic. Plugins that would
-  require breaking encryption are out of scope however they are framed.
+  require breaking encryption are out of scope whatever their stated purpose.
 - **Digital voice audio is deliberately not implemented.** C4FM (Yaesu System Fusion), DMR, D-STAR
   and P25 voice all need the AMBE/AMBE+2 vocoder, which is patented and proprietary; the open
   reimplementations (mbelib and the DSD family) sit in an unresolved rights position. A project
@@ -251,7 +251,7 @@ rather than a wrapper, and the demonstration that sells the project.
     contract exists partly so that choice is theirs.
   - **M17** is welcome: it was designed around Codec2 (LGPL) and has an open specification.
 - **Export deliberately.** The record store's export and share paths are where divulgence rules
-  bite. The export path is designed once, early; share affordances are not scattered across
+  apply. The export path is designed once, early; share affordances are not scattered across
   surfaces.
 - **TX interlock, written before TX code exists.** Decoding and displaying is observation;
   replaying is access-control bypass. Access-control and rolling-code protocols (garage and gate
@@ -328,9 +328,8 @@ job survives one; its records do.
 **Records reach clients on their own service.** `Decoders.SubscribeRecords` is the live stream,
 scoped to everything, one job or one protocol, drop-oldest with a `seq` per job and a retained
 window of 256 records replayable with `since_seq`, so "start the job, then subscribe" misses
-nothing. `Decoders.QueryRecords` reads the store. Neither is telemetry: a meter reading is a
-sample of a level and a record is a thing that was said, and a client wanting one rarely wants
-the other.
+nothing. `Decoders.QueryRecords` reads the store. Neither is telemetry: a meter reading samples a
+level and a record carries decoded content, and a client wanting one rarely wants the other.
 
 **The daemon measures `rssi_dbfs` and `snr_db`.** When a record arrives the daemon stamps it with
 the channel meter's latest power and SNR. A meter reading is 100 ms old at worst and a packet is

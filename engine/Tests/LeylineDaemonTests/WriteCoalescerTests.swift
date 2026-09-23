@@ -5,8 +5,8 @@ import Foundation
 import LeylineProto
 import XCTest
 
-/// The WriteParams tick loop is paced by its sleep alone, so it has to notice when the sleep stops
-/// sleeping.
+/// The WriteParams tick loop is paced by its sleep alone, so it has to notice when the sleep
+/// starts throwing at once.
 final class WriteCoalescerTests: XCTestCase {
     /// A cancelled handler ends its tick loop instead of spinning on a sleep that throws at once and
     /// hammering the store actor for as long as the client's stream takes to fail.

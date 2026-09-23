@@ -20,7 +20,7 @@ struct DaemonUnderTest {
     func logText() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
 }
 
-/// A step of a test's setup that did not happen, named; thrown so the test fails there.
+/// A setup step that failed, with its description; thrown so the test fails there.
 struct HarnessError: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }

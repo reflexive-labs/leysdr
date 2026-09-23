@@ -96,8 +96,8 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// ROW_MAX, not the default: a row that samples one block of its interval
-	// misses most of what happens in it, and duty cycle is the whole point of
-	// this view. The daemon answers with the looks it actually took.
+	// misses most of what happens in it, and this view exists to show duty
+	// cycle. The daemon answers with the looks it actually took.
 	sub, err := s.client.SubscribeFFTAccumulated(sctx, s.capture.CaptureId, o.bins, o.rate,
 		leylinev1.FftBinFormat_DB_F32, leylinev1.FftAccumulation_ROW_MAX)
 	if err != nil {
@@ -151,8 +151,8 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 				}
 			}
 			// A gap is drawn, never skipped: delivery is GAP_MARKED, and a row
-			// silently missing makes time compress, which is exactly the thing
-			// this view is read for.
+			// silently missing compresses the time axis, and timing is what this
+			// view shows.
 			if lastSeq != 0 && fr.Seq > lastSeq+1 {
 				fmt.Fprintln(out, view.gapRow(fr.Seq-lastSeq-1))
 			}

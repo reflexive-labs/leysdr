@@ -141,7 +141,7 @@ func (w *chartWriter) scroll(lines []string) {
 		w.out.WriteString(l + ansiEraseLine + "\n")
 	}
 	w.out.WriteString(w.status() + ansiEraseLine + "\n")
-	// Nothing on screen is ours to overwrite any more.
+	// The block has scrolled, so there is nothing on screen to overwrite.
 	w.lines = 0
 	w.scrolling = true
 }
@@ -160,7 +160,7 @@ func (w *chartWriter) footer(text string) {
 	}
 }
 
-// idle runs between rows. On a terminal it keeps the status line honest
+// idle runs between rows. On a terminal it keeps the status line current
 // (elapsed, or how long the stream has been silent); everywhere else it makes
 // sure a stream that never produces a row says so on stderr rather than
 // hanging with no output at all.

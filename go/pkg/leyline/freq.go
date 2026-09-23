@@ -66,7 +66,7 @@ func FormatFrequency(hz uint64) string {
 		// A fourth decimal for a frequency on an exact half-kilohertz: every 12.5 kHz
 		// channel plan has them (GMRS channel 3 is 462.6125 MHz, and three decimals would
 		// round it to a channel it is not), and no measurement lands on one by chance, so
-		// a detection's centre keeps the three decimals its bin width can honestly carry.
+		// a detection's centre keeps the three decimals its bin width supports.
 		if hz%1_000 == 500 {
 			return fmt.Sprintf("%.4f MHz", f/1e6)
 		}
@@ -238,7 +238,7 @@ func FormatRanges(ranges []*leylinev1.FrequencyRange) string {
 // user typed and hz what ParseUserFrequency made of it. When re-reading a bare
 // number as kHz lands inside a device range or a known band, suggest that
 // spelling ("did you mean 1.010 MHz (AM broadcast)? write 1010k"); otherwise
-// give the honest reason ("this device cannot tune below 24.000 MHz; HF needs
+// give the actual reason ("this device cannot tune below 24.000 MHz; HF needs
 // an upconverter"). Callers print the device's tuning range themselves; this
 // hint never repeats it.
 func FrequencyHint(input string, hz uint64, ranges []*leylinev1.FrequencyRange) string {
@@ -307,8 +307,8 @@ func NearestRate(rates []uint64, want uint64) uint64 {
 // A band name is refused rather than resolved. Half the metre names already
 // parse as frequencies ("2m" is 2 MHz everywhere in ley), so accepting them
 // here would make "2m..70cm" silently mean 2 MHz to something that does not
-// parse -- which is the quiet wrong answer that kept band names off every
-// positional in the first place. --band is the flag that takes them.
+// parse. The same silent misreading is why band names are not accepted in any
+// positional. --band is the flag that takes them.
 func ParseUserRange(s string) (minHz, maxHz uint64, err error) {
 	orig := strings.TrimSpace(s)
 	lo, hi, found := strings.Cut(orig, "..")

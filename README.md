@@ -9,9 +9,9 @@ a future app — is a peer of the CLI, never a second path into the hardware.
 `rtl_tcp`, added by `ley devices attach rtltcp pi.local:1234` and remembered from then on), or an
 IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
 squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
-views in the terminal; band-level meters and a seconds-wide clip of the waveform over what a
-channel is hearing; a band scan with an honest energy detector; two channels on one radio; a
-second terminal adjusting what the first is hearing; `--json` for scripts and `ley mcp` for agents,
+views in the terminal; band-level meters and a few seconds of a channel's waveform; a band scan
+with an energy detector that never guesses a modulation; two channels on one radio; a second
+terminal adjusting the channel the first is playing; `--json` for scripts and `ley mcp` for agents,
 which serves the same verbs as MCP tools.
 
 **Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app. `docs/plans/build-order.md` is the order they arrive in and
@@ -92,11 +92,11 @@ peak    146.521 MHz  -40 dBFS  60 dB above the floor
 tune with: ley tune 146.521
 ```
 
-Back in the first terminal the session says what the other one did (`another terminal set the
+Back in the first terminal the session reports what the other one did (`another terminal set the
 squelch to -45 dBFS`) and keeps playing. `ley scan 144M..148M` sweeps a band and lists what it
 found with frequency, width, SNR and how often it was seen; `ley waterfall` and `ley phosphor` show
-what comes and goes; `ley bands 146.52` says what a frequency is and what `tune` will do with it.
-Bare `ley` tells you where things stand and what to type next; `ley help glossary` explains the
+what comes and goes; `ley bands 146.52` shows which band a frequency is in and what `tune` will do
+with it. Bare `ley` shows the current state and what to type next; `ley help glossary` explains the
 words (capture, channel, dBFS, FFT, squelch); `ley help presets` lists names like `noaa` and
 `calling` that `tune` accepts in place of a frequency. The task-by-task walkthrough, including
 `--json` and exit codes for scripts and what to do when something fails, is
@@ -124,7 +124,7 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 
 - Device backends: RTL-SDR and HackRF on USB (librtlsdr/libhackrf), and an RTL-SDR another machine serves with
-  `rtl_tcp`. These are supported, not experiments: the engine tests drive a fake `rtl_tcp` server and
+  `rtl_tcp`. These are supported: the engine tests drive a fake `rtl_tcp` server and
   the e2e attaches one to the real daemon, on both CI hosts.
 - Milestone A (scaffold, daemon lifecycle, fixtures and file playback): done.
 - Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.
@@ -136,13 +136,13 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   predicates and notifiers, `ley devices-seen`/`ley label`, and an IQ input mode) done for APRS,
   SAME weather alerts and marine AIS, the other four drivers listed in `docs/plans/decoders.md`; D.16
   (MCP adapter, `ley mcp`) done for the tools the daemon can back, the rest waiting on the milestones
-  `docs/plans/mcp.md` names; D.14 (terminal dashboard) not started; of D.15 (durable jobs, watch, transcripts) only kept decode
+  `docs/plans/mcp.md` lists; D.14 (terminal dashboard) not started; of D.15 (durable jobs, watch, transcripts) only kept decode
   jobs surviving a daemon restart is done.
 - Spikes: S3 (USB posture) and S2 (20 MSPS throughput) decided in `docs/decisions/`; S2 sustained
   the full rate for ten minutes on one fifth of a core, with no overruns and an allocation-free
   sample path, so the all-Swift engine stands. S1 (latency chain) is the app's first spectrum.
 - Milestone E (the Mac app): E.1 done -- the `app/` package, a Swift client façade tested against
-  the real daemon (`docs/dev/app.md`), and a window that names the daemon's state and lists what is
+  the real daemon (`docs/dev/app.md`), and a window that shows the daemon's state and lists what is
   tuned. No spectrum yet: that is E.2, with spike S1 (`docs/plans/app.md`).
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
   audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio

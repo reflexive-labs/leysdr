@@ -2,12 +2,12 @@
 
 // The waterfall's shader, as source compiled at launch. `swift build` does not compile a
 // `.metal` resource into a library the way Xcode does, and a shader that silently fails to load
-// is a dark panel with no words; compiling from source works under both builds and fails with a
+// leaves a dark panel with no error; compiling from source works under both builds and fails with a
 // compiler message that the window can show (docs/plans/app.md, APP-2).
 //
 // One byte a bin in a ring texture, newest row at the top, one row per pixel, coloured through
 // the six-stop ramp between the floor and floor + range; below the floor, when the floor is
-// the squelch, a short fade to the ground, so what the squelch silences goes dark. A pixel
+// the squelch, a short fade to the ground, so anything below the squelch goes dark. A pixel
 // column that covers several bins takes the loudest, so a carrier one bin wide is never lost
 // between two pixels.
 

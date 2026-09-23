@@ -26,7 +26,7 @@ func TestShadeFloorIsBlank(t *testing.T) {
 	}
 }
 
-// Level survives with colour off, which is the whole reason the cell carries a
+// Level survives with colour off, which is why the cell carries a
 // texture as well as a hue: the ramp must be monotonic and use every step.
 func TestShadeUsesEveryStep(t *testing.T) {
 	for _, uni := range []bool{false, true} {

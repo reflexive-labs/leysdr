@@ -18,7 +18,7 @@ them in rather than inventing a shape beside them.
 ## What a scan is
 
 A sweep points the radio at a series of centre frequencies, looks at the spectrum at each one, and
-reports the carriers it is confident about. Everything hard is in the word *confident*.
+reports the carriers it is confident about. The hard part is deciding which carriers are real.
 
 The failure mode this design exists to prevent has already happened twice in this repo. The spectrum
 chart's peak list once used a 6 dB threshold and four of five "loudest bins" were random noise
@@ -42,7 +42,7 @@ A capture at 2.4 MSPS sees 2.4 MHz. Two parts of it cannot be believed:
 
 - **The centre.** The RTL-SDR's DC offset lands on the exact capture centre, and nothing in the
   pipeline corrects it — the driver applies only the `(u − 127.5)/127.5` conversion. A detector
-  thresholding against a noise floor would report a carrier in the middle of every step, forever.
+  thresholding against a noise floor would report a carrier in the middle of every step.
 - **The edges.** The tuner's IF filter rolls off, so the outer few percent read low and a real
   signal there looks weaker than it is.
 
@@ -53,7 +53,7 @@ Two extra steps sit outside the requested range, one at each end, placed so the 
 hertz asked for fall inside a window rather than on its edge.
 
 144–148 MHz at 2.4 MSPS is therefore **seven steps**, not the four a naive `range/span` would give.
-What the extra steps buy is the thing the rest of the design leans on: **most of the range is seen
+The extra steps also give the property the rest of the design relies on: **most of the range is seen
 at two different tuner settings.** Every artefact that is referenced to the local oscillator — the
 IQ image above all — moves when the tuner moves, and a real carrier does not.
 
@@ -77,7 +77,7 @@ stops nothing. Two things are still in flight afterwards:
 The tuner PLL relocks in well under a millisecond; it is not the problem. The problem is that the
 ladder stamps every row with the centre frequency in force *when the row is computed*, so rows
 straddling a hop are mislabelled in both directions — energy attributed to a frequency the radio was
-not listening to. That is precisely the quiet wrong answer a scan must not produce.
+not listening to. A scan must not produce silently wrong results like this.
 
 The fix is to ask the device how much it has in flight. `RadioDevice` gains `inFlightSamples`, which
 RTL-SDR answers from its own buffer geometry and a file device answers 0, and the sweep discards
@@ -88,14 +88,14 @@ so this arithmetic is exact rather than a guess about wall-clock timing.
 ### Gain is pinned for the sweep
 
 `RTLSDRDevice` opens with `gain = .auto`, which means the tuner's own AGC moves after every hop and
-whenever a strong signal enters the span. SNR measured against a moving reference is not a number.
-Worse, a gain step in the middle of a dwell fakes a threshold crossing in the early sub-blocks and
-suppresses a real one in the later ones.
+whenever a strong signal enters the span. SNR measured against a moving reference is meaningless.
+Worse, a gain step in the middle of a dwell causes a false threshold crossing in the early
+sub-blocks and suppresses a real one in the later ones.
 
 So the sweep pins manual gain for its whole duration: if the capture is in auto it reads the value
 the driver settled on, freezes it, and restores the previous setting on release. The pinned gain is
 recorded in the `Scan` (`gains`), because a scan run at a different gain is a different measurement
-and a scan that does not say which one it was cannot be compared with another.
+and a scan that does not record its gain cannot be compared with another.
 
 This also gives the operator the standard front-end-overload test by hand: intermodulation products
 fall about 3 dB for every dB of attenuation while real signals fall 1 dB, so a signal that survives
@@ -114,12 +114,11 @@ whose noise floor reads a few dB high because the maximum of N draws is biased u
 that produced the ISM occupancy bug. Not `.snapshot`, which at 2.4 MSPS looks at 0.17% of a 250 ms
 row.
 
-The consequence is worth stating plainly rather than discovering: a row is only as honest about a
-burst as the fraction of itself it looked at. A 1024-point FFT covers 1024 of every 16384-sample
-block, so a scan sees about 6% of the dwell. A carrier that is on throughout the dwell is found; a
-200 ms packet may or may not be. **Scan answers "what is sitting on this band", not "what
-transmitted during these four seconds".** Duty cycle is what `ley phosphor` and the band-watching
-accumulator are for.
+As a result, a row can only catch a burst during the fraction of the row interval it analysed. A
+1024-point FFT covers 1024 of every 16384-sample block, so a scan sees about 6% of the dwell. A
+carrier that is on throughout the dwell is found; a 200 ms packet may or may not be. **Scan answers
+"what is sitting on this band", not "what transmitted during these four seconds".** Duty cycle is
+what `ley phosphor` and the band-watching accumulator are for.
 
 ### M, and the bug that was nearly shipped
 
@@ -140,7 +139,7 @@ gives M = 16 — but it verifies rather than assumes.
 A local median, CFAR-style: for each bin, the median of 96 reference bins either side, skipping a
 96-bin guard band so that a wide signal does not raise its own floor.
 
-A single median per row was the first design and it is wrong for a measured reason. The R820T's IF
+A single median per row was the first design, and measurement showed it was wrong. The R820T's IF
 response plus the RTL2832's decimation skirt tilt the floor several dB across the analysis windows —
 the same magnitude as the detection threshold itself. Measured against a synthetic 12 dB edge-to-edge
 droop:
@@ -158,10 +157,10 @@ sizes from 32 to 512 bins all land within 20% of nominal. The guard band is what
 size a real choice — 96 bins is 225 kHz at 2.4 MSPS/1024, so a 200 kHz WFM signal is excluded from
 its own floor estimate.
 
-Occupancy is the honest limit. A knocked-out global median holds to about 40% band occupancy and
+Occupancy is the real limit. A knocked-out global median holds to about 40% band occupancy and
 collapses past 55%; the local window with a guard is better placed but a band that is genuinely full
 has no visible floor by definition. When more than 40% of a window's reference bins are excluded,
-the segment's floor is reported with that fact attached rather than as a number that looks solid.
+the segment's floor is reported with that fact attached rather than as a plain number.
 
 ### The threshold
 
@@ -193,7 +192,7 @@ floor:
 ```
 
 The dB figures are over the **per-bin** noise floor, which is where the wideband level minus
-10·log10(N) sits. That distinction is not pedantry: a scan's floor reads about 30 dB below the
+10·log10(N) sits. The distinction matters: a scan's floor reads about 30 dB below the
 number `ley tune`'s meter shows for the same air, because one is per bin and the other is per
 channel.
 
@@ -216,7 +215,7 @@ reported, and the counts go on the wire — `Detection.looks` (sub-blocks that c
 packet burst reads 1/8, and the difference is visible instead of decided in the daemon.
 
 This is the `SubAudible` pattern: publish the measurement and the evidence, let the client
-threshold. Invariant 12 is a rule about not dressing up guesses, and a count is not a guess.
+threshold. Invariant 12 forbids presenting guesses as measurements, and a count is a measurement.
 
 ### Grouping, centre and bandwidth
 
@@ -224,13 +223,14 @@ Contiguous runs of bins over threshold, joined across gaps of up to two bins, so
 middle of a wide signal does not split it into two carriers.
 
 **Centre** is the power-weighted centroid of the floor-subtracted excess power, computed in linear
-power, and bin *b* is the frequency `lowEdge + b·binWidth` -- a point sample of the spectrum, not
+power, because the rows arrive in dB and a centroid over decibels is a different, floor-biased
+statistic. Bin *b* is the frequency `lowEdge + b·binWidth` -- a point sample of the spectrum, not
 the interval `[b, b+1)`. Treating it as an interval put every reported frequency half a bin high,
 which the fixture run showed as carriers at 145.201 MHz where the generator had put 145.200. With
-that corrected, all four fixture carriers report at exactly their generated frequencies — the rows arrive in dB and a centroid over decibels is a different, floor-biased statistic.
-Measured accurate to 0.1 kHz against a 2.34 kHz bin.
+that corrected, all four fixture carriers report at exactly their generated frequencies. Measured
+accurate to 0.1 kHz against a 2.34 kHz bin.
 
-**Bandwidth** is the harder honesty question. The obvious answer, the width of the run above the
+**Bandwidth** is harder to measure accurately. The obvious answer, the width of the run above the
 threshold, is not a property of the signal: it grows with SNR, because the window's skirts clear a
 fixed threshold further out as the signal gets louder. Measured, a pure tone reads 2.3 kHz at 6 dB
 SNR and 7.0 kHz at 30 dB. Subtracting a fixed mainlobe width does not fix it either — convolution
@@ -257,7 +257,7 @@ measurement.
 One edge case the centroid inherits: a signal that straddles the boundary of the requested range is
 reported at the centroid of **the part inside it**, because that is all the detector was allowed to
 look at. A 150 kHz-wide carrier half outside `--band`'s edge reads tens of kHz low. Widening the
-range fixes it, and the honest alternative -- reporting a centre from bins outside what was asked
+range fixes it, and the alternative -- reporting a centre from bins outside what was asked
 for -- would be worse.
 
 **SNR** is the peak bin's excess over the local floor, in dB, and it is a *spectral* SNR of one
@@ -286,13 +286,13 @@ The one artefact this does not catch is a spur at a fixed absolute frequency —
 reference oscillator's harmonics, for example, which put the fifth at exactly 144.000 MHz. Those do
 not move with the LO, so no amount of cross-checking distinguishes them from a carrier. `ley scan`
 annotates a detection that lands within a bin of a reference-clock harmonic, client-side and
-labelled as a possibility rather than a verdict, and the design doc says plainly that it cannot be
-told apart by measurement.
+labelled as a possibility rather than a verdict, and this doc states that measurement cannot tell
+it apart from a carrier.
 
 ## The wire
 
-Everything goes through the messages that already exist, plus four additive fields that each pay for
-themselves.
+Everything goes through the messages that already exist, plus four additive fields, each justified
+below.
 
 `ley scan` is `Jobs.StartJob(ScanConfig{once})`. The job runs the sweep, emits `Detection` messages
 live on the telemetry plane, accumulates a `Scan`, and reaches `COMPLETED`. `Jobs.GetScan` returns
@@ -313,7 +313,7 @@ was rejected because it creates a second authoritative state channel beside `Wat
 the `ScanConfig`/`Scan`/`GetScan` triple the protos already define, and would have to be replaced
 when the job store lands at D.15.
 
-**Three additive fields on `Detection`** carry the evidence the design turns on:
+**Three additive fields on `Detection`** carry the evidence the design depends on:
 
 ```
 uint32 looks = 10;            // sub-blocks in which this cleared the threshold
@@ -332,11 +332,11 @@ wire, and a per-row floor cannot describe a local one.
 the driver settle, and pins where it settled; one asked for nothing pins whatever the radio is on,
 which is what the last client left. An agent surveying a band through `ley mcp` found two sweeps of
 the same 250 kHz reading floors 6 dB apart because the tune before each had left the tuner at 19.7
-and then 15.7 dB; it could not ask for a sensitive sweep, and could not tell a quiet band from a deaf
-receiver. A gain the radio cannot set fails the job (`GAIN_ELEMENT_UNKNOWN`, or a file device's
-refusal) rather than sweeping at another level under the requested one's name. `GainWrite` moved
-from `control.proto` to `common.proto` for this, since `control.proto` imports `jobs.proto`; the
-package and the wire are unchanged.
+and then 15.7 dB; it could not ask for a sensitive sweep, and could not tell a quiet band from a
+receiver with too little gain. A gain the radio cannot set fails the job (`GAIN_ELEMENT_UNKNOWN`, or
+a file device's refusal) rather than sweeping at a different level while reporting the requested
+one. `GainWrite` moved from `control.proto` to `common.proto` for this, since `control.proto`
+imports `jobs.proto`; the package and the wire are unchanged.
 
 ### Lifetime
 
@@ -357,8 +357,8 @@ and `ResolveLocalPath` has no file for it, because there is no file. Durable sca
 resource store at D.15, and the URI is the same one.
 
 `ScanConfig.recurring` is rejected with `INVALID_ARGUMENT`. A schedule needs the job table that
-survives a restart, which is D.15; accepting the field and ignoring it would be the dishonest
-option.
+survives a restart, which is D.15; accepting the field and silently ignoring it would mislead
+the client.
 
 ## Don't-disturb
 
@@ -385,9 +385,9 @@ protocol CaptureLease: AnyObject, Sendable {
 }
 ```
 
-The lease is what keeps the invariant literal: the sweep never names a capture and has no way to
+The lease enforces the invariant: the sweep never names a capture and has no way to
 retune anything but its own lease. It also bypasses `WriteCoalescer` deliberately — that path
-coalesces last-value-wins on a 20 ms tick and would silently eat sweep steps.
+coalesces last-value-wins on a 20 ms tick and would silently drop sweep steps.
 
 Policy, first match wins:
 
@@ -398,7 +398,7 @@ Policy, first match wins:
 3. Otherwise **decline, with a reason naming what is using it.** Never queue: a scan that blocks
    silently for minutes is worse than one that says no.
 
-`ley scan --take-over` skips the politeness checks in (2). It does not skip lease exclusivity — two
+`ley scan --take-over` skips the idle checks in (2). It does not skip lease exclusivity — two
 sweeps never share a radio.
 
 Release runs on cancellation and on error, not only on success, or a borrowed radio is left parked
@@ -416,7 +416,7 @@ and refuses band names: `2m` is 2 MHz everywhere else in `ley`, and letting it m
 here is the collision `--band` exists to avoid (see PC-9 in `docs/plans/archive/cli-papercuts.md`).
 `--band 2m` is the way to say the band. Giving both is a usage error, not a precedence rule.
 
-There is deliberately no `--step`: the geometry is what makes the sweep honest, and a user-supplied
+There is no `--step`: the step geometry guarantees full coverage, and a user-supplied
 step that broke DC-hole coverage would produce a scan with silent blind spots. The effective step is
 reported in the `Scan`.
 
@@ -440,8 +440,8 @@ a burst. The `BAND` column is the client-local band and preset tables, the same 
 prints — presentation over the daemon's measurement, added by the client, never by the detector.
 
 Nothing found prints a sentence saying what the threshold was and what to try, and exits 0: an empty
-band is an answer. A range wider than the radio can tune is clamped, with a line saying so, in the
-same shape `ley spectrum --band` already uses.
+band is a valid result. A range wider than the radio can tune is clamped, with a line saying so, in
+the same shape `ley spectrum --band` already uses.
 
 `--json` is the proto3 JSON mapping of the `Scan` message, alone on stdout.
 
@@ -454,18 +454,18 @@ Making it retunable was considered seriously and rejected on a technical point r
 A mix by `fileCenter − requestedCenter` at the file's own rate is circular in frequency: fixtures
 are 2.4 MSPS and the sweep advances 960 kHz, so by the second step a carrier has shifted past the
 Nyquist edge and aliases back into the analysis windows. No post-mix filtering removes it, because
-the aliasing happens in the shift. An honest retunable file device needs an oversampled wideband
+the aliasing happens in the shift. A correct retunable file device needs an oversampled wideband
 source, a mix-filter-decimate chain and a new class of large fixtures — a harness rewrite, bought to
-test one milestone, whose intermediate version would produce ghost detections. **A harness that lies
-is worse than no harness, and it would lie in exactly the frequency-labelling dimension the sweep
-exists to get right.**
+test one milestone, whose intermediate version would produce ghost detections. **A harness that
+gives wrong results is worse than none, and this one would get frequency labels wrong, which is
+exactly what the sweep must get right.**
 
 So the sweep is covered in three pieces:
 
 1. **Step geometry as a pure function.** `SweepPlanTests` asserts the quarter-band edges, the
    half-window advance, complete coverage of four ranges at four rates, that no window touches the
    capture centre, that a narrow range still gets two tuner positions, and that a request beyond the
-   tuner clips and says so.
+   tuner clips and reports it.
 2. **The detector against fixtures**, one step, through the real pipeline: floor estimation on
    `noise_floor`, threshold and grouping and centroid and equivalent width on a new multi-carrier
    fixture whose carriers are at known offsets and known levels above a known floor.

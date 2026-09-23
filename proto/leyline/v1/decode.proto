@@ -102,8 +102,8 @@ enum FieldType { FIELD_TYPE_UNSPECIFIED = 0; TEXT = 1; INTEGER = 2; NUMBER = 3; 
 
 // ---------- Records ----------
 
-// One thing a transmitter said. Promoted fields are present or empty, never invented; everything
-// protocol-specific is in `fields`. Records are immutable: a correction is a new record.
+// One decoded message from a transmitter. Promoted fields are present or empty, never invented;
+// everything protocol-specific is in `fields`. Records are immutable: a correction is a new record.
 message DecodeRecord {
   string record_id = 1;        // rec_<ulid>, assigned by the daemon
   string protocol = 2;         // the manifest's name
@@ -130,7 +130,7 @@ message DecodeRecord {
   string job_id = 11;
   uint64 seq = 12;
   string channel_id = 13;
-  // The protocol's own record type, when it has more than one: APRS says "position", "weather",
+  // The protocol's own record type, when it has more than one: APRS uses "position", "weather",
   // "telemetry", "message", "status", "object". Empty for a protocol with one kind of record.
   string kind = 14;
 }
@@ -176,8 +176,8 @@ message DecodeConfig {
   // a trigger fires with no client connected. Stateless: every clause is judged on one record.
   Predicate predicate = 6;
   // Where a record that passes the predicate goes when it fires: a notification, a webhook, a shell
-  // hook. A triggered alert is a channel output going somewhere, and "somewhere" is now a notifier
-  // (docs/design/decoders.md); it is not a parallel delivery path, it rides the same records.
+  // hook. A notifier is a channel output like any other (docs/design/decoders.md), not a parallel
+  // delivery path: it receives the same records.
   NotifyTarget notify = 7;
 }
 
@@ -228,7 +228,7 @@ message GeoTest {
 }
 
 // Where a matching record goes. External delivery happens in the daemon, so a webhook or a shell
-// hook is the daemon reaching out, never a client relaying; a client that wants records subscribes.
+// hook is called by the daemon, never relayed by a client; a client that wants records subscribes.
 message NotifyTarget {
   oneof target {
     // HTTP POST of the record as proto3 JSON to this URL.
@@ -290,7 +290,7 @@ message RecordQuery {
   bool in_effect = 9;
   // Exact-value field filters, all of which must match.
   repeated FieldMatch fields = 10;
-  uint32 limit = 11;           // 0 = the daemon's default (1000); the page says if it was cut
+  uint32 limit = 11;           // 0 = the daemon's default (1000); the page shows if it was cut
 }
 
 message FieldMatch { string name = 1; FieldValue equals = 2; }

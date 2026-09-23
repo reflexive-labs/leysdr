@@ -49,7 +49,7 @@ The contested resource is capture tuning — retuning a shared capture moves eve
 
 Decided approach — three simple mechanisms:
 
-**Last-write-wins with attribution.** Any client may retune. Every state event names the client that caused it, so contention is visible and attributable without a lease protocol. Two windows fighting over the dial means the same person is dragging in both — not a case worth protocol.
+**Last-write-wins with attribution.** Any client may retune. Every state event names the client that caused it, so contention is visible and attributable without a lease protocol. Two windows retuning the same capture means one person is dragging in both, which does not need protocol support.
 
 **Jobs declare requirements and degrade gracefully.** A job's channel records its required frequency. If the capture retunes away, the channel enters `out-of-capture`: the job logs a coverage gap and rebinds automatically when the capture returns (or claims an idle device if one exists). Nothing errors; the human is never blocked by a job.
 
@@ -79,7 +79,7 @@ Recordings, spectrum snapshots, and job results are addressable: `ley://recordin
 
 - Multi-device captures — **decided:** a capture references exactly one device. Coherent multi-SDR rigs, if ever supported, are absorbed by the device abstraction (a composite device presenting N synchronized SDRs as one descriptor). The session model never changes.
 - Auth for TCP remote access — **decided for v0:** UDS-only; no TCP listener ships. Local UDS trusts the user account. Remote access becomes its own milestone with auth designed properly (and Bonjour discovery alongside it). This decision is deferred; the protos reserve nothing for it yet, so field numbers for auth are not guaranteed to be free when that milestone lands.
-- TX forward-compatibility — **direction set (implementation later):** TX is inevitable and arrives as a sibling concept, never a retrofit. A `Transmission` (device + modulator + audio/IQ source + emission constraints) sits alongside `Capture`; channels and sinks stay RX-only. Transmissions own their own timeline (`SampleTime` scopes by ID string, so `tx_` IDs fit without schema change). Devices advertise `tx_capable` and `full_duplex` in the feature map; half-duplex devices (HackRF) suspend capture to emit, and that arbitration is device-level. Emitting requires an emission lease — a real lease, unlike tuning, because RF emission carries regulatory weight (license, band limits, power). All additive; nothing in v1 protos changes shape.
+- TX forward-compatibility — **direction set (implementation later):** TX is expected eventually and arrives as a sibling concept, not a retrofit. A `Transmission` (device + modulator + audio/IQ source + emission constraints) sits alongside `Capture`; channels and sinks stay RX-only. Transmissions own their own timeline (`SampleTime` scopes by ID string, so `tx_` IDs fit without schema change). Devices advertise `tx_capable` and `full_duplex` in the feature map; half-duplex devices (HackRF) suspend capture to emit, and that arbitration is device-level. Emitting requires an emission lease — a real lease, unlike tuning, because RF emission carries regulatory weight (license, band limits, power). All additive; nothing in v1 protos changes shape.
 
 ## Phase exit
 

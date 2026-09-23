@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The device menu: a chip in the toolbar, and behind it the one important control with nowhere
-// else to live, gain. The slider shows what auto chose, has detents where the radio has a
-// table, and the copy is honest about auto being poor on weak signals. Sample rate is the one
+// The device menu: a chip in the toolbar that opens the gain controls, which have no other
+// place in the window. The slider shows what auto chose, has detents where the radio has a
+// table, and the label warns that auto gain is poor on weak signals. Sample rate is the only
 // capture setting here; frequency correction and bias tee are not writable in the contract and
-// are not named.
+// are not shown.
 
 import LeylineClient
 import LeylineProto
@@ -18,8 +18,8 @@ struct DeviceChip: View {
         Button {
             session.deviceMenuShown.toggle()
         } label: {
-            // No ground of its own: the toolbar gives every item a glass one, and a chip with
-            // a ground inside it was a button in a button.
+            // No background of its own: the toolbar gives every item a glass one, and a chip
+            // with its own background looked like a button inside a button.
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
                 Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
@@ -140,7 +140,7 @@ struct DeviceMenuView: View {
 }
 
 /// One advertised gain stage, named and explained in receiver terms. Continuous/table stages use
-/// a slider; a two-value stage such as HackRF's RF amp uses an honest two-position control.
+/// a slider; a two-value stage such as HackRF's RF amp uses a two-position control.
 struct GainControl: View {
     @Environment(AppSession.self) private var session
     let device: Leyline_V1_DeviceDescriptor

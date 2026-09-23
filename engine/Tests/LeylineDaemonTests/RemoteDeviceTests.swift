@@ -31,7 +31,7 @@ func rtlTcpSource(host: String, port: UInt16) -> Leyline_V1_AttachDeviceRequest 
     return request
 }
 
-/// Writes `devices.json` in `dir`, as the text a previous daemon (or a fat-fingered operator) left.
+/// Writes `devices.json` in `dir`, as the text a previous daemon (or an operator's typo) left.
 func writeDeviceList(dir: String, _ text: String) throws {
     try text.write(toFile: dir + "/devices.json", atomically: true, encoding: .utf8)
 }
@@ -157,7 +157,7 @@ final class RemoteDeviceTests: XCTestCase {
     }
 
     /// The list outlives the daemon: a radio attached to one daemon is there when the next one
-    /// starts in the same directory, with no flag and nobody asking again.
+    /// starts in the same directory, with no flag and no second attach.
     func testRememberedEndpointComesBackWithTheNextDaemon() async throws {
         let first = try FakeRTLTCPServer()
         let port = first.port
@@ -189,7 +189,7 @@ final class RemoteDeviceTests: XCTestCase {
                 let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
                 let hosted = try XCTUnwrap(testDevices(state.devices).first)
                 XCTAssertEqual(hosted.serial, "127.0.0.1:\(server.port)")
-                // A flag is not an attach: it is the command line's to take back.
+                // A flag is not an attach: only the command line can remove it.
                 XCTAssertEqual(try rememberedEndpoints(dir: dir), [])
 
                 var detach = Leyline_V1_DetachDeviceRequest()
@@ -260,7 +260,7 @@ final class RemoteDeviceTests: XCTestCase {
         }
     }
 
-    /// A `devices.json` nothing can parse is an empty list, not a dead daemon: the station still
+    /// A `devices.json` nothing can parse is an empty list, not a dead daemon: the daemon still
     /// serves, and the next attach writes a list that parses.
     func testAMalformedDeviceListIsTreatedAsEmpty() async throws {
         let server = try FakeRTLTCPServer()
@@ -278,7 +278,7 @@ final class RemoteDeviceTests: XCTestCase {
     }
 
     /// AttachDevice takes a file as well as a radio, and DetachDevice takes it back. A file is a
-    /// thing you looked at once, so nothing about it is remembered.
+    /// one-off playback source, so nothing about it is remembered.
     func testAttachDeviceHostsAndDetachesAFile() async throws {
         try await withTempDir { dir in
             try await withDaemon(dir: dir) { c in

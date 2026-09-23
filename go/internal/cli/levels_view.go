@@ -15,7 +15,7 @@ import (
 // The meter's geometry. The gutter holds the widest mark (-60) and the axis
 // beside it; the bars are two cells wide with a gap, three where the width
 // allows, because an LED ladder one cell wide reads as a line rather than as a
-// bar. Height is the terminal's to limit but not to choose: twelve rows put
+// bar. The terminal can limit the height but does not set it: twelve rows put
 // every mark of the scale on its own row.
 const (
 	levelsGutterW = 5
@@ -25,16 +25,16 @@ const (
 	// levelsThirdCols is the width a third-octave meter needs before it is
 	// drawn: twenty-five bars below that are too thin to read a level off.
 	levelsThirdCols = 100
-	// levelsNarrowCols is where the nine octaves drop to the six speech lives
-	// in, and where the master pair loses its words.
+	// levelsNarrowCols is where the nine octaves drop to the six speech
+	// bands, and where the master pair loses its words.
 	levelsNarrowCols = 44
 	levelsWordsCols  = 60
 	// levelsMinCols is the narrowest plot the meter will draw into; the style
 	// never resolves a width below 40, so it is a floor and not a layout.
 	levelsMinCols = 20
-	// levelsMasterGap separates the master pair from the bands, so the eye
-	// reads them as a second instrument rather than as two more bands, and
-	// leaves the band labels room for their unit.
+	// levelsMasterGap separates the master pair from the bands, so they read
+	// as a separate meter rather than as two more bands, and leaves the band
+	// labels room for their unit.
 	levelsMasterGap = 5
 )
 
@@ -44,8 +44,8 @@ type levelsFrame struct {
 	bands []levelsBar
 	// rms and peak are the master pair, from the daemon's meter.
 	rms, peak levelsBar
-	// rmsDb and peakDb are what the current meter says, which is what the
-	// numbers under the pair print: the bars move, the numbers do not lie.
+	// rmsDb and peakDb are the current meter values, printed under the pair:
+	// the bars are smoothed by ballistics, the numbers are not.
 	rmsDb, peakDb float64
 	tap           leylinev1.AudioTap
 	what          string
@@ -57,7 +57,7 @@ type levelsFrame struct {
 	// that announced a closed squelch before then would be guessing.
 	squelchKnown bool
 	tone         *leylinev1.SubAudible
-	// level is the capture's newest CaptureLevel: the OVER authority, and
+	// level is the capture's newest CaptureLevel: the source of OVER, and
 	// the peak the header shows. nil until one arrives, and for ever against
 	// an older daemon, when OVER falls back to a bar at full scale.
 	level *leylinev1.CaptureLevel
@@ -67,9 +67,9 @@ type levelsFrame struct {
 
 // advance moves the frame on by one row. A live meter runs the ballistics
 // over it; a snapshot is the row as it was measured, because attack, release
-// and a hanging cap are ways of reading motion and a still has none. A shut
-// squelch moves nothing at all: there is no audio behind it to follow, and a
-// cap left chasing the detector's own noise would hang over a silent channel.
+// and a hanging cap only make sense over time. A closed squelch freezes the
+// bars: there is no audio to follow, and a cap tracking the detector's own
+// noise would hang over a silent channel.
 func (f *levelsFrame) advance(levels []float64, dt time.Duration, watch bool) {
 	f.latchOver(dt, watch)
 	switch {
@@ -90,7 +90,7 @@ func (f *levelsFrame) advance(levels []float64, dt time.Duration, watch bool) {
 
 // latchOver runs the capture's OVER latch off its level: lit for
 // levelsOverHold from the last interval that clipped, whatever the bands
-// read, because a clip is the converter's and not the audio's. A still is
+// read, because clipping happens in the ADC, not in the audio. A still is
 // lit or not by the interval it has. Without a level the latch stays out and
 // the bars' own full-scale latches are what overRow draws.
 func (f *levelsFrame) latchOver(dt time.Duration, watch bool) {
@@ -110,8 +110,8 @@ func (f *levelsFrame) latchOver(dt time.Duration, watch bool) {
 	}
 }
 
-// squelch is the squelch state for a JSON row: what the daemon said, and
-// nothing where it has not said anything.
+// squelch is the squelch state for a JSON row: the daemon's value, or nil
+// when it has not reported one.
 func (f *levelsFrame) squelch() *bool {
 	if !f.squelchKnown {
 		return nil
@@ -187,7 +187,7 @@ func levelsPairGap(gap int) int { return max(gap, 3) }
 
 // layout places the bars: the bands packed from the left, then the master pair
 // beyond a gap of its own, so the meter is one block whatever the width is and
-// the pair reads as a second instrument rather than as two more bands.
+// the pair reads as a separate meter rather than as two more bands.
 func (v *levelsView) layout(n int) {
 	v.x = make([]int, 0, n+2)
 	for i := range n {
@@ -204,9 +204,8 @@ func (v *levelsView) inner() int { return chartInner(v.width, v.framed) }
 // cols is the plot's width: everything right of the gutter.
 func (v *levelsView) cols() int { return max(v.inner()-levelsGutterW, levelsMinCols) }
 
-// levelsOverWord is what an overload says. It is latched rather than drawn
-// while it lasts: an overload is a thing that happened, and a flash too short
-// to read is the same as no warning at all.
+// levelsOverWord is the overload label. It is latched rather than shown only
+// while the overload lasts, because a flash too short to read is no warning.
 const levelsOverWord = "OVER"
 
 // render draws one still of the meter: the header, the overload line, the
@@ -215,7 +214,7 @@ func (v *levelsView) render(f levelsFrame) string {
 	bars := make([]levelsBar, 0, len(f.bands)+2)
 	bars = append(bars, f.bands...)
 	bars = append(bars, f.rms, f.peak)
-	// A shut squelch is passing nothing, so every ladder is drawn unlit. The
+	// A closed squelch passes no audio, so every ladder is drawn unlit. The
 	// spectrum behind it is still arriving -- on the demod tap it is the
 	// detector's own noise -- and a lit bar would report that as sound.
 	if f.squelchKnown && !f.squelchOpen {
@@ -238,15 +237,14 @@ func (v *levelsView) render(f levelsFrame) string {
 	for _, l := range v.labels(f) {
 		chart.WriteString(l + "\n")
 	}
-	// The ladders, their scale and the labels that name them are one object
-	// and are framed as one; the header reads as prose above it and stays
-	// outside.
+	// The ladders, their scale and their labels are framed together; the
+	// header sits above the frame, outside it.
 	b.WriteString(chartFrame(v.st, v.framed, chart.String()))
 	return b.String()
 }
 
-// header names the channel, the stage being measured, whether the squelch is
-// passing anything, and the tone the daemon says is under it.
+// header shows the channel, the stage being measured, whether the squelch is
+// open, and the tone the daemon reports under it.
 func (v *levelsView) header(f levelsFrame) []string {
 	segs := []headerSeg{
 		{value: f.what},
@@ -258,13 +256,13 @@ func (v *levelsView) header(f levelsFrame) []string {
 	if f.squelchKnown {
 		segs = append(segs, squelchSeg(v.st, f.squelchOpen))
 	}
-	// The capture's own peak, against the converter's full scale: the number
-	// OVER is read from, and the one that says how much headroom is left.
+	// The capture's own peak, against the converter's full scale: the value
+	// OVER is based on, and the one that shows how much headroom is left.
 	if f.level != nil {
 		segs = append(segs, headerSeg{name: "radio peak ", value: fmt.Sprintf("%.1f dBFS", f.level.GetPeakDbfs())})
 	}
-	// The tone the daemon named, and only that: a meter is read at a glance,
-	// and the measurement behind the name is `ley scope`'s header to carry.
+	// Only the tone the daemon identified: a meter is read at a glance, and
+	// the measurement behind it belongs in `ley scope`'s header.
 	if hz := scopeToneHz(f.tone); hz != nil {
 		segs = append(segs, headerSeg{name: "PL ", value: fmt.Sprintf("%.1f Hz", *hz)})
 	}
@@ -303,8 +301,8 @@ func (v *levelsView) overRow(bars []levelsBar, f levelsFrame) string {
 // across the meter and not across the rest of the terminal.
 func (v *levelsView) reach() int { return min(v.x[len(v.x)-1]+v.bar, v.cols()) }
 
-// row draws one row of the meter: the mark it carries, the horizon where it
-// falls, and a cell of every ladder.
+// row draws one row of the meter: its scale mark, the alignment rule if it
+// falls on this row, and a cell of every ladder.
 func (v *levelsView) row(r int, bars []levelsBar) string {
 	plot := v.reach()
 	g := v.st.Glyphs()
@@ -312,8 +310,8 @@ func (v *levelsView) row(r int, bars []levelsBar) string {
 	band := make([]int, plot)
 	horizon := r == v.markRow(levelsHorizonDb)
 	for c := range plot {
-		// The alignment level is a dashed rule the eye reads the bars
-		// against, the way the noise floor works in `ley spectrum`.
+		// The alignment level is a dashed reference rule for reading the
+		// bars, the way the noise floor works in `ley spectrum`.
 		if horizon && c%2 == 0 {
 			text[c], band[c] = string(g.Rule), inkMuted
 			continue
@@ -337,10 +335,10 @@ func (v *levelsView) row(r int, bars []levelsBar) string {
 
 // cell is one segment of one ladder: the peak cap where it hangs, the lit
 // segment where the bar reaches, and the dark segment everywhere else. The
-// dark segments are drawn because that is what lets the eye read a level
-// against the scale when nothing is playing, and the lit ones take the level
-// ramp by their own height, so a bar is green in the working range, amber
-// approaching -6 and red at the top whatever it is measuring.
+// dark segments are drawn so the scale can still be read when nothing is
+// playing, and the lit ones take the level ramp by their own height, so a
+// bar is green in the working range, amber approaching -6 and red at the top
+// whatever it is measuring.
 func (v *levelsView) cell(b levelsBar, top, bottom float64) (string, int) {
 	g := v.st.Glyphs()
 	if held := levelsFrac(b.cap); b.cap > levelsFloorDb && held > bottom && held <= top {
@@ -354,8 +352,8 @@ func (v *levelsView) cell(b levelsBar, top, bottom float64) (string, int) {
 }
 
 // levelsInk is a height on the meter as a step of the chart's level ramp, so
-// the ladders and `ley spectrum` say the same level in the same colour: the
-// one quantiser every chart uses, not a rounding of its own.
+// the ladders and `ley spectrum` show the same level in the same colour: it
+// uses the quantiser every chart uses rather than a rounding of its own.
 func levelsInk(frac float64) int { return rampBand(frac) }
 
 // markRow is the row a level falls in, top row first.
@@ -380,7 +378,7 @@ func (v *levelsView) gutter(r int) string {
 }
 
 // axis rules the meter off from its labels, with a mark under each of the
-// master pair: they are a second instrument, and the marks say so.
+// master pair to set the pair apart as a separate meter.
 func (v *levelsView) axis() string {
 	plot := min(v.reach()+levelsMasterGap-2, v.cols())
 	marks := make([]axisTick, 0, 2)
@@ -392,12 +390,12 @@ func (v *levelsView) axis() string {
 
 // labels writes what the bars are: the band centres under the ladders, then
 // the master pair's words and its numbers. The numbers are the current row's
-// own, in plain ink, because they are the answer the picture is read for; the
-// bars around them are shaped by ballistics and the numbers never are.
+// own, in plain ink, because they are the main reading; the bars around them
+// are shaped by ballistics and the numbers never are.
 //
 // A narrow screen loses the words rather than the numbers, and the pair goes
-// on the one line: "rms" and "peak" are what the reader can infer from where
-// the bars stand, and -18 dBFS is not.
+// on one line: "rms" and "peak" can be inferred from where the bars stand, and
+// a figure like -18 dBFS cannot.
 func (v *levelsView) labels(f levelsFrame) []string {
 	segs := make([]levelsSeg, 0, len(v.bands)+3)
 	for i, b := range v.bands {
@@ -419,8 +417,8 @@ func (v *levelsView) labels(f levelsFrame) []string {
 		v.centred(peak, fmtDb(f.peakDb), false),
 	}
 	// The unit is written once, after the numbers, and only where the width
-	// has room for it: it names what the two figures are, and a figure that
-	// wrapped would be worse than an unnamed one.
+	// has room for it: it labels both figures, and a wrapped figure is worse
+	// than an unlabelled one.
 	if at := levelsGutterW + v.x[peak] + v.bar + 1; at+4 <= v.inner() {
 		numbers = append(numbers, levelsSeg{at: at, text: v.st.Muted("dBFS"), width: 4})
 	}
@@ -446,8 +444,8 @@ type levelsSeg struct {
 }
 
 // levelsTextRow lays segments out across a row, dropping any that would touch
-// the one before it: a label that collides with its neighbour is worse than no
-// label, because two run together into a number that is neither.
+// the one before it: two labels with no gap read as one wrong number, which is
+// worse than no label.
 func levelsTextRow(segs []levelsSeg) string {
 	var b strings.Builder
 	col := 0

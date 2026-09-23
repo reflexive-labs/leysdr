@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The one thing in the window the daemon does not know: what the output device is called. A sink
-// carries a CoreAudio device UID (empty for the daemon's default), and CoreAudio has the name.
+// The only value in the window that does not come from the daemon: the output device's name. A
+// sink carries a CoreAudio device UID (empty for the daemon's default), and CoreAudio has the
+// name.
 
 import CoreAudio
 import Foundation

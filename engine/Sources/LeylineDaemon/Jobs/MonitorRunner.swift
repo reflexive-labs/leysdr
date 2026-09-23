@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The stationary watch. A monitor parks one capture on a band and runs the energy detector
-// continuously, so it never time-shares and cannot miss a transmission that starts while it is
-// looking elsewhere -- the one difference from a sweep, which walks a series of centres. It is
+// continuously, so it never time-shares and cannot miss a transmission by being tuned elsewhere.
+// That is the difference from a sweep, which walks a series of centres. It is
 // ScanRunner with the step/retune loop removed: one "step" that lasts the whole duration, over a
 // lease already tuned to the right centre. It reuses the same RowCollector, the same detector
-// signatures, the same fold/near identity test, and it publishes detections the same way -- so a
-// client cannot tell a monitor's DETECTION stream from a scan's. See docs/design/band-watching.md
+// signatures, the same fold/near identity test, and it publishes detections the same way, so a
+// monitor's DETECTION stream has the same form as a scan's. See docs/design/band-watching.md
 // (the stationary sibling of ley scan) and docs/design/scan.md (the detector, the 5-45% analysed
 // window, the DC hole).
 
@@ -121,8 +121,8 @@ enum MonitorRunner {
                 if windowFloor.isFinite { floors.append(windowFloor) }
                 for h in found {
                     // Fold keeping first/last seen and peak SNR, as a sweep folds within one step,
-                    // then re-publish the carrier's current state: every believed row is a chance
-                    // it had, so `looks_possible` is the believed-row count.
+                    // then re-publish the carrier's current state: each believed row was a chance
+                    // to detect it, so `looks_possible` is the believed-row count.
                     ScanRunner.fold(h, at: row.time, into: &hits)
                     if let i = hits.firstIndex(where: { ScanRunner.near($0.centerHz, h.centerHz, $0.bandwidthHz) }) {
                         hits[i].looksPossible = UInt32(believedRows)

@@ -37,7 +37,7 @@ enum EventScopeFilter: Sendable, Hashable {
 enum TeardownScope: Sendable {
     case capture(CaptureID)
     case channel(ChannelID)
-    /// The channel's audio descriptor stopped being true: its audio rate changed (a capture-rate
+    /// The channel's audio descriptor is stale: its audio rate changed (a capture-rate
     /// write, a retune that re-plans the chain, or a mode/bandwidth/offset write), or the rate held
     /// while the mode or the full-scale deviation it answered moved (a bandwidth or mode write).
     /// Audio streams negotiated under the old descriptor end; the client re-subscribes for a fresh
@@ -295,7 +295,7 @@ actor SessionStore {
         if stillAbsent(clientID) {
             await reapPlaybacks(clientID: clientID)
             guard stillAbsent(clientID) else { return }
-            // A sweep nobody is reading is a radio nobody can use. The CLI cancels its own scan on
+            // A sweep with no reader only ties up the radio. The CLI cancels its own scan on
             // Ctrl-C; this is the backstop for a hard kill.
             await clientGoneHook?(clientID)
             // Re-guarded like every other await in this function: the hook waits on a sweep's
@@ -396,11 +396,11 @@ actor SessionStore {
         return d
     }
 
-    /// Attaches a dongle served by rtl_tcp and remembers the endpoint, so the station comes back
-    /// with the daemon. One endpoint is one radio: an endpoint already hosted hands back the device
-    /// hosting it, and one another attach is still connecting to joins that attempt, so a second
-    /// socket is never opened. A radio the operator's `--rtltcp` flag brought up becomes the
-    /// client's, so it outlives the flag and can be detached. A server that cannot be reached is
+    /// Attaches a dongle served by rtl_tcp and remembers the endpoint, so the radio is reattached
+    /// when the daemon restarts. One endpoint is one radio: an endpoint already hosted hands back
+    /// the device hosting it, and one another attach is still connecting to joins that attempt, so
+    /// a second socket is never opened. A radio the operator's `--rtltcp` flag brought up becomes
+    /// the client's, so it outlives the flag and can be detached. A server that cannot be reached is
     /// `DEVICE_IO` naming the endpoint, with nothing remembered.
     func attachRemoteDevice(host: String, port: UInt16, by: ClientContext) async throws -> DeviceDescriptor {
         let endpoint = "\(host):\(port)"
@@ -408,8 +408,8 @@ actor SessionStore {
             await registry.claimVirtualDevice(id: existing.id)
             let saved = RememberedDevices.Endpoint(host: host, port: port)
             await remembered?.remember(saved)
-            // A detach that landed while this was suspended wins the endpoint: take the line out
-            // again so the next daemon does not bring back a radio somebody let go.
+            // A detach that landed while this was suspended takes precedence: remove the line
+            // again so the next daemon does not bring back a radio a client detached.
             if devices[existing.id] == nil { await remembered?.forget(saved) }
             return existing
         }
@@ -446,8 +446,8 @@ actor SessionStore {
         }
         let saved = RememberedDevices.Endpoint(host: host, port: port)
         await remembered?.remember(saved)
-        // A detach that landed while the endpoint was being remembered wins the endpoint: take the
-        // line out again so the next daemon does not bring back a radio somebody let go.
+        // A detach that landed while the endpoint was being remembered takes precedence: remove the
+        // line again so the next daemon does not bring back a radio a client detached.
         if devices[d.id] == nil { await remembered?.forget(saved) }
         return d
     }
@@ -458,7 +458,7 @@ actor SessionStore {
     /// is still starting is `DEVICE_BUSY`, and in every case no capture on that device is touched.
     /// An rtl_tcp endpoint is forgotten here, so it does not come back at the next start.
     ///
-    /// `fileOnly` is `DetachFileDevice`, which names a file and gets one: any other device is
+    /// `fileOnly` is `DetachFileDevice`, which accepts only a file device: any other device is
     /// `INVALID_ARGUMENT` there, whatever it is.
     func detachDevice(id: DeviceID, by: ClientContext, fileOnly: Bool = false) async throws {
         guard let d = devices[id] else { throw EngineError.deviceNotFound(id.string) }
@@ -477,8 +477,8 @@ actor SessionStore {
         for (capID, entry) in captures where entry.deviceID == id {
             await destroyCapture(id: capID, by: by)
         }
-        // Everything above suspends, so a second detach can have finished meanwhile: say the device
-        // is gone rather than take apart what is already gone. Dropping it from the table here,
+        // Everything above suspends, so a second detach can have finished meanwhile: report the
+        // device as gone rather than tear it down twice. Dropping it from the table here,
         // before anything else suspends, is also what an attach racing this detach looks for: it
         // re-checks the table after its own awaits and takes its `devices.json` line back out.
         guard var gone = devices.removeValue(forKey: id) else { throw EngineError.deviceNotFound(id.string) }
@@ -517,7 +517,8 @@ actor SessionStore {
         }
         if desc.state == .disconnected { throw EngineError.deviceDetached(deviceID.string) }
         if let existing = captures.first(where: { $0.value.deviceID == deviceID })?.key, swept.contains(existing) {
-            // Say what has it. "The radio is busy" sends somebody looking for another client.
+            // Name what holds it: a bare "the radio is busy" sends the user looking for another
+            // client.
             throw EngineError.deviceSweeping(deviceID.string)
         }
         if captures.values.contains(where: { $0.deviceID == deviceID }) || startingDevices.contains(deviceID) {
@@ -549,8 +550,8 @@ actor SessionStore {
                     // registry so the device reads IN_USE and is re-probed with backoff.
                     await registry.markHeldExternally(id: deviceID)
                 } else if e.code == EngineError.Code.deviceIO, desc.features["held_externally"] == .flag(true) {
-                    // The registry already knows another program has this dongle; say so instead
-                    // of surfacing librtlsdr's claim failure.
+                    // The registry already knows another program has this dongle; report that
+                    // instead of surfacing librtlsdr's claim failure.
                     throw EngineError.deviceHeldByOtherProgram(deviceID.string)
                 }
             }
@@ -805,7 +806,7 @@ actor SessionStore {
     // MARK: Playing a recording back
 
     /// Opens the file, starts the audio device and publishes the playback. The caller has already
-    /// resolved the uri to a path; this owns the sound.
+    /// resolved the uri to a path; this handles the audio output.
     func startPlayback(path: String, resourceURI: String, volume: Double, deviceUID: String?,
                        by client: ClientContext) async throws -> Leyline_V1_Playback
     {
@@ -865,8 +866,8 @@ actor SessionStore {
         return out
     }
 
-    /// Ends every playback a departing client started: the sound belongs to whoever asked for it,
-    /// which is what makes Ctrl-C in `ley play` stop it.
+    /// Ends every playback a departing client started: a playback belongs to the client that
+    /// started it, so Ctrl-C in `ley play` stops it.
     private func reapPlaybacks(clientID: String) async {
         for (id, entry) in playbacks where entry.owner.id == clientID {
             log.info("stopping playback \(id.string) of absent client \(clientID)")
@@ -889,7 +890,7 @@ actor SessionStore {
             captures[capID] = cap
             await emitCapture(capID, by: by)
         }
-        // Terminal event: state unset says "gone", the same tombstone destroyChannel
+        // Terminal event: state unset marks it gone, the same tombstone destroyChannel
         // uses. Without it a detach is byte-identical to the attach that preceded it.
         var terminal = entry.proto
         terminal.state = .unspecified
@@ -918,7 +919,7 @@ actor SessionStore {
         await teardownHook?(.channelAudioRate(chanID))
     }
 
-    /// Whether a channel write left the audio descriptor a client holds untrue with the audio rate
+    /// Whether a channel write made the audio descriptor a client holds stale with the audio rate
     /// unchanged: the mode moved, or the full-scale deviation the descriptor answered for it did.
     /// A squelch or offset write moves neither.
     static func audioDescriptorMoved(from before: ChannelConfig, to after: ChannelConfig) -> Bool {
@@ -950,8 +951,8 @@ actor SessionStore {
             switch w.param {
             case .centerHz(let hz)?:
                 let (id, entry) = try captureTarget(w.targetID)
-                // A sweep is stepping this capture; a client write here would fight it and both
-                // would lose. The lease is the only tuning path while it is held.
+                // A sweep is stepping this capture; a client write here would conflict with its
+                // retunes. The lease is the only tuning path while it is held.
                 try refuseIfSwept(id)
                 guard let d = devices[entry.deviceID], d.canTune(hz) else { throw EngineError.freqOutOfRange(hz, target: w.targetID) }
                 // A retune can bring a channel back into capture after a rate change: its chain is
@@ -973,7 +974,7 @@ actor SessionStore {
                 } catch {
                     // A failed rate change still moved the engine: it is either detached (the
                     // restore failed too) or streaming again at whatever rate the device ended up
-                    // on, with its channels re-planned accordingly. Publish that truth before the
+                    // on, with its channels re-planned accordingly. Publish that state before the
                     // rejection so watchers never need a GetState to learn the capture's state.
                     touchActivity(id, by: by)
                     await emitCapture(id, by: by)
@@ -990,7 +991,7 @@ actor SessionStore {
             case .gain(let g)?:
                 let (id, entry) = try captureTarget(w.targetID)
                 // The lease pins gain for the length of a sweep so every dB it reports is measured
-                // against one sensitivity; a write here would move the reference mid-answer and be
+                // against one sensitivity; a write here would move the reference mid-sweep and be
                 // silently undone when the lease restores what it pinned.
                 try refuseIfSwept(id)
                 // Argument shape first, then the element: a NaN/inf level is malformed whatever
@@ -1084,7 +1085,7 @@ actor SessionStore {
                 try await entry.engine.update(config)
                 // A channel write re-plans the chain, and a channel the capture had moved away from
                 // is re-planned at the capture's current rate -- which can move its audio rate. Every
-                // stream negotiated at the old one then describes something untrue, so reconcile
+                // stream negotiated at the old one is then stale, so reconcile
                 // exactly as a capture-rate change does: system-audio sinks are rebuilt and bulk
                 // streams -- both taps -- end for a fresh subscription.
                 if entry.engine.audioRate != audioRateBefore {
@@ -1092,9 +1093,10 @@ actor SessionStore {
                 } else if Self.audioDescriptorMoved(from: before, to: config) {
                     // The rate held, but the descriptor did not: a bandwidth write rescales an NFM
                     // detector to the channel it now has, and a mode write changes what the taps
-                    // carry and what full scale is worth. A stream negotiated before it would read
-                    // hertz off a number the daemon has already replaced, so it ends the same way,
-                    // and only the bulk streams: system-audio sinks play at the rate they have.
+                    // carry and what full scale means. A stream negotiated before it would convert
+                    // to hertz with a full-scale value the daemon has already replaced, so it ends
+                    // the same way, and only the bulk streams: system-audio sinks play at the rate
+                    // they have.
                     await teardownHook?(.channelAudioRate(chanID))
                 }
                 touchActivity(entry.captureID, by: by)

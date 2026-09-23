@@ -490,7 +490,7 @@ public enum AccelerateKernels {
     /// several dB low on a row with any structure in it.
     @inline(__always)
     public static func dbToPower(_ src: UnsafePointer<Float>, to dst: UnsafeMutablePointer<Float>, count: Int) {
-        // Deliberately the scalar loop, not vForce. There is no vDSP inverse of vDSP_vdbcon, and
+        // The scalar loop, not vForce. There is no vDSP inverse of vDSP_vdbcon, and
         // this is the only caller of any exp/pow in the file, so vectorising it would mean adding
         // the first unproven Accelerate symbol here to save work on a path nothing takes by
         // default: dbToPower runs for ROW_MEAN alone, at most 64 looks a row, and ROW_MEAN is not

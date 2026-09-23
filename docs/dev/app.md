@@ -41,7 +41,7 @@ added by an interceptor on the connection. The id is an `app_` ULID minted once 
 **Connection** (`DaemonConnection`). One gRPC client over the Unix socket (`SocketPath.default()`:
 `LEYLINE_SOCKET`, else the platform path the daemon uses), lazy like the Go client: nothing
 connects until the first RPC, and a socket with no listener fails that RPC with `UNAVAILABLE`,
-which `LeylineError.daemonUnreachable` names. The six typed service clients are properties;
+which maps to `LeylineError.daemonUnreachable`. The six typed service clients are properties;
 `state()` is a sorted daemon-scoped `GetState`; `events(sinceSeq:)` and `telemetry(_:)` are
 server streams as `AsyncThrowingStream`s. Ending the consumer cancels the RPC. Holding
 `events()` open is what keeps the client's non-persistent channels alive (5 s grace after the
@@ -56,16 +56,16 @@ the generated clients throw `RPCError`, and `LeylineError(error)` converts eithe
 **The mirror** (`DaemonMirror`, `MirrorState`). `run()` takes a snapshot, subscribes with
 `since_seq` set to the snapshot's `event_seq` and folds every event; on any failure it reports
 `connection = .unavailable(error, retryIn:)` and retries after a backoff that stops at 5 s, so
-a daemon that is not running is polled, not hammered, and the view has a state to name. The
+a daemon that is not running is polled, not hammered, and the view has a state to show. The
 fold is `ley`'s (`go/internal/cli/session.go`): replace by id, because every event carries the
 whole object (invariant 6); an object whose `state` is unset is the tombstone and leaves the
 mirror; `CAPTURE_DETACHED` stays, because the radio rebinds on replug; a device is never
 removed, only `DISCONNECTED`; a job is never removed, it finishes; an event at or below the
 held `seq` is skipped, except a `WriteRejected`, which no snapshot could have carried. A `seq`
 gap means the snapshot fell out of the daemon's 256-event window, and the mirror takes another
-snapshot without leaving the stream (`snapshots` counts them, so a test can tell a resync from
-luck). `MirrorState` is a value with no daemon in it, and that is where the rules are tested.
-The class is `@MainActor` on purpose: control events are a few a second, the mirror exists to be
+snapshot without leaving the stream (`snapshots` counts them, so a test can check that a resync
+happened). `MirrorState` is a value with no daemon in it, and that is where the rules are tested.
+The class is `@MainActor` because control events are a few a second, the mirror exists to be
 rendered, and one actor means no hop per event. It imports no UI framework; `onChange` fires
 after every change and the app's `@Observable` `AppSession` copies `state` and `connection` out
 of it, so views hold one render's value and the façade serves AppKit, SwiftUI and the Linux tests
@@ -83,9 +83,10 @@ on the event; it never treats the write as done.
 
 **Streams** (`Streams.swift`). `subscribe(_:)` is `Bulk.Subscribe` then `Bulk.Stream`;
 `fft(capture:bins:rowsPerSecond:)` is the FFT of a band decoded to dBFS per bin against the
-descriptor the daemon *answered* (what was asked for is a wish, and DB_U8 read as DB_F32 is not
-obviously wrong to look at). The client-side buffer keeps the newest few frames, which is the
-plane's own latest-wins policy: a renderer that falls behind draws the present. `BulkDecode`
+descriptor the daemon *answered* (the daemon may not grant what was requested, and DB_U8 decoded
+as DB_F32 does not look obviously wrong). The client-side buffer keeps the newest few frames, which
+is the plane's own latest-wins policy: a renderer that falls behind skips to the newest frame.
+`BulkDecode`
 holds the payload rules (`DB_U8` is `round((dB + 120) · 2)`; floats are little-endian; S16
 divides by 32768) and they match `go/pkg/leyline/bulk.go` bit for bit, tested on both sides.
 The shm ring is not built: the app draws over gRPC first and S1 decides
@@ -98,37 +99,38 @@ squelch edges and nothing else: the daemon summarises a transmission on the clos
 the log times nothing itself and a client that subscribes mid-transmission still logs the one it
 joined, its start read back from the close edge the way `ley mcp`'s `listen` does. The rules are
 `ley tune`'s (`go/internal/cli/transmission.go`, `subaudible.go`): a close edge with no duration
-is nothing, the CTCSS tone reported while a transmission ran stays with it, the 1 Hz heartbeat
-that repeats a tone is not a new one, and a measurement between two standard tones is no tone at
-all. `onAir` is the open transmission and `timeOnAir(at:)` its length at a `SampleTime`, so the
+is ignored, the CTCSS tone reported while a transmission ran stays with it, the 1 Hz heartbeat
+that repeats a tone is not a new one, and a measurement between two standard tones is not reported
+as a tone. `onAir` is the open transmission and `timeOnAir(at:)` its length at a `SampleTime`, so the
 view asks with the newest time it has rather than a clock of its own. `SampleClock` is the Swift
 mirror of `leyline.AnchorWallTime` and `RecordWallTime`: a `SampleTime` becomes a `Date` through
 a dated `CaptureAnchor` on the same capture that applies from a sample not past it, drift
 applied as the anchor states it, and nil otherwise (a capture's anchor has host time 0 until its
-first block), because a time nobody anchored is a clock the daemon never kept (invariant 5). The
+first block), because without an anchor the daemon has no wall-clock time to give (invariant 5). The
 mirror keeps each capture's newest anchor on the capture, and the daemon-backed test folds
 `nfm_keyed.cf32` into transmissions as long as the fixture keyed them.
 
-**Failure states** (`FailureState.swift`). What the radio's numbers say is wrong, named rather
-than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from
-the daemon's `CaptureLevel` (samples at the converter's rails, one in ten thousand names it, half
-that clears it; `CaptureLevelFeed` subscribes it per capture), with the gain named as the thing
-to try (on auto, take it by hand; at the lowest manual gain, move the antenna). A measured fact
-with its number and one action; not a detector (invariant 12). `ley tune` names the same state
-from the same count (`go/internal/cli/failure.go`), and also says, once, at tune, when nothing
-on the band is 15 dB above the floor; the window named that too until 2026-09-21 and does not
-now, because a quiet band re-named every few seconds distracted more than it told. The daemon
+**Failure states** (`FailureState.swift`). Problems the radio's numbers show, stated in words
+rather than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from
+the daemon's `CaptureLevel` (samples at the converter's rails, one in ten thousand raises it, half
+that clears it; `CaptureLevelFeed` subscribes it per capture), with the gain as the suggested fix
+(on auto, take it by hand; at the lowest manual gain, move the antenna). A measured fact
+with its number and one action; not a detector (invariant 12). `ley tune` reports the same state
+from the same count (`go/internal/cli/failure.go`), and also warns once, at tune, when nothing
+on the band is 15 dB above the floor. The window showed that warning too until 2026-09-21. It
+was removed because repeating it every few seconds on a quiet band distracted more than it helped.
+The daemon
 not running, no radio and an unplugged radio are the mirror's states and live in
-`AppSession.emptyWords`. The session names the state on every level reading and every mirror
+`AppSession.emptyWords`. The session re-evaluates the state on every level reading and every mirror
 change, logs each change, and the inspector's Region 2 shows it until the count clears or the
-user closes it (a closed state stays closed until a different one is named). A channel the
+user closes it (a closed state stays closed until a different one is raised). A channel the
 capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or moved the capture) is
-named the same way from the mirror, with the width and centre it would need; the window's own
+reported the same way from the mirror, with the width and centre it would need; the window's own
 rate change never causes it, because `AppSession.setSampleRate` re-places the centre for the
 tuned frequency at the new width and writes centre and rate in one tick.
 
 **The inspector** (`InspectorView.swift`, `InspectorGroups.swift`; the design is
-`../design/app-design-handoff-m2.md`). The panel on the window's right says what you are hearing
+`../design/app-design-handoff-m2.md`). The panel on the window's right describes the tuned signal
 in words, and every word is a presentation of a number the daemon measured: signal from
 `AppSession.overNoiseDB` through `SignalWord`, tuning and deviation from the meter's
 `freq_error_hz` and `deviation_hz` through `TuningWord` and `DeviationWord` (`Reading.swift`,
@@ -168,7 +170,7 @@ In the container and on Linux CI, `make app` builds the façade and `make app-te
 both suites against the Linux-built daemon; the SwiftUI target does not exist there. `make app-format` runs swift-format over the package with the
 configuration in `app/.swift-format` (`swift-style.md`, "Files"); run it before a commit. Anything
 under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, the same trap
-`setup.md` records for Accelerate: a green Linux run says nothing about a view.
+`setup.md` records for Accelerate: a green Linux run does not compile any view.
 
 ## Logs
 
@@ -183,8 +185,8 @@ compiled, the inspector shown or hidden, and every bookmark added, renamed or re
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
 which the Moat container's bind mount sees, so the log of a run on the Mac can be read from the
-container with no copying. A behaviour that cannot be explained from the log wants a line added
-where it happened, not a guess.
+container with no copying. If the log cannot explain a behaviour, add a log line where it happens
+rather than guessing.
 
 ## Testing
 
@@ -192,7 +194,7 @@ where it happened, not a guess.
 rule, the decoders, the ULID, the error mapping. `make app-e2e` is the façade against the
 product: it builds `leylined`, generates the fixtures, and `LeylineClientDaemonTests` starts a
 `leylined --no-hardware` on a temp socket with `nfm_tone.cf32` attached as a looping file
-device. The suite is the app's promises, one test each: a second client's capture and channel
+device. The suite covers the app's guarantees, one test each: a second client's capture and channel
 reach the mirror and its tombstone leaves it (the story "the CLI changes the tuning and the UI
 reflects it"); a burst of offsets in one tick lands as one confirmed value and an out-of-capture
 offset comes back as a `WriteRejected` with its tag; an FFT subscription's rows decode against
@@ -205,7 +207,7 @@ the only place it runs. Same rule as `go/internal/e2e`.
 
 A view's tests, when views have behaviour worth testing, go against the same daemon: the
 harness in `Tests/LeylineClientDaemonTests/DaemonHarness.swift` is the one to reuse, and a
-fixture is the radio. Nothing in the app's suites may need hardware.
+fixture stands in for the radio. Nothing in the app's suites may need hardware.
 
 ## Rules for new work
 

@@ -16,8 +16,8 @@ var micEMessages = [8]string{
 	"returning", "in service", "en route", "off duty",
 }
 
-// parseMicE reads the form that hides half the position in the AX.25
-// destination address. dest is the destination callsign, info the data after
+// parseMicE reads the form that encodes the latitude, and the message and sign
+// bits, in the AX.25 destination address. dest is the destination callsign, info the data after
 // the type identifier.
 func parseMicE(rec *leylinev1.DecodeRecord, dest, info string) {
 	if len(dest) < 6 || len(info) < 8 {

@@ -6,7 +6,7 @@ import XCTest
 final class SweepPlanTests: XCTestCase {
     private let rtl = [FrequencyRange(minHz: 24_000_000, maxHz: 1_766_000_000)]
 
-    /// The story's own example: 144-148 MHz on a 2.4 MSPS radio.
+    /// The user story's example: 144-148 MHz on a 2.4 MSPS radio.
     func testTwoMetreSweep() throws {
         let p = try XCTUnwrap(SweepPlan.plan(minHz: 144_000_000, maxHz: 148_000_000,
                                              sampleRateHz: 2_400_000, tuningRanges: rtl))
@@ -19,7 +19,7 @@ final class SweepPlanTests: XCTestCase {
         XCTAssertEqual(p.steps[2].centerHz - p.steps[1].centerHz, 960_000)
     }
 
-    /// The property the geometry exists for: no gap anywhere, because a step's own DC hole is
+    /// The property the geometry is designed for: no gap anywhere, because a step's own DC hole is
     /// covered by its neighbour's lower quarter.
     func testEveryFrequencyInRangeIsLookedAt() throws {
         for (lo, hi, rate) in [(144_000_000 as UInt64, 148_000_000 as UInt64, 2_400_000 as UInt64),
@@ -42,7 +42,7 @@ final class SweepPlanTests: XCTestCase {
             }
             XCTAssertTrue(gaps.isEmpty, "\(lo)-\(hi) at \(rate): \(gaps.count) uncovered points, first \(gaps.first ?? 0)")
             // Most of the range is seen at two tuner settings, which is the cross-check the
-            // geometry buys. The exception is each step's DC hole: it is covered by exactly one
+            // geometry provides. The exception is each step's DC hole: it is covered by exactly one
             // neighbour, and covering it twice would mean halving the advance and doubling the
             // sweep. A detection carries how many steps saw it, so this is reported, not hidden.
             let sampled = Int((hi - lo) / stride)
@@ -77,7 +77,7 @@ final class SweepPlanTests: XCTestCase {
         XCTAssertNotEqual(p.steps[0].centerHz, p.steps[1].centerHz)
     }
 
-    /// Asking for more than the radio can hear returns what it can, and says so.
+    /// Asking for more than the radio can tune returns what it can, and reports the shortfall.
     func testAskingBelowTheTunerClipsAndSaysSo() throws {
         let p = try XCTUnwrap(SweepPlan.plan(minHz: 1_000_000, maxHz: 30_000_000,
                                              sampleRateHz: 2_400_000, tuningRanges: rtl))

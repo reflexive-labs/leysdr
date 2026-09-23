@@ -3,8 +3,8 @@
 // The band table, read from the seed file `ley bands --json` generates (docs/design/
 // app-design-handoff.md, "Bands and bookmarks are files"). The table is Go's; this is a copy
 // checked in as a resource and drift-tested from Go, so the app and `ley` name the same bands
-// with the same defaults and neither has a table of its own. A band is a place to look: its
-// range, the mode and bandwidth a newcomer wants there, and the step the arrow keys tune by.
+// with the same defaults and neither has a table of its own. A band holds its range, the
+// default mode and bandwidth for a newcomer, and the step the arrow keys tune by.
 
 import Foundation
 import LeylineProto
@@ -117,7 +117,7 @@ public enum Bands {
         return bands.first { fold($0.name) == key || $0.aliases.contains { fold($0) == key } }
     }
 
-    /// The mode a newcomer wants at `hz`: the band's, sideband by frequency on HF, NFM when no
+    /// The default mode at `hz`: the band's, sideband by frequency on HF, NFM when no
     /// band is recognised. `ley tune`'s rule (`go/pkg/leyline/bands.go`, `DefaultMode`).
     public static func defaultMode(at hz: UInt64, in bands: [Band] = builtIn)
         -> Leyline_V1_DemodMode
@@ -146,7 +146,7 @@ extension Leyline_V1_DemodMode {
         }
     }
 
-    /// The mode as a person reads it.
+    /// The mode's display name.
     public var word: String {
         switch self {
         case .am: "AM"
@@ -207,7 +207,7 @@ extension Leyline_V1_DemodMode {
 
 extension Band {
     /// `hz` on the band's grid: the nearest multiple of the step counted from the low edge, so a
-    /// scrub along the rail lands on a channel the band names rather than between two. A band
+    /// scrub along the rail lands on a channel of the band's plan rather than between two. A band
     /// with no step hands the frequency back.
     public func snapped(_ hz: UInt64) -> UInt64 {
         guard stepHz > 0 else { return hz }
@@ -221,7 +221,7 @@ extension Band {
 extension Bands {
     /// The bands on either side of `range`, by frequency: the nearest one that ends at or below
     /// its low edge and the nearest that begins at or above its high edge, groups skipped. The
-    /// rail names these at its end caps, and a scrub past a cap crosses into them.
+    /// rail labels these at its end caps, and a scrub past a cap crosses into them.
     public static func neighbours(of range: ClosedRange<UInt64>, in bands: [Band] = builtIn) -> (
         below: Band?, above: Band?
     ) {
@@ -235,10 +235,10 @@ extension Bands {
 // MARK: Neighbours and reach
 
 extension Bands {
-    /// Whether `band` sits close enough against `range` to be named its neighbour: the gap
+    /// Whether `band` sits close enough against `range` to be labelled its neighbour: the gap
     /// between them is no more than a tenth of `range`'s width. Marine VHF and NOAA weather,
     /// 375 kHz apart, are neighbours; 2 m and marine VHF, 8 MHz apart, are not, and a rail
-    /// that named them so was naming a band 60 MHz away.
+    /// that labelled them so pointed at a band 60 MHz away.
     public static func abut(_ range: ClosedRange<UInt64>, _ band: Band) -> Bool {
         let gap: UInt64
         if band.minHz >= range.upperBound {
@@ -252,12 +252,12 @@ extension Bands {
     }
 
     /// Whether any of the radio's tuning ranges reaches into the band. No ranges means the
-    /// radio did not say, and every band is offered.
+    /// radio reported none, and every band is offered.
     public static func tunable(_ band: Band, ranges: [Leyline_V1_FrequencyRange]) -> Bool {
         ranges.isEmpty || ranges.contains { $0.minHz <= band.maxHz && $0.maxHz >= band.minHz }
     }
 
-    /// Why a band is out of the radio's reach, to follow its name: `below what this radio
+    /// Why a band is out of the radio's reach, shown after its name: `below what this radio
     /// tunes (24 – 1766 MHz)`. Nil when it is tunable.
     public static func outOfRangeWords(_ band: Band, ranges: [Leyline_V1_FrequencyRange]) -> String?
     {

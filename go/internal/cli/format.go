@@ -19,7 +19,7 @@ func stateWord(s string) string {
 
 // inkState gives a state word its ink: green when the thing is working,
 // yellow when it is degraded but alive, red when it is gone. The word carries
-// the meaning on its own; the colour only helps the eye find it.
+// the meaning on its own; the colour only highlights it.
 func inkState(st ui.Style, word string) string {
 	switch word {
 	case "active", "available", "running":
@@ -133,10 +133,10 @@ func channelFreqLabel(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) 
 	return leyline.FormatFrequency(hz)
 }
 
-// humanEvent reports whether an event says anything to a person watching a
+// humanEvent reports whether an event is worth showing to a person watching a
 // live verb. An Anchor is the capture's sample-timebase bookkeeping: it is
-// emitted whenever a stream (re)starts and tells the reader nothing they can
-// act on, so it stays in --json and out of the live view.
+// emitted whenever a stream (re)starts and carries nothing the user can act
+// on, so it stays in --json and out of the live view.
 func humanEvent(ev *leylinev1.Event) bool {
 	_, anchor := ev.Body.(*leylinev1.Event_Anchor)
 	return !anchor
@@ -224,7 +224,7 @@ func gainStatesString(gains []*leylinev1.GainState) string {
 // rangesPhrase renders tuning ranges as "24.000 MHz to 1.766 GHz", never with a
 // dash, so a dash always means "no value" (docs/dev/cli-style.md section 4). A range
 // with one frequency in it -- a file device plays back a single centre --
-// collapses to that frequency rather than spending the columns saying it twice.
+// collapses to that frequency rather than printing it twice.
 //
 // It returns "" for no ranges rather than a glyph: the absent form belongs to
 // the caller, which knows whether it is filling a table cell or a prose line.

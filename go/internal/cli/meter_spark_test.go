@@ -80,7 +80,7 @@ func TestMeterHistoryOnTheSignalRow(t *testing.T) {
 }
 
 // The sink times its own history, so the line it draws carries the levels of
-// the seconds a listener just sat through.
+// the last few seconds.
 func TestMeterSinkKeepsHistory(t *testing.T) {
 	var out strings.Builder
 	now := time.Unix(1_700_000_000, 0)

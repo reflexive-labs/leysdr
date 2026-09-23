@@ -2,15 +2,15 @@
 
 Leyline is a macOS SDR engine (`leylined`, Swift) with a Go CLI (`ley`) as its first client. The
 two halves meet at one generated contract, `proto/leyline/v1`. This page is the short version of
-how to work on it; the long version is `docs/dev/setup.md` (building), `docs/dev/engine-internals.md`
-(how the engine keeps its promises) and `docs/dev/cli-style.md` (how `ley` talks). `docs/README.md`
-is the map of everything under `docs/`, by reader.
+how to work on it; the long version is `docs/dev/setup.md` (building),
+`docs/dev/engine-internals.md` (the engine's implementation contract) and `docs/dev/cli-style.md`
+(`ley`'s output style). `docs/README.md` is the map of everything under `docs/`, by reader.
 
 ## Before you change anything
 
 Read `CLAUDE.md`. It is written as instructions to an agent, but it is also the review checklist:
 thirteen invariants, each with a rationale in `docs/design/*.md`. A change that breaks one needs a
-design-doc change first, not a clever workaround. The ones people trip on:
+design-doc change first, not a workaround. The ones people trip on:
 
 - **All DSP runs in the daemon.** Clients render. If a feature only works from Swift, or only from
   Go, it is not done.
@@ -28,11 +28,11 @@ design-doc change first, not a clever workaround. The ones people trip on:
 `make check` is what CI runs: generated-code drift, Go tests, lint (`golangci-lint` + `gofumpt`,
 pinned), the engine build and tests, and the cross-language e2e suite that drives a locally built
 `leylined` with `ley` over a Unix socket. Run it on a Mac before opening a pull request; the Linux
-job proves the Go half and the portable engine core, but only macOS compiles the Accelerate kernels
-and the audio sink, and only macOS is the product.
+job tests the Go half and the portable engine core, but only macOS compiles the Accelerate kernels
+and the audio sink, and the product ships only on macOS.
 
 Every DSP change must pass the fixture round-trips (`make fixtures` generates them; `docs/reference/iq-files.md`
-says what each signal is). Anything on the sample path gets `os_signpost` instrumentation.
+describes each signal). Anything on the sample path gets `os_signpost` instrumentation.
 Hardware-in-the-loop checks are manual: `docs/dev/release-checklist.md`.
 
 ## Tests without hardware
@@ -45,17 +45,17 @@ add the test that proves `ley` handles it, then confirm against the real daemon 
 ## Commits and pull requests
 
 One change per commit, with its tests. Subject line `area: what changed` in the imperative and under
-72 characters (`engine:`, `ley:`, `proto:`, `docs:`, `fix(scan):` are all in use); the body says why,
-in plain prose. Sign off every commit (`git commit -s`), which adds a `Signed-off-by:` line and says,
-in the sense of the Developer Certificate of Origin (developercertificate.org), that you wrote the
-change or have the right to submit it under the terms below; `git config core.hooksPath
+72 characters (`engine:`, `ley:`, `proto:`, `docs:`, `fix(scan):` are all in use); the body explains
+why, in plain prose. Sign off every commit (`git commit -s`), which adds a `Signed-off-by:` line and
+certifies, in the sense of the Developer Certificate of Origin (developercertificate.org), that you
+wrote the change or have the right to submit it under the terms below; `git config core.hooksPath
 scripts/git-hooks` makes the line automatic for this clone. Larger work starts from a plan in
 `docs/plans/` with `[ ]` work items, and a design decision starts from a `docs/design/*.md` change.
 
 ## Documentation
 
 Prose follows `docs/writing-guide.md`: the voice, the words, and which kind of page goes in which
-directory. `docs/README.md` says where a new page belongs and lists every page, so a page that is
+directory. `docs/README.md` shows where a new page belongs and lists every page, so a page that is
 added, moved or retired changes the index too. A moved page takes every `docs/` reference in the
 repository with it, code comments and tests included; two documents are parsed by tests (the error
 table in `docs/dev/engine-internals.md` and the help goldens) and keep their shape.
@@ -66,8 +66,8 @@ By opening a pull request you license your contribution to the project under the
 2.0, whichever directory it lands in. The project then distributes it under the licence of that
 directory: Apache-2.0 for the contract, the generated code, the client library, `ley` and
 everything else; GPL-3.0-or-later for the engine under `engine/`, which links librtlsdr
-(`docs/decisions/D2-licensing.md` says why the engine is GPL and nothing else is). Inbound
-permissive, outbound copyleft is deliberate: it asks nothing of you beyond the terms your code
+(`docs/decisions/D2-licensing.md` explains why the engine is GPL and nothing else is). This inbound
+permissive, outbound copyleft split asks nothing of you beyond the terms your code
 would carry anywhere outside the engine, and it leaves the engine's licence the owner's to change
 later (a commercial licence for a partnership, say) without finding every contributor first. You
 keep your copyright; nothing is assigned.

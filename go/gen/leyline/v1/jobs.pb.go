@@ -217,9 +217,9 @@ type Job struct {
 	ResultUris   []string `protobuf:"bytes,8,rep,name=result_uris,json=resultUris,proto3" json:"result_uris,omitempty"`
 	StatusDetail string   `protobuf:"bytes,9,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"` // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
 	// Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
-	// daemon's own sentence about it. Set only on FAILED; `status_detail` is prose and never carries
-	// the code, so a client that wants to tell "the radio cannot tune that" from "somebody is using
-	// it" reads this rather than splitting an English sentence.
+	// daemon's human-readable description. Set only on FAILED; `status_detail` is prose and never
+	// carries the code, so a client that wants to tell "the radio cannot tune that" from "somebody
+	// is using it" reads this rather than splitting an English sentence.
 	Error         *ErrorDetail `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -481,9 +481,9 @@ type ScanConfig struct {
 	// capture nobody is using. Without this a two-radio setup has no way to say which.
 	DeviceId string `protobuf:"bytes,7,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	// The tuner gain to sweep at. A sweep always pins the gain for its whole duration, because SNR
-	// against a moving AGC is not a number; this says where. `db` pins the element there (the first
-	// gain element when `element` is empty); `auto` asks the driver where its AGC settles and pins
-	// that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
+	// measured against a moving AGC is meaningless; this sets the level. `db` pins the element there
+	// (the first gain element when `element` is empty); `auto` asks the driver where its AGC settles
+	// and pins that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
 	// which is why two sweeps of one band could differ by 6 dB of floor. `Scan.gains` reports the
 	// level the sweep ran at either way, and the entry gain is restored when the radio is handed back.
 	Gain          *GainWrite `protobuf:"bytes,8,opt,name=gain,proto3" json:"gain,omitempty"`
@@ -771,8 +771,8 @@ func (x *RecordConfig) GetPartMs() int64 {
 
 // Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
 // go, in time order. Unlike a scan it does not sweep: it parks one capture on the band and runs the
-// detector continuously, so it never time-shares and cannot miss a transmission that starts while it
-// is looking elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
+// detector continuously, so it never time-shares and cannot miss a transmission by being tuned
+// elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
 // the client folds them into a transmission log. A band wider than one capture can analyse is
 // refused with INVALID_ARGUMENT (use scan, which sweeps). This is the band-watching design's
 // occupancy/burst view (docs/design/band-watching.md), the stationary sibling of ley scan.
@@ -927,7 +927,7 @@ type Transcript struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Segments      []*ActivitySegment     `protobuf:"bytes,2,rep,name=segments,proto3" json:"segments,omitempty"`
-	CoverageGaps  []*Gap                 `protobuf:"bytes,3,rep,name=coverage_gaps,json=coverageGaps,proto3" json:"coverage_gaps,omitempty"` // out-of-capture or daemon downtime; honesty over completeness
+	CoverageGaps  []*Gap                 `protobuf:"bytes,3,rep,name=coverage_gaps,json=coverageGaps,proto3" json:"coverage_gaps,omitempty"` // out-of-capture or daemon downtime, listed rather than hidden
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -992,18 +992,18 @@ type Scan struct {
 	StartedAtNs   int64                  `protobuf:"varint,5,opt,name=started_at_ns,json=startedAtNs,proto3" json:"started_at_ns,omitempty"`
 	CompletedAtNs int64                  `protobuf:"varint,6,opt,name=completed_at_ns,json=completedAtNs,proto3" json:"completed_at_ns,omitempty"`
 	// The gain the sweep pinned for its whole duration. A sweep must not run under the tuner's AGC
-	// -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
+	// -- the gain moves after every hop and SNR against a moving reference is meaningless -- and a
 	// scan that does not say which gain it ran at cannot be compared with another.
 	Gains []*GainState `protobuf:"bytes,7,rep,name=gains,proto3" json:"gains,omitempty"`
 	// The analysis bin width, in Hz. Every dB in this message -- floor_dbfs, snr_db -- is per bin,
-	// and a bin's width is what makes those numbers mean anything: a wider bin holds more noise. A
+	// and those numbers depend on the bin width: a wider bin holds more noise. A
 	// client should print this alongside the floor rather than deriving it from step_hz, which
 	// describes where the radio pointed and not how finely it looked.
 	ResolutionHz uint32 `protobuf:"varint,8,opt,name=resolution_hz,json=resolutionHz,proto3" json:"resolution_hz,omitempty"`
 	// What the sweep actually covered. Never wider than config.range, and narrower whenever the
 	// radio could not reach all of it, the request fell partly in the tuner's own blind spot, or the
-	// sweep was stopped early. A client that reports config.range as though it were searched is
-	// claiming coverage nobody measured.
+	// sweep was stopped early. A client must not report config.range as the searched range: part of
+	// it may never have been measured.
 	Covered       *FrequencyRange `protobuf:"bytes,9,opt,name=covered,proto3" json:"covered,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

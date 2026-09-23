@@ -195,8 +195,8 @@ func TestOutOfCaptureAndBack(t *testing.T) {
 	}
 }
 
-// Somebody else's knob is their business; their channel arriving on or leaving
-// the capture we share is not, because it moves the radio's load.
+// Another client's knob changes are not reported. Its channel joining or
+// leaving the capture we share is, because that changes the radio's load.
 func TestOtherChannelsOnlyReportComingAndGoing(t *testing.T) {
 	s := liveSession()
 	theirs := &leylinev1.Channel{

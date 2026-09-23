@@ -6,14 +6,14 @@
 //
 // The fold is the one `ley` does (`go/internal/cli/session.go`): every event carries the whole
 // object (invariant 6), so folding is a replace by id, and an object whose `state` is unset is the
-// tombstone — the one and only signal it is gone (`Capture.state` in control.proto). Reconnect is
+// tombstone — the only signal that it is gone (`Capture.state` in control.proto). Reconnect is
 // `GetState` then `WatchEvents(since_seq)`; a gap in `seq` means the snapshot fell out of the
 // daemon's retained window, and the fix is another snapshot (the seq-gap rule).
 
 import Foundation
 import LeylineProto
 
-/// Where the mirror stands with its daemon.
+/// The mirror's connection state.
 public enum MirrorConnection: Sendable, Equatable {
     /// Not started, or `run()` has returned.
     case idle
@@ -22,7 +22,7 @@ public enum MirrorConnection: Sendable, Equatable {
     /// A snapshot is held and the event stream is open.
     case live
     /// The last attempt failed; the mirror retries after `retryIn`. `error.daemonUnreachable`
-    /// is "the daemon is not running", which the app names rather than sits on.
+    /// is "the daemon is not running", which the app reports rather than hides.
     case unavailable(LeylineError, retryIn: Duration)
 }
 
@@ -218,7 +218,7 @@ public final class DaemonMirror {
             if event.seq != 0, event.seq > expected {
                 // The snapshot fell out of the daemon's retained window before the replay
                 // reached it; the events in between are lost, and only a new snapshot is
-                // whole (docs/dev/engine-internals.md, "SessionStore").
+                // complete (docs/dev/engine-internals.md, "SessionStore").
                 let again = try await connectionToDaemon.state()
                 let rejections = state.rejections
                 state = MirrorState(snapshot: again)

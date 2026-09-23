@@ -40,7 +40,7 @@ actor DecodeRunner {
     /// The record sequence: 1-based and contiguous per job, so it continues from what a kept
     /// job's store already holds when the job is resumed after a restart (DEC-11).
     private var seq: UInt64
-    /// How much the job has heard, for the detail it publishes while RUNNING (DEC-23).
+    /// Record count and last-record time, for the detail it publishes while RUNNING (DEC-23).
     private var liveness = DecodeLiveness()
     private var rssiDBFS = Double.nan
     private var snrDB = Double.nan
@@ -119,7 +119,7 @@ actor DecodeRunner {
             let status = await runPlugin()
             if Task.isCancelled || stopped { break }
             restarts += 1
-            // A coverage gap the job says out loud. The transcript's own Gap list arrives with D.15.
+            // A coverage gap the job reports. The transcript's own Gap list arrives with D.15.
             await onStatus(.degraded, "the decoder exited (status \(status)); restarting in \(Int(wait)) s (restart \(restarts))")
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, Self.maxRestartSeconds)
@@ -210,9 +210,8 @@ actor DecodeRunner {
                     case .written:
                         lostFrom = nil
                     case .droppedFull:
-                        // The plugin has stopped reading. Drop the frame, keep the gap open, and
-                        // leave the health of the plugin to whether it ever reads again -- silence
-                        // is not failure here, a decoder can legitimately want none of this audio.
+                        // The plugin has stopped reading. Drop the frame and keep the gap open. Not
+                        // reading is not a failure: a decoder may legitimately ignore this audio.
                         if lostFrom == nil { lostFrom = f.sampleStart }
                     }
                 } catch is PluginStalled {
@@ -222,7 +221,7 @@ actor DecodeRunner {
                     await process.stop()
                     continue
                 } catch {
-                    // The plugin died between the check and the write; the restart loop is on it.
+                    // The plugin died between the check and the write; the restart loop handles it.
                     if lostFrom == nil { lostFrom = f.sampleStart }
                     continue
                 }
@@ -283,8 +282,8 @@ actor DecodeRunner {
     }
 
     /// OUT_OF_CAPTURE degrades the job and the channel coming back restores it. The state is read
-    /// from the channel engine rather than from the event stream: the engine is the thing that
-    /// knows, and the event is only its echo.
+    /// from the channel engine rather than from the event stream: the engine holds the state, and
+    /// the event only reports it.
     private func followChannel() async {
         var last: ChannelState?
         while !Task.isCancelled {
@@ -323,7 +322,7 @@ actor DecodeRunner {
         var d = Leyline_V1_StreamDescriptor()
         d.streamID = streamID
         d.kind = .audio
-        // The one delivery policy a decoder can reason about: what was lost is named (invariant 3).
+        // GAP_MARKED, so the decoder is told what was lost (invariant 3).
         d.policy = .gapMarked
         var audio = Leyline_V1_AudioParams()
         audio.sampleRate = lease.engine.audioRate
@@ -335,8 +334,8 @@ actor DecodeRunner {
         audio.fullScaleDeviationHz = UInt32(DemodulatorFactory.fullScaleDeviationHz(
             mode: config.mode, bandwidthHz: config.bandwidthHz).rounded())
         d.audio = audio
-        // Where the channel is and how wide the radio around it is, so a plugin that wants to say
-        // where a packet sat can.
+        // Where the channel is and how wide the radio around it is, so a plugin can report the
+        // frequency a packet was on.
         d.centerHz = frequencyHz
         d.spanHz = captureRateHz
         d.grpc = true

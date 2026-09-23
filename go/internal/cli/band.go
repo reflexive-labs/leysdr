@@ -22,18 +22,18 @@ type bandOptions struct {
 	// device is picked, because how much of a band fits depends on the rates
 	// that radio supports.
 	band *leyline.Band
-	// verb names the command in the messages, which are the user's map of what
-	// just happened to their radio.
+	// verb is the command name used in the messages that report what happened
+	// to the radio.
 	verb string
 }
 
 // resolveBandFlag turns --band into a centre and a span, once the device is
 // known. Nine of the fourteen bands fit inside a 2.4 MSPS capture, so for most
 // of them this is exact; the rest are centred and the caller is told how much
-// of the band it is actually looking at, which is the same courtesy spectrum
-// already extends when it reuses an off-centre capture.
+// of the band it is actually looking at, as spectrum already does when it
+// reuses an off-centre capture.
 //
-// An explicit --span wins: someone who said how wide meant it.
+// An explicit --span overrides the band's width.
 //
 // A group (gmrs: two halves 5 MHz apart) that the radio cannot capture whole
 // is refused with its parts named rather than centred on the empty spectrum
@@ -91,7 +91,7 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 }
 
 // groupGapPhrase is the distance between a group's first two parts, for the
-// sentence that refuses to centre a picture between them.
+// error that refuses to centre the view between them.
 func groupGapPhrase(b leyline.Band) string {
 	parts := leyline.BandsWithin(b.MinHz, b.MaxHz)
 	if len(parts) < 2 {
@@ -101,8 +101,8 @@ func groupGapPhrase(b leyline.Band) string {
 }
 
 // openBand picks the device, reuses or creates a capture covering the
-// frequency, and says on stderr whenever the radio ended up somewhere other
-// than where the user pointed. The caller tears down a capture it created
+// frequency, and prints a note on stderr whenever the radio ended up somewhere
+// other than where the user pointed. The caller tears down a capture it created
 // (s.createdCapture says whether there is one).
 func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 	var err error
@@ -152,8 +152,8 @@ func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 		return err
 	}
 	// A reused capture keeps its own centre, so the picture can be centred
-	// somewhere other than the frequency that was asked for. Say so rather
-	// than let the axis be a surprise.
+	// somewhere other than the frequency that was asked for. Print a note so
+	// the offset axis is explained.
 	if o.freq != 0 && s.capture != nil && s.capture.CenterHz != o.freq {
 		fmt.Fprintf(app.Stderr, "showing the capture at %s, which covers %s\n", leyline.FormatFrequency(s.capture.CenterHz), leyline.FormatFrequency(o.freq))
 	}

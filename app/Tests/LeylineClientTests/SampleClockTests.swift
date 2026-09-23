@@ -2,8 +2,8 @@
 
 // The clock's arithmetic, held to `go/pkg/leyline/decoders.go`: `AnchorWallTime` has no
 // numeric test of its own there, so the numbers here are chosen to be checked by hand (one
-// second of samples is one second; 100 ppm over a second is 100 µs), and to say what a missing
-// anchor gives, which is nothing.
+// second of samples is one second; 100 ppm over a second is 100 µs), and to check that a missing
+// anchor gives nil.
 
 import Foundation
 import LeylineProto

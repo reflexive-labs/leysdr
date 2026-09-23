@@ -2,9 +2,9 @@
 
 // Package same demodulates and modulates SAME/EAS, the AFSK burst NOAA weather
 // radio keys before an alert (docs/design/decoders.md, driver C). The
-// modulation is AFSK like APRS but its own animal: mark 2083.3 Hz is a 1 and
-// space 1562.5 Hz a 0 at 520.83 baud, the bits are direct rather than NRZI, and
-// bytes are eight bits least-significant-first, ASCII. A transmission is a
+// modulation is AFSK like APRS but with different parameters: mark 2083.3 Hz
+// is a 1 and space 1562.5 Hz a 0 at 520.83 baud, the bits are direct rather
+// than NRZI, and bytes are eight bits least-significant-first, ASCII. A transmission is a
 // preamble of sixteen 0xAB bytes then the header "ZCZC-ORG-EEE-...-CALLSIGN-",
 // sent three times, and closes with the preamble then "NNNN", also three times.
 //

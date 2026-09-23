@@ -4,9 +4,9 @@
 // right (docs/design/app-design-handoff-m2.md, "The panel"). Six regions and no scroll view: a
 // header that says `Channel`, the identity, the failure strip carried out of M1, the reading in
 // words, the log of recent transmissions and the disclosure groups; the last two are in
-// InspectorGroups.swift. Every word here is a presentation of a number the daemon measured, and
-// the number is one click away in the popover under it, which is where invariant 12 lands in the
-// app. The panel keeps no state of its own: it renders the session's copy of the mirror and the
+// InspectorGroups.swift. Every word label here is derived from a number the daemon measured, and
+// the number is one click away in the popover under it, which is how the app meets invariant
+// 12. The panel keeps no state of its own: it renders the session's copy of the mirror and the
 // telemetry feed's log, and writes one thing, a bookmark's name, through the store both clients
 // own (`AppSession.renameTuned`).
 
@@ -54,8 +54,8 @@ struct InspectorView: View {
 }
 
 /// The word `Channel` and a close control, nothing else: no tabs. The tab strip (`Channel` /
-/// `Processors` / `＋`) is M4's and appears when there is a second thing to put in it; a one-tab
-/// tab bar now is a promise the window cannot keep for two milestones (M2 handoff, "The panel").
+/// `Processors` / `＋`) is M4's and appears when there is a second tab to put in it; a one-tab
+/// tab bar now would advertise tabs that do not exist until M4 (M2 handoff, "The panel").
 struct InspectorHeader: View {
     @Environment(AppSession.self) private var session
 
@@ -79,9 +79,9 @@ struct InspectorHeader: View {
 }
 
 /// Region 1: the channel's name first and the frequency demoted to a mono line, because the
-/// transport bar owns the frequency as a number you edit and the panel owns the channel as a
-/// thing with an identity. The name is the bookmark's; without one it is the band's, and the
-/// pencil names it, which makes the bookmark.
+/// frequency is edited in the transport bar and this panel identifies the channel. The name is
+/// the bookmark's; without one it is the band's, and naming it with the pencil creates the
+/// bookmark.
 struct IdentityView: View {
     @Environment(AppSession.self) private var session
     @State private var editing = false
@@ -101,7 +101,8 @@ struct IdentityView: View {
                         .foregroundStyle(hz == nil ? Theme.inkMuted : Theme.ink)
                         .lineLimit(1).truncationMode(.tail)
                     if session.bookmarkModified {
-                        // The bookmark and the radio disagree: say so, and offer both ways out.
+                        // The channel's settings differ from the bookmark's: show `changed`, and
+                        // offer Save (update the bookmark) or Revert (restore the channel).
                         Text("changed").font(Theme.Font.value).foregroundStyle(Theme.caution)
                         Button("Save") { session.saveTunedBookmark() }
                             .buttonStyle(.plain).font(Theme.Font.value)
@@ -155,11 +156,11 @@ struct IdentityView: View {
 
 /// The name, edited in place. Enter commits through `AppSession.renameTuned`; Escape, or the
 /// focus going elsewhere, puts the name back. While it has focus its window's bare space and
-/// arrow keys are done to the field editor by hand: the Tune menu holds them as key equivalents
-/// (`TuneCommands`), and a menu's equivalent is matched before a text field sees the key, so
-/// typing `2 m Simplex` would pause the audio and tune the radio. The transport field keeps the
-/// same keys the same way (`FrequencyField.watchClicks`), and as there only scalars cross into
-/// the main actor.
+/// arrow keys are sent to the field editor directly: the Tune menu holds them as key
+/// equivalents (`TuneCommands`), and a menu's equivalent is matched before a text field sees
+/// the key, so typing `2 m Simplex` would pause the audio and tune the radio. The transport
+/// field handles the same keys the same way (`FrequencyField.watchClicks`), and as there only
+/// scalars cross into the main actor.
 struct NameField: View {
     let initial: String
     var font: Font = Theme.Font.name
@@ -215,7 +216,7 @@ struct NameField: View {
             }
             let code = event.keyCode
             // The arrows carry the keypad and function flags on their own; those are not
-            // modifiers a person held.
+            // modifiers the user held.
             let held = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                 .subtracting([.numericPad, .function, .capsLock])
             guard held.isEmpty || held == [.shift] else { return event }
@@ -248,13 +249,13 @@ struct NameField: View {
     }
 }
 
-/// Region 2: what the band's numbers say is wrong (`FailureState`), or a channel the capture no
+/// Region 2: the problem the band's levels indicate (`FailureState`), or a channel the capture no
 /// longer covers, carried out of M1's strip over the waterfall (docs/plans/app.md, "Carried out
 /// of M1"): the sentence in ink, the number and the thing to try under it, and where the thing
-/// to try is the gain, a button that opens the device menu at the slider rather than saying
-/// where to look. `FailureState` and `ley tune`'s line do not change; this is presentation, and
-/// the close control keeps M1's rule that a closed state stays closed until a different one is
-/// named. Absent when nothing is wrong, not empty.
+/// to try is the gain, a button that opens the device menu at the slider rather than text
+/// describing where to find it. `FailureState` and `ley tune`'s line do not change; this is
+/// presentation, and the close control keeps M1's rule that a closed state stays closed until a
+/// different one is detected. Absent when nothing is wrong, not empty.
 struct FailureStrip: View {
     @Environment(AppSession.self) private var session
 
@@ -308,11 +309,10 @@ struct FailureStrip: View {
     }
 }
 
-/// Region 3: the reading, in words, label in a fixed column. This is the region that has to be
-/// in words and the one most likely to be built as numbers, because numbers are what the meter
-/// carries; the numbers are in the popovers and in Measurements. A row whose measurement is NaN
-/// (tuning outside FM or with the squelch closed, deviation outside FM) is hidden rather than
-/// dashed: a row that says `—` most of the time teaches that the row is broken.
+/// Region 3: the reading, in words, label in a fixed column. This region must use words even
+/// though the meter carries numbers; the numbers are in the popovers and in Measurements. A row
+/// whose measurement is NaN (tuning outside FM or with the squelch closed, deviation outside FM)
+/// is hidden rather than dashed: a row showing `—` most of the time looks broken.
 struct ReadingsView: View {
     @Environment(AppSession.self) private var session
 
@@ -376,8 +376,8 @@ struct ReadingsView: View {
 
     /// A centre-zero meter and the word: the marker sits where the tuning is against the
     /// transmitter, the way the waterfall shows it, and the word flips only past a tenth of the
-    /// channel's width. A number that moves at
-    /// 10 Hz wants a needle, not a label that flickers (the owner, 2026-09-21).
+    /// channel's width. A value that updates at 10 Hz reads better as a needle than as a
+    /// flickering label (the owner, 2026-09-21).
     private func tuning(_ word: TuningWord, errorHz: Double, channel ch: Leyline_V1_Channel)
         -> some View
     {
@@ -431,7 +431,7 @@ struct ReadingsView: View {
     /// `4.2 s · 23 since 11:38` while the squelch is open, `Idle · 23 since 11:38` when it is
     /// closed. The count is the log's, the session's first transmission its oldest, and `since`
     /// is that one's wall clock when the anchor dates it; otherwise `23 this session`, because a
-    /// clock the daemon never kept is not printed (M2-1's rule).
+    /// wall-clock time is printed only when the daemon's anchor provides one (M2-1's rule).
     private var onAir: some View {
         let log = session.transmissions
         let open = log?.onAir
@@ -481,7 +481,7 @@ struct ReadingsView: View {
 }
 
 extension Text {
-    /// A value in the reading: the dotted underline that says a number is one click away.
+    /// A value in the reading: the dotted underline marks that its number is one click away.
     func reading() -> Text {
         font(Theme.Font.label).underline(pattern: .dot, color: Theme.inkFaintest)
     }
@@ -510,8 +510,8 @@ struct ReadingRow<Value: View>: View {
 }
 
 /// Two lines: the sentence with the number in it, then the raw measurement in mono. The word
-/// is a presentation of a number, the number is always one click away, and the popover never
-/// states a confidence the measurement does not have.
+/// is derived from a number, the number is always one click away, and the popover never claims
+/// more confidence than the measurement supports.
 struct NumberPopover: View {
     let sentence: String
     let raw: String
@@ -576,7 +576,7 @@ struct CentreMeter: View {
 /// The deviation on the Signal row's own bar (`SignalBar`, the level ramp), with a tick at the
 /// mode's nominal; the track spans one and a half nominals. Drawn from a level the caller
 /// holds with `hold`, because deviation follows syllables and a bar that follows every 100 ms
-/// interval is a flicker. A caution fill past the tick was tried and read as a yellow
+/// interval flickers. A caution fill past the tick was tried and read as a yellow
 /// background (the owner, 2026-09-21); the number beside the bar carries the caution instead.
 struct DeviationMeter: View {
     let levelHz: Double

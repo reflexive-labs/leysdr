@@ -16,7 +16,7 @@ import (
 
 // TestScopeAgainstRealDaemon taps the demodulator the daemon actually runs. The demod tap is the
 // one view whose numbers come from before the audio chain, and the tone in its rows is the Swift
-// sub-audible detector's claim carried over telemetry, so only the real daemon can say whether the
+// sub-audible detector's result carried over telemetry, so only the real daemon can say whether the
 // Go view reports the tone that is in the recording.
 func TestScopeAgainstRealDaemon(t *testing.T) {
 	e, _ := setup(t)
@@ -34,7 +34,7 @@ func TestScopeAgainstRealDaemon(t *testing.T) {
 	chanID := list(st, "channels")[0].(map[string]any)["channelId"].(string)
 
 	// nfm_pl.cf32 carries a 100.0 Hz CTCSS tone. The detector needs a few windows of audio before
-	// it names one, and a row printed before the first telemetry message carries no tone at all,
+	// it reports one, and a row printed before the first telemetry message carries no tone at all,
 	// so keep drawing until one arrives.
 	const wantTone = 100.0
 	var tone *float64
@@ -69,8 +69,8 @@ func TestScopeAgainstRealDaemon(t *testing.T) {
 	}
 }
 
-// checkScopeRow asserts what every row owes regardless of tap: the tap it was asked for, a rate to
-// read the window against, and statistics that are numbers.
+// checkScopeRow asserts what every row must carry regardless of tap: the tap it was asked for, a
+// rate to read the window against, and statistics that are numbers.
 func checkScopeRow(t *testing.T, i int, r cli.ScopeRow, tap string) {
 	t.Helper()
 	if r.Tap != tap {

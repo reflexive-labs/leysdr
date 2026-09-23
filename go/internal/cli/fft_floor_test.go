@@ -30,8 +30,8 @@ func TestFloorOfIsAlwaysMarshalable(t *testing.T) {
 	}
 }
 
-// The point of carrying the floor at all: the two commands must not disagree
-// about where the noise floor is for the same row.
+// The floor is carried so the two commands agree about where the noise floor
+// is for the same row.
 func TestFFTAndSpectrumAgreeOnTheFloor(t *testing.T) {
 	bins := []float64{-95, -91, -88, -30, -92, -90, -89}
 	fft := FFTRow{Bins: bins, FloorDb: floorOf(bins)}

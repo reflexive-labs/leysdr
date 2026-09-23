@@ -95,10 +95,9 @@ type Expect struct {
 	Record      *RecordExpect `json:"record,omitempty"`
 }
 
-// SubExpect is what a sub-audible detector should say about a fixture. It is
-// the record that keeps a detector honest: a fixture carrying no tone, or one
-// carrying a tone too weak to call, states so here, and a detector that
-// reports one anyway has failed rather than merely disagreed.
+// SubExpect is what a sub-audible detector should report for a fixture. A
+// fixture carrying no tone, or a tone too weak to detect, records that here,
+// and a detector that reports a tone anyway fails.
 type SubExpect struct {
 	// ToneHz is the tone actually present, 0 for none.
 	ToneHz float64 `json:"tone_hz"`

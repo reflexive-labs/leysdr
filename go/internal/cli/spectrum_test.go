@@ -64,8 +64,8 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if !strings.Contains(text, wantPeak) {
 		t.Fatalf("want %q in:\n%s", wantPeak, text)
 	}
-	// The strongest peak's margin above the floor is the number the reader
-	// came for, and the screen ends with the command that acts on it.
+	// The strongest peak's margin above the floor is the main figure, and
+	// the screen ends with the command that acts on it.
 	if !strings.Contains(text, "dB above the floor") || !strings.Contains(text, "tune with: ley tune ") {
 		t.Fatalf("peak block and next step:\n%s", text)
 	}
@@ -275,8 +275,8 @@ func framed(screen string) bool {
 }
 
 // A reused capture keeps its own centre, so the chart can be drawn around a
-// frequency other than the one that was asked for. That is never a surprise:
-// spectrum names the capture's centre on stderr and says what it covers.
+// frequency other than the one that was asked for. spectrum prints the
+// capture's centre on stderr and says what it covers.
 func TestSpectrumSaysWhenTheCaptureIsOffCentre(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	ctx := context.Background()

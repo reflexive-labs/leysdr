@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The daemon's errors as a client sees them: a stable machine code, its own sentence, and the id
+// The daemon's errors as a client sees them: a stable machine code, a message, and the id
 // it concerns. The codes are the "Error codes" table in docs/dev/engine-internals.md; the daemon
 // serialises the `ErrorDetail` into the trailer `leyline-error-bin`, and a call that never reached
-// the daemon is named by its transport status instead, as `go/pkg/leyline/errors.go` does.
+// the daemon is identified by its transport status instead, as `go/pkg/leyline/errors.go` does.
 
 import Foundation
 import GRPCCore
@@ -20,7 +20,7 @@ public struct LeylineError: Error, Sendable, Hashable, CustomStringConvertible {
     public var code: String
     /// The daemon's prose, or the transport's.
     public var message: String
-    /// The id of the object the error concerns, when the daemon named one.
+    /// The id of the object the error concerns, when the daemon reported one.
     public var target: String
     /// The gRPC status the error arrived with.
     public var status: RPCError.Code?
@@ -60,7 +60,7 @@ public struct LeylineError: Error, Sendable, Hashable, CustomStringConvertible {
     public var description: String { message.isEmpty ? code : "\(message) [\(code)]" }
 
     // Transport-level codes: no daemon mints these, but a call that never reached the daemon still
-    // has to name what happened. Same spellings as the Go client library.
+    // has to report what happened. Same spellings as the Go client library.
     public static let unavailable = "UNAVAILABLE"
     public static let canceled = "CANCELED"
     public static let deadlineExceeded = "DEADLINE_EXCEEDED"

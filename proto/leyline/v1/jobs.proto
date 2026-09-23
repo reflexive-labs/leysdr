@@ -34,9 +34,9 @@ message Job {
   repeated string result_uris = 8;
   string status_detail = 9;         // human-readable, e.g. "out of capture since 14:02, 3 gaps logged"
   // Why a FAILED job failed: `code` is the stable string a client branches on and `message` the
-  // daemon's own sentence about it. Set only on FAILED; `status_detail` is prose and never carries
-  // the code, so a client that wants to tell "the radio cannot tune that" from "somebody is using
-  // it" reads this rather than splitting an English sentence.
+  // daemon's human-readable description. Set only on FAILED; `status_detail` is prose and never
+  // carries the code, so a client that wants to tell "the radio cannot tune that" from "somebody
+  // is using it" reads this rather than splitting an English sentence.
   ErrorDetail error = 10;
 }
 
@@ -74,9 +74,9 @@ message ScanConfig {
   // capture nobody is using. Without this a two-radio setup has no way to say which.
   string device_id = 7;
   // The tuner gain to sweep at. A sweep always pins the gain for its whole duration, because SNR
-  // against a moving AGC is not a number; this says where. `db` pins the element there (the first
-  // gain element when `element` is empty); `auto` asks the driver where its AGC settles and pins
-  // that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
+  // measured against a moving AGC is meaningless; this sets the level. `db` pins the element there
+  // (the first gain element when `element` is empty); `auto` asks the driver where its AGC settles
+  // and pins that. Unset, the sweep pins the gain the radio is on -- whatever the last client left it at,
   // which is why two sweeps of one band could differ by 6 dB of floor. `Scan.gains` reports the
   // level the sweep ran at either way, and the entry gain is restored when the radio is handed back.
   GainWrite gain = 8;
@@ -121,8 +121,8 @@ enum RecordGate {
 
 // Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
 // go, in time order. Unlike a scan it does not sweep: it parks one capture on the band and runs the
-// detector continuously, so it never time-shares and cannot miss a transmission that starts while it
-// is looking elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
+// detector continuously, so it never time-shares and cannot miss a transmission by being tuned
+// elsewhere. Detections stream on the telemetry plane (DETECTION), the same as a scan's;
 // the client folds them into a transmission log. A band wider than one capture can analyse is
 // refused with INVALID_ARGUMENT (use scan, which sweeps). This is the band-watching design's
 // occupancy/burst view (docs/design/band-watching.md), the stationary sibling of ley scan.
@@ -149,7 +149,7 @@ message ActivitySegment {
 message Transcript {
   string job_id = 1;
   repeated ActivitySegment segments = 2;
-  repeated Gap coverage_gaps = 3;   // out-of-capture or daemon downtime; honesty over completeness
+  repeated Gap coverage_gaps = 3;   // out-of-capture or daemon downtime, listed rather than hidden
 }
 
 message Scan {
@@ -160,18 +160,18 @@ message Scan {
   int64 started_at_ns = 5;
   int64 completed_at_ns = 6;
   // The gain the sweep pinned for its whole duration. A sweep must not run under the tuner's AGC
-  // -- the gain moves after every hop and SNR against a moving reference is not a number -- and a
+  // -- the gain moves after every hop and SNR against a moving reference is meaningless -- and a
   // scan that does not say which gain it ran at cannot be compared with another.
   repeated GainState gains = 7;
   // The analysis bin width, in Hz. Every dB in this message -- floor_dbfs, snr_db -- is per bin,
-  // and a bin's width is what makes those numbers mean anything: a wider bin holds more noise. A
+  // and those numbers depend on the bin width: a wider bin holds more noise. A
   // client should print this alongside the floor rather than deriving it from step_hz, which
   // describes where the radio pointed and not how finely it looked.
   uint32 resolution_hz = 8;
   // What the sweep actually covered. Never wider than config.range, and narrower whenever the
   // radio could not reach all of it, the request fell partly in the tuner's own blind spot, or the
-  // sweep was stopped early. A client that reports config.range as though it were searched is
-  // claiming coverage nobody measured.
+  // sweep was stopped early. A client must not report config.range as the searched range: part of
+  // it may never have been measured.
   FrequencyRange covered = 9;
 }
 message NoiseFloorSegment { FrequencyRange range = 1; double floor_dbfs = 2; }

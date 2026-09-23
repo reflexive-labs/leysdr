@@ -173,7 +173,7 @@ func (d *Daemon) destroyCaptureLocked(id string, ci *leylinev1.ClientInfo) {
 		}
 	}
 	delete(d.captures, c.CaptureId)
-	// Terminal event: state unset says "gone" (see Capture.state in
+	// Terminal event: state unset means "gone" (see Capture.state in
 	// control.proto). CAPTURE_DETACHED is reserved for an unplugged radio,
 	// which stays in state and rebinds.
 	gone := proto.Clone(c.Capture).(*leylinev1.Capture)
@@ -417,7 +417,7 @@ func (d *Daemon) attachRTLTCP(ctx context.Context, src *leylinev1.RtlTcpSource) 
 }
 
 // DetachDevice implements Control: any device a client attached goes, file or remote radio, along
-// with the capture on it. A dongle on this machine is not a client's to remove.
+// with the capture on it. A client cannot remove a dongle on this machine.
 func (d *Daemon) DetachDevice(ctx context.Context, req *leylinev1.DetachDeviceRequest) (*leylinev1.Empty, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)

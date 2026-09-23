@@ -93,7 +93,7 @@ func (s Style) ink(st lipgloss.Style, text string) string {
 // at the noise floor, then green, amber, orange and a salmon red at full
 // scale. The hue sweeps monotonically from cold to hot. The stops are the
 // brand's terminal ramp, sampled from the design system's dashboard mock and
-// adopted on 2026-09-14 knowing what they cost: they are tuned for a dark
+// adopted on 2026-09-14 with a known trade-off: they are tuned for a dark
 // ground, and ley is forbidden from asking which ground it is on (no OSC
 // query, no HasDarkBackground). Every stop clears 3.9:1 against #1e1e1e; on
 // white the cold end drops to 2.6:1, so a light terminal reads the noise

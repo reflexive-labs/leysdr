@@ -16,7 +16,7 @@ The layer that turns samples into things an agent — or a script, or a future U
 
 ## Derived products
 
-**Detection** — the atom of the tier: center frequency, bandwidth, SNR, first/last seen (sample timebase), optional modulation guess. Streamed on telemetry; aggregated into scans and watch results.
+**Detection** — the basic unit of the tier: center frequency, bandwidth, SNR, first/last seen (sample timebase), optional modulation guess. Streamed on telemetry; aggregated into scans and watch results.
 
 **Scan** — a sweep's aggregated detections plus sweep metadata (range, resolution, dwell, noise floor per segment). Job scans persist as `ley://scans/<id>`; ad-hoc scans return the same shape inline and are gone when the client is.
 
@@ -30,7 +30,7 @@ The layer that turns samples into things an agent — or a script, or a future U
 
 ## The v0 detector
 
-Scope deliberately narrow: energy detection over the FFT ladder. Noise-floor estimation per segment, threshold crossing, carrier center and bandwidth estimation, SNR, persistence tracking (merge across sweep passes, assign first/last seen). Modulation classification ships as a guess field that v0 populates only with cheap heuristics (bandwidth class, carrier presence) or leaves empty — a real classifier is a later, isolated improvement that slots into the existing field. The detector runs daemon-side and feeds both the telemetry stream and scan/watch aggregation.
+Scope is narrow: energy detection over the FFT ladder. Noise-floor estimation per segment, threshold crossing, carrier center and bandwidth estimation, SNR, persistence tracking (merge across sweep passes, assign first/last seen). Modulation classification ships as a guess field that v0 populates only with cheap heuristics (bandwidth class, carrier presence) or leaves empty — a real classifier is a later, isolated improvement that slots into the existing field. The detector runs daemon-side and feeds both the telemetry stream and scan/watch aggregation.
 
 ## Jobs
 
@@ -66,7 +66,7 @@ map one-to-one onto RPCs (names indicative):
 
 Resources map one-to-one onto `ley://` URIs. The adapter's value-adds beyond proto transcription: PNG rendering for snapshots, waterfall thumbnails for transcripts, and compact text summaries of scans (band-plan labels applied to detections) so agents spend context on reasoning rather than JSON.
 
-The don't-disturb default from the control-plane doc is enforced adapter-side as refusal-with-reason, and daemon-side as policy — belt and suspenders, since not every MCP client will be polite.
+The don't-disturb default from the control-plane doc is enforced adapter-side as refusal-with-reason, and daemon-side as policy. It is enforced in both places because not every MCP client honours a refusal.
 
 ## CLI mirror
 

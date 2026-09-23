@@ -83,8 +83,8 @@ func printState(app *App, st *leylinev1.GetStateResponse, wide bool) {
 }
 
 // stateHeader is the two-line preamble: what the daemon is on the first line,
-// where it is on a muted second one. The event sequence keeps its place for
-// reconnect debugging, but not its front-row seat.
+// where it is on a muted second one. The event sequence stays in the header
+// for reconnect debugging, but not on the first line.
 func stateHeader(s ui.Style, st *leylinev1.GetStateResponse, now time.Time) string {
 	d := st.GetDaemon()
 	if d == nil {

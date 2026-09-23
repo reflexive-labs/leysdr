@@ -931,7 +931,7 @@ type Channel struct {
 	Agc         GainMode               `protobuf:"varint,7,opt,name=agc,proto3,enum=leyline.v1.GainMode" json:"agc,omitempty"`
 	State       ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"` // unset on an event is the tombstone; see Capture.state
 	Persistent  bool                   `protobuf:"varint,9,opt,name=persistent,proto3" json:"persistent,omitempty"`                    // survives owner disconnect; jobs set this
-	// Set by jobs: the absolute frequency a channel wants back when its capture moves out from
+	// Set by jobs: the absolute frequency a channel returns to when its capture moves out from
 	// under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
 	// on it yet.
 	RequiredHz uint64      `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"`
@@ -939,8 +939,8 @@ type Channel struct {
 	// Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;
 	// ignored for every other mode. Detection is reported on the telemetry plane
 	// and never gates audio -- tone squelch is a separate, later decision, and
-	// field 13 is held for it, because every false negative there is silence the
-	// user cannot diagnose.
+	// field 13 is held for it, because a missed tone there would mute audio with
+	// no visible cause.
 	SubaudibleDetect bool `protobuf:"varint,12,opt,name=subaudible_detect,json=subaudibleDetect,proto3" json:"subaudible_detect,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -2268,9 +2268,9 @@ func (x *DaemonInfo) GetSocketPath() string {
 
 // A recording the daemon is playing through its own audio device (docs/design/recording.md,
 // "Playing a recording back"). It is not a sink: a sink is where a *channel's* audio goes, and a
-// playback has no channel. It is not a job either: nothing is produced and it is over when the
-// person stops listening. A playback belongs to the client that started it and ends when that
-// client goes, which is what makes Ctrl-C stop the sound.
+// playback has no channel. It is not a job either: it produces nothing and ends when playback
+// stops. A playback belongs to the client that started it and ends when that client disconnects,
+// so Ctrl-C on `ley play` stops the audio.
 type Playback struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	PlaybackId  string                 `protobuf:"bytes,1,opt,name=playback_id,json=playbackId,proto3" json:"playback_id,omitempty"`    // pb_<ulid>
@@ -2917,8 +2917,8 @@ func (x *DetachFileDeviceRequest) GetDeviceId() string {
 	return ""
 }
 
-// Where a virtual device's samples come from. Persistence follows intent: a file you play is
-// ephemeral, a radio you attach is part of the station.
+// Where a virtual device's samples come from. Persistence follows intent: a played file is
+// ephemeral; an attached radio is remembered across restarts.
 type DeviceSource struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Source:
@@ -3056,7 +3056,7 @@ func (x *FileSource) GetLoop() bool {
 }
 
 // A dongle served by rtl_tcp on another machine. The daemon remembers the endpoint across
-// restarts until DetachDevice forgets it.
+// restarts until DetachDevice removes it.
 type RtlTcpSource struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`

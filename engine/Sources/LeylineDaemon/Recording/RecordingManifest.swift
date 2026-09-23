@@ -19,9 +19,9 @@ struct RecordingPart: Codable, Sendable {
     /// Frames in the file: audio frames for a WAV part, complex samples for a cf32 one.
     var samples: UInt64
     var bytes: UInt64
-    /// Measured from the samples as they passed. Absent on a part nobody finished measuring -- one
-    /// a daemon restart repaired, say -- because a level invented here would be indistinguishable
-    /// from one that was measured.
+    /// Measured from the samples as they passed. Absent on a part whose measurement never finished
+    /// (one a daemon restart repaired, for example), because a level invented here would be
+    /// indistinguishable from one that was measured.
     var peakDbfs: Double?
     var meanDbfs: Double?
     /// How many times the squelch opened inside this part. A continuous recording has none.
@@ -49,9 +49,9 @@ struct RecordingSquelchOpen: Codable, Sendable {
     }
 }
 
-/// Time the recording did not cover, and why. Honesty over completeness: the gaps between a gated
-/// recording's parts and the stretches its capture was tuned away are stated rather than hidden
-/// inside one file (invariant 5).
+/// Time the recording did not cover, and why. The gaps between a gated recording's parts and the
+/// stretches its capture was tuned away are listed rather than hidden inside one file
+/// (invariant 5).
 struct RecordingGap: Codable, Sendable {
     var fromSample: UInt64
     var toSample: UInt64
@@ -64,7 +64,7 @@ struct RecordingGap: Codable, Sendable {
     }
 }
 
-/// The radio the recording was made on, named the way `ley devices` names one.
+/// The radio the recording was made on, identified the way `ley devices` lists it.
 struct RecordingDevice: Codable, Sendable {
     var driver: String
     var model: String

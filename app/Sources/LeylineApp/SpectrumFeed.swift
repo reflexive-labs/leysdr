@@ -61,12 +61,12 @@ final class SpectrumFeed {
     static let fallbackRangeDB: Float = 60
     /// The least the ramp reaches, so an empty band is not its noise blown up to cream.
     static let minRangeDB: Float = 20
-    /// How fast the held peak lets go: 1 dB a second, so a burst does not leave the picture
-    /// cold for the rest of the session and a carrier that stays keeps the top stop.
+    /// How fast the held peak decays: 1 dB a second, so a burst does not leave the waterfall
+    /// cold for the rest of the session and a steady carrier keeps the top stop.
     static let peakDecayDBPerRow: Float = 1 / Float(rowsPerSecond)
     /// The ramp's cold end sits this far above the median, so noise, which spreads a few dB
-    /// either side of it, stays in the near-black first stop and a signal is what has colour.
-    /// The desktop SDRs do the same with a waterfall minimum set above the floor. The floor
+    /// either side of it, stays in the near-black first stop and only signals get colour.
+    /// Desktop SDRs do the same with a waterfall minimum set above the floor. The floor
     /// itself follows the gain: a gain change moves the median, and the held floor is re-taken
     /// once it drifts `floorSlackDB`.
     static let noiseHeadroomDB: Float = 6
@@ -75,11 +75,12 @@ final class SpectrumFeed {
 
     private(set) var latest: [Float] = []
     private(set) var hold = MaxHold()
-    /// The loudest level on the band, held and let go at `peakDecayDBPerRow`: the ramp's hot
-    /// end, so the strongest thing on the band reaches the last stop rather than a full scale
-    /// nothing reaches (a −12 dBFS carrier 200 kHz wide is −34 dBFS a bin). Reset on a retune.
+    /// The loudest level on the band, held and decayed at `peakDecayDBPerRow`: the ramp's hot
+    /// end, so the strongest signal on the band reaches the last stop rather than full scale,
+    /// which nothing reaches (a −12 dBFS carrier 200 kHz wide is −34 dBFS a bin). Reset on a
+    /// retune.
     private(set) var peakDB: Float = .nan
-    /// The noise floor the ramp and the spectrum's axis are keyed from. Held, not chased: it is
+    /// The noise floor the ramp and the spectrum's axis are keyed from. Held, not tracked: it is
     /// taken from the smoothed median and re-taken only when that drifts more than `floorSlackDB`
     /// from it, because an axis that follows every wobble of the median makes the max-hold trace
     /// throb. Reset on a retune.
@@ -94,7 +95,7 @@ final class SpectrumFeed {
     let waterfall = WaterfallBuffer()
 
     private var task: Task<Void, Never>?
-    /// The capture the rows on hand belong to, so a caller that folds them (the app's auto
+    /// The capture the current rows belong to, so a caller that folds them (the app's auto
     /// squelch) can tell rows of this span from rows of the one before.
     private(set) var subscribedCapture: String?
     private var subscribedRate: UInt64 = 0
@@ -171,7 +172,7 @@ final class SpectrumFeed {
         gaps = 0
     }
 
-    /// The capture moved: what was held is about another span.
+    /// The capture moved: the held values belong to the old span.
     func resetFolds() {
         hold.reset()
         floorDB = .nan
@@ -260,9 +261,9 @@ final class ChannelTelemetryFeed {
         case .meter(let m)?:
             meter = m
             meters += 1
-            // The meter's numbers every thirty seconds, so a word in the inspector that does not
-            // move can be read against what the daemon sent (a tuning error of exactly 0 is a
-            // daemon built before the field existed).
+            // The meter's numbers every thirty seconds, so an inspector label that does not
+            // change can be checked against what the daemon sent (a tuning error of exactly 0
+            // means a daemon built before the field existed).
             if meters % 300 == 1 {
                 log(
                     "meter",
@@ -273,8 +274,8 @@ final class ChannelTelemetryFeed {
                         m.squelchOpen ? "open" : "closed"))
             }
         case .subAudible(let sa)?:
-            // One line per change of tone, not per heartbeat: what the daemon named, or that it
-            // looked and found nothing, so a missing PL in the log can be explained from here.
+            // One line per change of tone, not per heartbeat: the tone the daemon reported, or
+            // that it found none, so a missing PL in the log can be explained from here.
             let now = sa.kind == .subAudibleCtcss ? sa.standardToneHz : 0
             if now != lastToneHz {
                 lastToneHz = now
@@ -307,14 +308,14 @@ final class ChannelTelemetryFeed {
 }
 
 /// The capture's raw level four times a second (`CaptureLevel`): samples at the converter's
-/// rails and the peak, the clipping authority the failure state reads (`FailureState`,
+/// rails and the peak, the clipping source the failure state reads (`FailureState`,
 /// plans/app.md M2-5). One subscription per capture, reset with it.
 @MainActor
 @Observable
 final class CaptureLevelFeed {
     private(set) var level: Leyline_V1_CaptureLevel?
     private(set) var error: LeylineError?
-    /// Fires after every reading, on the main actor; the session names the failure state from it.
+    /// Fires after every reading, on the main actor; the session derives the failure state from it.
     var onLevel: (() -> Void)?
     private var task: Task<Void, Never>?
     private var capture: String?

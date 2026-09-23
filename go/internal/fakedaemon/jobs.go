@@ -171,8 +171,8 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 	if len(dev.SampleRates) > 0 {
 		rate = dev.SampleRates[len(dev.SampleRates)-1]
 	}
-	// The pacing of the sweep, which is not its arithmetic: a test must not wait for a real
-	// dwell, but the looks a step is meant to yield are the ones the daemon would have taken.
+	// The fake does not wait out a real dwell, so tests stay fast, but each step still yields
+	// the number of looks the daemon would take at this dwell and rate.
 	dwellMs := float64(sc.DwellMs)
 	if dwellMs <= 0 {
 		dwellMs = defaultDwellMs
@@ -218,7 +218,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 		d.mu.Unlock()
 	}()
 	// The radio is in hand, so now the geometry: where the steps go, and which parts of each span
-	// a detector is allowed to believe.
+	// the detector uses.
 	plan := planSweep(sc.Range.MinHz, sc.Range.MaxHz, rate, dev.TuningRanges)
 	if plan == nil {
 		d.failScan(jobID, leyline.CodeFreqOutOfRange, "this radio cannot tune any of that range")
@@ -295,8 +295,8 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 }
 
 // fakeCarriers is the synthetic band the fake daemon reports: what a scan finds, and what a
-// channel tuned to one of them hears. Real enough to render, and deliberately not derived from
-// the fake FFT: the CLI test is about the table, not the DSP.
+// channel tuned to one of them hears. They are not derived from the fake FFT: the CLI test
+// checks the table, not the DSP.
 //
 // tone is the CTCSS tone the transmitter sends, or 0 for a frequency that carries none -- 146.52
 // is the national calling channel, where a PL tone would be wrong.
@@ -340,7 +340,7 @@ func rowIntervalMs(rate uint64) float64 {
 }
 
 // sweepGains is what the sweep froze the tuner at. AGC is pinned for the duration -- SNR measured
-// against a moving reference is not a number -- and where it was pinned is part of the answer,
+// against a moving reference is meaningless -- and where it was pinned is part of the answer,
 // because a scan without its gain is not comparable with another. A requested gain pins its
 // element there (the first element when it names none; auto pins where the fake's AGC "settles",
 // the middle of the table); otherwise an element already on a fixed level keeps it, and an
@@ -469,7 +469,7 @@ func audible(dev *leylinev1.DeviceDescriptor, r *leylinev1.FrequencyRange) bool 
 }
 
 // trimJobsLocked keeps the last keepFinishedJobs finished jobs, as the daemon does: a client that
-// loops over scans must not find the fake remembering what the daemon forgot.
+// loops over scans must see the same job list from the fake as from the daemon.
 func (d *Daemon) trimJobsLocked() {
 	var finished []string
 	for _, id := range d.jobOrder {
@@ -604,7 +604,7 @@ func (d *Daemon) failScan(id, code, reason string) {
 
 // completedDetail is what a sweep that ran to the end says about itself: how many carriers it
 // found and over how many steps, whether the range had to be clipped to what the radio can tune,
-// and how many steps saw too few rows to be believed and were left out of the coverage.
+// and how many steps saw too few rows to be reliable and were left out of the coverage.
 func completedDetail(found, stepsDone, steps int, clipped bool) string {
 	if stepsDone < steps {
 		return fmt.Sprintf("%d found; %d of %d steps saw too few rows to trust and were left out",
@@ -694,7 +694,7 @@ func (d *Daemon) CancelJob(ctx context.Context, req *leylinev1.JobRef) (*leyline
 	if j == nil {
 		return nil, fail(ctx, errorf(leyline.CodeJobNotFound, req.JobId, "no such job"))
 	}
-	// The sweep did not put itself down inside the wait: answer cancelled anyway. A stale answer
+	// The sweep did not stop within the wait: answer cancelled anyway. A stale answer
 	// is better than an RPC that never returns, and the goroutine still ends on its own.
 	if j.proto.State == leylinev1.JobState_RUNNING {
 		j.proto.State = leylinev1.JobState_CANCELLED

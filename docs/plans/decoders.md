@@ -11,7 +11,7 @@ pass and `make check` is green.
 hints, capability flags, executable), `DecodeRecord` (the envelope of §4), `DecodeConfig`, and
 the `Decoders` service (`ListDecoders`, `SubscribeRecords`, `QueryRecords`). `jobs.proto` gains
 `Job.config.decode = 11`, `StartJobRequest.decode = 4` and `ResourceKind.RECORDS = 5`. `AudioTap`
-moved from `bulk.proto` to `common.proto`: the manifest names a tap, and `bulk.proto` imports
+moved from `bulk.proto` to `common.proto`: the manifest specifies a tap, and `bulk.proto` imports
 `control.proto`, which imports `jobs.proto`, which now imports `decode.proto`. Same package, same
 values, so nothing on the wire or in a generated symbol name changes. `OutputShape` values carry a
 `SHAPE_` prefix because enum values are package-scoped and `RECORDS` is a `ResourceKind`.
@@ -23,8 +23,8 @@ stderr is prose the daemon logs under the plugin's name. A plugin fills `protoco
 `device_id`, `position`, `validity`, `fields`, `raw` and `kind`; the daemon overwrites
 `record_id`, `rssi_dbfs`, `snr_db`, `job_id`, `seq` and `channel_id`. `time` is the `SampleTime`
 of the frame the packet ended in plus the sample offset within it, scaled to the capture rate
-(`frame.time.sample_index + offset * capture_rate / audio_rate`; the descriptor's `center_hz`
-and `span_hz` name the capture rate as `span_hz`).
+(`frame.time.sample_index + offset * capture_rate / audio_rate`; the descriptor carries
+`center_hz` and `span_hz`, and `span_hz` is the capture rate).
 
 ## DEC-2 `[x]` The APRS decoder and the plugin SDK (Go lane)
 
@@ -102,15 +102,14 @@ daemon target already holds proto messages as its record type).
   `capture_id`, `anchors: [{host_time_ns, sample_rate, drift_ppm, from_sample}]`, `count`.
   `query(_: Leyline_V1_RecordQuery) -> Leyline_V1_RecordPage`: scans sidecars, skips files whose
   protocol or wall-clock span cannot match, reads the rest, filters, sorts newest first, cuts at
-  `limit` (default 1000) and says so. Spatial filter is a haversine on `position`. `retain()`
+  `limit` (default 1000) and reports the cut. Spatial filter is a haversine on `position`. `retain()`
   applies age then cap; `stats` answers path, cap, age.
 - Tests (`LeylineDaemonTests/DecoderRegistryTests`, `PluginProcessTests`, `RecordStoreTests`): a
-  temp directory with a good manifest, a broken one and one with a missing executable; a fake
-  plugin that is a shell script using a tiny Swift-built helper? No: the fake plugin is
-  `leyline-fake-decoder`, a new executable target under `Tests/` built by SwiftPM, which echoes
-  one record per frame it reads (device_id = the frame's seq) and exits on a frame whose payload
-  is empty, so the restart path is testable; a store round trip with two anchors and every query
-  filter.
+  temp directory with a good manifest, a broken one and one with a missing executable; the fake
+  plugin is `leyline-fake-decoder`, a new executable target under `Tests/` built by SwiftPM, which
+  echoes one record per frame it reads (device_id = the frame's seq) and exits on a frame whose
+  payload is empty, so the restart path is testable; a store round trip with two anchors and every
+  query filter.
 
 ## DEC-5 `[x]` The decode job and the service (Swift lane, second half)
 
@@ -131,7 +130,7 @@ daemon target already holds proto messages as its record type).
   two tasks: the drain (frames from the source to the plugin, with `Gap` under `GAP_MARKED`) and
   the reader (records from the plugin: stamp `record_id`, `job_id`, `seq`, `channel_id`,
   `rssi_dbfs`/`snr_db` from the channel's latest meter, publish to the hub, append to the
-  writer). A plugin exit restarts it after 1 s, doubling to 30 s, with `status_detail` saying so
+  writer). A plugin exit restarts it after 1 s, doubling to 30 s, with `status_detail` reporting it
   and a coverage gap noted on the job (`Job.status_detail`; the transcript's `Gap` list arrives
   with D.15). A channel event `OUT_OF_CAPTURE` puts the job in `DEGRADED`; `CHANNEL_ACTIVE` back
   to `RUNNING`. `keep` jobs are not cancelled by `clientGone`. `cancel` stops the plugin, closes
@@ -151,7 +150,7 @@ daemon target already holds proto messages as its record type).
   hub, the store, the allocator's channel path) and the two rows.
 - Tests: `DecodeJobTests` runs a decode job against a `FilePlaybackDevice` and the fake decoder
   from DEC-4 (records arrive with the daemon's stamps; `keep` writes the store; cancel releases
-  the channel and the capture; a plugin that exits is restarted and the job says so; a channel
+  the channel and the capture; a plugin that exits is restarted and the job reports it; a channel
   moved out of capture degrades the job and recovers), `DecodersServiceTests` over the socket.
 
 ## DEC-6 `[x]` `ley` and the fake (Go lane)
@@ -169,7 +168,7 @@ daemon target already holds proto messages as its record type).
 - Verbs: `ley decoders` (table: NAME, FREQUENCY, MODE, OUTPUTS, VERSION; `--json` the response);
   `ley decode <name> [--freq F] [--device SEL] [--take-over] [--job]` (starts the job, subscribes
   from seq 0, prints one line per record: wall time, device id, kind, summary; `--json` NDJSON
-  `DecodeRecord`s; Ctrl-C cancels an ephemeral job and leaves a `--job` one running, saying
+  `DecodeRecord`s; Ctrl-C cancels an ephemeral job and leaves a `--job` one running, printing
   `ley jobs cancel`); `ley records [--protocol P] [--since 1h] [--device-id ID] [--kind K]
   [--near LAT,LON --radius 10km] [--in-effect] [--limit N]` (a table newest first; `--json` the
   `RecordPage`); `ley track <protocol>` (the live entity table redrawn in place, seeded from
@@ -265,16 +264,16 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   exception Swift cannot catch, so launchd restarted `leylined` (seen twice in the log on
   2026-09-13, found through `ley mcp`, whose `list_entities` cancels the decoder it started). The
   descriptor is now cached at spawn under a lock a write holds for its duration; `stop` empties it
-  before closing, so a late frame is a drop, the same answer as a plugin that stopped reading, and
+  before closing, so a late frame is dropped, as it is for a plugin that stopped reading, and
   a second `stop` closes nothing. `PluginProcessTests` writes after a stop and races writes against
   one. A kept job still does not survive the restart this caused (DEC-11).
 - DEC-23 `[x]` Liveness in the job. A decode job said "decoding with aprs" and nothing more for as
   long as it ran, so a client could not tell a decoder that had produced records from one that had
   not without subscribing to them; an agent testing `ley mcp` fell back to `ps` to check the plugin
-  was alive, which the job could have told it. `Job.status_detail` now reads "decoding with aprs:
+  was alive, which the job could have reported. `Job.status_detail` now reads "decoding with aprs:
   12 records, last 3 s ago" (or "no records yet"), from `DecodeLiveness` in both runners: the first
   record is published at once and a moving count every two seconds after that, never a Job event
-  per record. Silence stays RUNNING (DEC-16); it just stops being invisible. The fake mirrors it
+  per record. Silence stays RUNNING (DEC-16), and the detail now shows it. The fake mirrors it
   ("decoding aprs on 144.390 MHz: 12 records, last just now"), `ley jobs` shows it in DETAIL and
   the MCP `get_job` in its text.
 - DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side), on
@@ -285,10 +284,10 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   non-blocking, so a full pipe drops the frame and holds the gap open for the next one that lands
   (`PluginProcess.writeDelimited` returns `droppedFull`), and a frame that stalls half-written
   replaces the plugin (`PluginStalled`). The plan's second half -- a no-records health check that
-  respawns -- was **dropped on purpose**: a decoder that emits nothing is indistinguishable from a
+  respawns -- was **dropped**: a decoder that emits nothing is indistinguishable from a
   quiet band, and driver C (SAME) is silent by design, so killing a plugin for silence would kill
-  the ones working correctly. Silence is not failure; a plugin that has stopped *reading* is the
-  only hang, and the non-blocking write is what catches it.
+  ones that are working. A plugin that has stopped reading is the only hang, and the
+  non-blocking write detects it.
   Tests: `DecodeJobTests.testAPluginThatStopsReadingDoesNotWedgeTheDrain` (a `--deaf-after=3` fake
   reads three frames then stops; the job stays RUNNING and cancel returns promptly), the existing
   `PluginProcessTests`.
@@ -304,17 +303,17 @@ What the second look found, 2026-09-12.
   `leydec-aprs`, the fixture through `ley play`) passed on its first run: three records with the
   daemon's stamps, `rssi_dbfs` within 0.02 dB of the fixture's −20 dBFS, a kept job that outlived
   its client and a store with one record file. The whole e2e suite runs in 14 s here.
-- **The real radio found one bug the fixture could not.** On the owner's dongle over rtl_tcp the
+- **The real radio exposed one bug the fixture did not.** On the owner's dongle over rtl_tcp the
   allocator opened the decode capture at 3.2 MSPS, the fastest rate the device lists (the sweep's
   rule), and the channel's audio rate followed it to 49.2 kHz, which the AFSK demodulator refused
   and the daemon spent the run respawning. A channel's capture now opens at the default rate and
   the demodulator accepts up to 96 kHz (commit e789f34).
-- **144.39 MHz is quiet where the owner sits.** Two three-minute captures (auto gain and 40 dB;
+- **144.39 MHz is quiet at the owner's location.** Two three-minute captures (auto gain and 40 dB;
   `rf-captures/`, gitignored) held one decodable packet between them, `N0CALL-1` at 27.6 s of the
   first, and `leydec-aprs` recovered it; a tone-energy scan of the same file found the same
   burst and no other of packet length. A live `ley decode aprs` on the dongle ran for the
   duration of the work without a packet. The guide's transcripts are therefore recorded against
-  the fixture, and say so.
+  the fixture, and state that.
 - **Measured.** The AFSK demodulator decodes 100/100 synthetic frames clean at 48 kHz and 12 kHz,
   99/100 at 0 dB SNR over the 24 kHz audio band and 12/100 at −4 dB (the curve is in
   `go/pkg/decoders/afsk`'s doc comment). The −10 dB gate the plan asked for is 3 dB of Eb/N0

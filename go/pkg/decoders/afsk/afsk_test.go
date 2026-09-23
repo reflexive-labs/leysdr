@@ -86,9 +86,9 @@ func TestRoundTrip(t *testing.T) {
 // TestRoundTripInNoise pins the sensitivity. The gate is 0 dB rather than the
 // -10 dB docs/plans/decoders.md asked for because -10 dB over the audio band
 // is 3 dB of Eb/N0, and non-coherent FSK needs about 12.3 dB of it to hold a
-// 500-bit frame together at all; no demodulator decodes that, and a gate no
-// implementation can pass is not a gate. 0 dB here is 13 dB of Eb/N0, within
-// about 1 dB of the theoretical wall, and the measured curve either side of it
+// 500-bit frame together at all, so no demodulator could pass a -10 dB gate.
+// 0 dB here is 13 dB of Eb/N0, within about 1 dB of the theoretical limit,
+// and the measured curve either side of it
 // is in the package doc comment.
 func TestRoundTripInNoise(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 4))

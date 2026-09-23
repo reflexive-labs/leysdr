@@ -441,7 +441,7 @@ final class ChannelTests: XCTestCase {
     /// the Mac app's "over noise" and `ley tune`'s auto squelch compute from a spectrum row -- and
     /// not over the channel's own running minimum, which on `nfm_tone`'s continuous carrier was the
     /// carrier itself and read about 0 dB (`docs/plans/app.md`, APP-3, 2026-09-19). The fixture's
-    /// sidecar says what floor the generator spread under the tone, so the expected number is
+    /// sidecar records what floor the generator spread under the tone, so the expected number is
     /// `power - (noise + 10·log10(bandwidth / rate))`, to the 0.17 dB the median-of-a-Hann-row
     /// estimate is known to sit high (`DSPSpectrumTests.testBandFloorIsTheRowMedianAsADensity`).
     func testMeterSNRIsPowerOverTheBandFloorAtTheChannelWidth() async throws {
@@ -480,11 +480,11 @@ final class ChannelTests: XCTestCase {
 
     /// `deviationHz` and `freqErrorHz` come off the raw discriminator over the meter interval and
     /// not off the conditioned audio, whose 300 Hz high-pass has removed the DC and whose
-    /// de-emphasis has changed the excursion. `nfm_tone.json` says what the generator sent, 2.5 kHz
+    /// de-emphasis has changed the excursion. `nfm_tone.json` gives what the generator sent, 2.5 kHz
     /// of deviation at a 1 kHz tone, so a channel on the carrier reads that deviation and no tuning
     /// error. The sign is established here rather than assumed: a channel placed 1 kHz above the
     /// carrier leaves the transmitter 1 kHz below the channel and reads -1000 Hz, so positive means
-    /// the transmitter sits above the channel, as `telemetry.proto` says. An AM channel has no
+    /// the transmitter sits above the channel, as `telemetry.proto` specifies. An AM channel has no
     /// discriminator and reads NaN for both.
     ///
     /// Medians over the run's meters: the first interval carries the channelizer's start-up
@@ -683,7 +683,7 @@ final class ChannelTests: XCTestCase {
 
     /// Every transmission that ends bumps the close count. The sub-audible detector reads it to
     /// know the signal it has been measuring is over: a count rather than a flag, because that task
-    /// polls at 20 Hz and a whole transmission can start and finish between two of its looks.
+    /// polls at 20 Hz and a whole transmission can start and finish between two polls.
     func testSquelchCloseCountCountsTransmissions() throws {
         let rate: UInt64 = 240_000
         let queue = ChannelTelemetryQueue()

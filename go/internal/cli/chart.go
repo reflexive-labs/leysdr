@@ -14,11 +14,11 @@ import (
 )
 
 // The pieces every live chart is built from. A spectrum, a meter, a trace, a
-// clip and a map are five pictures of the same signal, and a reader moving
-// between them should be reading one instrument: the same header, the same
-// gutter, the same tick-and-label rule under the plot, the same border, and
-// one colour ramp whose ends mean the same thing. Only the plot itself is the
-// view's own. `ui` stays the palette and the glyph layer underneath.
+// clip and a map are five views of the same signal, so they share the same
+// header, the same gutter, the same tick-and-label rule under the plot, the
+// same border, and one colour ramp whose ends mean the same thing. Only the
+// plot itself is specific to each view. `ui` stays the palette and the glyph
+// layer underneath.
 
 // How a chart carries level as colour. Every cell takes the ramp ink its own
 // level lands on, so a noise floor reads cold and a carrier hot. The steps
@@ -85,8 +85,8 @@ func (l *inkedLine) String() string {
 // 1 at the hot one, and clamped to both. Every chart keys its ink this way and
 // only the two references differ -- the cold end is the noise line for
 // `spectrum`, the bottom of the meter's scale for `levels`, and silence for
-// the waveform -- so one colour means one thing to the eye across all of them:
-// this far above what this chart calls nothing.
+// the waveform -- so a colour means the same thing on every chart: how far
+// the value sits above that chart's zero reference.
 func rampFrac(value, floor, top float64) float64 {
 	// A chart that has not measured its own references yet has no ramp to
 	// place anything on, so everything sits at the cold end until it has.
@@ -117,8 +117,8 @@ type headerSeg struct {
 	name, value string
 	dim         bool
 	// inked marks a name that carries its own colour -- a legend swatch is the
-	// ramp's own glyph -- so it is written verbatim: muting it would show the
-	// reader a shade the map never draws.
+	// ramp's own glyph -- so it is written verbatim: muting it would show a
+	// shade the map never draws.
 	inked bool
 	// width overrides the measured width for a segment whose name is already
 	// inked, where counting bytes would count escape sequences as columns.
@@ -142,14 +142,14 @@ func (s headerSeg) render(st ui.Style) string {
 	return st.Muted(s.name) + s.value
 }
 
-// tapSeg names the stage of the channel a view is drawing, which is the one
-// fact that decides what every other number in the header means.
+// tapSeg shows which stage of the channel the view is drawing. Every other
+// number in the header is measured at that stage.
 func tapSeg(tap leylinev1.AudioTap) headerSeg {
 	return headerSeg{name: "tap ", value: scopeTapName(tap)}
 }
 
-// squelchSeg says whether the channel is passing anything, in the ink of the
-// answer: a view whose picture goes blank has to say why on the same screen.
+// squelchSeg shows whether the squelch is open, inked by state, so a view
+// whose picture goes blank shows why on the same screen.
 func squelchSeg(st ui.Style, open bool) headerSeg {
 	word, ink := "open", st.Ok
 	if !open {
@@ -210,9 +210,8 @@ func chartInner(width int, framed bool) int {
 	return width
 }
 
-// chartFrame puts the border round a picture. The plot, its scale and the
-// labels that name them are one object and are framed as one; a header reads
-// as prose above it and stays outside.
+// chartFrame puts the border round a picture. The plot, its scale and their
+// labels are framed together; the header sits above the frame, outside it.
 func chartFrame(st ui.Style, framed bool, chart string) string {
 	if !framed {
 		return chart
@@ -264,9 +263,9 @@ func axisRule(st ui.Style, cols int, ticks []axisTick) string {
 }
 
 // axisLabelRow writes each mark's text under it, dropping any label the width
-// cannot fit beside its neighbour: two labels run together read as a third
-// number that is neither. width is the whole row, gutter included, because a
-// label at the right edge is pulled back to fit rather than dropped.
+// cannot fit beside its neighbour: two labels with no gap read as one wrong
+// number. width is the whole row, gutter included, because a label at the
+// right edge is pulled back to fit rather than dropped.
 func axisLabelRow(gutterW, width int, ticks []axisTick) string {
 	row := make([]byte, 0, width)
 	for _, t := range ticks {
@@ -288,13 +287,13 @@ func axisLabelRow(gutterW, width int, ticks []axisTick) string {
 
 // liveStreamEnd is what a live view does when its bulk stream closes: nothing
 // on Ctrl-C, the daemon's error where there is one, and otherwise a sentence
-// -- because a stream the daemon ends on its own is never a finished job. The
-// daemon closes a stream when its descriptor stops being true (a rate, mode or
-// bandwidth write re-planned the channel) or when the channel or its capture
-// goes away, and a view that answered that with a clean exit would leave a
-// reader with a frozen picture and no reason. A run that reaches --count
-// returns before the stream closes, so it never lands here. `stream` names the
-// stream and `unit` what one picture of it is called.
+// explaining the close, because the daemon never closes a stream as normal
+// completion. The daemon closes a stream when its descriptor is out of date
+// (a rate, mode or bandwidth write re-planned the channel) or when the channel
+// or its capture goes away; a clean exit would leave a frozen picture with no
+// explanation. A run that reaches --count returns before the stream closes, so
+// it never lands here. `stream` names the stream and `unit` what one picture
+// of it is called.
 func liveStreamEnd(ctx context.Context, err error, drawn int, stream, unit string) error {
 	if ctx.Err() != nil {
 		return nil

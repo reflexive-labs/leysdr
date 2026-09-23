@@ -13,7 +13,7 @@ import (
 // standing for one. Every verb that takes a point accepts both, so `noaa2`
 // works wherever `162.400` does and fails the same way when it is a typo.
 //
-// This is deliberately not where bands are resolved. `2m`, `20m` and `160m`
+// Bands are not resolved here. `2m`, `20m` and `160m`
 // already parse as 2, 20 and 160 MHz, so a band name in this position would
 // silently redefine seven of the fourteen bands; bands are reached through an
 // explicit `--band`, which cannot be mistaken for a frequency.

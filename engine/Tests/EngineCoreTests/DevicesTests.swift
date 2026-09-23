@@ -510,7 +510,7 @@ final class ClosableVirtualDevice: VirtualDevice, @unchecked Sendable {
 
 final class DevicesRTLSDRTests: XCTestCase {
     /// These two tests describe the no-hardware case (CI runners, the Linux stub); a dongle plugged
-    /// into the developer's machine would be opened for real, so they step aside for it.
+    /// into the developer's machine would be opened for real, so they skip when one is present.
     private func skipIfDongleAttached() throws {
         try XCTSkipIf(rtlsdr_get_device_count() > 0, "an RTL-SDR is attached; hardware-free assertions do not apply")
     }

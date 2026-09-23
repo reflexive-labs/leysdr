@@ -26,8 +26,8 @@ import (
 // and the `ley` verb that mirrors it, and returns that verb's `--json` shape.
 // The blocked tools of the plan (get_transcript, identify_signal,
 // lookup_identity, whats_out_there) are not registered: a tool that only
-// refuses spends an agent's context on nothing, and the server's instructions
-// say what is not here yet.
+// refuses wastes an agent's context, and the server's instructions list what
+// is not here yet.
 func (srv *mcpServer) registerTools() {
 	s := srv.server
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: boolPtr(false)}
@@ -215,8 +215,8 @@ type daemonLogsArgs struct {
 	IncludeDriver bool `json:"include_driver,omitempty" jsonschema:"also return the lines the radio driver (librtlsdr) prints on every device open, which are left out by default because a dozen tunes push every daemon line out of the tail (default: false)"`
 }
 
-// daemonLogsMax bounds a read: a log is megabytes after a week, and an agent
-// reading it whole has spent its context on the radios found at every boot.
+// daemonLogsMax bounds a read: a log is megabytes after a week, and reading it
+// whole fills an agent's context with the device discovery from every boot.
 const daemonLogsMax = 500
 
 func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in daemonLogsArgs) (*mcp.CallToolResult, any, error) {
@@ -327,7 +327,7 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	}
 	// The session is closed, not torn down: the channel it made stays up on
 	// the presence this server holds (keepPresence), and a kept one is
-	// persistent on the daemon and needs nobody.
+	// persistent on the daemon and does not depend on this server.
 	defer s.close()
 	s.proseToStderr = true
 	s.takeOverHint = takeOverHint
@@ -463,8 +463,8 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	text := note + out.String() + errb.String()
 	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
 	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
-	// an agent's result budget holds, and the ones under the floor it asked for are the ones it
-	// did not want. The whole scan stays readable as ley://scans/<id> for as long as the daemon
+	// an agent's result budget holds, and detections under the requested floor are ones it asked
+	// to exclude. The whole scan stays readable as ley://scans/<id> for as long as the daemon
 	// remembers the job.
 	if o.minSNR > 0 {
 		kept := proto.Clone(scan).(*leylinev1.Scan)
@@ -500,8 +500,8 @@ func scanToolFailure(err error) error {
 }
 
 // gainlessRadio refuses a gain for a radio that has no gain to set (a file device plays a
-// recording as it was made) in a sentence, where the daemon would say "no gain element named"
-// and name nothing. With no device chosen, the daemon picks an idle one, so the refusal comes
+// recording as it was made) with a clear error, where the daemon would say "no gain element
+// named" and list none. With no device chosen, the daemon picks an idle one, so the refusal comes
 // only when no radio at all has a gain stage.
 func gainlessRadio(state *leylinev1.GetStateResponse, deviceID, gain string) error {
 	if gain == "" {
@@ -533,7 +533,7 @@ type listenSummaryArgs struct {
 }
 
 // listenMaxSeconds bounds a listen_summary, because a tool call that runs for
-// an hour is a hung agent, not a watch; a watch is a job (Milestone D.15).
+// an hour blocks the agent; a long watch is a job (Milestone D.15).
 const listenMaxSeconds = 300
 
 // meterStats is the listen_summary's reading of the meter: a client-side
@@ -1121,8 +1121,9 @@ func (srv *mcpServer) queryRecords(ctx context.Context, _ *mcp.CallToolRequest, 
 // the same for a quiet band and for a decoder that was never storing. The
 // daemon cannot tell the two apart in the page, but the job list can: a job
 // started without keep never wrote to the store, and no kept job at all means
-// there was nothing to search. Only with a kept job in the list is silence
-// the band's, and then listen_summary on its channel is the next question.
+// there was nothing to search. Only with a kept job in the list does an empty
+// page mean a quiet band, and then listen_summary on its channel is the next
+// step.
 func (srv *mcpServer) emptyPageReason(ctx context.Context, q *leylinev1.RecordQuery) string {
 	jobs, err := srv.client.ListJobs(ctx)
 	if err != nil {
@@ -1375,7 +1376,8 @@ type jobArgs struct {
 	Job string `json:"job" jsonschema:"the job: its id (job_...), an unambiguous id prefix, or its row number in list_jobs"`
 }
 
-// resolveJob names a job the way `ley jobs cancel` does: id, prefix or row.
+// resolveJob resolves a job reference the way `ley jobs cancel` does: id,
+// prefix or row.
 func (srv *mcpServer) resolveJob(ctx context.Context, sel string) (*leylinev1.Job, error) {
 	jobs, err := srv.client.ListJobs(ctx)
 	if err != nil {

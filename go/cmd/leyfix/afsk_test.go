@@ -74,7 +74,7 @@ func TestAPRSFixtureDecodes(t *testing.T) {
 }
 
 // TestGenerateSkipsAPRSWhenTooShort checks the guard that keeps a half-second
-// file from claiming three packets it cannot hold.
+// file from expecting three packets it cannot hold.
 func TestGenerateSkipsAPRSWhenTooShort(t *testing.T) {
 	var out bytes.Buffer
 	o := genOptions{out: t.TempDir(), rate: 2_400_000, duration: 0.5, seed: 1}

@@ -168,7 +168,7 @@ func TestResolveJob(t *testing.T) {
 			t.Errorf("%q resolved to %v (%v)", sel, j.GetJobId(), err)
 		}
 	}
-	// A prefix both jobs share names neither.
+	// A prefix both jobs share matches neither.
 	if _, err := ResolveJob(jobs, "job_0"); err == nil {
 		t.Error("an ambiguous prefix should not resolve")
 	} else if se := (*SelectorError)(nil); !errors.As(err, &se) || !se.Ambiguous {

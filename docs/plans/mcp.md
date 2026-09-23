@@ -35,13 +35,13 @@ enrichment in Go, in the client, not in the daemon.
 
 ## Where the server lives
 
-The decision, made decisively: **the MCP server is a Go program that reuses `go/pkg/leyline`, shipped
+The decision: **the MCP server is a Go program that reuses `go/pkg/leyline`, shipped
 as a `ley mcp` subcommand. It dials the daemon's UDS and translates MCP tool calls into leyline.v1
 RPCs. It is a client of the daemon, not a second surface on it.** The two options weighed:
 
 **(a) A Go MCP server reusing the client library.** `ley mcp` runs an MCP server; the agent's MCP
 client speaks to it, and it speaks leyline.v1 to the daemon over the same UDS every other client
-uses. This is what `CLAUDE.md`'s top line already names — "the MCP adapter shares its Go client
+uses. This is what `CLAUDE.md`'s top line already states — "the MCP adapter shares its Go client
 library" — and what invariant 1 requires: the adapter is a client that speaks the contract, not a
 new protocol on the daemon. The interpretation folds it needs already exist in Go (`records.Table`,
 `records.Summary`), and enrichment is a Go HTTP call the daemon is forbidden to make. The Go MCP SDK
@@ -52,11 +52,11 @@ protocol surface to the daemon, which invariant 1 calls a side channel and forbi
 the `go/pkg/records` folds and the enrichment lookups in Swift, duplicating code the Go client
 already has; it pulls interpretation state — entity tables, labels — into the daemon, against the
 state boundary and the spirit of invariant 7; it makes external HTTP enrichment calls from the
-daemon, which `decoders.md` §9 forbids in as many words; and it leans on less-mature Swift MCP
+daemon, which `decoders.md` §9 explicitly forbids; and it leans on less-mature Swift MCP
 tooling for a process whose hot path (invariant 4) should carry no agent-driven concurrency it does
 not have to.
 
-**Verdict: (a), strongly, as a `ley mcp` subcommand.** Option (b) conflicts with three load-bearing
+**Verdict: (a), as a `ley mcp` subcommand.** Option (b) conflicts with three core
 invariants (1, 2, 7) and one explicit design rule (enrichment adapter-side), and buys nothing in
 return: `ley` is Go and always present on the machine, so there is no "the daemon is the only process
 here" case that would justify a daemon-native server. No genuine reason for (b) was found.
@@ -83,13 +83,13 @@ HTTP mode is never shipped. This tracks the control-plane decision that remote a
 milestone with auth designed properly" (`control-plane.md`, "Auth for TCP remote access"); the HTTP
 transport waits on that milestone and is a later build item, not the first.
 
-**The trust the adapter exposes, stated plainly.** The daemon socket has no authentication: anything
+**What the adapter exposes.** The daemon socket has no authentication: anything
 that opens it can tune, take over a sweep, destroy another client's capture and read samples
 (`SECURITY.md`, "What the daemon trusts"). An MCP server hands that surface to an agent. Over stdio
 that is the same boundary a local shell already crosses, and acceptable. Over HTTP it is a new
 boundary and needs the token above. Two further guards carry over from the designs: the don't-disturb
-default is enforced adapter-side as refusal-with-reason and daemon-side as policy, belt and
-suspenders (`semantic-tier.md`), so a `tune`-like tool refuses to retune an active capture unless the
+default is enforced twice, adapter-side as refusal-with-reason and daemon-side as policy
+(`semantic-tier.md`), so a `tune`-like tool refuses to retune an active capture unless the
 user said to take over; and the TX interlock (`decoders.md` §10, invariant 11) means no tool ever
 transmits — there is no TX in the contract yet, and when there is, an emission lease gates it, never
 an MCP tool.
@@ -125,17 +125,17 @@ at it," and it, `start_decode_job`, `list_decoders` and `list_entities` all read
 with the decoder tier (`Decoders.QueryRecords`/`SubscribeRecords`, `Jobs.StartJob(DecodeConfig)`,
 `go/pkg/records`). The blocked tools wait on capabilities named in other plans, not on the adapter.
 
-**`identify_signal` stays honest.** It returns measured characteristics — bandwidth, burst timing, a
-symbol-rate estimate, spectral shape — from the daemon, plus a modulation guess carrying its
-confidence, and a snapshot image the adapter renders. It never asserts a protocol. This is invariant
-12 and the honest-detector rule of `semantic-tier.md`: a guess is labelled a guess, a peak is never
-called a signal, and the tool's contract says so in its own description so an agent does not read more
-into it than the daemon measured.
+**`identify_signal` reports measurements, not protocols.** It returns measured characteristics —
+bandwidth, burst timing, a symbol-rate estimate, spectral shape — from the daemon, plus a modulation
+guess carrying its confidence, and a snapshot image the adapter renders. It never asserts a
+protocol. This is invariant 12 and the honest-detector rule of `semantic-tier.md`: a guess is
+labelled a guess, a peak is never called a signal, and the tool's description states this so an
+agent does not read more into the output than the daemon measured.
 
 ## `whats_out_there`, the composite
 
-The one tool that is a new capability rather than a rendering of one RPC, and the demonstration that
-sells the project (`decoders.md` §9). It runs a pipeline over pieces that already exist:
+The one tool that is a new capability rather than a rendering of one RPC, and the project's main
+demonstration (`decoders.md` §9). It runs a pipeline over pieces that already exist:
 
 1. **Sweep** a frequency range: `Jobs.StartJob(ScanConfig{once})` then `Jobs.GetScan`, the same path
    as the `scan` tool and `ley scan`. Out come detections: centre, bandwidth, SNR, first/last seen.
@@ -150,9 +150,9 @@ sells the project (`decoders.md` §9). It runs a pipeline over pieces that alrea
    rendered one-line by `records.Summary`.
 
 It reuses scan (built), `ListDecoders`/`StartDecode`/`QueryRecords` and the `records` folds (built);
-the new parts are the orchestration and `identify_signal`. Honesty carries through the whole tool: a
-candidate decoder is a match hypothesis, not a claim the signal is that protocol until records
-decode, and every label carries the confidence the characteriser stated.
+the new parts are the orchestration and `identify_signal`. The same rule holds through the whole
+tool: a candidate decoder is a match hypothesis, not a claim the signal is that protocol until
+records decode, and every label carries the confidence the characteriser stated.
 
 ## Resources
 
@@ -180,16 +180,16 @@ does), and the `ley` mirror as the compatibility check that tool and verb read t
 ### MCP-1 `[x]` The server and the stdio transport
 
 `ley mcp` runs an MCP stdio server built on the official Go SDK, dialling the daemon UDS through
-`go/pkg/leyline` — the same `Dial` every verb uses, so the adapter is provably a client. Tool
-registration is a table; the first tool can be `list_devices` to prove the round trip. Verify: an MCP
-client lists the server's tools; a fake-daemon test that the server's daemon connection is the shared
-client and nothing else.
+`go/pkg/leyline` — the same `Dial` every verb uses, so the adapter is verifiably an ordinary client.
+Tool registration is a table; the first tool can be `list_devices` to prove the round trip. Verify:
+an MCP client lists the server's tools; a fake-daemon test that the server's daemon connection is
+the shared client and nothing else.
 
 ### MCP-2 `[x]` Orient and control tools
 
 `list_devices`, `get_state`, `tune`, mapped to the `Control` RPCs, with `tune` refusing to retune an
 active capture unless told to take over (don't-disturb, adapter-side). Verify: a fake-daemon test per
-tool; an e2e that `tune` refuses an active capture and names why.
+tool; an e2e that `tune` refuses an active capture and gives the reason.
 
 ### MCP-3 `[x]` Observe tools
 
@@ -256,7 +256,7 @@ refuses an unauthenticated request; a token-bearing MCP client drives the same t
 
 - **MCP inside the daemon.** The rejected option: a second protocol surface (invariant 1), Swift
   reimplementation of Go folds and enrichment, interpretation state and external HTTP in the daemon
-  (invariant 7 and `decoders.md` §9). The daemon stays a radio.
+  (invariant 7 and `decoders.md` §9).
 - **Custom tool shapes.** Tools return the standard proto3 JSON mapping, the same as `ley --json`; no
   bespoke schemas an agent would learn separately from the contract.
 - **Client-side DSP in the adapter** (invariant 2). Characterisation measurements come from the
@@ -276,8 +276,8 @@ refuses an unauthenticated request; a token-bearing MCP client drives the same t
   Decide when a remote-agent story is real, not before (`control-plane.md`, "Auth for TCP remote
   access").
 - **`list_entities` as a tool versus leaving agents to call `query_records` and fold themselves.**
-  Leaning tool, because the fold is the value and it is already written; revisit if the tool count
-  starts to crowd an agent's choices.
+  Leaning towards a tool, because the fold is the useful part and it is already written; revisit if
+  the tool count starts to crowd an agent's choices.
 - **`identify_signal` characteristics as a resource** — persist only when job-initiated, under
   persistence-follows-intent (the same question `decoders.md` open item 12 leaves for the
   characteriser).
@@ -296,8 +296,6 @@ this plan uses. Checked 2026-09-13 against the SDK's releases page
 (https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp); the v1.0.0 notes are at
 https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.0.0. `go.mod` pins v1.7.0, the
 newest stable release on 2026-09-14 (v1.8.0 was at its second pre-release).
-</content>
-</invoke>
 
 ## What the build found
 
@@ -309,11 +307,11 @@ control and observe; the AFSK fixture and the real APRS plugin for the decoder t
 --json` and `ley state --json` message for message; `scan`, `list_jobs` and `query_records` against
 their verbs' counts). What the second look found:
 
-- **Presence is the whole lifetime story.** The server holds one `WatchEvents` stream open for its
+- **Presence decides lifetime.** The server holds one `WatchEvents` stream open for its
   life, and every session a tool opens shares the process's client id, so a channel `tune` makes on
-  a short-lived session outlives that session on the server's presence and dies with the agent's
+  a short-lived session outlives that session on the server's presence and ends with the agent's
   conversation. That is invariant 8 ("ephemeral unless explicitly kept") without a `stop` tool:
-  `keep: true` is the one way an agent leaves something behind. The fake and the real daemon both
+  `keep: true` is the only way an agent leaves something running. The fake and the real daemon both
   keep presence per client id (`docs/dev/engine-internals.md`, "Presence"); the e2e waits for the
   daemon's five-second grace and checks the channel is gone.
 - **Each tool call is its own session; the server keeps no mirror.** Two tools may run at once and
@@ -321,39 +319,40 @@ their verbs' counts). What the second look found:
   its own connection, and the server's event stream is drained and discarded. The cost is a gRPC
   connection per call, which `ley` pays per invocation anyway.
 - **The refusal is made twice, in different words.** The adapter checks the fresh snapshot before
-  any write and names the listening channels, their frequencies and owners, ending with `take_over:
-  true`; `ensureCapture` refuses again with the daemon's picture if that was stale, and a
-  `takeOverHint` on the session swaps its `--retune` remedy for the argument an agent has. A
-  refused call leaves the daemon's event sequence untouched, and the test says so.
-- **The verbs' renderers are the summaries.** Rather than a second set of words, every tool runs
+  any write and lists the listening channels, their frequencies and owners, ending with `take_over:
+  true`; `ensureCapture` refuses again with the daemon's current state if the snapshot was stale, and
+  a `takeOverHint` on the session swaps its `--retune` remedy for the tool argument an agent can
+  pass. A refused call leaves the daemon's event sequence untouched, and the test checks that.
+- **The verbs' renderers are the summaries.** Rather than a second set of messages, every tool runs
   its session against an `App` whose stdout and stderr are buffers with plain styles, and returns
   what the verb would have printed: `printScan`, `printJobTable`, `printRecordTable`, `renderTrack`
-  and the tune's own decision lines. The one rewrite is a remedy that named a flag.
+  and the tune's own decision lines. The only rewritten line is a remedy that mentioned a CLI flag.
 - **Composites, not custom shapes.** `tune` and `listen_summary` answer with more than one message,
   so they return an envelope of proto3 JSON values under fixed keys. The one client-side statistic,
   `listen_summary`'s `meter`, marshals NaN as `null`: encoding/json refuses NaN, and the real daemon
   reports a squelch that is off as one, which the fake never did.
-- **A recording tunes only its own centre.** The real-daemon e2e first tried to tune the file device
-  400 kHz off its centre and was refused with `FREQ_OUT_OF_RANGE`; the capture has to be made at the
-  fixture's centre and the carriers found inside it. The fake's radio has no such limit, which is
-  why the e2e exists.
+- **A file device tunes only to its recorded centre.** The real-daemon e2e first tried to tune the
+  file device 400 kHz off its centre and was refused with `FREQ_OUT_OF_RANGE`; the capture has to be
+  made at the fixture's centre and the carriers found inside it. The fake's radio has no such limit,
+  which is why the e2e exists.
 - **The PNG draws with its own glyphs.** Axis labels need a font and the repository has no image
   library; the fourteen 5x7 bitmaps `FormatFrequency` and a dB label need are a map in
   `mcp_png.go`, and `ui.LevelRGB` was exported so the picture's ramp is the terminal chart's.
-- **The adapter is measured, not assumed.** `leyeval` (`go/cmd/leyeval`, `evals/scenarios`,
+- **The adapter has an eval harness.** `leyeval` (`go/cmd/leyeval`, `evals/scenarios`,
   `docs/dev/evals.md`) runs an agent against `ley mcp` on a daemon playing fixtures and grades the
   answer and the tool calls: which carriers a survey found, which stations a decode named, whether
   a refusal was respected, whether an empty store was told apart from a dead chain. Every
-  scenario's truth is a recording's, so no radio or operator is needed and runs compare.
+  scenario's ground truth comes from a recording, so no radio or operator is needed and runs are
+  comparable.
 - **The text was not reaching the agent.** The first eval transcripts (2026-09-17) showed every
   successful result arriving as the JSON alone: Claude Code hands the model only
   `structuredContent` when a tool returns one and drops the content blocks
-  (anthropics/claude-code#55677). Every sentence above had been written for nobody. Results are
+  (anthropics/claude-code#55677). None of the prose results had been reaching the model. Results are
   now two text blocks, prose then JSON, and no `structuredContent` (`jsonResult` in `mcp.go`);
   the evals then shed a third of their tool calls, since the agent could read what the tools
-  said. The JSON is the same proto3 mapping, read from the last block.
-- **The blocked tools are not stubs.** A tool that only refuses spends an agent's context on
-  nothing, so `get_transcript`, `identify_signal`, `lookup_identity` and `whats_out_there` are
-  named in the server's instructions with the milestone each waits on and registered nowhere; the
-  guide's stub rule is for a person typing a verb. (`find_recordings` was one of them until C.12
-  built its store.)
+  printed. The JSON is the same proto3 mapping, read from the last block.
+- **The blocked tools are not stubs.** A tool that only refuses wastes an agent's context, so
+  `get_transcript`, `identify_signal`, `lookup_identity` and `whats_out_there` are named in the
+  server's instructions with the milestone each waits on and are not registered; the guide's stub
+  rule is for a person typing a verb. (`find_recordings` was one of them until C.12 built its
+  store.)

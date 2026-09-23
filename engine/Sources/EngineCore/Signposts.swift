@@ -57,7 +57,7 @@ public enum Signpost {
     }
 
     /// Opaque token returned by `begin`, consumed by `end`. Holds a value-type `OSSignpostID`: the
-    /// `OSSignposter.beginInterval` API is deliberately avoided because its `OSSignpostIntervalState`
+    /// `OSSignposter.beginInterval` API is avoided because its `OSSignpostIntervalState`
     /// is a class instance, i.e. a heap allocation per interval while recording.
     public struct Token {
         #if canImport(os)

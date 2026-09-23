@@ -41,7 +41,7 @@ type Scenario struct {
 	// often the agent leaves the tools).
 	Mode string `yaml:"mode"`
 	// Skip, when set, is why this scenario is not run (a fixture that only exists on one machine
-	// is handled by the runner; this is for a scenario parked on purpose).
+	// is handled by the runner; this is for a scenario disabled by hand).
 	Skip string `yaml:"skip"`
 
 	// Path is where the scenario was read from.
@@ -87,8 +87,7 @@ type JobStep struct {
 }
 
 // Check is one graded assertion. `Type` picks the checker (checks.go); the rest are its
-// parameters, which differ by type and are left loose on purpose so a new checker needs no new
-// schema.
+// parameters, which differ by type and are left untyped so a new checker needs no new schema.
 type Check struct {
 	Type string `yaml:"type"`
 	// Path is a dotted path into the answer block: "carriers", "stations", "tone.hz".

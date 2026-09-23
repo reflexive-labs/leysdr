@@ -2,11 +2,11 @@
 
 // The inspector's lower half (docs/design/app-design-handoff-m2.md, Regions 4 and 5): the log
 // of recent transmissions on the tuned channel, straight from the façade's `TransmissionLog`,
-// and three disclosure groups holding the raw numbers the panel has said in words, the
-// demodulator as text, and the way to the device menu. Nothing here controls the radio: the
-// log's rows are not clickable (the shared selection with the waterfall is M3's, and a row that
-// highlights nothing is worse than one that does nothing), and Demodulator is a reading of what
-// the transport bar edits, not a second set of controls.
+// and three disclosure groups holding the raw numbers behind the panel's word labels, the
+// demodulator as text, and a link to the device menu. Nothing here controls the radio: the
+// log's rows are not clickable (the shared selection with the waterfall is M3's, and a clickable
+// row that highlights nothing would be misleading), and Demodulator displays what the transport
+// bar edits, not a second set of controls.
 
 import Foundation
 import LeylineClient
@@ -15,10 +15,10 @@ import SwiftUI
 
 /// Region 4: a section header, a three-column head, then the rows, newest first, the open one
 /// on `raised` ground with `now` in `accent`. Time is wall clock when the anchor covers it and
-/// relative (`−2:14`) when it does not; both shapes appear in one list without comment, which is
-/// honest, and the alternative is a timestamp nobody measured. Tone is not a column: a CTCSS
-/// tone the daemon reported is appended to that row's signal cell in `good`, and a row without
-/// one says nothing about tones.
+/// relative (`−2:14`) when it does not; both formats can appear in one list, because the
+/// alternative is a timestamp nobody measured. Tone is not a column: a CTCSS tone the daemon
+/// reported is appended to that row's signal cell in `good`, and a row without one leaves the
+/// tone blank.
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
@@ -103,7 +103,7 @@ struct LogRow: View {
         .background(open ? Theme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
     }
 
-    /// ` · PL 100.0` in `good` when the daemon named a tone under this transmission.
+    /// ` · PL 100.0` in `good` when the daemon reported a tone under this transmission.
     private var toneText: Text {
         guard let tone else { return Text("") }
         return Text(String(format: " · PL %.1f", tone.standardHz)).foregroundStyle(Theme.good)
@@ -111,16 +111,16 @@ struct LogRow: View {
 }
 
 /// Region 5. Nothing in these groups is required for anything above them to work: the M1
-/// handoff's sentence, kept findable here as the M2 handoff asks. They hold the numbers the
-/// panel has already said in words, the demodulator as text, and the way to the device menu.
+/// handoff's sentence, kept findable here as the M2 handoff asks. They hold the numbers behind
+/// the panel's word labels, the demodulator as text, and a link to the device menu.
 /// Collapsed by default and remembered, per group, in the defaults.
 struct DisclosureSection: View {
     @Environment(AppSession.self) private var session
     @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
 
     // One group, not the handoff's three: the demodulator's values are the transport bar's and
-    // the device and gain are the header's chip, and a second reading of either was a second
-    // place to look (the owner, 2026-09-21).
+    // the device and gain are the header's chip, and showing either twice meant two places to
+    // look (the owner, 2026-09-21).
     var body: some View {
         VStack(spacing: 0) {
             DisclosureRow(title: "Measurements", hint: "dBFS, Hz", open: $measurementsOpen) {

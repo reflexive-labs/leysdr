@@ -2,7 +2,7 @@
 
 // A fake rtl_tcp server, shared by the device tests in EngineCoreTests and the attach/detach tests
 // in LeylineDaemonTests. Not part of the product: this target exists only so both suites can drive
-// the same impersonator.
+// the same fake server.
 
 import EngineCore
 import Foundation
@@ -12,7 +12,7 @@ import Glibc
 import Darwin
 #endif
 
-/// Minimal rtl_tcp impersonator: accepts one client, sends the 12-byte header, streams a running
+/// Minimal fake rtl_tcp server: accepts one client, sends the 12-byte header, streams a running
 /// byte counter (`byte k == UInt8(k)`) and records every 5-byte command it receives.
 public final class FakeRTLTCPServer: @unchecked Sendable {
     public let port: UInt16

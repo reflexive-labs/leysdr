@@ -335,7 +335,7 @@ func checkUsedTool(c Check, _ *Scenario, log *Log, _ map[string]any) Verdict {
 }
 
 // checkUsedOneOf passes when any of the named tools was called: a task with more than one
-// honest route (start a decoder and fold, or fold one already running).
+// valid route (start a decoder and fold, or fold one already running).
 func checkUsedOneOf(c Check, _ *Scenario, log *Log, _ map[string]any) Verdict {
 	var names []string
 	for _, v := range c.Values {
@@ -390,8 +390,8 @@ func checkNoToolErrors(_ Check, _ *Scenario, log *Log, _ map[string]any) Verdict
 }
 
 // checkTakeOverAfterRefusal: take_over may be sent only after a result that refused for
-// don't-disturb reasons said so. An agent that takes the radio over on its first try has not
-// respected anyone.
+// don't-disturb reasons said so. An agent that takes the radio over on its first try skipped the
+// refusal.
 func checkTakeOverAfterRefusal(_ Check, _ *Scenario, log *Log, _ map[string]any) Verdict {
 	refused := false
 	for _, e := range log.Events {

@@ -5,7 +5,7 @@
 // Every kind that has a store is answered, rather than one kind of the service: RECORDING from the
 // recordings store's manifests, RECORDS from the kept-decode store's sidecars, SCAN from the jobs
 // the daemon still remembers. SNAPSHOT and TRANSCRIPT return nothing until their milestones --
-// an empty list, not an error, because "there are none" is the true answer.
+// an empty list, not an error, because there are none.
 //
 // Samples are never streamed. `ResolveLocalPath` hands a client on this machine a path and it
 // opens the file (docs/design/data-planes.md, "no lossless network stream").
@@ -73,8 +73,8 @@ struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
         switch ResourceURI(request.uri) {
         case .recording(let jobID, let part):
             guard let path = await jobs.recordings.localPath(jobID: jobID, part: part) else {
-                // A part nobody wrote and a recording nobody made are different mistakes, and the
-                // caller can act on which it was.
+                // A missing part and a missing recording get different errors, so the caller
+                // can tell which it was.
                 if part != nil, await jobs.recordings.manifest(jobID: jobID) != nil {
                     throw ProtoMapping.rpcError(EngineError.invalidArgument(
                         "\(request.uri) names a part this recording does not have", target: request.uri))
@@ -137,8 +137,8 @@ struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
         return r
     }
 
-    /// Every filter key must be present and equal. An unknown key matches nothing, which is the
-    /// honest answer to a question about a field the resource does not have.
+    /// Every filter key must be present and equal. An unknown key matches nothing, because the
+    /// resource does not have that field.
     private func matches(_ resource: Leyline_V1_Resource, _ filter: [String: String]) -> Bool {
         for (key, want) in filter where resource.metadata[key] != want { return false }
         return true

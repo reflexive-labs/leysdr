@@ -19,7 +19,7 @@ your program is logged as a gap and restarted; it never takes the daemon down.
 
 So the division is fixed: **the daemon measures the signal, you interpret it.** You never set
 `rssi_dbfs`, `snr_db`, `record_id`, `job_id`, `seq` or `channel_id` — the daemon overwrites them,
-because it is the thing that knows. You set what the protocol said.
+because only it has those values. You set the fields the protocol carries.
 
 ## The manifest
 
@@ -57,10 +57,10 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
 ```
 
 - **`recipe`** is the tuning your decoder needs, and it is what makes `ley decode aprs` need no
-  arguments. `frequenciesHz` lists where the protocol lives; the first is the default and
+  arguments. `frequenciesHz` lists the protocol's frequencies; the first is the default and
   `ley decode <name> --freq` picks another or overrides it. `mode`, `bandwidthHz` and `gain`
   (`GAIN_LEAVE` keeps whatever a borrowed capture is set to; `GAIN_AUTO` asks for AGC on one the job
-  creates) describe the channel. Sample rate is the daemon's to choose; leave it 0.
+  creates) describe the channel. The daemon chooses the sample rate; leave it 0.
 - **`input.tap`** is which stage of the channel you read. `TAP_AUDIO` is what a listener hears, after
   de-emphasis and the limiter; `TAP_DEMOD` is the discriminator before any of that, which a data
   decoder usually wants because de-emphasis tilts the tones a modem keys on. `input.mode` is
@@ -145,8 +145,8 @@ not the project's.
 ## What a decoder may not do
 
 - **Decode only what is in the clear.** No decryption of protected traffic.
-- **No patent-encumbered voice.** The digital-voice vocoders (AMBE and its kin) are deliberately out
-  of scope; the unencrypted metadata in those same protocols is fair game. The
+- **No patent-encumbered voice.** The digital-voice vocoders (AMBE and its kin) are out of scope;
+  the unencrypted metadata in those same protocols may be decoded. The
   [decoder design](../design/decoders.md), "Constraints and boundaries", is the full statement.
 - **Never touch the radio.** A decoder receives samples and emits records. Retuning, sink
   management and everything on the control plane belong to the daemon.

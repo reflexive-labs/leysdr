@@ -113,7 +113,7 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 				}
 				o.deviceID = dev.DeviceId
 			}
-			// The report and the JSON are the machine's; everything monitor says is for a person.
+			// The report and the JSON go to stdout for scripts; all other prose goes to stderr.
 			s.proseToStderr = true
 			return runMonitor(cmd.Context(), s, o)
 		},
@@ -138,7 +138,7 @@ type monitorCarrier struct {
 	peakSNR  float64
 	// looks is the rows the detector actually saw this carrier in; looksPossible is the rows that
 	// covered its frequency. Both are cumulative and grow with every update, so the carrier keeps
-	// the largest of each: looks/looksPossible is the fraction of the watch it was truly on air,
+	// the largest of each: looks/looksPossible is the fraction of the watch it was actually on air,
 	// which HELD (a first-to-last span) is not.
 	looks         uint32
 	looksPossible uint32
@@ -156,7 +156,7 @@ type monitorCarrier struct {
 // activity is the carrier's on-air share of each of sparkCells equal slices of the watch: the
 // updates that arrived in the slice over the rows the detector produced in it. rowsPerSec is
 // the detector's row rate (monitorRowRate); with no look counts to derive it from, a slice
-// with any update reads full rather than claiming a share nobody measured.
+// with any update reads full rather than showing a share that was never measured.
 func (c *monitorCarrier) activity(watched, rowsPerSec float64) []float64 {
 	counts := sliceCounts(c.hits, watched, sparkCells)
 	expected := rowsPerSec * watched / sparkCells
@@ -306,7 +306,7 @@ follow:
 			interrupted = true
 			break follow
 		case <-poll.C:
-			// A backstop, not the mechanism: job state arrives on the event stream, but a stream
+			// A fallback: job state normally arrives on the event stream, but a stream
 			// can end cleanly or drop an event, and without this the watch would never return.
 			j, gerr := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 			if gerr != nil {
@@ -472,8 +472,8 @@ func absDiff(a, b uint64) uint64 {
 }
 
 // monitorHidden counts, by reason, the carriers a filter left out of the log, so the report can
-// say what it dropped and how to see it. Hiding what was heard is a different answer from an empty
-// band, and each reason has its own remedy.
+// say what it dropped and how to see it. A band with hidden carriers is not an empty band, and
+// each reason has its own remedy.
 type monitorHidden struct {
 	weak  int // peak never cleared --min-snr
 	brief int // held for less than --min-hold
@@ -544,14 +544,14 @@ func isSkirtOf(c *monitorCarrier, peers []*monitorCarrier, skirtDb float64) bool
 
 // printMonitorReport draws the transmission log on stdout, sorted by first appearance, and the
 // summary sentence on stderr. The filters (weak, brief and skirt) leave carriers off the log and
-// are tallied on stderr, so hiding what was heard never reads as an empty band.
+// are tallied on stderr, so a filtered log is never mistaken for an empty band.
 func printMonitorReport(app *App, o monitorOptions, order []string, carriers map[string]*monitorCarrier, watched time.Duration) {
 	st := app.ErrStyle
 	rows, hidden := filterMonitorCarriers(order, carriers, o)
 	if len(rows) == 0 {
 		if hidden.any() {
-			// Hiding what was heard is not the same answer as hearing nothing, and the remedy
-			// differs: a longer watch will not bring back a carrier a filter left out.
+			// Filtered carriers are not the same as an empty band, and the remedy differs: a
+			// longer watch will not bring back a carrier a filter left out.
 			fmt.Fprintf(app.Stderr, "%s heard, all filtered out (%s)\n", plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o))
 			fmt.Fprintf(app.Stderr, "drop the filters to see them: %s\n", st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
 			return
@@ -569,15 +569,15 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 			break
 		}
 	}
-	// TIME is a gutter, not the answer: Muted, and stamped only when it changes from the row
-	// above, since the rows are in first-appearance order and six identical stamps in a row say
-	// nothing the first did not. Units live in the headers (section 5), so the cells are numbers.
+	// TIME is secondary: Muted, and stamped only when it changes from the row above, since the
+	// rows are in first-appearance order and repeated identical stamps add nothing. Units live
+	// in the headers (section 5), so the cells are numbers.
 	cols := []column{
 		{head: "TIME", cells: timeGutter(ts, rows)},
 		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
 	}
 	cols = append(cols,
-		// A band with no named channels, which is most of them, does without the column.
+		// A band with no named channels, which is most of them, omits the column.
 		column{head: "CHANNEL", cells: mapCarrier(rows, func(c *monitorCarrier) string { return monitorChannel(c.centerHz) }), hideEmpty: true},
 		column{head: "HELD (s)", cells: mapCarrier(rows, heldCell), right: true},
 		column{head: "ON AIR (s)", cells: mapCarrier(rows, onAirCell), right: true},
@@ -600,7 +600,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		}
 	}
 	// A channel label gets the frequency beside it, since the label is what a radio shows and
-	// the number is what ley tune takes; a carrier with no label is named once.
+	// the number is what ley tune takes; a carrier with no label shows the frequency once.
 	label := leyline.FormatFrequency(best.centerHz)
 	if ch := monitorChannel(best.centerHz); ch != "-" {
 		label = ch + " (" + trimZeros(float64(best.centerHz)/1e6) + ")"
@@ -647,9 +647,9 @@ func liveLine(st ui.Style, o monitorOptions, now float64, c *monitorCarrier) str
 	return strings.Join(parts, "  ")
 }
 
-// refinedNote says once when the report's frequencies are not the ones the live feed printed: a
-// carrier's centre is its strongest reading, and the feed printed the reading it had when the
-// carrier was announced. Without this a reader counting the two lists gets two answers.
+// refinedNote prints a one-time note when the report's frequencies are not the ones the live feed
+// printed: a carrier's centre is its strongest reading, and the feed printed the reading it had
+// when the carrier was announced. Without the note the two lists disagree with no explanation.
 func refinedNote(rows []*monitorCarrier) string {
 	for _, c := range rows {
 		if c.announced && absDiff(c.centerHz, c.announcedHz) > 1_000 {
@@ -660,7 +660,7 @@ func refinedNote(rows []*monitorCarrier) string {
 }
 
 // monitorRampDb is how far above the cold end the SNR ramp reaches. The cold end is --min-snr,
-// the line between shown and hidden, so hue answers how far over that line a carrier stands; 40 dB
+// the line between shown and hidden, so hue shows how far above that line a carrier is; 40 dB
 // above it is the waterfall's range and full scale here too.
 const monitorRampDb = 40
 
@@ -704,7 +704,7 @@ func onAirCell(c *monitorCarrier) string {
 }
 
 // secsCell renders a span of seconds for a table cell whose header carries the unit, reading "<1"
-// below a second so a number is never rounded to a claim of nothing.
+// below a second so a short span is never rounded down to 0.
 func secsCell(s float64) string {
 	if s < 1 {
 		return "<1"
@@ -768,7 +768,7 @@ func printMonitorJSON(app *App, o monitorOptions, order []string, carriers map[s
 	return nil
 }
 
-// monitorFailure turns a failed watch into the sentence the user reads: the daemon's code is what
+// monitorFailure turns a failed watch into the error the user sees: the daemon's code is what
 // ley branches on, its status_detail the prose a person needs, mirrored on scanFailure. parts
 // are the halves of a band group the watch was asked for, which is what to watch instead when
 // the whole is too wide.
@@ -785,8 +785,8 @@ func monitorFailure(job *leylinev1.Job, st ui.Style, parts []string) string {
 	case leyline.CodeDeviceBusy:
 		return detail + ". " + st.Cmd("ley monitor --take-over") + " watches anyway, and hands the radio back afterwards"
 	case leyline.CodeInvalidArgument:
-		// The daemon's own sentence names the remedy ("use ley scan, which sweeps"); saying it
-		// again in other words reads as a second error leaking in beside the first.
+		// The daemon's own message gives the remedy ("use ley scan, which sweeps"); restating it
+		// in other words would read as a second error.
 		if len(parts) > 0 {
 			var cmds []string
 			for _, p := range parts {

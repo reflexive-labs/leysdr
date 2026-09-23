@@ -19,7 +19,7 @@ const waveformMinCols = 16
 // measured, and never the samples themselves.
 type waveformCol struct {
 	// present is false for a column the run has not reached yet, which is
-	// drawn as the blank it is rather than as silence.
+	// drawn blank rather than as silence.
 	present bool
 	index   uint64
 	seconds float64
@@ -35,7 +35,7 @@ type waveformCol struct {
 }
 
 // waveformFrame is one still of the clip: the window of columns, oldest first,
-// and what the daemon says about the stream they came from.
+// and what the daemon reports about the stream they came from.
 type waveformFrame struct {
 	cols []waveformCol
 	tap  leylinev1.AudioTap
@@ -178,7 +178,7 @@ func (v *waveformView) cell(c waveformCol, r int, scale float64) (string, int) {
 	if bottom-top <= 1 {
 		// An envelope that reaches no half either side of the centre is under
 		// the resolution of the picture, and a mark around the centre would
-		// claim more of it than the view knows.
+		// show detail the view does not have.
 		return v.centre(r, scopeRow(0, scale, halves)/2)
 	}
 	ink := levelsInk(waveformFrac(c.peak, scale))

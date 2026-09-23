@@ -1,27 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// What a running decode job says about itself between state changes. A job read RUNNING whether
-// its decoder had produced a thousand records or none, and a client could not tell a decoder that
-// was working from one that had never heard a thing without subscribing to its records; an agent
+// The status detail a running decode job reports between state changes. A job read RUNNING
+// whether its decoder had produced a thousand records or none, and a client could not tell a
+// working decoder from one that had produced nothing without subscribing to its records; an agent
 // testing `ley mcp` fell back to `ps` to check the plugin was alive. The count and the age of the
 // last record go in `Job.status_detail` (the proto's own example is "3 gaps logged"), refreshed on
-// a timer rather than per record so the event stream is not flooded: the first record is said at
-// once, and after that the detail moves every `interval` while records are arriving. Silence
-// stays RUNNING (docs/plans/decoders.md, DEC-16); it just stops being invisible (DEC-23).
+// a timer rather than per record so the event stream is not flooded: the first record is published
+// at once, and after that the detail updates every `interval` while records are arriving. A job
+// with no records stays RUNNING (docs/plans/decoders.md, DEC-16), and the detail shows the count
+// (DEC-23).
 
 import Foundation
 
 struct DecodeLiveness: Sendable {
     /// How often a moving count is republished. Two seconds is fast enough that `ley jobs` typed
-    /// after a packet shows it, and slow enough that a busy decoder does not turn the event stream
-    /// into a record stream in disguise.
+    /// after a packet shows it, and slow enough that a busy decoder does not flood the event stream
+    /// with one event per record.
     static let interval: Duration = .seconds(2)
 
     private(set) var records: UInt64 = 0
     private var lastRecord: ContinuousClock.Instant?
     private var published: UInt64 = 0
 
-    /// Notes one delivered record. Returns true when this is the first, which is worth saying at once.
+    /// Notes one delivered record. Returns true when this is the first, which is published at once.
     mutating func noteRecord() -> Bool {
         records += 1
         lastRecord = .now
@@ -37,7 +38,7 @@ struct DecodeLiveness: Sendable {
         return detail(decoder: decoder)
     }
 
-    /// The running job's sentence: what it decodes with, how much it has heard, and how long ago.
+    /// The running job's status detail: the decoder, the record count and the last record's age.
     func detail(decoder: String) -> String {
         guard records > 0, let last = lastRecord else {
             return "decoding with \(decoder): no records yet"

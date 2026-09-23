@@ -24,9 +24,9 @@ func styledHelpApp() *App {
 	}
 }
 
-// TestHelpStyledStripsToGolden is the promise the help treatment makes: on a
-// terminal every screen takes ink, and stripping the ink gives back exactly
-// the piped screen the goldens hold. Nothing moves, so no golden changes.
+// TestHelpStyledStripsToGolden checks that on a terminal every help screen
+// takes ink, and stripping the ink gives back exactly the piped screen the
+// goldens hold. Nothing moves, so no golden changes.
 func TestHelpStyledStripsToGolden(t *testing.T) {
 	old := Version
 	Version = "0.0.0-test"

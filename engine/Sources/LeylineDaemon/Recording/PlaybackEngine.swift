@@ -13,8 +13,8 @@ import EngineCore
 import Foundation
 import Logging
 
-/// PCM S16 mono WAV, which is the only shape `PartWriter` writes. A reader that accepts more than
-/// the daemon can produce would be a promise nothing tests.
+/// PCM S16 mono WAV, which is the only shape `PartWriter` writes. Accepting any other format would
+/// add a code path nothing tests.
 struct WAVReader {
     let sampleRate: UInt32
     let channels: UInt16
@@ -158,7 +158,7 @@ actor PlaybackEngine {
     }
 
     /// Reads and pushes at the file's own rate. The sink's ring is the buffer, so a late tick is
-    /// absorbed rather than heard; a tick that would overfill it simply waits, which is what keeps
+    /// absorbed without a dropout; a tick that would overfill it simply waits, which is what keeps
     /// a two-hour recording from being read into memory.
     private func play() async {
         let started = ContinuousClock.now

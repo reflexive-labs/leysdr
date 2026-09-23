@@ -5,7 +5,7 @@
 // every 20 ms, and so does this side, so a frame's worth of writes is one message on the wire and
 // the last one is the one that counts. Writes are fire-and-forget: the confirmation is the state
 // event the daemon emits, folded by `DaemonMirror`, and a refusal is a `WriteRejected` event that
-// names the write's tag.
+// carries the write's tag.
 
 import Foundation
 import GRPCCore

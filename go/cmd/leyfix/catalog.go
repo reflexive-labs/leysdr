@@ -31,12 +31,12 @@ type fixture struct {
 	// expect returns the assertions for a file generated at rate.
 	expect func(rate float64) []iqfile.Expect
 	// minDurationS is the shortest file the fixture's expectations hold for; a
-	// packet fixture asserts a count, and half a second of it is not the same
-	// file with fewer samples. 0 means any duration.
+	// packet fixture asserts a count, and a shorter file holds fewer packets.
+	// 0 means any duration.
 	minDurationS float64
-	// fixedDurationS overrides --duration entirely: a fixture whose signal is a
-	// schedule in absolute seconds is that schedule or it is a different
-	// fixture. 0 means --duration decides.
+	// fixedDurationS overrides --duration entirely: a fixture whose signal
+	// follows a schedule in absolute seconds must be generated at that length.
+	// 0 means --duration decides.
 	fixedDurationS float64
 }
 
@@ -138,7 +138,7 @@ var catalog = []fixture{
 		// Half of the discrimination pair. 67.0 and 69.3 are 2.3 Hz apart, the
 		// tightest spacing on the EIA ladder: a detector whose resolution is a
 		// bin width cannot tell them apart, and one that snaps to the nearest
-		// standard tone will confidently name the wrong one.
+		// standard tone will report the wrong one.
 		name: "nfm_pl_67", centerHz: 146_520_000,
 		description: "NFM voice with a 67.0 Hz CTCSS tone; the low end of the ladder, 2.3 Hz from 69.3",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
@@ -171,10 +171,10 @@ var catalog = []fixture{
 		},
 	},
 	{
-		// The documented false positive, made into a fixture. 50 Hz mains hum
-		// lands on exactly 100.0 Hz at its second harmonic, is perfectly
-		// stable, and passes every frequency test a detector can apply. Only
-		// its deviation gives it away: hum is tens of Hz where PL is hundreds.
+		// The documented false positive as a fixture. 50 Hz mains hum lands
+		// on exactly 100.0 Hz at its second harmonic, is perfectly stable, and
+		// passes every frequency test a detector can apply. Only its deviation
+		// distinguishes it: hum is tens of Hz where PL is hundreds.
 		name: "nfm_hum", centerHz: 146_520_000,
 		description: "NFM voice with 100.0 Hz mains hum at 40 Hz deviation and no CTCSS: the false positive to reject",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},

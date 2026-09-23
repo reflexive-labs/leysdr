@@ -3,9 +3,9 @@
 package same
 
 // eventNames maps SAME event codes (EEE) to their human names. It is the
-// common set from the NWS SAME code list plus the national activations; a code
-// not here is not guessed, EventName returns it unchanged (invariant 12, the
-// detector stays honest).
+// common set from the NWS SAME code list plus the national activations. A code
+// not listed here is not guessed; EventName returns it unchanged (invariant
+// 12).
 var eventNames = map[string]string{
 	// National.
 	"EAN": "Emergency Action Notification",

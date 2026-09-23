@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// A name set is a name loaded back from a fresh open, a clear removes it, and an empty name is a
+// A name that is set is read back by a fresh open, a clear removes it, and an empty name is a
 // clear too, so `ley label id ""` and --clear reach one place.
 func TestStoreSetGetDeleteAndReload(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "labels.json")

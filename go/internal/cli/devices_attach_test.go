@@ -35,7 +35,7 @@ func TestDevicesAttachRTLTCP(t *testing.T) {
 			t.Errorf("stderr %q lacks %q", errOut, want)
 		}
 	}
-	// The radio is a radio like any other from here on.
+	// Once attached, the radio is listed like any other.
 	if table := mustRun(t, sock, "devices"); !strings.Contains(table, "rtl_tcp pi.local:1234") {
 		t.Errorf("the attached radio is not in ley devices:\n%s", table)
 	}

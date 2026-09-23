@@ -59,7 +59,7 @@ func TestErrorLineInkTargets(t *testing.T) {
 		},
 		{
 			// A parenthetical that lists accepted values is not a path and
-			// keeps its weight: the reader is meant to read it.
+			// is not dimmed: it is content the user needs.
 			"--squelch \"loud\" is not a squelch level (examples: -40, -40dB, off, auto)",
 			[]string{"(examples: -40, -40dB, off, auto)"},
 		},
@@ -91,7 +91,7 @@ func TestUnknownVerbIsHouseVoice(t *testing.T) {
 		}
 	}
 	// Cobra's suggestion mechanism is contractual and survives; when it
-	// fires, the topic list stands aside for it.
+	// fires, the topic list is left out.
 	_, _, err = runApp(t, helpApp(), "spectrun")
 	msg := err.Error()
 	if !strings.Contains(msg, "Did you mean this?\n  spectrum") {
