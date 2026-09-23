@@ -93,8 +93,10 @@ struct LogRow: View {
                 .frame(width: Theme.Layout.logTimeWidth, alignment: .leading)
             Text(length).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkSecondary)
                 .frame(width: Theme.Layout.logLengthWidth, alignment: .trailing)
-            (Text(signal).foregroundStyle(Theme.inkTertiary) + toneText)
-                .font(Theme.Font.valueSmall)
+            HStack(spacing: 0) {
+                Text(signal).foregroundStyle(Theme.inkTertiary)
+                toneText
+            }.font(Theme.Font.valueSmall)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 6).padding(.vertical, 3)

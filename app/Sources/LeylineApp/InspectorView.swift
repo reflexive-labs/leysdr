@@ -471,9 +471,11 @@ struct ReadingsView: View {
             raw = "—"
         }
         return ReadingRow(label: "On air", sentence: sentence, raw: raw) {
-            Text(state).reading()
-                .foregroundStyle(seconds == nil ? Theme.inkTertiary : Theme.inkSecondary)
-                + Text(" · \(clause)").font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
+            HStack(spacing: 0) {
+                Text(state).reading()
+                    .foregroundStyle(seconds == nil ? Theme.inkTertiary : Theme.inkSecondary)
+                Text(" · \(clause)").font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
+            }
         }
     }
 }
