@@ -42,14 +42,21 @@ The Go clients (ley and the github.com/dpup/leysdr/go/pkg/leyline library) impor
 
   Apache-2.0    github.com/oklog/ulid/v2, github.com/spf13/cobra,
                 google.golang.org/genproto/googleapis/rpc, google.golang.org/grpc
-  BSD-3-Clause  github.com/spf13/pflag, golang.org/x/net, golang.org/x/sys, golang.org/x/text,
-                google.golang.org/protobuf
+  BSD-3-Clause  github.com/spf13/pflag, github.com/yosida95/uritemplate/v3, golang.org/x/net,
+                golang.org/x/oauth2, golang.org/x/sync, golang.org/x/sys, golang.org/x/text,
+                golang.org/x/time, google.golang.org/protobuf
   MIT           github.com/aymanbagabas/go-osc52/v2, github.com/charmbracelet/colorprofile,
                 github.com/charmbracelet/lipgloss, github.com/charmbracelet/x/ansi,
                 github.com/charmbracelet/x/cellbuf, github.com/charmbracelet/x/term,
-                github.com/lucasb-eyer/go-colorful, github.com/mattn/go-isatty,
-                github.com/mattn/go-runewidth, github.com/muesli/termenv, github.com/rivo/uniseg,
+                github.com/google/jsonschema-go, github.com/lucasb-eyer/go-colorful,
+                github.com/mattn/go-isatty, github.com/mattn/go-runewidth, github.com/muesli/termenv,
+                github.com/rivo/uniseg, github.com/segmentio/asm, github.com/segmentio/encoding,
                 github.com/xo/terminfo
+  Apache-2.0    github.com/modelcontextprotocol/go-sdk, gopkg.in/yaml.v3
+  and MIT       (each has files under both licences; see its vendored licence text)
+
+  The NOTICE files google.golang.org/grpc and gopkg.in/yaml.v3 distribute are reproduced as
+  third_party/licenses/go_<module>.NOTICE.txt, as their licence requires.
 
 Nothing outside engine/ imports copyleft code, and the licence check refuses a dependency that
 would change that.

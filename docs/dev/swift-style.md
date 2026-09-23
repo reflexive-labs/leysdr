@@ -359,8 +359,8 @@ drive-by, for the reason section 2 gives, and a refactor nobody asked for is its
 **Do not fix what you did not break inside an unrelated diff.** Fixing it in the middle of a
 feature diff obscures both changes. Lint is the exception that is always fixed: `make lint` and
 `make app-lint` pass before work is handed over, and a failure you did not cause gets a commit of
-its own (AGENTS.md, Conventions). For anything else that was already broken, such as a red
-`make license-check`, flag it and move on.
+its own (AGENTS.md, Conventions). For anything else that was already broken, flag it and move
+on.
 
 Commit subjects, bodies and sign-off are in AGENTS.md and `../writing-guide.md`, "Commit messages
 and comments", not here.

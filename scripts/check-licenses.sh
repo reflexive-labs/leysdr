@@ -83,11 +83,14 @@ rows() { grep -v '^#' "$manifest" | awk -v k="$1" 'NF==4 && $1==k {print $2}' | 
 while read -r kind name lic file; do
   [ -f "third_party/licenses/$file" ] || bad "$name: third_party/licenses/$file is not vendored"
   grep -qF -- "$name" NOTICE || bad "$name: not named in NOTICE"
-  case "$kind" in
-    go) printf '%s' "$lic" | grep -Eqx "$permissive" || bad "$name is $lic; nothing outside engine/ may import copyleft code" ;;
-    swift|system) printf '%s' "$lic" | grep -Eqx "$engine_ok" || bad "$name is $lic, which the GPL-3.0 engine cannot link" ;;
-    *) bad "$name: unknown kind '$kind' in $manifest" ;;
-  esac
+  # A comma-separated list means every licence in it applies, so each one must be allowed.
+  for one in ${lic//,/ }; do
+    case "$kind" in
+      go) printf '%s' "$one" | grep -Eqx "$permissive" || bad "$name is $one; nothing outside engine/ may import copyleft code" ;;
+      swift|system) printf '%s' "$one" | grep -Eqx "$engine_ok" || bad "$name is $one, which the GPL-3.0 engine cannot link" ;;
+      *) bad "$name: unknown kind '$kind' in $manifest"; break ;;
+    esac
+  done
 done < <(grep -v '^#' "$manifest" | awk 'NF==4')
 
 # 4. The Go dependency graph (tests included) equals the manifest, and each vendored text still
@@ -107,6 +110,10 @@ while read -r _ name _ file; do
   src=$(first_of "$dir"/LICENSE* "$dir"/COPYING*)
   [ -n "$src" ] || continue
   cmp -s "$src" "third_party/licenses/$file" || bad "$name: third_party/licenses/$file differs from the module's own licence file ($src)"
+  # An Apache-2.0 module's NOTICE must ship with it, as the Swift packages' do (step 6).
+  notice=$(first_of "$dir"/NOTICE*)
+  [ -n "$notice" ] || continue
+  cmp -s "$notice" "third_party/licenses/${file%.txt}.NOTICE.txt" || bad "$name ships a NOTICE that third_party/licenses/${file%.txt}.NOTICE.txt does not match"
 done < <(grep -v '^#' "$manifest" | awk 'NF==4 && $1=="go"')
 
 # 5. The Swift packages the three Package.resolved files pin equal the manifest (each resolves the

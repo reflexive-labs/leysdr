@@ -79,7 +79,9 @@ file carries an `SPDX-License-Identifier` line matching its directory (GPL-3.0-o
 `engine/`, Apache-2.0 everywhere else, the generated `LeylineProto` included because it inherits the
 line from the `.proto` and lives outside `engine/`), `third_party/licenses/MANIFEST.txt` equals what
 `go.mod` and the three `Package.resolved` files pull in, each vendored text still matches the
-module's own, `NOTICE` names every row, and nothing outside `engine/` imports copyleft code. `scripts/check-licenses.sh
+module's own (and so does its NOTICE, where it ships one), `NOTICE` names every row, and nothing
+outside `engine/` imports copyleft code. A module whose files are under two licences lists both,
+comma-separated (`Apache-2.0,MIT`), and each must be allowed. `scripts/check-licenses.sh
 --fix` adds a missing header to a new file. Adding a dependency means adding its manifest row,
 copying its licence text (and NOTICE, if it ships one) beside it, and naming it in `NOTICE`; the
 check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is the decision.
