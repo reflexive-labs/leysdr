@@ -9,7 +9,8 @@
 // the six-stop ramp between the floor and floor + range; below the floor, when the floor is
 // the squelch, a short fade to the ground, so anything below the squelch goes dark. A pixel
 // column that covers several bins takes the loudest, so a carrier one bin wide is never lost
-// between two pixels.
+// between two pixels. A row captured while the radio clipped has its first two pixels in
+// `recording`, from a byte a ring slot beside the uniforms (plans/app.md, M2-8).
 
 enum WaterfallShader {
     static let source = """
@@ -29,6 +30,9 @@ enum WaterfallShader {
             float height;
             float rowsPerPixel;
             float fadeU8;       // how far under the floor the fade to the ground runs; 0 = no fade
+            float markR;        // `recording`, a clipped row's mark
+            float markG;
+            float markB;
         };
 
         struct VertexOut {
@@ -53,7 +57,8 @@ enum WaterfallShader {
         fragment float4 waterfall_fragment(VertexOut in [[stage_in]],
                                            texture2d<uint, access::read> rows [[texture(0)]],
                                            constant Uniforms &u [[buffer(0)]],
-                                           constant float4 *stops [[buffer(1)]]) {
+                                           constant float4 *stops [[buffer(1)]],
+                                           constant uchar *clipped [[buffer(2)]]) {
             const float3 ground = float3(0x0B / 255.0, 0x0D / 255.0, 0x0F / 255.0);
             // Age in rows: y = 0 is the newest row. Past what has been written there is nothing yet.
             uint age = uint(in.position.y * u.rowsPerPixel);
@@ -61,6 +66,11 @@ enum WaterfallShader {
                 return float4(ground, 1.0);
             }
             uint slot = (u.head + u.capacity - age) % u.capacity;
+            // A row captured while the radio clipped: its first two pixels are the mark.
+            // `position` is in drawable pixels, centres at 0.5 and 1.5.
+            if (in.position.x < 2.0 && clipped[slot] != 0) {
+                return float4(u.markR, u.markG, u.markB, 1.0);
+            }
             // The bins under this pixel column: the loudest wins.
             float x0 = in.position.x / u.width;
             float x1 = (in.position.x + 1.0) / u.width;

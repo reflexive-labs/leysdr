@@ -38,8 +38,12 @@ enum Theme {
     static let accent = Color(hex: 0xE8814A)
     /// Squelch open, a connected device, a bookmarked frequency.
     static let good = Color(hex: 0x2FB6A3)
-    /// Reserved; unused in M1.
-    static let recording = Color(hex: 0xB8483C)
+    /// The device dot for an unplugged radio or no daemon; the waterfall's clipped-row marks and
+    /// the gain slider's knob while the radio clips (plans/app.md, M2-8).
+    static let recordingHex: UInt32 = 0xB8483C
+    static let recording = Color(hex: recordingHex)
+    /// `recording` as an RGB triple in [0, 1], for the waterfall shader's row marks.
+    static var recordingRGB: SIMD3<Float> { rgb(recordingHex) }
     /// A reading that needs attention but is not an alarm: off tune, overdeviating, the radio
     /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
     /// with `accent` for the tuned channel.
@@ -53,12 +57,12 @@ enum Theme {
     static let levelStops: [Color] = levelStopsHex.map { Color(hex: $0) }
 
     /// The ramp as RGB triples in [0, 1], for the shader's uniforms.
-    static var levelStopsRGB: [SIMD3<Float>] {
-        levelStopsHex.map {
-            SIMD3(
-                Float(($0 >> 16) & 0xFF) / 255, Float(($0 >> 8) & 0xFF) / 255,
-                Float($0 & 0xFF) / 255)
-        }
+    static var levelStopsRGB: [SIMD3<Float>] { levelStopsHex.map(rgb) }
+
+    private static func rgb(_ hex: UInt32) -> SIMD3<Float> {
+        SIMD3(
+            Float((hex >> 16) & 0xFF) / 255, Float((hex >> 8) & 0xFF) / 255,
+            Float(hex & 0xFF) / 255)
     }
 
     /// The ramp at `frac` in [0, 1], interpolated between stops. A chart sets its own cold end
