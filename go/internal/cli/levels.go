@@ -21,8 +21,8 @@ import (
 // bins is a 2048-sample window: at a 48 kHz audio rate, 43 ms and 23 Hz a bin,
 // which puts a sub-audible tone in a band of its own rather than in the skirt
 // of the one above it and keeps a transient inside one row at the top rate.
-// Twenty rows a second is faster than anyone reads a meter, and the daemon
-// will not send more.
+// Twenty rows a second is about as fast as a bar meter can be read, and the
+// daemon will not send more.
 const (
 	levelsBins    = 1024
 	levelsRateMax = 20

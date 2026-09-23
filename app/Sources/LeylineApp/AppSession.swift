@@ -1129,8 +1129,8 @@ final class AppSession {
         writeGain(element: element, "auto") { $0.auto = true }
     }
 
-    /// A gain write always names its stage. A radio without that stage reports an error instead
-    /// of silently changing the first stage.
+    /// A gain write always names its stage. For a radio without that stage the window shows a
+    /// notice and writes nothing, rather than silently changing the first stage.
     private func writeGain(
         element elementName: String, _ words: String,
         _ fill: (inout Leyline_V1_GainWrite) -> Void

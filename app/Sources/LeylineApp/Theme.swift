@@ -69,7 +69,7 @@ enum Theme {
     /// (the noise line) and hot end.
     static func level(_ frac: Double) -> Color {
         // A meter with nothing measured yet hands over NaN, which clamps to itself and traps in
-        // `Int(_:)`; no reading maps to the cold end.
+        // `Int(_:)`; a missing reading is drawn at the cold end.
         guard frac.isFinite else { return levelStops[0] }
         let stops = levelStopsRGB
         let x = frac.clamped(to: 0...1) * Double(stops.count - 1)

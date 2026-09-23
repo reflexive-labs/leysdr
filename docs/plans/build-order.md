@@ -101,10 +101,10 @@ changed shape since D.13, and it waits until after the app.
 ## Milestone E — the Mac app
 
 Started 2026-09-18; the live plan is `docs/plans/app.md` (items APP-1 to APP-7 are E.1 to E.7,
-with what each landed). E.1 and E.2 are done: the `app/` package, the client façade and its tests
-against the real daemon, `make app*`, CI, the bundle script (`docs/dev/app.md`), and the spectrum,
-waterfall and click-to-hear window. E.3's controls and the file half of E.4 landed as the M1 cut,
-and the M2 inspector after it; E.4's CHIRP import and E.5 to E.7 are open.
+with what each landed). E.1 to E.3 are done: the `app/` package, the client façade and its tests
+against the real daemon, `make app*`, CI, the bundle script (`docs/dev/app.md`), the spectrum,
+waterfall and click-to-hear window, and the layer 1 controls. The file half of E.4 landed with
+them as the M1 cut, and the M2 inspector after it; E.4's CHIRP import and E.5 to E.7 are open.
 
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine

@@ -931,9 +931,9 @@ type Channel struct {
 	Agc         GainMode               `protobuf:"varint,7,opt,name=agc,proto3,enum=leyline.v1.GainMode" json:"agc,omitempty"`
 	State       ChannelState           `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ChannelState" json:"state,omitempty"` // unset on an event is the tombstone; see Capture.state
 	Persistent  bool                   `protobuf:"varint,9,opt,name=persistent,proto3" json:"persistent,omitempty"`                    // survives owner disconnect; jobs set this
-	// Set by jobs: the absolute frequency a channel returns to when its capture moves out from
-	// under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
-	// on it yet.
+	// Set by jobs: the absolute frequency a channel should return to when its capture moves out
+	// from under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing
+	// acts on it yet.
 	RequiredHz uint64      `protobuf:"varint,10,opt,name=required_hz,json=requiredHz,proto3" json:"required_hz,omitempty"`
 	Owner      *ClientInfo `protobuf:"bytes,11,opt,name=owner,proto3" json:"owner,omitempty"`
 	// Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;

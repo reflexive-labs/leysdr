@@ -552,9 +552,9 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// survives owner disconnect; jobs set this
   public var persistent: Bool = false
 
-  /// Set by jobs: the absolute frequency a channel returns to when its capture moves out from
-  /// under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
-  /// on it yet.
+  /// Set by jobs: the absolute frequency a channel should return to when its capture moves out
+  /// from under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing
+  /// acts on it yet.
   public var requiredHz: UInt64 = 0
 
   public var owner: Leyline_V1_ClientInfo {

@@ -297,8 +297,8 @@ clients own the same file (`app/Sources/LeylineClient/Bookmarks.swift:163`).
 
 **Anything under `#if canImport(Accelerate)`, `#if canImport(AppKit)` or `#if os(macOS)` is never
 compiled on Linux.** A vDSP kernel needs its portable twin and a row in `KernelParityTests`, or
-it goes untested on both platforms (`setup.md`, and the same trap `app.md`, "Building and
-running" records for views).
+it is never compiled in the Linux container, and on the Mac nothing checks it against the portable
+kernel (`setup.md`, and the same trap `app.md`, "Building and running" records for views).
 
 **Xcode's type checker is stricter than the Linux one.** A four-term shift chain the container
 accepted was refused on the Mac; one `loadUnaligned` per sample is the idiom both decoders use

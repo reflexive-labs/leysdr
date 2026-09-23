@@ -377,7 +377,7 @@ func sinkOrNil(sink *leylinev1.Sink) any {
 const takeOverHint = "Call again with take_over: true to move it anyway, or stop what is listening first"
 
 // refuseRetune is the don't-disturb refusal made adapter-side, as
-// docs/design/semantic-tier.md asks ("belt and suspenders"): when the radio
+// docs/design/semantic-tier.md asks, on top of the daemon's own: when the radio
 // is tuned somewhere the frequency does not fit and channels are listening
 // on it, refuse and name them before anything is written. ensureCapture
 // refuses again with the daemon's picture if this one is stale.

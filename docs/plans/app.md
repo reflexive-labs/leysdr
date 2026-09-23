@@ -102,7 +102,7 @@ Mac, and the spike's artifact (an Instruments trace and a findings note) is drop
 pending. The signposts stay in the code for whoever wants the measurement later. The ring
 decision stands where "Decisions" left it: gRPC, and the ring only if a window drops rows.
 
-### APP-3 `[ ]` Layer 1 controls (E.3)
+### APP-3 `[x]` Layer 1 controls (E.3)
 
 Frequency, mode, squelch, volume as Mac controls; drag-to-tune and scroll-to-zoom on the
 waterfall through the coalescer; keyboard shortcuts; the named failure states from telemetry
@@ -119,7 +119,9 @@ since has gone through `make app-run` there, and the state on 2026-09-19 is a wi
 audio, tunes by click, drag, scroll, keys, field, rail and bookmarks, and shows the band rail, the
 dB axis and the squelch-keyed waterfall. Nothing in M1 is still owed from the code (2026-09-20):
 CHIRP import follows M1 (APP-4), and the S1 trace was scratched (APP-2); what remains is the
-first-run checks each item lists.
+first-run checks each item lists. Ticked 2026-09-23: the owner confirmed M1 on the Mac on
+2026-09-20 (below), and the failure strip carried out of M1 landed with M2-3. Of the named
+failure states only clipping remains; the others were dropped on 2026-09-21 (`FailureState.swift`).
 
 Found 2026-09-19 on the Mac, a daemon matter the window works around: `Meter.snr_db` is
 `PowerMeter.snrDB`, the channel's power over its own running minimum across 5 s

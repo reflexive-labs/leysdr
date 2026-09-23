@@ -146,7 +146,7 @@ because in `ley`'s tables a dash means "no value". Shorten an id with an ellipsi
 | **design** | `design/` | why this way, and what did we measure? | `Status:` and companions; Context; the numbers; "Deliberately not"; open questions | remove the code blocks and it still reads; the doc changes before code that contradicts it |
 | **decision** | `decisions/` | what was decided, when, and what would reopen it | `Status: decided <date>`, the decision in bold, then why and what it costs | one decision per file, named after the item it resolves (`D2-`, `S3-`) |
 | **plan** | `plans/` | what lands, in what order, and what each step found | the design it implements, a status legend, items in build order | every item says how it is verified; a closing section records what the second look found |
-| **contract** | `dev/` | how the engine keeps its promises; how `ley` looks | the contract's scope and who must read it | code comments cite it by heading; tests parse the parts they can |
+| **contract** | `dev/` | the engine's implementation contract; how `ley` looks | the contract's scope and who must read it | code comments cite it by heading; tests parse the parts they can |
 
 Plan items carry an id (`SV-8`, `BW-2`, `R-4`) and a box: `[ ]` pending, `[x]` done, `[-]` dropped
 with the reason, `[d]` waiting on a decision. An item is ticked only when its tests pass and the

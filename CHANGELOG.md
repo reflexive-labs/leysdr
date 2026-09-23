@@ -40,8 +40,8 @@ Nothing has been released yet. This file starts with everything that exists on `
   deviation as `Quiet`, `Normal` or `Overdeviating`, time on air, and the last transmissions on the
   channel with the time each started, and a click on any word shows the number it came from. The
   channel's name leads, and a pencil renames it into `bookmarks.json`, so `ley bookmarks` lists the
-  name too. Band warnings (clipping, nothing above the floor) now show here instead of over the
-  waterfall, and the transport bar's signal readout moved here too. `View ▸ Show Inspector` (⌥⌘I)
+  name too. Band warnings (the radio clipping, the channel outside the capture) now show here
+  instead of over the waterfall, and the transport bar's signal readout moved here too. `View ▸ Show Inspector` (⌥⌘I)
   and the toolbar's right-hand button close and open it.
 - The meter reports how far off frequency a transmitter is and how hard it is deviating.
   `Meter.freq_error_hz` is the FM discriminator's DC over the meter interval, positive when the
@@ -144,5 +144,6 @@ Nothing has been released yet. This file starts with everything that exists on `
   at; a running decode job's detail shows how many records it has heard and how long ago; a decode
   job started with `--job` comes back after a daemon restart as the same job; the tone detector
   waits one second before reporting a PL, so synthesised voice is no longer reported as a tone.
-- Not yet: watch jobs and transcripts, the TUI dashboard, the Mac app
+- Not yet: durable watch jobs and transcripts (D.15), the terminal dashboard (D.14), and in the
+  Mac app, recording (E.5), CHIRP import (E.4) and a signed bundle (E.7)
   (`docs/plans/build-order.md` has the order).

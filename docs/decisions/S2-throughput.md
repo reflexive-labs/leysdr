@@ -203,5 +203,5 @@ release.
   dropped samples). This is headroom for the HackRF and Airspy class of radio on the roadmap, not a
   rate the shipped daemon reaches. At 2.4 MSPS the same path costs roughly a tenth of this.
 - What would reopen it: a demodulator or a stage added to the sample path, a move off Accelerate,
-  or the allocations pass above failing. A failure there still stops the all-Swift decision; it is
-not fixed by tuning.
+  or the allocations pass above failing. A failure there is a stop-and-escalate, as
+`AGENTS.md`, "Build order", says for S2, and is not fixed by tuning.

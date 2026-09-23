@@ -265,7 +265,7 @@ a row stamped with its block's first sample would be the same instant as the row
 Two inaccuracies in the row are documented rather than corrected.
 Bin 0 is DC, and the window puts a DC offset
 there about 6 dB above a tone of the same amplitude, with no mirrored copy of it further up the
-row — only the demod tap carries an offset worth correcting (AM's carrier), and bin 0 sits below the
+row — only the demod tap carries an offset worth naming (AM's carrier), and bin 0 sits below the
 lowest band a meter draws, so nothing is subtracted for it. And a row is emitted from the window as
 it stands when it comes due, so one that spans a retune straddles the two frequencies; at a couple
 of tens of milliseconds the smear is over before the next row, and pausing the meter across a

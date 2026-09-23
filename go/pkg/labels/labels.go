@@ -5,8 +5,8 @@
 // registry a deterministic fold over the record log and puts the one piece a fold cannot derive
 // -- the user's name for a device -- in the client (docs/design/decoders.md, "The state
 // boundary" and section 5, "Registry devices"). A label is keyed by device_id alone, because the
-// ids protocols carry (ICAO hex, MMSI, callsign-SSID, Acurite-Tower/2937) are globally unique,
-// so a label applies whichever decoder next receives that device; the protocol is kept only as
+// ids protocols carry (ICAO hex, MMSI, callsign-SSID, Acurite-Tower/2937) are the same across
+// decoders, so a label applies whichever decoder next receives that device; the protocol is kept only as
 // a note of where it was first labelled.
 package labels
 

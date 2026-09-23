@@ -86,9 +86,9 @@ message Channel {
   GainMode agc = 7;
   ChannelState state = 8;  // unset on an event is the tombstone; see Capture.state
   bool persistent = 9;           // survives owner disconnect; jobs set this
-  // Set by jobs: the absolute frequency a channel returns to when its capture moves out from
-  // under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing acts
-  // on it yet.
+  // Set by jobs: the absolute frequency a channel should return to when its capture moves out
+  // from under it. Stored and echoed; the rebind it describes belongs to watch jobs and nothing
+  // acts on it yet.
   uint64 required_hz = 10;
   ClientInfo owner = 11;
   // Watch for a sub-audible tone (CTCSS/PL) under this channel. NFM only;

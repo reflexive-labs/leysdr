@@ -385,8 +385,8 @@ zero crossing when the window repeats steadily, which holds a tone still; `--tri
 trace run. On a terminal without UTF-8, or with `--ascii`, the same trace is drawn with three levels
 per character.
 
-The default scale is for looking at speech. `--scale auto` fits the trace to the loudest level of
-the last second, ignoring its top tenth of samples, with a little headroom, snapped to a round
+The default scale is for looking at speech. `--scale auto` fits the trace to the ninetieth
+percentile of the frame peaks the last second held, with a little headroom, snapped to a round
 number (0.02, 0.05, 0.1, 0.2, 0.5 or 1) so the gutter stays readable. Reading the percentile
 rather than the peak is what keeps the picture still through a squelch tail — one frame several
 times full scale draws clamped rather than shrinking the next second of speech to a dot — and the
@@ -420,8 +420,10 @@ reported a tone. The samples themselves are
 audio at the two scales either side of it. `ley levels` is an octave-band meter like the one on the
 front of a rack unit: the level in each band right now. `ley waveform` is level over time: when
 something came through, over seconds or minutes. Neither opens the speakers, both take a frequency,
-a preset or a channel id, and both read the daemon's own audio spectrum and meter — the numbers come
-from the daemon, and only the peak-hold and decay are done on screen.
+a preset or a channel id, and both take their squelch state from the daemon's meter. `ley levels`
+reads the daemon's audio spectrum and groups its bins into bands on screen, with the peak-hold and
+decay; `ley waveform` reads the channel's audio samples and computes each column's peak, RMS and DC
+offset on screen.
 
 ```console
 $ ley levels 145.23 --tap demod

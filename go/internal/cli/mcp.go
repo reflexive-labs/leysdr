@@ -181,7 +181,7 @@ A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and t
 
 Only one thing can use the radio at a time. tune, scan, snapshot, start_decode_job and record refuse to move a radio somebody is listening on and say who; take_over: true insists. A channel tune makes, or a decode job started without keep, ends when this server exits; a recording does not -- it is written to disk and stays there.
 
-The detector stays honest: a detection is a carrier that stood above the measured noise floor with the looks that saw it; nothing here names a protocol or a station unless a decoder decoded it. Audio and samples never cross this connection: record writes files on the daemon's machine and get_recording hands back their paths, for another tool to open. Not available yet: snapshot resources (ley:// store), transcripts of watched audio, signal identification, and external identity lookups.`
+The detector does not overclaim: a detection is a carrier that stood above the measured noise floor with the looks that saw it; nothing here names a protocol or a station unless a decoder decoded it. Audio and samples never cross this connection: record writes files on the daemon's machine and get_recording hands back their paths, for another tool to open. Not available yet: snapshot resources (ley:// store), transcripts of watched audio, signal identification, and external identity lookups.`
 
 // newMCPServer dials the daemon, opens the presence stream and registers the
 // tool table. A daemon that is not running is reported the way every verb
