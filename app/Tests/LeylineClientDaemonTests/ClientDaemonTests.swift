@@ -96,7 +96,8 @@ final class ClientDaemonTests: XCTestCase {
         await assertEventually("condition never held") { mirror.connection == .live }
         let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
 
-        let writes = WriteCoalescer(connection: app, tick: .milliseconds(50))  // wide enough that a loaded runner cannot split the burst
+        // 50 ms is wide enough that a loaded runner cannot split the burst.
+        let writes = WriteCoalescer(connection: app, tick: .milliseconds(50))
         // A drag: a burst of offsets inside one tick. Only the last should be applied.
         for hz: Int64 in [110_000, 120_000, 130_000, 140_000, 150_000] {
             await writes.offsetHz(hz, channel: channel.channelID)
