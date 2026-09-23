@@ -5,6 +5,7 @@
 // same hertz (docs/writing-guide.md names the units; this is where the code honours them).
 
 import Foundation
+import LeylineClient
 
 enum Frequency {
     /// `146.520 MHz`, `88.5 MHz`, `462.6125 MHz`, `1.766 GHz`: the guide's spelling, a space
@@ -22,18 +23,11 @@ enum Frequency {
         return "\(hz) Hz"
     }
 
-    /// `146.520` and `000`: the MHz digits the field shows in ink and the sub-kHz ones it dims.
+    /// `146.5200` and `000`: the MHz digits the field shows in ink and the sub-hundred-hertz ones
+    /// it dims. Four fractional digits are always visible so `.6120` cannot masquerade as the
+    /// `.6125` centre of a 12.5 kHz channel plan.
     static func fieldParts(_ hz: UInt64) -> (major: String, minor: String) {
-        let mhz = hz / 1_000_000
-        let khz = (hz % 1_000_000) / 1_000
-        // The hundreds of hertz are a fourth typed digit (`462.6125`); only the tens and units
-        // are dimmed, and only when they are not zero.
-        let hundreds = (hz % 1_000) / 100
-        let sub = hz % 100
-        let major =
-            hundreds == 0
-            ? String(format: "%d.%03d", mhz, khz) : String(format: "%d.%03d%d", mhz, khz, hundreds)
-        return (major, sub == 0 ? "" : String(format: "%02d", sub))
+        FrequencyEntry.fieldParts(hz)
     }
 
     /// A width as a person says it: `12.5 kHz`, `200 kHz`, `500 Hz`.

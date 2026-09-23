@@ -71,17 +71,18 @@ struct PlayButton: View {
     }
 }
 
-/// `146.520` in ink, `000` dimmed, `MHz`. Entry works the way a radio's keypad does, by
+/// `146.5200` in ink, `000` dimmed, `MHz`. Entry works the way a radio's keypad does, by
 /// overwriting: click or ⌘L puts the caret on the first digit, each digit typed replaces the one
 /// under the caret and moves on, `.` jumps to the kHz digits (dropping whatever MHz digits were
 /// not retyped), Backspace steps back, Enter tunes, Escape or a click anywhere else puts the
-/// daemon's number back. A fourth digit after the kHz is the hundreds of hertz (GMRS sits on
-/// `462.6125`); below that the digits are shown dimmed and never typed. The stepper against the
-/// right edge does what the Tune menu's arrows do: the band's step, and the fine step with ⇧.
+/// daemon's number back. The fourth fractional digit is the hundreds of hertz (GMRS sits on
+/// `462.6125`) and is always present; below that the digits are shown dimmed and never typed. The
+/// stepper against the right edge does what the Tune menu's arrows do: the band's step, and the
+/// fine step with ⇧.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
     @State private var mhz: [Character] = []
-    @State private var khz: [Character] = ["0", "0", "0"]
+    @State private var khz: [Character] = ["0", "0", "0", "0"]
     @State private var caret = 0
     @State private var inKhz = false
     @State private var monitor: Any?
@@ -168,7 +169,7 @@ struct FrequencyField: View {
     private func load(_ hz: UInt64?) {
         guard let hz else {
             mhz = []
-            khz = ["0", "0", "0"]
+            khz = ["0", "0", "0", "0"]
             return
         }
         mhz = Array(String(hz / 1_000_000))
@@ -256,11 +257,7 @@ struct FrequencyField: View {
         }
         if key == .delete {
             if inKhz {
-                if caret > 3 {
-                    // The fourth digit is optional: deleting it removes it rather than zeroing it.
-                    caret -= 1
-                    khz.removeLast()
-                } else if caret > 0 {
+                if caret > 0 {
                     caret -= 1
                     khz[caret] = "0"
                 } else {
@@ -286,10 +283,6 @@ struct FrequencyField: View {
         if inKhz {
             if caret < khz.count {
                 khz[caret] = c
-                caret += 1
-            } else if khz.count == 3 {
-                // A fourth digit is the hundreds of hertz; nothing finer is typed.
-                khz.append(c)
                 caret += 1
             }
         } else if caret < mhz.count {
@@ -547,7 +540,8 @@ struct SquelchTrack: View {
                         .onChanged { v in
                             let d = db(atX: v.location.x, width: w)
                             dragDB = d
-                            session.setSquelch(d)  // coalesced: one write a tick, the last value wins
+                            // Coalesced: one write a tick, the last value wins.
+                            session.setSquelch(d)
                         }
                         .onEnded { v in
                             let d = db(atX: v.location.x, width: w)
