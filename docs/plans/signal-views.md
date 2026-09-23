@@ -194,6 +194,71 @@ tests.
 
 Same tap, same message, `kind = DCS`. A DCS lock suppresses the CTCSS claim.
 
+Explored 2026-09-24 (the owner asked; a read of the engine, the contract, the fixtures and the
+public descriptions of the format). What is already there, what is not, and the order to do it in.
+
+**Already there.** `SubAudible` carries `kind = SUB_AUDIBLE_DCS`, `dcs_code` ("octal as decimal,
+023 -> 23") and `dcs_inverted`, and the daemon never sets them (`TelemetryService` hardcodes
+CTCSS or none). The signal is the CTCSS detector's own: the sub-audible tap is the discriminator
+output before the 300 Hz high-pass, decimated in two FIR stages to about 1 kHz with a 320 Hz
+low-pass, sign preserved (the discriminator is a phase difference, not a magnitude), read off a
+`FloatRing` by a detached utility-priority task, off the hot path. DCS is a 134.4 bit/s NRZ
+stream at ±500–800 Hz of deviation (less on a narrow channel) with its energy under 300 Hz, so
+the tap's rate and passband hold it: about 7.4 samples a bit.
+
+**Not there.** Every client gates on CTCSS: `subaudible.go` prints nothing for another kind, the
+app's `CTCSSTone` returns nil, and the MCP `listen` summary prefers a CTCSS report. The fixture
+generator has only a sine sub-tone (`fmTone`), the sidecar's `sub_audible` expectation has no
+code field, and no recording anywhere carries DCS.
+
+**The format, as far as public sources agree.** A 23-bit word repeated without a gap while
+keyed: nine code bits (three octal digits, sent low bit first), three fixed bits, eleven parity
+bits of a Golay(23,12) code. Sources disagree on which end the fixed bits sit at and whether
+they read `100` or `001`, on the parity polynomial, and on how many codes are standard (83
+common, 104 in most radio menus, 177 distinct). An inverted code is the same stream
+complemented, and it decodes as a different valid code (023 inverted reads as 047), so normal
+and inverted are one signal read two ways; four codes have no inverted form. Unkey sends a
+134.4 Hz turn-off burst. Receivers do not recover a clock first: they test every alignment of
+the last 23 bits for the fixed pattern and a parity check that passes with up to a few bits
+corrected, and lock when consecutive words agree.
+
+**Order of work, and why.**
+
+1. **Record it first.** The owner's handheld sends DCS (a GMRS radio's menu has it). Two takes
+   with the RTL-SDR at gain 0 the way `ht-narrow.cu8` was made: DCS 023 normal, and 023
+   inverted if the radio offers it (else any second code), 10 s each, filed under
+   `rf-captures/` with 1 kHz taps committed to `engine/Tests/EngineCoreTests/Captures/` as the
+   CTCSS captures are. This is the ground truth that settles the bit order, the fixed pattern,
+   the parity polynomial and which sign of deviation is a one; nothing is written into the
+   decoder that the capture does not confirm. The fixture record SV-13 asked of CTCSS applies
+   here from the start.
+2. **The decoder** (`DCSDecoder`, beside `SubAudibleDetector`, Swift lane): removes the tuning
+   error with a slow tracker (a window mean would bend the bits; the meter's `freq_error_hz`
+   is the same number), slices the tap at the bit rate by testing each of the ~7 sample phases,
+   forms the 23-bit word at every bit, checks the fixed pattern and the parity in both
+   polarities, and locks when three consecutive words at one phase give one code. Reports
+   `code`, `inverted`, the deviation (the bit amplitude), a confidence in the detector's style
+   (parity errors corrected, words agreeing) and `first_seen`. Unit tests on synthesised
+   bits and on the captures' taps, the way `SubAudibleTests` and `SubAudibleCaptureTests` do.
+3. **The task and the wire.** `makeSubAudibleTask` runs the DCS decoder on the same hop; a
+   lock publishes `kind = DCS` and suppresses the CTCSS claim for as long as it holds (the
+   design doc's rule); the CTCSS heartbeat and edge rules apply unchanged. `TelemetryService`
+   maps the three kinds. The fake daemon gains a DCS option beside its PL.
+4. **Fixture** (`leyfix`, Go lane): a `dcsCode` source modelled on `afskPacket`, not `fmTone`,
+   a bitstream FM-modulated under the voice at 700 Hz of deviation, lightly low-passed as a
+   transmitter shapes it; `nfm_dcs` and `nfm_dcs_inverted`; `SubExpect` gains `dcs_code` and
+   `dcs_inverted`. The fixture is only trusted once the decoder reads the real capture.
+5. **Clients**, one shape each: `ley tune` prints `DCS  023` and `DCS  023 inverted` through
+   the same tracker rules as PL (once per change, nothing on loss); the app's `CTCSSTone`
+   becomes a `SubAudibleTone` with a CTCSS and a DCS case, the log row reads ` · DCS 023`; the
+   MCP `listen` summary keeps a DCS report over a CTCSS one, matching the daemon's rule, and
+   the tool text stops saying "CTCSS tone". Eval scenarios `dcs-code-present` and
+   `dcs-code-absent` from the captures, as the PL pair.
+
+**Cost.** Engine M (decoder, task, tests against captures), proto none, fake S, leyfix S,
+clients S, docs S, plus one evening with the handheld. The recording is the gate: without it the
+bit layout is a guess, and invariant 12 says a guess is not a claim.
+
 ## Decisions
 
 - Half-blocks rejected for the waterfall: level would live only in colour, so `NO_COLOR`/`--ascii`
