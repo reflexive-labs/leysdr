@@ -16,6 +16,7 @@ struct DeviceChip: View {
     var body: some View {
         @Bindable var session = session
         Button {
+            if !session.deviceMenuShown { session.deviceMenuAskedAt = .now }
             session.deviceMenuShown.toggle()
         } label: {
             // The pop-ups' ground (`PopupButton`): the toolbar's glass is hidden for this item.
@@ -70,6 +71,14 @@ struct DeviceMenuView: View {
         .padding(14)
         .frame(width: 320)
         .background(Theme.chrome)
+        .onAppear {
+            // The menu reads the mirror and asks the daemon nothing, so a slow open is the main
+            // actor busy elsewhere; the delay is logged to find out with what.
+            guard let asked = session.deviceMenuAskedAt else { return }
+            session.deviceMenuAskedAt = nil
+            let ms = -asked.timeIntervalSinceNow * 1000
+            log("session", String(format: "device menu shown after %.0f ms", ms))
+        }
     }
 
     private func header(_ d: Leyline_V1_DeviceDescriptor) -> some View {

@@ -89,6 +89,8 @@ final class AppSession {
     /// Set by ⌘L: the transport field takes focus and edits in place.
     var frequencyEntryShown = false
     var deviceMenuShown = false
+    /// When the chip was clicked, until the menu appears: the open is timed into the log.
+    @ObservationIgnored var deviceMenuAskedAt: Date?
     /// Whether the inspector is on the window's right (M2 handoff, "The panel"). Remembered in
     /// the defaults under `inspectorShownKey`, the way the last band is; shown until someone
     /// closes it, because the default window is sized with it.

@@ -231,6 +231,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     private var texture: MTLTexture?
     private var uploaded = 0
     private var lastTextureFailure: CFAbsoluteTime = 0
+    private var lastSlowDrawableLog: CFAbsoluteTime = 0
     private var stops: [SIMD4<Float>] = Theme.levelStopsRGB.map { SIMD4($0, 1) }
 
     var buffer: WaterfallBuffer?
@@ -280,9 +281,18 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     }
 
     private func render(in view: MTKView) {
-        guard let device, let queue, let pipeline, let buffer, buffer.bins > 0,
-            let drawable = view.currentDrawable, let pass = view.currentRenderPassDescriptor
-        else { return }
+        guard let device, let queue, let pipeline, let buffer, buffer.bins > 0 else { return }
+        // `currentDrawable` blocks the main actor, for up to a second, when every drawable is
+        // still with the compositor, and every click and popover waits behind it. Long waits
+        // are logged, at most one line a second.
+        let asked = CFAbsoluteTimeGetCurrent()
+        let drawable = view.currentDrawable
+        let waited = CFAbsoluteTimeGetCurrent() - asked
+        if waited > 0.05, asked - lastSlowDrawableLog >= 1 {
+            lastSlowDrawableLog = asked
+            log("waterfall", String(format: "waited %.0f ms for a drawable", waited * 1000))
+        }
+        guard let drawable, let pass = view.currentRenderPassDescriptor else { return }
         if texture == nil || texture?.width != buffer.bins {
             guard let made = makeRingTexture(device: device, bins: buffer.bins) else { return }
             texture = made
