@@ -481,6 +481,54 @@ pt ladder inside the 280 pt of padding), the gutter marks' anchors at the plot's
 `border` bars, the gradient's direction, and that the window's subscription starts and stops with
 the panel and the channel.
 
+### M2-8 `[ ]` Clipping drawn, not written
+
+Seen on the Mac 2026-09-23, after M2-6: "I noticed the clipping warning in the hardware
+popover. That's not very discoverable. Remove the written warning entirely and think about
+where else we could surface clipping." Chosen by the owner from a list: three indicators, one at
+the picture, one at the radio, one at the fix, none of them a sentence.
+
+- **The waterfall records it.** A row captured while the radio clipped carries a 2 px
+  `recording` mark at the waterfall's left edge, so the picture shows when and for how long,
+  and the mark scrolls away with the row. Which rows: those whose `SampleTime` falls inside a
+  `CaptureLevel` interval (its `time` is the interval's end, `total_samples` its length) whose
+  clipped fraction is at or over `FailureState.clippingFloor`, the raw per-interval count, not
+  the held state, because the mark is the record and the hold is for the chip. Levels arrive
+  after the rows they cover, so marking is retroactive: `WaterfallBuffer` keeps each row's
+  sample index beside its levels and a flag per row; `CaptureLevelFeed`'s reading marks the rows
+  in its interval; the renderer uploads the flags as a one-column texture beside the ring and
+  the fragment shader paints the first two pixels of a flagged row's line `recording`.
+- **The chip's dot, no words.** While the state holds the device chip's dot is `caution` and
+  the sentence (`headline` and `detail`) is the chip's tooltip (`.help`). The ` · clipping`
+  suffix and the device menu header's sentence from M2-6 go.
+- **The gain slider lights.** `GainSlider`'s knob is `recording` while the state holds, so the
+  fault is on the fix.
+- `FailureHold` and the `failure:` log lines are unchanged.
+
+Docs: the M2 handoff's "Decided 2026-09-24" gains the change; `../dev/app.md`'s failure-state
+paragraph names the three places.
+
+### M2-9 `[ ]` dB and margin on the spectrum
+
+Asked 2026-09-23: "Could the trace show dB and/or SNR?" Today the window is the held floor
+less 10 dB to the floor plus 70, labelled only at its two ends, over an unlabelled 10×4 grid,
+and the pointer's badge names the frequency alone. The terminal's `ley spectrum` draws the
+floor as a rule labelled on the axis so height above it reads as margin (`docs/dev/cli-style.md`,
+"A chart draws its trace, not its area"), and prints `N dB above the floor` for a peak. The
+window follows it:
+
+- **The floor is a rule.** A dashed `borderStrong` line across the plot at `floorDB`, labelled
+  `floor −78` at the right edge in `valueSmall` `inkFaint`, beside the two end labels that stay.
+- **The grid's rows are dB over the floor.** The four horizontal lines sit at the floor plus
+  10, 30, 50 and 70 dB (the window's rows are 20 dB, so this is where they already fall, moved
+  to start at the rule), each labelled at the left edge `+10`, `+30`, `+50`, `+70` in
+  `columnHead` `inkFaintest`. The absolute scale reads on the right, the margin on the left.
+- **The badge carries the level.** The pointer's badge reads
+  `146.520 MHz · −52 dBFS · 26 dB over the floor`, the column's loudest bin as the trace draws
+  it, and `—` for both before a floor is held. During a drag the swept clause stays and the
+  level clause is dropped, so the badge stays one line.
+- The 150 pt height and the grid's ten columns do not change.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,
