@@ -259,6 +259,38 @@ corrected, and lock when consecutive words agree.
 clients S, docs S, plus one evening with the handheld. The recording is the gate: without it the
 bit layout is a guess, and invariant 12 says a guess is not a claim.
 
+**Recorded and read 2026-09-23** (`rf-captures/ht-dcs-023.cf32` and `ht-dcs-754.cf32`, 12 s
+each at 2.4 MSPS from `ley record --iq` on the HackRF Pro, the owner's GMRS handheld on
+462.5625 MHz at DCS 023N and 754N; the analysis is a numpy chain mirroring the daemon's tap,
+kept in the session scratchpad and reproduced by the decoder's tests). Every open question above
+is settled by the two takes:
+
+- **Bit rate 134.44 bit/s** measured from the 23-bit word's autocorrelation (171.07 ms); on
+  both takes every word in the keyed span is identical (43 of 43, 52 of 52) with the bits sliced
+  at one phase.
+- **Deviation ±550 Hz** on this handheld; the tap's energy is 14 dB down between 70 and
+  140 Hz and 40 dB down above 300 Hz, so the CTCSS tap's 320 Hz low-pass and 1 kHz rate hold it
+  (7.44 samples a bit).
+- **The word is a Golay(23,12) codeword** under g(x) = x^11 + x^9 + x^7 + x^6 + x^5 + x + 1
+  (0xAE3) with the first received bit as the coefficient of x^22 (equivalently the reciprocal
+  0xC75 with it as x^0); every rotation of the received word divides exactly, as a cyclic code
+  does, and so does its complement, which is why an inverted stream is also valid.
+- **The frame, in received order with positive deviation as a one:** nine code bits, low bit
+  first, then the fixed bits `001`, then the eleven parity bits. Read that way the 023 take
+  gives 023 at one rotation and the 754 take gives 754.
+- **The fixed pattern does not frame the word on its own.** Rotations of the 754 word also
+  read as 076 and 203 with `001` in place, and the 023 word read inverted gives 047, 375 and
+  707 (the three inverted forms the references list for 023), the 754 word read inverted 060,
+  116 and 737. The standard list is what disambiguates: 754 is on it, 076 and 203 are not, and
+  116 is, which is the 754N/116I alias radios are known for. So the decoder carries the 104-code
+  list, prefers the received-polarity rotation whose code is on it (`inverted = false`), else
+  the complemented polarity's (`inverted = true`), reports the code it found, and leaves
+  `dcs_code = 0` with the raw 23-bit word in the log when no rotation of either polarity is a
+  listed code, rather than naming the nearest.
+
+Not settled, and not needed for the decoder: the turn-off burst (the takes end with the
+carrier dropping, and the tap shows no distinct tone before it at this resolution).
+
 ## Decisions
 
 - Half-blocks rejected for the waterfall: level would live only in colour, so `NO_COLOR`/`--ascii`
