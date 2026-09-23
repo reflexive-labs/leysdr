@@ -52,7 +52,7 @@ func closedTransmission(sq *leylinev1.SquelchTransition, captureRate uint64) (tr
 // sample index less the samples it was open, dated through the capture's
 // anchor. It reports false when the anchor does not cover that sample
 // (anchorCovers) or the duration runs past the start of the capture, because a
-// clock the daemon never kept is not one to print (CLAUDE.md invariant 5).
+// clock the daemon never kept is not one to print (AGENTS.md invariant 5).
 func transmissionStart(sq *leylinev1.SquelchTransition, at *leylinev1.SampleTime, anchor *leylinev1.CaptureAnchor) (time.Time, bool) {
 	if sq == nil || at == nil || !anchorCovers(anchor, at) || sq.GetDurationSamples() > at.GetSampleIndex() {
 		return time.Time{}, false

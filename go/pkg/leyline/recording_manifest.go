@@ -67,7 +67,7 @@ type RecordingClient struct {
 
 // RecordingAnchor dates one capture's samples. A recording that spans a detach
 // and reattach spans two captures, and each part is dated by the anchor of its
-// own (CLAUDE.md invariant 5).
+// own (AGENTS.md invariant 5).
 type RecordingAnchor struct {
 	CaptureID  string  `json:"capture_id"`
 	HostTimeNS int64   `json:"host_time_ns"`

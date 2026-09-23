@@ -27,7 +27,7 @@ things stand" section of the [README](../README.md) and `ley help roadmap`;
 
 Contributors and coding agents. Read first, in this order:
 
-1. [`CLAUDE.md`](../CLAUDE.md): the thirteen invariants, written as instructions to an agent and
+1. [`AGENTS.md`](../AGENTS.md): the thirteen invariants, written as instructions to an agent and
    used as the review checklist. Each has its rationale in a design doc below.
 2. [`CONTRIBUTING.md`](../CONTRIBUTING.md): the gate (`make check`), tests without hardware,
    commits, the licence of your contribution.
@@ -92,7 +92,8 @@ What is being built, in what order, and the record of what each step found.
 
 ### For coding agents
 
-`CLAUDE.md` is loaded automatically; this directory is where its rules come from. The four reads
+`AGENTS.md` is the agent guide (`CLAUDE.md` only points to it, for tools that load that name);
+this directory is where its rules come from. The four reads
 that prevent the most rework: the design doc for the area before a structural change,
 [CLI style](dev/cli-style.md) before changing output, [Engine internals](dev/engine-internals.md)
 plus the fixture round-trips in [IQ files and fixtures](reference/iq-files.md) before DSP, and

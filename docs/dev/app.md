@@ -1,7 +1,7 @@
 # App internals
 
 How the Mac app is put together and what it promises, for anyone changing it. The app is a
-peer client of the daemon over the same contract `ley` speaks (`CLAUDE.md`, invariant 1); this
+peer client of the daemon over the same contract `ley` speaks (`AGENTS.md`, invariant 1); this
 page is the contract for the Swift side of that, as `engine-internals.md` is for the daemon and
 `cli-style.md` for `ley`. The plan, with what is built and what is next, is
 `../plans/app.md`; the stories it answers to are V1a in `../plans/user-stories.md`.

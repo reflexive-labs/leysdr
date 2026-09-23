@@ -8,7 +8,7 @@ how to work on it; the long version is `docs/dev/setup.md` (building),
 
 ## Before you change anything
 
-Read `CLAUDE.md`. It is written as instructions to an agent, but it is also the review checklist:
+Read `AGENTS.md`. It is written as instructions to an agent, but it is also the review checklist:
 thirteen invariants, each with a rationale in `docs/design/*.md`. A change that breaks one needs a
 design-doc change first, not a workaround. The ones people trip on:
 

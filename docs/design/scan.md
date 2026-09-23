@@ -291,8 +291,9 @@ it apart from a carrier.
 
 ## The wire
 
-Everything goes through the messages that already exist, plus four additive fields, each justified
-below.
+Everything goes through the messages that already exist, plus eight additive fields, each justified
+below: two that make job state observable, three on `Detection`, one on `Scan`, and two on
+`ScanConfig`.
 
 `ley scan` is `Jobs.StartJob(ScanConfig{once})`. The job runs the sweep, emits `Detection` messages
 live on the telemetry plane, accumulates a `Scan`, and reaches `COMPLETED`. `Jobs.GetScan` returns

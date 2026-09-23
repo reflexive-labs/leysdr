@@ -138,6 +138,7 @@ decoders installed answers `ley decode aprs` with `there is no decoder called "a
 | pidfile, `devices.json` (remembered `rtl_tcp` radios) | beside the socket |
 | log | `~/Library/Logs/Leyline/leylined.log` (`ley daemon logs`) |
 | decoders | `~/Library/Application Support/Leyline/decoders/<name>/` (`make install-decoders`; `--decoders` and `LEYLINE_DECODERS` add more) |
+| recordings | `~/Library/Application Support/Leyline/recordings/` (`--recordings`, `--recordings-cap`, `--recordings-age`) |
 | decode records store | `~/Library/Application Support/Leyline/store/` (kept decode jobs; `--store`, `--store-cap`, `--store-age`) |
 | LaunchAgent | `~/Library/LaunchAgents/com.leyline.daemon.plist` (`ley daemon install` writes it, `uninstall` removes it) |
 

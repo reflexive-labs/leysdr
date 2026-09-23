@@ -2,7 +2,7 @@
 
 Status: v0 implementation contract. Companion to `docs/design/control-plane.md` and `docs/design/data-planes.md`;
 the wire contract is `proto/leyline/v1`, the engine contract is `engine/Sources/EngineCore/CoreProtocols.swift`.
-CLAUDE.md invariants apply throughout; this doc says *how* the engine keeps them.
+AGENTS.md invariants apply throughout; this doc says *how* the engine keeps them.
 
 ## Module map
 
@@ -816,7 +816,7 @@ resolved values in `PersistenceParams` on the stream descriptor.
 
 ## Platform posture
 
-The product is Mac-only and uses vDSP, AVFoundation, os_signpost directly (CLAUDE.md). Files that
+The product is Mac-only and uses vDSP, AVFoundation, os_signpost directly (AGENTS.md). Files that
 import those frameworks are wrapped in `#if canImport(Accelerate)` / `#if canImport(AVFoundation)` /
 `#if canImport(os)` with a portable branch that exists only so the non-DSP core compiles and the
 control plane can be exercised on Linux CI and in the moat container. `DSP/Kernels.swift` is the one

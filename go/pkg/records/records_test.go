@@ -172,7 +172,7 @@ func TestRegistryFoldsPerDevice(t *testing.T) {
 }
 
 // A record no anchor covers cannot be dated, so it counts but sets no wall time and cannot count
-// as the most recent (CLAUDE.md invariant 5).
+// as the most recent (AGENTS.md invariant 5).
 func TestRegistryUndatedRecord(t *testing.T) {
 	reg := NewRegistry() // no anchors
 	reg.Apply(rec("LEYTST-3", "status", 0, map[string]*leylinev1.FieldValue{"text": text("undated")}))

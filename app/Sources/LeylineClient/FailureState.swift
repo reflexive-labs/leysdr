@@ -3,7 +3,7 @@
 // The named failure state (docs/plans/user-stories.md, V1a: the app "detects and names failure
 // states instead of sitting silently broken"): the radio clipping, read from the daemon's
 // `CaptureLevel` and the capture's gains, a measured fact with its number and the thing to try,
-// not a detector (CLAUDE.md, invariant 12). `ley tune` reports the same state from the same count
+// not a detector (AGENTS.md, invariant 12). `ley tune` reports the same state from the same count
 // (`go/internal/cli/failure.go`). "Nothing above the noise" was a state here until 2026-09-21
 // and is now only `ley tune`'s one-time line: in a window it flagged a quiet band every few
 // seconds and distracted more than it helped (the owner). The daemon not running, no radio and

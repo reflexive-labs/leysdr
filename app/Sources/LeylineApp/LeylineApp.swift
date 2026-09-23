@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Mac app: a peer client of the daemon (CLAUDE.md invariant 1). It renders what the mirror
+// The Mac app: a peer client of the daemon (AGENTS.md invariant 1). It renders what the mirror
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
 // is M1 of docs/design/app-design-handoff.md: sidebar, spectrum, waterfall, transport bar, the
 // device menu, and a Tune menu that lists every gesture (docs/plans/app.md, "The M1 cut"), plus

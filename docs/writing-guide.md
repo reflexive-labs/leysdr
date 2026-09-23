@@ -9,11 +9,12 @@ page sounds and what goes in it.
 
 Three readers, in this order of priority:
 
-1. **Someone using Leyline.** They own an RTL-SDR and know roughly what a radio does. They may
-   not know what dBFS, an FFT row, a capture or a channel is, and they should not have to before
-   they hear a station. This is the default reader: when a page does not say otherwise, it is
-   written for them.
-2. **A coding agent working on the repository.** It reads `CLAUDE.md` first and these documents
+1. **Someone using Leyline: a ham or an RF hacker.** They own an RTL-SDR or a HackRF and know
+   radio: modes, squelch, CTCSS, dBFS, what a spectrum and a waterfall show. Do not explain those.
+   They do not know Leyline's own terms (capture, channel, sink, row), and they should not need
+   them before they hear a station; define one where it first appears. This is the default
+   reader: when a page does not say otherwise, it is written for them.
+2. **A coding agent working on the repository.** It reads `AGENTS.md` first and these documents
    for the rationale. It needs the rule, the reason, and the path to the thing the rule is about.
 3. **A contributor.** A person doing the same work, with the same needs and less patience for
    repetition.
@@ -37,7 +38,7 @@ reader who hits an undocumented gap stops trusting the docs.
 
 | avoid | prefer |
 |---|---|
-| Recording support is coming soon. | The Mac app is not in this build: `ley` is the only client today (Milestone E). |
+| Recording from the app is coming soon. | The Mac app cannot record yet: use `ley record` (E.5). |
 | The waterfall shows LoRa packets. | The waterfall is the right instrument, and ours cannot resolve the signal: a symbol is shorter than a row. |
 
 **Numbers are measured, and say where.** Every number in a design doc was measured before it was
@@ -91,13 +92,14 @@ in the sentence where it appears; `ley help glossary` is the reference.
 
 | term | means | not |
 |---|---|---|
-| **Leyline** | the product | "the app", "the system" |
+| **Leyline** | the product | "the system" |
+| **the app** | the Mac app, `app/`: a client like `ley` | "the GUI", "the frontend" |
 | **`leysdr`** | the repository and module path | |
 | **`ley`** | the command-line client, one Go binary | "the CLI" is fine in dev docs; never "the tool" |
 | **`leylined`**, **the daemon** | the background process that owns the radio | "the server", "the backend" |
 | **the engine** | the Swift package inside the daemon that does the signal processing (`EngineCore`) | use "the daemon" for behaviour a client sees, "the engine" for the code |
 | **the contract** | `leyline.v1`, the protos | "the API"; "the protocol" is gRPC |
-| **client** | anything that speaks the contract: `ley`, a script, an agent, a future app | "consumer", "frontend" |
+| **client** | anything that speaks the contract: `ley`, the app, a script, an agent | "consumer", "frontend" |
 | **the fake** | `go/internal/fakedaemon`, the in-memory contract the `ley` tests run against | "the mock" |
 | **radio** | what the user has, in guide prose | "SDR" as a noun for the hardware |
 | **device** | the same thing in the contract (`DeviceDescriptor`) and in reference prose | |
@@ -122,8 +124,8 @@ in the sentence where it appears; `ley help glossary` is the reference.
 | **fixture** | a generated IQ file with expectations in its sidecar | |
 | **recording** | an IQ file that came from a radio | |
 | **sample time**, **anchor** | the timebase every frame carries, and the one wall-clock mapping per capture | "timestamp" |
-| **invariant** | one of the thirteen rules in `CLAUDE.md` | "principle", "guideline" |
-| **milestone**, **spike**, **decision**, **work item** | A.1 to D.17; S1 to S3; D2; SV-8, R-4, DEC-2 | |
+| **invariant** | one of the thirteen rules in `AGENTS.md` | "principle", "guideline" |
+| **milestone**, **spike**, **decision**, **work item** | A.1 to E.7; S1 to S3; D2; SV-8, R-4, DEC-2, APP-4 | |
 
 Capitalise Leyline, RTL-SDR, the modes (NFM, WFM, AM, USB, LSB, CW), CTCSS, macOS, Homebrew,
 Xcode, GitHub. Do not capitalise daemon, capture, channel, sink, squelch, spectrum, waterfall,
@@ -151,11 +153,12 @@ with the reason, `[d]` waiting on a decision. An item is ticked only when its te
 gate is green. A plan whose items are all closed moves to `plans/archive/`; commit messages cite
 item ids, so the file is kept and never rewritten.
 
-The root files have fixed jobs: `README.md` is a stranger's first page and its "Where things
+The root files have fixed jobs: `README.md` is a new reader's first page and its "Where things
 stand" section must agree with `plans/build-order.md` (the release checklist checks);
 `CONTRIBUTING.md` is the short version of how to work here; `SECURITY.md` says what the daemon
-trusts; `CHANGELOG.md` is dated sections of what changed for a user; `CLAUDE.md` is the
-invariants, written as instructions to an agent and used as the review checklist.
+trusts; `CHANGELOG.md` is dated sections of what changed for a user; `AGENTS.md` is the
+invariants, written as instructions to an agent and used as the review checklist, and
+`CLAUDE.md` only points to it.
 
 ## Page shape
 
@@ -204,7 +207,7 @@ Every user reads the CLI's output, so it follows the tightest rules:
 
 A subject line is `area: what changed`, imperative, under 72 characters, and reads as a sentence
 about behaviour: `engine: NFM full scale follows the channel's bandwidth`, not
-`engine: update demod`. Areas in use: `engine`, `ley`, `proto`, `go`, `docs`, `test`, `build`, and
+`engine: update demod`. Areas in use: `engine`, `ley`, `app`, `proto`, `go`, `docs`, `test`, `build`, and
 `fix(<area>)` or `feat(<area>)` when the kind of change matters more than where it landed.
 The body says why, in prose; the tests say what. Every commit is signed off (`git commit -s`).
 

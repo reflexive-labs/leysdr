@@ -24,7 +24,7 @@ judgement, and says "prefer".
 2. **The app never imports `EngineCore`, `CRTLSDR` or `LeylineDaemon`.** The licence boundary is
    a directory boundary (`../decisions/D2-licensing.md`); `app/Package.swift:14` says why and
    `make license-check` refuses the import.
-3. **Generated code is never hand-edited** (CLAUDE.md, invariant 13). `swift/LeylineProto` comes
+3. **Generated code is never hand-edited** (AGENTS.md, invariant 13). `swift/LeylineProto` comes
    from `make proto` and `app/Sources/LeylineClient/Resources/bands.json` from `make bands-json`;
    a Go test fails when the band table drifts.
 4. **No view owns radio truth** (invariant 7). A view renders `AppSession`'s copy of the mirror
@@ -46,7 +46,7 @@ judgement, and says "prefer".
 9. **A negative or non-finite number is never converted blind.** `UInt64(someInt64)` traps below
    zero and `Int(Double.nan)` is fatal (`app/Sources/LeylineClient/DaemonMirror.swift:148`,
    `app/Sources/LeylineApp/Theme.swift:64`).
-10. **Every contract addition ships with its `ley` mirror** (CLAUDE.md, Conventions). A field the
+10. **Every contract addition ships with its `ley` mirror** (AGENTS.md, Conventions). A field the
     app reads that `ley --json` cannot show is not done.
 
 ## 2. Files
@@ -360,7 +360,7 @@ drive-by, for the reason section 2 gives, and a refactor nobody asked for is its
 dependency rows the MCP adapter added. A Swift change should not fix it, and fixing it inside an
 unrelated diff obscures both changes. Flag it and move on.
 
-Commit subjects, bodies and sign-off are in CLAUDE.md and `../writing-guide.md`, "Commit messages
+Commit subjects, bodies and sign-off are in AGENTS.md and `../writing-guide.md`, "Commit messages
 and comments", not here.
 
 ## 13. To fix

@@ -11,7 +11,7 @@
 //                      the coalescer, draws the bulk streams. Declared only when the manifest is
 //                      evaluated on macOS, so `swift build` on Linux builds and tests the façade.
 //
-// The app is a peer client of the daemon (CLAUDE.md invariant 1) and a separate Apache-2.0 work
+// The app is a peer client of the daemon (AGENTS.md invariant 1) and a separate Apache-2.0 work
 // beside the GPL engine (docs/decisions/D2-licensing.md): it depends on the `swift/LeylineProto`
 // package for the generated contract and on the engine package not at all, so nothing GPL is in its
 // graph and the app cannot bypass the wire protocol. `make license-check` refuses an

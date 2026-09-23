@@ -235,10 +235,9 @@ func namesARecording(arg string) bool {
 // this machine. A recording can hold more than one part, so it says which one
 // it picked and how to name another.
 //
-// An audio recording is a WAV, which is not a radio: it holds what the
-// demodulator already produced, and there is no signal left in it for a
-// channel to decode. play says so and names the tools that do play one, rather
-// than attaching it as a pretend radio and demodulating audio into noise.
+// An audio recording is a WAV of demodulator output, with no RF left in it to
+// tune, so it is never attached as a file device. playAudioPart plays it
+// through the daemon's audio output, or this machine's player, instead.
 func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part int) (string, error) {
 	jobID, inURI, ok := leyline.ParseRecordingURI(uri)
 	if !ok {

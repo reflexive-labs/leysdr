@@ -189,9 +189,9 @@ Then:
 Generations are still worth two clicks as a secondary check: mark one about 30 s in, once the run
 is steady, and another near the end. Nothing should be growing between them either.
 
-**The host.** The machine and macOS version this ran on are not recorded here yet; the release
-checklist records them, and a throughput number without the chip it was measured on
-cannot be compared with the next one.
+**The host.** The machine and macOS version are under "What was measured". A later run is
+comparable with this one only on the same chip; the release checklist records the host for each
+release.
 
 ## What this costs, and what would reopen it
 

@@ -30,7 +30,7 @@ type Entity struct {
 	// FirstSeen and LastSeen are on the capture's timeline, the timebase every record carries.
 	FirstSeen, LastSeen *leylinev1.SampleTime
 	// FirstWall and LastWall are those two turned into wall clock through an anchor, and are
-	// zero when no anchor covers the record (CLAUDE.md invariant 5: no record carries a clock).
+	// zero when no anchor covers the record (AGENTS.md invariant 5: no record carries a clock).
 	FirstWall, LastWall time.Time
 	// FirstHeard and LastHeard are the table's own clock: when the record reached this client.
 	// Ages and Expire run on these, because a record whose capture has no anchor still has to

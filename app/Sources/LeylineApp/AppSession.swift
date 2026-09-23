@@ -2,7 +2,7 @@
 
 // Shared state for every view: the daemon's state copied out of the mirror on every change, the
 // coalescer that writes through it, the two feeds, the bands and bookmarks files, and every
-// action the window performs. Nothing here is authoritative (CLAUDE.md invariant 7): a view
+// action the window performs. Nothing here is authoritative (AGENTS.md invariant 7): a view
 // renders `state` and its own writes come back as events like everyone else's. One identity per
 // process, so the window and its writes are one client to the daemon and `ley state` shows one
 // row for the app.

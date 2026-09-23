@@ -2,7 +2,7 @@
 
 // Package records folds decode records into the two shapes a client renders: one line per record
 // (Summary) and the entity table `ley track` keeps (Table). Both are presentation over the
-// daemon's records -- no decoding happens here (CLAUDE.md invariant 2), and a field a decoder
+// daemon's records -- no decoding happens here (AGENTS.md invariant 2), and a field a decoder
 // does not send is left out rather than invented.
 package records
 

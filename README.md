@@ -3,7 +3,7 @@
 A native macOS SDR engine with peer clients. A background daemon (`leylined`, Swift) owns the radio
 and does all the signal processing; the `ley` command-line tool (Go) drives it over a Unix socket
 using one gRPC contract, `leyline.v1`. Anything else that speaks the contract — a script, an agent,
-a future app — is a peer of the CLI, never a second path into the hardware.
+the Mac app — is a peer of the CLI, never a second path into the hardware.
 
 **What works today:** an RTL-SDR or HackRF plugged into the Mac (or an RTL-SDR another machine serves with
 `rtl_tcp`, added by `ley devices attach rtltcp pi.local:1234` and remembered from then on), or an
@@ -11,11 +11,16 @@ IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW dem
 squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
 views in the terminal; band-level meters and a few seconds of a channel's waveform; a band scan
 with an energy detector that never guesses a modulation; two channels on one radio; a second
-terminal adjusting the channel the first is playing; `--json` for scripts and `ley mcp` for agents,
-which serves the same verbs as MCP tools.
+terminal adjusting the channel the first is playing; recording audio or IQ to files through a
+daemon-side job and playing it back; decoders for APRS, SAME weather alerts and AIS, with
+`ley watch` notifying on matching records; `--json` for scripts and `ley mcp` for agents, which
+serves the same verbs as MCP tools. The Mac app is in progress: built from source with
+`make app-run`, it shows a spectrum and waterfall, plays and tunes a channel, and has an
+inspector for signal, tuning error, deviation and recent transmissions.
 
-**Not yet:** recording to files, watch jobs and transcripts, the terminal dashboard, the Mac app. `docs/plans/build-order.md` is the order they arrive in and
-`docs/plans/v1-release.md` is the gap analysis for the first shared release.
+**Not yet:** recording from the app, CHIRP import, a signed app bundle, durable watch jobs and
+transcripts, and the terminal dashboard. `docs/plans/build-order.md` is the order they arrive in
+and `docs/plans/v1-release.md` is the gap analysis for the first shared release.
 
 ## Requirements
 
@@ -141,9 +146,11 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 - Spikes: S3 (USB posture) and S2 (20 MSPS throughput) decided in `docs/decisions/`; S2 sustained
   the full rate for ten minutes on one fifth of a core, with no overruns and an allocation-free
   sample path, so the all-Swift engine stands. S1 (latency chain) is the app's first spectrum.
-- Milestone E (the Mac app): E.1 done -- the `app/` package, a Swift client façade tested against
-  the real daemon (`docs/dev/app.md`), and a window that shows the daemon's state and lists what is
-  tuned. No spectrum yet: that is E.2, with spike S1 (`docs/plans/app.md`).
+- Milestone E (the Mac app, `docs/plans/app.md`): E.1 and E.2 done -- the `app/` package, a Swift
+  client façade tested against the real daemon (`docs/dev/app.md`), and a window with the spectrum,
+  the waterfall and click to hear. E.3's controls and failure states and the file half of E.4
+  (bookmarks) are in and confirmed on the owner's Mac (the M1 cut), and the M2 inspector has landed;
+  CHIRP import (E.4), recording from the window (E.5), lifecycle (E.6) and the bundle (E.7) are open.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
   audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
   with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered
@@ -159,7 +166,7 @@ and the fix is one dial option.
 
 ## Contributing, security, licence
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) has the gate and the rules; `CLAUDE.md` is the invariant list
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the gate and the rules; `AGENTS.md` is the invariant list
 that doubles as the review checklist. [`SECURITY.md`](SECURITY.md) describes what the daemon trusts
 (a local socket, your user, no authentication) and how to report a problem.
 

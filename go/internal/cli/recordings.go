@@ -311,7 +311,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string) 
 		_, _ = printColumns(out, tableStyle(app), cols, nil)
 	}
 	// Gaps where nothing was recorded are listed here rather than hidden inside a file, so the
-	// recording's timeline matches the air (CLAUDE.md invariant 5).
+	// recording's timeline matches the air (AGENTS.md invariant 5).
 	if len(m.Gaps) > 0 && m.SampleRate > 0 {
 		fmt.Fprintf(out, "\n%s\n", s.Muted(plural(len(m.Gaps), "gap")+" where nothing was recorded:"))
 		for _, g := range m.Gaps {

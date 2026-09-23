@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Wall clock from the sample timebase, through a `CaptureAnchor` and nothing else (CLAUDE.md,
+// Wall clock from the sample timebase, through a `CaptureAnchor` and nothing else (AGENTS.md,
 // invariant 5: no frame carries a wall-clock field, and a time nobody anchored is never
 // invented). The Swift mirror of `go/pkg/leyline/decoders.go`, `AnchorWallTime` and
 // `RecordWallTime`: an anchor maps one sample index on one capture to host time at the capture's

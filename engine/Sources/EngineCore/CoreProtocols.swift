@@ -8,7 +8,7 @@
 // Model.swift, Identifiers.swift and Buffers.swift. Threading and ownership rules are in
 // docs/dev/engine-internals.md — read that before implementing anything here.
 //
-// Hot-path conventions (CLAUDE.md invariant 4):
+// Hot-path conventions (AGENTS.md invariant 4):
 //   - Sample buffers are engine-owned, preallocated, and reused. No allocation in process paths.
 //   - `SampleBuffer` wraps raw memory + count + format; it is a borrow, never an owner, inside
 //     processing calls. It never escapes the call it is passed to.
@@ -60,7 +60,7 @@ public struct CaptureAnchor: Hashable, Sendable {
 /// One physical or virtual SDR. Implementations: RTLSDRDevice, FilePlaybackDevice, and later
 /// HackRFDevice, AirspyDevice, SDRplayDevice, CompositeDevice (coherent rigs presented as one).
 /// TX, when it arrives, is a separate `TransmitCapableDevice` protocol composed onto devices that
-/// support it — never widen RadioDevice with TX methods (CLAUDE.md invariant 11).
+/// support it — never widen RadioDevice with TX methods (AGENTS.md invariant 11).
 public protocol RadioDevice: AnyObject, Sendable {
     var descriptor: DeviceDescriptor { get }
     /// Current setting of every gain element, in descriptor order.

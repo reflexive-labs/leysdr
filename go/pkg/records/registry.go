@@ -24,7 +24,7 @@ type Device struct {
 	Summary string
 	// FirstSeen and LastSeen are on the capture timeline, the timebase every record carries; the
 	// wall-clock forms are derived through the page's anchors, and are zero when no anchor covers
-	// the record (CLAUDE.md invariant 5: no record carries a clock).
+	// the record (AGENTS.md invariant 5: no record carries a clock).
 	FirstSeen, LastSeen *leylinev1.SampleTime
 	FirstWall, LastWall time.Time
 	Count               int

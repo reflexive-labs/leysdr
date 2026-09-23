@@ -41,7 +41,7 @@ RPCs. It is a client of the daemon, not a second surface on it.** The two option
 
 **(a) A Go MCP server reusing the client library.** `ley mcp` runs an MCP server; the agent's MCP
 client speaks to it, and it speaks leyline.v1 to the daemon over the same UDS every other client
-uses. This is what `CLAUDE.md`'s top line already states — "the MCP adapter shares its Go client
+uses. This is what `AGENTS.md`, "What this is", already states — "the MCP adapter shares its Go client
 library" — and what invariant 1 requires: the adapter is a client that speaks the contract, not a
 new protocol on the daemon. The interpretation folds it needs already exist in Go (`records.Table`,
 `records.Summary`), and enrichment is a Go HTTP call the daemon is forbidden to make. The Go MCP SDK

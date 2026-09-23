@@ -8,7 +8,7 @@ import Logging
 
 /// `devices.json` beside the socket: the endpoints of every rtl_tcp radio a client attached, so a
 /// remote radio survives a restart the way the radios plugged into the machine do. A file a client
-/// plays is not here: persistence follows intent (CLAUDE.md invariant 8), and playing a file is a
+/// plays is not here: persistence follows intent (AGENTS.md invariant 8), and playing a file is a
 /// one-off.
 ///
 /// The file is rewritten on every change and read once at startup. It is advisory: a missing or

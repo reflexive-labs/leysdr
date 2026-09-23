@@ -8,7 +8,7 @@ Agent-sized tasks with acceptance criteria. V0 user stories in `docs/plans/user-
 
 **S2 — Throughput.** Synthetic 20 MSPS cf32 source → channelizer → one NFM demod → null sink, allocation-free. Pass: sustained 10 min, zero allocations in the sample path (verified with Instruments allocations track), CPU headroom ≥ 50% on a base M-series. Fail = stop; revisit the all-Swift decision explicitly.
 
-**S3 — USB posture.** IOUSBHost vs libusb for RTL-SDR and HackRF, sandboxed and not, current macOS. Artifact: a decision note updating the CLAUDE.md licensing/driver line if needed.
+**S3 — USB posture.** IOUSBHost vs libusb for RTL-SDR and HackRF, sandboxed and not, current macOS. Artifact: a decision note updating the AGENTS.md licensing/driver line if needed.
 
 ## Milestone A — skeleton that talks
 
@@ -101,8 +101,10 @@ changed shape since D.13, and it waits until after the app.
 ## Milestone E — the Mac app
 
 Started 2026-09-18; the live plan is `docs/plans/app.md` (items APP-1 to APP-7 are E.1 to E.7,
-with what each landed). E.1 is done: the `app/` package, the client façade and its tests against
-the real daemon, the skeleton window, `make app*`, CI and the bundle script (`docs/dev/app.md`).
+with what each landed). E.1 and E.2 are done: the `app/` package, the client façade and its tests
+against the real daemon, `make app*`, CI, the bundle script (`docs/dev/app.md`), and the spectrum,
+waterfall and click-to-hear window. E.3's controls and the file half of E.4 landed as the M1 cut,
+and the M2 inspector after it; E.4's CHIRP import and E.5 to E.7 are open.
 
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine
@@ -127,4 +129,4 @@ its `ley` mirror.
    the launchd job as `ley daemon install` does; the trademark check (D3) gates the first public
    build.
 
-Each task lands with: tests (fixture-based where DSP), os_signpost instrumentation on any new sample-path code, and no invariant violations (CLAUDE.md is the review checklist).
+Each task lands with: tests (fixture-based where DSP), os_signpost instrumentation on any new sample-path code, and no invariant violations (AGENTS.md is the review checklist).

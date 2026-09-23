@@ -13,7 +13,7 @@ Design and arrive as a handoff, the way the terminal visuals did (`../dev/cli-st
 that one was reconciled). This plan is the order the app lands in and where each piece of the
 handoff goes.
 
-The app is a peer client (`CLAUDE.md`, invariant 1): it links the generated contract and never
+The app is a peer client (`AGENTS.md`, invariant 1): it links the generated contract and never
 the engine, keeps no state of its own, and every contract addition it needs ships with its `ley`
 mirror so nothing works only from Swift.
 
@@ -267,7 +267,7 @@ client from the demod tap's DC today; the daemon computes none. Engine work: the
 DC and its deviation onto `Meter`, FM and squelch-open only, NaN otherwise, with `ley`'s meter line
 and scope header reading the daemon's number. **Decided 2026-09-20:** the fields take 7 and 8 as the
 signal-views plan intended. The reserved rule exists for fields people depend on and nothing has
-shipped yet; `CLAUDE.md` now specifies when it starts to apply.
+shipped yet; `AGENTS.md` now specifies when it starts to apply.
 
 Landed 2026-09-20: `Meter.deviation_hz = 7` and `freq_error_hz = 8`. Engine: a
 `DiscriminatorInterval` (sum, count, high, low; four scalars, no allocation) inside

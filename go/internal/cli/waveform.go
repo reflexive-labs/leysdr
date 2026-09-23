@@ -243,8 +243,8 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
 	fullScaleHz := scopeFullScaleHz(ap, s.channel)
 	// The squelch state comes from the daemon; the view only draws with it.
-	// The stream's error is not read: a telemetry stream that
-	// ends leaves the clip drawing, on the last state it knew.
+	// The stream's error is not read: if the telemetry stream ends, the clip
+	// keeps drawing and the loop below drops the squelch state as unknown.
 	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
 		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_METER},

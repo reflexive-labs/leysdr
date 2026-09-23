@@ -189,7 +189,7 @@ func deviceLabel(store *labels.Store, id string) string {
 }
 
 // deviceAge is how long ago a wall time was, or the absent glyph when no anchor dated it: ley
-// does not make up times it cannot derive from an anchor (CLAUDE.md invariant 5).
+// does not make up times it cannot derive from an anchor (AGENTS.md invariant 5).
 func deviceAge(at, now time.Time) string {
 	if at.IsZero() {
 		return "-"

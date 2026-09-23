@@ -259,7 +259,7 @@ func printRecord(s *session, rec *leylinev1.DecodeRecord) error {
 }
 
 // recordClock is the record's wall time, derived from the capture's anchor as every other
-// timestamp in ley is (CLAUDE.md invariant 5). A record on a capture whose anchor ley has not
+// timestamp in ley is (AGENTS.md invariant 5). A record on a capture whose anchor ley has not
 // seen prints the time it arrived here instead of inventing one.
 func recordClock(s *session, rec *leylinev1.DecodeRecord) string {
 	if a := s.capture.GetAnchor(); a != nil && a.GetCaptureId() == rec.GetTime().GetCaptureId() {

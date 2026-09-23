@@ -25,7 +25,7 @@ import (
 // `ley mcp` is the MCP adapter of docs/plans/mcp.md: an MCP server an agent's
 // client spawns, speaking MCP on stdin and stdout and leyline.v1 to the
 // daemon over the same socket every other client uses. It is a client of the
-// daemon, not a second surface on it (CLAUDE.md invariant 1), and every tool
+// daemon, not a second surface on it (AGENTS.md invariant 1), and every tool
 // is a `ley` verb seen from an agent: the same protos, the same proto3 JSON
 // `--json` prints, the same decisions and refusals. The daemon computes;
 // this process renders (invariant 2) -- the one picture it draws, the

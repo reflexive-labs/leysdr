@@ -2,7 +2,7 @@
 
 // The daemon's single source of truth (docs/dev/engine-internals.md "SessionStore"): one actor owning
 // devices, captures, channels, sinks, the event sequence and client presence. Every mutation goes
-// through here and emits exactly one full-state event per changed object (CLAUDE.md invariants 6, 7).
+// through here and emits exactly one full-state event per changed object (AGENTS.md invariants 6, 7).
 
 import EngineCore
 import Foundation

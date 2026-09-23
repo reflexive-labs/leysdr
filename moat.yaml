@@ -8,8 +8,8 @@
 #
 # What this container is for: the Go half of the contract (`ley` CLI/TUI, the
 # MCP adapter, the shared Go client lib), the `proto/leyline.v1` sources and
-# their codegen, fixture generation, and docs/planning work. Per CLAUDE.md the
-# Go clients are the living proof of the cross-language contract, so this is
+# their codegen, fixture generation, and docs/planning work. Per AGENTS.md the
+# Go clients are what proves the cross-language contract, so this is
 # where a lot of the parity work happens.
 
 name: leysdr

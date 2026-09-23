@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The daemon's state as this client sees it, kept current by subscription. State lives in the
-// daemon (CLAUDE.md invariant 7); this is a render of it, and this client's own writes show up
+// daemon (AGENTS.md invariant 7); this is a render of it, and this client's own writes show up
 // here the way everyone else's do: as the event that confirmed them.
 //
 // The fold is the one `ley` does (`go/internal/cli/session.go`): every event carries the whole

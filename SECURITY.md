@@ -26,6 +26,10 @@ streams raw samples from it. Nothing on that link is authenticated or encrypted;
 you trust. An attached endpoint is remembered in `devices.json` beside the socket and reconnected at
 every start until `ley devices detach` removes it.
 
+A `webhook:URL` notifier (`ley watch --notify=webhook:URL`) makes the daemon POST each matching
+decode record to that URL as JSON, over `http` or `https` (the only schemes it accepts), for as
+long as the job runs.
+
 ## What the daemon reads and writes
 
 - Reads IQ files and JSON sidecars you name with `ley play`; a sidecar is capped at 1 MiB and must be
@@ -33,7 +37,20 @@ every start until `ley devices detach` removes it.
 - Writes its socket (`ley daemon status` prints the path), a pidfile, a log and `devices.json`
   beside it, and the LaunchAgent plist under `~/Library/LaunchAgents` when you run
   `ley daemon install`.
-- Does not write recordings yet.
+- Writes recordings under `~/Library/Application Support/Leyline/recordings` (`--recordings`
+  moves it; `--recordings-cap` and `--recordings-age` bound it), and kept decode jobs' records
+  under `~/Library/Application Support/Leyline/store` (`--store`).
+
+## What the daemon runs
+
+- **Decoder plugins.** A decode job starts the `executable` named in a decoder's `manifest.json`,
+  found in the directories `--decoders` / `LEYLINE_DECODERS` list and in
+  `~/Library/Application Support/Leyline/decoders`. It runs as your user with no sandbox, so
+  anything you put in those directories runs with your permissions. Listing decoders
+  (`ley decoders`) reads the manifests and executes nothing.
+- **Shell notifiers.** `ley watch --notify=shell:CMD` makes the daemon run `CMD` with
+  `/bin/sh -c` for each matching record, with the record's JSON on stdin. Any client of the socket
+  can ask for this, which is one more reason the socket must stay private to your account.
 
 ## Reporting a vulnerability
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // The leyline.v1 wire contract for Swift — SwiftPM package. Every file under
 // Sources/LeylineProto is generated from proto/leyline/v1/*.proto by scripts/gen-proto.sh and is
-// never hand-edited: change the .proto and run `make proto` (CLAUDE.md invariant 13).
+// never hand-edited: change the .proto and run `make proto` (AGENTS.md invariant 13).
 //
 // It is its own package, outside engine/, because the contract is Apache-2.0 and the engine is GPL
 // (docs/decisions/D2-licensing.md): the licence boundary is a directory boundary, and both clients

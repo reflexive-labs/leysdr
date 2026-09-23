@@ -371,7 +371,7 @@ file on a timer (the default for `--iq` is 60 s, because 2.4 MSPS is 19.2 MB a s
 one file unless asked otherwise. `--gate squelch` with `--iq` is refused, and so are `--pre`,
 `--hang` and `--stop-after-quiet` without a gate. Silence is never edited out of a file: each part
 says where on the capture's timeline it starts, and the times nothing was recorded are listed in
-the manifest as `coverage_gaps` (CLAUDE.md invariant 5). The verb runs in the foreground and prints, on stderr, a banner of the decisions **the daemon**
+the manifest as `coverage_gaps` (AGENTS.md invariant 5). The verb runs in the foreground and prints, on stderr, a banner of the decisions **the daemon**
 made rather than the ones asked for — it waits up to two seconds for the manifest so the rate,
 format, gate and radio in it are the real ones — then a live line, then what it recorded; the
 recording's URI is on stdout when it ends. Ctrl-C cancels the job, which finalises the files, so
@@ -470,7 +470,7 @@ function the dashboard reuses for its no-daemon and no-device states, so the wor
 AM, whatever the run prints; `--squelch off` opts out) and `set squelch auto` subscribe one FFT row of the capture, take the median bin
 as the floor, scale it to the channel bandwidth (`+10·log10(bw / bin width)`) and write
 `floor + 10 dB` with `WriteParams`. The measurement is the daemon's own spectrum and a median is
-presentation, so no DSP moves client-side (CLAUDE.md invariant 2); but the threshold is a
+presentation, so no DSP moves client-side (AGENTS.md invariant 2); but the threshold is a
 snapshot, and every client would have to repeat it. The recorded follow-up is an additive
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.

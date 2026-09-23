@@ -4,7 +4,7 @@
 // Region 3 "the reading" and Region 4's relative time form). Each word is a band of a number the
 // façade already holds — `AppSession.overNoiseDB`, `Meter.freq_error_hz`, `Meter.deviation_hz`
 // — and the number stays one click away, so a word is presentation and never a detector
-// (CLAUDE.md, invariant 12). A word for a measurement nobody made is not shown: NaN and nil
+// (AGENTS.md, invariant 12). A word for a measurement nobody made is not shown: NaN and nil
 // come back as nil here and the view prints `—` or hides the row. The band edges are the
 // handoff's tables verbatim; a value on an edge belongs to the band above it, so 3 dB is already
 // "Very weak" and a tenth of the bandwidth is still "Centred".

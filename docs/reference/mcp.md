@@ -44,7 +44,7 @@ Two guards carry over from the designs. The don't-disturb default is enforced tw
 refuses to move a radio somebody is listening on and names who, before anything is written, and the
 daemon refuses again with its own state if the adapter's view was stale; `take_over: true` is the
 only way past either. And nothing here transmits: there is no TX in the contract, and when there is,
-an emission lease gates it, never a tool (CLAUDE.md, invariant 11).
+an emission lease gates it, never a tool (AGENTS.md, invariant 11).
 
 Whatever an agent starts without `keep` ends with its conversation. The server holds one event
 stream open for its lifetime, which is what makes this process *present* on the daemon
