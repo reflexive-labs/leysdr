@@ -132,13 +132,15 @@ struct ChartCatcher: NSViewRepresentable {
 }
 
 /// The pointer's hairline at its frequency, on whichever chart, and on the chart the pointer
-/// is over, a badge showing the frequency (not an action hint).
+/// is over, a badge showing the frequency and the level there (not an action hint).
 struct PointerOverlay: View {
     @Environment(AppSession.self) private var session
     let columns: Columns
     let size: CGSize
     /// The pointer's place on this chart, or nil when it is over the other one.
     let point: CGPoint?
+    /// The badge's measured width, so it is kept inside the chart whatever its clause.
+    @State private var badgeWidth: CGFloat = 130
 
     var body: some View {
         if let hz = session.pointerHz {
@@ -146,14 +148,29 @@ struct PointerOverlay: View {
                 .offset(x: columns.x(of: hz))
                 .allowsHitTesting(false)
             if let p = point {
-                PointerBadge(text: session.pointerWords(hz))
+                PointerBadge(text: session.pointerWords(hz, levelDB: level(at: p)))
+                    .onGeometryChange(for: CGFloat.self) { geo in
+                        geo.size.width
+                    } action: { width in
+                        badgeWidth = width
+                    }
                     .offset(
-                        x: min(max(p.x + 12, 0), size.width - 130),
+                        x: min(max(p.x + 12, 0), max(size.width - badgeWidth, 0)),
                         y: min(max(p.y + 14, 0), max(size.height - 28, 0))
                     )
                     .allowsHitTesting(false)
             }
         }
+    }
+
+    /// The newest row's loudest bin under the pointer's column, the value the spectrum's trace
+    /// draws there (`Columns.loudest`); −infinity without a row. On the waterfall the column is
+    /// the waterfall's, the same width as the spectrum's.
+    private func level(at p: CGPoint) -> Float {
+        let w = Int(size.width.rounded(.down))
+        guard w > 0, p.x.isFinite else { return -.infinity }
+        let column = min(max(Int(p.x.rounded(.down)), 0), w - 1)
+        return columns.loudest(session.spectrum.latest, column: column)
     }
 }
 
@@ -163,6 +180,8 @@ struct PointerBadge: View {
         Text(text)
             .font(Theme.Font.value)
             .foregroundStyle(Theme.ink)
+            .lineLimit(1)
+            .fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(Theme.ground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))

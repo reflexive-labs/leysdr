@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 3: the spectrum. A live trace, a max-hold trace, a 10×4 grid, and the tuned channel as
-// a vertical band. It is a peak display but carries no label saying so, because that label
-// would be the detector's word (invariant 12). Every column is the loudest bin under it, so a
-// carrier one bin wide is never lost between two pixels. The mouse works here as on the
+// Region 3: the spectrum. A live trace, a max-hold trace, a 10×4 grid whose rows are dB over the
+// held floor, the floor as a dashed rule, and the tuned channel as a vertical band. It is a peak
+// display but carries no label saying so, because that label would be the detector's word
+// (invariant 12). Every column is the loudest bin under it, so a carrier one bin wide is never
+// lost between two pixels. The mouse works here as on the
 // waterfall, through the same `ChartMouse`, and the pointer's hairline shows on both.
 
 import LeylineClient
@@ -86,6 +87,9 @@ struct SpectrumView: View {
         }
     }
 
+    /// The grid's rows once a floor is held, in dB over it: where the window's 20 dB rows fall.
+    static let gridStepsDB: [Float] = [10, 30, 50, 70]
+
     private func draw(in ctx: inout GraphicsContext, size: CGSize, rows: Rows) {
         // The grid is drawn whether or not there is a row, so the empty chart is recognisable.
         var grid = Path()
@@ -94,12 +98,45 @@ struct SpectrumView: View {
             grid.move(to: CGPoint(x: x, y: 0))
             grid.addLine(to: CGPoint(x: x, y: size.height))
         }
-        for i in 1..<4 {
-            let y = size.height * CGFloat(i) / 4
-            grid.move(to: CGPoint(x: 0, y: y))
-            grid.addLine(to: CGPoint(x: size.width, y: y))
+        let held = !rows.floorDB.isNaN
+        // Held, the rows sit at the floor plus 10, 30, 50 and 70 dB, the last the top edge;
+        // before that, the plain three interior lines, which fall in the same places.
+        let rowYs =
+            held
+            ? Self.gridStepsDB.map { y(ofDBOverFloor: $0, height: size.height) }
+            : (1..<4).map { size.height * CGFloat($0) / 4 }
+        for rowY in rowYs {
+            grid.move(to: CGPoint(x: 0, y: rowY))
+            grid.addLine(to: CGPoint(x: size.width, y: rowY))
         }
         ctx.stroke(grid, with: .color(Theme.border.opacity(0.6)), lineWidth: 0.5)
+
+        if held {
+            // The margin at the left edge, under each line: above its line +50 would sit under
+            // the max-hold chip, and +70 is the top edge, under the chip either way, so it is
+            // not labelled (the top label on the right gives that line's level).
+            for step in Self.gridStepsDB where step < Self.aboveFloorDB {
+                ctx.draw(
+                    Text(verbatim: "+\(Int(step))").font(Theme.Font.columnHead).foregroundStyle(
+                        Theme.inkFaintest),
+                    at: CGPoint(x: 6, y: y(ofDBOverFloor: step, height: size.height) + 2),
+                    anchor: .topLeading)
+            }
+            // The floor as a rule, stroked before the traces so they cross over it, so height
+            // above it reads as margin (docs/dev/cli-style.md, "A chart draws its trace, not its
+            // area").
+            let ruleY = y(ofDBOverFloor: 0, height: size.height)
+            var rule = Path()
+            rule.move(to: CGPoint(x: 0, y: ruleY))
+            rule.addLine(to: CGPoint(x: size.width, y: ruleY))
+            ctx.stroke(
+                rule, with: .color(Theme.borderStrong),
+                style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            ctx.draw(
+                Text(verbatim: "floor \(dbLabel(rows.floorDB, unit: false))")
+                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
+                at: CGPoint(x: size.width - 8, y: ruleY - 2), anchor: .bottomTrailing)
+        }
 
         guard let cap = rows.capture, let range = rows.range, cap.sampleRate > 0 else { return }
         let latest = rows.latest
@@ -128,6 +165,13 @@ struct SpectrumView: View {
             Text(dbLabel(bottom, unit: false)).font(Theme.Font.valueSmall).foregroundStyle(
                 Theme.inkFaint),
             at: CGPoint(x: size.width - 8, y: size.height - 5), anchor: .bottomTrailing)
+    }
+
+    /// Where a level this far over the held floor falls: the window runs from the floor less
+    /// `belowFloorDB` at the bottom to the floor plus `aboveFloorDB` at the top.
+    private func y(ofDBOverFloor db: Float, height: CGFloat) -> CGFloat {
+        let frac = (db + Self.belowFloorDB) / (Self.belowFloorDB + Self.aboveFloorDB)
+        return height * (1 - CGFloat(frac))
     }
 
     /// `−18 dBFS`, `−104`: a real minus sign, the unit on the top label only.

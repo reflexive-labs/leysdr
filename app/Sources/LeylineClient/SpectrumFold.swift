@@ -89,6 +89,24 @@ public enum SpectrumFold {
         let binWidth = Double(sampleRate) / Double(bins)
         return binFloorDB + 10 * log10(Double(bandwidthHz) / binWidth)
     }
+
+    /// The pointer badge's level clause: `−52 dBFS · 26 dB over the floor`, whole dB with a
+    /// real minus sign (U+2212) and no plus, and `— dBFS · — dB over the floor` without a level
+    /// or before a floor is held (docs/design/app-design-handoff.md, "Region 3: the
+    /// spectrum"). The margin is the difference of the two rounded numbers, so it agrees with
+    /// the level beside it and with the rule's `floor −78` label.
+    public static func levelWords(levelDB: Float, floorDB: Float) -> String {
+        guard levelDB.isFinite, floorDB.isFinite else {
+            return "\(Reading.absent) dBFS · \(Reading.absent) dB over the floor"
+        }
+        let level = Int(levelDB.rounded())
+        let margin = level - Int(floorDB.rounded())
+        return "\(signed(level)) dBFS · \(signed(margin)) dB over the floor"
+    }
+
+    private static func signed(_ n: Int) -> String {
+        n < 0 ? "\u{2212}\(-n)" : "\(n)"
+    }
 }
 
 /// The loudest level seen per bin since the last reset: the spectrum's max-hold trace. A

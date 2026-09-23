@@ -527,7 +527,7 @@ otherwise; the menu header's sentence is gone; `GainSlider` takes `clipping` and
 `recording` while it holds. The views and the shader are not compiled in the container: the
 marks, their colour and scroll, the tooltip and the knob are unverified until a run on the Mac.
 
-### M2-9 `[ ]` dB and margin on the spectrum
+### M2-9 `[x]` dB and margin on the spectrum
 
 Asked 2026-09-23: "Could the trace show dB and/or SNR?" Today the window is the held floor
 less 10 dB to the floor plus 70, labelled only at its two ends, over an unlabelled 10×4 grid,
@@ -547,6 +547,26 @@ window follows it:
   it, and `—` for both before a floor is held. During a drag the swept clause stays and the
   level clause is dropped, so the badge stays one line.
 - The 150 pt height and the grid's ten columns do not change.
+
+Landed 2026-09-24. Façade: `SpectrumFold.levelWords(levelDB:floorDB:)` prints the level clause,
+whole dB with U+2212 and no plus, the margin taken as the difference of the two rounded numbers
+so it agrees with the level beside it and with the rule's label, and dashes for a NaN or
+infinite level or floor; two tests in `SpectrumFoldTests`. App: `SpectrumView.draw` strokes the
+grid's rows at the floor plus `gridStepsDB` (10, 30, 50, 70, the last the top edge) once
+`floorDB` is held, the three interior lines as before otherwise, and draws the dashed rule and
+`floor −78` before the traces. The margin labels sit under their lines at the left edge: above
+its line `+50` would overlap the max-hold chip (8 to about 29 pt from the top, against 24 to 35
+for the label at 150 pt), and `+70` is the top edge, under the chip either way, so it is not
+labelled. The badge's level is the newest row's `Columns.loudest` for the column under the
+pointer, computed in `PointerOverlay` from the chart's own `Columns` and the pointer's x, so it
+is the column the trace draws and not one bin; `AppSession.pointerWords(_:levelDB:)` adds the
+clause or, during a drag, the swept figure instead. On the waterfall the column is the
+waterfall's, the same width. The badge now measures its width (`onGeometryChange`) for the
+right-edge clamp, which assumed 130 pt, and is `fixedSize` so it stays one line. Not compiled in
+the container: `SpectrumView.swift`, `ChartMouse.swift` and the session's change; unverified
+until a run on the Mac are the label positions against the chip and the end labels, the rule's
+visibility in `borderStrong` under the traces, the half-drawn top grid line at y = 0, and the
+badge's width (about 310 pt for the full clause) and clamp near the right edge.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
