@@ -117,3 +117,63 @@ public struct MaxHold: Sendable {
         rows += 1
     }
 }
+
+/// The noise floor the waterfall's cold end and the spectrum's axis are keyed from: a smoothed
+/// median, held. It is taken from the first median, falls as soon as the median is more than
+/// `slackDB` below it, and rises only once the median has stayed more than `slackDB` above it
+/// for `riseSeconds` on the capture's clock. Every row on screen is coloured from the current
+/// floor, so a floor that moved recoloured rows already drawn; a keyed handheld that clips the
+/// radio lifts the whole band's median with overload spurs for as long as it transmits, and a
+/// floor that followed at once recoloured the history on every press of PTT
+/// (docs/design/app-design-handoff.md, "Palette"). A real change,
+/// a retune or a gain move, resets the fold, so the floor is re-taken at once after one. The
+/// time is the rows' `SampleTime` and the capture's rate, never the wall clock (AGENTS.md,
+/// invariant 5); with the rate unknown the floor does not rise.
+public struct HeldFloor: Sendable, Equatable {
+    /// How far the median may drift from the floor before the floor follows it.
+    public static let slackDB: Float = 4
+    /// How long the median must stay over the floor plus the slack before the floor rises.
+    /// Longer than the clipping over in the owner's GMRS log of 2026-09-23 (12206080 samples at
+    /// 4 MS/s, 3 s); an over that lasts longer than this still moves the floor once it has.
+    public static let riseSeconds: Double = 5
+
+    /// The held floor in dBFS, rounded to 1 dB; NaN until the first median.
+    public private(set) var floorDB: Float = .nan
+    /// The first sample of the run of medians above the floor plus the slack, or nil when the
+    /// newest median is not above it.
+    private var riseStart: UInt64?
+
+    public init() {}
+
+    /// Folds one smoothed median in, measured on the row at `sampleIndex` of a capture sampled
+    /// at `sampleRate`, and returns the floor. A NaN median changes nothing.
+    @discardableResult
+    public mutating func fold(medianDB: Float, atSample sampleIndex: UInt64, sampleRate: UInt64)
+        -> Float
+    {
+        guard !medianDB.isNaN else { return floorDB }
+        if floorDB.isNaN || medianDB < floorDB - Self.slackDB {
+            floorDB = medianDB.rounded()
+            riseStart = nil
+        } else if medianDB > floorDB + Self.slackDB, sampleRate > 0 {
+            // A row from before the run's start (a restarted timeline) begins the run again.
+            let from = riseStart.flatMap { $0 <= sampleIndex ? $0 : nil } ?? sampleIndex
+            if Double(sampleIndex - from) >= Self.riseSeconds * Double(sampleRate) {
+                floorDB = medianDB.rounded()
+                riseStart = nil
+            } else {
+                riseStart = from
+            }
+        } else {
+            riseStart = nil
+        }
+        return floorDB
+    }
+
+    /// Forgets the floor, so the next median is taken at once: the capture moved or its gain
+    /// changed, and the held value belongs to the old picture.
+    public mutating func reset() {
+        floorDB = .nan
+        riseStart = nil
+    }
+}

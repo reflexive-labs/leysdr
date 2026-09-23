@@ -95,4 +95,55 @@ final class SpectrumFoldTests: XCTestCase {
         XCTAssertEqual(f, floor, accuracy: 1e-9)
         XCTAssertEqual(threshold, (floor + 10).rounded())
     }
+
+    /// 2.4 MS/s, rows 1/30 s apart, as the feed folds them.
+    private let rate: UInt64 = 2_400_000
+    private func fold(_ f: inout HeldFloor, _ median: Float, seconds: Double) -> Float {
+        f.fold(medianDB: median, atSample: UInt64(seconds * Double(rate)), sampleRate: rate)
+    }
+
+    func testHeldFloorFallsAtOnce() {
+        var f = HeldFloor()
+        XCTAssertEqual(fold(&f, -80.4, seconds: 0), -80, "the first median is taken at once")
+        XCTAssertEqual(fold(&f, -83, seconds: 0.1), -80, "inside the slack")
+        XCTAssertEqual(fold(&f, -86, seconds: 0.2), -86, "more than 4 dB under: at once")
+    }
+
+    func testHeldFloorIgnoresAThreeSecondRise() {
+        var f = HeldFloor()
+        _ = fold(&f, -80, seconds: 0)
+        // A keyed handheld clipping the radio lifts the median 10 dB for three seconds.
+        for i in 1...90 { XCTAssertEqual(fold(&f, -70, seconds: Double(i) / 30), -80) }
+        XCTAssertEqual(fold(&f, -80, seconds: 3.1), -80)
+        // A second over after a pause is timed from its own start, not the first one's.
+        for i in 0..<120 { XCTAssertEqual(fold(&f, -70, seconds: 4 + Double(i) / 30), -80) }
+    }
+
+    func testHeldFloorFollowsASixSecondRise() {
+        var f = HeldFloor()
+        _ = fold(&f, -80, seconds: 0)
+        var floor = f.floorDB
+        for i in 1...180 {
+            floor = fold(&f, -70.2, seconds: 1 + Double(i) / 30)
+            if Double(i) / 30 < 5 { XCTAssertEqual(floor, -80, "held at \(Double(i) / 30) s") }
+        }
+        XCTAssertEqual(floor, -70, "risen after 5 s over the slack")
+    }
+
+    func testHeldFloorDoesNotRiseWithoutARate() {
+        var f = HeldFloor()
+        _ = f.fold(medianDB: -80, atSample: 0, sampleRate: 0)
+        XCTAssertEqual(f.fold(medianDB: -60, atSample: 100_000_000, sampleRate: 0), -80)
+        XCTAssertEqual(f.fold(medianDB: -90, atSample: 0, sampleRate: 0), -90, "it still falls")
+        XCTAssertEqual(f.fold(medianDB: .nan, atSample: 0, sampleRate: rate), -90)
+    }
+
+    func testHeldFloorResetRetakesAtOnce() {
+        var f = HeldFloor()
+        _ = fold(&f, -80, seconds: 0)
+        _ = fold(&f, -70, seconds: 1)
+        f.reset()
+        XCTAssertTrue(f.floorDB.isNaN)
+        XCTAssertEqual(fold(&f, -70, seconds: 1.1), -70, "a gain move or retune re-takes it")
+    }
 }

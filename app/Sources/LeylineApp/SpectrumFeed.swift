@@ -59,22 +59,25 @@ final class SpectrumFeed {
     /// The ramp's cold end sits this far above the median, so noise, which spreads a few dB
     /// either side of it, stays in the near-black first stop and only signals get colour.
     /// Desktop SDRs do the same with a waterfall minimum set above the floor. The floor
-    /// itself follows the gain: a gain change moves the median, and the held floor is re-taken
-    /// once it drifts `floorSlackDB`.
+    /// itself follows the gain: a gain change resets the folds, and the held floor is re-taken
+    /// from the next row.
     static let noiseHeadroomDB: Float = 6
     /// Where the waterfall's ramp starts: the held floor plus the headroom.
     var rampFloorDB: Float { floorDB.isNaN ? .nan : floorDB + Self.noiseHeadroomDB }
 
     private(set) var latest: [Float] = []
     private(set) var hold = MaxHold()
-    /// The noise floor the ramp and the spectrum's axis are keyed from. Held, not tracked: it is
-    /// taken from the smoothed median and re-taken only when that drifts more than `floorSlackDB`
-    /// from it, because an axis that follows every wobble of the median makes the max-hold trace
-    /// throb. Reset on a retune.
-    private(set) var floorDB: Float = .nan
+    /// The noise floor the ramp and the spectrum's axis are keyed from. Held, not tracked
+    /// (`HeldFloor`): taken from the smoothed median, it falls as soon as the median is more
+    /// than `HeldFloor.slackDB` under it and rises only after the median has stayed that far over
+    /// it for `HeldFloor.riseSeconds` on the rows' clock. An axis that follows every wobble of
+    /// the median makes the max-hold trace throb, and every row on screen is coloured from this
+    /// floor, so a floor that rose with a keyed handheld clipping the radio recoloured the rows
+    /// already drawn. Reset on a retune and a gain change, which re-take it at once.
+    var floorDB: Float { heldFloor.floorDB }
+    private var heldFloor = HeldFloor()
     /// The median of the newest row, smoothed over about ten rows.
     private(set) var medianDB: Float = .nan
-    static let floorSlackDB: Float = 4
     private(set) var rows = 0
     private(set) var gaps = 0
     private(set) var descriptor: Leyline_V1_StreamDescriptor?
@@ -162,7 +165,7 @@ final class SpectrumFeed {
     /// The capture moved: the held values belong to the old span.
     func resetFolds() {
         hold.reset()
-        floorDB = .nan
+        heldFloor.reset()
         medianDB = .nan
     }
 
@@ -178,8 +181,11 @@ final class SpectrumFeed {
         hold.fold(row.levelsDB)
         let median = SpectrumFold.medianDB(row.levelsDB)
         medianDB = medianDB.isNaN ? median : medianDB + (median - medianDB) * 0.1
-        if floorDB.isNaN || abs(medianDB - floorDB) > Self.floorSlackDB {
-            floorDB = medianDB.rounded()
+        let before = floorDB
+        heldFloor.fold(
+            medianDB: medianDB, atSample: row.time.sampleIndex, sampleRate: subscribedRate)
+        if !before.isNaN, floorDB != before {
+            log("feed", "floor \(before) -> \(floorDB) dBFS (median \(medianDB))")
         }
         waterfall.append(row.levelsDB, seq: row.seq)
         rows += 1
@@ -396,6 +402,14 @@ final class AudioLevelsFeed {
     private(set) var squelchOpen: Bool?
     private(set) var descriptor: Leyline_V1_StreamDescriptor?
     private(set) var error: LeylineError?
+    /// Fires on the main actor after the stream ended without an error and the subscription was
+    /// cleared, so the session follows the channel again. The daemon closes a channel's tap when
+    /// it rebuilds the channel's chain, as a sample-rate change does, and without a new
+    /// subscription the ladder stayed dark on the new chain.
+    var onEnded: (() -> Void)?
+    /// A stream that ends sooner than this after subscribing waits this long before the retry,
+    /// so a chain that closes every subscription at once is not asked again in a tight loop.
+    static let retryAfter: Duration = .seconds(1)
 
     @ObservationIgnored private var levels = BandLevels()
     @ObservationIgnored private var binHz: Double = 0
@@ -404,11 +418,14 @@ final class AudioLevelsFeed {
     private var task: Task<Void, Never>?
     private var channel: String?
     private var mode: Leyline_V1_DemodMode?
+    /// The capture rate the current subscription was made at.
+    private var subscribedRate: UInt64 = 0
 
     /// Follows `channel` while `shown`. The capture rate is the rows' clock (a row's
     /// `SampleTime` is on the capture's timeline) and is taken on every call, as
-    /// `ChannelTelemetryFeed` takes it, because it can change under a live subscription. A mode
-    /// change resubscribes: the tap's audio rate, and so the row's axis, belongs to the mode.
+    /// `ChannelTelemetryFeed` takes it. A changed rate resubscribes, as `SpectrumFeed` does:
+    /// the daemon rebuilds the channel's chain at the new rate, which is a new stream. A mode
+    /// change resubscribes too: the tap's audio rate, and so the row's axis, belongs to the mode.
     func follow(
         _ channel: Leyline_V1_Channel?, captureRate: UInt64, shown: Bool,
         connection: DaemonConnection?
@@ -418,12 +435,18 @@ final class AudioLevelsFeed {
             stop()
             return
         }
-        if channel.channelID == self.channel, channel.mode == mode, task != nil { return }
+        if channel.channelID == self.channel, channel.mode == mode,
+            captureRate == subscribedRate, task != nil
+        {
+            return
+        }
         stop()
         self.channel = channel.channelID
         mode = channel.mode
+        subscribedRate = captureRate
         let id = channel.channelID
         task = Task { [weak self] in
+            let started = ContinuousClock.now
             do {
                 let (desc, rows) = try await connection.fft(
                     channel: id, tap: .tapDemod, bins: Self.bins,
@@ -440,6 +463,22 @@ final class AudioLevelsFeed {
                     self.ingest(row)
                 }
                 log("feed", "audio fft stream ended after \(self.rows) rows")
+                if Task.isCancelled { return }
+                // The daemon closed the stream: follow the channel again, a second later if
+                // this subscription lasted less than that.
+                let quick = started.duration(to: .now) < Self.retryAfter
+                log(
+                    "feed",
+                    "audio fft on \(id): following again\(quick ? " in 1 s" : "")")
+                if quick {
+                    try? await Task.sleep(for: Self.retryAfter)
+                    if Task.isCancelled { return }
+                }
+                self.task = nil
+                self.channel = nil
+                self.mode = nil
+                self.subscribedRate = 0
+                self.onEnded?()
             } catch {
                 if !Task.isCancelled {
                     self?.error = LeylineError(error)
@@ -466,6 +505,7 @@ final class AudioLevelsFeed {
         task = nil
         channel = nil
         mode = nil
+        subscribedRate = 0
         descriptor = nil
         error = nil
         rows = 0

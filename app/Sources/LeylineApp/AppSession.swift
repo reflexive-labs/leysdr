@@ -401,6 +401,7 @@ final class AppSession {
     func start() async {
         guard running == nil else { return }
         captureLevel.onLevel = { [weak self] in self?.nameFailure() }
+        audioLevels.onEnded = { [weak self] in self?.followAudioLevels() }
         telemetry.onMeter = { [weak self] m, seconds in
             self?.foldReading(m, atSeconds: seconds)
             self?.audioLevels.meterChanged(m)
