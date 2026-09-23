@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // Gain writes through WriteParams: the element rule the contract states (`common.proto`,
 // `GainWrite`: an empty element is the first the device lists), on a radio with a gain stage and
