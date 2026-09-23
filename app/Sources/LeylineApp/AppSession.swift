@@ -223,15 +223,11 @@ final class AppSession {
     static let squelchFadeDB: Float = 6
     var rampFadeDB: Float { squelchPerBinDB == nil ? 0 : Self.squelchFadeDB }
 
-    /// How far the ramp reaches above its cold end: to the loudest level on the band, so the
-    /// strongest thing there is cream and the third strongest visibly cooler, and never less
-    /// than `SpectrumFeed.minRangeDB`. Before a peak is known, the fallback.
-    var rampRangeDB: Float {
-        let cold = rampFloorDB
-        let peak = spectrum.peakDB
-        guard cold.isFinite, peak.isFinite else { return SpectrumFeed.fallbackRangeDB }
-        return max(peak - cold, SpectrumFeed.minRangeDB)
-    }
+    /// How far the ramp reaches above its cold end: six stops over 40 dB, fixed, so a row keeps
+    /// its colour while it scrolls and only a squelch change recolours the waterfall. A hot end
+    /// that followed the loudest level on the band recoloured every row on screen whenever
+    /// something anywhere in the capture, on screen or not, keyed up or went quiet.
+    static let rampRangeDB: Float = 40
 
     /// The band's floor at the channel's width, the auto squelch's scaling of the feed's held
     /// floor. Nil until the floor is known.

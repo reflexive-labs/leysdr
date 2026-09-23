@@ -25,7 +25,7 @@ struct WaterfallView: View {
                     feed: session.spectrum,
                     floorDB: session.rampFloorDB,
                     fadeDB: session.rampFadeDB,
-                    rangeDB: session.rampRangeDB,
+                    rangeDB: AppSession.rampRangeDB,
                     viewLo: fraction(of: session.visibleRange?.lowerBound),
                     viewHi: fraction(of: session.visibleRange?.upperBound),
                     onPointer: { p in
@@ -238,7 +238,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     var viewHi: Float = 1
     var floorDB: Float = .nan
     var fadeDB: Float = 0
-    var rangeDB: Float = SpectrumFeed.fallbackRangeDB
+    var rangeDB: Float = AppSession.rampRangeDB
     /// Why there is no pipeline, as the compiler's or Metal's error text; nil when it came up.
     private(set) var problem: String?
     var problemReported = false

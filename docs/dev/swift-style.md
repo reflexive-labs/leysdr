@@ -90,7 +90,7 @@ type, booleans read as assertions. On top of that, this project's own:
   coalesced parameter write and nothing else (`AppSession.swift:917` through `:979`). A function
   that does something else takes a different verb, because readers rely on these three meanings.
 - **A unit is part of the name, never a comment.** `centerHz`, `offsetHz`, `bandwidthHz`,
-  `stepHz`, `peakDecayDBPerRow`, `updatedNs`. A bare `frequency`, `width` or `rate` gets flagged in
+  `stepHz`, `rowsPerSecond`, `updatedNs`. A bare `frequency`, `width` or `rate` gets flagged in
   review: the contract has several of each and they are not interchangeable.
 - **Decibels are `DB`, except where the name mirrors a proto field.** `floorDB`, `medianDB`,
   `peakAboveFloorDB`, `rampRangeDB` are the spelling to use. `squelchDb`, `powerDbfs` and
