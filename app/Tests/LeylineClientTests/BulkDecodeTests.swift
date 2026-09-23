@@ -11,6 +11,26 @@ import XCTest
 @testable import LeylineClient
 
 final class BulkDecodeTests: XCTestCase {
+    /// A reader that falls behind gets the newest rows, not a backlog: the decode stage keeps the
+    /// frames' latest-wins bound, so a waterfall never replays minutes of rows at speed.
+    func testFFTRowsKeepOnlyTheNewestForASlowReader() async throws {
+        let (frames, feed) = AsyncThrowingStream<Leyline_V1_Frame, any Error>.makeStream()
+        for seq in 1...100 {
+            feed.yield(
+                .with {
+                    $0.seq = UInt64(seq)
+                    $0.payload = Data([120, 120])
+                })
+        }
+        feed.finish()
+        let rows = BulkDecode.fftRows(frames, format: .dbU8, buffer: 8)
+        // Nothing reads until the decode stage has drained every frame.
+        try await Task.sleep(nanoseconds: 500_000_000)
+        var seqs: [UInt64] = []
+        for try await row in rows { seqs.append(row.seq) }
+        XCTAssertEqual(seqs, Array(93...100), "the newest eight, in order")
+    }
+
     func testDBU8() {
         let levels = BulkDecode.fftLevels(Data([0, 120, 240, 255]), format: .dbU8)
         XCTAssertEqual(levels, [-120, -60, 0, 7.5])

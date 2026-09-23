@@ -29,6 +29,40 @@ public struct FFTRow: Sendable {
 }
 
 public enum BulkDecode {
+    /// Decodes `frames` into rows, keeping only the newest `buffer` rows waiting to be read: the
+    /// same latest-wins bound as the frames. A decode stage that buffered without bound undid
+    /// it, because it drains the frames as fast as they arrive: a main actor that fell behind
+    /// left a backlog of minutes of rows, and the waterfall then scrolled two and three times
+    /// its rate for minutes while it caught up, showing rows that were minutes old.
+    /// `onTermination` runs once the consumer goes away.
+    public static func fftRows(
+        _ frames: AsyncThrowingStream<Leyline_V1_Frame, any Error>,
+        format: Leyline_V1_FftBinFormat, buffer: Int,
+        onTermination: @escaping @Sendable () async -> Void = {}
+    ) -> AsyncThrowingStream<FFTRow, any Error> {
+        let (rows, continuation) = AsyncThrowingStream<FFTRow, any Error>.makeStream(
+            bufferingPolicy: .bufferingNewest(buffer))
+        let task = Task {
+            do {
+                for try await frame in frames {
+                    continuation.yield(
+                        FFTRow(
+                            seq: frame.seq, time: frame.time,
+                            levelsDB: fftLevels(frame.payload, format: format),
+                            gap: frame.hasGap ? frame.gap : nil))
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { _ in
+            task.cancel()
+            Task { await onTermination() }
+        }
+        return rows
+    }
+
     /// Turns an FFT payload into dBFS levels. Pass the format from the descriptor. An
     /// unrecognised format is read as DB_F32, the wire default.
     public static func fftLevels(_ payload: Data, format: Leyline_V1_FftBinFormat) -> [Float] {
@@ -127,27 +161,9 @@ extension DaemonConnection {
         req.fft.rowsPerSecond = rowsPerSecond
         req.fft.accumulation = accumulation
         let sub = try await subscribe(req, buffer: buffer)
-        let answered = sub.descriptor.fft.binFormat
-        let rows = AsyncThrowingStream<FFTRow, any Error> { continuation in
-            let task = Task {
-                do {
-                    for try await frame in sub.frames {
-                        continuation.yield(
-                            FFTRow(
-                                seq: frame.seq, time: frame.time,
-                                levelsDB: BulkDecode.fftLevels(frame.payload, format: answered),
-                                gap: frame.hasGap ? frame.gap : nil))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in
-                task.cancel()
-                Task { await sub.unsubscribe() }
-            }
-        }
+        let rows = BulkDecode.fftRows(
+            sub.frames, format: sub.descriptor.fft.binFormat, buffer: buffer,
+            onTermination: { await sub.unsubscribe() })
         return (sub.descriptor, rows)
     }
 }
