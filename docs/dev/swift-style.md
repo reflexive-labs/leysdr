@@ -356,9 +356,11 @@ fixes ("from the Mac", "the first run on the Mac") came from leaving that out.
 added for a use that does not exist yet costs the next reader time for no benefit. No reformatting
 drive-by, for the reason section 2 gives, and a refactor nobody asked for is its own commit.
 
-**Do not fix what you did not break.** `make license-check` is currently red on main for eight Go
-dependency rows the MCP adapter added. A Swift change should not fix it, and fixing it inside an
-unrelated diff obscures both changes. Flag it and move on.
+**Do not fix what you did not break inside an unrelated diff.** Fixing it in the middle of a
+feature diff obscures both changes. Lint is the exception that is always fixed: `make lint` and
+`make app-lint` pass before work is handed over, and a failure you did not cause gets a commit of
+its own (AGENTS.md, Conventions). For anything else that was already broken, such as a red
+`make license-check`, flag it and move on.
 
 Commit subjects, bodies and sign-off are in AGENTS.md and `../writing-guide.md`, "Commit messages
 and comments", not here.
