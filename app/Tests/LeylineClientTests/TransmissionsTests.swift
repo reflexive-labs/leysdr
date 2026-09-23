@@ -91,7 +91,7 @@ final class TransmissionsTests: XCTestCase {
         XCTAssertEqual(log.closed[0].seconds, 0.5)
 
         // A duration past the timeline's start floors at sample 0, as `listenSummary` does.
-        log.fold(edge(open: false, at: 1_000, duration: 5_000), captureRate: rate)
+        log.fold(edge(open: false, at: 1_000, duration: 1_200_000), captureRate: rate)
         XCTAssertEqual(log.closed[0].start, at(0))
     }
 
@@ -101,6 +101,17 @@ final class TransmissionsTests: XCTestCase {
         log.fold(edge(open: false, at: 200, duration: 0), captureRate: rate)
         XCTAssertTrue(log.closed.isEmpty, "nothing measured, nothing logged")
         XCTAssertNil(log.onAir, "but the squelch is closed")
+    }
+
+    func testAnOpeningShorterThanAQuarterSecondIsNothing() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        log.fold(edge(open: false, at: 240_000, duration: 240_000, snr: 1), captureRate: rate)
+        XCTAssertTrue(log.closed.isEmpty, "a 0.1 s blip on noise is not logged")
+        XCTAssertNil(log.onAir, "but the squelch is closed")
+        log.fold(edge(open: true, at: 1_000_000), captureRate: rate)
+        log.fold(edge(open: false, at: 1_600_000, duration: 600_000), captureRate: rate)
+        XCTAssertEqual(log.closed.count, 1, "a quarter second is")
     }
 
     func testAnUnknownRateCostsTheDurationAndNothingElse() {
@@ -152,7 +163,7 @@ final class TransmissionsTests: XCTestCase {
         XCTAssertEqual(log.closed[0].tone?.standardHz, 123)
         // And it does not leak into the next transmission.
         log.fold(edge(open: true, at: 3_000_000), captureRate: rate)
-        log.fold(edge(open: false, at: 3_240_000, duration: 240_000), captureRate: rate)
+        log.fold(edge(open: false, at: 4_200_000, duration: 1_200_000), captureRate: rate)
         XCTAssertNil(log.closed[0].tone)
     }
 

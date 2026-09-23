@@ -31,6 +31,8 @@ func TestClosedTransmissionOnlyOnTheCloseEdge(t *testing.T) {
 		{"open edge with a stale duration", &leylinev1.SquelchTransition{Open: true, DurationSamples: 99}, false},
 		{"close edge, nothing measured", &leylinev1.SquelchTransition{Open: false, DurationSamples: 0}, false},
 		{"close edge", &leylinev1.SquelchTransition{Open: false, DurationSamples: rate}, true},
+		{"close edge, a noise blip", &leylinev1.SquelchTransition{Open: false, DurationSamples: rate / 10}, false},
+		{"close edge, just long enough", &leylinev1.SquelchTransition{Open: false, DurationSamples: rate / 4}, true},
 	} {
 		if _, got := closedTransmission(tc.sq, rate); got != tc.want {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)

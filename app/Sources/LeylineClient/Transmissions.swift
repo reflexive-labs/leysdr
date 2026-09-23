@@ -5,8 +5,8 @@
 // The daemon summarises a transmission on the close edge of a `SquelchTransition` (its length
 // in capture samples, the peaks it reached), so the log keeps the last ones without timing
 // anything itself, and the tone under each is the CTCSS `SubAudible` reported while it ran. The
-// rules are `ley tune`'s (`go/internal/cli/transmission.go`: a close edge with no duration is
-// ignored; `subaudible.go`: the 1 Hz heartbeat repeats a tone and is not a new one, and a tone's
+// rules are `ley tune`'s (`go/internal/cli/transmission.go`: a close edge with no duration, or
+// one shorter than a quarter second, is ignored; `subaudible.go`: the 1 Hz heartbeat repeats a tone and is not a new one, and a tone's
 // loss is not logged), and the start of a transmission whose open edge was never seen is read back
 // from the close edge the way `listenSummary.apply` does (`go/internal/cli/mcp_tools.go`), so a
 // client that subscribes mid-transmission still logs it. Every time here is a `SampleTime` on
@@ -64,6 +64,10 @@ public struct TransmissionLog: Sendable, Equatable {
     /// How many closed transmissions are kept. A listener scans the last few minutes of a
     /// repeater; fifty is more than a screen shows and less than a day's traffic.
     public static let capacity = 50
+    /// The shortest squelch opening that is logged: a squelch set near the floor opens on noise
+    /// for a block or two at a time, and a log of 0.0 s rows buries the transmissions. A
+    /// kerchunk runs longer. `ley tune`'s `shortestTransmissionSeconds`.
+    public static let shortestSeconds = 0.25
 
     public let channelID: String
     public private(set) var closed: [Transmission] = []
@@ -97,6 +101,8 @@ public struct TransmissionLog: Sendable, Equatable {
             guard sq.durationSamples > 0 else { return }
             let seconds =
                 captureRate > 0 ? Double(sq.durationSamples) / Double(captureRate) : Double.nan
+            // An unknown rate keeps it: a length nobody can read is not a short one.
+            guard seconds.isNaN || seconds >= Self.shortestSeconds else { return }
             closed.insert(
                 Transmission(
                     start: start, end: msg.time, seconds: seconds, peakSNRDB: sq.peakSnrDb,

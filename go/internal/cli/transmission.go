@@ -30,9 +30,16 @@ type transmission struct {
 	start time.Time
 }
 
+// shortestTransmissionSeconds is the shortest squelch opening that counts as a
+// transmission: a squelch set near the floor opens on noise for a block or two
+// at a time, and a log of 0.0 s lines buries the transmissions. A kerchunk
+// runs longer. The app's log uses the same floor (TransmissionLog.shortestSeconds).
+const shortestTransmissionSeconds = 0.25
+
 // closedTransmission reads the summary off a squelch message, or reports false
-// when the message is not the close edge of one. captureRate is the capture's
-// sample rate; 0 means unknown, which costs the duration and nothing else.
+// when the message is not the close edge of one, or is one shorter than
+// shortestTransmissionSeconds. captureRate is the capture's sample rate; 0
+// means unknown, which costs the duration and nothing else.
 func closedTransmission(sq *leylinev1.SquelchTransition, captureRate uint64) (transmission, bool) {
 	if sq == nil || sq.Open || sq.DurationSamples == 0 {
 		return transmission{}, false
@@ -44,6 +51,9 @@ func closedTransmission(sq *leylinev1.SquelchTransition, captureRate uint64) (tr
 	}
 	if captureRate > 0 {
 		t.seconds = float64(sq.DurationSamples) / float64(captureRate)
+		if t.seconds < shortestTransmissionSeconds {
+			return transmission{}, false
+		}
 	}
 	return t, true
 }
