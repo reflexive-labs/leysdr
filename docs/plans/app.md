@@ -353,7 +353,7 @@ same floor as `ley`'s), the near-full-scale state dropped rather than kept as a 
 ships with its daemon), and the radio's peak and clipped fraction as two rows of the inspector's
 Measurements.
 
-### M2-6 `[ ]` The failure strip retired
+### M2-6 `[x]` The failure strip retired
 
 Seen on the Mac 2026-09-23: a banner flashing in the panel, "weird, hard to read, and not
 useful". The log names two causes. Every band or bookmark switch showed the out-of-capture
@@ -394,6 +394,23 @@ tone the transmission carried or `no tone`.
 
 Docs: `../design/app-design-handoff-m2.md` gets a "Decided 2026-09-24" entry and Region 2 is
 marked retired; `../dev/app.md`'s failure-state paragraph follows.
+
+Landed 2026-09-24: `FailureHold` in the façade (`FailureState.swift`) folds each `CaptureLevel`
+through `FailureState.name` and times the run from its first interval's first sample, so four
+quarter-second readings are one second; a reading on another capture, or none, starts again,
+and five tests cover the half-second burst, the second that shows, the one-second gap that
+does not clear, the two seconds that do, and the exit fraction. `CaptureLevelFeed` keeps the
+reading's `SampleTime` for it. Out of capture waits on a main-actor task started when the
+mirror first reports the state and cancelled when it leaves, so the words cannot show early.
+The chip's dot and suffix and the menu header's sentence read `AppSession.failure` directly;
+the identity's line reads `outOfCaptureWords`, now `Outside the radio's … around …`, and
+`AppSession.tuneInside` shares `placedCentre` with `setSampleRate` and logs under `tune`.
+`FailureStrip`, both dismissals, `failureShown`, `warnGround` and `warnBorder` are gone.
+`ChannelTelemetryFeed` logs the first sub-audible report of each channel, and the
+transmission-ended line ends ` · PL 100.0` or ` · no tone` from the log entry it closed (none
+for an opening shorter than `TransmissionLog.shortestSeconds`). The views are not compiled in
+the container: the chip, the header's wrapped sentence, the identity line and its button, and
+the out-of-capture wait are unverified until a run on the Mac.
 
 ### M2-7 `[ ]` The audio ladder in the panel
 

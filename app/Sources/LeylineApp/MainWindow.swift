@@ -89,8 +89,9 @@ struct EmptyWords: View {
 
 /// One line about the last thing that happened or the last thing that went wrong, over the
 /// bottom of the waterfall; a click dismisses it. The band's failure state and a channel the
-/// capture no longer covers were shown here in M1 and have been in the inspector since M2
-/// (`FailureStrip`), where the owner wanted them (docs/plans/app.md, "Carried out of M1").
+/// capture no longer covers were shown here in M1; since M2-6 clipping is on the device chip
+/// and in its menu, and out of capture is a line in the inspector's identity
+/// (docs/plans/app.md, M2-6).
 struct NoticeStrip: View {
     @Environment(AppSession.self) private var session
 

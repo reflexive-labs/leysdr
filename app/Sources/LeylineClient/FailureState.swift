@@ -96,3 +96,72 @@ public enum FailureState: Sendable, Equatable {
         }
     }
 }
+
+/// The failure state as the window shows it: `FailureState.name` folded over the capture's
+/// `CaptureLevel` readings with a hold on the capture's clock, so a state is shown only once it
+/// has lasted (plans/app.md, M2-6). Clipping is raised after the fraction has been at or over
+/// `FailureState.clippingFloor` for `raiseSeconds` and cleared after it has been under
+/// `FailureState.clippingExitFraction` for `clearSeconds`; the exit fraction still applies while
+/// the state is shown. Clipping comes in bursts of half a second to two seconds (a keyed HT, an
+/// FM peak), and without the hold each burst showed and cleared the words. The time is the
+/// readings' `SampleTime` and the capture's rate, never the wall clock (AGENTS.md, invariant 5).
+public struct FailureHold: Sendable, Equatable {
+    /// How long the fraction must stay over the floor before clipping is shown.
+    public static let raiseSeconds: Double = 1
+    /// How long it must stay under the exit fraction before the shown state clears: longer than
+    /// the raise, so a pause between two bursts does not clear and raise the words again.
+    public static let clearSeconds: Double = 2
+
+    /// The state to show, or nil.
+    public private(set) var state: FailureState?
+    /// The capture the readings came from; a reading on another capture starts again.
+    private var captureID: String?
+    /// The first sample of the run of readings that would change `state` (over the floor while
+    /// nothing is shown, under the exit fraction while clipping is), or nil when the newest
+    /// reading agrees with `state`.
+    private var runStart: UInt64?
+
+    public init() {}
+
+    /// Folds one reading in and returns the state to show. `time` is the reading's `SampleTime`
+    /// (the end of its interval, as the daemon sends it) and `sampleRate` the capture's rate. An
+    /// empty interval or an unknown rate changes nothing: neither can be timed. Folding the same
+    /// reading twice, as the window does when only the gains changed, changes only the words.
+    public mutating func fold(
+        level: Leyline_V1_CaptureLevel, at time: Leyline_V1_SampleTime, sampleRate: UInt64,
+        gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement]
+    ) -> FailureState? {
+        guard sampleRate > 0, level.totalSamples > 0 else { return state }
+        if time.captureID != captureID {
+            reset()
+            captureID = time.captureID
+        }
+        let named = FailureState.name(
+            level: level, gains: gains, elements: elements, previous: state)
+        guard (named == nil) != (state == nil) else {
+            runStart = nil
+            if named != nil { state = named }
+            return state
+        }
+        let end = time.sampleIndex
+        let start = end - min(end, level.totalSamples)
+        // The run is timed from the first interval's first sample, so four quarter-second
+        // readings are one second; a reading from before the run's start begins it again.
+        let from = runStart.flatMap { $0 <= end ? $0 : nil } ?? start
+        let needed = state == nil ? Self.raiseSeconds : Self.clearSeconds
+        if Double(end - from) >= needed * Double(sampleRate) {
+            state = named
+            runStart = nil
+        } else {
+            runStart = from
+        }
+        return state
+    }
+
+    /// Forgets the state and any run: the capture went away, or its readings stopped.
+    public mutating func reset() {
+        state = nil
+        captureID = nil
+        runStart = nil
+    }
+}

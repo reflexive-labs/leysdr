@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The inspector: the tuned channel as a thing with an identity and a reading, on the window's
-// right (docs/design/app-design-handoff-m2.md, "The panel"). Six regions and no scroll view: a
-// header that says `Channel`, the identity, the failure strip carried out of M1, the reading,
-// the log of recent transmissions and the disclosure groups; the last two are in
+// right (docs/design/app-design-handoff-m2.md, "The panel"). Five regions and no scroll view: a
+// header that says `Channel`, the identity, the reading, the log of recent transmissions and
+// the disclosure groups; the last two are in
 // InspectorGroups.swift and the reading's meter in MeterTrack.swift. Every word label here is
 // derived from a number the daemon measured, and the number is printed beside it, which is how
 // the app meets invariant 12. The panel keeps no radio state of its own: it renders the
@@ -42,7 +42,6 @@ struct InspectorView: View {
             InspectorHeader()
             Rectangle().fill(Theme.hairline).frame(height: 1)
             IdentityView()
-            FailureStrip()
             Rectangle().fill(Theme.hairline).frame(height: 1)
             ReadingsView()
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -75,7 +74,8 @@ struct InspectorHeader: View {
 /// Region 1: the channel's name first and the frequency demoted to a mono line, because the
 /// frequency is edited in the transport bar and this panel identifies the channel. The name is
 /// the bookmark's; without one it is the band's, and naming it with the pencil creates the
-/// bookmark.
+/// bookmark. A channel's condition is a line under the frequency with its fix beside it: the
+/// channel changed from its bookmark, and the channel outside the capture (plans/app.md, M2-6).
 struct IdentityView: View {
     @Environment(AppSession.self) private var session
     @State private var editing = false
@@ -125,6 +125,22 @@ struct IdentityView: View {
                         .help("Back to the bookmark's saved mode and width")
                     Button("Save") { session.saveTunedBookmark() }
                         .help("The bookmark takes the mode and width it is heard with now")
+                }
+                .buttonStyle(.bordered).controlSize(.mini)
+                .padding(.top, 4)
+            }
+            if let words = session.outOfCaptureWords {
+                // The channel is silent until the capture covers it again; Tune inside moves
+                // the capture's centre, not the channel. No close control: the line goes when
+                // the channel is back inside. It may wrap: with the button beside it the panel's
+                // 280 pt do not hold both frequencies on one line at every rate.
+                HStack(spacing: 8) {
+                    Text(words).font(Theme.Font.aside)
+                        .foregroundStyle(Theme.caution).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Tune inside") { session.tuneInside() }
+                        .help("Moves the radio's centre so this frequency is captured again")
                 }
                 .buttonStyle(.bordered).controlSize(.mini)
                 .padding(.top, 4)
@@ -243,66 +259,6 @@ struct NameField: View {
         default:
             return false
         }
-    }
-}
-
-/// Region 2: the problem the band's levels indicate (`FailureState`), or a channel the capture no
-/// longer covers, carried out of M1's strip over the waterfall (docs/plans/app.md, "Carried out
-/// of M1"): the sentence in ink, the number and the thing to try under it, and where the thing
-/// to try is the gain, a button that opens the device menu at the slider rather than text
-/// describing where to find it. `FailureState` and `ley tune`'s line do not change; this is
-/// presentation, and the close control keeps M1's rule that a closed state stays closed until a
-/// different one is detected. Absent when nothing is wrong, not empty.
-struct FailureStrip: View {
-    @Environment(AppSession.self) private var session
-
-    var body: some View {
-        if let words = session.outOfCaptureWords {
-            block(sentence: words, detail: nil, namesGain: false) {
-                session.dismissOutOfCapture()
-            }
-        } else if let f = session.failureShown {
-            block(sentence: f.headline + ".", detail: f.detail, namesGain: f.namesGain) {
-                session.dismissFailure()
-            }
-        }
-    }
-
-    private func block(
-        sentence: String, detail: String?, namesGain: Bool, dismiss: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top) {
-                Text(sentence).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9)) }
-                    .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
-                    .help("Close until a different state is named")
-            }
-            if let detail {
-                Text(detail).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if namesGain {
-                Button {
-                    session.deviceMenuShown = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Open the gain slider").font(Theme.Font.aside)
-                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.inkSecondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.warnGround, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.warnBorder))
-        .padding(.horizontal, 16).padding(.bottom, 12)
     }
 }
 

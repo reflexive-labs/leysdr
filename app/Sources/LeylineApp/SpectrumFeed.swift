@@ -209,8 +209,10 @@ final class ChannelTelemetryFeed {
     /// steadied reading from it (`ChannelReading`).
     var onMeter: ((Leyline_V1_Meter, Double) -> Void)?
     private var captureRate: UInt64 = 0
-    /// The last tone logged, so the heartbeat does not write a line a second.
-    private var lastToneHz: Double = 0
+    /// The last tone logged, so the heartbeat does not write a line a second: nil until the
+    /// first sub-audible report, which is logged whether it names a tone or not, so a log with no
+    /// PL in it shows whether the daemon reported anything (0 is a report of no tone).
+    private var lastToneHz: Double?
     /// Meters folded since the channel was followed, for the thirty-second log line.
     private var meters = 0
     private var task: Task<Void, Never>?
@@ -225,6 +227,7 @@ final class ChannelTelemetryFeed {
         if channelID == channel, task != nil { return }
         stop()
         channel = channelID
+        lastToneHz = nil
         transmissions = TransmissionLog(channelID: channelID)
         var sub = Leyline_V1_TelemetrySubscription()
         sub.channelID = channelID
@@ -277,14 +280,22 @@ final class ChannelTelemetryFeed {
                             sa.standardToneHz, sa.toneHz, sa.deviationHz, sa.toneSnrDb)
                         : "no PL (\(sa.kind))")
             }
-        case .squelch(let sq)?:
-            if !sq.open, sq.durationSamples > 0 {
-                log("telemetry", "transmission ended after \(sq.durationSamples) samples")
-            }
         default:
             break
         }
         transmissions?.fold(msg, captureRate: captureRate)
+        if case .squelch(let sq)? = msg.body, !sq.open, sq.durationSamples > 0 {
+            // After the fold, so the line can say which tone the log attached to the
+            // transmission; one too short for the log (`TransmissionLog.shortestSeconds`) has
+            // no entry and no tone clause.
+            let entry = transmissions?.closed.first.flatMap { $0.end == msg.time ? $0 : nil }
+            let tone = entry.map { t in
+                t.tone.map { String(format: " · PL %.1f", $0.standardHz) } ?? " · no tone"
+            }
+            log(
+                "telemetry",
+                "transmission ended after \(sq.durationSamples) samples\(tone ?? "")")
+        }
     }
 
     func stop() {
@@ -304,6 +315,9 @@ final class ChannelTelemetryFeed {
 @Observable
 final class CaptureLevelFeed {
     private(set) var level: Leyline_V1_CaptureLevel?
+    /// The newest reading's time, the end of its interval: the failure state's hold is timed on
+    /// it (`FailureHold`).
+    private(set) var time: Leyline_V1_SampleTime?
     private(set) var error: LeylineError?
     /// Fires after every reading, on the main actor; the session derives the failure state from it.
     var onLevel: (() -> Void)?
@@ -328,6 +342,7 @@ final class CaptureLevelFeed {
                     if Task.isCancelled { return }
                     if case .captureLevel(let l)? = msg.body {
                         self?.level = l
+                        self?.time = msg.time
                         self?.onLevel?()
                     }
                 }
@@ -342,5 +357,6 @@ final class CaptureLevelFeed {
         task = nil
         capture = nil
         level = nil
+        time = nil
     }
 }

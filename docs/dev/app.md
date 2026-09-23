@@ -12,7 +12,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`) | macOS and Linux |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`) | macOS and Linux |
 | `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
@@ -121,13 +121,22 @@ on the band is 15 dB above the floor. The window showed that warning too until 2
 was removed because repeating it every few seconds on a quiet band distracted more than it helped.
 The daemon
 not running, no radio and an unplugged radio are the mirror's states and live in
-`AppSession.emptyWords`. The session re-evaluates the state on every level reading and every mirror
-change, logs each change, and the inspector's Region 2 shows it until the count clears or the
-user closes it (a closed state stays closed until a different one is raised). A channel the
-capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or moved the capture) is
-reported the same way from the mirror, with the width and centre it would need; the window's own
-rate change never causes it, because `AppSession.setSampleRate` re-places the centre for the
-tuned frequency at the new width and writes centre and rate in one tick.
+`AppSession.emptyWords`. The session folds every level reading, and every mirror change for the
+gains, through `FailureHold`: clipping is raised after 1 s at or over the floor and cleared after
+2 s under the exit fraction, on the capture's clock, because clipping comes in bursts of half a
+second to two seconds and each burst used to show and clear the words. Each change is logged
+after the hold. While the state holds, the toolbar's device chip has a `caution` dot and reads
+`<radio> · clipping`, and the device menu's header carries the headline and detail above the gain
+slider. A channel the capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or
+moved the capture) is a `caution` line under the frequency in the inspector's identity, with the
+width and centre the radio is capturing and a `Tune inside` button, which moves the centre the
+way `AppSession.setSampleRate` places it (the channel keeps its absolute frequency, so only the
+centre is written). It shows only once the mirror has reported the state for 1 s, because the
+window's own retune writes the centre before the offset and the channel event between the two
+reads out of capture for about 90 ms. Neither has a close control: each goes when its cause
+clears. The window's own rate change never causes out of capture, because `setSampleRate`
+re-places the centre for the tuned frequency at the new width and writes centre and rate in one
+tick.
 
 **The inspector** (`InspectorView.swift`, `InspectorGroups.swift`; the design is
 `../design/app-design-handoff-m2.md`). The panel on the window's right describes the tuned signal
@@ -140,8 +149,8 @@ reports and folds the last two into the façade's `TransmissionLog`. The number 
 under each word, and a row whose measurement is NaN is hidden rather than dashed. Wall clock in
 the log comes through `SampleClock` from the capture's anchor and is relative otherwise. The panel
 keeps no state of its own; its one write is a bookmark's name, through `BookmarkStore`. The
-failure strip reads here since M2, and the transport bar's signal readout left when the panel
-arrived, the M1 handoff's one named exception to "nothing moves".
+failure strip read here from M2-3 until M2-6 retired it, and the transport bar's signal readout
+left when the panel arrived, the M1 handoff's one named exception to "nothing moves".
 
 ## Building and running
 

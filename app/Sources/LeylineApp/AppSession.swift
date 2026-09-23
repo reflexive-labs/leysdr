@@ -117,14 +117,20 @@ final class AppSession {
     /// The empty-state and out-of-capture messages last logged, so a change logs one line.
     private var shownEmptyWords: String?
     private var shownOutOfCapture: String?
-    /// The problem the band's levels indicate, or nil (`FailureState`): computed from the feed's
-    /// folds after every row and from the mirror when the gains change, and logged when it
-    /// changes. Shown in the inspector until the levels change or the user dismisses it.
+    /// The problem the radio's level shows, or nil (`FailureState`): folded through
+    /// `failureHold` on every `CaptureLevel` reading and on every mirror change (the gains pick
+    /// the words), and logged when it is raised and when it clears. Shown on the device chip and
+    /// in the device menu's header while it holds; there is no close control, because it goes
+    /// when the level clears (plans/app.md, M2-6).
     private(set) var failure: FailureState?
-    /// The state the user dismissed; the strip returns when a different state is detected.
-    private var dismissedFailure: FailureState?
-    /// The out-of-capture message was closed; it returns once the channel has been back inside.
-    private var outOfCaptureDismissed = false
+    /// The hold on the capture's clock that keeps a burst of clipping from showing.
+    @ObservationIgnored private var failureHold = FailureHold()
+    /// The channel the mirror has reported out of capture for `outOfCaptureHoldSeconds`, or nil:
+    /// only then are `outOfCaptureWords` shown.
+    private var outOfCaptureHeld: String?
+    /// The wait that sets `outOfCaptureHeld`, for the channel it is waiting on; cancelled when
+    /// the channel comes back inside.
+    @ObservationIgnored private var outOfCaptureWait: (channel: String, task: Task<Void, Never>)?
     private var busy = false
     private var rejectionsSeen = 0
 
@@ -471,8 +477,8 @@ final class AppSession {
         telemetry.follow(channelID, captureRate: capture?.sampleRate ?? 0, connection: daemon)
         captureLevel.follow(capture?.captureID, connection: daemon)
         nameFailure()
+        holdOutOfCapture()
         logShownWords()
-        if let ch = channel, ch.state != .outOfCapture { outOfCaptureDismissed = false }
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
         if state.rejections.count != rejectionsSeen {
             rejectionsSeen = state.rejections.count
@@ -1182,20 +1188,14 @@ final class AppSession {
             log("rate", "\(rate) S/s refused: a centre move is in flight")
             return
         }
-        let span = Int64(rate)
         var centre = Int64(cap.centerHz)
         if let ch = channel, let hz = tunedHz {
-            let bw = Int64(ch.bandwidthHz)
-            if bw > span {
+            if Int64(ch.bandwidthHz) > Int64(rate) {
                 notice =
-                    "\(ch.mode.word) at \(Frequency.format(UInt64(bw))) wide does not fit a \(Frequency.format(rate)) capture. Pick a narrower width first."
+                    "\(ch.mode.word) at \(Frequency.format(UInt64(ch.bandwidthHz))) wide does not fit a \(Frequency.format(rate)) capture. Pick a narrower width first."
                 return
             }
-            let target = Int64(hz)
-            if let b = band { centre = Int64(captureCentre(for: b, at: hz, rate: rate)) }
-            // The band's rule leaves the band's width to spare; the channel may be wider.
-            centre = min(max(centre, target - span / 2 + bw), target + span / 2 - bw)
-            centre = clampCentre(centre, span: span)
+            centre = placedCentre(for: ch, at: hz, rate: rate)
         }
         let want = UInt64(max(0, centre))
         let narrowing = rate < cap.sampleRate
@@ -1221,18 +1221,85 @@ final class AppSession {
         }
     }
 
-    /// The tuned channel lies outside the capture, silent: another client narrowed or moved the
-    /// capture (the window's own writes keep the station inside). The daemon holds the channel
-    /// at its frequency until the capture covers it again, and the message says how to fix it.
-    var outOfCaptureWords: String? {
-        guard !outOfCaptureDismissed, let ch = channel, ch.state == .outOfCapture,
-            let cap = capture, let hz = tunedHz
-        else { return nil }
-        return
-            "\(Frequency.format(hz)) is outside the \(Frequency.format(cap.sampleRate)) the radio is capturing around \(Frequency.format(cap.centerHz)). Pick a wider sample rate, or tune inside it."
+    /// Where the capture's centre goes so the tuned channel at `hz` fits a capture `rate` wide:
+    /// the band's rule when there is a band, then pulled in until the channel has its width to
+    /// spare, then kept in the radio's range. `setSampleRate` and `tuneInside` place it the same
+    /// way.
+    private func placedCentre(for ch: Leyline_V1_Channel, at hz: UInt64, rate: UInt64) -> Int64 {
+        let span = Int64(rate)
+        let bw = Int64(ch.bandwidthHz)
+        let target = Int64(hz)
+        var centre = Int64(capture?.centerHz ?? hz)
+        if let b = band { centre = Int64(captureCentre(for: b, at: hz, rate: rate)) }
+        // The band's rule leaves the band's width to spare; the channel may be wider.
+        centre = min(max(centre, target - span / 2 + bw), target + span / 2 - bw)
+        return clampCentre(centre, span: span)
     }
 
-    func dismissOutOfCapture() { outOfCaptureDismissed = true }
+    /// The tuned channel lies outside the capture, silent: another client narrowed or moved the
+    /// capture (the window's own writes keep the station inside). The daemon holds the channel
+    /// at its frequency until the capture covers it again. Shown under the frequency in the
+    /// identity, with `Tune inside` beside it, once the mirror has reported the state for
+    /// `outOfCaptureHoldSeconds`: the window's own retune writes the centre before the offset,
+    /// and the channel event between the two reads out of capture for about 90 ms.
+    var outOfCaptureWords: String? {
+        guard let ch = channel, ch.state == .outOfCapture, outOfCaptureHeld == ch.channelID,
+            let cap = capture
+        else { return nil }
+        return
+            "Outside the radio's \(Frequency.format(cap.sampleRate)) around \(Frequency.format(cap.centerHz))"
+    }
+
+    /// How long the mirror must report the tuned channel out of capture before the words show.
+    static let outOfCaptureHoldSeconds: Double = 1
+
+    /// Starts the wait when the tuned channel goes out of capture, and cancels it, and hides the
+    /// words, when the channel comes back inside or another channel is tuned.
+    private func holdOutOfCapture() {
+        let out = channel.flatMap { $0.state == .outOfCapture ? $0.channelID : nil }
+        if outOfCaptureHeld != out { outOfCaptureHeld = nil }
+        if let wait = outOfCaptureWait, wait.channel != out {
+            wait.task.cancel()
+            outOfCaptureWait = nil
+        }
+        guard let out, outOfCaptureHeld == nil, outOfCaptureWait == nil else { return }
+        let task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.outOfCaptureHoldSeconds))
+            guard !Task.isCancelled, let self, self.outOfCaptureWait?.channel == out else {
+                return
+            }
+            self.outOfCaptureWait = nil
+            self.outOfCaptureHeld = out
+            self.logShownWords()
+        }
+        outOfCaptureWait = (channel: out, task: task)
+    }
+
+    /// `Tune inside`: the capture's centre moves so the tuned frequency is inside it again, at
+    /// the capture's own rate, placed the way `setSampleRate` places it. Only the centre is
+    /// written: the daemon keeps the channel at its absolute frequency and recomputes the offset.
+    func tuneInside() {
+        guard let cap = capture, let ch = channel, let hz = tunedHz, let writes else { return }
+        guard centreInFlight == nil else {
+            log("tune", "tune inside refused: a centre move is in flight")
+            return
+        }
+        if UInt64(ch.bandwidthHz) > cap.sampleRate {
+            notice =
+                "\(ch.mode.word) at \(Frequency.format(UInt64(ch.bandwidthHz))) wide does not fit a \(Frequency.format(cap.sampleRate)) capture. Pick a wider sample rate first."
+            return
+        }
+        let want = UInt64(max(0, placedCentre(for: ch, at: hz, rate: cap.sampleRate)))
+        guard want != cap.centerHz else { return }
+        centreInFlight = Int64(want)
+        spectrum.resetFolds()
+        log("tune", "tune inside: centre \(cap.centerHz) -> \(want) Hz for \(hz) Hz")
+        Task {
+            await writes.centerHz(want, capture: cap.captureID)
+            await confirmed { self.capture?.centerHz == want }
+            if centreInFlight == Int64(want) { centreInFlight = nil }
+        }
+    }
 
     /// Another radio: a new capture there on the current band, the old one left to its owner
     /// (destroyed only if this app made it).
@@ -1454,19 +1521,22 @@ final class AppSession {
     func clearNotice() { notice = nil }
     func clearError() { lastError = nil }
 
-    /// The current failure state, from the capture's level and gains. A change logs one line, so
-    /// any strip that appeared can be traced in the log.
+    /// The current failure state, from the capture's level and gains through the hold. A change
+    /// logs one line, after the hold, so what the chip showed can be traced in the log.
     private func nameFailure() {
         let now: FailureState?
-        if let cap = capture, isLive, spectrum.error == nil {
-            now = FailureState.name(
-                level: captureLevel.level, gains: cap.gains, elements: device?.gainElements ?? [],
-                previous: failure)
+        if let cap = capture, isLive, spectrum.error == nil, let level = captureLevel.level,
+            let time = captureLevel.time
+        {
+            now = failureHold.fold(
+                level: level, at: time, sampleRate: cap.sampleRate, gains: cap.gains,
+                elements: device?.gainElements ?? [])
         } else {
+            failureHold.reset()
             now = nil
         }
         guard now != failure else { return }
-        // The same state with a new number is not a change: keep the dismissal, skip the log.
+        // The same state with a new number is not a change: skip the log.
         if let now, let was = failure, now.kind == was.kind {
             failure = now
             return
@@ -1477,9 +1547,6 @@ final class AppSession {
         } else {
             log("failure", "cleared")
         }
-        // A dismissal outlives the state's clearing: it is forgotten only when a different state
-        // is detected, or a state that flickers at its threshold would reappear on every flicker.
-        if let now, let d = dismissedFailure, now.kind != d.kind { dismissedFailure = nil }
     }
 
     /// Logs one line when the waterfall's empty-state message or the out-of-capture message
@@ -1496,16 +1563,6 @@ final class AppSession {
             log("shown", out.map { "out of capture: \($0)" } ?? "out of capture cleared")
         }
     }
-
-    /// Whether the inspector's strip shows the failure: not after the user closed it, until a
-    /// different one.
-    var failureShown: FailureState? {
-        guard let failure else { return nil }
-        if let d = dismissedFailure, d.kind == failure.kind { return nil }
-        return failure
-    }
-
-    func dismissFailure() { dismissedFailure = failure }
 }
 
 extension FailureState {

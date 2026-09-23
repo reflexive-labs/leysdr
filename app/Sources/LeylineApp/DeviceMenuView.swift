@@ -4,7 +4,8 @@
 // place in the window. The slider shows what auto chose, has detents where the radio has a
 // table, and the label warns that auto gain is poor on weak signals. Sample rate is the only
 // capture setting here; frequency correction and bias tee are not writable in the contract and
-// are not shown.
+// are not shown. Clipping is shown here too, on the chip and in the menu's header, because its
+// fix is the gain slider below it (plans/app.md, M2-6).
 
 import LeylineClient
 import LeylineProto
@@ -22,7 +23,13 @@ struct DeviceChip: View {
             // The pop-ups' ground (`PopupButton`): the toolbar's glass is hidden for this item.
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
-                Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
+                // `HackRF Pro · clipping` while the failure state holds; the state goes when
+                // the level clears, so there is nothing to close.
+                HStack(spacing: 0) {
+                    Text(name).foregroundStyle(Theme.inkSecondary)
+                    if clipping { Text(" · clipping").foregroundStyle(Theme.caution) }
+                }
+                .font(Theme.Font.label)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Theme.inkMuted)
             }
@@ -42,10 +49,16 @@ struct DeviceChip: View {
         return session.isLive ? "No radio" : "No daemon"
     }
 
+    private var clipping: Bool {
+        if case .clipping? = session.failure { return true }
+        return false
+    }
+
     private var dotColour: Color {
         guard session.isLive else { return Theme.recording }
         guard let d = session.device ?? session.state.devices.first else { return Theme.inkFaint }
-        return d.state == .disconnected ? Theme.recording : Theme.good
+        if d.state == .disconnected { return Theme.recording }
+        return clipping ? Theme.caution : Theme.good
     }
 }
 
@@ -91,6 +104,16 @@ struct DeviceMenuView: View {
             }
             Text("\(stateWord(d.state))\(d.serial.isEmpty ? "" : " · serial \(d.serial)")")
                 .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkMuted)
+            if let f = session.failure {
+                // One Text, so the sentence wraps as one: the headline in caution, the number
+                // and the thing to try after it.
+                let headline = Text(f.headline + ": ").foregroundStyle(Theme.caution)
+                let detail = Text(f.detail).foregroundStyle(Theme.inkTertiary)
+                Text("\(headline)\(detail)")
+                    .font(Theme.Font.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
         }
     }
 

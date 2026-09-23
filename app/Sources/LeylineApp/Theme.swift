@@ -40,14 +40,10 @@ enum Theme {
     static let good = Color(hex: 0x2FB6A3)
     /// Reserved; unused in M1.
     static let recording = Color(hex: 0xB8483C)
-    /// A reading that needs attention but is not an alarm: off tune, overdeviating. The ramp's
-    /// fourth stop, so it never competes with `accent` for the tuned channel.
+    /// A reading that needs attention but is not an alarm: off tune, overdeviating, the radio
+    /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
+    /// with `accent` for the tuned channel.
     static let caution = Color(hex: 0xC9C06A)
-    /// The failure strip's ground in the inspector (M2 handoff, Region 2): warm, one step off
-    /// the panel, so the failure message reads as a block and not a row.
-    static let warnGround = Color(hex: 0x1F1714)
-    /// The failure strip's edge, the only border in the window that is not grey.
-    static let warnBorder = Color(hex: 0x6B3A28)
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
     /// SwiftUI-drawn meters; the waterfall shader gets the same stops as floats.
@@ -107,7 +103,7 @@ enum Theme {
         static let columnHead = SwiftUI.Font.system(
             size: 8.5, weight: .medium, design: .monospaced)
         static let footnote = SwiftUI.Font.system(size: 10.5)
-        /// A clause under a sentence: the failure strip's thing to try.
+        /// A clause under a sentence, or a condition line under the identity's frequency.
         static let aside = SwiftUI.Font.system(size: 11.5)
     }
 
