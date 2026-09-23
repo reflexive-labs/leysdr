@@ -12,7 +12,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`) | macOS and Linux |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`) | macOS and Linux |
 | `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
@@ -128,9 +128,13 @@ not running, no radio and an unplugged radio are the mirror's states and live in
 gains, through `FailureHold`: clipping is raised after 1 s at or over the floor and cleared after
 2 s under the exit fraction, on the capture's clock, because clipping comes in bursts of half a
 second to two seconds and each burst used to show and clear the words. Each change is logged
-after the hold. While the state holds, the toolbar's device chip has a `caution` dot and reads
-`<radio> · clipping`, and the device menu's header carries the headline and detail above the gain
-slider. A channel the capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or
+after the hold. Clipping is drawn in three places and written in none (`../plans/app.md`, M2-8).
+While the state holds, the toolbar's device chip has a `caution` dot with the headline and detail
+as its tooltip, and the gain slider's knob is `recording`. The waterfall marks every row captured
+during a reading at or over the floor, the raw reading rather than the held state, with 2 px of
+`recording` at its left edge: readings arrive after the rows they cover, so
+`WaterfallBuffer` keeps each row's sample index in `ClippedRows` and the reading flags the held
+rows inside its interval, and the shader reads the flags as one byte per ring slot. A channel the capture no longer covers (`OUT_OF_CAPTURE`: another client narrowed or
 moved the capture) is a `caution` line under the frequency in the inspector's identity, with the
 width and centre the radio is capturing and a `Tune inside` button, which moves the centre the
 way `AppSession.setSampleRate` places it (the channel keeps its absolute frequency, so only the

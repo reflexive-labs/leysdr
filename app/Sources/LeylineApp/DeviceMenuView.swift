@@ -4,8 +4,9 @@
 // place in the window. The slider shows what auto chose, has detents where the radio has a
 // table, and the label warns that auto gain is poor on weak signals. Sample rate is the only
 // capture setting here; frequency correction and bias tee are not writable in the contract and
-// are not shown. Clipping is shown here too, on the chip and in the menu's header, because its
-// fix is the gain slider below it (plans/app.md, M2-6).
+// are not shown. Clipping is shown here too, drawn rather than written: the chip's dot, with the
+// sentence as the chip's tooltip, and the gain slider's knob, because the slider is its fix
+// (plans/app.md, M2-8).
 
 import LeylineClient
 import LeylineProto
@@ -23,13 +24,7 @@ struct DeviceChip: View {
             // The pop-ups' ground (`PopupButton`): the toolbar's glass is hidden for this item.
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
-                // `HackRF Pro · clipping` while the failure state holds; the state goes when
-                // the level clears, so there is nothing to close.
-                HStack(spacing: 0) {
-                    Text(name).foregroundStyle(Theme.inkSecondary)
-                    if clipping { Text(" · clipping").foregroundStyle(Theme.caution) }
-                }
-                .font(Theme.Font.label)
+                Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Theme.inkMuted)
             }
@@ -38,7 +33,17 @@ struct DeviceChip: View {
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+        // While the failure state holds the dot is `caution` and the sentence is here, in the
+        // tooltip, and nowhere else in words; it goes when the level clears, so there is
+        // nothing to close (plans/app.md, M2-8).
+        .help(tooltip)
         .popover(isPresented: $session.deviceMenuShown, arrowEdge: .bottom) { DeviceMenuView() }
+    }
+
+    private var tooltip: String {
+        if let f = session.failure { return f.headline + ": " + f.detail }
+        guard let d = session.device ?? session.state.devices.first else { return name }
+        return d.state == .disconnected ? name + ", unplugged" : name
     }
 
     private var name: String {
@@ -104,16 +109,6 @@ struct DeviceMenuView: View {
             }
             Text("\(stateWord(d.state))\(d.serial.isEmpty ? "" : " · serial \(d.serial)")")
                 .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkMuted)
-            if let f = session.failure {
-                // One Text, so the sentence wraps as one: the headline in caution, the number
-                // and the thing to try after it.
-                let headline = Text(f.headline + ": ").foregroundStyle(Theme.caution)
-                let detail = Text(f.detail).foregroundStyle(Theme.inkTertiary)
-                Text("\(headline)\(detail)")
-                    .font(Theme.Font.footnote)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
-            }
         }
     }
 
@@ -229,7 +224,8 @@ struct GainControl: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             } else {
-                GainSlider(element: element, db: db, dimmed: auto) { newDB, ended in
+                GainSlider(element: element, db: db, dimmed: auto, clipping: clipping) {
+                    newDB, ended in
                     dragging = ended ? nil : newDB
                     if ended { session.setGain(element: element.name, db: newDB) }
                 }
@@ -256,6 +252,12 @@ struct GainControl: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// Whether the radio is clipping: the slider's knob lights, because the slider is the fix.
+    private var clipping: Bool {
+        if case .clipping? = session.failure { return true }
+        return false
     }
 
     private var binaryValues: [Double]? {
@@ -298,6 +300,8 @@ struct GainSlider: View {
     let element: Leyline_V1_GainElement
     let db: Double
     let dimmed: Bool
+    /// The radio is clipping: the knob is `recording` (plans/app.md, M2-8).
+    let clipping: Bool
     let onChange: (Double, Bool) -> Void
 
     private var values: [Double] { element.validDb.isEmpty ? [] : element.validDb.sorted() }
@@ -313,7 +317,7 @@ struct GainSlider: View {
                     Rectangle().fill(Theme.borderStrong).frame(width: 1, height: 6).offset(
                         x: x(of: v, width: w))
                 }
-                Circle().fill(dimmed ? Theme.inkMuted : Theme.ink).frame(width: 12, height: 12)
+                Circle().fill(knobColour).frame(width: 12, height: 12)
                     .offset(x: x(of: db, width: w) - 6)
             }
             .frame(height: 14)
@@ -324,6 +328,11 @@ struct GainSlider: View {
                     .onEnded { v in onChange(snap(value(atX: v.location.x, width: w)), true) })
         }
         .frame(height: 14)
+    }
+
+    private var knobColour: Color {
+        if clipping { return Theme.recording }
+        return dimmed ? Theme.inkMuted : Theme.ink
     }
 
     private func x(of v: Double, width: CGFloat) -> CGFloat {

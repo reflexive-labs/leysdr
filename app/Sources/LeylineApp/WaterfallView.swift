@@ -219,6 +219,10 @@ struct WaterfallUniforms {
     var height: Float = 1
     var rowsPerPixel: Float = 1
     var fadeU8: Float = 0
+    /// `Theme.recording`, the colour of a clipped row's mark.
+    var markR: Float = 0
+    var markG: Float = 0
+    var markB: Float = 0
 }
 
 /// Fills a byte texture from the feed's ring and draws it through the ramp. S1's client half:
@@ -233,6 +237,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     private var lastTextureFailure: CFAbsoluteTime = 0
     private var lastSlowDrawableLog: CFAbsoluteTime = 0
     private var stops: [SIMD4<Float>] = Theme.levelStopsRGB.map { SIMD4($0, 1) }
+    private let mark = Theme.recordingRGB
 
     var buffer: WaterfallBuffer?
     var viewLo: Float = 0
@@ -320,6 +325,9 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         u.width = Float(view.drawableSize.width)
         u.height = Float(view.drawableSize.height)
         u.rowsPerPixel = 1
+        u.markR = mark.x
+        u.markG = mark.y
+        u.markB = mark.z
 
         guard let cmd = queue.makeCommandBuffer(),
             let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
@@ -328,6 +336,12 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         enc.setFragmentTexture(texture, index: 0)
         enc.setFragmentBytes(&u, length: MemoryLayout<WaterfallUniforms>.stride, index: 0)
         stops.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+        // The clipping flags, one byte a ring slot (plans/app.md, M2-8), sent whole every frame
+        // rather than uploaded by the slots a reading touched: a reading flags rows already
+        // drawn, and 2048 bytes is under the 4 KB `setFragmentBytes` takes without a buffer.
+        buffer.clipped.flags.withUnsafeBytes {
+            enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2)
+        }
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
         cmd.present(drawable)

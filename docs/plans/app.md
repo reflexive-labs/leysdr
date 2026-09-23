@@ -481,7 +481,7 @@ pt ladder inside the 280 pt of padding), the gutter marks' anchors at the plot's
 `border` bars, the gradient's direction, and that the window's subscription starts and stops with
 the panel and the channel.
 
-### M2-8 `[ ]` Clipping drawn, not written
+### M2-8 `[x]` Clipping drawn, not written
 
 Seen on the Mac 2026-09-23, after M2-6: "I noticed the clipping warning in the hardware
 popover. That's not very discoverable. Remove the written warning entirely and think about
@@ -507,6 +507,25 @@ the picture, one at the radio, one at the fix, none of them a sentence.
 
 Docs: the M2 handoff's "Decided 2026-09-24" gains the change; `../dev/app.md`'s failure-state
 paragraph names the three places.
+
+Landed 2026-09-24: `ClippedRows` in the façade (`ClippedRows.swift`) keeps a sample index and a
+flag byte per ring slot, preallocated at `WaterfallBuffer.capacity`; `append` clears the new
+row's flag, and `mark(_:at:)` flags every held row inside a reading's interval when its clipped
+fraction is at or over `clippingFloor`. Every held row is compared rather than stopping at the
+first older one, because after a change of capture the ring still holds rows on the old clock.
+Eight tests cover the interval, an empty one, a reused slot, overwritten rows, the reset, the
+floor, a reading under it, and an interval longer than the clock. `WaterfallBuffer` holds one
+beside its levels, `SpectrumFeed.ingest` passes each row's sample index, and `AppSession`'s
+`onLevel` handler marks the rows when the reading's capture (`CaptureLevelFeed.capture`, now
+readable) is the waterfall's subscribed capture. The renderer sends the flag column whole every
+frame with `setFragmentBytes` at buffer index 2: 2048 bytes is under the 4 KB that call takes,
+and a reading flags rows already drawn, so tracking the touched slots would save nothing worth
+the code. The shader returns `recording` (three floats appended to `WaterfallUniforms` from
+`Theme.recordingRGB`) for a flagged row's pixels whose centre is under x = 2. The chip lost its
+suffix and gained `.help` with `headline: detail` while clipping and the radio's name
+otherwise; the menu header's sentence is gone; `GainSlider` takes `clipping` and its knob is
+`recording` while it holds. The views and the shader are not compiled in the container: the
+marks, their colour and scroll, the tooltip and the knob are unverified until a run on the Mac.
 
 ### M2-9 `[ ]` dB and margin on the spectrum
 

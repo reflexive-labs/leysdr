@@ -15,26 +15,31 @@ import os
 let signposter = OSSignposter(subsystem: "com.leyline.app", category: "waterfall")
 
 /// Rows as the waterfall's texture wants them: DB_U8 bytes, newest last, in a ring the renderer
-/// copies from by row count. Main-actor only: the renderer draws on the main thread.
+/// copies from by row count, and beside it which rows were captured while the radio clipped
+/// (`ClippedRows`, plans/app.md M2-8). Main-actor only: the renderer draws on the main thread.
 @MainActor
 final class WaterfallBuffer {
-    static let capacity = 2048
+    nonisolated static let capacity = 2048
     private(set) var bins = 0
     private(set) var storage: [UInt8] = []
     /// Rows appended since the last reset; the ring index of the newest is `(count - 1) % capacity`.
     private(set) var count = 0
     /// The seq of the newest row, for the draw-side signpost.
     private(set) var newestSeq: UInt64 = 0
+    /// Each slot's sample index and clipping flag; its slots are the ring's.
+    private(set) var clipped = ClippedRows(capacity: WaterfallBuffer.capacity)
 
     func reset(bins: Int) {
         self.bins = bins
         storage = [UInt8](repeating: 0, count: bins * Self.capacity)
         count = 0
         newestSeq = 0
+        clipped.reset()
     }
 
-    func append(_ row: [Float], seq: UInt64) {
+    func append(_ row: [Float], seq: UInt64, sampleIndex: UInt64) {
         if row.count != bins { reset(bins: row.count) }
+        clipped.append(sampleIndex: sampleIndex)
         let slot = count % Self.capacity
         let base = slot * bins
         for i in 0..<bins {
@@ -43,6 +48,11 @@ final class WaterfallBuffer {
         }
         count += 1
         newestSeq = seq
+    }
+
+    /// Flags the held rows one `CaptureLevel` reading covers, when it is over the clipping floor.
+    func markClipped(_ level: Leyline_V1_CaptureLevel, at time: Leyline_V1_SampleTime) {
+        clipped.mark(level, at: time)
     }
 
     /// The row at ring slot `slot`, as a pointer for a texture upload.
@@ -181,7 +191,7 @@ final class SpectrumFeed {
         if floorDB.isNaN || abs(medianDB - floorDB) > Self.floorSlackDB {
             floorDB = medianDB.rounded()
         }
-        waterfall.append(row.levelsDB, seq: row.seq)
+        waterfall.append(row.levelsDB, seq: row.seq, sampleIndex: row.time.sampleIndex)
         rows += 1
         if row.gap != nil { gaps += 1 }
         if rows % 900 == 0 { log("feed", "\(rows) rows, \(gaps) gaps, floor \(floorDB) dBFS") }
@@ -322,7 +332,8 @@ final class CaptureLevelFeed {
     /// Fires after every reading, on the main actor; the session derives the failure state from it.
     var onLevel: (() -> Void)?
     private var task: Task<Void, Never>?
-    private var capture: String?
+    /// The capture the readings belong to, so the session marks only that capture's rows.
+    private(set) var capture: String?
 
     func follow(_ captureID: String?, connection: DaemonConnection?) {
         guard let captureID, let connection else {

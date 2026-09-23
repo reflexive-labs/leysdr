@@ -124,9 +124,10 @@ final class AppSession {
     private var shownOutOfCapture: String?
     /// The problem the radio's level shows, or nil (`FailureState`): folded through
     /// `failureHold` on every `CaptureLevel` reading and on every mirror change (the gains pick
-    /// the words), and logged when it is raised and when it clears. Shown on the device chip and
-    /// in the device menu's header while it holds; there is no close control, because it goes
-    /// when the level clears (plans/app.md, M2-6).
+    /// the words), and logged when it is raised and when it clears. While it holds the device
+    /// chip's dot is `caution` with the sentence as its tooltip and the gain slider's knob is
+    /// `recording`; there is no close control, because it goes when the level clears
+    /// (plans/app.md, M2-6 and M2-8).
     private(set) var failure: FailureState?
     /// The hold on the capture's clock that keeps a burst of clipping from showing.
     @ObservationIgnored private var failureHold = FailureHold()
@@ -400,7 +401,10 @@ final class AppSession {
 
     func start() async {
         guard running == nil else { return }
-        captureLevel.onLevel = { [weak self] in self?.nameFailure() }
+        captureLevel.onLevel = { [weak self] in
+            self?.markClippedRows()
+            self?.nameFailure()
+        }
         telemetry.onMeter = { [weak self] m, seconds in
             self?.foldReading(m, atSeconds: seconds)
             self?.audioLevels.meterChanged(m)
@@ -1536,6 +1540,16 @@ final class AppSession {
 
     func clearNotice() { notice = nil }
     func clearError() { lastError = nil }
+
+    /// Marks the waterfall's rows the newest reading covers, when it is over the clipping floor
+    /// and its capture is the one the waterfall's rows come from (plans/app.md, M2-8). The raw
+    /// reading, not `failure`: the mark records every interval that clipped, the hold does not.
+    private func markClippedRows() {
+        guard let level = captureLevel.level, let time = captureLevel.time,
+            let id = captureLevel.capture, id == spectrum.subscribedCapture
+        else { return }
+        spectrum.waterfall.markClipped(level, at: time)
+    }
 
     /// The current failure state, from the capture's level and gains through the hold. A change
     /// logs one line, after the hold, so what the chip showed can be traced in the log.
