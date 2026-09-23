@@ -56,24 +56,15 @@ struct InspectorView: View {
     }
 }
 
-/// The word `Channel` and a close control, nothing else: no tabs. The tab strip (`Channel` /
-/// `Processors` / `＋`) is M4's and appears when there is a second tab to put in it; a one-tab
-/// tab bar now would advertise tabs that do not exist until M4 (M2 handoff, "The panel").
+/// The word `Channel`, nothing else: no tabs, and no close control, because the toolbar's
+/// toggle beside it already hides the panel. The tab strip (`Channel` / `Processors` / `＋`) is
+/// M4's and appears when there is a second tab to put in it; a one-tab tab bar now would
+/// advertise tabs that do not exist until M4 (M2 handoff, "The panel").
 struct InspectorHeader: View {
-    @Environment(AppSession.self) private var session
-
     var body: some View {
         HStack {
             Text("Channel").font(Theme.Font.menuTitle).foregroundStyle(Theme.inkSecondary)
             Spacer()
-            Button {
-                session.toggleInspector()
-            } label: {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.inkFaint)
-            }
-            .buttonStyle(.plain)
-            .help("Hide Inspector (⌥⌘I)")
         }
         .padding(.horizontal, 16)
         .frame(height: Theme.Layout.inspectorHeaderHeight)
