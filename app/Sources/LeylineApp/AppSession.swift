@@ -770,14 +770,17 @@ final class AppSession {
         }
     }
 
-    /// `146.520 MHz`, and during a drag how far it has swept.
-    func pointerWords(_ hz: UInt64) -> String {
+    /// `146.520 MHz · −52 dBFS · 26 dB over the floor`, the level being the pointer column's
+    /// (`levelDB`) against the held floor, dashes before one is held. During a drag the swept
+    /// figure takes the level clause's place, so the badge stays one line.
+    func pointerWords(_ hz: UInt64, levelDB: Float) -> String {
         let f = Frequency.fieldParts(hz)
         if let start = sweepFromHz, start != hz {
             let sweep = start > hz ? start - hz : hz - start
             return "\(f.major) MHz · \(Frequency.format(sweep)) swept"
         }
-        return "\(f.major) MHz"
+        let level = SpectrumFold.levelWords(levelDB: levelDB, floorDB: spectrum.floorDB)
+        return "\(f.major) MHz · \(level)"
     }
 
     /// Every gesture ends here. Inside the capture it is one `offset_hz` write. Outside it the

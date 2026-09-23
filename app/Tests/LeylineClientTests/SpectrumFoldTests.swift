@@ -95,4 +95,26 @@ final class SpectrumFoldTests: XCTestCase {
         XCTAssertEqual(f, floor, accuracy: 1e-9)
         XCTAssertEqual(threshold, (floor + 10).rounded())
     }
+
+    func testLevelWordsPrintWholeDBAndTheMarginOverTheFloor() {
+        XCTAssertEqual(
+            SpectrumFold.levelWords(levelDB: -52.3, floorDB: -78.2),
+            "\u{2212}52 dBFS · 26 dB over the floor")
+        XCTAssertEqual(
+            SpectrumFold.levelWords(levelDB: -81.4, floorDB: -78),
+            "\u{2212}81 dBFS · \u{2212}3 dB over the floor", "under the floor, no plus above it")
+        XCTAssertEqual(
+            SpectrumFold.levelWords(levelDB: -52.6, floorDB: -78.4),
+            "\u{2212}53 dBFS · 25 dB over the floor", "the margin of the two rounded numbers")
+        XCTAssertEqual(
+            SpectrumFold.levelWords(levelDB: -0.3, floorDB: -0.2),
+            "0 dBFS · 0 dB over the floor", "no negative zero")
+    }
+
+    func testLevelWordsAreDashesWithoutALevelOrAFloor() {
+        let dashes = "— dBFS · — dB over the floor"
+        XCTAssertEqual(SpectrumFold.levelWords(levelDB: -52, floorDB: .nan), dashes)
+        XCTAssertEqual(SpectrumFold.levelWords(levelDB: -.infinity, floorDB: -78), dashes)
+        XCTAssertEqual(SpectrumFold.levelWords(levelDB: .nan, floorDB: -78), dashes)
+    }
 }
