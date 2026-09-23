@@ -27,7 +27,9 @@ struct InspectorToggle: View {
         } label: {
             Image(systemName: "sidebar.right").font(.system(size: 13, weight: .medium))
                 .foregroundStyle(session.inspectorShown ? Theme.inkSecondary : Theme.inkMuted)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .help(session.inspectorShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")

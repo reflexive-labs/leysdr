@@ -18,15 +18,16 @@ struct DeviceChip: View {
         Button {
             session.deviceMenuShown.toggle()
         } label: {
-            // No background of its own: the toolbar gives every item a glass one, and a chip
-            // with its own background looked like a button inside a button.
+            // The pop-ups' ground (`PopupButton`): the toolbar's glass is hidden for this item.
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
                 Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Theme.inkMuted)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .popover(isPresented: $session.deviceMenuShown, arrowEdge: .bottom) { DeviceMenuView() }

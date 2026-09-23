@@ -31,10 +31,13 @@ struct MainWindow: View {
         }
         .background(Theme.ground)
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                DeviceChip()
-                InspectorToggle()
-            }
+            // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
+            // is hidden and each item draws the pop-ups' ground instead.
+            ToolbarItem(placement: .primaryAction) { DeviceChip() }
+                .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) { InspectorToggle() }
+                .sharedBackgroundVisibility(.hidden)
         }
         .toolbarBackground(Theme.chrome, for: .windowToolbar)
         .preferredColorScheme(.dark)
