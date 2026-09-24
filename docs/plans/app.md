@@ -568,6 +568,30 @@ until a run on the Mac are the label positions against the chip and the end labe
 visibility in `borderStrong` under the traces, the half-drawn top grid line at y = 0, and the
 badge's width (about 310 pt for the full clause) and clamp near the right edge.
 
+### M2-10 `[ ]` Clipping said once, in both clients
+
+Seen 2026-09-24 in `ley tune 462.5625` with a keyed handheld a metre from the HackRF: the
+clipping line printed on every quarter-second reading, seven times with seven counts across one
+transmission; "Nothing is above the noise … the gain is at its lowest. Turn it up" printed
+three times, between overs, though the design has it warn once at tune; and "at the lowest gain.
+Move the antenna away" was said at LNA 8 dB and VGA 20 dB, because the rule counts any stage at
+its minimum and the AMP, a two-value stage, was off. The owner: "the TUI should handle these
+clipping alerts more gracefully."
+
+- **The hold the app has, in `ley tune`**: raised after 1 s over `clippingFloor`, cleared after
+  2 s under the exit fraction, on the capture's clock, one line when raised and nothing when it
+  clears (the transmission's summary line already carries the peak). The count in the line is
+  the reading that raised it.
+- **The quiet-band line is said once, at tune**, from the first rows, and never again in the
+  session; it is not a state the tracker re-raises.
+- **"At the lowest gain" means every continuous or table stage is at its lowest.** A two-value
+  stage (the HackRF's AMP) does not count. When one such stage is not at its lowest the advice
+  names it: "Lower the VGA gain." The façade's `FailureState.gainAtMinimum` and `detail` follow
+  the same rule, with tests for a HackRF at LNA 8 / VGA 20 / AMP off (not at the lowest, names
+  the VGA) and at 0 / 0 / off (at the lowest).
+- **`ley record --gain 0` on the HackRF left LNA at 8 dB** (the take's sidecar). Find out whether
+  the flag reaches the job's capture and fix it if it is a plumbing gap.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,
