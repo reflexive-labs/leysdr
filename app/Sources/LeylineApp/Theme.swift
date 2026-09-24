@@ -182,6 +182,25 @@ enum Theme {
         static let gutterTickSeconds = 10
         /// The store footer's bar at the sidebar's foot (M3 handoff, "In every screen").
         static let storeBarHeight: CGFloat = 3
+        /// The Recordings source's channel page (M3 handoff, 8c): its header is 56 pt, as the
+        /// handoff specifies; the rest are read off the 8c screen (`tmp/recordings3.png`, 1.31
+        /// device pixels a point there): the page's side and bottom inset, the gap above a day's
+        /// header, the gap between cards, a card's inset and corner, and a chip's gap, inset and
+        /// 4 pt corner.
+        static let pageHeaderHeight: CGFloat = 56
+        static let pageInset: CGFloat = 24
+        static let pageDayGap: CGFloat = 20
+        static let cardGap: CGFloat = 10
+        static let cardInset: CGFloat = 14
+        static let cardRadius: CGFloat = 6
+        static let chipGap: CGFloat = 8
+        static let chipInsetH: CGFloat = 8
+        static let chipInsetV: CGFloat = 5
+        static let chipRadius: CGFloat = 4
+        /// The inspector on a part: the 3 pt position bar, and the table's label column at the
+        /// reading rows' 62 pt so the two panels line up.
+        static let partProgressHeight: CGFloat = 3
+        static let partTableLabelWidth: CGFloat = readingLabelWidth
         /// The inspector's audio ladder (M2 handoff, "Region 3b: audio"): a 64 pt plot beside a
         /// 22 pt dB gutter, eleven 14 pt bars in 22 pt slots with a gap before rms and peak,
         /// 272 pt in all inside the panel's 280. The rows under the plot are the labels and the

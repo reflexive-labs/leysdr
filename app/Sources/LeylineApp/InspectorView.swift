@@ -36,7 +36,23 @@ struct InspectorToggle: View {
     }
 }
 
+/// The Channel panel, or while the sidebar's Recordings source shows and a part is selected or
+/// playing, the inspector on that part (`PartInspector`, M3 handoff, 8c). With nothing selected
+/// the Recordings source shows the Channel panel as the Radio source does.
 struct InspectorView: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        if let p = session.inspectedPart {
+            PartInspector(manifest: p.manifest, part: p.part, group: p.group)
+        } else {
+            ChannelPanel()
+        }
+    }
+}
+
+/// The six regions of the M2 panel.
+struct ChannelPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             InspectorHeader()

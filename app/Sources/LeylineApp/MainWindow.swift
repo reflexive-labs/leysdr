@@ -58,10 +58,10 @@ struct MainWindow: View {
     }
 
     /// Band rail, spectrum and waterfall, or the message explaining why there is nothing to draw.
-    /// While the sidebar's Recordings source shows with a row selected, one sentence covers it
-    /// until 8c's channel page lands (M3 handoff, "In every screen"): an overlay, as the empty
-    /// state is, so the Metal view and its subscription carry on underneath and come back as
-    /// they were.
+    /// While the sidebar's Recordings source shows with a row selected, that channel's page
+    /// covers it (`RecordingsPage`, M3 handoff, 8c): an overlay, as the empty state is, so the
+    /// Metal view and its subscription carry on underneath and come back as they were, and the
+    /// transport bar below stays live.
     private var canvas: some View {
         VStack(spacing: 0) {
             BandRailView()
@@ -88,7 +88,7 @@ struct MainWindow: View {
             }
         }
         .overlay {
-            if session.recordingsPageShown { RecordingsPagePending() }
+            if session.recordingsPageShown { RecordingsPage() }
         }
     }
 
@@ -108,22 +108,6 @@ struct MainWindow: View {
             .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
         }
         .frame(width: Theme.Layout.waterfallGutterWidth + 1)
-    }
-}
-
-/// The centre column while the Recordings source shows a selected channel: one sentence where
-/// 8c's channel page will be, never a broken page (M3 handoff, "In every screen"). Opaque, and it
-/// takes the clicks, so nothing of the live canvas under it can be tuned by accident.
-struct RecordingsPagePending: View {
-    var body: some View {
-        ZStack {
-            Theme.ground
-            Text("The channel page is coming; the files are in Finder.")
-                .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
-                .multilineTextAlignment(.center)
-                .padding(20)
-        }
-        .contentShape(Rectangle())
     }
 }
 

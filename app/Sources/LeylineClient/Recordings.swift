@@ -692,7 +692,7 @@ public enum Recordings {
     }
 
     /// Whole calendar days from `date` to `now`; a date after now (a clock step) is today.
-    private static func daysBefore(_ date: Date, now: Date, calendar: Calendar) -> Int {
+    static func daysBefore(_ date: Date, now: Date, calendar: Calendar) -> Int {
         let days =
             calendar.dateComponents(
                 [.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)
@@ -700,7 +700,7 @@ public enum Recordings {
         return max(0, days)
     }
 
-    private static func format(_ date: Date, _ pattern: String, _ calendar: Calendar) -> String {
+    static func format(_ date: Date, _ pattern: String, _ calendar: Calendar) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.calendar = calendar

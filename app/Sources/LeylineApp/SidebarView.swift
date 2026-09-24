@@ -6,8 +6,8 @@
 // station; selecting a band applies all of its settings and the expanded row shows them, and a
 // bookmark that is recording has a dot. Recordings is the store grouped by channel, one row per
 // frequency and mode and never one per recording, because a file on disk is not a place to tune
-// and a flat list grew without bound ("What this replaces"). Until 8c's channel page lands a row
-// only selects, and the files are reached through Finder.
+// and a flat list grew without bound ("What this replaces"). Selecting a row puts that channel's
+// page in the centre column (`RecordingsPage.swift`).
 
 import LeylineClient
 import LeylineProto
@@ -214,8 +214,9 @@ struct BookmarkRow: View {
 }
 
 /// The Recordings source: a search field, then one row per channel (`Recordings.channels`),
-/// running ones first and then by most recent activity (M3 handoff, 8c). A click selects a row,
-/// and a second click on it clears the selection and gives the centre column back to the radio.
+/// running ones first and then by most recent activity (M3 handoff, 8c). A click selects a row and
+/// shows its channel page; a second click on it clears the selection and gives the centre column
+/// back to the radio.
 struct RecordingsSource: View {
     @Environment(AppSession.self) private var session
 

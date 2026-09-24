@@ -112,12 +112,22 @@ final class AppSession {
         UserDefaults.standard.string(forKey: AppSession.sidebarSourceKey)
         .flatMap(SidebarSource.init(rawValue:)) ?? .radio
     {
-        didSet { UserDefaults.standard.set(sidebarSource.rawValue, forKey: Self.sidebarSourceKey) }
+        didSet {
+            UserDefaults.standard.set(sidebarSource.rawValue, forKey: Self.sidebarSourceKey)
+            if sidebarSource != oldValue { followPage() }
+        }
     }
-    /// The Recordings source's selected channel row (`RecordingChannel.id`), or nil. Selecting a
-    /// row only selects it until 8c's channel page lands; while one is selected and the source
-    /// shows, the centre column says where the files are (`MainWindow`).
-    var selectedRecordingChannel: String?
+    /// The Recordings source's selected channel row (`RecordingChannel.id`), or nil. While one is
+    /// selected and the source shows, the centre column is that channel's page
+    /// (`RecordingsPage`), and the manifests of its recordings are read. Another row, or none,
+    /// clears the selected part: the inspector then shows a part only while one plays.
+    var selectedRecordingChannel: String? {
+        didSet {
+            guard selectedRecordingChannel != oldValue else { return }
+            selectedPartURI = nil
+            followPage()
+        }
+    }
     /// The Recordings source's search field.
     var recordingsQuery = ""
     /// One sentence about the last thing that happened, or nil.
@@ -178,8 +188,31 @@ final class AppSession {
     /// The switch's click, until the job's event agrees or `neverSeenDropSeconds` pass: the
     /// switch would otherwise flick back for the round trip. Not a state of its own; the switch
     /// shows the job as soon as the mirror carries it.
-    private var recordSwitchPending: Bool?
+    /// Keyed by frequency and mode (`recordKey`, `RecordingChannel.id`'s shape), because the
+    /// channel page's switch and the log's are one state in two places when they name the same
+    /// channel, and two states when they do not.
+    private var recordSwitchPending: RecordSwitchClick?
     @ObservationIgnored private var recordSwitchExpiry: Task<Void, Never>?
+    /// The channel page's manifests by job id (docs/design/app-design-handoff-m3.md, 8c), read
+    /// through `ResolveLocalPath` for each recording of the selected channel, kept while the
+    /// listing holds the recording, and read again on each event of its job, which is how a
+    /// running card grows as parts land.
+    private(set) var pageManifests: [String: RecordingManifest] = [:]
+    @ObservationIgnored private var pageLoads: [String: Task<Void, Never>] = [:]
+    /// Job ids whose manifest a job event made stale.
+    @ObservationIgnored private var pageStale: Set<String> = []
+    /// Job ids whose read failed, not tried again until their job changes or the listing is read
+    /// again: a mirror change arrives four times a second while a part plays.
+    @ObservationIgnored private var pageFailed: Set<String> = []
+    /// The part the inspector shows while the Recordings source does: the last chip clicked, and
+    /// the part Play all moved on to. Cleared when its recording is deleted.
+    var selectedPartURI: String?
+    /// The folded cards (older than `Recordings.collapseAfterDays`) opened by a click, by
+    /// recording URI. Presentation only.
+    var openedRecordings: Set<String> = []
+    /// Play all's parts still to play (`PlayQueue`); the next starts on the tombstone of the one
+    /// playing.
+    private(set) var playQueue = PlayQueue()
     /// The playback this window started, by the id `StartPlayback` returned, and the part it
     /// plays, until its tombstone. One at a time. Its position is the mirror's: the daemon
     /// publishes a playing playback four times a second.
@@ -1777,7 +1810,34 @@ final class AppSession {
 
     /// What the switch and File ▸ Record Transmissions show: the click while its job's event is
     /// in flight, else whether the job runs.
-    var recordSwitchOn: Bool { recordSwitchPending ?? (recordingJob != nil) }
+    var recordSwitchOn: Bool { switchOn(key: tunedRecordKey, job: recordingJob) }
+
+    /// The channel page's switch: the record job on that channel's frequency and mode, whoever
+    /// started it, or the click in flight. The log's switch shows the same when it is tuned
+    /// there, because both read the job (M3 handoff, 8c: "one state, two places").
+    func pageSwitchOn(for c: RecordingChannel) -> Bool {
+        switchOn(key: c.id, job: activeRecordJob(for: c))
+    }
+
+    func activeRecordJob(for c: RecordingChannel) -> Leyline_V1_Job? {
+        Recordings.activeJob(in: state.jobs, frequencyHz: c.frequencyHz, mode: c.mode)
+    }
+
+    private func switchOn(key: String?, job: Leyline_V1_Job?) -> Bool {
+        if let p = recordSwitchPending, p.key == key { return p.on }
+        return job != nil
+    }
+
+    /// `462612500/2`: a channel by frequency and mode, the shape of `RecordingChannel.id`, so a
+    /// click on either switch is shown by both when they name one channel.
+    nonisolated static func recordKey(_ hz: UInt64, _ mode: Leyline_V1_DemodMode) -> String {
+        "\(hz)/\(mode.rawValue)"
+    }
+
+    private var tunedRecordKey: String? {
+        guard let hz = tunedHz, let ch = channel else { return nil }
+        return Self.recordKey(hz, ch.mode)
+    }
 
     /// A sidebar bookmark's dot: a record job runs on its frequency and mode, tuned or not.
     func isRecording(_ b: Bookmark) -> Bool {
@@ -1816,33 +1876,75 @@ final class AppSession {
     /// The switch, and File ▸ Record Transmissions (⌘R): on starts the record job, off cancels
     /// the one the switch shows, whoever started it.
     func setRecording(_ on: Bool) async {
+        let key = tunedRecordKey ?? ""
         guard on != (recordingJob != nil) else {
-            recordSwitchPending = nil
+            if recordSwitchPending?.key == key { recordSwitchPending = nil }
             return
         }
-        holdRecordSwitch(on)
+        holdRecordSwitch(on, frequencyHz: tunedHz ?? 0, mode: channel?.mode ?? .unspecified)
         if on {
             await startRecording()
         } else {
-            await stopRecording()
+            await stopRecording(recordingJob?.jobID, key: key)
+        }
+    }
+
+    /// The channel page's switch: on starts the frequency form on that channel's frequency and
+    /// mode, at the width of its newest recording and the daemon's auto squelch (NaN, the channel
+    /// default), because the page has no channel of its own to copy a squelch from; off cancels
+    /// the job the switch shows.
+    func setRecording(_ on: Bool, channel c: RecordingChannel) async {
+        let job = activeRecordJob(for: c)
+        guard on != (job != nil) else {
+            if recordSwitchPending?.key == c.id { recordSwitchPending = nil }
+            return
+        }
+        holdRecordSwitch(on, frequencyHz: c.frequencyHz, mode: c.mode)
+        guard on else {
+            await stopRecording(job?.jobID, key: c.id)
+            return
+        }
+        guard let daemon else {
+            recordSwitchPending = nil
+            return
+        }
+        let width = Recordings.channelWidth(pageGroups(for: c), channel: c) ?? 0
+        var req = Leyline_V1_StartJobRequest()
+        req.record = Recordings.config(
+            frequencyHz: c.frequencyHz, mode: c.mode, bandwidthHz: width, squelchDBFS: .nan)
+        do {
+            let started = try await daemon.jobs.startJob(req)
+            log(
+                "record",
+                "\(started.jobID) started from the channel page: \(c.frequencyHz) Hz \(c.mode.word) \(width) Hz, auto squelch, gated by squelch"
+            )
+        } catch {
+            let e = LeylineError(error)
+            recordSwitchPending = nil
+            log("record", "refused at \(c.frequencyHz) Hz from the page: \(e.code) \(e.message)")
+            notice = "Could not record: \(e.message.isEmpty ? e.code : e.message)"
         }
     }
 
     /// The click shown until the job's event agrees, or for `neverSeenDropSeconds`, after which
     /// the switch shows the mirror again.
-    private func holdRecordSwitch(_ on: Bool) {
-        recordSwitchPending = on
+    private func holdRecordSwitch(_ on: Bool, frequencyHz: UInt64, mode: Leyline_V1_DemodMode) {
+        let click = RecordSwitchClick(frequencyHz: frequencyHz, mode: mode, on: on)
+        recordSwitchPending = click
         recordSwitchExpiry?.cancel()
         recordSwitchExpiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.neverSeenDropSeconds))
-            guard let self, !Task.isCancelled, self.recordSwitchPending == on else { return }
+            guard let self, !Task.isCancelled, self.recordSwitchPending == click else { return }
             self.recordSwitchPending = nil
         }
     }
 
     /// The job's event agrees with the click: the switch shows the mirror.
     private func settleRecordSwitch() {
-        guard let p = recordSwitchPending, p == (recordingJob != nil) else { return }
+        guard let p = recordSwitchPending else { return }
+        let running =
+            Recordings.activeJob(in: state.jobs, frequencyHz: p.frequencyHz, mode: p.mode) != nil
+        guard p.on == running else { return }
         recordSwitchPending = nil
         recordSwitchExpiry?.cancel()
         recordSwitchExpiry = nil
@@ -1879,9 +1981,9 @@ final class AppSession {
 
     /// `CancelJob` on the job the switch shows: the daemon finalises the files and the job ends
     /// `CANCELLED`, which is how an open-ended recording is meant to stop.
-    private func stopRecording() async {
-        guard let daemon, let id = recordingJob?.jobID else {
-            recordSwitchPending = nil
+    private func stopRecording(_ jobID: String?, key: String) async {
+        guard let daemon, let id = jobID else {
+            if recordSwitchPending?.key == key { recordSwitchPending = nil }
             return
         }
         var ref = Leyline_V1_JobRef()
@@ -1891,7 +1993,7 @@ final class AppSession {
             log("record", "\(id) stopped: \(job.statusDetail)")
         } catch {
             let e = LeylineError(error)
-            recordSwitchPending = nil
+            if recordSwitchPending?.key == key { recordSwitchPending = nil }
             log("record", "\(id) not stopped: \(e.code) \(e.message)")
             notice = "Could not stop the recording: \(e.message.isEmpty ? e.code : e.message)"
         }
@@ -1908,9 +2010,14 @@ final class AppSession {
             let changed = Set(jobs.filter { !recordJobsSeen.contains($0) }.map(\.jobID))
             recordJobsSeen = jobs
             if let shown = manifestLoadingID, changed.contains(shown) { manifestStale = true }
+            // The page's cards of the changed jobs: a part closed or the job ended.
+            pageStale.formUnion(
+                changed.filter { pageManifests[$0] != nil || pageFailed.contains($0) })
+            pageFailed.subtract(changed)
             reloadRecordings()
         }
         followRecording()
+        followPage()
         settleRecordSwitch()
     }
 
@@ -1982,6 +2089,9 @@ final class AppSession {
                     log("record", "\(list.count) recordings listed")
                 }
                 if list != self.recordings { self.recordings = list }
+                self.prunePage()
+                self.pageFailed = []
+                self.followPage()
             } catch {
                 guard !Task.isCancelled else { return }
                 log("record", "recordings not listed: \(LeylineError(error))")
@@ -2006,20 +2116,145 @@ final class AppSession {
         return tunedBookmark?.name ?? Frequency.format(hz)
     }
 
-    /// Whether the centre column shows the Recordings source's sentence instead of the canvas:
-    /// the source is showing and a listed row is selected, so a selection whose recordings were
-    /// all deleted selects nothing (docs/design/app-design-handoff-m3.md, "In every screen":
-    /// "never a broken page").
+    /// Whether the centre column shows the channel page instead of the canvas: the Recordings
+    /// source is showing and a row is selected. A selected channel whose recordings have all gone
+    /// is still a page, with one sentence (`RecordingsPage`), so a delete of the last recording
+    /// does not drop the window back onto the radio under the pointer.
     var recordingsPageShown: Bool {
-        guard sidebarSource == .recordings, let id = selectedRecordingChannel else { return false }
-        return recordingChannels.contains { $0.id == id }
+        sidebarSource == .recordings && selectedRecordingChannel != nil
+    }
+
+    /// The selected row's channel while the listing holds it.
+    var selectedChannel: RecordingChannel? {
+        guard let id = selectedRecordingChannel else { return nil }
+        return recordingChannels.first { $0.id == id }
+    }
+
+    /// The page's cards for `c`, with the manifests read so far.
+    func pageGroups(for c: RecordingChannel) -> [RecordingGroup] {
+        Recordings.groups(c.recordings, manifests: pageManifests, jobs: state.jobs)
+    }
+
+    /// The part the inspector shows while the Recordings source does: the selected part, else the
+    /// one playing, once its recording's manifest has been read. nil shows the Channel panel.
+    var inspectedPart: (manifest: RecordingManifest, part: RecordingPart, group: RecordingGroup)? {
+        guard sidebarSource == .recordings,
+            let uri = selectedPartURI ?? playingURI, let ref = RecordingPartRef(uri: uri),
+            let m = pageManifests[ref.jobID],
+            let part = m.parts.first(where: { $0.part == ref.part }),
+            let summary = recordings.first(where: { $0.jobID == ref.jobID })
+        else { return nil }
+        let running = state.jobs.contains { $0.jobID == ref.jobID && $0.isActive }
+        return (m, part, RecordingGroup(summary: summary, manifest: m, running: running))
+    }
+
+    /// The selected channel's manifests: each recording not yet read, or made stale by a job
+    /// event, is read, one read per recording at a time. Nothing is read while the page is not
+    /// showing.
+    private func followPage() {
+        guard recordingsPageShown, let c = selectedChannel else { return }
+        for r in c.recordings {
+            let id = r.jobID
+            let stale = pageStale.contains(id)
+            guard stale || (pageManifests[id] == nil && !pageFailed.contains(id)) else { continue }
+            guard stale || pageLoads[id] == nil else { continue }
+            loadPageManifest(id)
+        }
+    }
+
+    /// `ResolveLocalPath(ley://recordings/<id>)` and `recording.json`, as `loadManifest` reads the
+    /// tuned channel's.
+    private func loadPageManifest(_ id: String) {
+        guard let daemon else { return }
+        pageStale.remove(id)
+        pageLoads[id]?.cancel()
+        pageLoads[id] = Task { [weak self] in
+            var ref = Leyline_V1_ResourceRef()
+            ref.uri = "ley://recordings/\(id)"
+            do {
+                let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
+                let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
+                guard let self, !Task.isCancelled else { return }
+                self.pageLoads[id] = nil
+                if self.pageManifests[id] != manifest {
+                    if self.pageManifests[id]?.parts.count != manifest.parts.count {
+                        log("record", "page: \(id) has \(manifest.parts.count) parts")
+                    }
+                    self.pageManifests[id] = manifest
+                }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.pageLoads[id] = nil
+                self.pageFailed.insert(id)
+                // A job's first second has no manifest on disk yet; its next event reads again.
+                log("record", "page: manifest of \(id) not read: \(error)")
+            }
+        }
+    }
+
+    /// Forgets the manifests of recordings the listing no longer holds, and a selection or an
+    /// opened card among them.
+    private func prunePage() {
+        let listed = Set(recordings.map(\.jobID))
+        for id in pageManifests.keys where !listed.contains(id) { pageManifests[id] = nil }
+        for (id, task) in pageLoads where !listed.contains(id) {
+            task.cancel()
+            pageLoads[id] = nil
+        }
+        if let uri = selectedPartURI, let ref = RecordingPartRef(uri: uri),
+            !listed.contains(ref.jobID)
+        {
+            selectedPartURI = nil
+        }
+        let uris = Set(recordings.map(\.uri))
+        if !openedRecordings.isSubset(of: uris) { openedRecordings.formIntersection(uris) }
+    }
+
+    /// A folded card's click: open it, or fold it again.
+    func toggleOpened(_ uri: String) {
+        if openedRecordings.contains(uri) {
+            openedRecordings.remove(uri)
+        } else {
+            openedRecordings.insert(uri)
+        }
+    }
+
+    /// A chip's click (8c, "Playing"): the part is selected, so the inspector shows it, and
+    /// plays; a click on the part already playing stops it and keeps it selected. Either ends a
+    /// Play all.
+    func clickChip(_ uri: String) async {
+        selectedPartURI = uri
+        if playingURI == uri {
+            await stopPlayback()
+        } else {
+            await play(partURI: uri)
+        }
+    }
+
+    /// Play all: the recording's parts in part order, the next started on the tombstone of the
+    /// one before (`endPlayback`), each selected as it starts so the inspector follows.
+    func playAll(_ group: RecordingGroup) async {
+        var queue = PlayQueue()
+        guard let first = queue.start(group) else { return }
+        log("playback", "play all \(group.uri): \(group.chips.count) parts")
+        selectedPartURI = first
+        playQueue = queue
+        await startPlayback(first)
     }
 
     /// Plays one part through the daemon's speakers (`Control.StartPlayback` on
     /// `ley://recordings/<id>/<part>`). The live channel's sink is detached meanwhile and attached
     /// again when the clip ends, so the clip is heard alone; one playback at a time, so a clip
-    /// already playing is stopped first, and a clip replays from its start.
+    /// already playing is stopped first, and a clip replays from its start. A Play all in
+    /// progress is ended: this part is the one asked for.
     func play(partURI uri: String) async {
+        playQueue.clear()
+        await startPlayback(uri)
+    }
+
+    /// `play(partURI:)` without touching Play all's queue, which `playAll` and `endPlayback`
+    /// have set for the parts after this one.
+    private func startPlayback(_ uri: String) async {
         guard let daemon else { return }
         if let old = playbackID {
             // Cleared first, so the old one's tombstone is not read as this one ending.
@@ -2066,12 +2301,15 @@ final class AppSession {
             log("playback", "\(uri) not played: \(e.code) \(e.message)")
             notice = "Could not play the part: \(e.message.isEmpty ? e.code : e.message)"
             playingURI = nil
+            playQueue.clear()
             await attachAfterPlayback()
         }
     }
 
-    /// Stops the window's clip; its tombstone ends it here and attaches the live sink again.
+    /// Stops the window's clip, and a Play all with it; its tombstone ends it here and attaches
+    /// the live sink again.
     func stopPlayback() async {
+        playQueue.clear()
         guard let daemon, let id = playbackID else { return }
         var req = Leyline_V1_StopPlaybackRequest()
         req.playbackID = id
@@ -2097,13 +2335,65 @@ final class AppSession {
         endPlayback(id)
     }
 
+    /// A clip ended. During Play all the next part starts at once and the live sink stays
+    /// detached between parts, so the channel is not heard in the gaps; `playingURI` is held on
+    /// the next part meanwhile, which keeps `reattachAfterPlayback` for the end of the last one.
     private func endPlayback(_ id: String) {
         guard playbackID == id else { return }
         log("playback", "\(id) ended")
         playbackID = nil
-        playingURI = nil
         playbackSeen = false
+        var queue = playQueue
+        if let next = queue.next() {
+            playQueue = queue
+            playingURI = next
+            selectedPartURI = next
+            log("playback", "play all: \(next) next, \(queue.pending.count) after it")
+            Task { await startPlayback(next) }
+            return
+        }
+        playQueue = queue
+        playingURI = nil
         Task { await attachAfterPlayback() }
+    }
+
+    /// `Resources.DeleteResource` on the whole recording (8c, "The inspector, on a part"): the
+    /// daemon refuses one whose job runs and stops a playback of its parts first, so the clip's
+    /// tombstone ends it here as a stop would. On success the listing is read again, which
+    /// forgets the recording's manifest and clears the selection (`prunePage`).
+    func deleteRecording(uri: String) async {
+        guard let daemon else { return }
+        if let q = playQueue.recordingURI, q == uri { playQueue.clear() }
+        var ref = Leyline_V1_ResourceRef()
+        ref.uri = uri
+        do {
+            let gone = try await daemon.resources.deleteResource(ref)
+            log("record", "deleted \(gone.uri): \(gone.freedBytes) bytes freed")
+            if let sel = selectedPartURI, RecordingPartRef(uri: sel)?.recordingURI == uri {
+                selectedPartURI = nil
+            }
+            openedRecordings.remove(uri)
+            reloadRecordings()
+        } catch {
+            let e = LeylineError(error)
+            log("record", "\(uri) not deleted: \(e.code) \(e.message)")
+            notice = "Could not delete the recording: \(e.message.isEmpty ? e.code : e.message)"
+        }
+    }
+
+    /// The page's Tune: back to the Radio source and tuned to the channel, by the path a bookmark
+    /// click takes (`tune(bookmark:)`), which opens the band that holds the frequency when no
+    /// radio is open and otherwise tunes the frequency and lets the band follow it, then applies
+    /// the mode and the width of the channel's newest recording.
+    func tune(recordingChannel c: RecordingChannel) {
+        sidebarSource = .radio
+        let mode =
+            c.mode == .unspecified ? Bands.defaultMode(at: c.frequencyHz, in: bands) : c.mode
+        let width = Recordings.channelWidth(pageGroups(for: c), channel: c) ?? 0
+        log("tune", "recording channel \(c.title) at \(c.frequencyHz) Hz")
+        tune(
+            bookmark: Bookmark(
+                id: "", name: c.title, hz: c.frequencyHz, mode: mode, bandwidthHz: width))
     }
 
     /// The live sink back on the tuned channel, when it was attached before the clip.
@@ -2249,6 +2539,16 @@ extension FailureState {
 
 extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
+}
+
+/// A Record transmissions switch's click, on the channel `key` names (`AppSession.recordKey`),
+/// until its job's event agrees.
+struct RecordSwitchClick: Equatable {
+    let frequencyHz: UInt64
+    let mode: Leyline_V1_DemodMode
+    let on: Bool
+
+    var key: String { AppSession.recordKey(frequencyHz, mode) }
 }
 
 /// The sidebar's two sources (docs/design/app-design-handoff-m3.md, "In every screen"): Radio is

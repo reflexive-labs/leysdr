@@ -902,6 +902,64 @@ status line, and the 18 pt ring in the 20 pt column; the volume caption truncati
 6 pt from the frequency. `docs/guide/using-ley.md`'s `ley state` transcript predates the
 recordings clause and needs recording again on a radio.
 
+8c landed 2026-09-24 (`../design/app-design-handoff-m3.md`, 8c, its 8c screen and the bullets
+this adds to "Decided"). Façade, `RecordingPages.swift`: `RecordingGroup` (a card from the
+listing's summary and, once read, the manifest: the parts' span through the anchors, their
+lengths summed, the manifest's bytes, running, `ended_by`, and a `RecordingChip` per part in
+part order), `Recordings.days` (today, yesterday, the day before by name, then `earlier`, the one
+group that folds, past `collapseAfterDays` = 2; a running recording is today's top card),
+`pageWords`, `channelWidth`, `partWords` (`Part 5 of Tuesday 14:02`, `16:11:04 · 10.0 s`, `0:03.8
+of 0:10.0 · 2 overs` and the bar's fraction), `partTable` (Peak, Mean, Radio, Gain, Squelch,
+Ended, Files), `endedWords`, `gainWords`, `deleteWords`, `deleteQuestion`, `deleteRefusalWords`
+(the daemon's sentence), `lengthWords`, `RecordingPartRef`, `PlayQueue` and `FlowRows`. Window:
+`RecordingsPage.swift` replaces the `RecordingsPagePending` sentence with the page (the 56 pt
+header with the name, `462.6125 MHz · NFM 12.5 kHz · 4 recordings · 13.1 MB`, a Record
+transmissions switch on the page's frequency and mode and `Tune`; day groups under
+`SectionHeader`; cards on `panel` with an `accentRec` 40 % border while running; chips wrapping in
+`FlowLayout`; folded cards opened by a click, `AppSession.openedRecordings`), and
+`PartInspector.swift` replaces the whole panel while the Recordings source shows and a part is
+selected or playing (`AppSession.inspectedPart`). Session: `pageManifests`, read through
+`ResolveLocalPath` for each recording of the selected channel, re-read on each event of its job,
+pruned with the listing; `selectedPartURI` (a chip's click selects and plays; another row
+clears it); `playQueue` with `playAll`, advanced in `endPlayback` with the live sink held
+detached between parts and cleared by a stop, a chip, a failed start or the delete;
+`deleteRecording(uri:)` (`Resources.DeleteResource`, then the listing again) and
+`tune(recordingChannel:)` (Radio, then the bookmark path with the newest recording's width). The
+switch's click in flight is keyed by frequency and mode (`RecordSwitchClick`), so the page's
+switch and the log's show one state when they name one channel; the page's switch starts the
+frequency form with the daemon's auto squelch. The centre column keeps the page, with one
+sentence, when every recording on the selected row has gone.
+
+Verified in the container: `RecordingPagesTests` (a card's chips, range and counts through the
+anchor, folded and open; a running card and one before its manifest; a chip without an anchor;
+the day groups, their order and the fold, with a running recording three days old on top; the
+header's words and width; the part's three lines, idle, playing and today; the table, running,
+one stage and unmeasured; every `ended_by`; the delete line, question and refusal; the length
+words; Play all's order and its clearing; a part URI taken apart; the wrap rule), and in
+`LeylineClientDaemonTests` the recording case, which now has the real daemon refuse a delete
+while the job runs in exactly `Recordings.deleteRefusalWords`, and builds a card, Play all's
+first part, the ended word and the part's lines from the daemon's own manifest. `make app-lint`,
+`swift test --filter LeylineClientTests` and `make app-e2e` pass.
+
+Unverified until the first `make app-run` on a Mac: every change in `AppSession.swift`,
+`RecordingsPage.swift`, `PartInspector.swift`, `InspectorView.swift`, `MainWindow.swift`,
+`SidebarView.swift` and `Theme.swift`. Named behaviours: that `FlowLayout` compiles against the
+SDK's `Layout` (isolation of its methods) and wraps the chips inside a card in a `LazyVStack`;
+the page covering the canvas, the Metal view under it not drawing through or taking clicks (a
+hosted view has drawn over SwiftUI before); the header at 56 pt with the name, the detail line,
+the `.small` switch and the bordered Tune fitting the centre column's width; the page's switch
+and the log's showing one state on the tuned channel and not flicking back in flight; the chips'
+▶ and ■ glyphs, the playing chip's tint and the selected chip's `borderFocus` stroke; a folded
+card opening and folding on its header, its chevron turning; Play all moving on at each
+tombstone, the inspector following, the live sink not coming back between parts and coming back
+after the last, a stop mid-way ending it; the part inspector replacing the whole panel and the
+Channel panel coming back with nothing selected; the position bar and `0:03.8 of 0:10.0` moving
+four times a second from the mirror; Delete's tooltip on the disabled button's wrapper (a
+disabled button shows none of its own), the `.alert` overload with a `String` title, and the
+page and selection refreshing after a delete; Show in Finder selecting the part's file; Tune
+switching to Radio and tuning, with and without a radio open; the running card growing as
+parts land.
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

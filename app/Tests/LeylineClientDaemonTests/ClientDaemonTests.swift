@@ -363,6 +363,18 @@ final class ClientDaemonTests: XCTestCase {
         deadline.cancel()
         let heard = try XCTUnwrap(log.closed.first, "nothing heard on the keyed fixture")
 
+        // Delete is refused while the job runs, in the sentence the part inspector's disabled
+        // Delete shows as its tooltip.
+        var runningRef = Leyline_V1_ResourceRef()
+        runningRef.uri = "ley://recordings/\(job.jobID)"
+        do {
+            _ = try await app.resources.deleteResource(runningRef)
+            XCTFail("a running recording was deleted")
+        } catch {
+            XCTAssertEqual(
+                LeylineError(error).message, Recordings.deleteRefusalWords(jobID: job.jobID))
+        }
+
         var ref = Leyline_V1_JobRef()
         ref.jobID = job.jobID
         let cancelled = try await app.jobs.cancelJob(ref)
@@ -401,6 +413,17 @@ final class ClientDaemonTests: XCTestCase {
         )
         XCTAssertTrue(
             manifest.uri(of: part).hasPrefix(summary.uri + "/"), "the kept row plays its part")
+        // The channel page's card and the inspector on that part, from the daemon's own files.
+        let card = RecordingGroup(summary: summary, manifest: manifest, running: false)
+        XCTAssertEqual(card.chips.map(\.uri), manifest.parts.map { manifest.uri(of: $0) })
+        XCTAssertNotNil(card.startedAt, "the anchor dates the first part")
+        XCTAssertEqual(Recordings.endedWords(manifest.endedBy, running: false), "Switched off")
+        var queue = PlayQueue()
+        XCTAssertEqual(queue.start(card), card.chips.first?.uri, "Play all starts at part 1")
+        let words = Recordings.partWords(
+            part: part, of: manifest, positionFrames: nil, positionRate: 0, now: Date())
+        XCTAssertTrue(words.title.hasPrefix("Part \(part.part) of "), words.title)
+        XCTAssertTrue(words.progress.hasPrefix("0:00.0 of "), words.progress)
         // The gutter's kept bars: a row on the capture's timeline inside the part is held, the
         // newer one after every part is not.
         var rows = ClippedRows(capacity: 8)

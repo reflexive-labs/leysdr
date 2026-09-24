@@ -4,11 +4,22 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app's Recordings source has channel pages. Select a channel in the sidebar and the
+  centre of the window lists what it has kept, grouped Today, Yesterday, the day before, and
+  Earlier, where older recordings fold to one line until clicked. Each recording is a card with
+  its time range, parts, length and size, and each part is a chip, `▶ 09:12:40 · 8 s`: click it
+  to hear it (the live channel is held silent meanwhile), click it again to stop, or use Play all
+  to hear the parts in order. The page's header has the same Record transmissions switch as the
+  inspector, and Tune goes back to Radio tuned to the channel. While a part is selected the
+  inspector shows it: its place in the recording, how far it has played, its peak and mean, the
+  radio, gain and squelch it was recorded with, why it ended, and its files, with Show in Finder
+  and Delete recording…, which deletes the whole recording after asking and is disabled while it
+  is still recording.
+
 - The Mac app's sidebar has two sources, Radio and Recordings, under a switch above the bands.
   Recordings lists one row per channel that has been recorded, titled by its bookmark or its
   frequency, with how many recordings it holds and when the latest was (`latest now` while one
-  is running), and a search field that matches a name, a frequency or a weekday. Selecting a row
-  says the channel page is coming and that the files are in Finder; the page itself is M3. Under
+  is running), and a search field that matches a name, a frequency or a weekday. Under
   both sources a footer shows how much of the recordings cap the store uses, `944 MB of 20 GB ·
   oldest go first`. The waterfall has a time gutter at its right, with `now` at the top and a mark
   every ten seconds, and the red bars for what a recording kept are drawn in it instead of over
