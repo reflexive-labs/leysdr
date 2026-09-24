@@ -107,6 +107,7 @@ are optional in the schema; the defaults are the mirror verb's.
 | `record` | `ley record` | `Jobs.StartJob(RecordConfig)` | `target` (frequency, preset or `chan_…`), `duration_s` (**required**, 1 to 3600); `iq`, `gate`, `pre_roll_ms`, `hang_ms`, `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | the finished `Job` |
 | `find_recordings` | `ley recordings` | `Resources.ListResources(RECORDING)` | `kind`, `frequency`, `mode`, `since_s`, `limit` | `ListResourcesResponse` |
 | `get_recording` | `ley recordings show`, `ley recordings path` | `Resources.GetResource` + `ResolveLocalPath` | `id` (job id or `ley://recordings/` uri) | `{manifest, directory, parts: [{part, path, samples}]}` |
+| `delete_recording` | `ley recordings delete` | `Resources.DeleteResource` | `recording` (whole job id or `ley://recordings/` uri) | `DeletedResource` |
 | `list_jobs` | `ley jobs` | `Jobs.ListJobs` | none | `ListJobsResponse` |
 | `get_job` | `ley jobs` | `Jobs.GetJob` | `job` (id, prefix or row) | `Job` |
 | `cancel_job` | `ley jobs cancel` | `Jobs.CancelJob` | `job` | `Job` |
@@ -221,6 +222,12 @@ Notes a table cell cannot hold:
   samples. Audio and IQ do not cross this connection (`docs/design/data-planes.md`, "no lossless
   network stream"); an agent that wants to transcribe a recording hands the path to a tool that can
   open it, and an agent on another machine cannot open it.
+- **`delete_recording`** removes a recording whole and returns `{uri, freedBytes}` with the text
+  `Deleted job_…, 6.9 MB freed.` It is refused while the recording's job runs, with `cancel_job
+  <id>` named, and a part's uri is refused because a recording is deleted whole. It takes a whole
+  id and no prefix, since a prefix that matched another recording would delete that one. No eval
+  scenario covers it: `docs/dev/evals.md` has no rule for destructive tools, and a scenario that
+  deletes has nothing to grade that `TestMCPDeleteRecording` does not.
 
 Job status: a decode job reads `RUNNING` whether the decoder is producing records or
 not, by design (`docs/plans/decoders.md`, DEC-16: a silent decoder is indistinguishable from a quiet

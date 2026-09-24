@@ -1336,11 +1336,25 @@ public enum Leyline_V1_Resources: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "DeleteResource" metadata.
+        public enum DeleteResource: Sendable {
+            /// Request type for "DeleteResource".
+            public typealias Input = Leyline_V1_ResourceRef
+            /// Response type for "DeleteResource".
+            public typealias Output = Leyline_V1_DeletedResource
+            /// Descriptor for "DeleteResource".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Resources"),
+                method: "DeleteResource",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "leyline.v1.Resources" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             ListResources.descriptor,
             GetResource.descriptor,
-            ResolveLocalPath.descriptor
+            ResolveLocalPath.descriptor,
+            DeleteResource.descriptor
         ]
     }
 }
@@ -1419,6 +1433,28 @@ extension Leyline_V1_Resources {
             request: GRPCCore.StreamingServerRequest<Leyline_V1_ResourceRef>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_LocalPath>
+
+        /// Handle the "DeleteResource" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+        /// > while its job is running: cancel the job first, and the recording it made stays until it is
+        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_ResourceRef` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_DeletedResource` messages.
+        func deleteResource(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_ResourceRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_DeletedResource>
     }
 
     /// Service protocol for the "leyline.v1.Resources" service.
@@ -1481,6 +1517,28 @@ extension Leyline_V1_Resources {
             request: GRPCCore.ServerRequest<Leyline_V1_ResourceRef>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_LocalPath>
+
+        /// Handle the "DeleteResource" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+        /// > while its job is running: cancel the job first, and the recording it made stays until it is
+        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_DeletedResource` message.
+        func deleteResource(
+            request: GRPCCore.ServerRequest<Leyline_V1_ResourceRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_DeletedResource>
     }
 
     /// Simple service protocol for the "leyline.v1.Resources" service.
@@ -1541,6 +1599,28 @@ extension Leyline_V1_Resources {
             request: Leyline_V1_ResourceRef,
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_LocalPath
+
+        /// Handle the "DeleteResource" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+        /// > while its job is running: cancel the job first, and the recording it made stays until it is
+        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_ResourceRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_DeletedResource` to respond with.
+        func deleteResource(
+            request: Leyline_V1_ResourceRef,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_DeletedResource
     }
 }
 
@@ -1576,6 +1656,17 @@ extension Leyline_V1_Resources.StreamingServiceProtocol {
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_LocalPath>(),
             handler: { request, context in
                 try await self.resolveLocalPath(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Resources.Method.DeleteResource.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ResourceRef>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_DeletedResource>(),
+            handler: { request, context in
+                try await self.deleteResource(
                     request: request,
                     context: context
                 )
@@ -1619,6 +1710,17 @@ extension Leyline_V1_Resources.ServiceProtocol {
         )
         return GRPCCore.StreamingServerResponse(single: response)
     }
+
+    public func deleteResource(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_ResourceRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_DeletedResource> {
+        let response = try await self.deleteResource(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
 }
 
 // Default implementation of methods from 'ServiceProtocol'.
@@ -1656,6 +1758,19 @@ extension Leyline_V1_Resources.SimpleServiceProtocol {
     ) async throws -> GRPCCore.ServerResponse<Leyline_V1_LocalPath> {
         return GRPCCore.ServerResponse<Leyline_V1_LocalPath>(
             message: try await self.resolveLocalPath(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func deleteResource(
+        request: GRPCCore.ServerRequest<Leyline_V1_ResourceRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_DeletedResource> {
+        return GRPCCore.ServerResponse<Leyline_V1_DeletedResource>(
+            message: try await self.deleteResource(
                 request: request.message,
                 context: context
             ),
@@ -1739,6 +1854,33 @@ extension Leyline_V1_Resources {
             deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_LocalPath>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_LocalPath>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DeleteResource" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+        /// > while its job is running: cancel the job first, and the recording it made stays until it is
+        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ResourceRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_DeletedResource` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func deleteResource<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ResourceRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ResourceRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_DeletedResource>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeletedResource>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -1858,6 +2000,44 @@ extension Leyline_V1_Resources {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "DeleteResource" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+        /// > while its job is running: cancel the job first, and the recording it made stays until it is
+        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ResourceRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_DeletedResource` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func deleteResource<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ResourceRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ResourceRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_DeletedResource>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeletedResource>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Resources.Method.DeleteResource.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -1940,6 +2120,39 @@ extension Leyline_V1_Resources.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ResourceRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_LocalPath>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteResource" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+    /// > while its job is running: cancel the job first, and the recording it made stays until it is
+    /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+    /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+    /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteResource<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_ResourceRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeletedResource>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.deleteResource(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ResourceRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_DeletedResource>(),
             options: options,
             onResponse: handleResponse
         )
@@ -2036,6 +2249,43 @@ extension Leyline_V1_Resources.ClientProtocol {
             metadata: metadata
         )
         return try await self.resolveLocalPath(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteResource" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+    /// > while its job is running: cancel the job first, and the recording it made stays until it is
+    /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+    /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+    /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteResource<Result>(
+        _ message: Leyline_V1_ResourceRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_DeletedResource>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_ResourceRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.deleteResource(
             request: request,
             options: options,
             onResponse: handleResponse

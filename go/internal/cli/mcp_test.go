@@ -33,7 +33,7 @@ import (
 var mcpToolNames = []string{
 	"list_devices", "get_state", "daemon_logs", "tune", "scan", "listen_summary", "snapshot",
 	"list_decoders", "query_records", "list_entities", "start_decode_job",
-	"record", "find_recordings", "get_recording",
+	"record", "find_recordings", "get_recording", "delete_recording",
 	"list_jobs", "get_job", "cancel_job",
 }
 
@@ -1104,6 +1104,59 @@ func TestMCPRecordFindAndGet(t *testing.T) {
 	if res := h.call(t, "get_recording", map[string]any{"id": "job_nothing"}); !res.IsError ||
 		!strings.Contains(resultText(res), "find_recordings") {
 		t.Errorf("get_recording on a missing recording: %s", resultText(res))
+	}
+}
+
+// delete_recording removes a finished recording whole and says how much it
+// freed; a running one is refused with the tool that stops it, a part is
+// refused, and a missing one points at find_recordings.
+func TestMCPDeleteRecording(t *testing.T) {
+	dir := t.TempDir()
+	h := newMCPHarnessWith(t, fakedaemon.Options{RecordingsDir: dir})
+
+	res := h.must(t, "record", map[string]any{"target": "146.52", "duration_s": 1})
+	var job leylinev1.Job
+	structured(t, res, &job)
+	uri := leyline.RecordingURI(job.GetJobId())
+
+	if res := h.call(t, "delete_recording", map[string]any{"recording": uri + "/1"}); !res.IsError ||
+		!strings.Contains(resultText(res), "deleted whole") {
+		t.Errorf("a part must be refused: %s", resultText(res))
+	}
+	got := h.must(t, "delete_recording", map[string]any{"recording": job.GetJobId()})
+	var deleted leylinev1.DeletedResource
+	structured(t, got, &deleted)
+	if deleted.GetUri() != uri || deleted.GetFreedBytes() == 0 {
+		t.Errorf("DeletedResource: %v", &deleted)
+	}
+	if !strings.HasPrefix(resultText(got), "Deleted "+job.GetJobId()+", ") || !strings.Contains(resultText(got), "freed") {
+		t.Errorf("the text: %q", resultText(got))
+	}
+	if _, err := os.Stat(filepath.Join(dir, job.GetJobId())); !os.IsNotExist(err) {
+		t.Errorf("the directory is still there: %v", err)
+	}
+	found := h.must(t, "find_recordings", map[string]any{})
+	var list leylinev1.ListResourcesResponse
+	structured(t, found, &list)
+	if len(list.GetResources()) != 0 {
+		t.Errorf("find_recordings still lists it: %v", list.GetResources())
+	}
+	if res := h.call(t, "delete_recording", map[string]any{"recording": job.GetJobId()}); !res.IsError ||
+		!strings.Contains(resultText(res), "find_recordings") {
+		t.Errorf("a deleted recording deleted again: %s", resultText(res))
+	}
+
+	// A running recording: started through the client, since the record tool waits.
+	running, err := h.client.StartRecord(context.Background(), &leylinev1.RecordConfig{FrequencyHz: 146_520_000, Mode: leylinev1.DemodMode_NFM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = h.client.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: running.GetJobId()})
+	})
+	if res := h.call(t, "delete_recording", map[string]any{"recording": running.GetJobId()}); !res.IsError ||
+		!strings.Contains(resultText(res), "cancel the job first") || !strings.Contains(resultText(res), "cancel_job "+running.GetJobId()) {
+		t.Errorf("a running recording must be refused with cancel_job: %s", resultText(res))
 	}
 }
 

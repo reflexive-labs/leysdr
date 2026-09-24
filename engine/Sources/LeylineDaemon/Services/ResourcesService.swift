@@ -98,6 +98,47 @@ struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
         }
     }
 
+    /// A recording is deleted whole, and never while its job runs: the runner has a part open in
+    /// that directory, and cancelling first finalises it (docs/design/recording.md, "The wire").
+    /// Nothing goes out on the event plane -- a recording is a resource, not state -- and the job's
+    /// entry stays as it is.
+    func deleteResource(request: Leyline_V1_ResourceRef, context _: ServerContext) async throws -> Leyline_V1_DeletedResource {
+        let client = ClientContext.current
+        await store.touchUnary(client)
+        switch ResourceURI(request.uri) {
+        case .recording(let jobID, let part):
+            if part != nil {
+                throw ProtoMapping.rpcError(EngineError.invalidArgument(
+                    "\(request.uri) names one part; a recording is deleted whole, as ley://recordings/\(jobID)",
+                    target: request.uri))
+            }
+            guard await jobs.recordings.manifest(jobID: jobID) != nil else {
+                throw ProtoMapping.rpcError(EngineError.jobNotFound(jobID))
+            }
+            if let id = JobID(string: jobID), await jobs.jobIsLive(id) {
+                throw ProtoMapping.rpcError(EngineError.failedPrecondition(
+                    "\(jobID) is still recording; cancel the job first, then delete it", target: jobID))
+            }
+            let freed: UInt64?
+            do {
+                freed = try await jobs.recordings.delete(jobID: jobID, by: client.id)
+            } catch {
+                throw ProtoMapping.rpcError(EngineError.internalError(
+                    "could not remove the recording's directory: \(error.localizedDescription)", target: jobID))
+            }
+            guard let freed else { throw ProtoMapping.rpcError(EngineError.jobNotFound(jobID)) }
+            var out = Leyline_V1_DeletedResource()
+            out.uri = "ley://recordings/\(jobID)"
+            out.freedBytes = freed
+            return out
+        case .records, .scan, .unknown:
+            // Kept records have their own lifetime (docs/design/decoders.md) and a scan is in
+            // memory; only recordings are deleted through the contract in v1.
+            throw ProtoMapping.rpcError(EngineError.invalidArgument(
+                "\(request.uri) is not a recording; only ley://recordings/<id> can be deleted", target: request.uri))
+        }
+    }
+
     // MARK: Shapes
 
     private func recording(_ manifest: RecordingManifest, sizeBytes: UInt64) -> Leyline_V1_Resource {

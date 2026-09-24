@@ -1808,6 +1808,58 @@ func (x *LocalPath) GetPath() string {
 	return ""
 }
 
+type DeletedResource struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Uri           string                 `protobuf:"bytes,1,opt,name=uri,proto3" json:"uri,omitempty"`
+	FreedBytes    uint64                 `protobuf:"varint,2,opt,name=freed_bytes,json=freedBytes,proto3" json:"freed_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeletedResource) Reset() {
+	*x = DeletedResource{}
+	mi := &file_leyline_v1_jobs_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletedResource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletedResource) ProtoMessage() {}
+
+func (x *DeletedResource) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_jobs_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletedResource.ProtoReflect.Descriptor instead.
+func (*DeletedResource) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_jobs_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeletedResource) GetUri() string {
+	if x != nil {
+		return x.Uri
+	}
+	return ""
+}
+
+func (x *DeletedResource) GetFreedBytes() uint64 {
+	if x != nil {
+		return x.FreedBytes
+	}
+	return 0
+}
+
 var File_leyline_v1_jobs_proto protoreflect.FileDescriptor
 
 const file_leyline_v1_jobs_proto_rawDesc = "" +
@@ -1943,7 +1995,11 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\vResourceRef\x12\x10\n" +
 	"\x03uri\x18\x01 \x01(\tR\x03uri\"\x1f\n" +
 	"\tLocalPath\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path*j\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"D\n" +
+	"\x0fDeletedResource\x12\x10\n" +
+	"\x03uri\x18\x01 \x01(\tR\x03uri\x12\x1f\n" +
+	"\vfreed_bytes\x18\x02 \x01(\x04R\n" +
+	"freedBytes*j\n" +
 	"\bJobState\x12\x19\n" +
 	"\x15JOB_STATE_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aRUNNING\x10\x01\x12\f\n" +
@@ -1971,11 +2027,12 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\x06GetJob\x12\x12.leyline.v1.JobRef\x1a\x0f.leyline.v1.Job\x120\n" +
 	"\tCancelJob\x12\x12.leyline.v1.JobRef\x1a\x0f.leyline.v1.Job\x12F\n" +
 	"\rGetTranscript\x12\x1d.leyline.v1.TranscriptRequest\x1a\x16.leyline.v1.Transcript\x120\n" +
-	"\aGetScan\x12\x13.leyline.v1.ScanRef\x1a\x10.leyline.v1.Scan2\xe3\x01\n" +
+	"\aGetScan\x12\x13.leyline.v1.ScanRef\x1a\x10.leyline.v1.Scan2\xab\x02\n" +
 	"\tResources\x12T\n" +
 	"\rListResources\x12 .leyline.v1.ListResourcesRequest\x1a!.leyline.v1.ListResourcesResponse\x12<\n" +
 	"\vGetResource\x12\x17.leyline.v1.ResourceRef\x1a\x14.leyline.v1.Resource\x12B\n" +
-	"\x10ResolveLocalPath\x12\x17.leyline.v1.ResourceRef\x1a\x15.leyline.v1.LocalPathB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\x10ResolveLocalPath\x12\x17.leyline.v1.ResourceRef\x1a\x15.leyline.v1.LocalPath\x12F\n" +
+	"\x0eDeleteResource\x12\x17.leyline.v1.ResourceRef\x1a\x1b.leyline.v1.DeletedResourceB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_jobs_proto_rawDescOnce sync.Once
@@ -1990,7 +2047,7 @@ func file_leyline_v1_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_leyline_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_leyline_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_leyline_v1_jobs_proto_goTypes = []any{
 	(JobState)(0),                 // 0: leyline.v1.JobState
 	(RecordGate)(0),               // 1: leyline.v1.RecordGate
@@ -2015,60 +2072,61 @@ var file_leyline_v1_jobs_proto_goTypes = []any{
 	(*ListResourcesResponse)(nil), // 20: leyline.v1.ListResourcesResponse
 	(*ResourceRef)(nil),           // 21: leyline.v1.ResourceRef
 	(*LocalPath)(nil),             // 22: leyline.v1.LocalPath
-	nil,                           // 23: leyline.v1.Resource.MetadataEntry
-	nil,                           // 24: leyline.v1.ListResourcesRequest.MetadataFilterEntry
-	(*ClientInfo)(nil),            // 25: leyline.v1.ClientInfo
-	(*DecodeConfig)(nil),          // 26: leyline.v1.DecodeConfig
-	(*ErrorDetail)(nil),           // 27: leyline.v1.ErrorDetail
-	(DemodMode)(0),                // 28: leyline.v1.DemodMode
-	(*FrequencyRange)(nil),        // 29: leyline.v1.FrequencyRange
-	(*GainWrite)(nil),             // 30: leyline.v1.GainWrite
-	(*SampleTime)(nil),            // 31: leyline.v1.SampleTime
-	(*Gap)(nil),                   // 32: leyline.v1.Gap
-	(*Detection)(nil),             // 33: leyline.v1.Detection
-	(*GainState)(nil),             // 34: leyline.v1.GainState
-	(*StreamPosition)(nil),        // 35: leyline.v1.StreamPosition
+	(*DeletedResource)(nil),       // 23: leyline.v1.DeletedResource
+	nil,                           // 24: leyline.v1.Resource.MetadataEntry
+	nil,                           // 25: leyline.v1.ListResourcesRequest.MetadataFilterEntry
+	(*ClientInfo)(nil),            // 26: leyline.v1.ClientInfo
+	(*DecodeConfig)(nil),          // 27: leyline.v1.DecodeConfig
+	(*ErrorDetail)(nil),           // 28: leyline.v1.ErrorDetail
+	(DemodMode)(0),                // 29: leyline.v1.DemodMode
+	(*FrequencyRange)(nil),        // 30: leyline.v1.FrequencyRange
+	(*GainWrite)(nil),             // 31: leyline.v1.GainWrite
+	(*SampleTime)(nil),            // 32: leyline.v1.SampleTime
+	(*Gap)(nil),                   // 33: leyline.v1.Gap
+	(*Detection)(nil),             // 34: leyline.v1.Detection
+	(*GainState)(nil),             // 35: leyline.v1.GainState
+	(*StreamPosition)(nil),        // 36: leyline.v1.StreamPosition
 }
 var file_leyline_v1_jobs_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.Job.state:type_name -> leyline.v1.JobState
-	25, // 1: leyline.v1.Job.created_by:type_name -> leyline.v1.ClientInfo
+	26, // 1: leyline.v1.Job.created_by:type_name -> leyline.v1.ClientInfo
 	4,  // 2: leyline.v1.Job.watch:type_name -> leyline.v1.WatchConfig
 	5,  // 3: leyline.v1.Job.scan:type_name -> leyline.v1.ScanConfig
 	6,  // 4: leyline.v1.Job.record:type_name -> leyline.v1.RecordConfig
-	26, // 5: leyline.v1.Job.decode:type_name -> leyline.v1.DecodeConfig
+	27, // 5: leyline.v1.Job.decode:type_name -> leyline.v1.DecodeConfig
 	7,  // 6: leyline.v1.Job.monitor:type_name -> leyline.v1.MonitorConfig
-	27, // 7: leyline.v1.Job.error:type_name -> leyline.v1.ErrorDetail
-	28, // 8: leyline.v1.WatchConfig.mode:type_name -> leyline.v1.DemodMode
-	29, // 9: leyline.v1.ScanConfig.range:type_name -> leyline.v1.FrequencyRange
-	30, // 10: leyline.v1.ScanConfig.gain:type_name -> leyline.v1.GainWrite
-	30, // 11: leyline.v1.ScanConfig.gains:type_name -> leyline.v1.GainWrite
-	28, // 12: leyline.v1.RecordConfig.mode:type_name -> leyline.v1.DemodMode
-	30, // 13: leyline.v1.RecordConfig.gain:type_name -> leyline.v1.GainWrite
+	28, // 7: leyline.v1.Job.error:type_name -> leyline.v1.ErrorDetail
+	29, // 8: leyline.v1.WatchConfig.mode:type_name -> leyline.v1.DemodMode
+	30, // 9: leyline.v1.ScanConfig.range:type_name -> leyline.v1.FrequencyRange
+	31, // 10: leyline.v1.ScanConfig.gain:type_name -> leyline.v1.GainWrite
+	31, // 11: leyline.v1.ScanConfig.gains:type_name -> leyline.v1.GainWrite
+	29, // 12: leyline.v1.RecordConfig.mode:type_name -> leyline.v1.DemodMode
+	31, // 13: leyline.v1.RecordConfig.gain:type_name -> leyline.v1.GainWrite
 	1,  // 14: leyline.v1.RecordConfig.gate:type_name -> leyline.v1.RecordGate
-	30, // 15: leyline.v1.RecordConfig.gains:type_name -> leyline.v1.GainWrite
-	29, // 16: leyline.v1.MonitorConfig.range:type_name -> leyline.v1.FrequencyRange
-	31, // 17: leyline.v1.ActivitySegment.start:type_name -> leyline.v1.SampleTime
-	31, // 18: leyline.v1.ActivitySegment.end:type_name -> leyline.v1.SampleTime
+	31, // 15: leyline.v1.RecordConfig.gains:type_name -> leyline.v1.GainWrite
+	30, // 16: leyline.v1.MonitorConfig.range:type_name -> leyline.v1.FrequencyRange
+	32, // 17: leyline.v1.ActivitySegment.start:type_name -> leyline.v1.SampleTime
+	32, // 18: leyline.v1.ActivitySegment.end:type_name -> leyline.v1.SampleTime
 	8,  // 19: leyline.v1.Transcript.segments:type_name -> leyline.v1.ActivitySegment
-	32, // 20: leyline.v1.Transcript.coverage_gaps:type_name -> leyline.v1.Gap
+	33, // 20: leyline.v1.Transcript.coverage_gaps:type_name -> leyline.v1.Gap
 	5,  // 21: leyline.v1.Scan.config:type_name -> leyline.v1.ScanConfig
-	33, // 22: leyline.v1.Scan.detections:type_name -> leyline.v1.Detection
+	34, // 22: leyline.v1.Scan.detections:type_name -> leyline.v1.Detection
 	11, // 23: leyline.v1.Scan.noise_floor:type_name -> leyline.v1.NoiseFloorSegment
-	34, // 24: leyline.v1.Scan.gains:type_name -> leyline.v1.GainState
-	29, // 25: leyline.v1.Scan.covered:type_name -> leyline.v1.FrequencyRange
-	29, // 26: leyline.v1.NoiseFloorSegment.range:type_name -> leyline.v1.FrequencyRange
+	35, // 24: leyline.v1.Scan.gains:type_name -> leyline.v1.GainState
+	30, // 25: leyline.v1.Scan.covered:type_name -> leyline.v1.FrequencyRange
+	30, // 26: leyline.v1.NoiseFloorSegment.range:type_name -> leyline.v1.FrequencyRange
 	2,  // 27: leyline.v1.Resource.kind:type_name -> leyline.v1.ResourceKind
-	23, // 28: leyline.v1.Resource.metadata:type_name -> leyline.v1.Resource.MetadataEntry
+	24, // 28: leyline.v1.Resource.metadata:type_name -> leyline.v1.Resource.MetadataEntry
 	4,  // 29: leyline.v1.StartJobRequest.watch:type_name -> leyline.v1.WatchConfig
 	5,  // 30: leyline.v1.StartJobRequest.scan:type_name -> leyline.v1.ScanConfig
 	6,  // 31: leyline.v1.StartJobRequest.record:type_name -> leyline.v1.RecordConfig
-	26, // 32: leyline.v1.StartJobRequest.decode:type_name -> leyline.v1.DecodeConfig
+	27, // 32: leyline.v1.StartJobRequest.decode:type_name -> leyline.v1.DecodeConfig
 	7,  // 33: leyline.v1.StartJobRequest.monitor:type_name -> leyline.v1.MonitorConfig
 	0,  // 34: leyline.v1.ListJobsRequest.states:type_name -> leyline.v1.JobState
 	3,  // 35: leyline.v1.ListJobsResponse.jobs:type_name -> leyline.v1.Job
-	35, // 36: leyline.v1.TranscriptRequest.from:type_name -> leyline.v1.StreamPosition
+	36, // 36: leyline.v1.TranscriptRequest.from:type_name -> leyline.v1.StreamPosition
 	2,  // 37: leyline.v1.ListResourcesRequest.kind:type_name -> leyline.v1.ResourceKind
-	24, // 38: leyline.v1.ListResourcesRequest.metadata_filter:type_name -> leyline.v1.ListResourcesRequest.MetadataFilterEntry
+	25, // 38: leyline.v1.ListResourcesRequest.metadata_filter:type_name -> leyline.v1.ListResourcesRequest.MetadataFilterEntry
 	12, // 39: leyline.v1.ListResourcesResponse.resources:type_name -> leyline.v1.Resource
 	13, // 40: leyline.v1.Jobs.StartJob:input_type -> leyline.v1.StartJobRequest
 	14, // 41: leyline.v1.Jobs.ListJobs:input_type -> leyline.v1.ListJobsRequest
@@ -2079,17 +2137,19 @@ var file_leyline_v1_jobs_proto_depIdxs = []int32{
 	19, // 46: leyline.v1.Resources.ListResources:input_type -> leyline.v1.ListResourcesRequest
 	21, // 47: leyline.v1.Resources.GetResource:input_type -> leyline.v1.ResourceRef
 	21, // 48: leyline.v1.Resources.ResolveLocalPath:input_type -> leyline.v1.ResourceRef
-	3,  // 49: leyline.v1.Jobs.StartJob:output_type -> leyline.v1.Job
-	15, // 50: leyline.v1.Jobs.ListJobs:output_type -> leyline.v1.ListJobsResponse
-	3,  // 51: leyline.v1.Jobs.GetJob:output_type -> leyline.v1.Job
-	3,  // 52: leyline.v1.Jobs.CancelJob:output_type -> leyline.v1.Job
-	9,  // 53: leyline.v1.Jobs.GetTranscript:output_type -> leyline.v1.Transcript
-	10, // 54: leyline.v1.Jobs.GetScan:output_type -> leyline.v1.Scan
-	20, // 55: leyline.v1.Resources.ListResources:output_type -> leyline.v1.ListResourcesResponse
-	12, // 56: leyline.v1.Resources.GetResource:output_type -> leyline.v1.Resource
-	22, // 57: leyline.v1.Resources.ResolveLocalPath:output_type -> leyline.v1.LocalPath
-	49, // [49:58] is the sub-list for method output_type
-	40, // [40:49] is the sub-list for method input_type
+	21, // 49: leyline.v1.Resources.DeleteResource:input_type -> leyline.v1.ResourceRef
+	3,  // 50: leyline.v1.Jobs.StartJob:output_type -> leyline.v1.Job
+	15, // 51: leyline.v1.Jobs.ListJobs:output_type -> leyline.v1.ListJobsResponse
+	3,  // 52: leyline.v1.Jobs.GetJob:output_type -> leyline.v1.Job
+	3,  // 53: leyline.v1.Jobs.CancelJob:output_type -> leyline.v1.Job
+	9,  // 54: leyline.v1.Jobs.GetTranscript:output_type -> leyline.v1.Transcript
+	10, // 55: leyline.v1.Jobs.GetScan:output_type -> leyline.v1.Scan
+	20, // 56: leyline.v1.Resources.ListResources:output_type -> leyline.v1.ListResourcesResponse
+	12, // 57: leyline.v1.Resources.GetResource:output_type -> leyline.v1.Resource
+	22, // 58: leyline.v1.Resources.ResolveLocalPath:output_type -> leyline.v1.LocalPath
+	23, // 59: leyline.v1.Resources.DeleteResource:output_type -> leyline.v1.DeletedResource
+	50, // [50:60] is the sub-list for method output_type
+	40, // [40:50] is the sub-list for method input_type
 	40, // [40:40] is the sub-list for extension type_name
 	40, // [40:40] is the sub-list for extension extendee
 	0,  // [0:40] is the sub-list for field type_name
@@ -2127,7 +2187,7 @@ func file_leyline_v1_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_jobs_proto_rawDesc), len(file_leyline_v1_jobs_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   22,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

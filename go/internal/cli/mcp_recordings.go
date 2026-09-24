@@ -236,6 +236,38 @@ func (srv *mcpServer) getRecording(ctx context.Context, _ *mcp.CallToolRequest, 
 	return jsonResult(b.String(), raw), nil, nil
 }
 
+type deleteRecordingArgs struct {
+	Recording string `json:"recording" jsonschema:"the recording to delete: its whole job id from find_recordings or record, or its ley://recordings/<job_id> uri"`
+}
+
+// deleteRecording is Resources.DeleteResource: a recording goes whole, and the
+// daemon refuses one whose job is still running.
+func (srv *mcpServer) deleteRecording(ctx context.Context, _ *mcp.CallToolRequest, in deleteRecordingArgs) (*mcp.CallToolResult, any, error) {
+	if in.Recording == "" {
+		return nil, nil, fmt.Errorf("recording is required: a job id from find_recordings, or a ley://recordings/ uri")
+	}
+	// A part's uri reaches the daemon as given, so its refusal is the one returned. A whole id is
+	// needed, as get_recording takes one: a prefix that matched the wrong recording would delete it.
+	jobID, part, isURI := leyline.ParseRecordingURI(in.Recording)
+	uri := in.Recording
+	if !isURI {
+		jobID, uri = in.Recording, leyline.RecordingURI(in.Recording)
+	} else if part == 0 {
+		uri = leyline.RecordingURI(jobID)
+	}
+	deleted, err := srv.client.DeleteRecording(ctx, uri)
+	if err != nil {
+		switch leyline.Code(err) {
+		case leyline.CodeFailedPrecondition:
+			return nil, nil, fmt.Errorf("%s; cancel_job %s stops it, and the recording is complete when it stops", daemonMessage(err), jobID)
+		case leyline.CodeJobNotFound:
+			return nil, nil, fmt.Errorf("no recording called %s; find_recordings lists the ones the daemon has", jobID)
+		}
+		return nil, nil, toolError(err)
+	}
+	return protoResult(deleted, fmt.Sprintf("Deleted %s, %s freed.", jobID, recordingSize(deleted.GetFreedBytes())))
+}
+
 // manifestFor reads a recording's manifest through the daemon's own path, so a
 // recording the daemon does not have is a refusal rather than a missing file.
 func (srv *mcpServer) manifestFor(ctx context.Context, jobID string) (*leyline.RecordingManifest, error) {

@@ -388,6 +388,29 @@ func TestRecordScreensStyleIsSGROnly(t *testing.T) {
 		})
 	}
 
+	// recordings delete prints one stderr line; two recordings, one deleted plain and one inked,
+	// differ only in their ids and, by a tick of the fake's clock, their sizes.
+	var lines []string
+	for _, color := range []bool{false, true} {
+		u := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "300ms"))
+		id, _, _ := leyline.ParseRecordingURI(u)
+		out, errOut := runStyled(t, sock, color, "recordings", "delete", id, "--yes")
+		if out != "" {
+			t.Errorf("recordings delete printed on stdout: %q", out)
+		}
+		line := strings.Replace(errOut, id, "job_", 1)
+		if i, j := strings.Index(line, ", "), strings.Index(line, " freed"); i >= 0 && j > i {
+			line = line[:i] + ", N" + line[j:]
+		}
+		lines = append(lines, line)
+	}
+	if !strings.Contains(lines[1], "\033[") {
+		t.Errorf("the delete line was not inked: %q", lines[1])
+	}
+	if ui.Strip(lines[1]) != lines[0] {
+		t.Errorf("recordings delete: stripped ink differs from plain\n%q\n%q", lines[0], ui.Strip(lines[1]))
+	}
+
 	// The record banner is stderr prose, so it is rendered through the verb itself.
 	plainOut, plainErr := runStyled(t, sock, false, "record", "146.52", "--for", "400ms")
 	inkOut, inkErr := runStyled(t, sock, true, "record", "146.52", "--for", "400ms")
@@ -485,4 +508,110 @@ func TestRecordGainSetsEachStageNamed(t *testing.T) {
 	if _, _, err := run(t, t.Context(), sock, "record", "462.5625", "--gain", "LNA=0,20"); err == nil || !strings.Contains(err.Error(), "name each stage") {
 		t.Errorf("a bare value in a list is a usage error, got %v", err)
 	}
+}
+
+// runWithStdin is run with a terminal on stdin that answers with input, so the
+// confirmation path is taken.
+func runWithStdin(t *testing.T, sock, input string, args ...string) (string, string, error) {
+	t.Helper()
+	var out, errb bytes.Buffer
+	app := &App{
+		Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(input), IsInTTY: func() bool { return true },
+		LookupEnv: func(string) (string, bool) { return "", false },
+	}
+	err := Execute(t.Context(), app, append([]string{"--socket", sock}, args...))
+	return out.String(), errb.String(), err
+}
+
+// ley recordings delete asks on a terminal, naming the recording, and goes on a y; anything else
+// keeps it. The prose is on stderr and stdout is empty, or the DeletedResource under --json.
+func TestRecordingsDeleteConfirmsThenDeletes(t *testing.T) {
+	sock, dir := recordHarness(t)
+	uri := strings.TrimSpace(mustRun(t, sock, "record", "462.5625", "--for", "300ms"))
+	jobID, _, _ := leyline.ParseRecordingURI(uri)
+
+	out, errOut, err := runWithStdin(t, sock, "n\n", "recordings", "delete", jobID)
+	if err != nil {
+		t.Fatalf("declining is not an error: %v\n%s", err, errOut)
+	}
+	if !strings.HasPrefix(errOut, "Delete 462.5625 MHz NFM, ") || !strings.Contains(errOut, " in 1 part, ") ||
+		!strings.Contains(errOut, "? [y/N] ") || !strings.Contains(errOut, "nothing was deleted") || out != "" {
+		t.Errorf("the question and the answer:\nstdout %q\nstderr %q", out, errOut)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, jobID)); serr != nil {
+		t.Fatalf("a declined delete removed the recording: %v", serr)
+	}
+
+	out, errOut, err = runWithStdin(t, sock, "y\n", "recordings", "delete", jobID[:12])
+	if err != nil {
+		t.Fatalf("ley recordings delete: %v\n%s", err, errOut)
+	}
+	if out != "" || !strings.Contains(errOut, "Deleted "+jobID+", ") || !strings.HasSuffix(errOut, " freed\n") {
+		t.Errorf("stdout %q\nstderr %q", out, errOut)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, jobID)); !os.IsNotExist(serr) {
+		t.Errorf("the directory is still there: %v", serr)
+	}
+	if table := mustRun(t, sock, "recordings"); strings.Contains(table, jobID) {
+		t.Errorf("ley recordings still lists it:\n%s", table)
+	}
+	// The job is left as it was: jobs are never tombstoned.
+	if jobs := mustRun(t, sock, "jobs"); !strings.Contains(jobs, "record") {
+		t.Errorf("the job went with the recording:\n%s", jobs)
+	}
+	_, _, err = run(t, t.Context(), sock, "recordings", "delete", jobID, "--yes")
+	if err == nil || !strings.Contains(err.Error(), "no recording called") || !strings.Contains(err.Error(), "[JOB_NOT_FOUND]") {
+		t.Errorf("deleting it again: %v", err)
+	}
+}
+
+// --yes skips the question, is required when stdin is not a terminal, and --json prints the
+// DeletedResource on stdout.
+func TestRecordingsDeleteYesAndJSON(t *testing.T) {
+	sock, dir := recordHarness(t)
+	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "300ms"))
+	jobID, _, _ := leyline.ParseRecordingURI(uri)
+
+	_, _, err := run(t, t.Context(), sock, "recordings", "delete", jobID)
+	var ee *ExitError
+	if !errors.As(err, &ee) || ee.Code != ExitUsage || !strings.Contains(err.Error(), "ley recordings delete "+jobID+" --yes") {
+		t.Fatalf("no terminal and no --yes must be a usage error naming --yes: %v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, jobID)); serr != nil {
+		t.Fatalf("the refusal removed the recording: %v", serr)
+	}
+	// A part is refused by the daemon: a recording is deleted whole.
+	_, _, err = run(t, t.Context(), sock, "recordings", "delete", uri+"/1", "-y")
+	if err == nil || !strings.Contains(err.Error(), "deleted whole") || !strings.Contains(err.Error(), "[INVALID_ARGUMENT]") {
+		t.Errorf("a part uri: %v", err)
+	}
+	out, errOut, err := run(t, t.Context(), sock, "--json", "recordings", "delete", uri, "-y")
+	if err != nil {
+		t.Fatalf("--json delete: %v\n%s", err, errOut)
+	}
+	var deleted struct {
+		URI        string `json:"uri"`
+		FreedBytes string `json:"freedBytes"`
+	}
+	if jerr := json.Unmarshal([]byte(out), &deleted); jerr != nil || deleted.URI != uri || deleted.FreedBytes == "" || deleted.FreedBytes == "0" {
+		t.Errorf("--json prints the DeletedResource (%v): %s", jerr, out)
+	}
+}
+
+// A running recording is refused with the daemon's sentence and the command that stops it.
+func TestRecordingsDeleteRefusesARunningRecording(t *testing.T) {
+	sock, dir := recordHarness(t)
+	fields := strings.Fields(mustRun(t, sock, "record", "146.52", "--detach"))
+	jobID := fields[0]
+	t.Cleanup(func() { _, _, _ = run(t, context.Background(), sock, "jobs", "cancel", jobID) })
+	_, _, err := run(t, t.Context(), sock, "recordings", "delete", jobID, "--yes")
+	want := jobID + " is still recording; cancel the job first, then delete it. Run: ley jobs cancel " + jobID + " [FAILED_PRECONDITION]"
+	if err == nil || err.Error() != want {
+		t.Fatalf("got  %v\nwant %s", err, want)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, jobID)); serr != nil {
+		t.Fatalf("the refusal removed the recording: %v", serr)
+	}
+	mustRun(t, sock, "jobs", "cancel", jobID)
+	mustRun(t, sock, "recordings", "delete", jobID, "--yes")
 }

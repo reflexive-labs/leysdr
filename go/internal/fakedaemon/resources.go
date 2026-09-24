@@ -5,6 +5,7 @@ package fakedaemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -122,6 +123,57 @@ func (d *Daemon) ResolveLocalPath(ctx context.Context, req *leylinev1.ResourceRe
 		req.GetUri()+" names a part this recording does not have"))
 }
 
+// DeleteResource implements Resources: a recording is removed whole, never while
+// its job runs, and nothing goes out on the event plane -- a recording is a
+// resource, not state, and the job's entry stays as it is
+// (docs/design/recording.md, "The wire").
+func (d *Daemon) DeleteResource(ctx context.Context, req *leylinev1.ResourceRef) (*leylinev1.DeletedResource, error) {
+	ci := clientFrom(ctx)
+	d.touchUnary(ci)
+	jobID, part, ok := leyline.ParseRecordingURI(req.GetUri())
+	if !ok {
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetUri(),
+			req.GetUri()+" is not a recording; only ley://recordings/<id> can be deleted"))
+	}
+	if part != 0 {
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetUri(),
+			req.GetUri()+" names one part; a recording is deleted whole, as "+leyline.RecordingURI(jobID)))
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	j := d.jobs[jobID]
+	if j == nil || j.record == nil {
+		return nil, fail(ctx, errorf(leyline.CodeJobNotFound, jobID, "no recording called "+quoted(jobID)))
+	}
+	if st := j.proto.GetState(); st == leylinev1.JobState_RUNNING || st == leylinev1.JobState_DEGRADED {
+		return nil, fail(ctx, errorf(leyline.CodeFailedPrecondition, jobID,
+			jobID+" is still recording; cancel the job first, then delete it"))
+	}
+	freed := dirSize(j.record.dir)
+	if err := os.RemoveAll(j.record.dir); err != nil {
+		return nil, fail(ctx, errorf(leyline.CodeInternal, jobID,
+			"could not remove the recording's directory: "+err.Error()))
+	}
+	j.record = nil
+	return &leylinev1.DeletedResource{Uri: leyline.RecordingURI(jobID), FreedBytes: freed}, nil
+}
+
+// dirSize is what a recording's directory holds on disk, parts and sidecars and
+// manifest, as the daemon reports freed_bytes.
+func dirSize(dir string) uint64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	var n uint64
+	for _, e := range entries {
+		if info, ierr := e.Info(); ierr == nil && info.Mode().IsRegular() {
+			n += uint64(info.Size())
+		}
+	}
+	return n
+}
+
 // recordingResource is the manifest as the contract carries it, with the frozen
 // metadata keys a filter matches on by exact string. Caller holds the lock.
 func recordingResource(j *fakeJob) *leylinev1.Resource {
@@ -130,11 +182,17 @@ func recordingResource(j *fakeJob) *leylinev1.Resource {
 	if m.Device != nil {
 		device = m.Device.Model
 	}
+	// What the directory takes on disk, sidecars and the part being written included, as the
+	// daemon reports it; so the size listed is the size DeleteResource frees.
+	size := dirSize(j.record.dir)
+	if size == 0 {
+		size = m.Bytes
+	}
 	return &leylinev1.Resource{
 		Uri:              m.URI,
 		Kind:             leylinev1.ResourceKind_RECORDING,
 		CreatedAtNs:      m.StartedAtNS,
-		SizeBytes:        m.Bytes,
+		SizeBytes:        size,
 		OriginatingJobId: m.JobID,
 		Metadata: map[string]string{
 			"kind":          m.Kind,

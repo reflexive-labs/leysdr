@@ -215,7 +215,7 @@ Rules the daemon enforces, each with its code:
 No new error code in v1. A full disk ends the job `FAILED` with `FAILED_PRECONDITION` and a
 message naming the free space; a code a client can branch on is added when a client needs it.
 
-**`Resources`**, all three RPCs, implemented over the manifests:
+**`Resources`**, all four RPCs, implemented over the manifests:
 
 - `ListResources(kind, metadata_filter)` returns one `Resource` per manifest, newest first, with
   `kind = RECORDING`, `size_bytes` the sum of the parts, `originating_job_id` the job, and a
@@ -230,6 +230,14 @@ message naming the free space; a code a client can branch on is added when a cli
 - `ResolveLocalPath(uri)` returns the recording's directory for `ley://recordings/<id>` and the
   part's samples file for `ley://recordings/<id>/<part>`. Clients on the same machine open the
   file; nothing is streamed.
+- `DeleteResource(uri)` removes a recording's directory, every part, sidecar and the manifest,
+  and returns `DeletedResource` with `freed_bytes`, what the directory held (added 2026-09-24
+  for the app's delete button, `plans/app.md` APP-5). It refuses while the recording's job is
+  `RUNNING` or `DEGRADED`, `FAILED_PRECONDITION` with "cancel the job first", because the runner
+  has a part open there and cancelling finalises it. A part's URI is `INVALID_ARGUMENT`, since a
+  recording is deleted whole, and a missing one is `JOB_NOT_FOUND`. Nothing goes out on the event
+  plane: a recording is a resource, the job's entry is left as it was, and a client re-reads
+  `ListResources`. Deleting the directory in Finder does the same.
 
 **Job events** already exist (`Event.job`), so a client renders a recording's progress by
 subscription. While `RUNNING`, `status_detail` carries liveness the way a decode job's does, on
@@ -321,6 +329,7 @@ ley record <frequency|preset|channel> [--iq] [--for 5m] [--gate squelch] [--pre 
 ley recordings [--kind audio|iq] [--freq F] [--since 24h] [--limit N]
 ley recordings show <id>
 ley recordings path <id> [--part N]
+ley recordings delete <id> [--yes]
 ley play ley://recordings/<id> [--part N]
 ley jobs cancel <id>
 ```
@@ -357,13 +366,14 @@ ley jobs cancel <id>
 
 ## MCP
 
-Three tools and one resource, each with the `ley` mirror above and the same proto3 JSON.
+Four tools and one resource, each with the `ley` mirror above and the same proto3 JSON.
 
 | Tool | Maps to | Notes |
 |---|---|---|
 | `record` | `Jobs.StartJob(RecordConfig)` | `duration_s` is required (1 to 3600): what an agent starts must end without it. `gate`, `pre_roll_ms`, `hang_ms`, `take_over` as the config. Returns the `Job` and the URI, and refuses an active capture the way `tune` does |
 | `find_recordings` | `Resources.ListResources(RECORDING)` | the filters are the frozen metadata keys; the summary is the `ley recordings` table |
 | `get_recording` | `Resources.GetResource` + `ResolveLocalPath` | the manifest with each part's local path, so an agent hands a file to another tool by path |
+| `delete_recording` | `Resources.DeleteResource` | returns the `DeletedResource`; refused while the job runs, with `cancel_job` named (2026-09-24) |
 
 The resource `ley://recordings/<id>` returns the manifest as JSON. Samples are never returned
 through MCP; a file path is. `find_recordings` leaves the "not registered" list in
@@ -491,8 +501,6 @@ case where the file is local anyway, because a headless daemon is usually the on
   likely answer and is one additive field (`gate_channel_id`) when someone asks for it.
 - **Resuming a recording after a restart.** The watch job resumes (D.15); a recording ends.
 - **Scheduled starts.** `start_at_ns` is refused; a schedule is a job-store feature (D.15).
-- **Deleting through the contract.** The store is a directory; delete in Finder or `rm`. A
-  `DeleteResource` RPC is additive when the app wants a delete button, and it is expected to.
 - **Streaming a recording's samples** over MCP or gRPC. `ResolveLocalPath` and `ley play` are
   the two ways in, and the data-planes doc's "no lossless network stream" holds. A playback moves
   no samples over the socket either: the daemon opens the file itself and the client sees a

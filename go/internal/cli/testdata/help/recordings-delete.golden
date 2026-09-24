@@ -1,0 +1,34 @@
+delete removes one recording whole, its parts, their sidecars and the
+manifest, and prints how much space that freed. A single part cannot be
+deleted: the manifest lists every part, and a recording with one missing
+would not match it.
+
+The daemon refuses while the recording's job is running, because it has a
+part open; 'ley jobs cancel <id>' stops it, and the recording is complete
+when it stops.
+
+On a terminal it asks first, naming the recording; --yes deletes without
+asking, and is required when stdin is not a terminal. Deleting the directory
+in Finder or with rm does the same thing.
+
+The id is a job id, an id prefix, or a ley://recordings/ URI.
+
+--json prints a DeletedResource: the uri and freed_bytes.
+
+Usage:
+  ley recordings delete <id> [flags]
+
+Examples:
+  ley recordings delete job_01J...
+  ley recordings delete job_01J... --yes
+  ley recordings --freq 462.5625 --json | jq -r '.resources[].uri' | xargs -n1 ley recordings delete --yes
+
+Flags:
+  -h, --help   help for delete
+  -y, --yes    delete without asking
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

@@ -321,6 +321,7 @@ const (
 	Resources_ListResources_FullMethodName    = "/leyline.v1.Resources/ListResources"
 	Resources_GetResource_FullMethodName      = "/leyline.v1.Resources/GetResource"
 	Resources_ResolveLocalPath_FullMethodName = "/leyline.v1.Resources/ResolveLocalPath"
+	Resources_DeleteResource_FullMethodName   = "/leyline.v1.Resources/DeleteResource"
 )
 
 // ResourcesClient is the client API for Resources service.
@@ -336,6 +337,12 @@ type ResourcesClient interface {
 	// to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
 	// so a missing one is JOB_NOT_FOUND.
 	ResolveLocalPath(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*LocalPath, error)
+	// Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+	// while its job is running: cancel the job first, and the recording it made stays until it is
+	// deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+	// is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+	// (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+	DeleteResource(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*DeletedResource, error)
 }
 
 type resourcesClient struct {
@@ -376,6 +383,16 @@ func (c *resourcesClient) ResolveLocalPath(ctx context.Context, in *ResourceRef,
 	return out, nil
 }
 
+func (c *resourcesClient) DeleteResource(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*DeletedResource, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletedResource)
+	err := c.cc.Invoke(ctx, Resources_DeleteResource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ResourcesServer is the server API for Resources service.
 // All implementations must embed UnimplementedResourcesServer
 // for forward compatibility.
@@ -389,6 +406,12 @@ type ResourcesServer interface {
 	// to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
 	// so a missing one is JOB_NOT_FOUND.
 	ResolveLocalPath(context.Context, *ResourceRef) (*LocalPath, error)
+	// Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+	// while its job is running: cancel the job first, and the recording it made stays until it is
+	// deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+	// is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+	// (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+	DeleteResource(context.Context, *ResourceRef) (*DeletedResource, error)
 	mustEmbedUnimplementedResourcesServer()
 }
 
@@ -407,6 +430,9 @@ func (UnimplementedResourcesServer) GetResource(context.Context, *ResourceRef) (
 }
 func (UnimplementedResourcesServer) ResolveLocalPath(context.Context, *ResourceRef) (*LocalPath, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveLocalPath not implemented")
+}
+func (UnimplementedResourcesServer) DeleteResource(context.Context, *ResourceRef) (*DeletedResource, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteResource not implemented")
 }
 func (UnimplementedResourcesServer) mustEmbedUnimplementedResourcesServer() {}
 func (UnimplementedResourcesServer) testEmbeddedByValue()                   {}
@@ -483,6 +509,24 @@ func _Resources_ResolveLocalPath_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Resources_DeleteResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResourceRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcesServer).DeleteResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Resources_DeleteResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcesServer).DeleteResource(ctx, req.(*ResourceRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Resources_ServiceDesc is the grpc.ServiceDesc for Resources service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -501,6 +545,10 @@ var Resources_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveLocalPath",
 			Handler:    _Resources_ResolveLocalPath_Handler,
+		},
+		{
+			MethodName: "DeleteResource",
+			Handler:    _Resources_DeleteResource_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

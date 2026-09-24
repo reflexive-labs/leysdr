@@ -68,6 +68,19 @@ actor RecordingStore {
     /// that is still being written.
     func sizeOnDisk(jobID: String) -> UInt64 { size(of: directory + "/" + jobID) }
 
+    /// Removes one recording whole, every part, sidecar and the manifest, and returns the bytes it
+    /// held; nil when there is no such recording. The caller has already refused a recording whose
+    /// job is running (`Resources.DeleteResource`, docs/design/recording.md, "The wire"). Nothing
+    /// else needs updating: the listing is a scan of the manifests.
+    func delete(jobID: String, by client: String) throws -> UInt64? {
+        guard manifest(jobID: jobID) != nil else { return nil }
+        let path = directory + "/" + jobID
+        let bytes = size(of: path)
+        try FileManager.default.removeItem(atPath: path)
+        log.info("deleted \(path): \(bytes) bytes, asked by \(client.isEmpty ? "an unnamed client" : client)")
+        return bytes
+    }
+
     // MARK: Retention and repair
 
     /// Age first, then size, oldest first by manifest time -- and never a recording whose job is

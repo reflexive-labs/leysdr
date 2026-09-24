@@ -86,8 +86,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # recording's, and ley://recordings/<job_id> is on stdout when it ends
 ├── recordings [--kind audio|iq] [--freq F] [--since D] [--limit N]
 │   ├── show <id>                    # the manifest: the radio, the parts, the coverage gaps, how it ended
-│   └── path <id> [--part N]         # where it is on this machine, for Finder or another tool
-│                                    # Resources.ListResources / GetResource / ResolveLocalPath
+│   ├── path <id> [--part N]         # where it is on this machine, for Finder or another tool
+│   └── delete <id> [--yes]          # the whole recording; asks on a terminal, refused while its job runs
+│                                    # Resources.ListResources / GetResource / ResolveLocalPath / DeleteResource
 ├── play <file.cf32 | job_ID | ley://recordings/ID[/PART]> [--part N] [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto|STAGE=dB,...] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline; a recording's id or URI
 │                                    # is resolved to its part file first. An audio part holds what a
@@ -392,6 +393,16 @@ job_…)"` reveals it in Finder. Every id argument takes a full job id, an id pr
 `ley://recordings/` URI, `ley play` included: `ley play job_01J…` plays a recording's first part,
 and `--part N` picks another.
 
+`ley recordings delete <id>` removes a recording whole through `Resources.DeleteResource`: every
+part, its sidecars and the manifest. On a terminal it asks first, naming the recording (`Delete
+462.5625 MHz NFM, 12 min in 4 parts, 6.9 MB? [y/N]`), and anything but `y` keeps it; `--yes`
+(`-y`) deletes without asking and is required when stdin is not a terminal, a usage error
+otherwise. It prints `Deleted job_…, 6.9 MB freed` on stderr and nothing on stdout; `--json`
+prints the `DeletedResource` (`{"uri": "ley://recordings/job_…", "freedBytes": "7235584"}`). The
+daemon refuses a recording whose job is running (`FAILED_PRECONDITION`, the message says to
+cancel the job first, and `ley` adds `Run: ley jobs cancel job_…`) and a part's URI
+(`INVALID_ARGUMENT`: a recording is deleted whole).
+
 **What `ley play` does with a recording depends on what is in it.** An **IQ** part is raw samples,
 so it is attached as a pretend radio and tuned, exactly as a fixture is. An **audio** part is a
 WAV: it holds what a demodulator already produced, and there is no signal left in it for a channel
@@ -437,7 +448,8 @@ The store is a plain directory Finder can open and Spotlight can index:
 `~/Library/Application Support/Leyline/recordings` on macOS, `$XDG_DATA_HOME/leyline/recordings`
 elsewhere, `leylined --recordings PATH` to move it, with `--recordings-cap BYTES` (default 20 GiB)
 and `--recordings-age DAYS` (default 0, never) as its retention. A recording deleted in Finder is
-gone with no further step: the listing is a scan of the manifests. Retention never removes a
+gone with no further step, as one `ley recordings delete` removed is: the listing is a scan of the
+manifests. Retention never removes a
 recording whose job is running, and a daemon restart does not resume a recording — the next daemon
 repairs the last part's WAV header from the file's length and closes the manifest with
 `ended_by = restart`.

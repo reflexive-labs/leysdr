@@ -230,6 +230,12 @@ service Resources {
   // to that part's samples file. RESOURCE_NOT_FOUND does not exist: a recording's id is its job's,
   // so a missing one is JOB_NOT_FOUND.
   rpc ResolveLocalPath(ResourceRef) returns (LocalPath); // UDS clients read the file directly
+  // Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
+  // while its job is running: cancel the job first, and the recording it made stays until it is
+  // deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
+  // is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
+  // (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+  rpc DeleteResource(ResourceRef) returns (DeletedResource);
 }
 
 message StartJobRequest {
@@ -244,3 +250,4 @@ message ListResourcesRequest { ResourceKind kind = 1; map<string, string> metada
 message ListResourcesResponse { repeated Resource resources = 1; }
 message ResourceRef { string uri = 1; }
 message LocalPath { string path = 1; }
+message DeletedResource { string uri = 1; uint64 freed_bytes = 2; } // what the delete removed

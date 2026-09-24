@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -39,16 +40,18 @@ func newRecordingsCommand(app *App) *cobra.Command {
 A recording is one directory of files -- 'ley recordings path' says where, so
 'open -R "$(ley recordings path <id>)"' reveals it in Finder.
 
-The store is a plain directory. A recording deleted there is gone, and the
-daemon does not have to be told; the daemon drops the oldest when the store
-passes its cap (leylined --recordings-cap).
+'ley recordings delete' removes one. The store is a plain directory, so a
+recording deleted there in Finder is gone too, and the daemon does not have
+to be told; the daemon drops the oldest when the store passes its cap
+(leylined --recordings-cap).
 
 --json prints a ListResourcesResponse.`,
 		Example: `  ley recordings                       # everything kept, newest first
   ley recordings --kind audio          # just the WAVs
   ley recordings --freq 146.52         # one frequency
   ley recordings show job_01J...       # the manifest: parts, gaps, the radio
-  open -R "$(ley recordings path job_01J...)"`,
+  open -R "$(ley recordings path job_01J...)"
+  ley recordings delete job_01J...     # asks first; --yes does not`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -76,7 +79,7 @@ passes its cap (leylined --recordings-cap).
 	cmd.Flags().StringVar(&freq, "freq", "", "only recordings of this frequency or preset, e.g. 146.52")
 	cmd.Flags().StringVar(&since, "since", "", "only recordings started more recently than this, e.g. 1h, 30m, 2d")
 	cmd.Flags().IntVar(&o.limit, "limit", 0, "at most this many rows, e.g. 20 (default: all of them)")
-	cmd.AddCommand(newRecordingsShowCommand(app), newRecordingsPathCommand(app))
+	cmd.AddCommand(newRecordingsShowCommand(app), newRecordingsPathCommand(app), newRecordingsDeleteCommand(app))
 	return cmd
 }
 
@@ -410,6 +413,119 @@ func runRecordingsPath(ctx context.Context, app *App, ref string, part int) erro
 	}
 	fmt.Fprintln(app.Stdout, path)
 	return nil
+}
+
+// ---------- delete ----------
+
+func newRecordingsDeleteCommand(app *App) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a recording: every part and its manifest",
+		Long: `delete removes one recording whole, its parts, their sidecars and the
+manifest, and prints how much space that freed. A single part cannot be
+deleted: the manifest lists every part, and a recording with one missing
+would not match it.
+
+The daemon refuses while the recording's job is running, because it has a
+part open; 'ley jobs cancel <id>' stops it, and the recording is complete
+when it stops.
+
+On a terminal it asks first, naming the recording; --yes deletes without
+asking, and is required when stdin is not a terminal. Deleting the directory
+in Finder or with rm does the same thing.
+
+The id is a job id, an id prefix, or a ley://recordings/ URI.
+
+--json prints a DeletedResource: the uri and freed_bytes.`,
+		Example: `  ley recordings delete job_01J...
+  ley recordings delete job_01J... --yes
+  ley recordings --freq 462.5625 --json | jq -r '.resources[].uri' | xargs -n1 ley recordings delete --yes`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRecordingsDelete(cmd.Context(), app, args[0], yes)
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
+	return cmd
+}
+
+func runRecordingsDelete(ctx context.Context, app *App, ref string, yes bool) error {
+	if !yes && !app.IsInTTY() {
+		return usageErrorf("stdin is not a terminal, so nobody can confirm the delete. Run: ley recordings delete %s --yes", ref)
+	}
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	// A part's uri goes to the daemon as typed, so its refusal (a recording is deleted whole) is
+	// the one the reader sees rather than the whole recording going instead.
+	jobID, part, isURI := leyline.ParseRecordingURI(ref)
+	uri := ref
+	if !isURI || part == 0 {
+		if jobID, err = resolveRecordingID(ctx, c, ref); err != nil {
+			return err
+		}
+		uri = leyline.RecordingURI(jobID)
+	}
+	if !yes {
+		res, gerr := c.GetResource(ctx, uri)
+		if gerr != nil {
+			return recordingNotFound(app, ref, gerr)
+		}
+		fmt.Fprintf(app.Stderr, "Delete %s? [y/N] ", deleteSummary(res))
+		answer, _ := bufio.NewReader(app.Stdin).ReadString('\n')
+		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+			fmt.Fprintln(app.Stderr, "Kept "+jobID+"; nothing was deleted.")
+			return nil
+		}
+	}
+	deleted, err := c.DeleteRecording(ctx, uri)
+	if err != nil {
+		return recordingDeleteFailure(app, ref, jobID, err)
+	}
+	st := app.ErrStyle
+	fmt.Fprintf(app.Stderr, "%s %s, %s freed\n", st.Ok("Deleted"), jobID, recordingSize(deleted.GetFreedBytes()))
+	if app.JSON {
+		return app.printJSON(deleted)
+	}
+	return nil
+}
+
+// deleteSummary is the recording as the confirmation names it: where, what, how long, how
+// many parts, how big -- enough to tell it from the one beside it.
+func deleteSummary(r *leylinev1.Resource) string {
+	m := r.GetMetadata()
+	var what []string
+	if hz, err := strconv.ParseUint(m["frequency_hz"], 10, 64); err == nil && hz > 0 {
+		what = append(what, leyline.FormatFrequency(hz))
+	}
+	switch {
+	case m["kind"] == "iq":
+		what = append(what, "IQ")
+	case m["mode"] != "":
+		what = append(what, m["mode"])
+	}
+	head := strings.Join(what, " ")
+	if head == "" {
+		head = r.GetOriginatingJobId()
+	}
+	parts, _ := strconv.Atoi(m["parts"])
+	return fmt.Sprintf("%s, %s in %s, %s", head, recordingLength(m["duration_ms"]),
+		plural(parts, "part"), recordingSize(r.GetSizeBytes()))
+}
+
+// recordingDeleteFailure adds what to do next to the daemon's refusal: a running recording is
+// cancelled first, and a missing one is looked for in the list.
+func recordingDeleteFailure(app *App, ref, jobID string, err error) error {
+	if leyline.Code(err) == leyline.CodeFailedPrecondition {
+		return &friendlyError{
+			msg:   fmt.Sprintf("%s. Run: %s", daemonMessage(err), app.ErrStyle.Cmd("ley jobs cancel "+jobID)),
+			cause: err,
+		}
+	}
+	return recordingNotFound(app, ref, err)
 }
 
 // resolveRecordingID reads the id out of what the user typed: a job id, a URI, or an id prefix

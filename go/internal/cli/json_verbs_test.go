@@ -90,6 +90,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "recordings", args: []string{"recordings"}, prep: prepRecordingOnly},
 	{path: "recordings show", args: []string{"recordings", "show"}, prep: prepRecording},
 	{path: "recordings path", args: []string{"recordings", "path"}, prep: prepRecording},
+	{path: "recordings delete", args: []string{"recordings", "delete", "--yes"}, prep: prepRecording},
 	{path: "records", args: []string{"records"}, prep: prepKeptDecode},
 	{path: "track", args: []string{"track", "aprs", "--count", "1"}},
 	{path: "devices-seen", args: []string{"devices-seen"}, prep: prepKeptDecode},

@@ -4,6 +4,12 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- `ley recordings delete <id>` removes a recording whole, every part and its manifest, and prints
+  how much space that freed. On a terminal it names the recording and asks first; `--yes` skips
+  the question and is required from a script. A recording whose job is still running is refused
+  with `ley jobs cancel` named. The contract gains `Resources.DeleteResource`, which the Mac app's
+  delete button will use, and the MCP adapter a `delete_recording` tool with the same refusals.
+
 - Every gain takes one syntax and prints one way. `ley set gain` and `ley scan --gain` accept what
   `--gain` accepts on `tune` and `record`: `auto`, a level for the first stage, or stages by name
   (`ley set gain LNA=0,VGA=20`), so `ley set`'s `--element` flag is gone. `ScanConfig` gains

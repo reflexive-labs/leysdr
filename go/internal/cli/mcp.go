@@ -46,9 +46,9 @@ short text summary so the agent spends its context on reasoning.
 
 Tools: list_devices, get_state, daemon_logs, tune, scan, listen_summary,
 snapshot, list_decoders, query_records, list_entities, start_decode_job,
-record, find_recordings, get_recording, list_jobs, get_job, cancel_job. The
-resources ley://recordings/<job_id> and ley://records/<job_id> read a
-recording's manifest and a kept decode job's records. Anything an agent
+record, find_recordings, get_recording, delete_recording, list_jobs, get_job,
+cancel_job. The resources ley://recordings/<job_id> and ley://records/<job_id>
+read a recording's manifest and a kept decode job's records. Anything an agent
 starts here (a channel from tune, a decode job without keep) ends when the
 agent disconnects, the way a ley verb's ends at Ctrl-C; keep: true on a tool
 leaves it running, and a recording always outlives the call that made it.

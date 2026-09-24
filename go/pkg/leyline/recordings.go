@@ -80,6 +80,14 @@ func (c *Client) ResolveLocalPath(ctx context.Context, uri string) (string, erro
 	return resp.GetPath(), nil
 }
 
+// DeleteRecording asks the daemon to remove a recording whole: every part, its
+// sidecars and the manifest. The daemon refuses a part's uri and refuses while
+// the recording's job runs (FAILED_PRECONDITION; cancel the job first). The
+// reply carries the bytes the directory held.
+func (c *Client) DeleteRecording(ctx context.Context, uri string) (*leylinev1.DeletedResource, error) {
+	return c.Resources.DeleteResource(ctx, &leylinev1.ResourceRef{Uri: uri})
+}
+
 // StartPlayback asks the daemon to play a recording through its own audio
 // device. The daemon owns the speakers, as it does for a channel's audio, so
 // the sound comes out where the radio is and no samples cross the socket.

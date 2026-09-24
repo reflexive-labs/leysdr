@@ -741,7 +741,21 @@ the file to your own player instead and says so.)
 Moving the radio while a recording runs leaves a gap in it, so `ley tune` and `ley set freq`
 refuse and name the job; `--retune` goes ahead, and the recording logs the gap rather than
 failing. The daemon drops the oldest recordings when the store passes its cap (20 GiB by
-default); you can delete one in Finder without telling the daemon.
+default).
+
+`ley recordings delete` removes one recording whole, every part and its manifest. On a terminal it
+names the recording and asks first; `--yes` skips the question, and a script has to pass it. This
+was recorded against the fake daemon, which is why the recording is two seconds long:
+
+```console
+$ ley recordings delete job_01M3
+Delete 146.520 MHz NFM, 2 s in 1 part, 185 KB? [y/N] y
+Deleted job_01M38P70S3EHR1GYNEPA4FZFMD, 185 KB freed
+```
+
+A recording that is still being made is refused, because the daemon has a part open: stop it with
+`ley jobs cancel job_…` first, and the recording is complete when it stops. Deleting the
+directory in Finder does the same as `delete`, and the daemon does not need to be told.
 
 ## 12. Decode what is being said
 

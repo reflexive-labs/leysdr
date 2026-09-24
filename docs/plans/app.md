@@ -643,6 +643,78 @@ not read as untouched.
 Start and stop over C.12 (`Jobs.StartJob(RecordConfig)`), the job rendered from the mirror's
 `jobs`, reveal in Finder through `Resources.ResolveLocalPath`.
 
+Designed 2026-09-24, from a survey of eight SDR applications and the scanner loggers, and the
+owner's choices. The owner's ask: "monitor a channel, say a repeater, and leave ley recording.
+Then come back and be able to see the chunks."
+
+**The transport bar's button is the audio control.** Every desktop SDR app stops the whole
+radio with its main button and mutes with a separate one; none freezes the waterfall. The
+window's radio is the daemon's and shared, so the button keeps today's behaviour (pause detaches
+the channel's sink, play attaches one) and is drawn as what it is: a speaker, `speaker.wave.2`
+and `speaker.slash`, the help text "Mute: the channel's audio is detached; the radio keeps
+running". The Tune menu gains **Stop listening (⌘.)**, `ley stop`'s act: the channel removed,
+the capture this window made destroyed, the waterfall at its empty state. The waterfall never
+pauses.
+
+**A gated recording is the transcript with audio attached** (`../design/recording.md`), one part
+per exchange on the sample timebase, and the inspector already lists the channel's transmissions.
+So the chunks are the log's rows:
+
+- **The record control is the inspector header's**: `Channel` on the left, a mini bordered
+  `● Record` on the right. While recording, a `recording` dot, `12 min · 4 parts · 6.9 MB` (from
+  `Job.status_detail`, the daemon's own words), and `■ Stop`. The job is the frequency form of
+  `RecordConfig` with the channel's frequency, mode, width and squelch copied at the start, gated
+  by squelch (pre-roll and hang at the daemon's defaults, no duration, no stop-after-quiet), so
+  it owns its channel and outlives the window, a retune and a quit. A band switch degrades it
+  (the daemon's "out of capture, will resume") and the header shows the job's `status_detail` in
+  `caution` until it resumes. File menu: **Record Channel (⌘R)**, **Record Continuously** (gate
+  none), **Stop Recording**, **Show Recordings in Finder**.
+- **A recorded row plays.** The log's rows gain a trailing 16 pt column with `play.fill` in
+  `inkTertiary` on a row whose transmission lies inside a part (same capture, part start ≤ the
+  transmission's start, its end ≤ the part's end). Clicking starts `Control.StartPlayback` on
+  the part's URI: the daemon plays it through the speakers; the window detaches the live
+  channel's sink meanwhile and reattaches it after, so the clip is heard alone; the row shows
+  `stop.fill` and a 2 pt `accent` progress line along its bottom from the playback's `position`
+  over `samples` (the mirror's `playbacks`). One playback at a time; a clip replays from its
+  start (pause and seek are the recording design's named additive fields, not this item).
+- **Coming back.** The parts come from the recording's manifest, read through
+  `Resources.ResolveLocalPath` and `recording.json` (the window is local, as `ley recordings
+  show` is), re-read on every `Job` event for the job and once on adoption. On adoption with no
+  live rows yet, the log is seeded from the newest recording on the tuned frequency, running or
+  not: one row per part, with the part's wall time through its anchor, its length and its peak
+  in the signal cell, so the chunks are there before any transmission arrives; live rows and
+  part rows merge by sample time. The log's header names the recording (`recording since 18:09`).
+- **Recordings in the sidebar**, a section under the bookmarks: newest first,
+  `462.5625 NFM · Tue 18:09 · 12 min · 4 parts`, the running one first with its dot and live
+  counters, from `Resources.ListResources(RECORDING)` re-read on job events. Click tunes there
+  (band, frequency, mode) and the log shows its parts. Context menu: Reveal in Finder, Delete
+  (with confirmation; `Resources.DeleteResource`, added 2026-09-24 with `ley recordings delete`
+  as its mirror, refused while the job runs), Stop Recording on the running one.
+- **Not in this item**: IQ recording (M4), pause and seek of a clip, a bottom drawer (the M3
+  ladder row's band history and shared selection come later and may take the parts list with
+  them), scheduled recording.
+
+Lanes: the contract and daemon (`DeleteResource`, `ley recordings delete`, the MCP mirror),
+the façade (a Swift `RecordingManifest` reader, the part-to-transmission match, tests), the
+window (header control, log column and progress, sidebar section, transport glyph, menus).
+
+Landed 2026-09-24 (contract and daemon). `Resources.DeleteResource(ResourceRef)` returns
+`DeletedResource{uri, freed_bytes}`: `ResourcesService.deleteResource` over
+`RecordingStore.delete`, which removes the job's directory and reports what it held on disk, the
+same number `ListResources` gives as `size_bytes`. A part's URI is `INVALID_ARGUMENT`, a missing
+recording `JOB_NOT_FOUND`, and a job still `RUNNING` or `DEGRADED` `FAILED_PRECONDITION` ("job_… is
+still recording; cancel the job first, then delete it"). The table's generic code fits, since a
+client has one precondition to act on here, so no code was added. Nothing is emitted on the event
+plane and the job's entry is untouched, so the window re-reads `ListResources` after a delete. The
+fake has the same RPC and refusals (and now lists `size_bytes` as the directory's size on disk, as
+the daemon does), `go/pkg/leyline` has `DeleteRecording`, `ley recordings delete <id> [--yes]`
+asks on a terminal and needs `--yes` from a script, and `ley mcp` has `delete_recording`.
+Verified by `RecordingJobTests` (`testDeletingAFinishedRecordingRemovesItsDirectory`,
+`testDeletingARunningRecordingIsRefused`, `testTheDeleteRefusals`), `TestRecordingsDelete*`,
+`TestMCPDeleteRecording` and the help goldens. No eval scenario: `docs/dev/evals.md` has no rule
+for destructive tools, and the unit test grades everything a scenario could. The façade and
+window lanes are open, so the item stays `[ ]`.
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

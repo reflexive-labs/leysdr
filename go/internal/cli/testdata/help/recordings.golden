@@ -2,9 +2,10 @@ recordings reads the daemon's store: what 'ley record' wrote, newest first.
 A recording is one directory of files -- 'ley recordings path' says where, so
 'open -R "$(ley recordings path <id>)"' reveals it in Finder.
 
-The store is a plain directory. A recording deleted there is gone, and the
-daemon does not have to be told; the daemon drops the oldest when the store
-passes its cap (leylined --recordings-cap).
+'ley recordings delete' removes one. The store is a plain directory, so a
+recording deleted there in Finder is gone too, and the daemon does not have
+to be told; the daemon drops the oldest when the store passes its cap
+(leylined --recordings-cap).
 
 --json prints a ListResourcesResponse.
 
@@ -18,8 +19,10 @@ Examples:
   ley recordings --freq 146.52         # one frequency
   ley recordings show job_01J...       # the manifest: parts, gaps, the radio
   open -R "$(ley recordings path job_01J...)"
+  ley recordings delete job_01J...     # asks first; --yes does not
 
 Available Commands:
+  delete      Delete a recording: every part and its manifest
   path        Print where a recording is on this machine
   show        Print one recording's manifest
 

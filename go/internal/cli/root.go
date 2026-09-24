@@ -67,6 +67,12 @@ const (
 type App struct {
 	Stdout io.Writer
 	Stderr io.Writer
+	// Stdin is where a confirmation is read from (`ley recordings delete`);
+	// nil means os.Stdin. IsInTTY reports whether it is a terminal, so a verb
+	// that asks knows whether anyone can answer; nil means "detect from
+	// Stdin", and a test sets it to take either path.
+	Stdin   io.Reader
+	IsInTTY func() bool
 	// JSON switches every verb to machine output (proto3 JSON mapping).
 	JSON bool
 	// Socket is the daemon's UDS path; empty means leyline.DefaultSocketPath().
@@ -126,6 +132,12 @@ func NewRootCommand(app *App) *cobra.Command {
 	}
 	if app.LookupEnv == nil {
 		app.LookupEnv = os.LookupEnv
+	}
+	if app.Stdin == nil {
+		app.Stdin = os.Stdin
+	}
+	if app.IsInTTY == nil {
+		app.IsInTTY = func() bool { return isTerminalReader(app.Stdin) }
 	}
 	if app.IsTTY == nil {
 		app.IsTTY = func() bool { return isTerminal(app.Stdout) }
@@ -671,6 +683,21 @@ func isTerminal(w io.Writer) bool {
 	}
 	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// isTerminalReader reports whether r is a terminal someone can type into.
+// A character device is not enough: /dev/null is one, and a confirmation
+// read from it would take the empty answer for the person's. The window-size
+// ioctl succeeds on a terminal alone (a pty with no size set reports zero
+// columns, and still succeeds).
+func isTerminalReader(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	var ws struct{ rows, cols, x, y uint16 }
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
+	return errno == 0
 }
 
 // terminalWidth returns w's column count, or 0 when it is not a terminal or

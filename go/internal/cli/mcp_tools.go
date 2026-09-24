@@ -122,6 +122,13 @@ func (srv *mcpServer) registerTools() {
 		Annotations: readOnly,
 	}, srv.getRecording)
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "delete_recording",
+		Description: "Delete one recording whole: every part, its sidecars and the manifest (Resources.DeleteResource; ley recordings delete). " +
+			"Refused while the recording's job is running; cancel_job stops it first, and the recording is complete when it stops. A single part cannot be deleted. " +
+			"Returns a DeletedResource: the uri and freed_bytes.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
+	}, srv.deleteRecording)
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_jobs",
 		Description: "The daemon's background work -- sweeps, decode jobs, watches -- with state and progress (Jobs.ListJobs; ley jobs). Returns a ListJobsResponse.",
 		Annotations: readOnly,
