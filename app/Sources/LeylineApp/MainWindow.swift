@@ -41,6 +41,20 @@ struct MainWindow: View {
         }
         .toolbarBackground(Theme.chrome, for: .windowToolbar)
         .preferredColorScheme(.dark)
+        // Before a band switch, a rail drag's release or a narrower width moves the radio off a
+        // running recording (docs/design/app-design-handoff-m3.md, 8b). The buttons answer it;
+        // the binding's setter does nothing, because SwiftUI may set it before or after the
+        // button's action runs, and an answer given there would pre-empt Move anyway.
+        .alert(
+            "Move the radio?",
+            isPresented: Binding(get: { session.retuneQuestion != nil }, set: { _ in }),
+            presenting: session.retuneQuestion
+        ) { _ in
+            Button("Cancel", role: .cancel) { session.answerRetune(moveAnyway: false) }
+            Button("Move anyway", role: .destructive) { session.answerRetune(moveAnyway: true) }
+        } message: { q in
+            Text(q.words)
+        }
     }
 
     /// Band rail, spectrum and waterfall, or the message explaining why there is nothing to draw.

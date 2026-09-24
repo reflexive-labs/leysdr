@@ -140,26 +140,27 @@ final class AppSession {
     private var busy = false
     private var rejectionsSeen = 0
 
-    // Recording (plans/app.md, APP-5). The jobs and the playbacks are the mirror's; what is here
-    // is the window's copy of the store on disk and which of it the log shows.
-    /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
-    /// every record job's event and once on adoption.
-    private(set) var recordings: [RecordingSummary] = []
-    /// The manifest the log shows, read from disk through `ResolveLocalPath`; `recording` gives it
-    /// only while its frequency is the tuned one.
+    // Recording (plans/app.md, APP-5; docs/design/app-design-handoff-m3.md, 8a and 8b). The
+    // jobs and the playbacks are the mirror's; what is here is the tuned channel's recording as
+    // read from disk, and the switch's click until its job's event arrives.
+    /// The manifest the log's kept rows and the waterfall's kept bars come from, read from disk
+    /// through `ResolveLocalPath`; `recording` gives it only while its frequency is the tuned
+    /// one. Each read re-marks the waterfall's kept rows (`markKeptRows`).
     private var shownManifest: RecordingManifest?
+    /// How many waterfall rows the last mark flagged, so a change logs one line.
+    @ObservationIgnored private var keptRowsMarked = 0
     /// The recording whose manifest is being read or was read last.
     @ObservationIgnored private var manifestLoadingID: String?
-    /// A job event for the shown recording arrived while the list was being read: the manifest
-    /// is read again when the list lands.
+    /// A job event for the shown recording arrived: the manifest is read again.
     @ObservationIgnored private var manifestStale = false
-    @ObservationIgnored private var recordingsLoad: Task<Void, Never>?
     @ObservationIgnored private var manifestLoad: Task<Void, Never>?
     /// The record jobs as last seen, so a change to one is noticed.
     @ObservationIgnored private var recordJobsSeen: [Leyline_V1_Job] = []
-    /// The recording clicked in the sidebar: the log shows it while its frequency is tuned, over
-    /// the newest one there.
-    private var pinnedRecordingID: String?
+    /// The switch's click, until the job's event agrees or `neverSeenDropSeconds` pass: the
+    /// switch would otherwise flick back for the round trip. Not a state of its own; the switch
+    /// shows the job as soon as the mirror carries it.
+    private var recordSwitchPending: Bool?
+    @ObservationIgnored private var recordSwitchExpiry: Task<Void, Never>?
     /// The playback this window started, by the id `StartPlayback` returned, and the part it
     /// plays, until its tombstone. One at a time. Its position is the mirror's: the daemon
     /// publishes a playing playback four times a second.
@@ -482,8 +483,8 @@ final class AppSession {
                 isLive
                     ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures"
                     : "not live: \(connection)")
-            // Once on adoption: the store as it is, and the manifest read afresh.
-            if isLive { reloadRecordings(forceManifest: true) }
+            // Once on adoption: the manifest read afresh.
+            if isLive { manifestStale = true }
         }
         if let r = requestedHz, r == tunedHz { clearRequested() }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted. One
@@ -621,8 +622,31 @@ final class AppSession {
     /// audio, and a squelch measured from the floor. Creates what does not exist and writes
     /// what does (docs/design/app-design-handoff.md, Region 1). With `hz`, the band arrives
     /// tuned there rather than at its centre, and the capture sits where that frequency is
-    /// inside it: a drag past the rail's end cap lands on the neighbour's near edge.
+    /// inside it: a drag past the rail's end cap lands on the neighbour's near edge. A switch
+    /// that would move the capture off a running recording asks first (`retuneQuestion`).
     func select(band: Band, at hz: UInt64? = nil) async {
+        if let words = bandMoveWords(band, at: hz) {
+            ask(words, before: "band \(band.name)") {
+                Task { await self.moveToBand(band, at: hz) }
+            }
+            return
+        }
+        await moveToBand(band, at: hz)
+    }
+
+    /// The question before `select(band:at:)` moves the capture: nil when the band change makes
+    /// a new capture (no radio open, another radio) or leaves every recording inside the span.
+    /// The centre is the one `moveToBand` computes.
+    private func bandMoveWords(_ band: Band, at hz: UInt64?) -> String? {
+        guard !busy, outOfRangeWords(band) == nil, let cap = capture,
+            let dev = try? pickDevice(), dev.deviceID == cap.deviceID
+        else { return nil }
+        let centre =
+            hz.map { captureCentre(for: band, at: $0, rate: cap.sampleRate) } ?? band.centerHz
+        return leftOutWords(centre: Int64(centre), rate: cap.sampleRate)
+    }
+
+    private func moveToBand(_ band: Band, at hz: UInt64?) async {
         guard !busy, daemon != nil else { return }
         if let why = outOfRangeWords(band) {
             notice = "\(band.name) is \(why)"
@@ -851,7 +875,10 @@ final class AppSession {
     /// them, unlike a click's move (`retune`). While a click's move is in flight the drag is
     /// refused, because two writers of the same centre leave one offset against a centre that
     /// never applied.
-    func pan(centreTo centre: Int64, ended: Bool) {
+    /// A drag that would take the span off a running recording's frequency moves the pill and
+    /// not the radio, and its release asks first (`retuneQuestion`); Move anyway performs the
+    /// release's move (`askedFirst`), Cancel puts the pill back where the radio is.
+    func pan(centreTo centre: Int64, ended: Bool, askedFirst: Bool = false) {
         guard let cap = capture, let ch = channel, let writes else { return }
         guard panCentre != nil || centreInFlight == nil else { return }
         let span = Int64(cap.sampleRate)
@@ -861,6 +888,17 @@ final class AppSession {
                 b.widthHz > cap.sampleRate
                 ? min(max(newCentre, Int64(b.minHz) + span / 2), Int64(b.maxHz) - span / 2)
                 : Int64(cap.centerHz)
+        }
+        if !askedFirst, let words = leftOutWords(centre: newCentre, rate: cap.sampleRate) {
+            panCentre = newCentre
+            guard ended else { return }
+            ask(words, before: "pan to \(newCentre) Hz") {
+                self.pan(centreTo: centre, ended: true, askedFirst: true)
+            } cancel: {
+                self.panCentre = nil
+                self.releaseCentreInFlight()
+            }
+            return
         }
         let bound = max(0, min(span * 4 / 10, span / 2 - Int64(ch.bandwidthHz)))
         let station = Int64(displayHz ?? cap.centerHz)
@@ -887,6 +925,17 @@ final class AppSession {
                     centreInFlight = nil
                 }
             }
+        }
+    }
+
+    /// After a cancelled pan: the centre the drag last wrote, if one, is still in flight, and is
+    /// released once the capture's event carries it, as the release of a drag releases it.
+    private func releaseCentreInFlight() {
+        guard let written = centreInFlight else { return }
+        let want = UInt64(max(0, written))
+        Task {
+            await confirmed { self.capture?.centerHz == want }
+            if panCentre == nil, centreInFlight == written { centreInFlight = nil }
         }
     }
 
@@ -1286,7 +1335,9 @@ final class AppSession {
     /// change does, and writes centre and rate in one tick: centre first when narrowing and rate
     /// first when widening, so the channel fits at each step the daemon applies. A width the
     /// channel cannot fit at all is refused here with a message.
-    func setSampleRate(_ rate: UInt64) {
+    /// A narrower width that would leave a running recording outside the span asks first
+    /// (`retuneQuestion`); Move anyway sets it (`askedFirst`), Cancel leaves the width.
+    func setSampleRate(_ rate: UInt64, askedFirst: Bool = false) {
         guard let cap = capture, let writes, rate != cap.sampleRate else { return }
         guard centreInFlight == nil else {
             log("rate", "\(rate) S/s refused: a centre move is in flight")
@@ -1300,6 +1351,10 @@ final class AppSession {
                 return
             }
             centre = placedCentre(for: ch, at: hz, rate: rate)
+        }
+        if !askedFirst, let words = leftOutWords(centre: centre, rate: rate) {
+            ask(words, before: "\(rate) S/s") { self.setSampleRate(rate, askedFirst: true) }
+            return
         }
         let want = UInt64(max(0, centre))
         let narrowing = rate < cap.sampleRate
@@ -1582,7 +1637,7 @@ final class AppSession {
         selectedBandID = nil
         log("tune", "bookmark \(bookmark.name) at \(bookmark.hz) Hz")
         // No capture (after Stop listening): the band opens the radio there first, then the
-        // bookmark's settings are applied, the way a recording's row tunes.
+        // bookmark's settings are applied.
         if capture == nil, let b = Bands.band(containing: bookmark.hz, in: bands),
             outOfRangeWords(b) == nil
         {
@@ -1688,28 +1743,39 @@ final class AppSession {
 
     // MARK: Recording
 
-    /// The record job on the tuned frequency, running or degraded, from the mirror's jobs: the
-    /// inspector header's control and status follow it.
+    /// The record job on the tuned channel's frequency and mode, running or degraded, whoever
+    /// started it (`Recordings.activeJob`): the Record transmissions switch's state and its
+    /// status line (docs/design/app-design-handoff-m3.md, 8a and 8b). The switch remembers
+    /// nothing, so a job `ley record` or an agent started shows the same.
     var recordingJob: Leyline_V1_Job? {
-        tunedHz.flatMap { Recordings.activeJob(in: state.jobs, frequencyHz: $0) }
+        guard let hz = tunedHz, let ch = channel else { return nil }
+        return Recordings.activeJob(in: state.jobs, frequencyHz: hz, mode: ch.mode)
     }
 
-    /// The daemon's words for the running job: `recording audio: 12 m 04 s, 4 parts, 6.9 MB`, or
-    /// the degraded job's `out of capture since …`.
-    var recordingStatus: String? { recordingJob?.statusDetail }
+    /// What the switch and File ▸ Record Transmissions show: the click while its job's event is
+    /// in flight, else whether the job runs.
+    var recordSwitchOn: Bool { recordSwitchPending ?? (recordingJob != nil) }
 
-    /// The manifest for the tuned frequency: the running job's, else the recording picked in the
-    /// sidebar, else the newest one on this frequency. Nil while the one read last is for
-    /// another frequency.
+    /// A sidebar bookmark's dot: a record job runs on its frequency and mode, tuned or not.
+    func isRecording(_ b: Bookmark) -> Bool {
+        Recordings.activeJob(in: state.jobs, frequencyHz: b.hz, mode: b.mode) != nil
+    }
+
+    /// The manifest of the tuned frequency's recording, while its frequency is the tuned one: the
+    /// running job's, else the newest record job's on this channel that the mirror holds, else
+    /// the one read last.
     var recording: RecordingManifest? {
         guard let m = shownManifest, let hz = tunedHz, m.frequencyHz == hz else { return nil }
         return m
     }
 
-    /// The log's rows: the live transmissions with the parts they lie inside, and every other
-    /// part of `recording` as a row of its own, merged by sample time (`RecordingParts.merge`).
-    var logEntries: [LogEntry] {
-        RecordingParts.merge(closed: transmissions?.closed ?? [], manifest: recording)
+    /// The part a closed transmission lies inside, as the URI that plays it: the row is kept.
+    /// nil for a heard row, whose audio is not on disk (`RecordingParts.match`).
+    func keptPartURI(_ t: Transmission) -> String? {
+        guard let m = recording, let p = RecordingParts.match(transmission: t, in: m.parts) else {
+            return nil
+        }
+        return m.uri(of: p)
     }
 
     /// The window's playback, by the id `StartPlayback` returned, while the mirror carries it.
@@ -1724,57 +1790,75 @@ final class AppSession {
         return min(1, Double(p.position) / Double(p.samples))
     }
 
-    /// The sidebar's list: the recordings whose jobs are running first, then the rest newest
-    /// first, as the daemon lists them.
-    var sidebarRecordings: [RecordingSummary] {
-        let running = Set(state.jobs.filter { $0.isActive && $0.recordConfig != nil }.map(\.jobID))
-        return recordings.filter { running.contains($0.jobID) }
-            + recordings.filter { !running.contains($0.jobID) }
+    /// The switch, and File ▸ Record Transmissions (⌘R): on starts the record job, off cancels
+    /// the one the switch shows, whoever started it.
+    func setRecording(_ on: Bool) async {
+        guard on != (recordingJob != nil) else {
+            recordSwitchPending = nil
+            return
+        }
+        holdRecordSwitch(on)
+        if on {
+            await startRecording()
+        } else {
+            await stopRecording()
+        }
     }
 
-    /// The running or degraded job that is writing `jobID`'s recording, or nil once it finished.
-    func activeRecordJob(_ jobID: String) -> Leyline_V1_Job? {
-        state.jobs.first { $0.jobID == jobID && $0.isActive }
+    /// The click shown until the job's event agrees, or for `neverSeenDropSeconds`, after which
+    /// the switch shows the mirror again.
+    private func holdRecordSwitch(_ on: Bool) {
+        recordSwitchPending = on
+        recordSwitchExpiry?.cancel()
+        recordSwitchExpiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.neverSeenDropSeconds))
+            guard let self, !Task.isCancelled, self.recordSwitchPending == on else { return }
+            self.recordSwitchPending = nil
+        }
     }
 
-    /// `Record Channel` (gated by squelch) and `Record Continuously`: the frequency form of
-    /// `RecordConfig` with the tuned channel's frequency, mode, width and squelch copied now, so
-    /// the job owns its channel and outlives the window, a retune and a quit. The confirmation is
-    /// the job's event, which the header renders; a refusal is a notice with the daemon's words.
-    func startRecording(continuous: Bool) async {
+    /// The job's event agrees with the click: the switch shows the mirror.
+    private func settleRecordSwitch() {
+        guard let p = recordSwitchPending, p == (recordingJob != nil) else { return }
+        recordSwitchPending = nil
+        recordSwitchExpiry?.cancel()
+        recordSwitchExpiry = nil
+    }
+
+    /// The frequency form of `RecordConfig`, gated by squelch, with the tuned channel's frequency,
+    /// mode, width and squelch copied now, so the job owns its channel and outlives the window, a
+    /// retune and a quit. The confirmation is the job's event, which the switch renders; a
+    /// refusal is a notice with the daemon's words.
+    private func startRecording() async {
         guard let daemon, let ch = channel, let hz = tunedHz else {
+            recordSwitchPending = nil
             notice =
                 "Tune a channel first: a recording copies its frequency, mode, width and squelch."
             return
         }
-        if recordingJob != nil {
-            notice = "\(Frequency.format(hz)) is already being recorded."
-            return
-        }
         var req = Leyline_V1_StartJobRequest()
         req.record = Recordings.config(
-            frequencyHz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz, squelchDBFS: ch.squelchDb,
-            continuous: continuous)
+            frequencyHz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz, squelchDBFS: ch.squelchDb)
         let squelch = ch.squelchDb.isFinite ? String(format: "%.0f dBFS", ch.squelchDb) : "auto"
         do {
             let job = try await daemon.jobs.startJob(req)
             log(
                 "record",
-                "\(job.jobID) started: \(hz) Hz \(ch.mode.word) \(ch.bandwidthHz) Hz, squelch \(squelch), \(continuous ? "continuous" : "gated by squelch")"
+                "\(job.jobID) started: \(hz) Hz \(ch.mode.word) \(ch.bandwidthHz) Hz, squelch \(squelch), gated by squelch"
             )
         } catch {
             let e = LeylineError(error)
+            recordSwitchPending = nil
             log("record", "refused at \(hz) Hz: \(e.code) \(e.message)")
             notice = "Could not record: \(e.message.isEmpty ? e.code : e.message)"
         }
     }
 
-    /// `CancelJob`: the daemon finalises the files and the job ends `CANCELLED`, which is how an
-    /// open-ended recording is meant to stop. Without an id, the job on the tuned frequency.
-    func stopRecording(jobID: String? = nil) async {
-        guard let daemon else { return }
-        guard let id = jobID ?? recordingJob?.jobID else {
-            notice = "Nothing is recording on the tuned frequency."
+    /// `CancelJob` on the job the switch shows: the daemon finalises the files and the job ends
+    /// `CANCELLED`, which is how an open-ended recording is meant to stop.
+    private func stopRecording() async {
+        guard let daemon, let id = recordingJob?.jobID else {
+            recordSwitchPending = nil
             return
         }
         var ref = Leyline_V1_JobRef()
@@ -1784,68 +1868,46 @@ final class AppSession {
             log("record", "\(id) stopped: \(job.statusDetail)")
         } catch {
             let e = LeylineError(error)
+            recordSwitchPending = nil
             log("record", "\(id) not stopped: \(e.code) \(e.message)")
             notice = "Could not stop the recording: \(e.message.isEmpty ? e.code : e.message)"
         }
     }
 
-    /// A record job changed: the list is read again, and the shown manifest too when the job was
-    /// the shown recording's (a part closed, the job ended). Otherwise the log's recording follows
-    /// the tuned frequency.
+    /// A record job changed: the manifest being shown is read again when its job is among the
+    /// changed ones (a part closed, the liveness report, the job ended), because its parts,
+    /// bytes and the waterfall's kept bars come from it. Then the manifest follows the tuned
+    /// channel, and the switch settles.
     private func followRecordJobs() {
         let jobs = state.jobs.filter { $0.recordConfig != nil }
-        guard jobs != recordJobsSeen else {
-            followRecording(force: false)
-            return
+        if jobs != recordJobsSeen {
+            let changed = Set(jobs.filter { !recordJobsSeen.contains($0) }.map(\.jobID))
+            recordJobsSeen = jobs
+            if let shown = manifestLoadingID, changed.contains(shown) { manifestStale = true }
         }
-        let changed = Set(jobs.filter { !recordJobsSeen.contains($0) }.map(\.jobID))
-        recordJobsSeen = jobs
-        reloadRecordings(forceManifest: shownManifest.map { changed.contains($0.jobID) } ?? true)
+        followRecording()
+        settleRecordSwitch()
     }
 
-    /// `ListResources(RECORDING)`, then the log's recording resolved against the new list.
-    private func reloadRecordings(forceManifest: Bool) {
-        guard let daemon else { return }
-        if forceManifest { manifestStale = true }
-        recordingsLoad?.cancel()
-        recordingsLoad = Task { [weak self] in
-            var req = Leyline_V1_ListResourcesRequest()
-            req.kind = .recording
-            do {
-                let listed = try await daemon.resources.listResources(req)
-                guard let self, !Task.isCancelled else { return }
-                self.recordings = listed.resources.map(RecordingSummary.init)
-            } catch {
-                guard !Task.isCancelled else { return }
-                log("record", "recordings not listed: \(LeylineError(error))")
-            }
-            self?.followRecording(force: false)
-        }
-    }
-
-    /// Which recording the log shows for the tuned frequency: the running job's, else the one
-    /// picked in the sidebar while its frequency is tuned, else the newest on this frequency.
+    /// Which recording's manifest is read: the running job's on the tuned channel, else the
+    /// newest record job's on this frequency and mode that the mirror still holds (its parts are
+    /// on disk, so the rows it holds stay kept after the switch goes off), else the one read
+    /// last, so the waterfall's bars stay while another channel in the span is tuned.
     private var wantedRecordingID: String? {
-        guard let hz = tunedHz else { return nil }
+        guard let hz = tunedHz, let ch = channel else { return manifestLoadingID }
         if let job = recordingJob { return job.jobID }
-        if let p = pinnedRecordingID,
-            recordings.contains(where: { $0.jobID == p && $0.frequencyHz == hz })
-        {
-            return p
+        let last = state.jobs.last { j in
+            guard let r = j.recordConfig, r.channelID.isEmpty else { return false }
+            return r.frequencyHz == hz && (r.mode == ch.mode || r.mode == .unspecified)
         }
-        return recordings.first { $0.frequencyHz == hz }?.jobID
+        return last?.jobID ?? manifestLoadingID
     }
 
     /// Reads the wanted manifest when it is another recording than the one read last, or when a
     /// job event made the shown one stale.
-    private func followRecording(force: Bool) {
-        guard let want = wantedRecordingID else {
-            manifestLoad?.cancel()
-            manifestLoadingID = nil
-            if shownManifest != nil { shownManifest = nil }
-            return
-        }
-        guard force || manifestStale || want != manifestLoadingID else { return }
+    private func followRecording() {
+        guard let want = wantedRecordingID else { return }
+        guard manifestStale || want != manifestLoadingID else { return }
         manifestStale = false
         loadManifest(want)
     }
@@ -1870,44 +1932,27 @@ final class AppSession {
                     log("record", "\(id): \(manifest.parts.count) parts read from \(path)")
                 }
                 if manifest != self.shownManifest { self.shownManifest = manifest }
+                // Every read, not only a changed one: the waterfall's ring is emptied on each
+                // new subscription and the next read puts the bars back.
+                self.markKeptRows()
             } catch {
                 guard let self, !Task.isCancelled, self.manifestLoadingID == id else { return }
+                // A job's first second has no manifest on disk yet; its next event reads again.
                 log("record", "manifest of \(id) not read: \(error)")
-                if self.shownManifest?.jobID != id { self.shownManifest = nil }
+                if self.shownManifest?.jobID != id {
+                    self.shownManifest = nil
+                    self.markKeptRows()
+                }
             }
         }
     }
 
-    /// A sidebar row: the band the recording's frequency is in, then the frequency and the mode,
-    /// as a bookmark's row tunes; the log then shows this recording's parts.
-    func tune(recording r: RecordingSummary) async {
-        guard r.frequencyHz > 0 else { return }
-        pinnedRecordingID = r.jobID
-        log("tune", "recording \(r.jobID) at \(r.frequencyHz) Hz \(r.mode.word)")
-        let mode: Leyline_V1_DemodMode? = r.mode == .unspecified ? nil : r.mode
-        if let b = Bands.band(containing: r.frequencyHz, in: bands), outOfRangeWords(b) == nil,
-            capture == nil || band?.id != b.id
-        {
-            await select(band: b, at: r.frequencyHz)
-        } else if capture != nil {
-            selectedBandID = nil
-            // The recording's mode wins over the band's, as a bookmark's does.
-            tuningBookmark = mode != nil
-            tune(to: r.frequencyHz)
-        } else {
-            notice = "\(Frequency.format(r.frequencyHz)) is in no band this radio reaches."
-            return
-        }
-        // The width recorded, when the listing carries it (`bandwidth_hz`, 2026-09-24); a
-        // listing without it tunes the mode's default, and only when the mode changes.
-        if let mode, let ch = channel {
-            if r.bandwidthHz > 0, ch.mode != mode || ch.bandwidthHz != r.bandwidthHz {
-                await apply(mode: mode, bandwidthHz: r.bandwidthHz, to: ch)
-            } else if r.bandwidthHz == 0, ch.mode != mode {
-                await apply(mode: mode, bandwidthHz: mode.defaultBandwidthHz, to: ch)
-            }
-        }
-        followRecording(force: true)
+    /// The waterfall's kept bars from the manifest's closed parts, each time it is read.
+    private func markKeptRows() {
+        let n = spectrum.waterfall.markKept(shownManifest?.parts ?? [])
+        guard n != keptRowsMarked else { return }
+        keptRowsMarked = n
+        log("record", "\(shownManifest?.jobID ?? "no recording"): \(n) waterfall rows kept")
     }
 
     /// Plays one part through the daemon's speakers (`Control.StartPlayback` on
@@ -2014,53 +2059,45 @@ final class AppSession {
         }
     }
 
-    /// `DeleteResource`, then the list read again. The daemon refuses while the job runs, and
-    /// the refusal is shown in its words.
-    func deleteRecording(_ r: RecordingSummary) async {
-        guard let daemon else { return }
-        var ref = Leyline_V1_ResourceRef()
-        ref.uri = r.uri
-        do {
-            let gone = try await daemon.resources.deleteResource(ref)
-            log("record", "deleted \(r.uri): \(gone.freedBytes) bytes freed")
-            if pinnedRecordingID == r.jobID { pinnedRecordingID = nil }
-            if shownManifest?.jobID == r.jobID {
-                shownManifest = nil
-                manifestLoadingID = nil
-            }
-            reloadRecordings(forceManifest: true)
-        } catch {
-            let e = LeylineError(error)
-            log("record", "\(r.uri) not deleted: \(e.code) \(e.message)")
-            notice = e.message.isEmpty ? e.code : e.message
-        }
-    }
-
-    /// The recording's directory selected in Finder.
-    func revealInFinder(_ r: RecordingSummary) async {
-        guard let path = await localPath(r.uri) else { return }
+    /// A kept row's context menu: the part's file selected in Finder, found through
+    /// `ResolveLocalPath` of the part's URI.
+    func revealInFinder(partURI uri: String) async {
+        guard let path = await localPath(uri) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
         log("record", "revealed \(path)")
     }
 
-    /// File ▸ Show Recordings in Finder: the store's directory, found through any recording's
-    /// path, else the daemon's default store on macOS when it exists.
+    /// File ▸ Show Recordings in Finder: the store's directory, found through the path of any
+    /// recording the daemon lists, else the daemon's default store on macOS when it exists.
     func showRecordingsInFinder() async {
         let dir: URL
-        if let first = recordings.first, let path = await localPath(first.uri) {
+        if let uri = await anyRecordingURI(), let path = await localPath(uri) {
             dir = URL(fileURLWithPath: path).deletingLastPathComponent()
         } else {
             let home = FileManager.default.homeDirectoryForCurrentUser
             let store = home.appendingPathComponent(Self.defaultRecordingsPath)
             guard FileManager.default.fileExists(atPath: store.path) else {
                 notice =
-                    "Nothing has been recorded yet. Record Channel (⌘R) records the tuned channel."
+                    "Nothing has been recorded yet. Record Transmissions (⌘R) records the tuned channel."
                 return
             }
             dir = store
         }
         NSWorkspace.shared.open(dir)
         log("record", "opened \(dir.path)")
+    }
+
+    /// The first recording `ListResources(RECORDING)` lists, or nil with none.
+    private func anyRecordingURI() async -> String? {
+        guard let daemon else { return nil }
+        var req = Leyline_V1_ListResourcesRequest()
+        req.kind = .recording
+        do {
+            return try await daemon.resources.listResources(req).resources.first?.uri
+        } catch {
+            log("record", "recordings not listed: \(LeylineError(error))")
+            return nil
+        }
     }
 
     /// The daemon's store under the home directory on macOS (docs/design/recording.md, "Files");
@@ -2081,6 +2118,48 @@ final class AppSession {
             notice = e.message.isEmpty ? e.code : e.message
             return nil
         }
+    }
+
+    // MARK: Moving the radio over a recording
+
+    /// A move of the radio that would leave a record job's frequency outside the capture, until
+    /// it is answered (M3 handoff, 8b, "Tuning while recording"). The daemon never refuses the
+    /// move: it degrades the job and records the gap, so the window asks first, as `ley tune`
+    /// refuses without `--retune`.
+    struct RetuneQuestion: Identifiable {
+        let id = UUID()
+        /// `Recordings.retuneWords`: the job named and the gap the move would leave.
+        let words: String
+        let proceed: @MainActor () -> Void
+        let cancel: @MainActor () -> Void
+    }
+
+    private(set) var retuneQuestion: RetuneQuestion?
+
+    /// The question for moving the capture to `centre` at `rate`, or nil when every recording on
+    /// it stays inside (or none runs): tuning inside the span never asks.
+    private func leftOutWords(centre: Int64, rate: UInt64) -> String? {
+        guard let cap = capture, rate > 0 else { return nil }
+        let half = Int64(rate / 2)
+        let span = UInt64(max(0, centre - half))...UInt64(max(0, centre + half))
+        return Recordings.retuneWords(
+            jobs: Recordings.leftOut(capture: cap.captureID, movingTo: span, in: state))
+    }
+
+    private func ask(
+        _ words: String, before what: String, proceed: @escaping @MainActor () -> Void,
+        cancel: @escaping @MainActor () -> Void = {}
+    ) {
+        log("record", "asked before \(what): \(words)")
+        retuneQuestion = RetuneQuestion(words: words, proceed: proceed, cancel: cancel)
+    }
+
+    /// The alert's buttons: Move anyway performs the move, Cancel leaves the radio where it is.
+    func answerRetune(moveAnyway: Bool) {
+        guard let q = retuneQuestion else { return }
+        retuneQuestion = nil
+        log("record", moveAnyway ? "moved anyway" : "move cancelled; the radio stays")
+        if moveAnyway { q.proceed() } else { q.cancel() }
     }
 
     /// Logs one line when the waterfall's empty-state message or the out-of-capture message

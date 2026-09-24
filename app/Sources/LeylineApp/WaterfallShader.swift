@@ -10,7 +10,10 @@
 // the squelch, a short fade to the ground, so anything below the squelch goes dark. A pixel
 // column that covers several bins takes the loudest, so a carrier one bin wide is never lost
 // between two pixels. A row captured while the radio clipped has its first two pixels in
-// `recording`, from a byte a ring slot beside the uniforms (plans/app.md, M2-8).
+// `recording`, from a byte a ring slot beside the uniforms (plans/app.md, M2-8); a row a
+// recording kept has its last three in `accentRec`, from a second byte a slot (docs/design/
+// app-design-handoff-m3.md, 8b). The uniforms are scalars only and `WaterfallUniforms` in
+// WaterfallView.swift lists the same fields in the same order: change both together.
 
 enum WaterfallShader {
     static let source = """
@@ -33,6 +36,10 @@ enum WaterfallShader {
             float markR;        // `recording`, a clipped row's mark
             float markG;
             float markB;
+            float keptR;        // `accentRec`, a kept row's bar
+            float keptG;
+            float keptB;
+            float keptWidth;    // the bar's width at the right edge, pixels
         };
 
         struct VertexOut {
@@ -58,7 +65,8 @@ enum WaterfallShader {
                                            texture2d<uint, access::read> rows [[texture(0)]],
                                            constant Uniforms &u [[buffer(0)]],
                                            constant float4 *stops [[buffer(1)]],
-                                           constant uchar *clipped [[buffer(2)]]) {
+                                           constant uchar *clipped [[buffer(2)]],
+                                           constant uchar *kept [[buffer(3)]]) {
             const float3 ground = float3(0x0B / 255.0, 0x0D / 255.0, 0x0F / 255.0);
             // Age in rows: y = 0 is the newest row. Past what has been written there is nothing yet.
             uint age = uint(in.position.y * u.rowsPerPixel);
@@ -70,6 +78,11 @@ enum WaterfallShader {
             // `position` is in drawable pixels, centres at 0.5 and 1.5.
             if (in.position.x < 2.0 && clipped[slot] != 0) {
                 return float4(u.markR, u.markG, u.markB, 1.0);
+            }
+            // A row a recording kept: its last `keptWidth` pixels are the bar, the clipping
+            // mark's mirror at the other edge.
+            if (in.position.x >= u.width - u.keptWidth && kept[slot] != 0) {
+                return float4(u.keptR, u.keptG, u.keptB, 1.0);
             }
             // The bins under this pixel column: the loudest wins.
             float x0 = in.position.x / u.width;

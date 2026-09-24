@@ -4,6 +4,20 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app records from its log. "Recent on this channel" opens with a Record transmissions
+  switch: on, the daemon records the tuned channel while its squelch is open, one part per
+  transmission, and keeps going after a retune or a quit; the line under the switch reads
+  `Since 09:12 · 3 parts · 1.1 MB`. The switch shows a recording `ley record` or an agent started
+  on the same frequency and mode too, and File ▸ Record Transmissions (⌘R) is the same switch. A
+  transmission the recording holds is white with ▶ to play it and Show in Finder in its menu; one
+  that was only heard stays grey and has no ▶. A bookmark that is recording has a red dot, and the
+  waterfall marks the rows that were kept with a red bar at its right edge. Moving the radio off a
+  recording's frequency (a band switch, a drag of the band rail, a narrower sample rate) asks
+  first. The sidebar's Recordings list, the Record button beside the Channel heading, the log's
+  rows made from a recording, and Record Continuously are gone; use `ley recordings` to list and
+  delete recordings, and `ley record` without `--gate` for an ungated one, until the app's
+  Recordings view arrives (M3).
+
 - The daemon publishes a playing recording four times a second with its position, so `ley play`
   and the Mac app follow it on the event stream and no longer poll `GetState`. Deleting a
   recording stops a playback of any of its parts first, and `ley play` holding it ends. A

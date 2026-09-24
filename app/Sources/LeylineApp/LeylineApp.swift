@@ -111,21 +111,26 @@ struct TuneCommands: Commands {
     static let modes: [Leyline_V1_DemodMode] = [.am, .nfm, .wfm, .usb, .lsb, .cw]
 }
 
-/// File ▸ the recording items (plans/app.md, APP-5). Each one checks its own precondition in the
-/// session and says what is missing in a notice, rather than being disabled: a Commands body is
-/// not guaranteed to re-evaluate when the session changes, so a disabled item could stay stale.
+/// File ▸ the recording items (plans/app.md, APP-5, revised by docs/design/
+/// app-design-handoff-m3.md). `Record Transmissions` (⌘R) is the log's switch: checked while a
+/// record job runs on the tuned channel, and choosing it flips the switch. Its precondition is
+/// checked in the session, which says what is missing in a notice, rather than the item being
+/// disabled: a Commands body is not guaranteed to re-evaluate when the session changes, so a
+/// disabled item could stay stale, and the check mark can lag the same way; the switch in the
+/// log is the live one, as the toolbar's toggle is for the inspector.
 struct RecordCommands: Commands {
     let session: AppSession
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Divider()
-            Button("Record Channel") { Task { await session.startRecording(continuous: false) } }
-                .keyboardShortcut("r", modifiers: [.command])
-            Button("Record Continuously") {
-                Task { await session.startRecording(continuous: true) }
-            }
-            Button("Stop Recording") { Task { await session.stopRecording() } }
+            Toggle(
+                "Record Transmissions",
+                isOn: Binding(
+                    get: { session.recordSwitchOn },
+                    set: { on in Task { await session.setRecording(on) } })
+            )
+            .keyboardShortcut("r", modifiers: [.command])
             Divider()
             Button("Show Recordings in Finder") { Task { await session.showRecordingsInFinder() } }
         }

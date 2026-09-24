@@ -781,6 +781,71 @@ daemon-backed recording case. Unverified until a Mac: `AppSession.swift`'s playb
 recording-row changes, the progress line moving from the mirror, and a clip ended by a delete
 attaching the live sink again.
 
+Revised 2026-09-24 by the owner's handoff (`../design/app-design-handoff-m3.md`, 8a and 8b, and
+its "Decided 2026-09-24, read against the code"), which replaces this item's recording surfaces
+under one rule: a transmission is heard, a recording is kept, and no surface offers to play what
+is not on disk. Removed: the sidebar's `Recordings` section with its context menu and delete
+confirmation (and `AppSession.recordings`, `sidebarRecordings`, `tune(recording:)`,
+`deleteRecording`, `activeRecordJob`), the inspector header's `● Record` and running status (the
+header reads `Channel` alone again), the log's rows made from a recording's parts
+(`RecordingParts.merge`, `LogEntry`, `logEntries`) and its `recording since …` line, File ▸
+Record Continuously and Stop Recording, and the façade's `continuous` option and
+`statusWords`. Delete stays with `ley recordings delete` and the MCP tool until 8c. The IQ toast
+the handoff names was never built. Added: the log's head row, `Record transmissions` and a
+`.switch` toggle tinted `Theme.accentRec` (`#E5484D`, a new token; `recording` stays the clipping
+red), with `Each transmission becomes a part, cut at dead air.` under it while off; the switch is
+`Recordings.activeJob` on the tuned channel's frequency and mode, whoever started the job, and
+holds only a click in flight (`recordSwitchOn`), so a `ley record` job shows the same. On, the
+line is `Recordings.statusLine`: `Since 09:12 · 3 parts · 1.1 MB. Keeps going if you tune away.`
+from the job's `created_at_ns` and the manifest, or the job's `status_detail` in `caution` while
+degraded. The `now` row carries a 6 pt `accentRec` dot while the job runs and the squelch is
+open. A closed row a part holds (`RecordingParts.match`, unchanged) is kept: time and length in
+`ink`, ▶ in an 18 pt ring that becomes ■ while the part plays, the progress line and the held
+live channel as before, and `Show in Finder` on its context menu (`ResolveLocalPath` of the part's
+URI); a heard row is `inkTertiary` with no glyph. The manifest read is the running job's, else the
+newest record job's on the channel that the mirror holds, re-read on each of its job events. A
+bookmark row whose frequency and mode are recording has a 6 pt `accentRec` dot. `ClippedRows`
+gains a second flag per slot and each slot's capture (`markKept`), set from the manifest's parts
+on every read, and the shader paints the rightmost 3 device pixels of a kept row in
+`accentRec` (`keptR`/`keptG`/`keptB`/`keptWidth` in both uniform layouts, the flags at buffer 3).
+A band switch, the rail drag's release and a sample-rate change that would leave a running
+recording outside the span ask first, with `Recordings.retuneWords` ("job_… is recording on this
+radio; moving the radio would leave a gap in it.") from `Recordings.leftOut`, which finds the jobs
+riding the capture by `ley`'s rule (`recordingsOn`: the job's own channel, owned by a job, with
+`required_hz` its frequency), in an alert with Cancel and Move anyway; during a drag that has
+left the recording the pill moves and the radio waits for the answer. File has `Record
+Transmissions` (⌘R), a toggle item on the switch, and `Show Recordings in Finder`, which now
+lists the store on demand.
+
+Verified in the container: `RecordingsTests` (the record job copies the channel and is always
+gated; the active job by frequency and mode, degraded included, a job or a bookmark without a
+mode matching any; the status line, before a manifest, with another recording's manifest and
+while degraded, and its time and size words; the jobs riding a capture, both forms; a move
+inside, off the band, and narrowed off the channel's width, a job already outside, and the
+question's words for one job and two), `ClippedRowsTests` (parts flag held rows on their own
+capture only, a re-read replaces the bars, a reused slot starts unkept), and in
+`LeylineClientDaemonTests` the recording case, which now finds the job by frequency and mode,
+finds it riding the window's capture on the real daemon, asks about a move ten spans away and not
+about one inside, and flags a waterfall row inside the newest transmission's part and not one
+past the last part. `make app-lint` passes.
+
+Unverified until the first `make app-run` on a Mac, because nothing in `LeylineApp` compiles in
+the container: every change in `AppSession.swift`, `InspectorView.swift`, `InspectorGroups.swift`,
+`SidebarView.swift`, `MainWindow.swift`, `LeylineApp.swift`, `SpectrumFeed.swift`,
+`WaterfallView.swift`, `WaterfallShader.swift` and `Theme.swift`. Named behaviours to check
+there: the `.switch` toggle at `.small` in the log region, its `accentRec` track when on, and
+that it does not flick back while its job's event is in flight; the help and status lines
+wrapping to two lines inside 280 pt and the log's row count with them; the ring glyph (▶ and ■
+centred in an 18 pt circle in a 19 pt row) and the row's column alignment with the head; kept
+rows white and heard rows grey; the context menu on a kept row and none on a heard row; the live
+dot at the right of `now`; the bookmark dot beside the frequency; the shader compiling with the
+second colour and buffer 3, and the 3 px bars at the right edge, including after a retune within
+the span and after the ring is emptied by a new subscription; the alert's flow on a band click,
+on a neighbour's name, on a rail drag's release (the pill parked off the radio during the drag,
+Cancel putting it back and releasing the centre in flight) and on the sample-rate picker in the
+device popover; File ▸ Record Transmissions' check mark and ⌘R. Moves the handoff does not list
+(a click, a typed frequency or a bookmark outside the span, `Tune inside`) do not ask.
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

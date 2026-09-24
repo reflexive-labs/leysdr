@@ -2,6 +2,8 @@
 
 // The waterfall's clipping marks on numbers (plans/app.md, M2-8): which held rows a reading
 // flags, that a new row in a reused slot starts unflagged, and the floor the reading must reach.
+// And its kept bars (docs/design/app-design-handoff-m3.md, 8b): which held rows a recording's
+// parts flag, on their own capture only, and that a manifest read again replaces them.
 
 import LeylineProto
 import XCTest
@@ -94,5 +96,47 @@ final class ClippedRowsTests: XCTestCase {
         var r = rows(4)
         XCTAssertEqual(r.mark(level(clipped: 100, total: 600_000), at: time(1500)), 2)
         XCTAssertEqual(flagged(r), [0, 1000])
+    }
+
+    private func part(_ n: Int, _ from: UInt64, _ to: UInt64, capture: String? = "cap_a")
+        -> RecordingPart
+    {
+        RecordingPart(
+            part: n, file: "p\(n).wav", startSample: from, endSample: to, samples: 0, bytes: 0,
+            captureID: capture)
+    }
+
+    private func kept(_ r: ClippedRows) -> [UInt64] {
+        (max(0, r.count - r.capacity)..<r.count).compactMap { row in
+            let slot = row % r.capacity
+            return r.kept[slot] == 1 ? r.sampleIndex[slot] : nil
+        }
+    }
+
+    func testPartsFlagTheRowsTheyHoldOnTheirCapture() {
+        var r = ClippedRows(capacity: 8)
+        // Three rows of an earlier capture on the same sample numbers, then five of this one.
+        for i in 0..<3 { r.append(sampleIndex: UInt64(i) * 1000, captureID: "cap_old") }
+        for i in 0..<5 { r.append(sampleIndex: UInt64(i) * 1000, captureID: "cap_a") }
+        XCTAssertEqual(r.markKept([part(1, 1000, 2000), part(2, 3500, 9000)]), 3)
+        XCTAssertEqual(kept(r), [1000, 2000, 4000], "cap_old's 1000 and 2000 are another time")
+        XCTAssertEqual(flagged(r), [], "a kept row is not a clipped one")
+        // Read again after part 2 was dropped: its bar goes.
+        XCTAssertEqual(r.markKept([part(1, 1000, 2000)]), 2)
+        XCTAssertEqual(kept(r), [1000, 2000])
+        XCTAssertEqual(r.markKept([part(1, 1000, 2000, capture: nil)]), 0, "no capture, no bar")
+        XCTAssertEqual(kept(r), [])
+    }
+
+    func testAReusedSlotStartsUnkept() {
+        var r = ClippedRows(capacity: 4)
+        for i in 0..<4 { r.append(sampleIndex: UInt64(i) * 1000, captureID: "cap_a") }
+        r.markKept([part(1, 0, 3000)])
+        r.append(sampleIndex: 4000, captureID: "cap_a")
+        XCTAssertEqual(kept(r), [1000, 2000, 3000])
+        r.markClipped(from: 0, to: 9000)
+        r.reset()
+        XCTAssertEqual(r.kept, [0, 0, 0, 0])
+        XCTAssertEqual(r.captureID, ["", "", "", ""])
     }
 }

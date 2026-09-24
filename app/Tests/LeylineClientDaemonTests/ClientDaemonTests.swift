@@ -310,15 +310,34 @@ final class ClientDaemonTests: XCTestCase {
         try await Harness.setSquelch(-40, channel: channel.channelID, via: app, mirror: mirror)
         let hz = UInt64(Int64(capture.centerHz) + channel.offsetHz)
 
-        // The job the header's Record starts: the channel copied, gated by the squelch.
+        // The job the Record transmissions switch starts: the channel copied, gated by the
+        // squelch. The switch's state is that job, found in the mirror by frequency and mode.
         var start = Leyline_V1_StartJobRequest()
         start.record = Recordings.config(
-            frequencyHz: hz, mode: .nfm, bandwidthHz: channel.bandwidthHz, squelchDBFS: -40,
-            continuous: false)
+            frequencyHz: hz, mode: .nfm, bandwidthHz: channel.bandwidthHz, squelchDBFS: -40)
         let job = try await app.jobs.startJob(start)
         await assertEventually("the record job never ran on the tuned frequency") {
-            Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz)?.jobID == job.jobID
+            Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz, mode: .nfm)?.jobID
+                == job.jobID
         }
+        // The job rides the window's capture, so moving the capture off its frequency asks
+        // first, and moving it a little does not.
+        await assertEventually("the job's channel never reached the mirror") {
+            Recordings.jobs(riding: capture.captureID, in: mirror.state).map(\.jobID)
+                == [job.jobID]
+        }
+        let far = capture.centerHz + 10 * capture.sampleRate
+        XCTAssertEqual(
+            Recordings.leftOut(
+                capture: capture.captureID,
+                movingTo: (far - capture.sampleRate / 2)...(far + capture.sampleRate / 2),
+                in: mirror.state
+            ).map(\.jobID), [job.jobID])
+        XCTAssertEqual(
+            Recordings.leftOut(
+                capture: capture.captureID,
+                movingTo: (hz - capture.sampleRate / 4)...(hz + capture.sampleRate / 4),
+                in: mirror.state), [])
 
         // Two transmissions heard after the job started: the first the fold sees may have
         // begun before the job did, and its start is then outside every part.
@@ -361,8 +380,7 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertEqual(summary.frequencyHz, hz)
         XCTAssertEqual(summary.mode, .nfm)
         XCTAssertEqual(
-            summary.bandwidthHz, channel.bandwidthHz,
-            "the listing carries the width recorded, which a sidebar click tunes")
+            summary.bandwidthHz, channel.bandwidthHz, "the listing carries the width recorded")
         XCTAssertGreaterThan(summary.parts, 0)
 
         var resource = Leyline_V1_ResourceRef()
@@ -381,9 +399,14 @@ final class ClientDaemonTests: XCTestCase {
             RecordingParts.match(transmission: heard, in: manifest.parts),
             "the newest transmission \(heard.start.sampleIndex)–\(heard.end.sampleIndex) lies in no part of \(manifest.parts.map { ($0.startSample, $0.endSample) })"
         )
-        let rows = RecordingParts.merge(closed: log.closed, manifest: manifest)
-        XCTAssertEqual(rows.first?.partURI, manifest.uri(of: part), "the newest row plays its part")
-        XCTAssertFalse(rows.first?.fromPart ?? true)
+        XCTAssertTrue(
+            manifest.uri(of: part).hasPrefix(summary.uri + "/"), "the kept row plays its part")
+        // The waterfall's kept bars: rows on the capture's timeline inside the part are flagged.
+        var rows = ClippedRows(capacity: 8)
+        rows.append(sampleIndex: part.startSample, captureID: capture.captureID)
+        let last = manifest.parts.map(\.endSample).max() ?? part.endSample
+        rows.append(sampleIndex: last + 1, captureID: capture.captureID)
+        XCTAssertEqual(rows.markKept(manifest.parts), 1)
 
         let gone = try await app.resources.deleteResource(resource)
         XCTAssertEqual(gone.uri, summary.uri)

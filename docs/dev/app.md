@@ -12,9 +12,9 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the log's merge of parts and transmissions, the window's `RecordConfig` and the sidebar's summaries (`Recordings.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the header's control, the log's play column, the sidebar's `Recordings`, the File items; APP-5), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
-| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest and the part match | both |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped or kept by a recording (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, and a listing's summary (`Recordings.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's kept bars, the retune question, the File items; APP-5), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
 The package depends on the generated contract (`.package(path: "../swift/LeylineProto")`) and on
@@ -163,31 +163,44 @@ keeps no state of its own; its one write is a bookmark's name, through `Bookmark
 failure strip read here from M2-3 until M2-6 retired it, and the transport bar's signal readout
 left when the panel arrived, the M1 handoff's one named exception to "nothing moves".
 
-**Recording** (`Recordings.swift`; `AppSession`'s "Recording" section; the design is
-`../design/app-design-handoff-m3.md`). A recording is a record job's output (`../design/
-recording.md`), so the window starts one with `Jobs.StartJob` in the frequency form of
-`RecordConfig`, the tuned channel's frequency, mode, width and squelch copied
-(`Recordings.config`), and stops it with `CancelJob`; the job then owns its channel and outlives
-the window. The header's control and status follow the active record job on the tuned frequency
-in the mirror's `jobs` (`Recordings.activeJob`). The store is read, not mirrored: the sidebar's
-list is `ListResources(RECORDING)` read into `RecordingSummary` values on every record job's
-event, and the log's recording is a `RecordingManifest` read from `recording.json` through
-`ResolveLocalPath`, because the window is local as `ley recordings show` is. A part's capture is
-the manifest's one anchor capture, or its sidecar's when a recording spans two. The log's rows are
-`RecordingParts.merge`: every live transmission with the part it lies inside (same capture, the
-part's start at or before the transmission's start, its end at or before the part's end), and
-every part no live row lies inside as a row of its own, so `TransmissionLog` stays a fold of
-squelch edges alone. A row with a part plays it through `Control.StartPlayback` while the live
-sink is detached, and the progress line reads the mirror's `playbacks`: the daemon publishes a
-playing playback four times a second with its `position`, so nothing polls (2026-09-24). Delete
-is `Resources.DeleteResource`, which the daemon refuses while the job runs and which stops a
-playback of the recording's part first. A sidebar click tunes the width recorded, the listing's
-`bandwidth_hz`, and the mode's default when a daemon's listing lacks it. The transport bar's
+**Recording** (`Recordings.swift`; `AppSession`'s "Recording" and "Moving the radio over a
+recording" sections; the design is `../design/app-design-handoff-m3.md`, 8a and 8b, as its
+"Decided 2026-09-24" reads it against the code). A recording is a record job's output
+(`../design/recording.md`), and one rule decides every surface: a transmission is heard, a
+recording is kept, and nothing offers to play what is not on disk. The log's head row is the
+Record transmissions switch. On starts `Jobs.StartJob` in the frequency form of `RecordConfig`,
+gated by squelch, with the tuned channel's frequency, mode, width and squelch copied
+(`Recordings.config`); off is `CancelJob`; the job owns its channel and outlives the window. The
+switch shows `Recordings.activeJob`, the running or degraded record job on the tuned channel's
+frequency and mode in the mirror's `jobs`, whoever started it, and keeps only a click until that
+job's event arrives (`recordSwitchOn`); File ▸ Record Transmissions (⌘R) is the same switch.
+While it is on, the line under it is `Recordings.statusLine` (`Since 09:12 · 3 parts · 1.1 MB.
+Keeps going if you tune away.`, from the job's `created_at_ns` and the manifest), or the job's
+`status_detail` in `caution` while it is degraded. The store is read, not mirrored: the manifest
+is `recording.json` read through `ResolveLocalPath`, because the window is local as `ley
+recordings show` is, for the running job on the tuned channel or else the newest record job there
+that the mirror holds, and it is read again on each of that job's events. The log's rows are the
+live transmissions only and never back-fill from a recording. A closed row whose transmission
+lies inside a part (same capture, the part's start at or before the transmission's start, its end
+at or before the part's end; `RecordingParts.match`) is kept: its time and length in `ink`, ▶ in
+a ring that plays the part through `Control.StartPlayback` while the live sink is detached, the
+progress line from the mirror's `playbacks` (the daemon publishes a playing playback four times a
+second), and Show in Finder on its context menu. A heard row is `inkTertiary` with no glyph. The
+`now` row has an `accentRec` dot while the job runs and the squelch is open, a bookmark whose
+frequency and mode are recording has one in the sidebar, and `ClippedRows` flags every waterfall
+row inside a part, on the part's capture, on each manifest read, which the shader draws as 3 px of
+`accentRec` at the right edge (the clipping marks' mirror; the design's time gutter does not
+exist yet). A band switch, the rail drag's release and a sample-rate change that would leave a
+running recording outside the span ask first with `Recordings.retuneWords`, `ley tune`'s
+sentence, for the jobs `Recordings.leftOut` finds riding the capture by `ley`'s rule; tuning
+inside the span never asks, and the daemon records the gap if the move goes ahead. The sidebar
+lists no recordings and the window deletes none until M3's Recordings source (8c): File ▸ Show
+Recordings in Finder opens the store, and `ley recordings` lists and deletes. The transport bar's
 button is the mute (`toggleMute`, the sink detached), and Tune ▸ Stop Listening removes the
 channel and destroys the capture only when this window made it and no other channel rides on
 it. The window was written in the container and is unverified until it runs on a Mac
-(`../plans/app.md`, APP-5); the façade's rules are tested in `RecordingsTests`, and against the
-daemon's own manifest by the daemon-backed suite.
+(`../plans/app.md`, APP-5); the façade's rules are tested in `RecordingsTests` and
+`ClippedRowsTests`, and against the daemon's own manifest by the daemon-backed suite.
 
 **The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`; the handoff's "Region 3b:
 audio"). Between the reading and the log, the panel draws the meter `ley levels --watch` draws:
@@ -238,8 +251,8 @@ the meter's numbers every thirty seconds,
 the FFT subscription's descriptor and a row count every thirty seconds, the audio ladder's
 subscription, its end or failure and a row count every thirty seconds, whether the shader
 compiled, the inspector shown or hidden, every bookmark added, renamed or removed, every
-recording started, stopped, refused or deleted and each manifest read with its part count
-(`record`), every clip played, stopped or ended and the live sink detached and attached around it
+recording started, stopped or refused, each manifest read with its part count, the waterfall's
+kept rows when their count changes, and every retune question asked and answered (`record`), every clip played, stopped or ended and the live sink detached and attached around it
 (`playback`), and Stop Listening with whether the radio was freed. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
@@ -259,8 +272,10 @@ reflects it"); a burst of offsets in one tick lands as one confirmed value and a
 offset comes back as a `WriteRejected` with its tag; an FFT subscription's rows decode against
 the answered descriptor with the fixture's tone in the upper half of the row; a daemon error
 keeps its code; a socket with no listener is `UNAVAILABLE` and the mirror keeps trying; and on
-`nfm_keyed.cf32`, the window's record job writes a manifest the façade reads, whose newest part
-holds the newest transmission heard live, and the finished recording deletes.
+`nfm_keyed.cf32`, the window's record job rides the window's capture, so a move off it asks and
+one inside does not, writes a manifest the façade reads, whose newest part holds the newest
+transmission heard live and flags the waterfall row inside it, and the finished recording
+deletes.
 
 A bare `swift test` in `app/` runs the daemon suite too and skips it silently without
 `LEYLINED_BIN`, which is why the Makefile names the suites: `app-test` skips it, `app-e2e` is

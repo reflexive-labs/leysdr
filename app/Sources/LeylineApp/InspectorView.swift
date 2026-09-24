@@ -57,66 +57,31 @@ struct InspectorView: View {
     }
 }
 
-/// The word `Channel` on the left and the record control on the right: no tabs, and no close
-/// control, because the toolbar's toggle beside it already hides the panel. The tab strip
-/// (`Channel` / `Processors` / `＋`) is M4's and appears when there is a second tab to put in it
-/// (M2 handoff, "The panel"). `● Record` starts a recording gated by the squelch; while one runs
-/// on the tuned frequency the header shows the `recording` dot, the job's `status_detail` (the
-/// daemon's words, `caution` while the job is degraded) and `■ Stop` (M3 handoff, "Region 1").
+/// The word `Channel`, nothing else: no tabs, and no close control, because the toolbar's
+/// toggle beside it already hides the panel. The tab strip (`Channel` / `Processors` / `＋`) is
+/// M4's and appears when there is a second tab to put in it; a one-tab tab bar now would
+/// advertise tabs that do not exist until M4 (M2 handoff, "The panel"). The Record pill that sat
+/// here from APP-5's first build is gone: recording is switched on in the log, beside the
+/// transmissions it keeps (docs/design/app-design-handoff-m3.md, "What this replaces").
 struct InspectorHeader: View {
-    @Environment(AppSession.self) private var session
-
     var body: some View {
-        HStack(spacing: 6) {
+        HStack {
             Text("Channel").font(Theme.Font.menuTitle).foregroundStyle(Theme.inkSecondary)
-                .layoutPriority(1)
-            Spacer(minLength: 8)
-            if let job = session.recordingJob {
-                RecordingDot()
-                Text(Recordings.statusWords(session.recordingStatus ?? ""))
-                    .font(Theme.Font.valueSmall)
-                    .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkTertiary)
-                    .lineLimit(1).truncationMode(.tail)
-                    .help(
-                        job.statusDetail.isEmpty
-                            ? "Recording. The daemon reports its length and size every two seconds."
-                            : job.statusDetail)
-                Button {
-                    Task { await session.stopRecording() }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "stop.fill").font(Theme.Font.glyph)
-                        Text("Stop")
-                    }
-                }
-                .help("Stop the recording; its parts stay in Recordings")
-            } else if session.tunedHz != nil {
-                Button {
-                    Task { await session.startRecording(continuous: false) }
-                } label: {
-                    HStack(spacing: 4) {
-                        RecordingDot()
-                        Text("Record")
-                    }
-                }
-                .help(
-                    "Record this channel while its squelch is open (⌘R). The daemon keeps recording after the window closes."
-                )
-            }
+            Spacer()
         }
-        .buttonStyle(.bordered).controlSize(.mini)
         .padding(.horizontal, 16)
         .frame(height: Theme.Layout.inspectorHeaderHeight)
         .background(Theme.panelHeader)
     }
 }
 
-/// The `recording` dot beside Record, a running recording's status and its sidebar row.
+/// The `accentRec` dot: at the right of the log's `now` row while a part is being written, and
+/// on a sidebar bookmark whose frequency and mode are recording (M3 handoff, 8b).
 struct RecordingDot: View {
     var size: CGFloat = Theme.Layout.recordingDot
 
     var body: some View {
-        Circle().fill(Theme.recording).frame(width: size, height: size)
+        Circle().fill(Theme.accentRec).frame(width: size, height: size)
     }
 }
 

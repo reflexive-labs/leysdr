@@ -16,7 +16,8 @@ let signposter = OSSignposter(subsystem: "com.leyline.app", category: "waterfall
 
 /// Rows as the waterfall's texture wants them: DB_U8 bytes, newest last, in a ring the renderer
 /// copies from by row count, and beside it which rows were captured while the radio clipped
-/// (`ClippedRows`, plans/app.md M2-8). Main-actor only: the renderer draws on the main thread.
+/// (plans/app.md, M2-8) and which a recording kept (docs/design/app-design-handoff-m3.md, 8b),
+/// both in `ClippedRows`. Main-actor only: the renderer draws on the main thread.
 @MainActor
 final class WaterfallBuffer {
     nonisolated static let capacity = 2048
@@ -26,7 +27,7 @@ final class WaterfallBuffer {
     private(set) var count = 0
     /// The seq of the newest row, for the draw-side signpost.
     private(set) var newestSeq: UInt64 = 0
-    /// Each slot's sample index and clipping flag; its slots are the ring's.
+    /// Each slot's sample index, capture, clipping flag and kept flag; its slots are the ring's.
     private(set) var clipped = ClippedRows(capacity: WaterfallBuffer.capacity)
 
     func reset(bins: Int) {
@@ -37,9 +38,9 @@ final class WaterfallBuffer {
         clipped.reset()
     }
 
-    func append(_ row: [Float], seq: UInt64, sampleIndex: UInt64) {
+    func append(_ row: [Float], seq: UInt64, time: Leyline_V1_SampleTime) {
         if row.count != bins { reset(bins: row.count) }
-        clipped.append(sampleIndex: sampleIndex)
+        clipped.append(sampleIndex: time.sampleIndex, captureID: time.captureID)
         let slot = count % Self.capacity
         let base = slot * bins
         for i in 0..<bins {
@@ -53,6 +54,13 @@ final class WaterfallBuffer {
     /// Flags the held rows one `CaptureLevel` reading covers, when it is over the clipping floor.
     func markClipped(_ level: Leyline_V1_CaptureLevel, at time: Leyline_V1_SampleTime) {
         clipped.mark(level, at: time)
+    }
+
+    /// Flags the held rows a recording's closed parts hold, and clears the rest; returns how
+    /// many are flagged.
+    @discardableResult
+    func markKept(_ parts: [RecordingPart]) -> Int {
+        clipped.markKept(parts)
     }
 
     /// The row at ring slot `slot`, as a pointer for a texture upload.
@@ -197,7 +205,7 @@ final class SpectrumFeed {
         if !before.isNaN, floorDB != before {
             log("feed", "floor \(before) -> \(floorDB) dBFS (median \(medianDB))")
         }
-        waterfall.append(row.levelsDB, seq: row.seq, sampleIndex: row.time.sampleIndex)
+        waterfall.append(row.levelsDB, seq: row.seq, time: row.time)
         rows += 1
         if row.gap != nil { gaps += 1 }
         if rows % 900 == 0 { log("feed", "\(rows) rows, \(gaps) gaps, floor \(floorDB) dBFS") }

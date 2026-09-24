@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Recordings as the window reads them (docs/plans/app.md, APP-5): `recording.json` decoded, the
-// rule that says which part holds a transmission, the log's rows merged from the live
-// transmissions and a recording's parts, the frequency form of `RecordConfig` the window starts,
-// and the words for a recording in the sidebar. The manifest is the file format the daemon
-// writes (docs/design/recording.md, "The manifest"; `engine/Sources/LeylineDaemon/Recording/
+// Recordings as the window reads them (docs/plans/app.md, APP-5; docs/design/
+// app-design-handoff-m3.md, 8a and 8b): `recording.json` decoded, the rule that says which part
+// holds a transmission (a kept row of the log), the frequency form of `RecordConfig` the switch
+// starts, the switch's state and status line, and the question asked before the window moves the
+// radio out from under a recording. The manifest is the file format the daemon writes
+// (docs/design/recording.md, "The manifest"; `engine/Sources/LeylineDaemon/Recording/
 // RecordingManifest.swift`), read from disk through `Resources.ResolveLocalPath` because the window
 // is local, as `ley recordings show` is. Every position is a sample on a capture's timeline and
-// wall clock comes only from the manifest's anchors (invariant 5).
+// wall clock comes only from the manifest's anchors and the job's `created_at_ns` (invariant 5).
 
 import Foundation
 import LeylineProto
@@ -375,29 +376,11 @@ public struct RecordingPart: Sendable, Equatable, Codable {
     }
 }
 
-/// One row of the inspector's log: a transmission heard live, or a recorded part no live row
-/// lies inside. `partURI` is the part the row plays, when there is one.
-public struct LogEntry: Sendable, Equatable, Identifiable {
-    /// A part row's `start` and `end` are the part's samples on its capture, `seconds` its frames
-    /// over the manifest's rate, `peakAudioDBFS` its peak, and `peakSNRDB` NaN: a part has no
-    /// floor to measure against, so it has no signal word.
-    public var transmission: Transmission
-    public var partURI: String?
-    /// True for a row made from a part rather than heard live.
-    public var fromPart: Bool
-    /// A part row's wall clock through the manifest's anchor; nil on a live row, whose time the
-    /// window reads through the tuned capture's anchor.
-    public var startDate: Date?
-
-    public var id: String {
-        "\(transmission.start.captureID):\(transmission.start.sampleIndex)\(fromPart ? ":part" : "")"
-    }
-}
-
 public enum RecordingParts {
     /// The part a transmission lies inside, or nil: the same capture, the part's start at or
     /// before the transmission's start, and the transmission's end at or before the part's end.
-    /// A part whose capture is unknown matches nothing.
+    /// A part whose capture is unknown matches nothing. A transmission with a part is a kept row
+    /// of the log, one without is a heard row (docs/design/app-design-handoff-m3.md, "The rule").
     public static func match(transmission t: Transmission, in parts: [RecordingPart])
         -> RecordingPart?
     {
@@ -407,68 +390,19 @@ public enum RecordingParts {
                 && p.startSample <= t.start.sampleIndex && t.end.sampleIndex <= p.endSample
         }
     }
-
-    /// A part as a row of the log (`LogEntry`); nil when its capture is unknown, because a row
-    /// has to sit on a timeline.
-    public static func entry(for part: RecordingPart, in manifest: RecordingManifest) -> LogEntry? {
-        guard let capture = part.captureID, !capture.isEmpty else { return nil }
-        func at(_ sample: UInt64) -> Leyline_V1_SampleTime {
-            .with {
-                $0.captureID = capture
-                $0.sampleIndex = sample
-            }
-        }
-        let seconds =
-            manifest.sampleRate > 0 ? Double(part.samples) / Double(manifest.sampleRate) : .nan
-        let t = Transmission(
-            start: at(part.startSample), end: at(part.endSample), seconds: seconds,
-            peakSNRDB: .nan, peakAudioDBFS: part.peakDBFS ?? .nan, tone: nil)
-        return LogEntry(
-            transmission: t, partURI: manifest.uri(of: part), fromPart: true,
-            startDate: manifest.wallTime(ofSample: part.startSample, capture: capture))
-    }
-
-    /// The log's rows, newest first: every live transmission (`closed`, newest first as
-    /// `TransmissionLog` keeps it) with the part it lies inside, and every part no live row lies
-    /// inside as a row of its own. Rows on the live rows' capture merge by start sample; parts on
-    /// another capture (an earlier capture's recording) follow them, newest part first, because
-    /// two timelines have no common order. With no live rows every part is a row, newest first,
-    /// which is how the log shows a recording's chunks before anything is heard.
-    public static func merge(closed: [Transmission], manifest: RecordingManifest?) -> [LogEntry] {
-        guard let manifest else {
-            return closed.map {
-                LogEntry(transmission: $0, partURI: nil, fromPart: false, startDate: nil)
-            }
-        }
-        var matched = Set<Int>()
-        let live = closed.map { t -> LogEntry in
-            let part = match(transmission: t, in: manifest.parts)
-            if let part { matched.insert(part.part) }
-            return LogEntry(
-                transmission: t, partURI: part.map { manifest.uri(of: $0) }, fromPart: false,
-                startDate: nil)
-        }
-        let partRows = manifest.parts.reversed().filter { !matched.contains($0.part) }
-            .compactMap { entry(for: $0, in: manifest) }
-        guard let capture = closed.first?.start.captureID else { return partRows }
-        let same = partRows.filter { $0.transmission.start.captureID == capture }
-        let other = partRows.filter { $0.transmission.start.captureID != capture }
-        let merged = (live + same).sorted {
-            $0.transmission.start.sampleIndex > $1.transmission.start.sampleIndex
-        }
-        return merged + other
-    }
 }
 
 /// A recording as `Resources.ListResources(RECORDING)` lists it, read from the resource's frozen
-/// metadata keys (`proto/leyline/v1/jobs.proto`, `Resource.metadata`).
+/// metadata keys (`proto/leyline/v1/jobs.proto`, `Resource.metadata`). The window lists no
+/// recordings until M3's Recordings source (docs/design/app-design-handoff-m3.md, 8c), whose rows
+/// these are; File ▸ Show Recordings in Finder reads the list for a recording's path.
 public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var uri: String
     public var jobID: String
     public var frequencyHz: UInt64
     public var mode: Leyline_V1_DemodMode
     /// The channel width recorded, from `bandwidth_hz`; 0 for an IQ recording and for a listing
-    /// from a daemon older than the key (2026-09-24), where a click tunes the mode's default.
+    /// from a daemon older than the key (2026-09-24).
     public var bandwidthHz: UInt32
     public var startedAt: Date?
     /// The parts' durations summed: what the recording holds, not the wall clock it ran.
@@ -523,43 +457,130 @@ extension Leyline_V1_Job {
 }
 
 public enum Recordings {
-    /// The newest active record job on `frequencyHz`, in the frequency form: a job that borrows a
-    /// channel records whatever that channel is tuned to, so its `frequency_hz` says nothing.
-    public static func activeJob(in jobs: [Leyline_V1_Job], frequencyHz: UInt64) -> Leyline_V1_Job?
-    {
+    /// The newest active record job on `frequencyHz` and `mode`, in the frequency form, whoever
+    /// started it: the Record transmissions switch's state, and a bookmark's dot. A job that
+    /// borrows a channel records whatever that channel is tuned to, so its `frequency_hz` says
+    /// nothing. A job whose config names no mode (`ley record` leaves it to the daemon) matches
+    /// any mode on its frequency, and so does `mode` unspecified (a bookmark saved without one).
+    public static func activeJob(
+        in jobs: [Leyline_V1_Job], frequencyHz: UInt64, mode: Leyline_V1_DemodMode
+    ) -> Leyline_V1_Job? {
         jobs.last { j in
             guard j.isActive, let r = j.recordConfig else { return false }
             return r.channelID.isEmpty && r.frequencyHz == frequencyHz
+                && (r.mode == mode || r.mode == .unspecified || mode == .unspecified)
         }
     }
 
     /// The window's recording: the frequency form of `RecordConfig` with the channel's settings
     /// copied at the start, so the job owns its channel and outlives the window, a retune and a
-    /// quit (docs/plans/app.md, APP-5). Gated by squelch unless `continuous`; pre-roll, hang and
-    /// part length are left at the daemon's defaults, with no duration and no stop after quiet.
-    /// A squelch that is off (NaN) is sent as NaN, which the daemon reads as the channel default.
+    /// quit (docs/plans/app.md, APP-5). Gated by squelch, because the daemon's gate cuts a part
+    /// at dead air and a channel that never goes quiet is one long part; an ungated recording is
+    /// `ley record` without `--gate` (docs/design/app-design-handoff-m3.md, 8a). Pre-roll, hang
+    /// and part length are left at the daemon's defaults, with no duration and no stop after
+    /// quiet. A squelch that is off (NaN) is sent as NaN, which the daemon reads as the channel
+    /// default.
     public static func config(
-        frequencyHz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32, squelchDBFS: Double,
-        continuous: Bool
+        frequencyHz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32, squelchDBFS: Double
     ) -> Leyline_V1_RecordConfig {
         .with {
             $0.frequencyHz = frequencyHz
             $0.mode = mode
             $0.bandwidthHz = bandwidthHz
             $0.squelchDbfs = squelchDBFS
-            $0.gate = continuous ? Leyline_V1_RecordGate.none : .squelch
+            $0.gate = .squelch
         }
     }
 
-    /// The running job's `status_detail` as the inspector's header prints it: the daemon's
-    /// `recording audio: 1 m 12 s, 3 parts, 6.9 MB` without the lead the header's dot already
-    /// says, its commas as the panel's ` · `. Any other detail (`out of capture since 14:05:10,
-    /// will resume …` while degraded) is printed as the daemon wrote it; empty is `recording`,
-    /// which is what the header shows before the first liveness report two seconds in.
-    public static func statusWords(_ detail: String) -> String {
-        let d = detail.trimmingCharacters(in: .whitespaces)
-        if d.isEmpty { return "recording" }
-        guard d.hasPrefix("recording "), let colon = d.range(of: ": ") else { return d }
-        return d[colon.upperBound...].replacingOccurrences(of: ", ", with: " · ")
+    /// The line under the switch while it is on: `Since 09:12 · 3 parts · 1.1 MB. Keeps going
+    /// if you tune away.` The time is the job's `created_at_ns` as wall clock in `timeZone`; the
+    /// parts and bytes are the manifest's (closed parts only, since a part joins the manifest
+    /// when it closes), and without a manifest yet the line is the time alone. While the job is
+    /// degraded the line is the daemon's `status_detail` instead (`out of capture since …`),
+    /// which the window prints in `caution`.
+    public static func statusLine(
+        job: Leyline_V1_Job, manifest: RecordingManifest?, timeZone: TimeZone = .current
+    ) -> String {
+        if job.state == .degraded, !job.statusDetail.isEmpty { return job.statusDetail }
+        var words = [sinceWords(createdAtNs: job.createdAtNs, timeZone: timeZone)]
+        if let m = manifest, m.jobID == job.jobID {
+            words.append(RecordingSummary.partsWords(m.parts.count))
+            words.append(sizeWords(m.bytes))
+        }
+        return words.joined(separator: " · ") + ". Keeps going if you tune away."
+    }
+
+    /// `Since 09:12`, the job's start as wall clock; `Since now` before the daemon has dated it.
+    public static func sinceWords(createdAtNs: Int64, timeZone: TimeZone = .current) -> String {
+        guard createdAtNs > 0 else { return "Since now" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        f.dateFormat = "HH:mm"
+        return "Since " + f.string(from: Date(timeIntervalSince1970: Double(createdAtNs) / 1e9))
+    }
+
+    /// `1.1 MB`: the daemon's own rule for a recording's size in `status_detail`
+    /// (`RecordRunner.bytesText` in the engine), binary units, so the two never disagree.
+    public static func sizeWords(_ bytes: UInt64) -> String {
+        if bytes >= 1 << 30 { return String(format: "%.1f GB", Double(bytes) / Double(1 << 30)) }
+        if bytes >= 1 << 20 { return String(format: "%.1f MB", Double(bytes) / Double(1 << 20)) }
+        if bytes >= 1024 { return String(format: "%.0f KB", Double(bytes) / 1024) }
+        return "\(bytes) B"
+    }
+
+    /// The running or degraded record jobs whose channel rides `captureID`: the channel form's
+    /// channel on it, or the frequency form's own channel (owned by a job, `required_hz` the
+    /// job's frequency) on it. The same rule as `ley`'s `recordingsOn`
+    /// (`go/internal/cli/session.go`), so the window and the terminal ask about the same jobs.
+    public static func jobs(riding captureID: String, in state: MirrorState) -> [Leyline_V1_Job] {
+        state.jobs.filter { j in
+            guard j.isActive, let r = j.recordConfig else { return false }
+            if !r.channelID.isEmpty { return state.channel(r.channelID)?.captureID == captureID }
+            return state.channels.contains {
+                $0.captureID == captureID && $0.owner.kind == "job"
+                    && $0.requiredHz == r.frequencyHz
+            }
+        }
+    }
+
+    /// The record jobs on `captureID` that moving the capture to `span` would leave outside it:
+    /// each job's frequency with half its width either side is inside the capture's span now and
+    /// is not inside `span`. Moving inside the span, or a job already outside, never asks.
+    public static func leftOut(
+        capture captureID: String, movingTo span: ClosedRange<UInt64>, in state: MirrorState
+    ) -> [Leyline_V1_Job] {
+        guard let cap = state.capture(captureID), cap.sampleRate > 0 else { return [] }
+        let half = cap.sampleRate / 2
+        let now = (cap.centerHz > half ? cap.centerHz - half : 0)...(cap.centerHz + half)
+        return jobs(riding: captureID, in: state).filter { j in
+            guard let r = j.recordConfig, let hz = frequency(of: r, in: state) else { return false }
+            let bw = UInt64(r.bandwidthHz / 2)
+            let lo = hz > bw ? hz - bw : 0
+            let covered = { (s: ClosedRange<UInt64>) in s.contains(lo) && s.contains(hz + bw) }
+            return covered(now) && !covered(span)
+        }
+    }
+
+    /// Where a record job listens: its frequency, or the borrowed channel's.
+    private static func frequency(of r: Leyline_V1_RecordConfig, in state: MirrorState)
+        -> UInt64?
+    {
+        if r.channelID.isEmpty { return r.frequencyHz }
+        return state.channel(r.channelID).flatMap { state.frequencyHz(of: $0) }
+    }
+
+    /// The question before a move that `leftOut` found jobs for, with `ley tune`'s content
+    /// (`refuseRetuneOverRecording`): the jobs named and the gap the move would leave. nil when
+    /// the list is empty, so nothing asks.
+    public static func retuneWords(jobs: [Leyline_V1_Job]) -> String? {
+        guard !jobs.isEmpty else { return nil }
+        let ids = jobs.map(\.jobID)
+        let names =
+            ids.count == 1
+            ? ids[0] : ids.dropLast().joined(separator: ", ") + " and " + ids[ids.count - 1]
+        return ids.count == 1
+            ? "\(names) is recording on this radio; moving the radio would leave a gap in it."
+            : "\(names) are recording on this radio; moving the radio would leave a gap in them."
     }
 }

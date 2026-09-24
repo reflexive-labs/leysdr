@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Recordings without a daemon: a hand-written `recording.json` in the shape
-// docs/design/recording.md, "The manifest" gives, parsed; the containment rule that puts a live
-// transmission inside a part; the log's rows merged from live transmissions and parts; the
-// sidebar's summary from a resource's metadata; the record job the window starts; and the
-// header's status words.
+// docs/design/recording.md, "The manifest" gives, parsed; the containment rule that makes a live
+// transmission a kept row; a listing's summary from a resource's metadata; the record job the
+// switch starts and the job that is its state; the status line under the switch; and the
+// question asked before the window moves the radio off a recording
+// (docs/design/app-design-handoff-m3.md, 8a and 8b).
 
 import Foundation
 import LeylineProto
@@ -145,49 +146,6 @@ final class RecordingsTests: XCTestCase {
         XCTAssertNil(RecordingParts.match(transmission: heard(3_600_000, 6_000_000), in: unknown))
     }
 
-    func testSeedsTheLogFromPartsNewestFirst() throws {
-        let m = try manifest()
-        let rows = RecordingParts.merge(closed: [], manifest: m)
-        XCTAssertEqual(
-            rows.map(\.partURI), ["ley://recordings/job_a/2", "ley://recordings/job_a/1"])
-        XCTAssertTrue(rows.allSatisfy(\.fromPart))
-        let first = rows[1].transmission
-        XCTAssertEqual(first.start, at(2_400_000))
-        XCTAssertEqual(first.end, at(7_200_000))
-        XCTAssertEqual(first.seconds, 2, accuracy: 1e-9, "96000 frames at 48 kHz")
-        XCTAssertEqual(first.peakAudioDBFS, -6.2)
-        XCTAssertTrue(first.peakSNRDB.isNaN, "a part has no floor, so no signal word")
-        XCTAssertTrue(rows[0].transmission.peakAudioDBFS.isNaN)
-        // One second in at 2.4 MSPS, through the anchor.
-        XCTAssertEqual(
-            rows[1].startDate?.timeIntervalSince1970 ?? 0, 1_789_653_701, accuracy: 1e-6)
-        XCTAssertNotEqual(rows[0].id, rows[1].id)
-    }
-
-    func testMergesLiveRowsAndPartsBySampleTime() throws {
-        let m = try manifest()
-        // Newest first, as the log keeps them: one after part 2, one inside part 1.
-        let live = [heard(20_000_000, 21_000_000), heard(3_600_000, 6_000_000)]
-        let rows = RecordingParts.merge(closed: live, manifest: m)
-        XCTAssertEqual(rows.map(\.fromPart), [false, true, false])
-        XCTAssertEqual(
-            rows.map(\.transmission.start.sampleIndex), [20_000_000, 12_000_000, 3_600_000])
-        XCTAssertNil(rows[0].partURI, "no part holds it")
-        XCTAssertEqual(rows[1].partURI, "ley://recordings/job_a/2", "no live row lies in part 2")
-        XCTAssertEqual(rows[2].partURI, "ley://recordings/job_a/1", "the live row plays its part")
-    }
-
-    func testPartsOnAnotherCaptureFollowTheLiveRows() throws {
-        let m = try manifest()
-        let rows = RecordingParts.merge(
-            closed: [heard(100, 2_400_100, capture: "cap_z")], manifest: m)
-        XCTAssertEqual(rows.map(\.fromPart), [false, true, true])
-        XCTAssertEqual(
-            rows.map(\.partURI).dropFirst(),
-            ["ley://recordings/job_a/2", "ley://recordings/job_a/1"])
-        XCTAssertEqual(RecordingParts.merge(closed: [heard(1, 2)], manifest: nil).count, 1)
-    }
-
     func testSummaryFromTheResourceMetadata() {
         let r = Leyline_V1_Resource.with {
             $0.uri = "ley://recordings/job_a"
@@ -225,36 +183,38 @@ final class RecordingsTests: XCTestCase {
 
     func testTheWindowsRecordJobCopiesTheChannel() {
         let gated = Recordings.config(
-            frequencyHz: 462_562_500, mode: .nfm, bandwidthHz: 12_500, squelchDBFS: -80,
-            continuous: false)
+            frequencyHz: 462_562_500, mode: .nfm, bandwidthHz: 12_500, squelchDBFS: -80)
         XCTAssertEqual(gated.frequencyHz, 462_562_500)
         XCTAssertEqual(gated.mode, .nfm)
         XCTAssertEqual(gated.bandwidthHz, 12_500)
         XCTAssertEqual(gated.squelchDbfs, -80)
-        XCTAssertEqual(gated.gate, .squelch)
+        XCTAssertEqual(gated.gate, .squelch, "cut at dead air; there is no continuous option")
         XCTAssertEqual(gated.durationMs, 0)
         XCTAssertEqual(gated.stopAfterQuietMs, 0)
         XCTAssertEqual(gated.preRollMs, 0, "the daemon's default")
         XCTAssertTrue(gated.channelID.isEmpty, "the frequency form: the job owns its channel")
-        let continuous = Recordings.config(
-            frequencyHz: 1, mode: .am, bandwidthHz: 0, squelchDBFS: .nan, continuous: true)
-        XCTAssertEqual(continuous.gate, .none)
-        XCTAssertTrue(continuous.squelchDbfs.isNaN)
+        let off = Recordings.config(frequencyHz: 1, mode: .am, bandwidthHz: 0, squelchDBFS: .nan)
+        XCTAssertEqual(off.gate, .squelch)
+        XCTAssertTrue(off.squelchDbfs.isNaN, "an off squelch is the channel default")
     }
 
-    func testFindsTheActiveRecordJobOnAFrequency() {
-        func job(_ id: String, _ state: Leyline_V1_JobState, hz: UInt64, channel: String = "")
-            -> Leyline_V1_Job
-        {
-            .with {
-                $0.jobID = id
-                $0.state = state
-                $0.record = .with {
-                    $0.frequencyHz = hz
-                    $0.channelID = channel
-                }
+    private func job(
+        _ id: String, _ state: Leyline_V1_JobState, hz: UInt64, mode: Leyline_V1_DemodMode = .nfm,
+        channel: String = "", bandwidthHz: UInt32 = 12_500
+    ) -> Leyline_V1_Job {
+        .with {
+            $0.jobID = id
+            $0.state = state
+            $0.record = .with {
+                $0.frequencyHz = hz
+                $0.mode = mode
+                $0.bandwidthHz = bandwidthHz
+                $0.channelID = channel
             }
         }
+    }
+
+    func testFindsTheActiveRecordJobOnAFrequencyAndMode() {
         let scan = Leyline_V1_Job.with {
             $0.jobID = "job_s"
             $0.state = .running
@@ -263,23 +223,126 @@ final class RecordingsTests: XCTestCase {
         let jobs = [
             job("job_1", .completed, hz: 100), job("job_2", .degraded, hz: 100),
             job("job_3", .running, hz: 200), job("job_4", .running, hz: 100, channel: "chan_x"),
-            scan,
+            job("job_5", .running, hz: 300, mode: .am),
+            job("job_6", .running, hz: 400, mode: .unspecified), scan,
         ]
-        XCTAssertEqual(Recordings.activeJob(in: jobs, frequencyHz: 100)?.jobID, "job_2")
-        XCTAssertEqual(Recordings.activeJob(in: jobs, frequencyHz: 200)?.jobID, "job_3")
-        XCTAssertNil(Recordings.activeJob(in: jobs, frequencyHz: 300))
+        XCTAssertEqual(
+            Recordings.activeJob(in: jobs, frequencyHz: 100, mode: .nfm)?.jobID, "job_2",
+            "a degraded job is still the switch's state")
+        XCTAssertEqual(Recordings.activeJob(in: jobs, frequencyHz: 200, mode: .nfm)?.jobID, "job_3")
+        XCTAssertNil(Recordings.activeJob(in: jobs, frequencyHz: 300, mode: .nfm), "another mode")
+        XCTAssertEqual(Recordings.activeJob(in: jobs, frequencyHz: 300, mode: .am)?.jobID, "job_5")
+        XCTAssertEqual(
+            Recordings.activeJob(in: jobs, frequencyHz: 400, mode: .usb)?.jobID, "job_6",
+            "a job that named no mode matches any")
+        XCTAssertEqual(
+            Recordings.activeJob(in: jobs, frequencyHz: 300, mode: .unspecified)?.jobID, "job_5",
+            "a bookmark saved without a mode matches any")
+        XCTAssertNil(Recordings.activeJob(in: jobs, frequencyHz: 500, mode: .nfm))
         XCTAssertNil(scan.recordConfig)
     }
 
-    func testStatusWords() {
+    func testTheStatusLine() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        var running = job("job_a", .running, hz: 462_562_500)
+        // 2026-09-17 09:12:40 UTC.
+        running.createdAtNs = 1_789_636_360_000_000_000
+        var m = try manifest()
+        m.bytes = 1_153_434
         XCTAssertEqual(
-            Recordings.statusWords("recording audio: 1 m 12 s, 3 parts, 6.9 MB"),
-            "1 m 12 s · 3 parts · 6.9 MB")
+            Recordings.statusLine(job: running, manifest: m, timeZone: utc),
+            "Since 09:12 · 2 parts · 1.1 MB. Keeps going if you tune away.")
         XCTAssertEqual(
-            Recordings.statusWords("recording audio: 4 m 02 s, 3 parts, squelch closed 38 s"),
-            "4 m 02 s · 3 parts · squelch closed 38 s")
-        let degraded = "out of capture since 14:05:10, will resume when 146.520 MHz is back"
-        XCTAssertEqual(Recordings.statusWords(degraded), degraded)
-        XCTAssertEqual(Recordings.statusWords(""), "recording")
+            Recordings.statusLine(job: running, manifest: nil, timeZone: utc),
+            "Since 09:12. Keeps going if you tune away.", "before the manifest is read")
+        m.jobID = "job_other"
+        XCTAssertEqual(
+            Recordings.statusLine(job: running, manifest: m, timeZone: utc),
+            "Since 09:12. Keeps going if you tune away.", "another recording's counts are not shown"
+        )
+        var degraded = running
+        degraded.state = .degraded
+        degraded.statusDetail =
+            "out of capture since 09:40:02, will resume when 462.562 MHz is back"
+        XCTAssertEqual(
+            Recordings.statusLine(job: degraded, manifest: m, timeZone: utc),
+            degraded.statusDetail)
+        XCTAssertEqual(Recordings.sinceWords(createdAtNs: 0, timeZone: utc), "Since now")
+        XCTAssertEqual(Recordings.sizeWords(512), "512 B")
+        XCTAssertEqual(Recordings.sizeWords(96_044), "94 KB")
+        XCTAssertEqual(Recordings.sizeWords(7_235_174), "6.9 MB")
+        XCTAssertEqual(Recordings.sizeWords(3 << 30), "3.0 GB")
+    }
+
+    /// A capture at 462.6 MHz, 2.4 MSPS wide, with the window's channel and the frequency-form
+    /// job's own channel on it, and one job borrowing the window's channel.
+    private func radio() -> MirrorState {
+        var s = MirrorState()
+        s.captures = [
+            .with {
+                $0.captureID = "cap_a"
+                $0.centerHz = 462_600_000
+                $0.sampleRate = 2_400_000
+            }
+        ]
+        s.channels = [
+            .with {
+                $0.channelID = "chan_app"
+                $0.captureID = "cap_a"
+                $0.offsetHz = -37_500
+                $0.owner = .with { $0.kind = "app" }
+            },
+            .with {
+                $0.channelID = "chan_job"
+                $0.captureID = "cap_a"
+                $0.offsetHz = -37_500
+                $0.requiredHz = 462_562_500
+                $0.owner = .with { $0.kind = "job" }
+            },
+        ]
+        s.jobs = [
+            job("job_own", .running, hz: 462_562_500),
+            job("job_done", .completed, hz: 462_562_500),
+            job("job_elsewhere", .running, hz: 146_520_000),
+        ]
+        return s
+    }
+
+    func testTheJobsRidingACapture() {
+        var s = radio()
+        XCTAssertEqual(Recordings.jobs(riding: "cap_a", in: s).map(\.jobID), ["job_own"])
+        s.jobs.append(job("job_borrow", .degraded, hz: 0, channel: "chan_app"))
+        XCTAssertEqual(
+            Recordings.jobs(riding: "cap_a", in: s).map(\.jobID), ["job_own", "job_borrow"])
+        XCTAssertEqual(Recordings.jobs(riding: "cap_b", in: s).map(\.jobID), [])
+    }
+
+    func testAMoveThatLeavesARecordingOutAsksFirst() {
+        let s = radio()
+        // Inside: the span slides 1 MHz up and 462.5625 is still 162 kHz inside its low edge.
+        XCTAssertEqual(
+            Recordings.leftOut(capture: "cap_a", movingTo: 462_400_000...464_800_000, in: s), [])
+        // Outside: another band.
+        let left = Recordings.leftOut(capture: "cap_a", movingTo: 144_800_000...147_200_000, in: s)
+        XCTAssertEqual(left.map(\.jobID), ["job_own"])
+        // A narrower span that no longer holds the channel's width: 462.5625 ± 6.25 kHz.
+        XCTAssertEqual(
+            Recordings.leftOut(capture: "cap_a", movingTo: 462_560_000...463_800_000, in: s)
+                .map(\.jobID), ["job_own"])
+        XCTAssertEqual(
+            Recordings.retuneWords(jobs: left),
+            "job_own is recording on this radio; moving the radio would leave a gap in it.")
+        XCTAssertNil(Recordings.retuneWords(jobs: []), "nothing recording, nothing asked")
+        XCTAssertEqual(
+            Recordings.retuneWords(jobs: [
+                job("job_a", .running, hz: 1), job("job_b", .running, hz: 2),
+            ]),
+            "job_a and job_b are recording on this radio; moving the radio would leave a gap in them."
+        )
+        // A job already outside the span (degraded) is not asked about again.
+        var away = s
+        away.captures[0].centerHz = 150_000_000
+        XCTAssertEqual(
+            Recordings.leftOut(capture: "cap_a", movingTo: 144_800_000...147_200_000, in: away), [])
     }
 }

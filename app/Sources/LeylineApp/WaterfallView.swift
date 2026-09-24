@@ -205,7 +205,8 @@ final class InteractiveMetalView: MTKView {
     override func scrollWheel(with event: NSEvent) { mouse.scroll(event) }
 }
 
-/// Uniforms the shader reads; scalars only, so the two layouts cannot disagree.
+/// Uniforms the shader reads; scalars only, so the two layouts cannot disagree. The fields and
+/// their order are `Uniforms` in WaterfallShader.swift: change both together.
 struct WaterfallUniforms {
     var head: UInt32 = 0
     var rowsWritten: UInt32 = 0
@@ -223,6 +224,11 @@ struct WaterfallUniforms {
     var markR: Float = 0
     var markG: Float = 0
     var markB: Float = 0
+    /// `Theme.accentRec`, the colour of a kept row's bar, and the bar's width in pixels.
+    var keptR: Float = 0
+    var keptG: Float = 0
+    var keptB: Float = 0
+    var keptWidth: Float = 0
 }
 
 /// Fills a byte texture from the feed's ring and draws it through the ramp. S1's client half:
@@ -238,6 +244,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     private var lastSlowDrawableLog: CFAbsoluteTime = 0
     private var stops: [SIMD4<Float>] = Theme.levelStopsRGB.map { SIMD4($0, 1) }
     private let mark = Theme.recordingRGB
+    private let keptColour = Theme.accentRecRGB
 
     var buffer: WaterfallBuffer?
     var viewLo: Float = 0
@@ -328,6 +335,10 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         u.markR = mark.x
         u.markG = mark.y
         u.markB = mark.z
+        u.keptR = keptColour.x
+        u.keptG = keptColour.y
+        u.keptB = keptColour.z
+        u.keptWidth = Theme.Layout.keptBarPixels
 
         guard let cmd = queue.makeCommandBuffer(),
             let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
@@ -341,6 +352,10 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         // drawn, and 2048 bytes is under the 4 KB `setFragmentBytes` takes without a buffer.
         buffer.clipped.flags.withUnsafeBytes {
             enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2)
+        }
+        // The kept flags the same way (M3 handoff, 8b): a manifest read flags rows already drawn.
+        buffer.clipped.kept.withUnsafeBytes {
+            enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 3)
         }
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
