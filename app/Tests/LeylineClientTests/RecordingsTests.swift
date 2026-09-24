@@ -308,6 +308,57 @@ final class RecordingsTests: XCTestCase {
         XCTAssertNil(scan.recordConfig)
     }
 
+    func testTheSwitchMatchesAJobWithinOneHertz() {
+        let jobs = [
+            job("job_1", .running, hz: 462_612_501),
+            job("job_2", .running, hz: 462_587_500, mode: .unspecified),
+        ]
+        XCTAssertEqual(
+            Recordings.activeJob(in: jobs, frequencyHz: 462_612_500, mode: .nfm)?.jobID, "job_1",
+            "1 Hz above is the same channel")
+        XCTAssertEqual(
+            Recordings.activeJob(in: jobs, frequencyHz: 462_612_502, mode: .nfm)?.jobID, "job_1",
+            "1 Hz below is the same channel")
+        XCTAssertNil(
+            Recordings.activeJob(in: jobs, frequencyHz: 462_612_503, mode: .nfm),
+            "2 Hz apart is another channel")
+        XCTAssertNil(
+            Recordings.activeJob(in: jobs, frequencyHz: 462_612_500, mode: .am),
+            "a job that names a mode matches that mode only")
+        XCTAssertEqual(
+            Recordings.activeJob(in: jobs, frequencyHz: 462_587_499, mode: .wfm)?.jobID, "job_2",
+            "a job that names no mode matches any, within the tolerance")
+        XCTAssertTrue(Recordings.sameChannel(0, .nfm, 1, .nfm), "no underflow at 0 Hz")
+        XCTAssertTrue(Recordings.sameChannel(.max, .nfm, .max - 1, .nfm), "no overflow at the top")
+    }
+
+    func testAClickIsShownForAtMostThreeSecondsThenTheJob() {
+        let t0 = Date(timeIntervalSince1970: 1_789_636_360)
+        let click = RecordSwitchClick(frequencyHz: 462_612_500, mode: .nfm, on: true, at: t0)
+        func shown(
+            _ hz: UInt64?, _ mode: Leyline_V1_DemodMode = .nfm, after s: TimeInterval,
+            running: Bool = false
+        ) -> Bool {
+            RecordSwitchClick.shown(
+                pending: click, frequencyHz: hz, mode: mode, running: running,
+                now: t0.addingTimeInterval(s))
+        }
+        XCTAssertTrue(shown(462_612_500, after: 0), "the click, at once")
+        XCTAssertTrue(shown(462_612_500, after: 2.9), "the click, inside the hold")
+        XCTAssertTrue(shown(462_612_501, after: 1), "the click, on the same channel within 1 Hz")
+        XCTAssertFalse(shown(462_612_500, after: 3), "the job, once the hold is over")
+        XCTAssertTrue(shown(462_612_500, after: 3, running: true), "the job, once the hold is over")
+        XCTAssertFalse(shown(462_612_500, after: -1), "a clock set back does not extend the hold")
+        XCTAssertFalse(shown(462_637_500, after: 1), "another channel shows its own job")
+        XCTAssertFalse(shown(462_612_500, .am, after: 1), "another mode shows its own job")
+        XCTAssertFalse(shown(nil, after: 1), "nothing tuned shows the job alone")
+        XCTAssertTrue(
+            RecordSwitchClick.shown(
+                pending: nil, frequencyHz: 462_612_500, mode: .nfm, running: true, now: t0),
+            "no click shows the job")
+        XCTAssertEqual(RecordSwitchClick.holdSeconds, 3)
+    }
+
     func testTheStatusLine() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         var running = job("job_a", .running, hz: 462_562_500)

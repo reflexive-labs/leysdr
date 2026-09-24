@@ -102,8 +102,8 @@ struct RecordingsPageHeader: View {
                     set: { on in Task { await session.setRecording(on, channel: channel) } })
             )
             .toggleStyle(.switch).labelsHidden().controlSize(.small)
-            // `accentRec` only while on; off is the system's own dark track, untinted.
-            .tint(session.pageSwitchOn(for: channel) ? Theme.accentRec : nil)
+            // One tint, always, as the log's switch (`RecordSwitch`).
+            .tint(Theme.accentRec)
             .disabled(!session.isLive)
             .help(
                 job == nil
@@ -205,7 +205,7 @@ struct RecordingCard: View {
         }
         .buttonStyle(.plain)
         .disabled(group.chips.isEmpty)
-        .help("Play the \(RecordingSummary.partsWords(group.chips.count)) in order")
+        .help("Play all")
     }
 }
 
@@ -238,11 +238,7 @@ struct PartChip: View {
             .contentShape(RoundedRectangle(cornerRadius: Theme.Layout.chipRadius))
         }
         .buttonStyle(.plain)
-        .help(
-            playing
-                ? "Stop the part; the channel's audio comes back"
-                : "Play part \(chip.part) through the daemon's speakers; the channel's audio is held silent until it ends"
-        )
+        .help(playing ? "Stop" : "Play")
     }
 }
 

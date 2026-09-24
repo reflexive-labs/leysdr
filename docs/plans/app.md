@@ -1105,6 +1105,36 @@ recording's parts), `RecordingsPage.swift` (the page switch's tint), and `MainWi
 (`PlaceSwitch`'s grounds and stroke in the toolbar, and whether `.tint(nil)` leaves the system's
 off track).
 
+Fixed 2026-09-25 (third run), two items from the owner's third run of the recording build. **The
+Record transmissions switch went grey, and clicking it restored it.** The app's log for the run
+shows the switch's jobs matched throughout: the job started at 21:05:21 was found and cancelled
+by the next click 0.8 s later, so neither the frequency match nor the click's hold was stuck, and
+no `.disabled` depends on a click in flight (the log's switch is disabled only with nothing tuned,
+the page's only while the daemon is not live). What changed in this build was the tint: the
+second run's fix made both switches `.tint(on ? accentRec : nil)`
+(`InspectorGroups.swift`, `RecordSwitch`; `RecordingsPage.swift`, the page's switch), so the
+hosted control was re-tinted to nil in the same pass as its state flipped, and the flip itself
+is drawn before the click's hold reaches the session. Both switches are now
+`.tint(Theme.accentRec)` at all times, as before the second run: macOS paints the tint on the on
+track only, so an off switch is the system's dark track, which is what the second run asked for.
+Two guards landed with it. The match between a switch and a record job allows 1 Hz
+(`Recordings.matchToleranceHz`, `Recordings.sameChannel`) and takes the mode only when the job
+names one, and the click's hold moved to the façade as `RecordSwitchClick`, which the read
+ignores once `holdSeconds` (3 s) have passed even if the session's expiry clock is late, so the
+switch shows the job after 3 s at most. The session writes each change to what the log's switch
+shows (`record: switch on (job_… running) at 462612500 Hz NFM`, `switch off, disabled (no record
+job) at no tuned frequency`), every click, and every release with its reason; an expired hold
+lists the active record jobs, so a job on a frequency the click did not match shows in
+`tmp/leyline-app.log`. **The play buttons' tooltips were sentences**: a kept row's ▶ and ■ now
+read `Play` and `Stop`, as do a part's chip on the channel page and the player's button;
+the step buttons read `Previous part` and `Next part`, and Play all reads `Play all`. Verified by
+`RecordingsTests` (`testTheSwitchMatchesAJobWithinOneHertz`,
+`testAClickIsShownForAtMostThreeSecondsThenTheJob`). Unverified until a Mac: whether the
+constant tint is what stops the grey (the container cannot draw the switch, and the grey was not
+reproduced), `AppSession.swift` (the hold's release paths, `logRecordSwitch` and its lines),
+`InspectorGroups.swift` and `RecordingsPage.swift` (the tint, the off track under it, the
+tooltips), and `PlayerBar.swift` (the tooltips).
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

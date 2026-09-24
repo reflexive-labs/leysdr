@@ -171,8 +171,10 @@ struct RecordSwitch: View {
                         set: { on in Task { await session.setRecording(on) } })
                 )
                 .toggleStyle(.switch).labelsHidden().controlSize(.small)
-                // `accentRec` only while on; off is the system's own dark track, untinted.
-                .tint(session.recordSwitchOn ? Theme.accentRec : nil)
+                // One tint, always: macOS paints it on the on track only, so off is the
+                // system's own dark track. Switching it to nil with the state greyed the switch
+                // on the owner's third run (plans/app.md, APP-5, "Fixed 2026-09-25 (third run)").
+                .tint(Theme.accentRec)
                 .disabled(session.tunedHz == nil)
                 .help(
                     job == nil
@@ -256,11 +258,7 @@ struct LogRow: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(
-                part.playing
-                    ? "Stop the part; the channel's audio comes back"
-                    : "Play the kept part through the daemon's speakers; the channel's audio is held silent until it ends"
-            )
+            .help(part.playing ? "Stop" : "Play")
         }
     }
 

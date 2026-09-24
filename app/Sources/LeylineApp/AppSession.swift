@@ -184,14 +184,17 @@ final class AppSession {
     @ObservationIgnored private var recordingsLoad: Task<Void, Never>?
     /// The record jobs as last seen, so a change to one is noticed.
     @ObservationIgnored private var recordJobsSeen: [Leyline_V1_Job] = []
-    /// The switch's click, until the job's event agrees or `neverSeenDropSeconds` pass: the
-    /// switch would otherwise flick back for the round trip. Not a state of its own; the switch
-    /// shows the job as soon as the mirror carries it.
-    /// Keyed by frequency and mode (`recordKey`, `RecordingChannel.id`'s shape), because the
-    /// channel page's switch and the log's are one state in two places when they name the same
-    /// channel, and two states when they do not.
+    /// The switch's click, until the job's event agrees or `RecordSwitchClick.holdSeconds`
+    /// pass: the switch would otherwise flick back for the round trip. Not a state of its own;
+    /// the switch shows the job as soon as the mirror carries it. By frequency and mode, because
+    /// the channel page's switch and the log's are one state in two places when they name the
+    /// same channel, and two states when they do not. Written only by `holdRecordSwitch` and
+    /// `letGoRecordSwitch`, which log it.
     private var recordSwitchPending: RecordSwitchClick?
     @ObservationIgnored private var recordSwitchExpiry: Task<Void, Never>?
+    /// The log's switch as last written to the log (`logRecordSwitch`), so a change is logged
+    /// once: the owner's third run saw the switch go grey and left nothing in the log to say why.
+    @ObservationIgnored private var recordSwitchLogged: String?
     /// The record jobs either switch started, until each ends: `StartJob` answers before the
     /// radio is allocated, so a decline arrives as the job's FAILED event and is shown from
     /// there (`Recordings.failureNotice`).
@@ -1823,33 +1826,27 @@ final class AppSession {
 
     /// What the switch and File ▸ Record Transmissions show: the click while its job's event is
     /// in flight, else whether the job runs.
-    var recordSwitchOn: Bool { switchOn(key: tunedRecordKey, job: recordingJob) }
+    var recordSwitchOn: Bool {
+        switchOn(frequencyHz: tunedHz, mode: channel?.mode ?? .unspecified, job: recordingJob)
+    }
 
     /// The channel page's switch: the record job on that channel's frequency and mode, whoever
     /// started it, or the click in flight. The log's switch shows the same when it is tuned
     /// there, because both read the job (M3 handoff, 8c: "one state, two places").
     func pageSwitchOn(for c: RecordingChannel) -> Bool {
-        switchOn(key: c.id, job: activeRecordJob(for: c))
+        switchOn(frequencyHz: c.frequencyHz, mode: c.mode, job: activeRecordJob(for: c))
     }
 
     func activeRecordJob(for c: RecordingChannel) -> Leyline_V1_Job? {
         Recordings.activeJob(in: state.jobs, frequencyHz: c.frequencyHz, mode: c.mode)
     }
 
-    private func switchOn(key: String?, job: Leyline_V1_Job?) -> Bool {
-        if let p = recordSwitchPending, p.key == key { return p.on }
-        return job != nil
-    }
-
-    /// `462612500/2`: a channel by frequency and mode, the shape of `RecordingChannel.id`, so a
-    /// click on either switch is shown by both when they name one channel.
-    nonisolated static func recordKey(_ hz: UInt64, _ mode: Leyline_V1_DemodMode) -> String {
-        "\(hz)/\(mode.rawValue)"
-    }
-
-    private var tunedRecordKey: String? {
-        guard let hz = tunedHz, let ch = channel else { return nil }
-        return Self.recordKey(hz, ch.mode)
+    private func switchOn(
+        frequencyHz: UInt64?, mode: Leyline_V1_DemodMode, job: Leyline_V1_Job?
+    ) -> Bool {
+        RecordSwitchClick.shown(
+            pending: recordSwitchPending, frequencyHz: frequencyHz, mode: mode,
+            running: job != nil)
     }
 
     /// A sidebar bookmark's dot: a record job runs on its frequency and mode, tuned or not.
@@ -1897,16 +1894,17 @@ final class AppSession {
     /// The switch, and File ▸ Record Transmissions (⌘R): on starts the record job, off cancels
     /// the one the switch shows, whoever started it.
     func setRecording(_ on: Bool) async {
-        let key = tunedRecordKey ?? ""
+        let hz = tunedHz ?? 0
+        let mode = channel?.mode ?? .unspecified
         guard on != (recordingJob != nil) else {
-            if recordSwitchPending?.key == key { recordSwitchPending = nil }
+            letGoRecordSwitch(frequencyHz: hz, mode: mode, "the job already agrees")
             return
         }
-        holdRecordSwitch(on, frequencyHz: tunedHz ?? 0, mode: channel?.mode ?? .unspecified)
+        holdRecordSwitch(on, frequencyHz: hz, mode: mode)
         if on {
             await startRecording()
         } else {
-            await stopRecording(recordingJob?.jobID, key: key)
+            await stopRecording(recordingJob?.jobID, frequencyHz: hz, mode: mode)
         }
     }
 
@@ -1917,16 +1915,16 @@ final class AppSession {
     func setRecording(_ on: Bool, channel c: RecordingChannel) async {
         let job = activeRecordJob(for: c)
         guard on != (job != nil) else {
-            if recordSwitchPending?.key == c.id { recordSwitchPending = nil }
+            letGoRecordSwitch(frequencyHz: c.frequencyHz, mode: c.mode, "the job already agrees")
             return
         }
         holdRecordSwitch(on, frequencyHz: c.frequencyHz, mode: c.mode)
         guard on else {
-            await stopRecording(job?.jobID, key: c.id)
+            await stopRecording(job?.jobID, frequencyHz: c.frequencyHz, mode: c.mode)
             return
         }
         guard let daemon else {
-            recordSwitchPending = nil
+            letGoRecordSwitch("not dialled")
             return
         }
         var req = Leyline_V1_StartJobRequest()
@@ -1941,23 +1939,80 @@ final class AppSession {
             )
         } catch {
             let e = LeylineError(error)
-            recordSwitchPending = nil
+            letGoRecordSwitch("refused")
             log("record", "refused at \(c.frequencyHz) Hz from the page: \(e.code) \(e.message)")
             notice = "Could not record: \(e.message.isEmpty ? e.code : e.message)"
         }
     }
 
-    /// The click shown until the job's event agrees, or for `neverSeenDropSeconds`, after which
-    /// the switch shows the mirror again.
+    /// The click shown until the job's event agrees, or for `RecordSwitchClick.holdSeconds`,
+    /// after which the switch shows the mirror again. The hold never disables the switch.
     private func holdRecordSwitch(_ on: Bool, frequencyHz: UInt64, mode: Leyline_V1_DemodMode) {
         let click = RecordSwitchClick(frequencyHz: frequencyHz, mode: mode, on: on)
         recordSwitchPending = click
+        log("record", "switch clicked \(on ? "on" : "off") at \(frequencyHz) Hz \(mode.word)")
+        logRecordSwitch()
         recordSwitchExpiry?.cancel()
         recordSwitchExpiry = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.neverSeenDropSeconds))
+            try? await Task.sleep(for: .seconds(RecordSwitchClick.holdSeconds))
             guard let self, !Task.isCancelled, self.recordSwitchPending == click else { return }
-            self.recordSwitchPending = nil
+            self.letGoRecordSwitch(
+                "no job event agreed within \(Int(RecordSwitchClick.holdSeconds)) s; active record jobs: \(self.activeRecordJobsWords)"
+            )
         }
+    }
+
+    /// The held click is dropped, and the switch shows the job; with a frequency and mode, only a
+    /// click on that channel. `why` goes to the log.
+    private func letGoRecordSwitch(
+        frequencyHz: UInt64? = nil, mode: Leyline_V1_DemodMode = .unspecified, _ why: String
+    ) {
+        guard let p = recordSwitchPending else { return }
+        if let hz = frequencyHz, !p.names(frequencyHz: hz, mode: mode) { return }
+        recordSwitchPending = nil
+        recordSwitchExpiry?.cancel()
+        recordSwitchExpiry = nil
+        log(
+            "record",
+            "switch let go of its \(p.on ? "on" : "off") click at \(p.frequencyHz) Hz \(p.mode.word): \(why)"
+        )
+        logRecordSwitch()
+    }
+
+    /// `job_01… 462612500 Hz NFM running`, one per active record job, or `none`: what the expiry's
+    /// log line compares the click with, so a job on a frequency the click did not match shows.
+    private var activeRecordJobsWords: String {
+        let words = state.jobs.filter { $0.isActive }.compactMap { j -> String? in
+            guard let r = j.recordConfig else { return nil }
+            let form = r.channelID.isEmpty ? "" : " on \(r.channelID)"
+            return "\(j.jobID) \(r.frequencyHz) Hz \(r.mode.word)\(form) \(j.state)"
+        }
+        return words.isEmpty ? "none" : words.joined(separator: ", ")
+    }
+
+    /// Writes the log's switch to the log when what it shows changed: on or off, whether a click
+    /// or a job decides it, and whether it is disabled (nothing tuned), so a switch seen grey can
+    /// be read back from tmp/leyline-app.log: `record: switch on (job_01… running) at 462612500
+    /// Hz NFM`.
+    private func logRecordSwitch() {
+        let on = recordSwitchOn
+        let why: String
+        if let p = recordSwitchPending, let hz = tunedHz,
+            p.isHeld(now: Date()), p.names(frequencyHz: hz, mode: channel?.mode ?? .unspecified)
+        {
+            why = "the click, held"
+        } else if let job = recordingJob {
+            why = "\(job.jobID) \(job.state)"
+        } else {
+            why = "no record job"
+        }
+        let shown = "\(on ? "on" : "off")\(tunedHz == nil ? ", disabled" : "") (\(why))"
+        // A retune with the switch off changes nothing it shows, so the frequency is left out of
+        // the comparison and a drag writes no line per step.
+        guard shown != recordSwitchLogged else { return }
+        recordSwitchLogged = shown
+        let at = tunedHz.map { "\($0) Hz \(channel?.mode.word ?? "")" } ?? "no tuned frequency"
+        log("record", "switch \(shown) at \(at)")
     }
 
     /// A job a switch started has ended. FAILED is a notice with the daemon's reason, and the
@@ -1972,12 +2027,8 @@ final class AppSession {
             guard let words = Recordings.failureNotice(job) else { continue }
             log("record", "\(id) failed: \(job.error.code) \(job.statusDetail)")
             notice = words
-            if let r = job.recordConfig,
-                recordSwitchPending?.key == Self.recordKey(r.frequencyHz, r.mode)
-            {
-                recordSwitchPending = nil
-                recordSwitchExpiry?.cancel()
-                recordSwitchExpiry = nil
+            if let r = job.recordConfig {
+                letGoRecordSwitch(frequencyHz: r.frequencyHz, mode: r.mode, "\(id) failed")
             }
         }
     }
@@ -1988,9 +2039,7 @@ final class AppSession {
         let running =
             Recordings.activeJob(in: state.jobs, frequencyHz: p.frequencyHz, mode: p.mode) != nil
         guard p.on == running else { return }
-        recordSwitchPending = nil
-        recordSwitchExpiry?.cancel()
-        recordSwitchExpiry = nil
+        letGoRecordSwitch("the job's event agrees")
     }
 
     /// The frequency form of `RecordConfig`, gated by squelch, with the tuned channel's frequency,
@@ -1999,7 +2048,7 @@ final class AppSession {
     /// refusal is a notice with the daemon's words.
     private func startRecording() async {
         guard let daemon, let ch = channel, let hz = tunedHz else {
-            recordSwitchPending = nil
+            letGoRecordSwitch("nothing tuned")
             notice =
                 "Tune a channel first: a recording copies its frequency, mode, width and squelch."
             return
@@ -2017,7 +2066,7 @@ final class AppSession {
             )
         } catch {
             let e = LeylineError(error)
-            recordSwitchPending = nil
+            letGoRecordSwitch("refused")
             log("record", "refused at \(hz) Hz: \(e.code) \(e.message)")
             notice = "Could not record: \(e.message.isEmpty ? e.code : e.message)"
         }
@@ -2025,9 +2074,11 @@ final class AppSession {
 
     /// `CancelJob` on the job the switch shows: the daemon finalises the files and the job ends
     /// `CANCELLED`, which is how an open-ended recording is meant to stop.
-    private func stopRecording(_ jobID: String?, key: String) async {
+    private func stopRecording(
+        _ jobID: String?, frequencyHz: UInt64, mode: Leyline_V1_DemodMode
+    ) async {
         guard let daemon, let id = jobID else {
-            if recordSwitchPending?.key == key { recordSwitchPending = nil }
+            letGoRecordSwitch(frequencyHz: frequencyHz, mode: mode, "no job to stop")
             return
         }
         var ref = Leyline_V1_JobRef()
@@ -2037,7 +2088,7 @@ final class AppSession {
             log("record", "\(id) stopped: \(job.statusDetail)")
         } catch {
             let e = LeylineError(error)
-            if recordSwitchPending?.key == key { recordSwitchPending = nil }
+            letGoRecordSwitch(frequencyHz: frequencyHz, mode: mode, "not stopped")
             log("record", "\(id) not stopped: \(e.code) \(e.message)")
             notice = "Could not stop the recording: \(e.message.isEmpty ? e.code : e.message)"
         }
@@ -2062,6 +2113,7 @@ final class AppSession {
         followPage()
         noticeFailedRecordJobs()
         settleRecordSwitch()
+        logRecordSwitch()
     }
 
     /// The tuned channel's manifests: every recording on its frequency and mode, not only the
@@ -2666,16 +2718,6 @@ extension FailureState {
 
 extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
-}
-
-/// A Record transmissions switch's click, on the channel `key` names (`AppSession.recordKey`),
-/// until its job's event agrees.
-struct RecordSwitchClick: Equatable {
-    let frequencyHz: UInt64
-    let mode: Leyline_V1_DemodMode
-    let on: Bool
-
-    var key: String { AppSession.recordKey(frequencyHz, mode) }
 }
 
 /// The window's two places (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the

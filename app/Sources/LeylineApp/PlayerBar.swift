@@ -35,11 +35,11 @@ struct PlayerBar: View {
                 PartStepButton(symbol: "backward.end.fill", enabled: session.canStepPart(-1)) {
                     Task { await session.stepPart(-1) }
                 }
-                .help("Previous part of this recording (←)")
+                .help("Previous part")
                 PartStepButton(symbol: "forward.end.fill", enabled: session.canStepPart(1)) {
                     Task { await session.stepPart(1) }
                 }
-                .help("Next part of this recording (→)")
+                .help("Next part")
             }
             .frame(maxHeight: .infinity)
             VStack(alignment: .leading, spacing: 4) {
@@ -97,10 +97,7 @@ struct PlayerButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .help(
-            playing
-                ? "Stop the part (space); the channel's audio comes back"
-                : "Play the part (space); the channel's audio is held silent until it ends")
+        .help(playing ? "Stop" : "Play")
     }
 }
 

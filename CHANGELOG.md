@@ -4,6 +4,16 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app's Record transmissions switches no longer go grey. Their red tint was switched off
+  along with the switch, and on the owner's third run a switch went grey until it was clicked
+  again. The tint now stays set; macOS paints it on the on track only, so an off switch still
+  shows the system's dark track. A switch now matches a recording within 1 Hz of its frequency,
+  and after a click it shows that click for 3 s at most before it shows the recording again. Each
+  change to what the switch shows is written to the app's log.
+
+- The play buttons' tooltips are one word: Play or Stop on a kept row of the log, on a part in the
+  Library and on the player, and Previous part, Next part and Play all beside them.
+
 - The Mac app's Record transmissions switch now makes one part per transmission. The window left
   the daemon's 5 s hang in place, so a quick back-and-forth on a simplex channel became one long
   part: four 4 s transmissions were one 25 s part in the Library, and playing one row of the log
