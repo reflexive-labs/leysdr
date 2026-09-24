@@ -161,14 +161,10 @@ final class AppSession {
     /// the newest one there.
     private var pinnedRecordingID: String?
     /// The playback this window started, by the id `StartPlayback` returned, and the part it
-    /// plays, until its tombstone. One at a time.
+    /// plays, until its tombstone. One at a time. Its position is the mirror's: the daemon
+    /// publishes a playing playback four times a second.
     private var playbackID: String?
     private(set) var playingURI: String?
-    /// Frames played, polled from the daemon's state while a clip plays: a playback's event is
-    /// sent when it starts and when it ends, not as it goes, so `ley play` polls it too
-    /// (`go/internal/cli/play.go`, `followPlayback`).
-    private(set) var playbackPosition: UInt64 = 0
-    @ObservationIgnored private var playbackPoll: Task<Void, Never>?
     @ObservationIgnored private var playbackSeen = false
     @ObservationIgnored private var playbackStartedAt = Date.distantPast
     /// Whether the live channel's sink was attached when the clip started, so it is attached
@@ -1721,11 +1717,11 @@ final class AppSession {
         playbackID.flatMap { id in state.playbacks.first { $0.playbackID == id } }
     }
 
-    /// How far the clip has played, 0 to 1: the polled position over the frames the mirror's
-    /// playback states; nil when nothing plays or its length is unknown.
+    /// How far the clip has played, 0 to 1: the mirror's playback, its position over its
+    /// frames; nil when nothing plays or its length is unknown.
     var playbackProgress: Double? {
         guard playingURI != nil, let p = playback, p.samples > 0 else { return nil }
-        return min(1, Double(playbackPosition) / Double(p.samples))
+        return min(1, Double(p.position) / Double(p.samples))
     }
 
     /// The sidebar's list: the recordings whose jobs are running first, then the rest newest
@@ -1902,8 +1898,14 @@ final class AppSession {
             notice = "\(Frequency.format(r.frequencyHz)) is in no band this radio reaches."
             return
         }
-        if let mode, let ch = channel, ch.mode != mode {
-            await apply(mode: mode, bandwidthHz: mode.defaultBandwidthHz, to: ch)
+        // The width recorded, when the listing carries it (`bandwidth_hz`, 2026-09-24); a
+        // listing without it tunes the mode's default, and only when the mode changes.
+        if let mode, let ch = channel {
+            if r.bandwidthHz > 0, ch.mode != mode || ch.bandwidthHz != r.bandwidthHz {
+                await apply(mode: mode, bandwidthHz: r.bandwidthHz, to: ch)
+            } else if r.bandwidthHz == 0, ch.mode != mode {
+                await apply(mode: mode, bandwidthHz: mode.defaultBandwidthHz, to: ch)
+            }
         }
         followRecording(force: true)
     }
@@ -1925,7 +1927,6 @@ final class AppSession {
             reattachAfterPlayback = sink != nil
         }
         playingURI = uri
-        playbackPosition = 0
         if let s = sink {
             var detach = Leyline_V1_DetachSinkRequest()
             detach.sinkID = s.sinkID
@@ -1946,7 +1947,15 @@ final class AppSession {
             log(
                 "playback",
                 "\(pb.playbackID) playing \(uri): \(pb.samples) frames at \(pb.sampleRate) Hz")
-            pollPlayback(pb.playbackID)
+            // A clip so short that its tombstone was folded before `StartPlayback` answered is
+            // never seen in the mirror, and a quiet daemon may send nothing else that would run
+            // `followPlayback`: one check after the never-seen limit ends it.
+            let id = pb.playbackID
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(Self.neverSeenDropSeconds + 0.1))
+                guard let self, self.playbackID == id else { return }
+                self.followPlayback()
+            }
         } catch {
             let e = LeylineError(error)
             log("playback", "\(uri) not played: \(e.code) \(e.message)")
@@ -1966,28 +1975,6 @@ final class AppSession {
             log("playback", "\(id) stopped")
         } catch {
             log("playback", "\(id) not stopped: \(LeylineError(error))")
-        }
-    }
-
-    /// The playback's position, four times a second from the daemon's state, the rate `ley play`
-    /// polls at, until the playback is no longer this window's. A state without it means the clip
-    /// ended, as `ley play` reads it, which covers a clip whose tombstone the mirror folded before
-    /// `StartPlayback` answered.
-    private func pollPlayback(_ id: String) {
-        playbackPoll?.cancel()
-        playbackPoll = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let session = self, session.playbackID == id, let daemon = session.daemon
-                else { return }
-                guard let st = try? await daemon.state() else { continue }
-                guard session.playbackID == id else { return }
-                guard let p = st.playbacks.first(where: { $0.playbackID == id }) else {
-                    session.endPlayback(id)
-                    return
-                }
-                session.playbackPosition = p.position
-            }
         }
     }
 
@@ -2011,8 +1998,6 @@ final class AppSession {
         playbackID = nil
         playingURI = nil
         playbackSeen = false
-        playbackPoll?.cancel()
-        playbackPoll = nil
         Task { await attachAfterPlayback() }
     }
 

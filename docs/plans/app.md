@@ -762,6 +762,25 @@ the speaker glyphs and their help; ⌘R and ⌘. in the menus, and ⌘. not caug
 Stop Listening's empty state, and a band, bookmark or recording click opening the radio again;
 Reveal in Finder and Show Recordings in Finder.
 
+Follow-ups 2026-09-24, the three departures the handoff's "Decided 2026-09-24" named. The daemon
+publishes a playing playback four times a second with `position` current
+(`SessionStore.playbackInterval`, the whole object each time, the tombstone unchanged), so
+`ley play` follows its playback on the session's event stream and the window's progress line
+reads the mirror's `playbacks`; both `GetState` polls are gone, and the fake publishes on the
+same cadence. `DeleteResource` stops every playback of the recording's parts through
+`StopPlayback`'s path before the directory goes (`SessionStore.stopPlaybacks(of:by:)`, and the
+fake the same). `bandwidth_hz` joins a recording's frozen metadata keys, `RecordingSummary`
+carries it, and a sidebar click tunes that width. `ley recordings` prints no width and its row is
+left as it was, eight columns already. Verified by `RecordingJobTests`
+(`testAPlayingPartIsPublishedWithItsPosition` and `testDeletingARecordingStopsItsPlayback`, which
+play through a discarding sink the store takes in place of the audio device, so they run on a
+host with none), `RecordingTests.testTheManifestCarriesTheFrozenResourceKeys`,
+`TestPlayFollowsThePositionOnTheEventPlane`, `TestDeletingARecordingEndsItsPlay`,
+`MirrorStateTests.testAPlaybacksPositionMovesInTheMirror`, `RecordingsTests` and the
+daemon-backed recording case. Unverified until a Mac: `AppSession.swift`'s playback and
+recording-row changes, the progress line moving from the mirror, and a clip ended by a delete
+attaching the live sink again.
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

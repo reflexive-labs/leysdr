@@ -339,9 +339,11 @@ type ResourcesClient interface {
 	ResolveLocalPath(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*LocalPath, error)
 	// Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
 	// while its job is running: cancel the job first, and the recording it made stays until it is
-	// deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-	// is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-	// (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+	// deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+	// tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+	// a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+	// 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+	// `ley recordings delete` is its mirror.
 	DeleteResource(ctx context.Context, in *ResourceRef, opts ...grpc.CallOption) (*DeletedResource, error)
 }
 
@@ -408,9 +410,11 @@ type ResourcesServer interface {
 	ResolveLocalPath(context.Context, *ResourceRef) (*LocalPath, error)
 	// Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
 	// while its job is running: cancel the job first, and the recording it made stays until it is
-	// deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-	// is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-	// (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+	// deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+	// tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+	// a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+	// 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+	// `ley recordings delete` is its mirror.
 	DeleteResource(context.Context, *ResourceRef) (*DeletedResource, error)
 	mustEmbedUnimplementedResourcesServer()
 }

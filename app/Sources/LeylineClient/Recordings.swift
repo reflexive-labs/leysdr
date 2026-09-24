@@ -467,6 +467,9 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var jobID: String
     public var frequencyHz: UInt64
     public var mode: Leyline_V1_DemodMode
+    /// The channel width recorded, from `bandwidth_hz`; 0 for an IQ recording and for a listing
+    /// from a daemon older than the key (2026-09-24), where a click tunes the mode's default.
+    public var bandwidthHz: UInt32
     public var startedAt: Date?
     /// The parts' durations summed: what the recording holds, not the wall clock it ran.
     public var durationMs: Int64
@@ -485,6 +488,7 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
             ? String(r.uri.split(separator: "/").last ?? "") : r.originatingJobID
         frequencyHz = m["frequency_hz"].flatMap { UInt64($0) } ?? 0
         mode = m["mode"].flatMap { Leyline_V1_DemodMode.named($0) } ?? .unspecified
+        bandwidthHz = m["bandwidth_hz"].flatMap { UInt32($0) } ?? 0
         startedAt = m["started_at_ns"].flatMap { Int64($0) }.flatMap {
             $0 > 0 ? Date(timeIntervalSince1970: Double($0) / 1e9) : nil
         }

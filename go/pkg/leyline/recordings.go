@@ -51,8 +51,9 @@ func (c *Client) StartRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 }
 
 // ListRecordings returns the recordings the daemon's store holds, newest first,
-// narrowed by the frozen metadata keys (kind, frequency_hz, mode, sample_rate,
-// format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by, device).
+// narrowed by the frozen metadata keys (kind, frequency_hz, mode, bandwidth_hz,
+// sample_rate, format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by,
+// device).
 func (c *Client) ListRecordings(ctx context.Context, filter map[string]string) ([]*leylinev1.Resource, error) {
 	resp, err := c.Resources.ListResources(ctx, &leylinev1.ListResourcesRequest{
 		Kind: leylinev1.ResourceKind_RECORDING, MetadataFilter: filter,

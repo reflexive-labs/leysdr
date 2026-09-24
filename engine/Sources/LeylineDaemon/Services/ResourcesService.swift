@@ -100,8 +100,9 @@ struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
 
     /// A recording is deleted whole, and never while its job runs: the runner has a part open in
     /// that directory, and cancelling first finalises it (docs/design/recording.md, "The wire").
-    /// Nothing goes out on the event plane -- a recording is a resource, not state -- and the job's
-    /// entry stays as it is.
+    /// A playback of one of its parts is stopped first, as `StopPlayback` stops it, so its
+    /// tombstone is the one event the delete sends; the recording itself is a resource, not
+    /// state, and the job's entry stays as it is.
     func deleteResource(request: Leyline_V1_ResourceRef, context _: ServerContext) async throws -> Leyline_V1_DeletedResource {
         let client = ClientContext.current
         await store.touchUnary(client)
@@ -119,6 +120,7 @@ struct ResourcesService: Leyline_V1_Resources.SimpleServiceProtocol {
                 throw ProtoMapping.rpcError(EngineError.failedPrecondition(
                     "\(jobID) is still recording; cancel the job first, then delete it", target: jobID))
             }
+            await store.stopPlaybacks(of: "ley://recordings/\(jobID)", by: client)
             let freed: UInt64?
             do {
                 freed = try await jobs.recordings.delete(jobID: jobID, by: client.id)

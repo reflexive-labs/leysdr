@@ -907,7 +907,9 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
   }
 
   /// A recording the daemon is playing. Daemon state like everything else here, so the app
-  /// renders a position and a stop button by subscription rather than by polling.
+  /// renders a position and a stop button by subscription rather than by polling: sent when it
+  /// starts, four times a second while it plays with `position` current (the whole object each
+  /// time, never a delta), and once more as the tombstone when it ends.
   public var playback: Leyline_V1_Playback {
     get {
       if case .playback(let v)? = _storage._body {return v}
@@ -931,7 +933,9 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     /// so this stays full-state (never a delta) like every other member.
     case job(Leyline_V1_Job)
     /// A recording the daemon is playing. Daemon state like everything else here, so the app
-    /// renders a position and a stop button by subscription rather than by polling.
+    /// renders a position and a stop button by subscription rather than by polling: sent when it
+    /// starts, four times a second while it plays with `position` current (the whole object each
+    /// time, never a delta), and once more as the tombstone when it ends.
     case playback(Leyline_V1_Playback)
 
   }
@@ -1149,8 +1153,9 @@ public nonisolated struct Leyline_V1_Playback: Sendable {
   /// frames in the file; 0 when it could not be counted
   public var samples: UInt64 = 0
 
-  /// Frames played so far. A client renders elapsed time from this and the rate rather than from a
-  /// clock of its own, and it is reported rather than written: seeking is not in v1.
+  /// Frames played so far, published on Event.playback four times a second while it plays. A
+  /// client renders elapsed time from this and the rate rather than from a clock of its own, and
+  /// it is reported rather than written: seeking is not in v1.
   public var position: UInt64 = 0
 
   public var volume: Double = 0

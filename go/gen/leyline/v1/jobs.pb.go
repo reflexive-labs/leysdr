@@ -1186,9 +1186,10 @@ type Resource struct {
 	SizeBytes        uint64                 `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	OriginatingJobId string                 `protobuf:"bytes,5,opt,name=originating_job_id,json=originatingJobId,proto3" json:"originating_job_id,omitempty"` // empty for explicit keeps
 	// Queryable, and frozen per kind because ListResourcesRequest.metadata_filter matches on these
-	// by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, sample_rate,
-	// format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by, device
-	// (docs/design/recording.md, "The wire"). Adding a key is additive; renaming one is not.
+	// by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, bandwidth_hz
+	// (0 for IQ; added 2026-09-24), sample_rate, format, duration_ms, parts, started_at_ns,
+	// ended_at_ns, ended_by, device (docs/design/recording.md, "The wire"). Adding a key is
+	// additive; renaming one is not.
 	Metadata      map[string]string `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

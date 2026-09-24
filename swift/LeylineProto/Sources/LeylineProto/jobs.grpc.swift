@@ -1440,9 +1440,11 @@ extension Leyline_V1_Resources {
         /// >
         /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
         /// > while its job is running: cancel the job first, and the recording it made stays until it is
-        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+        /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+        /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+        /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+        /// > `ley recordings delete` is its mirror.
         ///
         /// - Parameters:
         ///   - request: A streaming request of `Leyline_V1_ResourceRef` messages.
@@ -1524,9 +1526,11 @@ extension Leyline_V1_Resources {
         /// >
         /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
         /// > while its job is running: cancel the job first, and the recording it made stays until it is
-        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+        /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+        /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+        /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+        /// > `ley recordings delete` is its mirror.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -1606,9 +1610,11 @@ extension Leyline_V1_Resources {
         /// >
         /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
         /// > while its job is running: cancel the job first, and the recording it made stays until it is
-        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+        /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+        /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+        /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+        /// > `ley recordings delete` is its mirror.
         ///
         /// - Parameters:
         ///   - request: A `Leyline_V1_ResourceRef` message.
@@ -1862,9 +1868,11 @@ extension Leyline_V1_Resources {
         /// >
         /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
         /// > while its job is running: cancel the job first, and the recording it made stays until it is
-        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+        /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+        /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+        /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+        /// > `ley recordings delete` is its mirror.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -2007,9 +2015,11 @@ extension Leyline_V1_Resources {
         /// >
         /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
         /// > while its job is running: cancel the job first, and the recording it made stays until it is
-        /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-        /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-        /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+        /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+        /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+        /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+        /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+        /// > `ley recordings delete` is its mirror.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -2131,9 +2141,11 @@ extension Leyline_V1_Resources.ClientProtocol {
     /// >
     /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
     /// > while its job is running: cancel the job first, and the recording it made stays until it is
-    /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-    /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-    /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+    /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+    /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+    /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+    /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+    /// > `ley recordings delete` is its mirror.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Leyline_V1_ResourceRef` message.
@@ -2261,9 +2273,11 @@ extension Leyline_V1_Resources.ClientProtocol {
     /// >
     /// > Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
     /// > while its job is running: cancel the job first, and the recording it made stays until it is
-    /// > deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-    /// > is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-    /// > (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+    /// > deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+    /// > tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+    /// > a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+    /// > 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+    /// > `ley recordings delete` is its mirror.
     ///
     /// - Parameters:
     ///   - message: request message to send.

@@ -98,6 +98,15 @@ struct WAVReader {
     func close() { try? handle.close() }
 }
 
+/// Opens a playback's audio output: the sink's id, the file's rate, the volume and the output
+/// device's UID (nil for the default).
+typealias PlaybackSinkFactory = @Sendable (SinkID, UInt32, Double, String?) throws -> any AudioSink
+
+/// The daemon's own audio device, which is where a playback goes outside a test.
+let systemPlaybackSink: PlaybackSinkFactory = { id, rate, volume, deviceUID in
+    try makeSystemAudioSink(id: id, rate: rate, volume: volume, deviceUID: deviceUID)
+}
+
 /// One playing recording: the file, the sink it is going to, and where it has reached.
 actor PlaybackEngine {
     /// Frames pushed per tick. 20 ms at 48 kHz: short enough that stopping is prompt, long enough
@@ -119,7 +128,10 @@ actor PlaybackEngine {
     private var played: UInt64 = 0
     private var stopped = false
 
+    /// `makeSink` opens the audio output: the daemon's audio device in the daemon, a sink that
+    /// discards the audio in a test on a host with none (`SessionStore.setPlaybackSinkFactory`).
     init(id: PlaybackID, path: String, resourceURI: String, volume: Double, deviceUID: String?,
+         makeSink: PlaybackSinkFactory = systemPlaybackSink,
          onEnd: @escaping @Sendable (PlaybackID) async -> Void) throws
     {
         self.id = id
@@ -131,7 +143,7 @@ actor PlaybackEngine {
         sampleRate = reader.sampleRate
         frames = reader.frames
         do {
-            sink = try makeSystemAudioSink(id: SinkID(), rate: reader.sampleRate, volume: volume, deviceUID: deviceUID)
+            sink = try makeSink(SinkID(), reader.sampleRate, volume, deviceUID)
         } catch {
             reader.close()
             throw error

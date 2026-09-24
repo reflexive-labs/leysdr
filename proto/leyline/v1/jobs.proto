@@ -197,9 +197,10 @@ message Resource {
   uint64 size_bytes = 4;
   string originating_job_id = 5;    // empty for explicit keeps
   // Queryable, and frozen per kind because ListResourcesRequest.metadata_filter matches on these
-  // by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, sample_rate,
-  // format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by, device
-  // (docs/design/recording.md, "The wire"). Adding a key is additive; renaming one is not.
+  // by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, bandwidth_hz
+  // (0 for IQ; added 2026-09-24), sample_rate, format, duration_ms, parts, started_at_ns,
+  // ended_at_ns, ended_by, device (docs/design/recording.md, "The wire"). Adding a key is
+  // additive; renaming one is not.
   map<string, string> metadata = 6;
 }
 
@@ -232,9 +233,11 @@ service Resources {
   rpc ResolveLocalPath(ResourceRef) returns (LocalPath); // UDS clients read the file directly
   // Removes a recording's directory, every part and its manifest. Refused FAILED_PRECONDITION
   // while its job is running: cancel the job first, and the recording it made stays until it is
-  // deleted. A part's uri is INVALID_ARGUMENT: a recording is deleted whole. A missing recording
-  // is JOB_NOT_FOUND, as above. Additive on 2026-09-24 for the window's delete button
-  // (docs/design/recording.md, "The wire"); `ley recordings delete` is its mirror.
+  // deleted. A playback of one of its parts is stopped first, as StopPlayback stops it, so its
+  // tombstone goes out on the event plane before the files go. A part's uri is INVALID_ARGUMENT:
+  // a recording is deleted whole. A missing recording is JOB_NOT_FOUND, as above. Additive on
+  // 2026-09-24 for the window's delete button (docs/design/recording.md, "The wire");
+  // `ley recordings delete` is its mirror.
   rpc DeleteResource(ResourceRef) returns (DeletedResource);
 }
 

@@ -331,12 +331,16 @@ var errNoDaemonAudio = errors.New("the daemon has no audio device")
 
 // playThroughDaemon starts a daemon-side playback and holds the terminal until it finishes or
 // Ctrl-C stops it, the way every other listening verb does.
+//
+// The session's event stream is open before StartPlayback is sent, so every event of the
+// playback reaches followPlayback, the tombstone of a clip shorter than the round trip included.
 func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part int) error {
-	c, err := app.dial(ctx)
+	s, err := openSession(ctx, app)
 	if err != nil {
-		return app.notRunning(err)
+		return err
 	}
-	defer c.Close()
+	defer s.close()
+	c := s.client
 	pb, err := c.StartPlayback(ctx, leyline.RecordingPartURI(jobID, part), -1)
 	if err != nil {
 		if leyline.Code(err) == leyline.CodePlatformUnsupported {
@@ -352,7 +356,7 @@ func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part 
 		defer cancel()
 		_ = c.StopPlayback(cctx, pb.GetPlaybackId())
 	}()
-	followPlayback(ctx, app, c, pb)
+	s.followPlayback(ctx, pb)
 	return errDone
 }
 
@@ -365,31 +369,31 @@ func playbackLength(pb *leylinev1.Playback) string {
 	return forPhrase(time.Duration(secs * float64(time.Second)))
 }
 
-// followPlayback draws the position until the playback leaves the daemon's state or Ctrl-C
-// stops it. The position is the daemon's own count of frames it has pushed, not a clock here.
-func followPlayback(ctx context.Context, app *App, c *leyline.Client, pb *leylinev1.Playback) {
-	progress := newScanProgress(app)
+// followPlayback draws the position until the playback's tombstone arrives or Ctrl-C stops it.
+// The daemon publishes the whole playback four times a second while it plays, so the event
+// stream the session already holds carries the position; it is the daemon's own count of frames
+// pushed, not a clock here. A stream that ends takes the playback with it, since the daemon ends
+// a playback whose client has gone.
+func (s *session) followPlayback(ctx context.Context, pb *leylinev1.Playback) {
+	progress := newScanProgress(s.app)
 	defer progress.clear()
 	total := float64(pb.GetSamples()) / float64(max(pb.GetSampleRate(), 1))
-	tick := time.NewTicker(250 * time.Millisecond)
-	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-tick.C:
-			st, err := c.State(ctx)
-			if err != nil {
+		case ev, ok := <-s.events:
+			if !ok {
 				return
 			}
-			var live *leylinev1.Playback
-			for _, p := range st.GetPlaybacks() {
-				if p.GetPlaybackId() == pb.GetPlaybackId() {
-					live = p
-				}
+			b, isPlayback := ev.Body.(*leylinev1.Event_Playback)
+			if !isPlayback || b.Playback.GetPlaybackId() != pb.GetPlaybackId() {
+				s.apply(ev)
+				continue
 			}
-			if live == nil {
-				// Gone from the daemon's state: it reached the end of the file.
+			live := b.Playback
+			if live.GetState() == leylinev1.PlaybackState_PLAYBACK_STATE_UNSPECIFIED {
+				// The tombstone: the file ran out, or another client stopped it.
 				return
 			}
 			at := float64(live.GetPosition()) / float64(max(live.GetSampleRate(), 1))

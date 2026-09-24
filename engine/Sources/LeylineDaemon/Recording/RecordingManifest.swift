@@ -251,6 +251,7 @@ struct RecordingManifest: Codable, Sendable {
             "kind": kind,
             "frequency_hz": String(frequencyHz),
             "mode": mode,
+            "bandwidth_hz": String(bandwidthHz),
             "sample_rate": String(sampleRate),
             "format": format,
             "duration_ms": String(durationMs),

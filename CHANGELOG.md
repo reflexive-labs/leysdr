@@ -4,6 +4,12 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The daemon publishes a playing recording four times a second with its position, so `ley play`
+  and the Mac app follow it on the event stream and no longer poll `GetState`. Deleting a
+  recording stops a playback of any of its parts first, and `ley play` holding it ends. A
+  recording's listing carries `bandwidth_hz`, and a click on a recording in the app's sidebar
+  tunes the width it was recorded at rather than the mode's default.
+
 - `ley recordings delete <id>` removes a recording whole, every part and its manifest, and prints
   how much space that freed. On a terminal it names the recording and asks first; `--yes` skips
   the question and is required from a script. A recording whose job is still running is refused

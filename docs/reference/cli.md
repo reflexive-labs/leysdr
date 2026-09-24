@@ -386,8 +386,8 @@ and the URI for a script.
 `ley recordings` lists the store through `Resources.ListResources(RECORDING)`, newest first;
 `--kind`, `--freq` and `--since` filter on the resource's own metadata, whose keys are frozen
 because `metadata_filter` matches them by exact string: `kind` (`audio`|`iq`), `frequency_hz`,
-`mode`, `sample_rate`, `format`, `duration_ms`, `parts`, `started_at_ns`, `ended_at_ns`,
-`ended_by`, `device`. `ley recordings show <id>` prints the manifest and `ley recordings path
+`mode`, `bandwidth_hz` (`0` for IQ), `sample_rate`, `format`, `duration_ms`, `parts`,
+`started_at_ns`, `ended_at_ns`, `ended_by`, `device`. `ley recordings show <id>` prints the manifest and `ley recordings path
 <id> [--part N]` the directory or one part's samples file, so `open -R "$(ley recordings path
 job_…)"` reveals it in Finder. Every id argument takes a full job id, an id prefix or a
 `ley://recordings/` URI, `ley play` included: `ley play job_01J…` plays a recording's first part,

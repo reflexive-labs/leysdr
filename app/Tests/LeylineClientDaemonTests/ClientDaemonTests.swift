@@ -360,6 +360,9 @@ final class ClientDaemonTests: XCTestCase {
             "the recording is not listed")
         XCTAssertEqual(summary.frequencyHz, hz)
         XCTAssertEqual(summary.mode, .nfm)
+        XCTAssertEqual(
+            summary.bandwidthHz, channel.bandwidthHz,
+            "the listing carries the width recorded, which a sidebar click tunes")
         XCTAssertGreaterThan(summary.parts, 0)
 
         var resource = Leyline_V1_ResourceRef()

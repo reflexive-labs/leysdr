@@ -178,9 +178,11 @@ the manifest's one anchor capture, or its sidecar's when a recording spans two. 
 part's start at or before the transmission's start, its end at or before the part's end), and
 every part no live row lies inside as a row of its own, so `TransmissionLog` stays a fold of
 squelch edges alone. A row with a part plays it through `Control.StartPlayback` while the live
-sink is detached, and the position is polled from `GetState` four times a second as `ley play`
-polls it, because the daemon sends a playback's event only when it starts and ends. Delete is
-`Resources.DeleteResource`, which the daemon refuses while the job runs. The transport bar's
+sink is detached, and the progress line reads the mirror's `playbacks`: the daemon publishes a
+playing playback four times a second with its `position`, so nothing polls (2026-09-24). Delete
+is `Resources.DeleteResource`, which the daemon refuses while the job runs and which stops a
+playback of the recording's part first. A sidebar click tunes the width recorded, the listing's
+`bandwidth_hz`, and the mode's default when a daemon's listing lacks it. The transport bar's
 button is the mute (`toggleMute`, the sink detached), and Tune ▸ Stop Listening removes the
 channel and destroys the capture only when this window made it and no other channel rides on
 it. The window was written in the container and is unverified until it runs on a Mac

@@ -112,6 +112,8 @@ actor SessionStore {
     struct PlaybackEntry {
         var engine: PlaybackEngine
         var owner: ClientContext
+        /// Republishes the playback while it plays (`playbackInterval`); cancelled when it ends.
+        var ticker: Task<Void, Never>?
     }
 
     private struct Presence {
@@ -145,6 +147,12 @@ actor SessionStore {
     /// "Playing a recording back"). Daemon state like everything else here, so a second client
     /// sees one and the app renders its position; owned by the client that started it.
     private(set) var playbacks: [PlaybackID: PlaybackEntry] = [:]
+    /// How often a playing playback is published with its position: four times a second, so a
+    /// client renders elapsed time from the event plane and does not poll `GetState` for it.
+    static let playbackInterval: Duration = .milliseconds(250)
+    /// What a playback's audio goes to. The daemon's audio device; a test on a host with none
+    /// swaps in a sink that discards the audio (`setPlaybackSinkFactory`).
+    private var playbackSink: PlaybackSinkFactory = systemPlaybackSink
     private(set) var seq: UInt64 = 0
     private var subscribers: [UUID: Subscriber] = [:]
     /// The most recent `eventHistoryLimit` events, oldest first, for `since_seq` replay.
@@ -178,6 +186,8 @@ actor SessionStore {
     }
 
     func setTeardownHook(_ hook: @escaping @Sendable (TeardownScope) async -> Void) { teardownHook = hook }
+
+    func setPlaybackSinkFactory(_ factory: @escaping PlaybackSinkFactory) { playbackSink = factory }
 
     // MARK: Events
 
@@ -812,7 +822,7 @@ actor SessionStore {
     {
         let id = PlaybackID()
         let engine = try PlaybackEngine(id: id, path: path, resourceURI: resourceURI, volume: volume,
-                                        deviceUID: deviceUID) { [weak self] ended in
+                                        deviceUID: deviceUID, makeSink: playbackSink) { [weak self] ended in
             // The file ran out: the playback goes the way a stopped one does, so a client watching
             // its own sees the same tombstone either way.
             await self?.endPlayback(ended, by: .daemon)
@@ -821,7 +831,27 @@ actor SessionStore {
         await engine.start()
         let proto = await playbackProto(id)!
         emit(.playback(proto), captureID: nil, by: client)
+        playbacks[id]?.ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.playbackInterval)
+                guard let self, !Task.isCancelled else { return }
+                guard await self.publishPlayback(id) else { return }
+            }
+        }
         return proto
+    }
+
+    /// Publishes a playing playback's full state with its current position, as the daemon does
+    /// on `playbackInterval` (invariant 6: the whole object every time, never a delta). False once
+    /// the playback has ended, which stops the ticker.
+    private func publishPlayback(_ id: PlaybackID) async -> Bool {
+        guard let entry = playbacks[id], var proto = await playbackProto(id, entry: entry) else { return false }
+        // Checked again after the await: an `endPlayback` that ran meanwhile has already emitted the
+        // tombstone, and a playing event after it would bring the playback back in every mirror.
+        guard playbacks[id] != nil else { return false }
+        proto.state = .playbackPlaying
+        emit(.playback(proto), captureID: nil, by: .daemon)
+        return true
     }
 
     func stopPlaybackChecked(id: PlaybackID, by: ClientContext) async throws {
@@ -835,6 +865,7 @@ actor SessionStore {
     /// can tell "it finished" from "somebody stopped it" by who caused the event.
     private func endPlayback(_ id: PlaybackID, by: ClientContext) async {
         guard let entry = playbacks.removeValue(forKey: id) else { return }
+        entry.ticker?.cancel()
         await entry.engine.stop()
         var proto = await playbackProto(id, entry: entry) ?? Leyline_V1_Playback()
         proto.playbackID = id.string
@@ -864,6 +895,18 @@ actor SessionStore {
             if let p = await playbackProto(id) { out.append(p) }
         }
         return out
+    }
+
+    /// Ends every playback of a part of `recordingURI` (`ley://recordings/<id>`), each with its
+    /// tombstone caused by `by`, as `StopPlayback` ends one. `DeleteResource` calls it before the
+    /// directory goes, so nothing is left playing a file that no longer exists.
+    func stopPlaybacks(of recordingURI: String, by: ClientContext) async {
+        let prefix = recordingURI + "/"
+        let doomed = playbacks.filter { $0.value.engine.resourceURI == recordingURI || $0.value.engine.resourceURI.hasPrefix(prefix) }
+        for id in doomed.keys.sorted(by: { $0.string < $1.string }) {
+            log.info("stopping playback \(id.string): \(recordingURI) is being deleted")
+            await endPlayback(id, by: by)
+        }
     }
 
     /// Ends every playback a departing client started: a playback belongs to the client that

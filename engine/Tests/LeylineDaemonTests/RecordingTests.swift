@@ -257,9 +257,10 @@ final class RecordingTests: XCTestCase {
         m.parts = [RecordingPart(part: 1, file: "a.wav", startSample: 0, endSample: 48000, samples: 96000,
                                  bytes: 100, peakDbfs: -6, meanDbfs: -18, squelchOpens: 2)]
         let metadata = m.resourceMetadata
-        XCTAssertEqual(Set(metadata.keys), ["kind", "frequency_hz", "mode", "sample_rate", "format",
-                                            "duration_ms", "parts", "started_at_ns", "ended_at_ns",
-                                            "ended_by", "device"])
+        XCTAssertEqual(Set(metadata.keys), ["kind", "frequency_hz", "mode", "bandwidth_hz", "sample_rate",
+                                            "format", "duration_ms", "parts", "started_at_ns",
+                                            "ended_at_ns", "ended_by", "device"])
+        XCTAssertEqual(metadata["bandwidth_hz"], "12500", "the width recorded, so a client tunes back to it")
         XCTAssertEqual(metadata["duration_ms"], "2000", "two seconds of 48 kHz audio")
         XCTAssertEqual(metadata["parts"], "1")
         XCTAssertEqual(metadata["mode"], "NFM")

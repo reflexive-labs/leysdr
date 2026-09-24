@@ -726,9 +726,10 @@ public nonisolated struct Leyline_V1_Resource: Sendable {
   public var originatingJobID: String = String()
 
   /// Queryable, and frozen per kind because ListResourcesRequest.metadata_filter matches on these
-  /// by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, sample_rate,
-  /// format, duration_ms, parts, started_at_ns, ended_at_ns, ended_by, device
-  /// (docs/design/recording.md, "The wire"). Adding a key is additive; renaming one is not.
+  /// by exact string. A RECORDING carries: kind (audio|iq), frequency_hz, mode, bandwidth_hz
+  /// (0 for IQ; added 2026-09-24), sample_rate, format, duration_ms, parts, started_at_ns,
+  /// ended_at_ns, ended_by, device (docs/design/recording.md, "The wire"). Adding a key is
+  /// additive; renaming one is not.
   public var metadata: Dictionary<String,String> = [:]
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

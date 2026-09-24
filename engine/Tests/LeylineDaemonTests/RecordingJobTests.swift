@@ -220,6 +220,8 @@ final class RecordingJobTests: XCTestCase {
             XCTAssertEqual(resource.metadata["kind"], "audio")
             XCTAssertEqual(resource.metadata["mode"], "NFM")
             XCTAssertEqual(resource.metadata["ended_by"], "duration")
+            XCTAssertEqual(resource.metadata["bandwidth_hz"], String(manifest.bandwidthHz))
+            XCTAssertGreaterThan(manifest.bandwidthHz, 0, "an audio recording states its channel's width")
             XCTAssertGreaterThan(resource.sizeBytes, 0)
 
             var ref = Leyline_V1_ResourceRef()
@@ -600,6 +602,64 @@ final class RecordingJobTests: XCTestCase {
         }
     }
 
+    /// Makes a finished one-second audio recording and swaps the daemon's audio device for a sink
+    /// that discards the audio, so a host with no audio device plays it too.
+    private func playableRecording(_ c: DaemonClients) async throws -> Leyline_V1_Job {
+        await c.daemon.store.setPlaybackSinkFactory { id, _, _, _ in NullSink(id: id) }
+        try await attach(c, fixture: "nfm_tone.cf32", loop: true)
+        var config = Leyline_V1_RecordConfig()
+        config.frequencyHz = recordFrequencyHz
+        config.mode = .nfm
+        config.durationMs = 1000
+        config.squelchDbfs = -80
+        let done = try await waitForEnd(c, try await start(c, config).jobID)
+        XCTAssertEqual(done.state, .completed, done.statusDetail)
+        return done
+    }
+
+    private func play(_ c: DaemonClients, _ uri: String) async throws -> Leyline_V1_Playback {
+        var request = Leyline_V1_StartPlaybackRequest()
+        request.resourceUri = uri
+        return try await c.control.startPlayback(request, metadata: testMetadata)
+    }
+
+    /// A playing playback is published four times a second with its position, full state each
+    /// time, so a client renders elapsed time from the event plane; the tombstone still ends it,
+    /// and nothing playing follows the tombstone.
+    func testAPlayingPartIsPublishedWithItsPosition() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            let done = try await self.playableRecording(c)
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            defer { Task { await events.stop() } }
+            let pb = try await self.play(c, "ley://recordings/\(done.jobID)/1")
+            let id = pb.playbackID
+            let tomb = await events.waitFor(timeoutMs: 5000) {
+                $0.playback.playbackID == id && $0.playback.state == .unspecified
+            }
+            XCTAssertNotNil(tomb, "the playback ends at the end of the file")
+            let mine = await events.events.filter {
+                if case .playback(let p)? = $0.body { return p.playbackID == id }
+                return false
+            }
+            let playing = mine.prefix { $0.playback.state == .playbackPlaying }.map(\.playback)
+            XCTAssertEqual(mine.count, playing.count + 1, "one tombstone, last, and nothing playing after it")
+            // The start and at least two on the cadence: a second of audio is four ticks.
+            XCTAssertGreaterThanOrEqual(playing.count, 3, "\(playing.map(\.position))")
+            let positions = playing.map(\.position)
+            XCTAssertEqual(positions, positions.sorted(), "the position only moves forward")
+            XCTAssertGreaterThan(Set(positions.dropFirst()).count, 1, "and it moves between events: \(positions)")
+            for p in playing {
+                XCTAssertEqual(p.samples, pb.samples, "every event is the whole object")
+                XCTAssertEqual(p.resourceUri, pb.resourceUri)
+                XCTAssertLessThanOrEqual(p.position, p.samples)
+            }
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertTrue(state.playbacks.isEmpty, "the finished playback is out of the daemon's state")
+        }
+    }
+
     // MARK: Deleting (Resources.DeleteResource)
 
     private func delete(_ c: DaemonClients, _ uri: String) async throws -> Leyline_V1_DeletedResource {
@@ -648,6 +708,30 @@ final class RecordingJobTests: XCTestCase {
             } catch {
                 XCTAssertEqual(errorCode(error).code, EngineError.Code.jobNotFound)
             }
+        }
+    }
+
+    /// Deleting a recording stops a playback of its part first, through the path `StopPlayback`
+    /// takes, so the tombstone goes out and nothing is left playing a file that is gone.
+    func testDeletingARecordingStopsItsPlayback() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            let done = try await self.playableRecording(c)
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            defer { Task { await events.stop() } }
+            let pb = try await self.play(c, "ley://recordings/\(done.jobID)/1")
+            let before = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(before.playbacks.map(\.playbackID), [pb.playbackID])
+
+            _ = try await self.delete(c, "ley://recordings/\(done.jobID)")
+            let after = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertTrue(after.playbacks.isEmpty, "the playback went with the recording")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/" + done.jobID))
+            let tomb = await events.waitFor {
+                $0.playback.playbackID == pb.playbackID && $0.playback.state == .unspecified
+            }
+            XCTAssertEqual(tomb?.causedBy.clientID, testClientID, "the tombstone is the deleting client's")
         }
     }
 

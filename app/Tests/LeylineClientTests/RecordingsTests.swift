@@ -196,7 +196,8 @@ final class RecordingsTests: XCTestCase {
             $0.originatingJobID = "job_a"
             $0.metadata = [
                 "kind": "audio", "frequency_hz": "462562500", "mode": "NFM",
-                "sample_rate": "48000", "format": "wav-s16", "duration_ms": "720000", "parts": "4",
+                "bandwidth_hz": "12500", "sample_rate": "48000", "format": "wav-s16",
+                "duration_ms": "720000", "parts": "4",
                 "started_at_ns": "1789653802000000000", "ended_at_ns": "0", "ended_by": "",
                 "device": "Nooelec NESDR SMArt",
             ]
@@ -205,6 +206,7 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(s.jobID, "job_a")
         XCTAssertEqual(s.frequencyHz, 462_562_500)
         XCTAssertEqual(s.mode, .nfm)
+        XCTAssertEqual(s.bandwidthHz, 12_500, "the width recorded, which a sidebar click tunes")
         XCTAssertEqual(s.durationMs, 720_000)
         XCTAssertEqual(s.parts, 4)
         XCTAssertEqual(s.startedAt, Date(timeIntervalSince1970: 1_789_653_802))
@@ -218,6 +220,7 @@ final class RecordingsTests: XCTestCase {
         bare.metadata = [:]
         XCTAssertEqual(RecordingSummary(bare).jobID, "job_a", "the id is the URI's last segment")
         XCTAssertNil(RecordingSummary(bare).startedAt)
+        XCTAssertEqual(RecordingSummary(bare).bandwidthHz, 0, "no key: the mode's default is tuned")
     }
 
     func testTheWindowsRecordJobCopiesTheChannel() {

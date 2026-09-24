@@ -67,6 +67,30 @@ final class MirrorStateTests: XCTestCase {
         XCTAssertTrue(s.captures.isEmpty)
     }
 
+    /// The daemon publishes a playing playback four times a second with its position, so the
+    /// window's progress line reads the mirror; the tombstone takes the playback out.
+    func testAPlaybacksPositionMovesInTheMirror() {
+        func playback(_ position: UInt64, state: Leyline_V1_PlaybackState = .playbackPlaying)
+            -> Leyline_V1_Playback
+        {
+            var p = Leyline_V1_Playback()
+            p.playbackID = "pb_a"
+            p.samples = 48_000
+            p.sampleRate = 48_000
+            p.position = position
+            p.state = state
+            return p
+        }
+        var s = MirrorState()
+        s.apply(event(1, .playback(playback(0))))
+        s.apply(event(2, .playback(playback(12_000))))
+        XCTAssertEqual(s.playbacks.map(\.position), [12_000], "replaced by id, never added twice")
+        s.apply(event(3, .playback(playback(24_000))))
+        XCTAssertEqual(s.playbacks.first?.position, 24_000)
+        s.apply(event(4, .playback(playback(48_000, state: .unspecified))))
+        XCTAssertTrue(s.playbacks.isEmpty, "state unset is the tombstone")
+    }
+
     func testStaleEventsAreSkippedButRejectionsNever() {
         var snap = Leyline_V1_GetStateResponse()
         snap.eventSeq = 20

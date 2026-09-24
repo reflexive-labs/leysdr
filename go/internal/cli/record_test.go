@@ -226,6 +226,56 @@ func TestPlayOnAnAudioRecording(t *testing.T) {
 	}
 }
 
+// ley play follows the position from the event stream alone: the daemon publishes the playback
+// four times a second while it plays, and the tombstone ends the command.
+func TestPlayFollowsThePositionOnTheEventPlane(t *testing.T) {
+	sock, _ := recordHarness(t)
+	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "2s"))
+	_, errOut, err := run(t, t.Context(), sock, "play", uri)
+	if err != nil {
+		t.Fatalf("play: %v\n%s", err, errOut)
+	}
+	for _, want := range []string{"0:00 / ", "0:01 / "} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("the position must move while it plays; no %q in:\n%s", want, errOut)
+		}
+	}
+}
+
+// Deleting a recording stops a playback of its part, and the tombstone ends the ley play holding
+// it: nothing is left playing a file that is gone.
+func TestDeletingARecordingEndsItsPlay(t *testing.T) {
+	sock, dir := recordHarness(t)
+	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "3s"))
+	jobID, _, _ := leyline.ParseRecordingURI(uri)
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := run(t, t.Context(), sock, "play", uri)
+		done <- err
+	}()
+	for i := 0; !strings.Contains(mustRun(t, sock, "state", "--json"), "playbackId"); i++ {
+		if i == 100 {
+			t.Fatal("the playback never appeared in the daemon's state")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mustRun(t, sock, "recordings", "delete", jobID, "--yes")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("play ended by a delete is not a failure: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ley play still holds a playback whose recording was deleted")
+	}
+	if st := mustRun(t, sock, "state", "--json"); strings.Contains(st, "playbackId") {
+		t.Errorf("the playback outlived its recording:\n%s", st)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, jobID)); !os.IsNotExist(serr) {
+		t.Errorf("the directory is still there: %v", serr)
+	}
+}
+
 // A daemon with no audio device -- a headless one, which is usually the one on this machine --
 // leaves the file to the machine's own player rather than refusing.
 func TestPlayFallsBackToTheLocalPlayer(t *testing.T) {

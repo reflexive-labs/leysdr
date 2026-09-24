@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -124,8 +125,9 @@ func (d *Daemon) ResolveLocalPath(ctx context.Context, req *leylinev1.ResourceRe
 }
 
 // DeleteResource implements Resources: a recording is removed whole, never while
-// its job runs, and nothing goes out on the event plane -- a recording is a
-// resource, not state, and the job's entry stays as it is
+// its job runs. A playback of one of its parts is stopped first, as StopPlayback
+// stops it, so its tombstone is the one event a delete sends -- the recording is
+// a resource, not state, and the job's entry stays as it is
 // (docs/design/recording.md, "The wire").
 func (d *Daemon) DeleteResource(ctx context.Context, req *leylinev1.ResourceRef) (*leylinev1.DeletedResource, error) {
 	ci := clientFrom(ctx)
@@ -148,6 +150,12 @@ func (d *Daemon) DeleteResource(ctx context.Context, req *leylinev1.ResourceRef)
 	if st := j.proto.GetState(); st == leylinev1.JobState_RUNNING || st == leylinev1.JobState_DEGRADED {
 		return nil, fail(ctx, errorf(leyline.CodeFailedPrecondition, jobID,
 			jobID+" is still recording; cancel the job first, then delete it"))
+	}
+	uri := leyline.RecordingURI(jobID)
+	for id, p := range d.playbacks {
+		if pu := p.proto.GetResourceUri(); pu == uri || strings.HasPrefix(pu, uri+"/") {
+			d.endPlaybackLocked(id, ci)
+		}
 	}
 	freed := dirSize(j.record.dir)
 	if err := os.RemoveAll(j.record.dir); err != nil {
@@ -198,6 +206,7 @@ func recordingResource(j *fakeJob) *leylinev1.Resource {
 			"kind":          m.Kind,
 			"frequency_hz":  strconv.FormatUint(m.FrequencyHz, 10),
 			"mode":          m.Mode,
+			"bandwidth_hz":  strconv.FormatUint(uint64(m.BandwidthHz), 10),
 			"sample_rate":   strconv.FormatUint(m.SampleRate, 10),
 			"format":        m.Format,
 			"duration_ms":   strconv.FormatInt(m.DurationMs(), 10),
@@ -223,8 +232,13 @@ func matchesResourceFilter(r *leylinev1.Resource, filter map[string]string) bool
 
 // Playing a recording back (docs/design/recording.md, "Playing a recording back"). The fake owns
 // no audio device, so it plays nothing; what it has is the shape -- a Playback object with a
-// position that advances at the file's own rate, events as it starts and ends, and a client that
-// takes its playbacks with it. That is what a client is tested against.
+// position that advances at the file's own rate, events as it starts, four times a second while
+// it plays and as it ends, and a client that takes its playbacks with it. That is what a client
+// is tested against.
+
+// playbackInterval is how often a playing playback is published with its position, the
+// daemon's SessionStore.playbackInterval.
+const playbackInterval = 250 * time.Millisecond
 
 // playback is one recording the fake is "playing": the state object plus when it started, which
 // is what the position is derived from.
@@ -311,8 +325,9 @@ func (d *Daemon) StopPlayback(ctx context.Context, req *leylinev1.StopPlaybackRe
 	return &leylinev1.Empty{}, nil
 }
 
-// runPlayback advances the position at the file's own rate and ends the playback when the file
-// runs out, so a client following one sees it finish rather than having to guess.
+// runPlayback advances the position at the file's own rate, publishes the whole playback every
+// playbackInterval as the daemon does, and ends it when the file runs out, so a client following
+// one sees it move and finish from the event plane alone.
 func (d *Daemon) runPlayback(p *playback) {
 	rate := float64(p.proto.GetSampleRate())
 	if rate <= 0 {
@@ -321,6 +336,7 @@ func (d *Daemon) runPlayback(p *playback) {
 	total := time.Duration(float64(p.proto.GetSamples()) / rate * float64(time.Second))
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()
+	published := p.started
 	for {
 		select {
 		case <-p.done:
@@ -338,6 +354,10 @@ func (d *Daemon) runPlayback(p *playback) {
 				return
 			}
 			p.proto.Position = uint64(elapsed.Seconds() * rate)
+			if time.Since(published) >= playbackInterval {
+				published = time.Now()
+				d.emit(byDaemon(), proto.Clone(p.proto).(*leylinev1.Playback))
+			}
 			d.mu.Unlock()
 		}
 	}

@@ -1770,7 +1770,9 @@ type Event_Job struct {
 
 type Event_Playback struct {
 	// A recording the daemon is playing. Daemon state like everything else here, so the app
-	// renders a position and a stop button by subscription rather than by polling.
+	// renders a position and a stop button by subscription rather than by polling: sent when it
+	// starts, four times a second while it plays with `position` current (the whole object each
+	// time, never a delta), and once more as the tombstone when it ends.
 	Playback *Playback `protobuf:"bytes,10,opt,name=playback,proto3,oneof"`
 }
 
@@ -2278,8 +2280,9 @@ type Playback struct {
 	Path        string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`                                  // the file the daemon opened, for a client on the same machine
 	SampleRate  uint32                 `protobuf:"varint,4,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`
 	Samples     uint64                 `protobuf:"varint,5,opt,name=samples,proto3" json:"samples,omitempty"` // frames in the file; 0 when it could not be counted
-	// Frames played so far. A client renders elapsed time from this and the rate rather than from a
-	// clock of its own, and it is reported rather than written: seeking is not in v1.
+	// Frames played so far, published on Event.playback four times a second while it plays. A
+	// client renders elapsed time from this and the rate rather than from a clock of its own, and
+	// it is reported rather than written: seeking is not in v1.
 	Position  uint64      `protobuf:"varint,6,opt,name=position,proto3" json:"position,omitempty"`
 	Volume    float64     `protobuf:"fixed64,7,opt,name=volume,proto3" json:"volume,omitempty"`
 	CreatedBy *ClientInfo `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`

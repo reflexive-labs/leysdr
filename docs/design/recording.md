@@ -220,9 +220,10 @@ message naming the free space; a code a client can branch on is added when a cli
 - `ListResources(kind, metadata_filter)` returns one `Resource` per manifest, newest first, with
   `kind = RECORDING`, `size_bytes` the sum of the parts, `originating_job_id` the job, and a
   `metadata` map with these keys, frozen because `metadata_filter` matches on them by exact
-  string: `kind` (`audio`|`iq`), `frequency_hz`, `mode`, `sample_rate`, `format`,
-  `duration_ms` (the sum of the parts' durations), `parts`, `started_at_ns`, `ended_at_ns`,
-  `ended_by`, `device`. `RECORDS` and `SCAN` are answered too, from the stores that exist, so the
+  string: `kind` (`audio`|`iq`), `frequency_hz`, `mode`, `bandwidth_hz` (the channel's width,
+  `0` for IQ; added 2026-09-24 so the app's sidebar tunes the width recorded), `sample_rate`,
+  `format`, `duration_ms` (the sum of the parts' durations), `parts`, `started_at_ns`,
+  `ended_at_ns`, `ended_by`, `device`. `RECORDS` and `SCAN` are answered too, from the stores that exist, so the
   service covers every kind that has a store; `SNAPSHOT` and `TRANSCRIPT` return nothing until
   their milestones.
 - `GetResource(uri)` returns the same `Resource`; `RESOURCE_NOT_FOUND` is not added, the
@@ -235,9 +236,12 @@ message naming the free space; a code a client can branch on is added when a cli
   for the app's delete button, `plans/app.md` APP-5). It refuses while the recording's job is
   `RUNNING` or `DEGRADED`, `FAILED_PRECONDITION` with "cancel the job first", because the runner
   has a part open there and cancelling finalises it. A part's URI is `INVALID_ARGUMENT`, since a
-  recording is deleted whole, and a missing one is `JOB_NOT_FOUND`. Nothing goes out on the event
-  plane: a recording is a resource, the job's entry is left as it was, and a client re-reads
-  `ListResources`. Deleting the directory in Finder does the same.
+  recording is deleted whole, and a missing one is `JOB_NOT_FOUND`. A playback of one of its parts
+  is stopped first, through the path `StopPlayback` takes, so its tombstone (caused by the
+  deleting client) goes out before the files go (2026-09-24). Otherwise nothing goes out on the
+  event plane: a recording is a resource, the job's entry is left as it was, and a client re-reads
+  `ListResources`. Deleting the directory in Finder does the same, except that a playback
+  already reading a part keeps its open file and plays to the end.
 
 **Job events** already exist (`Event.job`), so a client renders a recording's progress by
 subscription. While `RUNNING`, `status_detail` carries liveness the way a decode job's does, on
@@ -456,7 +460,7 @@ message Playback {
   string path = 3;              // the file the daemon opened, for a client on the same machine
   uint32 sample_rate = 4;
   uint64 samples = 5;           // frames in the file, 0 when it could not be counted
-  uint64 position = 6;          // frames played; the client renders elapsed from this and the rate
+  uint64 position = 6;          // frames played, published four times a second while playing
   double volume = 7;
   ClientInfo created_by = 8;
   PlaybackState state = 9;      // PLAYBACK_PLAYING; unset on the final event is the tombstone
@@ -466,7 +470,12 @@ message Playback {
 `Control.StartPlayback` and `Control.StopPlayback`, `Event.playback` and
 `GetStateResponse.playbacks` on the pattern every other object already follows: full state, never
 a delta, and a tombstone with `state` unset when it ends, so a client watching its own playback can
-tell "it finished" from "somebody stopped it".
+tell "it finished" from "somebody stopped it". While it plays the daemon publishes the whole
+playback four times a second with `position` current (`SessionStore.playbackInterval`, added
+2026-09-24), so `ley play` and the app render elapsed time from the event plane and neither polls
+`GetState`. A playback counts against the 256 events the daemon retains for `since_seq` replay
+like any other event: at four a second it fills them in about a minute, and a client resuming
+from an older seq re-reads `GetState` by the seq-gap rule.
 
 **A playback belongs to the client that started it**, like a non-persistent channel: it stops when
 that client goes, which is what makes Ctrl-C in `ley play` stop the sound. There is no `persistent`

@@ -180,7 +180,9 @@ message Event {
     // so this stays full-state (never a delta) like every other member.
     Job job = 9;
     // A recording the daemon is playing. Daemon state like everything else here, so the app
-    // renders a position and a stop button by subscription rather than by polling.
+    // renders a position and a stop button by subscription rather than by polling: sent when it
+    // starts, four times a second while it plays with `position` current (the whole object each
+    // time, never a delta), and once more as the tombstone when it ends.
     Playback playback = 10;
   }
 }
@@ -258,8 +260,9 @@ message Playback {
   string path = 3;              // the file the daemon opened, for a client on the same machine
   uint32 sample_rate = 4;
   uint64 samples = 5;           // frames in the file; 0 when it could not be counted
-  // Frames played so far. A client renders elapsed time from this and the rate rather than from a
-  // clock of its own, and it is reported rather than written: seeking is not in v1.
+  // Frames played so far, published on Event.playback four times a second while it plays. A
+  // client renders elapsed time from this and the rate rather than from a clock of its own, and
+  // it is reported rather than written: seeking is not in v1.
   uint64 position = 6;
   double volume = 7;
   ClientInfo created_by = 8;
