@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -102,7 +103,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				return usageErrorf("scan needs a range: ley scan 144M..148M, or ley scan --band 2m; check with: ley bands")
 			}
 			if o.gain != "" {
-				if _, _, err := leyline.ParseGain(o.gain); err != nil {
+				if _, err := leyline.ParseGains(o.gain); err != nil {
 					return usageErrorf("--gain %v", err)
 				}
 			}
@@ -139,7 +140,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 	cmd.Flags().StringVar(&sortBy, "sort", "freq", "row order: freq or snr")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "sweep even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
-	cmd.Flags().StringVar(&o.gain, "gain", "", "receiver gain to sweep at: auto (where the radio's AGC settles, then held) or dB such as 30 (default: the gain the radio is on, held)")
+	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; held for the whole sweep; default: the gain the radio is on")
 	return cmd
 }
 
@@ -159,7 +160,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	if s.app.JSON {
 		return s.app.printJSON(scan)
 	}
-	printScan(s.app, scan, o)
+	printScan(s.app, scan, o, scanGainElements(s.state, o.deviceID, scan))
 	return nil
 }
 
@@ -174,7 +175,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		Schedule: &leylinev1.ScanConfig_Once{Once: true},
 		TakeOver: o.takeOver,
 		DeviceId: o.deviceID,
-		Gain:     scanGain(o.gain),
+		Gains:    gainWrites(o.gain),
 	}
 	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
@@ -293,21 +294,33 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 	}
 }
 
-// scanGain is --gain as the contract carries it: a GainWrite on the first gain element (the
-// daemon reads an empty element as the first), or nil to leave the radio where it is. The flag
-// was checked when it was parsed, so an error here cannot happen.
-func scanGain(flag string) *leylinev1.GainWrite {
-	if flag == "" {
+// scanGainElements is the gain elements of the radio a sweep ran on, for the summary's gain words.
+// A Scan does not name its device, so this is the one asked for, else the only device whose
+// elements are the stages the scan reports; nil when that is not one device, and the words then
+// print a switch's level rather than on or off.
+func scanGainElements(st *leylinev1.GetStateResponse, deviceID string, scan *leylinev1.Scan) []*leylinev1.GainElement {
+	if deviceID != "" || scan.GetConfig().GetDeviceId() != "" {
+		return deviceGainElements(st, cmp.Or(deviceID, scan.GetConfig().GetDeviceId()))
+	}
+	var found []*leylinev1.GainElement
+	matches := 0
+	for _, d := range st.GetDevices() {
+		els := d.GetGainElements()
+		if len(els) == 0 || len(els) != len(scan.GetGains()) {
+			continue
+		}
+		same := true
+		for _, g := range scan.GetGains() {
+			same = same && gainElement(els, g.GetElement()) != nil
+		}
+		if same {
+			found, matches = els, matches+1
+		}
+	}
+	if matches != 1 {
 		return nil
 	}
-	db, auto, err := leyline.ParseGain(flag)
-	if err != nil {
-		return nil
-	}
-	if auto {
-		return &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: true}}
-	}
-	return &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Db{Db: db}}
+	return found
 }
 
 // scanIDOf reads the scan's id out of the job's result URI. A job that named no
@@ -386,7 +399,7 @@ func (p *scanProgress) clear() {
 
 // printScan renders the table and the summary. The table is stdout (it is the answer); the
 // summary sentence and the next command are stderr.
-func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
+func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement) {
 	rows := make([]*leylinev1.Detection, 0, len(scan.Detections))
 	for _, d := range scan.Detections {
 		if o.minSNR > 0 && d.SnrDb < o.minSNR {
@@ -410,7 +423,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 			fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley scan "+scanArg(o)))
 			return
 		}
-		fmt.Fprintf(app.Stderr, "nothing stood above the noise floor%s%s\n", floorPhrase(scan), gainPhrase(scan))
+		fmt.Fprintf(app.Stderr, "nothing stood above the noise floor%s%s\n", floorPhrase(scan), gainPhrase(scan, els))
 		fmt.Fprintf(app.Stderr, "a longer look finds weaker signals: %s\n", st.Cmd("ley scan "+scanArg(o)+" --dwell 1000"))
 		coverageNote(app, scan, o)
 		return
@@ -429,7 +442,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions) {
 	// tableStyle, not app.Style: off a terminal the width is unknown rather than 80, and fitting
 	// to 80 would silently drop the BAND column out of a piped table.
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
-	fmt.Fprintf(app.Stderr, "%s%s%s\n", plural(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan))
+	fmt.Fprintf(app.Stderr, "%s%s%s\n", plural(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
 	unconfirmedNote(app, rows)
 	coverageNote(app, scan, o)
 	if best := strongest(rows); best != nil {
@@ -573,21 +586,22 @@ func floorPhrase(scan *leylinev1.Scan) string {
 	return fmt.Sprintf(", floor %.0f dBFS", median)
 }
 
-// gainPhrase names the gain the sweep ran at. A sweep pins the tuner for its duration, because SNR
-// measured against a moving AGC is meaningless. Two scans of the same band are comparable only at
-// the same gain, so the gain is printed beside the floor.
-func gainPhrase(scan *leylinev1.Scan) string {
-	var parts []string
+// gainPhrase names the gain the sweep ran at, in the words every screen uses (stageGainWords). A
+// sweep pins the tuner for its duration, because SNR measured against a moving AGC is meaningless.
+// Two scans of the same band are comparable only at the same gain, so the gain is printed beside
+// the floor.
+func gainPhrase(scan *leylinev1.Scan, els []*leylinev1.GainElement) string {
+	var gains []*leylinev1.GainState
 	for _, g := range scan.GetGains() {
 		if math.IsNaN(g.GetDb()) || math.IsInf(g.GetDb(), 0) {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s %.1f dB", strings.ToLower(g.GetElement()), g.GetDb()))
+		gains = append(gains, g)
 	}
-	if len(parts) == 0 {
+	if len(gains) == 0 {
 		return ""
 	}
-	return ", gain " + strings.Join(parts, ", ")
+	return ", " + stageGainWords(gains, els)
 }
 
 // scanArg re-spells what the user asked for, for a hint line.

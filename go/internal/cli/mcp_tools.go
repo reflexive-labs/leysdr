@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/proto"
 
@@ -55,18 +56,21 @@ func (srv *mcpServer) registerTools() {
 			"Refuses to move a radio other channels are listening on and says who, unless take_over is true. The channel ends when this server exits unless keep is true. " +
 			"Returns {capture: Capture, channel: Channel, sink: Sink|null}; the text lists the decisions made.",
 		Annotations: mutates,
+		InputSchema: gainSchema[tuneArgs]("; default: leave the radio's setting"),
 	}, srv.tune)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "scan",
 		Description: "Sweep a frequency range and report the carriers that stood above the measured noise floor: centre, width, SNR and how many looks saw each (Jobs.StartJob(ScanConfig{once}) then Jobs.GetScan; ley scan). " +
 			"A detection is a carrier, not a protocol or a station. Takes seconds and owns the radio meanwhile; refuses a radio somebody is using unless take_over is true. gain pins the tuner for the sweep (a sweep of a quiet band at low gain reads as a deaf receiver; ask for auto or a level and read Scan.gains). Returns a Scan.",
 		Annotations: mutates,
+		InputSchema: gainSchema[scanArgs]("; the sweep holds it still and Scan.gains says where; default: the gain the radio is on, which is whatever the last client left"),
 	}, srv.scan)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "listen_summary",
 		Description: "Listen on a frequency, preset or existing channel for duration_s seconds and summarise what the daemon's squelch and meter saw: the transmissions (squelch-open intervals with their length and peak), the signal level range, and any CTCSS tone or DCS code (Telemetry.Subscribe, bounded; ley tune / ley listen). " +
 			"No audio is returned or played. Returns {channel: Channel, transcript: Transcript, meter: {...}, tone: SubAudible|null}.",
 		Annotations: mutates,
+		InputSchema: gainSchema[listenSummaryArgs]("; default: leave it; not with a channel id"),
 	}, srv.listenSummary)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "snapshot",
@@ -103,6 +107,7 @@ func (srv *mcpServer) registerTools() {
 			"duration_s is required, 1 to 3600: what an agent starts must end without it. gate: \"squelch\" records only while something is on the air, one file per exchange, so a quiet band costs no disk. " +
 			"Refuses a radio somebody is using unless take_over is true. Returns the finished Job; its resultUris names ley://recordings/<job_id>, which get_recording resolves to files on this machine.",
 		Annotations: mutates,
+		InputSchema: gainSchema[recordArgs]("; default: leave the radio's setting"),
 	}, srv.record)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "find_recordings",
@@ -131,6 +136,19 @@ func (srv *mcpServer) registerTools() {
 		Description: "Stop a job and hand the radio back (Jobs.CancelJob; ley jobs cancel). A job that has already finished is left as it is. Returns the Job in the state the daemon left it.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 	}, srv.cancelJob)
+}
+
+// gainSchema is the input schema the SDK would infer for a tool's arguments, with the gain field
+// described by gainHelp and the tool's own default after it. A struct tag cannot name a constant,
+// and the four tools that take a gain (tune, listen_summary, record, scan) describe it in the same
+// sentence as every --gain (plans/v1-release.md, R-23).
+func gainSchema[T any](tail string) *jsonschema.Schema {
+	sch, err := jsonschema.For[T](&jsonschema.ForOptions{})
+	if err != nil {
+		panic(fmt.Sprintf("mcp: the %T schema: %v", *new(T), err))
+	}
+	sch.Properties["gain"].Description = gainHelp + tail
+	return sch
 }
 
 // registerResources exposes the ley:// resources the daemon can answer: a
@@ -300,7 +318,7 @@ type tuneArgs struct {
 	Mode      string `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw, raw; fm or ssb pick by frequency (default: chosen from the band)"`
 	Bandwidth string `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)"`
 	Squelch   string `json:"squelch,omitempty" jsonschema:"mute below this level: auto (measured from the noise floor; the default for nfm and am), off, or dBFS such as -40"`
-	Gain      string `json:"gain,omitempty" jsonschema:"receiver gain: auto, or dB such as 30 (default: leave the radio's setting)"`
+	Gain      string `json:"gain,omitempty"`
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id (dev_...), id prefix or row number from list_devices (default: the first real radio)"`
 	Audio     bool   `json:"audio,omitempty" jsonschema:"also play the channel through the speakers of the machine the daemon runs on (default: false)"`
 	Keep      bool   `json:"keep,omitempty" jsonschema:"leave the channel running after this server exits (default: false; the channel ends with the agent's session)"`
@@ -413,13 +431,13 @@ type scanArgs struct {
 	MinSNR   float64 `json:"min_snr,omitempty" jsonschema:"leave out detections weaker than this many dB over the noise floor (default: 0, report everything found)"`
 	Device   string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the daemon picks an idle one)"`
 	TakeOver bool    `json:"take_over,omitempty" jsonschema:"sweep even when somebody is using the radio; it is theirs again afterwards (default: false). Send it only after a refusal named who is using it"`
-	Gain     string  `json:"gain,omitempty" jsonschema:"receiver gain to sweep at: auto (where the radio's AGC settles, then held for the sweep) or dB such as 30; the sweep always holds the gain still and Scan.gains says where (default: the gain the radio is on, which is whatever the last client left)"`
+	Gain     string  `json:"gain,omitempty"`
 }
 
 func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanArgs) (*mcp.CallToolResult, any, error) {
 	o := scanOptions{dwellMs: in.DwellMs, minSNR: in.MinSNR, takeOver: in.TakeOver, device: in.Device, gain: in.Gain}
 	if in.Gain != "" {
-		if _, _, err := leyline.ParseGain(in.Gain); err != nil {
+		if _, err := leyline.ParseGains(in.Gain); err != nil {
 			return nil, nil, fmt.Errorf("gain %v", err)
 		}
 	}
@@ -459,7 +477,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		return nil, nil, errors.New(strings.TrimSpace(errb.String()))
 	}
 	errb.Reset()
-	printScan(app, scan, o)
+	printScan(app, scan, o, scanGainElements(s.state, o.deviceID, scan))
 	text := note + out.String() + errb.String()
 	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
 	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
@@ -527,7 +545,7 @@ type listenSummaryArgs struct {
 	Mode      string  `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw (default: chosen from the band); not with a channel id"`
 	Bandwidth string  `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz, or 200k, 12500 (default: the mode's usual width); not with a channel id"`
 	Squelch   string  `json:"squelch,omitempty" jsonschema:"auto (the default for nfm and am: a transmission is a squelch-open interval, so a squelch is what makes one countable), off, or dBFS such as -40; not with a channel id"`
-	Gain      string  `json:"gain,omitempty" jsonschema:"receiver gain: auto, or dB such as 30 (default: leave it); not with a channel id"`
+	Gain      string  `json:"gain,omitempty"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the first real radio)"`
 	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who). Send it only after a refusal named who is listening; a channel this tool made itself is gone when it returns and needs no taking over"`
 }

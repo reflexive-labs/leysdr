@@ -38,7 +38,7 @@ type recordArgs struct {
 	Mode      string  `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw (default: chosen from the band); not with a channel id or with iq"`
 	Bandwidth string  `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)"`
 	Squelch   string  `json:"squelch,omitempty" jsonschema:"mute below this level: auto (the default with a gate, measured from the channel's own noise floor), off, or dBFS such as -40"`
-	Gain      string  `json:"gain,omitempty" jsonschema:"receiver gain: auto, or dB such as 30 (default: leave the radio's setting)"`
+	Gain      string  `json:"gain,omitempty"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio: an id (dev_...), id prefix or row number from list_devices (default: the first real radio)"`
 	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"record even when somebody is using the radio (default: false, refuse and say who is using it). Send it only after a refusal named who"`
 }

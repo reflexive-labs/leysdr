@@ -95,7 +95,7 @@ func TestCaptureChangesThatMatter(t *testing.T) {
 	}{
 		{"retune", func(c *leylinev1.Capture) { c.CenterHz = 146_700_000 }, "another terminal retuned the radio to 146.700 MHz"},
 		{"rate", func(c *leylinev1.Capture) { c.SampleRate = 1_024_000 }, "another terminal set the sample rate to 1.024 MHz"},
-		{"gain", func(c *leylinev1.Capture) { c.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 30.0}} }, "another terminal set the gain to 30.0 dB"},
+		{"gain", func(c *leylinev1.Capture) { c.Gains = []*leylinev1.GainState{{Element: "TUNER", Db: 30.0}} }, "another terminal set the gain to 30 dB"},
 		{"detached", func(c *leylinev1.Capture) { c.State = leylinev1.CaptureState_CAPTURE_DETACHED }, "another terminal left the radio detached"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

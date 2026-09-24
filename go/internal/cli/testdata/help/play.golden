@@ -23,7 +23,7 @@ Examples:
 Flags:
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
       --freq string      frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)
-      --gain string      receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)
+      --gain string      receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); default: leave the radio's setting
   -h, --help             help for play
       --loop             start over when the file ends, until Ctrl-C (default: stop at the end)
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)

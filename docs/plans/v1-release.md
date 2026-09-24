@@ -558,7 +558,7 @@ community submits and who curates, and the licence per pack (data, not code: CC-
 decided per source). The daemon-side home for the data is D6 (bookmarks live in the daemon), so the
 document also specifies which pack contents become daemon state and which stay files.
 
-### R-23 `[ ]` One gain syntax, one gain line (S, Opus)
+### R-23 `[x]` One gain syntax, one gain line (S, Opus)
 
 Asked 2026-09-24 after M2-10 gave `--gain` stage pairs: "let's align all the gain flags." The
 inventory found four surfaces still on older shapes and one print form that differs by command.
@@ -590,6 +590,35 @@ same names and number form. `--json` is untouched.
 Not applicable, and left so: `monitor`, `decode`, `watch` and `track` (the daemon's gain is the
 daemon's, as `monitor.go` says), `devices attach`. The app already writes one `GainWrite` per
 stage and prints nothing as a string.
+
+Landed 2026-09-24. `ley set gain` parses with `ParseGains` and sends one `ParamWrite` per stage
+(`buildGainWrites` in `set.go`), waiting for the capture event that holds every stage; `--element`
+is gone. `ley scan --gain` sends `ScanConfig.gains` (field 9), and the daemon turns it into a list
+of `GainRequest`s (`AllocationRequest.exclusiveCapture` now carries `gains: [GainRequest]`) that
+`pinGain` applies in order through `resolvedGainElement`, stopping at the first refusal, which
+`pinFailure` fails the sweep with; a stage the device does not list is refused with
+`unknownGainElement`, as the record path does. The fake reads `gains` the same way. `gainHelp` in
+`topics.go` is the one sentence: every `--gain` flag starts with it, `set`'s gain row is it, and
+the four MCP tools' input schemas are built with `jsonschema.For` so the `gain` description can
+use the constant (a struct tag cannot). `TestHelpMeta` and `TestMCPListsTheToolTable` fail on a
+description that does not.
+
+The one renderer is `stageGainWords(gains, elements)` in `session.go`, with `stageLevel` and
+`gainDB` for a line of another shape. A two-value stage is known from the device's
+`GainElement`, so every caller looks the device up: the banner from the session, the tree,
+`--wide`, the event line and `set` from the state, `recordings show` from `ListDevices` (matched by
+driver and serial), and the scan summary from the device asked for or the one device whose stages
+are the scan's, since a `Scan` names none. Where the device is not listed the switch prints its
+level (`AMP 11 dB`). The live change notice (`another terminal set the gain to VGA 20 dB`) and
+`eventLine`'s capture case use the same words. `ley devices` lists a switch as
+`AMP 0 or 11 dB`, the two values `--gain` takes for off and on. One wart is left: turning the AMP
+on reads `… AMP on on the radio (cap_…)` in `set`'s line, because the line's shape is
+`<value> on <scope>` for every parameter. Verified by `TestStageGainWords` (one stage, 49.6, a
+float's tail, a HackRF with the AMP off and on, and with the device gone),
+`TestTuneGainSetsEachStageNamed` (banner, tree, `--wide`, `set` with stages),
+`TestScanPinsEveryStageNamed`, `TestRecordGainSetsEachStageNamed` (`recordings show`), the gains
+cases in `TestGainsStringUnknownTable`, and on the engine `testTheSweepPinsEveryStageItIsGiven`
+and `testTheSweepFailsOnAStageTheRadioDoesNotHave`.
 
 ### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
 

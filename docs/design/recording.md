@@ -317,7 +317,7 @@ The drain adds none: it is not on the sample path.
 ```
 ley record <frequency|preset|channel> [--iq] [--for 5m] [--gate squelch] [--pre 500ms]
            [--hang 5s] [--stop-after-quiet 10m] [--part 60s] [--detach]
-           [--mode M] [--bandwidth HZ] [--squelch DB|auto] [--gain G|auto] [--device ID] [--take-over]
+           [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
 ley recordings [--kind audio|iq] [--freq F] [--since 24h] [--limit N]
 ley recordings show <id>
 ley recordings path <id> [--part N]

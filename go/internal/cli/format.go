@@ -84,26 +84,36 @@ func ratesString(rates []uint64) string {
 	return fmt.Sprintf("%.3g..%.3g MSPS (%d)", float64(lo)/1e6, float64(hi)/1e6, len(rates))
 }
 
-// gainsString renders gain elements as "tuner 0..49.6dB(auto)". An element
-// with no table and a 0..0 range is one the daemon could not read (it never
-// managed to open the dongle) and renders "unknown" rather than "0..0dB".
+// gainsString renders gain elements as ranges, with the names and number form every gain line
+// uses (stageGainWords): "LNA 0–40 dB, VGA 0–62 dB, AMP 0 or 11 dB", "TUNER 0–49.6 dB auto". A
+// switch (two settings, no step) lists its two levels, which are what --gain takes for off and on.
+// An element with no table and a 0..0 range is one the daemon could not read (it never managed to
+// open the dongle) and renders "unknown" rather than "0 dB".
 func gainsString(gs []*leylinev1.GainElement) string {
 	if len(gs) == 0 {
 		return "-"
 	}
 	parts := make([]string, 0, len(gs))
 	for _, g := range gs {
-		if len(g.ValidDb) == 0 && g.MinDb == 0 && g.MaxDb == 0 {
+		var s string
+		switch {
+		case len(g.ValidDb) == 0 && g.MinDb == 0 && g.MaxDb == 0:
 			parts = append(parts, g.Name+" unknown")
 			continue
+		case isGainSwitch(g):
+			lo, hi := min(g.ValidDb[0], g.ValidDb[1]), max(g.ValidDb[0], g.ValidDb[1])
+			s = fmt.Sprintf("%s %s or %s dB", g.Name, gainDB(lo), gainDB(hi))
+		case g.MinDb == g.MaxDb:
+			s = fmt.Sprintf("%s %s dB", g.Name, gainDB(g.MinDb))
+		default:
+			s = fmt.Sprintf("%s %s–%s dB", g.Name, gainDB(g.MinDb), gainDB(g.MaxDb))
 		}
-		s := fmt.Sprintf("%s %g..%gdB", g.Name, g.MinDb, g.MaxDb)
 		if g.SupportsAuto {
-			s += "(auto)"
+			s += " auto"
 		}
 		parts = append(parts, s)
 	}
-	return strings.Join(parts, ",")
+	return strings.Join(parts, ", ")
 }
 
 // squelchString renders a squelch value ("off" for NaN).
@@ -154,7 +164,7 @@ func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 		return fmt.Sprintf("device %s %s %s%s", d.DeviceId, d.Model, enumName(d.State.String()), who)
 	case *leylinev1.Event_Capture:
 		c := p.Capture
-		return fmt.Sprintf("capture %s %s %s @ %s%s%s", c.CaptureId, enumName(c.State.String()), leyline.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), gainStatesString(c.Gains), who)
+		return fmt.Sprintf("capture %s %s %s @ %s%s%s", c.CaptureId, enumName(c.State.String()), leyline.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), gainStatesString(c.Gains, deviceGainElements(state, c.DeviceId)), who)
 	case *leylinev1.Event_Channel:
 		c := p.Channel
 		freq := ""
@@ -207,18 +217,14 @@ func channelByID(state *leylinev1.GetStateResponse, id string) *leylinev1.Channe
 	return nil
 }
 
-// gainStatesString renders the capture's gain states (" gain TUNER 7.7 dB"), so a
-// confirmation line shows the value the daemon snapped to.
-func gainStatesString(gains []*leylinev1.GainState) string {
-	var b strings.Builder
-	for _, g := range gains {
-		if g.Auto {
-			fmt.Fprintf(&b, " gain %s auto", g.Element)
-		} else {
-			fmt.Fprintf(&b, " gain %s %.1f dB", g.Element, g.Db)
-		}
+// gainStatesString renders the capture's gain states in the words every gain line uses
+// (stageGainWords: " gain 7.7 dB", " gain LNA 0 dB, VGA 20 dB, AMP off"), so a confirmation
+// line shows the value the daemon snapped to; "" when the capture reports none.
+func gainStatesString(gains []*leylinev1.GainState, els []*leylinev1.GainElement) string {
+	if len(gains) == 0 {
+		return ""
 	}
-	return b.String()
+	return " " + stageGainWords(gains, els)
 }
 
 // rangesPhrase renders tuning ranges as "24.000 MHz to 1.766 GHz", never with a

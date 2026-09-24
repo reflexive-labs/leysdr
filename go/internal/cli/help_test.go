@@ -152,7 +152,17 @@ func TestHelpMeta(t *testing.T) {
 				if f.Usage == "" {
 					t.Errorf("%s --%s: no description", path, f.Name)
 				}
+				// One gain syntax, described in one sentence (plans/v1-release.md, R-23).
+				if f.Name == "gain" && !strings.HasPrefix(f.Usage, gainHelp) {
+					t.Errorf("%s --gain: %q does not use the shared gain sentence", path, f.Usage)
+				}
+				if f.Name == "element" {
+					t.Errorf("%s --element: gain stages are named in the value (LNA=0,VGA=20)", path)
+				}
 			})
+			if sub.Name() == "set" && !strings.Contains(sub.Long, "  gain     "+gainHelp+"\n") {
+				t.Errorf("%s: the gain row does not use the shared gain sentence", path)
+			}
 			walk(sub)
 		}
 	}

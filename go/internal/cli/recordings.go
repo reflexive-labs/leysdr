@@ -239,11 +239,19 @@ func runRecordingsShow(ctx context.Context, app *App, ref string) error {
 		_, werr := fmt.Fprintf(app.Stdout, "%s\n", buf.Bytes())
 		return werr
 	}
-	printRecordingManifest(app, manifest, dir)
+	// The radio's elements are what tell a switch stage (on or off) from a level; a daemon that
+	// cannot list them leaves the manifest's levels to print as numbers.
+	var els []*leylinev1.GainElement
+	if resp, lerr := c.Control.ListDevices(ctx, &leylinev1.ListDevicesRequest{}); lerr == nil {
+		els = manifestGainElements(resp.GetDevices(), manifest)
+	}
+	printRecordingManifest(app, manifest, dir, els)
 	return nil
 }
 
-func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string) {
+// printRecordingManifest renders the manifest a label per line. els is the radio's gain elements,
+// or nil when the daemon no longer lists the radio.
+func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, els []*leylinev1.GainElement) {
 	s := app.Style
 	out := app.Stdout
 	what := m.Kind
@@ -268,7 +276,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string) 
 	if m.Device != nil && m.Device.Model != "" {
 		radio := m.Device.Model + " (" + m.Device.Driver + ")"
 		if len(m.Gains) > 0 {
-			radio += fmt.Sprintf(", %s gain %.1f dB", m.Gains[0].Element, m.Gains[0].ValueDB)
+			radio += ", " + stageGainWords(manifestGains(m), els)
 		}
 		fmt.Fprintln(out, leadLabel(s, "Radio    ", radio))
 	}

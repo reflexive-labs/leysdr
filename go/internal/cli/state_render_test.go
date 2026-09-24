@@ -127,7 +127,7 @@ func TestStateTreeContent(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Generic RTL2832U (R820T)", "nfm_tone.cf32", "in use", "disconnected",
-		"146.500 MHz", "2.4 MSPS", "gain tuner 20.7 dB", "gain tuner auto",
+		"146.500 MHz", "2.4 MSPS", "gain 20.7 dB", "gain auto",
 		"146.520 MHz NFM", "offset +20.000 kHz", "offset -80.000 kHz", "bw 12.5 kHz",
 		"squelch -40.0 dB", "squelch off", "out of capture", "persistent",
 		"system_audio", "by cli:ley", "not attached to a listed device", "stream",

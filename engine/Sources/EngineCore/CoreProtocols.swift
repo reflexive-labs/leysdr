@@ -553,9 +553,10 @@ public enum AllocationRequest: Sendable {
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
     /// `deviceID` nil means the allocator picks; setting one selects the radio on a two-radio rig.
-    /// `gain` is where the sweep pins the tuner: a level, or `auto` for where the driver's AGC
-    /// settles. nil pins whatever the radio is on, which is what the last client left.
-    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool, gain: GainRequest? = nil)
+    /// `gains` is where the sweep pins the tuner, one stage at a time in order: a level, or `auto`
+    /// for where the driver's AGC settles. Empty pins whatever the radio is on, which is what the
+    /// last client left.
+    case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool, gains: [GainRequest] = [])
 }
 
 public enum AllocationResult: Sendable {

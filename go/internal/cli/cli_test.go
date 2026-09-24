@@ -137,10 +137,10 @@ func TestDevicesTableAndJSON(t *testing.T) {
 			heldLine = l
 		}
 	}
-	if !strings.Contains(heldLine, "IN_USE (other program)") || !strings.Contains(heldLine, "TUNER unknown") || strings.Contains(heldLine, "0..0dB") {
+	if !strings.Contains(heldLine, "IN_USE (other program)") || !strings.Contains(heldLine, "TUNER unknown") || strings.Contains(heldLine, "0 dB") {
 		t.Fatalf("held device row must read IN_USE (other program) / TUNER unknown, got:\n%s", out)
 	}
-	if !strings.Contains(out, "TUNER 0..49.6dB(auto)") || strings.Contains(out, "AVAILABLE (other program)") {
+	if !strings.Contains(out, "TUNER 0–49.6 dB auto") || strings.Contains(out, "AVAILABLE (other program)") {
 		t.Fatalf("built-in device row must be unchanged:\n%s", out)
 	}
 	if out = mustRun(t, sock, "state", "--wide"); !strings.Contains(out, "IN_USE (other program)") || !strings.Contains(out, "TUNER unknown") {
@@ -203,9 +203,11 @@ func TestGainsStringUnknownTable(t *testing.T) {
 	}{
 		{&leylinev1.GainElement{Name: "TUNER", SupportsAuto: true}, "TUNER unknown"},
 		{&leylinev1.GainElement{Name: "TUNER"}, "TUNER unknown"},
-		{&leylinev1.GainElement{Name: "TUNER", ValidDb: []float64{0}}, "TUNER 0..0dB"},
-		{&leylinev1.GainElement{Name: "LNA", MaxDb: 40, StepDb: 8}, "LNA 0..40dB"},
-		{&leylinev1.GainElement{Name: "TUNER", MaxDb: 49.6, SupportsAuto: true, ValidDb: fakedaemon.R820TGains}, "TUNER 0..49.6dB(auto)"},
+		{&leylinev1.GainElement{Name: "TUNER", ValidDb: []float64{0}}, "TUNER 0 dB"},
+		{&leylinev1.GainElement{Name: "LNA", MaxDb: 40, StepDb: 8}, "LNA 0–40 dB"},
+		{&leylinev1.GainElement{Name: "TUNER", MaxDb: 49.6, SupportsAuto: true, ValidDb: fakedaemon.R820TGains}, "TUNER 0–49.6 dB auto"},
+		// A switch lists the two levels --gain takes for off and on (plans/v1-release.md, R-23).
+		{&leylinev1.GainElement{Name: "AMP", MaxDb: 11, ValidDb: []float64{0, 11}}, "AMP 0 or 11 dB"},
 	}
 	for _, c := range cases {
 		if got := gainsString([]*leylinev1.GainElement{c.el}); got != c.want {

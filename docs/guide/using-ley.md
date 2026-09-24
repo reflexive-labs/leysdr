@@ -47,7 +47,7 @@ started leylined (pid 4242); check with: ley daemon status
 
 $ ley devices
 MODEL                     STATE      RANGE                    RATES                GAIN
-Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
+Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0–49.6 dB auto
 ley devices --wide  adds DRIVER, SERIAL, ID
 ```
 
@@ -191,11 +191,14 @@ frequency 146.520 MHz → 146.620 MHz on channel 1 (NFM)
 ```
 
 In the gain line, you asked for 30, the radio has 29.7, and that is what is printed. The
-parameters are `freq` (or `frequency`), `mode`, `bw` (or `filter`), `squelch`, `gain` (with
-`--element` for radios that have more than one stage) and `volume`; `ley set --help` lists the
-forms each accepts. A wrong parameter name or value is refused before anything reaches the
-daemon (exit 2), with the accepted forms in the message — `ley set squelch 5`, for example, explains that levels are dBFS and 0 is the
-loudest, so try `-40` or `auto`.
+parameters are `freq` (or `frequency`), `mode`, `bw` (or `filter`), `squelch`, `gain` and
+`volume`; `ley set --help` lists the forms each accepts. `gain` takes what `--gain` takes on every
+verb (`ley help gain`): on a radio with several stages a bare value sets the first, and
+`ley set gain LNA=0,VGA=20` sets each stage named, in that order, and the line names every stage
+it set (`gain LNA 8 dB, VGA 20 dB → LNA 0 dB, VGA 20 dB on the radio (cap_…)`). A wrong
+parameter name or value is refused before anything reaches the daemon (exit 2), with the accepted
+forms in the message — `ley set squelch 5`, for example, explains that levels are dBFS and 0 is
+the loudest, so try `-40` or `auto`.
 
 Which channel does `set` change? The only active one; among several, the one a `ley` command
 made when there is exactly one such, and `set` says which; otherwise it lists them and asks
@@ -580,8 +583,10 @@ others fall silent; a capture with no active channels is retuned without asking,
 says so. `--gain 30` (or `auto`) on `tune` and `play` sets the receiver gain once the radio is
 tuned, and the banner shows the value the radio applied. On a radio with several gain stages a
 bare value sets the first; `--gain LNA=0,VGA=0` sets each stage named, in that order, and the
-banner lists every stage (`Radio HackRF Pro, gain LNA 0.0 dB, VGA 0.0 dB, AMP 0.0 dB`). A stage
-the radio does not have is refused with the ones it has.
+banner lists every stage (`Radio HackRF Pro, gain LNA 0 dB, VGA 0 dB, AMP off`; the AMP is a
+switch, so it prints on or off). A stage the radio does not have is refused with the ones it has.
+`ley scan --gain` and `ley set gain` take the same forms, and every screen prints a capture's
+gain the same way: `gain 28 dB` on a one-stage radio, each stage by name on a radio with several.
 
 `--channel`, `--capture` and `--device` all accept the same selectors: a full id, an id prefix,
 the row number from the printed list (`ley state`, `ley devices`) or a frequency
@@ -603,7 +608,7 @@ pid 4242  socket /tmp/leyline/d.sock  event seq 11
 Generic RTL2832U (R820T)  rtlsdr  in use
   device dev_01M1S9TR56S46QTCK0SZS2YPJA  serial 00000001
   tunes 24.000 MHz to 1.766 GHz
-  └─ 146.500 MHz  2.4 MSPS  active  gain tuner 20.7 dB
+  └─ 146.500 MHz  2.4 MSPS  active  gain 20.7 dB
      capture cap_01M1S9VA1XVX9M2K9V0S6Q1J6D  by cli:ley
      └─ 146.620 MHz NFM  bw 12.5 kHz  squelch -80.0 dB  active
         channel chan_01M1S9VA2F5E5G6KK85YNJQ7MS  offset +120.000 kHz  persistent  by cli:ley
@@ -668,7 +673,7 @@ starts it and exits, printing the id `ley jobs cancel` takes.
 `--gain` sets the receiver gain for the take, as on `tune`: `--gain 20` sets the first stage, and
 `--gain LNA=0,VGA=0` each stage named, which is what a HackRF a metre from a keyed handheld needs.
 When a stage was set, the banner gains a line with every stage the take started at, read from
-the recording's manifest (`Radio     HackRF Pro, gain LNA 0.0 dB, VGA 0.0 dB, AMP 0.0 dB`), so a
+the recording's manifest (`Radio     HackRF Pro, gain LNA 0 dB, VGA 0 dB, AMP off`), so a
 gain that did not apply shows before the file does. A stage the radio does not have fails the job
 before anything is written: `ley: the gain asked for could not be set: no gain element named IF;
 this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]`. Before 2026-09-24 the daemon dropped
@@ -710,7 +715,7 @@ $ ley recordings show job_01J8
 Recording 146.520 MHz NFM audio, wav-s16
 Holds     2 min of signal in 1 part, 11.5 MB of samples
 Started   2026-09-17 14:03:22, ended by duration
-Radio     Nooelec NESDR SMArt (rtlsdr), tuner gain 29.7 dB
+Radio     Nooelec NESDR SMArt (rtlsdr), gain 29.7 dB
 /Users/you/Library/Application Support/Leyline/recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
 
 PART  STARTED   LENGTH  PEAK        OVERS  FILE

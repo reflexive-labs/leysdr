@@ -94,8 +94,8 @@ func TestConfirmLineSurvivesColourOff(t *testing.T) {
 	st, ch, cap := liveState(-40, leylinev1.DemodMode_NFM)
 	before := &leylinev1.Channel{ChannelId: ch.ChannelId, CaptureId: ch.CaptureId, OffsetHz: ch.OffsetHz, Mode: ch.Mode, BandwidthHz: ch.BandwidthHz, SquelchDb: math.NaN()}
 	ev := &leylinev1.Event{}
-	want := confirmLine(plain, st, "squelch", "", ev, before, cap)
-	got := confirmLine(styled, st, "squelch", "", ev, before, cap)
+	want := confirmLine(plain, st, "squelch", nil, ev, before, cap)
+	got := confirmLine(styled, st, "squelch", nil, ev, before, cap)
 	if got == want {
 		t.Fatal("a coloured style left the confirmation unstyled")
 	}
@@ -109,12 +109,12 @@ func TestConfirmLineSurvivesColourOff(t *testing.T) {
 		t.Errorf("the channel id is not repeated in a confirmation: %q", want)
 	}
 	// gain is the radio's, whichever channel the command addressed.
-	gain := confirmLine(plain, st, "gain", "", ev, ch, cap)
+	gain := confirmLine(plain, st, "gain", nil, ev, ch, cap)
 	if w := "gain 7.7 dB on the radio (TUNER)"; !strings.Contains(gain, "on the radio (TUNER)") || strings.Contains(gain, "channel") {
 		t.Errorf("gain confirmation = %q, want the radio scope like %q", gain, w)
 	}
 	// An unknown or unchanged previous value falls back to today's shape.
-	same := confirmLine(plain, st, "mode", "", ev, ch, cap)
+	same := confirmLine(plain, st, "mode", nil, ev, ch, cap)
 	if !strings.HasPrefix(same, "mode → NFM on ") {
 		t.Errorf("unchanged value should not print an arrow from itself: %q", same)
 	}

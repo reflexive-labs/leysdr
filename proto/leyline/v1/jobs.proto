@@ -80,6 +80,11 @@ message ScanConfig {
   // which is why two sweeps of one band could differ by 6 dB of floor. `Scan.gains` reports the
   // level the sweep ran at either way, and the entry gain is restored when the radio is handed back.
   GainWrite gain = 8;
+  // Gains to pin, one stage at a time, applied in order, each read as `gain` is (an empty element
+  // is the device's first, a name matches ignoring case). When `gains` is non-empty `gain` is
+  // ignored; `gain` stays for a client that sends one stage. A refusal fails the sweep with the
+  // device's code and message, and `Scan.gains` still reports every stage the sweep ran at.
+  repeated GainWrite gains = 9;
 }
 
 // A recording is a job's output (docs/design/recording.md). Control.AttachSink(file) stays

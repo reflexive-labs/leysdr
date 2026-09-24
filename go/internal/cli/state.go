@@ -176,7 +176,7 @@ func stateNodes(s ui.Style, st *leylinev1.GetStateResponse) (roots, orphans []tr
 		return n
 	}
 	buildCapture := func(c *leylinev1.Capture) treeNode {
-		n := captureNode(s, c)
+		n := captureNode(s, c, deviceGainElements(st, c.DeviceId))
 		for _, ch := range channels[c.CaptureId] {
 			n.kids = append(n.kids, buildChannel(ch))
 		}
@@ -228,10 +228,10 @@ func deviceNode(s ui.Style, d *leylinev1.DeviceDescriptor) treeNode {
 	return n
 }
 
-// captureNode is a radio tuned to a band.
-func captureNode(s ui.Style, c *leylinev1.Capture) treeNode {
+// captureNode is a radio tuned to a band. els is its device's gain elements, for the gain words.
+func captureNode(s ui.Style, c *leylinev1.Capture, els []*leylinev1.GainElement) treeNode {
 	head := []string{leyline.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), inkState(s, stateWord(c.State.String()))}
-	if g := captureGains(c.Gains); g != "" {
+	if g := captureGains(c.Gains, els); g != "" {
 		head = append(head, g)
 	}
 	detail := []string{s.Muted("capture " + c.CaptureId)}
@@ -349,21 +349,14 @@ func deviceStateWords(d *leylinev1.DeviceDescriptor) string {
 	return s
 }
 
-// captureGains renders the gains a capture is running with ("gain tuner auto",
-// "gain tuner 20.0 dB"); empty when the daemon reports none.
-func captureGains(gs []*leylinev1.GainState) string {
+// captureGains renders the gains a capture is running with as every other screen does
+// (stageGainWords: "gain auto", "gain LNA 0 dB, VGA 20 dB, AMP off"); empty when the daemon
+// reports none, so the tree leaves the words out rather than printing "no gain control".
+func captureGains(gs []*leylinev1.GainState, els []*leylinev1.GainElement) string {
 	if len(gs) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(gs))
-	for _, g := range gs {
-		if g.Auto {
-			parts = append(parts, strings.ToLower(g.Element)+" auto")
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%s %.1f dB", strings.ToLower(g.Element), g.Db))
-	}
-	return "gain " + strings.Join(parts, ", ")
+	return stageGainWords(gs, els)
 }
 
 // sinkStrings splits a sink into its kind and the one fact that identifies it.
@@ -398,17 +391,14 @@ func printStateTables(app *App, st *leylinev1.GetStateResponse) {
 	for _, c := range st.Captures {
 		gains := "-"
 		if len(c.Gains) > 0 {
-			gains = ""
+			// One cell, so the stages are ELEMENT=LEVEL with no spaces; the level is the one
+			// every screen prints (stageLevel), so a switch reads AMP=off here too.
+			els := deviceGainElements(st, c.DeviceId)
+			cells := make([]string, len(c.Gains))
 			for i, g := range c.Gains {
-				if i > 0 {
-					gains += ","
-				}
-				if g.Auto {
-					gains += g.Element + "=auto"
-				} else {
-					gains += fmt.Sprintf("%s=%gdB", g.Element, g.Db)
-				}
+				cells[i] = g.Element + "=" + strings.ReplaceAll(stageLevel(g, gainElement(els, g.Element)), " ", "")
 			}
+			gains = strings.Join(cells, ",")
 		}
 		sinks := uint32(0)
 		if c.Activity != nil {

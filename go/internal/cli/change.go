@@ -80,7 +80,7 @@ func (s *session) changeLine(before any, ev *leylinev1.Event) (line string, ende
 	switch b := ev.Body.(type) {
 	case *leylinev1.Event_Capture:
 		was, _ := before.(*leylinev1.Capture)
-		what = captureChanges(was, b.Capture, s.capture, st)
+		what = captureChanges(was, b.Capture, s.capture, s.device.GetGainElements(), st)
 	case *leylinev1.Event_Channel:
 		was, _ := before.(*leylinev1.Channel)
 		what, ended = s.channelChanges(was, b.Channel, st)
@@ -154,7 +154,7 @@ func andList(parts []string) string {
 // Everything else about a capture -- its activity clock above all, which every
 // interactive write in every terminal stamps -- is bookkeeping a listener
 // cannot act on.
-func captureChanges(was, now, ours *leylinev1.Capture, st ui.Style) []change {
+func captureChanges(was, now, ours *leylinev1.Capture, els []*leylinev1.GainElement, st ui.Style) []change {
 	if ours == nil || now.CaptureId != ours.CaptureId || was == nil {
 		return nil
 	}
@@ -165,7 +165,7 @@ func captureChanges(was, now, ours *leylinev1.Capture, st ui.Style) []change {
 	if was.SampleRate != now.SampleRate {
 		out = append(out, change{"set", "the sample rate to " + leyline.FormatFrequency(now.SampleRate)})
 	}
-	if g := gainChange(was.Gains, now.Gains); g != "" {
+	if g := gainChange(was.Gains, now.Gains, els); g != "" {
 		out = append(out, change{"set", g})
 	}
 	if was.State != now.State {
@@ -181,8 +181,10 @@ func captureChanges(was, now, ours *leylinev1.Capture, st ui.Style) []change {
 }
 
 // gainChange words the first gain element that moved. Every element is on the
-// event (full state), but a person setting gain sets one.
-func gainChange(was, now []*leylinev1.GainState) string {
+// event (full state), but a person setting gain sets one. The level is in the
+// words every gain line uses (stageLevel), with the stage named on a radio with
+// several: "the gain to 30 dB", "the gain to VGA 20 dB", "the gain to AMP on".
+func gainChange(was, now []*leylinev1.GainState, els []*leylinev1.GainElement) string {
 	prev := map[string]*leylinev1.GainState{}
 	for _, g := range was {
 		prev[g.Element] = g
@@ -192,10 +194,11 @@ func gainChange(was, now []*leylinev1.GainState) string {
 		if p == nil || (p.Auto == g.Auto && p.Db == g.Db) {
 			continue
 		}
-		if g.Auto {
-			return "the gain to auto"
+		level := stageLevel(g, gainElement(els, g.Element))
+		if len(now) > 1 {
+			level = g.Element + " " + level
 		}
-		return fmt.Sprintf("the gain to %.1f dB", g.Db)
+		return "the gain to " + level
 	}
 	return ""
 }

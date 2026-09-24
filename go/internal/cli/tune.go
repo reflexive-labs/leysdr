@@ -41,7 +41,7 @@ func addSignalFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
 	if withDevice {
 		addRadioFlags(cmd, f, true)
 	}
-	cmd.Flags().StringVar(&f.gain, "gain", "", "receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)")
+	cmd.Flags().StringVar(&f.gain, "gain", "", gainHelp+"; default: leave the radio's setting")
 	cmd.Flags().StringVar(&f.squelch, "squelch", "", "mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)")
 }
 
@@ -381,7 +381,7 @@ func (s *session) banner(o *tuneOptions) string {
 // FilePlaybackDevice, no gain control" would be a wasted line.
 func (s *session) bannerSource(st ui.Style) string {
 	if s.sourceLine == "" {
-		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, stageGainWords(s.capture.GetGains())))
+		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, stageGainWords(s.capture.GetGains(), s.device.GetGainElements())))
 	}
 	// An unknown width is not a narrow one: piped, the line must arrive whole.
 	line := s.sourceLine

@@ -442,10 +442,14 @@ func TestRecordGainSetsEachStageNamed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley record: %v\n%s\n%s", err, out, errOut)
 	}
-	if !strings.Contains(errOut, "Radio     HackRF Pro, gain LNA 0.0 dB, VGA 0.0 dB, AMP ") {
+	if !strings.Contains(errOut, "Radio     HackRF Pro, gain LNA 0 dB, VGA 0 dB, AMP off\n") {
 		t.Errorf("the banner does not list the stages the take started at:\n%s", errOut)
 	}
 	jobID, _, _ := leyline.ParseRecordingURI(strings.TrimSpace(out))
+	// recordings show prints the manifest's stages as the banner does, not the first alone.
+	if show := mustRun(t, sock, "recordings", "show", jobID); !strings.Contains(show, "Radio     HackRF Pro (hackrf), gain LNA 0 dB, VGA 0 dB, AMP off\n") {
+		t.Errorf("recordings show should name every stage:\n%s", show)
+	}
 	job, err := c.Jobs.GetJob(t.Context(), &leylinev1.JobRef{JobId: jobID})
 	if err != nil {
 		t.Fatal(err)

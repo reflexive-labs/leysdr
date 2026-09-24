@@ -38,13 +38,13 @@ running  0.1.0-dev  pid 4242  up 46s  socket /tmp/leyline/d.sock
 
 $ ley devices
 MODEL                     STATE      RANGE                    RATES                GAIN
-Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
+Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0–49.6 dB auto
 ```
 
 `ley tune 101.1M --mode wfm` on a local broadcaster is the "is my radio alive" test. A HackRF
 starts at the same conservative LNA 8 dB / VGA 20 dB defaults as `hackrf_transfer`. While that
 command runs, adjust either stage from another terminal with, for example,
-`ley set gain 16 --element LNA` or `ley set gain 24 --element VGA`. From here,
+`ley set gain LNA=16` or `ley set gain LNA=16,VGA=24`. From here,
 [Using `ley`](using-ley.md) walks every task, and [Troubleshooting](troubleshooting.md) covers an
 empty device list, a busy radio and no audio.
 

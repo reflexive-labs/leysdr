@@ -277,6 +277,48 @@ final class ScanSweepTests: XCTestCase {
         }
     }
 
+    /// `gains` names stages the way `ley scan --gain LNA=0,VGA=20` sends them: matched ignoring
+    /// case, applied in order, and winning over `gain` when both are sent (jobs.proto, ScanConfig).
+    func testTheSweepPinsEveryStageItIsGiven() async throws {
+        let carriers = [SyntheticBandDevice.Carrier(hz: 145_400_000, dbfs: -25, widthHz: 12_500)]
+        try await withSweepDaemon(carriers, configure: {
+            $0.gain.db = 40
+            $0.gains = [.with { $0.element = "tuner"; $0.db = 20 }]
+        }) { _, scan in
+            let g = try XCTUnwrap(scan.gains.first)
+            XCTAssertEqual(g.element, "TUNER", "the stage is reported as the device spells it")
+            XCTAssertEqual(g.db, 20, accuracy: 0.5, "gains wins over gain: the sweep ran at \(g.db) dB")
+        }
+    }
+
+    /// A stage the radio does not have fails the sweep with the stages it does, rather than
+    /// measuring at a gain nobody asked for.
+    func testTheSweepFailsOnAStageTheRadioDoesNotHave() async throws {
+        try await withDaemon { c in
+            let device = SyntheticBandDevice(carriers: [])
+            _ = try await c.daemon.registry.attachVirtualDevice(device).descriptor
+            try await Task.sleep(nanoseconds: 200_000_000)
+            var config = Leyline_V1_ScanConfig()
+            config.range.minHz = 145_000_000
+            config.range.maxHz = 148_600_000
+            config.dwellMs = 200
+            config.once = true
+            config.gains = [.with { $0.element = "TUNER"; $0.db = 20 }, .with { $0.element = "IF"; $0.db = 10 }]
+            var req = Leyline_V1_StartJobRequest()
+            req.config = .scan(config)
+            var job = try await c.jobs.startJob(req, metadata: testMetadata)
+            let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+            while job.state == .running, ContinuousClock.now < deadline {
+                try await Task.sleep(nanoseconds: 100_000_000)
+                job = try await c.jobs.getJob(Leyline_V1_JobRef.with { $0.jobID = job.jobID }, metadata: testMetadata)
+            }
+            XCTAssertEqual(job.state, .failed, job.statusDetail)
+            XCTAssertEqual(job.error.code, EngineError.Code.gainElementUnknown, job.statusDetail)
+            XCTAssertTrue(job.statusDetail.contains("no gain element named IF"), job.statusDetail)
+            XCTAssertTrue(job.statusDetail.contains("TUNER"), job.statusDetail)
+        }
+    }
+
     /// A sweep declines a radio somebody is listening on, and --take-over borrows it and gives it
     /// back where it was.
     func testTakeOverBorrowsAndRestores() async throws {

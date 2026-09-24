@@ -233,6 +233,11 @@ ripple, a carrier in CW is a sine, NFM voice is a voice.
   ley scope 146.52             draw what the demodulator is making`
 }
 
+// gainHelp is the one sentence every place that takes a gain describes it with: --gain on every
+// verb, 'ley set gain', and the gain field of the MCP tune, listen_summary, record and scan tools
+// (plans/v1-release.md, R-23). 'ley help gain' is the one place the syntax is explained.
+const gainHelp = "receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain)"
+
 func topicGain() string {
 	return `Gain is how much the radio amplifies what the antenna picks up before it
 turns the signal into numbers, in dB. More gain makes weak signals
@@ -240,28 +245,43 @@ audible. Too much gain overloads the radio, and then everything gets worse
 at once: the noise floor rises, stations appear at frequencies where there
 is nothing (images), and a strong station splatters across its neighbours.
 
-The numbers are the radio's own. An RTL-SDR offers about 0 to 49.6 dB in
-fixed steps; ley snaps a value to the nearest step and prints the value the
-radio applied. 'ley devices' lists each radio's gain elements (stages) with
-their ranges.
+Every verb that takes a gain reads it the same way: --gain on tune, play,
+listen, levels, scope, waveform, record and scan, the value of
+'ley set gain', and the gain of the MCP tools.
 
-  auto  let the radio choose. The default, and right for most listening.
-  30    a fixed gain in dB (30dB is accepted too). Negative values are
-        rejected with the element's range.
+  auto           let the radio choose. For a sweep, where the radio's
+                 automatic gain settles, then held.
+  30             30 dB on the radio's first stage (30dB is accepted too).
+  LNA=0,VGA=20   stages by name, several at once, set in the order given.
+                 Names ignore case (lna=0 reaches the LNA) and are matched
+                 against the radio's; one it does not have is refused with
+                 the ones it has. A stage may be auto (TUNER=auto).
+
+'ley devices' lists each radio's stages with their ranges. The numbers
+are the radio's own: an RTL-SDR has one stage, TUNER, about 0 to 49.6 dB
+in fixed steps, and a HackRF has three, LNA, VGA and AMP. ley snaps a
+value to the nearest step and prints the value the radio applied.
+Negative values are rejected.
+
+A stage with only two settings and no step between them is a switch:
+the HackRF's AMP takes 0 (off) or 11 (on), and 'ley devices' lists it as
+AMP 0 or 11 dB. A value between snaps to the nearer one.
+
+Gain prints the same way everywhere: gain 28 dB on a radio with one
+stage, every stage by name on a radio with several (gain LNA 0 dB,
+VGA 20 dB, AMP off), a switch as on or off, and a decimal only when the
+value has one (49.6 dB).
 
 Rules of thumb: start with auto. If a distant station is faint and the
 noise floor in 'ley spectrum' is low, raise the gain about 5 dB at a time.
 If the floor rises as fast as the signal, or ghost stations appear, lower
-it. A radio with more than one gain stage (a HackRF has LNA, VGA and an
-AMP switch) takes a bare value on its first stage. 'ley set' takes
---element to pick another; tune, record and the other verbs that take
---gain take stage=dB pairs instead, several at once, set in the order
-given.
+it.
 
-  ley set gain 30              fixed 30 dB, snapped to the radio's step
-  ley set gain auto            back to automatic
-  ley set gain 20 --element IF one stage of a multi-stage radio
-  ley record 462.5625 --gain LNA=0,VGA=0   a HackRF's LNA and VGA at 0 dB`
+  ley set gain 30                      fixed 30 dB, snapped to the radio's step
+  ley set gain auto                    back to automatic
+  ley set gain LNA=0,VGA=20            two stages of a HackRF
+  ley scan 2m --gain 30                sweep with the tuner held at 30 dB
+  ley record 462.5625 --gain LNA=0,VGA=0,AMP=0   a HackRF at its quietest`
 }
 
 // topicPresets is generated from the preset and band tables so the help

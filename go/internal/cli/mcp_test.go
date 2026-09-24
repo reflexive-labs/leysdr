@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -177,6 +178,21 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		names = append(names, tool.Name)
 		if tool.Description == "" || tool.InputSchema == nil {
 			t.Errorf("%s: no description or input schema", tool.Name)
+		}
+		// Every tool that takes a gain describes it in the sentence every --gain uses
+		// (plans/v1-release.md, R-23).
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+		}
+		raw, _ := json.Marshal(tool.InputSchema)
+		_ = json.Unmarshal(raw, &schema)
+		if gain, ok := schema.Properties["gain"]; ok && !strings.HasPrefix(gain.Description, gainHelp) {
+			t.Errorf("%s: gain is described as %q, not in the shared sentence", tool.Name, gain.Description)
+		}
+		if _, ok := schema.Properties["gain"]; ok != slices.Contains([]string{"tune", "listen_summary", "record", "scan"}, tool.Name) {
+			t.Errorf("%s: a gain field %v, want one on exactly tune, listen_summary, record and scan", tool.Name, ok)
 		}
 	}
 	// The SDK lists tools by name; the table's order is the help text's.

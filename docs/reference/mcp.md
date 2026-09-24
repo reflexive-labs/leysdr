@@ -113,6 +113,13 @@ are optional in the schema; the defaults are the mirror verb's.
 
 Notes a table cell cannot hold:
 
+- **`gain`**, on `tune`, `listen_summary`, `record` and `scan`, takes what `--gain` takes on
+  every `ley` verb: `auto`, a level in dB such as `30` for the radio's first stage, or stages by
+  name such as `LNA=0,VGA=20`, set in the order given. Names are matched against the radio's
+  ignoring case, and one it does not have is refused with the ones it has (`list_devices` lists
+  each radio's stages). The four tools describe the field in the same sentence, and
+  `ley help gain` is the full explanation.
+
 - **`daemon_logs`** is the one tool that reads the host rather than the daemon: the last lines of
   the log file `ley daemon logs` prints, headed by the daemon's pid and start time from
   `get_state`. The socket does not report why a daemon exited; the log does. A restart also
@@ -147,9 +154,9 @@ Notes a table cell cannot hold:
   daemon's minute of grace after an interactive write ("somebody was tuning this radio 39 s ago") is
   skipped when the write was this server's own earlier tune, listen or snapshot and nobody is
   listening on the capture: the sweep goes ahead, and the text says so, since it silences nobody.
-  `gain` (a level, or `auto` for where the radio's AGC settles) is where the sweep pins the tuner;
+  `gain` is where the sweep pins the tuner (`auto` is where the radio's AGC settles, then held);
   without it the sweep pins whatever gain the radio was left at, which is what made two sweeps of
-  one band differ by 6 dB of floor in the survey, and `Scan.gains` records the gain either way.
+  one band differ by 6 dB of floor in the survey, and `Scan.gains` records every stage either way.
 - **`listen_summary`** subscribes to the channel's meter, squelch and sub-audible telemetry for
   `duration_s` and summarises it. A transmission is a squelch-open interval, reported from the
   daemon's own close edge as an `ActivitySegment` (start and end on the capture's timeline,

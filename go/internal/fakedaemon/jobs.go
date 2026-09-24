@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -237,7 +238,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 		return
 	}
 	d.planScan(jobID, plan, rate)
-	gains, gerr := d.sweepGains(dev, sc.GetGain())
+	gains, gerr := d.sweepGains(dev, sc)
 	if gerr != nil {
 		d.failScan(jobID, leyline.CodeGainElementUnknown, gerr.Error())
 		return
@@ -355,26 +356,37 @@ func rowIntervalMs(rate uint64) float64 {
 
 // sweepGains is what the sweep froze the tuner at. AGC is pinned for the duration -- SNR measured
 // against a moving reference is meaningless -- and where it was pinned is part of the answer,
-// because a scan without its gain is not comparable with another. A requested gain pins its
-// element there (the first element when it names none; auto pins where the fake's AGC "settles",
-// the middle of the table); otherwise an element already on a fixed level keeps it, and an
-// automatic one is pinned at the middle of its table, which is what the allocator falls back to
-// when the driver will not say where AGC settled. An element the device does not have fails the
-// sweep, as the daemon's GAIN_ELEMENT_UNKNOWN does.
-func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor, want *leylinev1.GainWrite) ([]*leylinev1.GainState, error) {
+// because a scan without its gain is not comparable with another. The requested gains pin their
+// elements, in order (`gains`, else `gain`: jobs.proto, ScanConfig): an empty element is the
+// first, a name matches ignoring case, and auto pins where the fake's AGC "settles", the middle
+// of the table. Otherwise an element already on a fixed level keeps it, and an automatic one is
+// pinned at the middle of its table, which is what the allocator falls back to when the driver
+// will not say where AGC settled. An element the device does not have fails the sweep with the
+// ones it has, as the daemon's GAIN_ELEMENT_UNKNOWN does.
+func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor, sc *leylinev1.ScanConfig) ([]*leylinev1.GainState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	wantElement := want.GetElement()
-	if want != nil && wantElement == "" && len(dev.GainElements) > 0 {
-		wantElement = dev.GainElements[0].Name
+	wants := sc.GetGains()
+	if len(wants) == 0 && sc.GetGain() != nil {
+		wants = []*leylinev1.GainWrite{sc.GetGain()}
 	}
-	if want != nil {
-		known := false
-		for _, el := range dev.GainElements {
-			known = known || el.Name == wantElement
+	asked := map[string]*leylinev1.GainWrite{}
+	for _, w := range wants {
+		name := w.GetElement()
+		if name == "" && len(dev.GainElements) > 0 {
+			name = dev.GainElements[0].Name
 		}
-		if !known {
-			return nil, fmt.Errorf("the gain asked for could not be set: %s has no gain element %q", dev.Model, wantElement)
+		var el *leylinev1.GainElement
+		for _, e := range dev.GainElements {
+			if strings.EqualFold(e.Name, name) {
+				el = e
+			}
+		}
+		if el == nil {
+			return nil, fmt.Errorf("the gain asked for could not be set: %s", unknownGainElement(w.GetElement(), dev, "").Message)
+		}
+		if w.GetValue() != nil {
+			asked[el.Name] = w
 		}
 	}
 	var out []*leylinev1.GainState
@@ -389,11 +401,14 @@ func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor, want *leylinev1.Gai
 				}
 			}
 		}
-		if want != nil && el.Name == wantElement {
-			if db, ok := want.GetValue().(*leylinev1.GainWrite_Db); ok {
-				g = &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, db.Db)}
-			} else {
-				g = &leylinev1.GainState{Element: el.Name, Auto: true}
+		if want := asked[el.Name]; want != nil {
+			switch v := want.GetValue().(type) {
+			case *leylinev1.GainWrite_Db:
+				g = &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, v.Db)}
+			case *leylinev1.GainWrite_Auto:
+				if v.Auto {
+					g = &leylinev1.GainState{Element: el.Name, Auto: true}
+				}
 			}
 		}
 		if g.Auto {

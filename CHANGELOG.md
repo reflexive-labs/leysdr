@@ -4,6 +4,15 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- Every gain takes one syntax and prints one way. `ley set gain` and `ley scan --gain` accept what
+  `--gain` accepts on `tune` and `record`: `auto`, a level for the first stage, or stages by name
+  (`ley set gain LNA=0,VGA=20`), so `ley set`'s `--element` flag is gone. `ScanConfig` gains
+  `repeated GainWrite gains`, applied in order, and a stage the radio does not have fails the
+  sweep with the ones it has. A capture's gain reads the same in the banners, `ley state`,
+  `ley set`, the scan summary and `ley recordings show`: `gain 28 dB` on a one-stage radio,
+  `gain LNA 0 dB, VGA 20 dB, AMP off` on a HackRF, a decimal only when the value has one.
+  `ley devices` lists ranges the same way (`TUNER 0–49.6 dB auto`), and `ley help gain` is the
+  one explanation of the syntax.
 - `ley tune` says the radio is clipping once, after it has clipped for a second, with the count
   that raised it, and says nothing more until it has been clean for two seconds; the "Nothing is
   above the noise" line is said once, at tune. "At the lowest gain" now needs every gain stage you

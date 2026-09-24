@@ -137,7 +137,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	cmd.Flags().StringVar(&bw, "bandwidth", "", "another spelling of --bw")
 	_ = cmd.Flags().MarkHidden("bandwidth")
 	cmd.Flags().StringVar(&squelch, "squelch", "", "mute below this level: auto (default with --gate), off, or a level like -40 (dBFS)")
-	cmd.Flags().StringVar(&o.gain, "gain", "", "receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)")
+	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; default: leave the radio's setting")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "record even when somebody is using the radio; it is theirs again afterwards")
 	return cmd
@@ -341,7 +341,7 @@ func (o *recordOptions) config() *leylinev1.RecordConfig {
 	if o.gated {
 		cfg.Gate = leylinev1.RecordGate_SQUELCH
 	}
-	cfg.Gains = recordGains(o.gain)
+	cfg.Gains = gainWrites(o.gain)
 	return cfg
 }
 
@@ -623,7 +623,7 @@ func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir
 		}
 		lines = append(lines, leadLabel(st, "Gate     ", gate))
 	}
-	if radio := recordRadio(m); radio != "" {
+	if radio := recordRadio(m, manifestGainElements(s.state.GetDevices(), m)); radio != "" {
 		lines = append(lines, leadLabel(st, "Radio    ", radio))
 	}
 	lines = append(lines, leadLabel(st, "Until    ", recordUntil(o)))
@@ -639,11 +639,11 @@ func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir
 	return strings.Join(lines, "\n")
 }
 
-// recordGains is --gain as the job's writes, in the order typed: one with no element for a bare
-// level (the daemon's first stage, common.proto GainWrite), one per stage for pairs. The stage
-// names go as typed; the daemon matches them ignoring case and fails the job on one the radio
-// does not have. nil leaves the radio's gain alone.
-func recordGains(flag string) []*leylinev1.GainWrite {
+// gainWrites is --gain as a job's writes (RecordConfig.gains, ScanConfig.gains), in the order
+// typed: one with no element for a bare level (the daemon's first stage, common.proto GainWrite),
+// one per stage for pairs. The stage names go as typed; the daemon matches them ignoring case and
+// fails the job on one the radio does not have. nil leaves the radio's gain alone.
+func gainWrites(flag string) []*leylinev1.GainWrite {
 	settings, err := leyline.ParseGains(flag)
 	if flag == "" || err != nil {
 		return nil
@@ -661,19 +661,40 @@ func recordGains(flag string) []*leylinev1.GainWrite {
 }
 
 // recordRadio is the banner's radio line: the model and the gain the take started at, from the
-// manifest, so a gain the daemon did not apply shows here rather than in the file. Every stage
-// is named on a radio with several (stageGainWords). A stage on auto has no level in the
-// manifest and is left out, and the line is "" without a manifest, a device or a stage set by
-// hand.
-func recordRadio(m *leyline.RecordingManifest) string {
+// manifest, so a gain the daemon did not apply shows here rather than in the file. The gain
+// prints as every screen prints it (stageGainWords); els is the radio's gain elements when the
+// daemon still lists it, which is how a switch reads on or off. A stage on auto has no level in
+// the manifest and is left out, and the line is "" without a manifest, a device or a stage set
+// by hand.
+func recordRadio(m *leyline.RecordingManifest, els []*leylinev1.GainElement) string {
 	if m == nil || m.Device == nil || m.Device.Model == "" || len(m.Gains) == 0 {
 		return ""
 	}
+	return m.Device.Model + ", " + stageGainWords(manifestGains(m), els)
+}
+
+// manifestGains is a manifest's gains as the contract's GainState, for stageGainWords.
+func manifestGains(m *leyline.RecordingManifest) []*leylinev1.GainState {
 	gains := make([]*leylinev1.GainState, len(m.Gains))
 	for i, g := range m.Gains {
 		gains[i] = &leylinev1.GainState{Element: g.Element, Db: g.ValueDB}
 	}
-	return m.Device.Model + ", " + stageGainWords(gains)
+	return gains
+}
+
+// manifestGainElements is the gain elements of the radio a recording was made on, from the
+// daemon's device list: the device with the manifest's driver and serial (and model, when it has
+// no serial). nil when the daemon no longer lists it.
+func manifestGainElements(devs []*leylinev1.DeviceDescriptor, m *leyline.RecordingManifest) []*leylinev1.GainElement {
+	if m == nil || m.Device == nil {
+		return nil
+	}
+	for _, d := range devs {
+		if d.GetDriver() == m.Device.Driver && d.GetSerial() == m.Device.Serial && (m.Device.Serial != "" || d.GetModel() == m.Device.Model) {
+			return d.GetGainElements()
+		}
+	}
+	return nil
 }
 
 // recordWhat is the banner's first value: where the recording is listening, and what that is.

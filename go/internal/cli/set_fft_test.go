@@ -99,12 +99,12 @@ func TestSetParams(t *testing.T) {
 		t.Fatalf("mode/bw: %v", st.Channels[0])
 	}
 	// A rejection is reported with its code.
-	_, _, err := run(t, context.Background(), sock, "set", "gain", "20", "--element", "nope")
+	_, _, err := run(t, context.Background(), sock, "set", "gain", "nope=20")
 	if err == nil || !strings.Contains(err.Error(), "rejected") || exitCode(err) != 1 {
 		t.Fatalf("expected rejection, got %v", err)
 	}
 	// Under --json the WriteRejected event is the report: on stdout, exit 1, no prose.
-	out, errOut, err := run(t, context.Background(), sock, "--json", "set", "gain", "20", "--element", "nope")
+	out, errOut, err := run(t, context.Background(), sock, "--json", "set", "gain", "nope=20")
 	var ee *ExitError
 	if !errors.As(err, &ee) || ee.Code != 1 || ee.Message != "" || errOut != "" {
 		t.Fatalf("set --json rejection: %v stderr=%q", err, errOut)
@@ -273,13 +273,13 @@ func TestSetParameterErrors(t *testing.T) {
 	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	cases := map[string][]string{
-		"squelch ":                      {"squelch", "5"},
-		"accepted: -40, -40dB, off":     {"squelch", "loud"},
-		"accepted: 30, 30dB, auto":      {"gain", "-5"},
-		"accepted: 12.5 (kHz), 200k":    {"bw", "wide"},
-		"accepted: 0.5, 50%":            {"volume", "loud"},
-		"accepted: nfm, am, wfm":        {"mode", "morse"},
-		"accepted: 146.52 (MHz), 1010k": {"freq", "146,520"},
+		"squelch ":                         {"squelch", "5"},
+		"accepted: -40, -40dB, off":        {"squelch", "loud"},
+		"accepted: 30, auto, LNA=0,VGA=20": {"gain", "-5"},
+		"accepted: 12.5 (kHz), 200k":       {"bw", "wide"},
+		"accepted: 0.5, 50%":               {"volume", "loud"},
+		"accepted: nfm, am, wfm":           {"mode", "morse"},
+		"accepted: 146.52 (MHz), 1010k":    {"freq", "146,520"},
 	}
 	for want, args := range cases {
 		_, _, err := run(t, context.Background(), sock, append([]string{"set"}, args...)...)

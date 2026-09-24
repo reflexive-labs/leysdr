@@ -15,6 +15,7 @@ import (
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -531,16 +532,54 @@ func TestTuneGainSetsEachStageNamed(t *testing.T) {
 			t.Errorf("the capture does not carry %s:\n%s", want, st)
 		}
 	}
+	// The banner, the tree and the --wide cell print the gain in the same words, the AMP as the
+	// switch the device says it is (plans/v1-release.md, R-23).
+	banner := &session{device: hackrf, capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "LNA", Db: 16}, {Element: "VGA", Db: 4}, {Element: "AMP", Db: 0}}}}
+	if got, want := banner.bannerSource(ui.Style{}), "Radio HackRF Pro, gain LNA 16 dB, VGA 4 dB, AMP off"; got != want {
+		t.Errorf("the banner reads %q, want %q", got, want)
+	}
+	if tree := mustRun(t, sock, "state"); !strings.Contains(tree, "  gain LNA 16 dB, VGA 4 dB, AMP off\n") {
+		t.Errorf("the tree should name every stage:\n%s", tree)
+	}
+	if wide := mustRun(t, sock, "state", "--wide"); !strings.Contains(wide, " LNA=16dB,VGA=4dB,AMP=off ") {
+		t.Errorf("--wide should hold every stage in one cell:\n%s", wide)
+	}
+	// set takes the same syntax, one write per stage, and its line names every stage it set.
+	set, setErr, err := run(t, t.Context(), sock, "set", "gain", "vga=20,AMP=11")
+	if err != nil || !strings.Contains(set, "gain VGA 4 dB, AMP off → VGA 20 dB, AMP on on the radio (cap_") {
+		t.Errorf("set gain with stages: %v\n%s%s", err, set, setErr)
+	}
 	mustRun(t, sock, "stop", "all")
 	_, errOut, err = run(t, t.Context(), sock, "tune", "462.5625", "--device", hackrf.DeviceId, "--no-audio", "--persistent", "--squelch", "off", "--gain", "IF=0")
 	if err == nil || !strings.Contains(err.Error(), "no gain element named IF; this radio's are LNA, VGA and AMP") {
 		t.Errorf("an unknown stage should be the daemon's refusal with the list, got %v\n%s", err, errOut)
 	}
-	if got := stageGainWords([]*leylinev1.GainState{{Element: "LNA", Db: 8}, {Element: "VGA", Db: 20}, {Element: "AMP", Db: 0}}); got != "gain LNA 8.0 dB, VGA 20.0 dB, AMP 0.0 dB" {
-		t.Errorf("a HackRF's banner gain reads %q", got)
+}
+
+// A capture's gain prints one way wherever it prints (plans/v1-release.md, R-23): the level alone
+// on a one-stage radio, every stage by name on a radio with several, a switch as on or off, and a
+// decimal only when the level has one.
+func TestStageGainWords(t *testing.T) {
+	hackrf := fakedaemon.HackRFPro().GainElements
+	cases := []struct {
+		name  string
+		gains []*leylinev1.GainState
+		els   []*leylinev1.GainElement
+		want  string
+	}{
+		{"one stage", []*leylinev1.GainState{{Element: "TUNER", Db: 28}}, nil, "gain 28 dB"},
+		{"one stage, a decimal", []*leylinev1.GainState{{Element: "TUNER", Db: 49.6}}, nil, "gain 49.6 dB"},
+		{"one stage, a float's tail", []*leylinev1.GainState{{Element: "TUNER", Db: 29.700000000000003}}, nil, "gain 29.7 dB"},
+		{"one stage, auto", []*leylinev1.GainState{{Element: "TUNER", Auto: true}}, nil, "gain auto"},
+		{"a HackRF, AMP off", []*leylinev1.GainState{{Element: "LNA", Db: 0}, {Element: "VGA", Db: 20}, {Element: "AMP", Db: 0}}, hackrf, "gain LNA 0 dB, VGA 20 dB, AMP off"},
+		{"a HackRF, AMP on", []*leylinev1.GainState{{Element: "LNA", Db: 8}, {Element: "VGA", Db: 20}, {Element: "AMP", Db: 11}}, hackrf, "gain LNA 8 dB, VGA 20 dB, AMP on"},
+		{"a HackRF gone from the list", []*leylinev1.GainState{{Element: "LNA", Db: 8}, {Element: "VGA", Db: 20}, {Element: "AMP", Db: 11}}, nil, "gain LNA 8 dB, VGA 20 dB, AMP 11 dB"},
+		{"no stages", nil, nil, "no gain control"},
 	}
-	if got := stageGainWords([]*leylinev1.GainState{{Element: "TUNER", Auto: true}}); got != "gain auto" {
-		t.Errorf("a dongle's banner gain reads %q", got)
+	for _, c := range cases {
+		if got := stageGainWords(c.gains, c.els); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
 	}
 }
 

@@ -59,7 +59,7 @@ contract's fake daemon (`go/internal/fakedaemon`), so your ids, model and levels
 ```console
 $ ley devices                           # 1. is my radio visible?
 MODEL                     STATE      RANGE                    RATES                GAIN
-Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0..49.6dB(auto)
+Generic RTL2832U (R820T)  AVAILABLE  24.000 MHz to 1.766 GHz  0.25..3.2 MSPS (11)  TUNER 0–49.6 dB auto
 
 $ ley tune 146.52                       # 2. listen: a bare number is MHz; mode and squelch are chosen for you
 using NFM: 2 m amateur band default

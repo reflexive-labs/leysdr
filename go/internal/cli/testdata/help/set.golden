@@ -6,7 +6,7 @@ Parameters:
   mode     how to decode (nfm, am, wfm, usb, lsb, cw, fm, ssb)
   bw       channel bandwidth (filter width; 'filter' works too) (12.5 (kHz), 200k, 12500)
   squelch  mute the audio when the signal is weaker than this level (-40, -40dB, off, auto)
-  gain     radio gain (--element picks the gain stage) (30, 30dB, auto)
+  gain     receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain)
   volume   speaker volume (0.5, 50%)
 
 Which channel (a channel is one station picked out of what the radio hears:
@@ -25,6 +25,7 @@ Examples:
   ley set squelch -45        mute below -45 dBFS
   ley set squelch auto       measure the noise floor and sit 10 dB above it
   ley set gain 30
+  ley set gain LNA=0,VGA=20  two stages of a HackRF
   ley set freq 146.62
   ley set volume 50%
   ley set mode am --channel 2
@@ -32,7 +33,6 @@ Examples:
 Flags:
       --capture string   which capture (a radio tuned to a band), for freq and gain: id, prefix, row number or frequency (default: the channel's)
       --channel string   which channel: an id (chan_...), id prefix, row number from 'ley state' or frequency, e.g. --channel 146.62 (default: the active one)
-      --element string   which gain stage, for radios with more than one; names from 'ley devices', e.g. --element IF (default: the radio's first)
   -h, --help             help for set
       --retune           move the radio even when a recording is running on it (the recording logs the gap); without it set freq refuses and names the job
 

@@ -127,7 +127,7 @@ func TestDeviceTableLeadsWithTheAnswer(t *testing.T) {
 	app, buf = tableApp(ui.Style{Width: 80})
 	printDeviceTable(app, devicesFixture(), true)
 	wide := buf.String()
-	for _, want := range []string{"dev_01M224S5ZRDDEGKRWJSCTABBRB", "00000001", "rtlsdr", "TUNER 0..49.6dB(auto)"} {
+	for _, want := range []string{"dev_01M224S5ZRDDEGKRWJSCTABBRB", "00000001", "rtlsdr", "TUNER 0–49.6 dB auto"} {
 		if !strings.Contains(wide, want) {
 			t.Errorf("--wide dropped %q:\n%s", want, wide)
 		}

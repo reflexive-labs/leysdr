@@ -343,17 +343,18 @@ actor JobStore {
             await finish(id, state: .failed, detail: "no device with id \(config.deviceID)", code: EngineError.Code.deviceNotFound)
             return
         }
-        // The gain the sweep pins at, when the request says. `auto: false` is the write that means
-        // "manual, keep the last level", which for a sweep is the same as leaving gain unset.
-        var gain: GainRequest?
-        if config.hasGain {
-            switch config.gain.value {
-            case .db(let db): gain = GainRequest(element: config.gain.element, value: .db(db))
-            case .auto(true): gain = GainRequest(element: config.gain.element, value: .auto)
-            default: break
+        // The gains the sweep pins at, when the request says, in order; `gains` wins over `gain`
+        // (`jobs.proto`, `ScanConfig`), as a recording's do. `auto: false` is the write that means
+        // "manual, keep the last level", which for a sweep is the same as leaving that stage unset.
+        let writes = config.gains.isEmpty ? (config.hasGain ? [config.gain] : []) : config.gains
+        let requests: [GainRequest] = writes.compactMap { write in
+            switch write.value {
+            case .db(let db): return GainRequest(element: write.element, value: .db(db))
+            case .auto(true): return GainRequest(element: write.element, value: .auto)
+            default: return nil
             }
         }
-        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, deviceID: deviceID, takeOver: config.takeOver, gain: gain), for: id)
+        let allocation = await allocator.allocate(.exclusiveCapture(rangeHz: range, deviceID: deviceID, takeOver: config.takeOver, gains: requests), for: id)
         guard case .capture(let lease) = allocation else {
             if case .declined(let code, let reason) = allocation {
                 await finish(id, state: .failed, detail: reason, code: code)

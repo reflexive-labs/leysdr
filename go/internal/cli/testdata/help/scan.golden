@@ -45,7 +45,7 @@ Flags:
       --band string     sweep a named band instead of a range, e.g. 2m (ley bands lists them)
       --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
       --dwell uint32    milliseconds to listen at each stop, e.g. 400; longer finds weaker signals (default: the daemon's 250)
-      --gain string     receiver gain to sweep at: auto (where the radio's AGC settles, then held) or dB such as 30 (default: the gain the radio is on, held)
+      --gain string     receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); held for the whole sweep; default: the gain the radio is on
   -h, --help            help for scan
       --min-snr float   hide anything weaker than this many dB over the noise floor (default: show everything found)
       --sort string     row order: freq or snr (default "freq")

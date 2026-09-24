@@ -50,8 +50,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
         case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver):
             return await allocateCaptureIQ(frequencyHz: frequencyHz, sampleRateHz: sampleRateHz,
                                            deviceID: deviceID, takeOver: takeOver, job: job)
-        case .exclusiveCapture(let range, let deviceID, let takeOver, let gain):
-            return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, gain: gain, job: job)
+        case .exclusiveCapture(let range, let deviceID, let takeOver, let gains):
+            return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, gains: gains, job: job)
         }
     }
 
@@ -297,7 +297,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
     }
 
     private func allocateCapture(range: ClosedRange<UInt64>, deviceID wanted: DeviceID?, takeOver: Bool,
-                                 gain: GainRequest?, job: JobID) async -> AllocationResult
+                                 gains: [GainRequest], job: JobID) async -> AllocationResult
     {
         let state = await store.snapshot(scope: .daemon)
         // A device that can hear any of the range. Prefer one with no capture at all: creating and
@@ -340,7 +340,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     lastReason = "another scan already has \(device.model)"
                     continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job, gain: gain) else {
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, gains: gains) else {
                     leased.remove(id)
                     continue
                 }
@@ -360,7 +360,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job, created: true, gain: gain) else {
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, created: true, gains: gains) else {
                     leased.remove(id)
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
@@ -407,7 +407,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
     }
 
     private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, created: Bool = false,
-                        gain: GainRequest? = nil) async -> SessionCaptureLease?
+                        gains: [GainRequest] = []) async -> SessionCaptureLease?
     {
         guard let engine = await store.captureEngine(id) else { return nil }
         let device = await store.registry.device(id: deviceID)
@@ -420,7 +420,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             await self?.releaseLease(id)
         }
         await store.setSwept(id, true)
-        await lease.pinGain(device: device, requested: gain)
+        await lease.pinGain(device: device, requested: gains)
         return lease
     }
 
@@ -516,21 +516,31 @@ actor SessionCaptureLease: CaptureLease {
     }
 
     /// Freezes the tuner's gain for the sweep. Under AGC the gain moves after every hop and SNR
-    /// measured against a moving reference is meaningless. `requested` sets where to pin: a
-    /// level, or auto for where the driver settles; nil pins the gain the radio is on.
-    func pinGain(device: (any RadioDevice)?, requested: GainRequest? = nil) async {
+    /// measured against a moving reference is meaningless. `requested` sets where to pin, one
+    /// stage at a time in order (`ScanConfig.gains`): a level, or auto for where the driver
+    /// settles; empty pins the gain the radio is on. The first refusal stops the list and is kept
+    /// in `pinFailure`, so the sweep fails rather than measuring at a gain nobody asked for; the
+    /// stages set before it stay set until the lease restores the entry gain.
+    func pinGain(device: (any RadioDevice)?, requested: [GainRequest] = []) async {
         entryGains = await engine.snapshot.gains
-        if let requested {
-            let element = resolvedGainElement(requested.element, in: gainElements)
+        var settling = false
+        for request in requested {
+            let element = resolvedGainElement(request.element, in: gainElements)
+            guard gainElements.contains(where: { $0.name == element }) else {
+                pinFailure = unknownGainElement(request.element, in: gainElements, target: captureID.string)
+                break
+            }
             do {
-                try await engine.setGain(element: element, value: requested.value)
-                if requested.value == .auto {
-                    // Give the driver's AGC a moment to settle before asking where it did.
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                }
+                try await engine.setGain(element: element, value: request.value)
+                settling = settling || request.value == .auto
             } catch {
                 pinFailure = error as? EngineError ?? EngineError.invalidArgument("\(error)", target: element)
+                break
             }
+        }
+        if settling {
+            // Give the driver's AGC a moment to settle before asking where it did.
+            try? await Task.sleep(nanoseconds: 200_000_000)
         }
         for g in await engine.snapshot.gains where g.value == .auto {
             // Where AGC actually settled, so the sweep is exactly as sensitive as the radio was a

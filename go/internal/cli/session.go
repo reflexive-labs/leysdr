@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -985,34 +986,72 @@ func meterGate(m *leylinev1.Meter, air onAir) string {
 	}
 }
 
-// stageGainWords renders a capture's gain for a banner: "gain 29.7 dB" or
-// "gain auto" on a radio with one stage, and every stage by name on a radio
-// with several ("gain LNA 0.0 dB, VGA 20.0 dB, AMP 0.0 dB"), because "gain
-// 8.0 dB" on a HackRF read as the radio's whole gain when it was the LNA alone
-// (plans/app.md, M2-10).
-func stageGainWords(gains []*leylinev1.GainState) string {
-	if len(gains) < 2 {
-		return gainString(&leylinev1.Capture{Gains: gains})
+// stageGainWords is the one way a capture's gain prints, wherever it prints (plans/v1-release.md,
+// R-23): "gain 28 dB" or "gain auto" on a radio with one stage, every stage by name on a radio
+// with several ("gain LNA 0 dB, VGA 20 dB, AMP off"), because "gain 8.0 dB" on a HackRF read as
+// the radio's whole gain when it was the LNA alone (plans/app.md, M2-10). Names are the daemon's
+// spelling. els is the device's gain elements, which is how a two-value stage is known to be a
+// switch; without them (the device is gone) such a stage prints its level ("AMP 11 dB").
+func stageGainWords(gains []*leylinev1.GainState, els []*leylinev1.GainElement) string {
+	switch len(gains) {
+	case 0:
+		return "no gain control"
+	case 1:
+		return "gain " + stageLevel(gains[0], gainElement(els, gains[0].GetElement()))
 	}
 	stages := make([]string, len(gains))
 	for i, g := range gains {
-		if g.GetAuto() {
-			stages[i] = g.GetElement() + " auto"
-		} else {
-			stages[i] = fmt.Sprintf("%s %.1f dB", g.GetElement(), g.GetDb())
-		}
+		stages[i] = g.GetElement() + " " + stageLevel(g, gainElement(els, g.GetElement()))
 	}
 	return "gain " + strings.Join(stages, ", ")
 }
 
-// gainString renders a capture's first gain element as "gain auto" / "gain 29.7 dB".
-func gainString(cap *leylinev1.Capture) string {
-	if cap == nil || len(cap.Gains) == 0 {
-		return "no gain control"
+// stageLevel is one stage's setting as stageGainWords prints it: "auto", "on" or "off" for a
+// switch, else the level ("20 dB", "49.6 dB").
+func stageLevel(g *leylinev1.GainState, el *leylinev1.GainElement) string {
+	switch {
+	case g.GetAuto():
+		return "auto"
+	case isGainSwitch(el):
+		if g.GetDb() > min(el.ValidDb[0], el.ValidDb[1]) {
+			return "on"
+		}
+		return "off"
 	}
-	g := cap.Gains[0]
-	if g.Auto {
-		return "gain auto"
+	return gainDB(g.GetDb()) + " dB"
+}
+
+// gainDB renders a gain level with a decimal only when it has one: "49.6", "8", "0". Gains are
+// set in steps of a tenth of a dB at the finest (the RTL-SDR tables), so the level is rounded to
+// one decimal first and a stored 29.700000001 still reads 29.7.
+func gainDB(db float64) string {
+	return strconv.FormatFloat(math.Round(db*10)/10, 'f', -1, 64)
+}
+
+// isGainSwitch reports whether a gain element is a switch rather than a level: two valid settings
+// and no step, as the HackRF's AMP (0 or 11 dB).
+func isGainSwitch(el *leylinev1.GainElement) bool {
+	return el != nil && len(el.ValidDb) == 2 && el.StepDb == 0
+}
+
+// gainElement is the element of els a stage names, matched ignoring case as the daemon matches
+// it; nil when els does not list it.
+func gainElement(els []*leylinev1.GainElement, name string) *leylinev1.GainElement {
+	for _, el := range els {
+		if strings.EqualFold(el.GetName(), name) {
+			return el
+		}
 	}
-	return fmt.Sprintf("gain %.1f dB", g.Db)
+	return nil
+}
+
+// deviceGainElements is the gain elements of the device a capture runs on, from the state; nil
+// when the state no longer lists it.
+func deviceGainElements(st *leylinev1.GetStateResponse, deviceID string) []*leylinev1.GainElement {
+	for _, d := range st.GetDevices() {
+		if d.GetDeviceId() == deviceID {
+			return d.GetGainElements()
+		}
+	}
+	return nil
 }

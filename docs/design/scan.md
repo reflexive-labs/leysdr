@@ -409,7 +409,7 @@ mid-band with no event explaining why.
 
 ```
 ley scan <lo>..<hi> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr]
-                    [--gain dB|auto] [--device SEL] [--take-over] [--json]
+                    [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over] [--json]
 ```
 
 A range positional, parsed by `leyline.ParseUserRange`, which accepts `144M..148M` and `144..148`

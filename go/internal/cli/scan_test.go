@@ -479,7 +479,7 @@ func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 			Auto    bool    `json:"auto"`
 		} `json:"gains"`
 		Config struct {
-			Gain map[string]any `json:"gain"`
+			Gains []map[string]any `json:"gains"`
 		} `json:"config"`
 	}
 	if err := json.Unmarshal([]byte(js), &scan); err != nil {
@@ -488,15 +488,38 @@ func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 	if len(scan.Gains) == 0 || scan.Gains[0].Auto || math.Abs(scan.Gains[0].Db-30) > 1 {
 		t.Errorf("the sweep did not run at 30 dB: %+v", scan.Gains)
 	}
-	if scan.Config.Gain["db"] != 30.0 {
-		t.Errorf("the Scan's config should echo the gain asked for: %v", scan.Config.Gain)
+	if len(scan.Config.Gains) != 1 || scan.Config.Gains[0]["db"] != 30.0 {
+		t.Errorf("the Scan's config should echo the gain asked for: %v", scan.Config.Gains)
 	}
 	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "auto")
-	if err != nil || !strings.Contains(errOut, "gain tuner ") {
+	if err != nil || !oneStageGain.MatchString(errOut) {
 		t.Errorf("--gain auto: %v\n%s", err, errOut)
 	}
 	if _, _, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "loud"); exitCode(err) != ExitUsage {
 		t.Errorf("--gain loud should be a usage error, got %v", err)
+	}
+}
+
+// oneStageGain is a one-stage radio's gain as every screen prints it: the level alone, a decimal
+// only when it has one (plans/v1-release.md, R-23).
+var oneStageGain = regexp.MustCompile(`, gain \d+(\.\d)? dB\n`)
+
+// --gain on a sweep takes the syntax every verb takes: stages by name, any case, in order, and
+// the summary names every stage the sweep ran at with a switch as on or off. A stage the radio
+// does not have fails the sweep with the ones it has (plans/v1-release.md, R-23).
+func TestScanPinsEveryStageNamed(t *testing.T) {
+	hackrf := fakedaemon.HackRFPro()
+	sock, _ := harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
+	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "lna=0,VGA=20,amp=11")
+	if err != nil {
+		t.Fatalf("ley scan: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, ", gain LNA 0 dB, VGA 20 dB, AMP on\n") {
+		t.Errorf("the summary should name every stage as the device spells it:\n%s", errOut)
+	}
+	_, errOut, err = run(t, context.Background(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "LNA=0,IF=0")
+	if err == nil || !strings.Contains(err.Error(), "no gain element named IF; this radio's are LNA, VGA and AMP") {
+		t.Errorf("an unknown stage should fail the sweep with the stages the radio has, got %v\n%s", err, errOut)
 	}
 }
 
@@ -508,10 +531,10 @@ func TestScanSaysWhatGainItRanAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley scan: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut, "gain tuner ") {
+	if !oneStageGain.MatchString(errOut) {
 		t.Errorf("the summary should name the gain the sweep ran at:\n%s", errOut)
 	}
-	if strings.Contains(out, "gain tuner ") {
+	if oneStageGain.MatchString(out) {
 		t.Errorf("prose reached stdout:\n%s", out)
 	}
 	// And the machine-readable answer carries it as a GainState, with the automatic gain frozen.

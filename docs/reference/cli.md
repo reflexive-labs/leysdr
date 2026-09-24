@@ -15,8 +15,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── tune <freq|preset> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto|STAGE=dB,...] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
 │                                    # capture+channel+system-audio sink in one verb; prints every decision it made;
 │                                    # refuses to retune a capture other active channels ride on unless --retune
-├── set [param value] [--channel SEL] [--capture SEL] [--element E]
-│                                    # live adjust: freq (frequency), mode, bw (filter), squelch, gain, volume (streams WriteParams); no args = show
+├── set [param value] [--channel SEL] [--capture SEL]
+│                                    # live adjust: freq (frequency), mode, bw (filter), squelch, gain (dB|auto|STAGE=dB,...), volume (streams WriteParams); no args = show
 ├── stop [channel|all] [--all] [--device SEL]
 │                                    # DestroyChannel for one channel (set's target rule); all/--all destroys every channel and the capture, freeing the radio
 ├── spectrum [freq] [--span N] [--bins N] [--watch] [--rate N] [--count N] [--device SEL] [--width N] [--retune]
@@ -42,7 +42,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
-├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--gain dB|auto] [--take-over] [--device SEL]
+├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--gain dB|auto|STAGE=dB,...] [--take-over] [--device SEL]
 │                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
@@ -289,10 +289,14 @@ never used as a filter: a signal seen once in eight is reported as such rather t
 because an
 intermittent transmission is exactly what somebody may be scanning for. `Scan.gains` is the gain the
 sweep pinned for its whole duration, because a scan run at a different gain is a different
-measurement. `--gain dB|auto` says where to pin it (`ScanConfig.gain`, a `GainWrite` on the first
-gain element): a level, or where the radio's AGC settles; without it the sweep pins whatever the
-last client left the radio at, and two sweeps of one band can differ by that. A gain the radio
-cannot set fails the job with the daemon's code rather than sweeping at another. `Scan.resolution_hz` is the analysis bin width, which every dB in the message is per --
+measurement. `--gain` says where to pin it, in the syntax every verb's `--gain` takes
+(`ley help gain`): a level for the first stage, `auto` for where the radio's AGC settles, or
+stages by name (`--gain LNA=0,VGA=20`). It goes as `ScanConfig.gains`, one `GainWrite` per stage
+applied in order; without it the sweep pins whatever the last client left the radio at, and two
+sweeps of one band can differ by that. A gain the radio cannot set, or a stage it does not have,
+fails the job with the daemon's code rather than sweeping at another. The summary line names the
+gain as every screen does (`gain 28 dB`, or `gain LNA 0 dB, VGA 20 dB, AMP off` on a radio with
+several stages). `Scan.resolution_hz` is the analysis bin width, which every dB in the message is per --
 a wider bin holds more noise -- and `Scan.covered` is the range actually looked at, never wider than
 `config.range` and narrower whenever the radio could not reach all of it, part of the request fell
 in the tuner's own blind spot, or the sweep was stopped early; a client that reported `config.range`
