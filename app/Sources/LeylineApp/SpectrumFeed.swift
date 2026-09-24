@@ -214,18 +214,22 @@ final class SpectrumFeed {
 /// One channel's telemetry: the meter ten times a second for the squelch track and the
 /// inspector's readings, and the squelch edges and sub-audible reports folded into a
 /// `TransmissionLog` for the inspector's log and its time on air (docs/design/
-/// app-design-handoff-m2.md, Regions 3 and 4). One subscription per channel, reset with it: the
-/// log is the channel's, and a transmission on the last channel is not one on this. The log and
-/// the last tone are reset when the channel is retuned as well, since the window retunes by
-/// writing the same channel's offset: a transmission on the last frequency is not one on this
-/// either (`ChannelFrequencyWatch`; plans/app.md, APP-5, "Fixed 2026-09-25"). The capture
+/// app-design-handoff-m2.md, Regions 3 and 4). One subscription per channel, reset with it. The
+/// logs are kept per frequency and mode for the session (`TransmissionLogs`), and the one shown
+/// is the tuned frequency's: the window retunes by writing the same channel's offset, so a
+/// retune switches logs (`ChannelFrequencyWatch`), and coming back finds the rows heard there
+/// before. Until the owner's second run (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)")
+/// a retune emptied the one log, and switching channel lost the transmissions. The capture
 /// rate is `duration_samples`' unit and comes from the session's capture, which can change under
 /// a live subscription, so it is taken on every `follow` and not only at subscribe time.
 @MainActor
 @Observable
 final class ChannelTelemetryFeed {
     private(set) var meter: Leyline_V1_Meter?
-    private(set) var transmissions: TransmissionLog?
+    /// Every frequency's log this session; kept across a new channel and a lost connection.
+    private(set) var logs = TransmissionLogs()
+    /// The tuned frequency's log, or nil without a channel.
+    var transmissions: TransmissionLog? { logs.log }
     /// The newest `SampleTime` any message carried, for `timeOnAir(at:)` and the log's relative
     /// times: the view asks with the newest time it has rather than a clock of its own.
     private(set) var newestTime: Leyline_V1_SampleTime?
@@ -246,11 +250,11 @@ final class ChannelTelemetryFeed {
     private var channel: String?
     private var frequency = ChannelFrequencyWatch()
 
-    /// `offsetHz` and `centerHz` are the mirror's for the channel and its capture, read on every
-    /// call so a retune of the same channel starts the log over.
+    /// `offsetHz`, `centerHz` and `mode` are the mirror's for the channel and its capture, read
+    /// on every call so a retune of the same channel switches to the new frequency's log.
     func follow(
-        _ channelID: String?, offsetHz: Int64?, centerHz: UInt64?, captureRate: UInt64,
-        connection: DaemonConnection?
+        _ channelID: String?, offsetHz: Int64?, centerHz: UInt64?, mode: Leyline_V1_DemodMode?,
+        captureRate: UInt64, connection: DaemonConnection?
     ) {
         self.captureRate = captureRate
         guard let channelID, let connection else {
@@ -258,13 +262,8 @@ final class ChannelTelemetryFeed {
             return
         }
         if channelID == channel, task != nil {
-            if let offsetHz, frequency.observe(offsetHz: offsetHz, centerHz: centerHz) {
-                log(
-                    "telemetry",
-                    "retuned to \(frequency.tunedHz ?? 0) Hz; the transmission log starts over")
-                lastTone = nil
-                transmissions = TransmissionLog(channelID: channelID)
-            }
+            if let offsetHz { _ = frequency.observe(offsetHz: offsetHz, centerHz: centerHz) }
+            showLog(of: channelID, mode: mode)
             return
         }
         stop()
@@ -272,7 +271,7 @@ final class ChannelTelemetryFeed {
         lastTone = nil
         frequency = ChannelFrequencyWatch()
         if let offsetHz { _ = frequency.observe(offsetHz: offsetHz, centerHz: centerHz) }
-        transmissions = TransmissionLog(channelID: channelID)
+        showLog(of: channelID, mode: mode)
         var sub = Leyline_V1_TelemetrySubscription()
         sub.channelID = channelID
         sub.types = [.meter, .squelchTransition, .subAudible]
@@ -286,6 +285,23 @@ final class ChannelTelemetryFeed {
             } catch {
                 if !Task.isCancelled { self?.error = LeylineError(error) }
             }
+        }
+    }
+
+    /// Switches to the log of the channel's frequency, as `ChannelFrequencyWatch` last read it,
+    /// and its mode, making it if this pair is new. Until both are known the log shown does not
+    /// change.
+    private func showLog(of channelID: String, mode: Leyline_V1_DemodMode?) {
+        guard let hz = frequency.tunedHz, let mode else { return }
+        let key = TransmissionLogs.Key(frequencyHz: hz, mode: mode)
+        let retune = logs.current != nil && logs.current != key
+        guard logs.tune(key, channelID: channelID) else { return }
+        if retune {
+            lastTone = nil
+            log(
+                "telemetry",
+                "retuned to \(hz) Hz \(mode.word); its log has \(logs.log?.closed.count ?? 0) transmissions, \(logs.count) logs kept"
+            )
         }
     }
 
@@ -336,7 +352,7 @@ final class ChannelTelemetryFeed {
         default:
             break
         }
-        transmissions?.fold(msg, captureRate: captureRate)
+        logs.fold(msg, captureRate: captureRate)
         if case .squelch(let sq)? = msg.body, !sq.open, sq.durationSamples > 0 {
             // After the fold, so the line can say which tone the log attached to the
             // transmission; one too short for the log (`TransmissionLog.shortestSeconds`) has
@@ -356,7 +372,7 @@ final class ChannelTelemetryFeed {
         task = nil
         channel = nil
         meter = nil
-        transmissions = nil
+        logs.leave()
         newestTime = nil
     }
 }

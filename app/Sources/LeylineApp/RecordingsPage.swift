@@ -102,7 +102,8 @@ struct RecordingsPageHeader: View {
                     set: { on in Task { await session.setRecording(on, channel: channel) } })
             )
             .toggleStyle(.switch).labelsHidden().controlSize(.small)
-            .tint(Theme.accentRec)
+            // `accentRec` only while on; off is the system's own dark track, untinted.
+            .tint(session.pageSwitchOn(for: channel) ? Theme.accentRec : nil)
             .disabled(!session.isLive)
             .help(
                 job == nil

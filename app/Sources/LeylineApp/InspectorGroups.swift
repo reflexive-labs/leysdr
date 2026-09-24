@@ -21,10 +21,13 @@ import SwiftUI
 /// does not; both formats can appear in one list, because the alternative is a timestamp nobody
 /// measured. Tone is not a column: a CTCSS tone the daemon reported is appended to that row's
 /// signal cell in `good`, and a row without one leaves the tone blank. Every row is a transmission heard live; the log never back-fills from a
-/// recording (M3 handoff, "The rule"). A row whose transmission lies inside a part of the tuned
-/// channel's recording is kept: its time and length in `ink`, ▶ in a ring at its right, and
-/// Show in Finder in its context menu. A heard row's time and length are `inkTertiary` and it has
-/// no ▶, because nothing of it is on disk.
+/// recording (M3 handoff, "The rule"). The rows are the tuned frequency's log, which is kept
+/// for the session and comes back when the frequency is tuned again (`TransmissionLogs`). A row
+/// whose transmission lies inside a part of any recording on the tuned channel is kept: its time
+/// and length in `ink`, ▶ in a ring at its right, and Show in Finder in its context menu. A heard
+/// row's time and length are `inkTertiary` and it has no ▶, because nothing of it is on disk.
+/// Several rows can lie in one part; only the row whose ▶ was clicked shows ■ and the progress
+/// line (`AppSession.playingRowStart`), and the others keep their ▶.
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
@@ -85,7 +88,7 @@ struct RecentLog: View {
                     length: Reading.seconds(t.seconds), lengthInk: ink,
                     signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
                     tone: t.tone, open: false,
-                    trailing: uri.map { LogRow.Trailing.part(part($0)) } ?? .empty
+                    trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) } ?? .empty
                 )
                 .contextMenu {
                     if let uri {
@@ -124,9 +127,10 @@ struct RecentLog: View {
         return Reading.relative(secondsAgo: session.secondsAgo(t.start) ?? .nan)
     }
 
-    /// A kept row's play control on the part at `uri`.
-    private func part(_ uri: String) -> LogRow.Part {
-        let playing = session.playingURI == uri
+    /// A kept row's play control on the part at `uri`, for the row that starts at `row`: it shows
+    /// the part playing only when its own ▶ started it.
+    private func part(_ uri: String, row: Leyline_V1_SampleTime) -> LogRow.Part {
+        let playing = session.playingURI == uri && session.playingRowStart == row
         return LogRow.Part(
             playing: playing, progress: playing ? session.playbackProgress : nil
         ) {
@@ -134,7 +138,7 @@ struct RecentLog: View {
                 if playing {
                     await session.stopPlayback()
                 } else {
-                    await session.play(partURI: uri)
+                    await session.play(partURI: uri, row: row)
                 }
             }
         }
@@ -167,7 +171,8 @@ struct RecordSwitch: View {
                         set: { on in Task { await session.setRecording(on) } })
                 )
                 .toggleStyle(.switch).labelsHidden().controlSize(.small)
-                .tint(Theme.accentRec)
+                // `accentRec` only while on; off is the system's own dark track, untinted.
+                .tint(session.recordSwitchOn ? Theme.accentRec : nil)
                 .disabled(session.tunedHz == nil)
                 .help(
                     job == nil

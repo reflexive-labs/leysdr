@@ -4,6 +4,27 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app's Record transmissions switch now makes one part per transmission. The window left
+  the daemon's 5 s hang in place, so a quick back-and-forth on a simplex channel became one long
+  part: four 4 s transmissions were one 25 s part in the Library, and playing one row of the log
+  lit three. The window's recordings now close a part half a second after the squelch does, and
+  a gap shorter than that stays in one part. `ley record` keeps the 5 s hang.
+
+- Rows of the log that a recording kept keep their ▶ after the switch is turned off and on again.
+  The window matched the rows against the newest recording only, which starts empty, so the rows
+  the earlier recording had kept looked heard and could not be played. Every recording on the
+  tuned frequency and mode now counts, and the waterfall's kept bars show them all.
+
+- Playing a kept row shows ■ and the progress line on that row only. Rows close together can lie
+  in one part, and each of them used to show the part playing.
+
+- Switching channel no longer empties the transmissions log. The window keeps a log for each
+  frequency and mode tuned this session, up to 32, and coming back to a frequency shows what was
+  heard there. The transmission on air when you tune away still ends in that frequency's log.
+
+- The toolbar's Radio | Library switch shows the unselected place on the toolbar's dark ground,
+  and the Record transmissions switch is red only while it is on.
+
 - The Mac app has two places, Radio and Library, switched at the left of the toolbar or with ⌘1
   and ⌘2. Radio is the window as before, and its sidebar is back to bands and bookmarks only.
   Library replaces the whole window below the toolbar with what has been kept while the radio
@@ -29,7 +50,7 @@ Nothing has been released yet. This file starts with everything that exists on `
   frequency's transmission on air (`not audible`, 2:48 and counting). The daemon now closes an
   open squelch whenever a channel's frequency, width or mode changes or its radio moves off it,
   and opens a new transmission if the new frequency carries a signal; every client's log sees
-  the close. The Mac app's log also starts over when the tuned frequency changes, since a
+  the close. The Mac app's log switches to the new frequency's own log (above), since a
   transmission on the last frequency was not one on this. `ley tune` makes a new channel for
   each tune and was not affected.
 

@@ -146,6 +146,68 @@ final class RecordingsTests: XCTestCase {
         XCTAssertNil(RecordingParts.match(transmission: heard(3_600_000, 6_000_000), in: unknown))
     }
 
+    /// The switch turned off and on: the first recording kept two transmissions, the second
+    /// one started empty and then kept a third. Every row keeps its ▶, whichever recording
+    /// holds it.
+    func testAKeptRowMatchesAcrossEveryRecordingOfTheChannel() throws {
+        let older = try manifest()
+        var newer = try manifest()
+        newer.jobID = "job_b"
+        newer.uri = "ley://recordings/job_b"
+        newer.parts = []
+        let first = heard(3_600_000, 6_000_000)
+        let second = heard(12_100_000, 14_000_000)
+        let third = heard(20_000_000, 21_000_000)
+        XCTAssertEqual(
+            RecordingParts.keptPartURI(of: first, in: [newer, older]), "ley://recordings/job_a/1",
+            "the new recording's empty manifest does not hide the old one's parts")
+        XCTAssertEqual(
+            RecordingParts.keptPartURI(of: second, in: [newer, older]), "ley://recordings/job_a/2")
+        XCTAssertNil(RecordingParts.keptPartURI(of: third, in: [newer, older]))
+        newer.parts = [
+            RecordingPart(
+                part: 1, file: "p1.wav", startSample: 19_000_000, endSample: 22_000_000,
+                samples: 60_000, bytes: 120_044, captureID: "cap_a")
+        ]
+        XCTAssertEqual(
+            RecordingParts.keptPartURI(of: third, in: [newer, older]), "ley://recordings/job_b/1")
+        XCTAssertEqual(
+            RecordingParts.keptPartURI(of: first, in: [newer, older]), "ley://recordings/job_a/1")
+        XCTAssertNil(RecordingParts.keptPartURI(of: first, in: []))
+    }
+
+    func testTheTunedChannelsRecordingsAreEveryOneOnItsFrequencyAndModeNewestFirst() {
+        func listed(_ id: String, hz: UInt64, mode: String, startedNs: Int64) -> RecordingSummary {
+            RecordingSummary(
+                Leyline_V1_Resource.with {
+                    $0.uri = "ley://recordings/\(id)"
+                    $0.originatingJobID = id
+                    $0.metadata = [
+                        "frequency_hz": "\(hz)", "mode": mode, "started_at_ns": "\(startedNs)",
+                    ]
+                })
+        }
+        let listing = [
+            listed("job_old", hz: 462_562_500, mode: "NFM", startedNs: 1_000_000_000),
+            listed("job_new", hz: 462_562_500, mode: "NFM", startedNs: 3_000_000_000),
+            listed("job_am", hz: 462_562_500, mode: "AM", startedNs: 4_000_000_000),
+            listed("job_else", hz: 146_520_000, mode: "NFM", startedNs: 5_000_000_000),
+            listed("job_any", hz: 462_562_500, mode: "", startedNs: 2_000_000_000),
+        ]
+        XCTAssertEqual(
+            Recordings.recordingIDs(onFrequencyHz: 462_562_500, mode: .nfm, in: listing),
+            ["job_new", "job_any", "job_old"], "another mode and another frequency are not these")
+        XCTAssertEqual(
+            Recordings.recordingIDs(
+                onFrequencyHz: 462_562_500, mode: .nfm, in: listing, running: "job_live"),
+            ["job_live", "job_new", "job_any", "job_old"],
+            "the running job first, before the listing carries it")
+        XCTAssertEqual(
+            Recordings.recordingIDs(
+                onFrequencyHz: 462_562_500, mode: .nfm, in: listing, running: "job_old"),
+            ["job_old", "job_new", "job_any"], "listed once")
+    }
+
     func testSummaryFromTheResourceMetadata() {
         let r = Leyline_V1_Resource.with {
             $0.uri = "ley://recordings/job_a"
@@ -191,7 +253,11 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(gated.gate, .squelch, "cut at dead air; there is no continuous option")
         XCTAssertEqual(gated.durationMs, 0)
         XCTAssertEqual(gated.stopAfterQuietMs, 0)
-        XCTAssertEqual(gated.preRollMs, 0, "the daemon's default")
+        XCTAssertEqual(gated.preRollMs, 500, "the daemon's default, stated")
+        XCTAssertEqual(
+            gated.hangMs, 500,
+            "each transmission its own part: the daemon's 5 s hang folds a whole exchange into one")
+        XCTAssertEqual(gated.hangMs, gated.preRollMs, "a gap shorter than the pre-roll is one part")
         XCTAssertTrue(gated.channelID.isEmpty, "the frequency form: the job owns its channel")
         let off = Recordings.config(frequencyHz: 1, mode: .am, bandwidthHz: 0, squelchDBFS: .nan)
         XCTAssertEqual(off.gate, .squelch)
@@ -467,6 +533,8 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(r.bandwidthHz, 0, "no recording states a width: the mode's default")
         XCTAssertTrue(r.squelchDbfs.isNaN, "NaN asks a gated recording for the auto squelch")
         XCTAssertEqual(r.gate, .squelch)
+        XCTAssertEqual(r.preRollMs, 500)
+        XCTAssertEqual(r.hangMs, 500, "the page's switch cuts parts as the log's does")
         XCTAssertTrue(r.channelID.isEmpty, "the frequency form, which the switch finds its job by")
     }
 

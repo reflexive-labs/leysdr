@@ -129,16 +129,16 @@ struct WaterfallGutter: View {
 }
 
 /// The tuned channel's kept bars: a `keptBarWidth` `accentRec` bar against each run of held rows
-/// a closed part of its recording holds (`WaterfallBuffer.keptRuns`, from the manifest's parts on
-/// the capture clock). Its own view so that only it is re-evaluated as rows arrive: reading the
-/// feed's `rows` is what subscribes it to each row.
+/// a closed part of any of its recordings holds (`WaterfallBuffer.keptRuns`, from the manifests'
+/// parts on the capture clock; `AppSession.keptParts`). Its own view so that only it is
+/// re-evaluated as rows arrive: reading the feed's `rows` is what subscribes it to each row.
 struct KeptBars: View {
     @Environment(AppSession.self) private var session
     let displayScale: CGFloat
 
     var body: some View {
         let feed = session.spectrum
-        let parts = session.recording?.parts ?? []
+        let parts = session.keptParts
         let runs = feed.rows > 0 && !parts.isEmpty ? feed.waterfall.keptRuns(parts) : []
         let scale = max(displayScale, 1)
         Canvas { ctx, size in

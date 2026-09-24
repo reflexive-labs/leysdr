@@ -174,23 +174,14 @@ final class AppSession {
     private var rejectionsSeen = 0
 
     // Recording (plans/app.md, APP-5; docs/design/app-design-handoff-m3.md, 8a and 8b). The
-    // jobs and the playbacks are the mirror's; what is here is the store's listing, the tuned
-    // channel's recording as read from disk, and the switch's click until its job's event
-    // arrives.
+    // jobs and the playbacks are the mirror's; what is here is the store's listing, the
+    // manifests of the recordings the window shows as read from disk, and the switch's click
+    // until its job's event arrives.
     /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
     /// every change to a record job and once on adoption. The Library's sidebar and the
     /// store footer render it.
     private(set) var recordings: [RecordingSummary] = []
     @ObservationIgnored private var recordingsLoad: Task<Void, Never>?
-    /// The manifest the log's kept rows and the time gutter's kept bars come from, read from disk
-    /// through `ResolveLocalPath`; `recording` gives it only while its frequency is the tuned
-    /// one.
-    private var shownManifest: RecordingManifest?
-    /// The recording whose manifest is being read or was read last.
-    @ObservationIgnored private var manifestLoadingID: String?
-    /// A job event for the shown recording arrived: the manifest is read again.
-    @ObservationIgnored private var manifestStale = false
-    @ObservationIgnored private var manifestLoad: Task<Void, Never>?
     /// The record jobs as last seen, so a change to one is noticed.
     @ObservationIgnored private var recordJobsSeen: [Leyline_V1_Job] = []
     /// The switch's click, until the job's event agrees or `neverSeenDropSeconds` pass: the
@@ -205,17 +196,19 @@ final class AppSession {
     /// radio is allocated, so a decline arrives as the job's FAILED event and is shown from
     /// there (`Recordings.failureNotice`).
     @ObservationIgnored private var switchStartedJobs: Set<String> = []
-    /// The channel page's manifests by job id (docs/design/app-design-handoff-m3.md, 8c), read
-    /// through `ResolveLocalPath` for each recording of the selected channel, kept while the
-    /// listing holds the recording, and read again on each event of its job, which is how a
-    /// running card grows as parts land.
-    private(set) var pageManifests: [String: RecordingManifest] = [:]
-    @ObservationIgnored private var pageLoads: [String: Task<Void, Never>] = [:]
+    /// Manifests by job id, read through `ResolveLocalPath`: every recording of the channel page's
+    /// channel (docs/design/app-design-handoff-m3.md, 8c) and every recording on the tuned
+    /// frequency and mode, whose parts the log's kept rows and the time gutter's bars come from
+    /// (`tunedManifests`). Each is kept while the listing holds the recording, read once, and read
+    /// again on each event of its job, which is how a running card grows and a new row is kept as
+    /// parts land.
+    private(set) var manifests: [String: RecordingManifest] = [:]
+    @ObservationIgnored private var manifestLoads: [String: Task<Void, Never>] = [:]
     /// Job ids whose manifest a job event made stale.
-    @ObservationIgnored private var pageStale: Set<String> = []
+    @ObservationIgnored private var staleManifests: Set<String> = []
     /// Job ids whose read failed, not tried again until their job changes or the listing is read
     /// again: a mirror change arrives four times a second while a part plays.
-    @ObservationIgnored private var pageFailed: Set<String> = []
+    @ObservationIgnored private var failedManifests: Set<String> = []
     /// The part the Library's inspector and player show: the last chip clicked, and
     /// the part Play all moved on to. Cleared when its recording is deleted.
     var selectedPartURI: String?
@@ -230,6 +223,11 @@ final class AppSession {
     /// publishes a playing playback four times a second.
     private var playbackID: String?
     private(set) var playingURI: String?
+    /// The start of the log row whose ▶ started the playing part, so only that row shows ■ and
+    /// the progress line: several rows can lie inside one part, and until 2026-09-25 each of them
+    /// showed the part playing (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)"). nil when
+    /// the part was started anywhere else, and cleared when the playback ends.
+    private(set) var playingRowStart: Leyline_V1_SampleTime?
     @ObservationIgnored private var playbackSeen = false
     @ObservationIgnored private var playbackStartedAt = Date.distantPast
     /// Whether the live channel's sink was attached when the clip started, so it is attached
@@ -548,9 +546,9 @@ final class AppSession {
                 isLive
                     ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures"
                     : "not live: \(connection)")
-            // Once on adoption: the store as it is, and the manifest read afresh.
+            // Once on adoption: the store as it is, and the manifests read afresh.
             if isLive {
-                manifestStale = true
+                staleManifests.formUnion(manifests.keys)
                 reloadRecordings()
             }
         }
@@ -596,7 +594,7 @@ final class AppSession {
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(
             channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
-            captureRate: capture?.sampleRate ?? 0, connection: daemon)
+            mode: channel?.mode, captureRate: capture?.sampleRate ?? 0, connection: daemon)
         captureLevel.follow(capture?.captureID, connection: daemon)
         followAudioLevels()
         nameFailure()
@@ -1859,21 +1857,29 @@ final class AppSession {
         Recordings.activeJob(in: state.jobs, frequencyHz: b.hz, mode: b.mode) != nil
     }
 
-    /// The manifest of the tuned frequency's recording, while its frequency is the tuned one: the
-    /// running job's, else the newest record job's on this channel that the mirror holds, else
-    /// the one read last.
-    var recording: RecordingManifest? {
-        guard let m = shownManifest, let hz = tunedHz, m.frequencyHz == hz else { return nil }
-        return m
+    /// Every recording on the tuned frequency and mode, newest first (`Recordings.recordingIDs`):
+    /// the running job's, then the store's listing.
+    private var tunedRecordingIDs: [String] {
+        guard let hz = tunedHz, let ch = channel else { return [] }
+        return Recordings.recordingIDs(
+            onFrequencyHz: hz, mode: ch.mode, in: recordings, running: recordingJob?.jobID)
     }
 
-    /// The part a closed transmission lies inside, as the URI that plays it: the row is kept.
-    /// nil for a heard row, whose audio is not on disk (`RecordingParts.match`).
+    /// The manifests of `tunedRecordingIDs` read so far, newest first.
+    var tunedManifests: [RecordingManifest] { tunedRecordingIDs.compactMap { manifests[$0] } }
+
+    /// The running recording's manifest on the tuned channel, for the switch's status line; nil
+    /// while the switch is off or before its first read.
+    var recording: RecordingManifest? { recordingJob.flatMap { manifests[$0.jobID] } }
+
+    /// Every closed part of every recording on the tuned channel: the time gutter's kept bars.
+    var keptParts: [RecordingPart] { tunedManifests.flatMap(\.parts) }
+
+    /// The part a closed transmission lies inside, in any recording of the tuned channel, as the
+    /// URI that plays it: the row is kept. nil for a heard row, whose audio is not on disk
+    /// (`RecordingParts.keptPartURI`).
     func keptPartURI(_ t: Transmission) -> String? {
-        guard let m = recording, let p = RecordingParts.match(transmission: t, in: m.parts) else {
-            return nil
-        }
-        return m.uri(of: p)
+        RecordingParts.keptPartURI(of: t, in: tunedManifests)
     }
 
     /// The window's playback, by the id `StartPlayback` returned, while the mirror carries it.
@@ -2038,78 +2044,41 @@ final class AppSession {
     }
 
     /// A record job changed: the store's listing is read again (a part closed, a job started or
-    /// ended, so the sidebar's rows and the footer's use moved), and so is the manifest being
-    /// shown when its job is among the changed ones, because its parts, bytes and the gutter's
-    /// kept bars come from it. Then the manifest follows the tuned channel, and the switch
-    /// settles.
+    /// ended, so the sidebar's rows and the footer's use moved), and so is every manifest read of
+    /// a changed job, because the parts, the bytes and the gutter's kept bars come from it. Then
+    /// the manifests follow the tuned channel and the page, and the switch settles.
     private func followRecordJobs() {
         let jobs = state.jobs.filter { $0.recordConfig != nil }
         if jobs != recordJobsSeen {
             let changed = Set(jobs.filter { !recordJobsSeen.contains($0) }.map(\.jobID))
             recordJobsSeen = jobs
-            if let shown = manifestLoadingID, changed.contains(shown) { manifestStale = true }
-            // The page's cards of the changed jobs: a part closed or the job ended.
-            pageStale.formUnion(
-                changed.filter { pageManifests[$0] != nil || pageFailed.contains($0) })
-            pageFailed.subtract(changed)
+            // A part closed or the job ended.
+            staleManifests.formUnion(
+                changed.filter { manifests[$0] != nil || failedManifests.contains($0) })
+            failedManifests.subtract(changed)
             reloadRecordings()
         }
-        followRecording()
+        followTunedRecordings()
         followPage()
         noticeFailedRecordJobs()
         settleRecordSwitch()
     }
 
-    /// Which recording's manifest is read: the running job's on the tuned channel, else the
-    /// newest record job's on this frequency and mode that the mirror still holds (its parts are
-    /// on disk, so the rows it holds stay kept after the switch goes off), else the one read
-    /// last, so the waterfall's bars stay while another channel in the span is tuned.
-    private var wantedRecordingID: String? {
-        guard let hz = tunedHz, let ch = channel else { return manifestLoadingID }
-        if let job = recordingJob { return job.jobID }
-        let last = state.jobs.last { j in
-            guard let r = j.recordConfig, r.channelID.isEmpty else { return false }
-            return r.frequencyHz == hz && (r.mode == ch.mode || r.mode == .unspecified)
-        }
-        return last?.jobID ?? manifestLoadingID
+    /// The tuned channel's manifests: every recording on its frequency and mode, not only the
+    /// newest, so a row an earlier recording kept stays kept after the switch goes off and on
+    /// again (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)"). Each is read once and again
+    /// when its job changes; the running one is the one whose job changes.
+    private func followTunedRecordings() {
+        for id in tunedRecordingIDs { readManifestIfNeeded(id) }
     }
 
-    /// Reads the wanted manifest when it is another recording than the one read last, or when a
-    /// job event made the shown one stale.
-    private func followRecording() {
-        guard let want = wantedRecordingID else { return }
-        guard manifestStale || want != manifestLoadingID else { return }
-        manifestStale = false
-        loadManifest(want)
-    }
-
-    /// `ResolveLocalPath(ley://recordings/<id>)`, then `recording.json` from that directory:
-    /// the window is local, as `ley recordings show` is, and samples are never streamed.
-    private func loadManifest(_ id: String) {
-        guard let daemon else { return }
-        manifestLoad?.cancel()
-        manifestLoadingID = id
-        manifestLoad = Task { [weak self] in
-            var ref = Leyline_V1_ResourceRef()
-            ref.uri = "ley://recordings/\(id)"
-            do {
-                let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
-                let path = local.path
-                let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: path))
-                guard let self, !Task.isCancelled, self.manifestLoadingID == id else { return }
-                if manifest.jobID != self.shownManifest?.jobID
-                    || manifest.parts.count != self.shownManifest?.parts.count
-                {
-                    log("record", "\(id): \(manifest.parts.count) parts read from \(path)")
-                }
-                if manifest != self.shownManifest { self.shownManifest = manifest }
-            } catch {
-                guard let self, !Task.isCancelled, self.manifestLoadingID == id else { return }
-                // A job's first second has no manifest on disk yet; its next event reads again.
-                log("record", "manifest of \(id) not read: \(error)")
-                if self.shownManifest?.jobID != id { self.shownManifest = nil }
-            }
-        }
+    /// Reads `id`'s manifest when it has not been read and its last read did not fail, or when a
+    /// job event made it stale, one read per recording at a time.
+    private func readManifestIfNeeded(_ id: String) {
+        let stale = staleManifests.contains(id)
+        guard stale || (manifests[id] == nil && !failedManifests.contains(id)) else { return }
+        guard stale || manifestLoads[id] == nil else { return }
+        loadManifest(id)
     }
 
     /// `ListResources(RECORDING)` into `recordings`. A listing already in flight is replaced,
@@ -2129,10 +2098,11 @@ final class AppSession {
                 }
                 if list != self.recordings { self.recordings = list }
                 self.prunePage()
-                self.pageFailed = []
+                self.failedManifests = []
                 if self.place == .library, self.selectedRecordingChannel == nil {
                     self.selectFirstChannel()
                 }
+                self.followTunedRecordings()
                 self.followPage()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -2182,7 +2152,7 @@ final class AppSession {
 
     /// The page's cards for `c`, with the manifests read so far.
     func pageGroups(for c: RecordingChannel) -> [RecordingGroup] {
-        Recordings.groups(c.recordings, manifests: pageManifests, jobs: state.jobs)
+        Recordings.groups(c.recordings, manifests: manifests, jobs: state.jobs)
     }
 
     /// The part the inspector shows while the Library does: the selected part, else the one
@@ -2190,7 +2160,7 @@ final class AppSession {
     var inspectedPart: (manifest: RecordingManifest, part: RecordingPart, group: RecordingGroup)? {
         guard place == .library,
             let uri = selectedPartURI ?? playingURI, let ref = RecordingPartRef(uri: uri),
-            let m = pageManifests[ref.jobID],
+            let m = manifests[ref.jobID],
             let part = m.parts.first(where: { $0.part == ref.part }),
             let summary = recordings.first(where: { $0.jobID == ref.jobID })
         else { return nil }
@@ -2198,59 +2168,57 @@ final class AppSession {
         return (m, part, RecordingGroup(summary: summary, manifest: m, running: running))
     }
 
-    /// The selected channel's manifests: each recording not yet read, or made stale by a job
-    /// event, is read, one read per recording at a time. Nothing is read while the page is not
-    /// showing.
+    /// The selected channel's manifests, read as the tuned channel's are. Nothing is read for
+    /// the page while it is not showing.
     private func followPage() {
         guard recordingsPageShown, let c = selectedChannel else { return }
-        for r in c.recordings {
-            let id = r.jobID
-            let stale = pageStale.contains(id)
-            guard stale || (pageManifests[id] == nil && !pageFailed.contains(id)) else { continue }
-            guard stale || pageLoads[id] == nil else { continue }
-            loadPageManifest(id)
-        }
+        for r in c.recordings { readManifestIfNeeded(r.jobID) }
     }
 
-    /// `ResolveLocalPath(ley://recordings/<id>)` and `recording.json`, as `loadManifest` reads the
-    /// tuned channel's.
-    private func loadPageManifest(_ id: String) {
+    /// `ResolveLocalPath(ley://recordings/<id>)`, then `recording.json` from that directory:
+    /// the window is local, as `ley recordings show` is, and samples are never streamed.
+    private func loadManifest(_ id: String) {
         guard let daemon else { return }
-        pageStale.remove(id)
-        pageLoads[id]?.cancel()
-        pageLoads[id] = Task { [weak self] in
+        staleManifests.remove(id)
+        manifestLoads[id]?.cancel()
+        manifestLoads[id] = Task { [weak self] in
             var ref = Leyline_V1_ResourceRef()
             ref.uri = "ley://recordings/\(id)"
             do {
                 let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
                 let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
                 guard let self, !Task.isCancelled else { return }
-                self.pageLoads[id] = nil
-                if self.pageManifests[id] != manifest {
-                    if self.pageManifests[id]?.parts.count != manifest.parts.count {
-                        log("record", "page: \(id) has \(manifest.parts.count) parts")
+                self.manifestLoads[id] = nil
+                if self.manifests[id] != manifest {
+                    if self.manifests[id]?.parts.count != manifest.parts.count {
+                        log(
+                            "record", "\(id): \(manifest.parts.count) parts read from \(local.path)"
+                        )
                     }
-                    self.pageManifests[id] = manifest
+                    self.manifests[id] = manifest
                 }
             } catch {
                 guard let self, !Task.isCancelled else { return }
-                self.pageLoads[id] = nil
-                self.pageFailed.insert(id)
+                self.manifestLoads[id] = nil
+                self.failedManifests.insert(id)
                 // A job's first second has no manifest on disk yet; its next event reads again.
-                log("record", "page: manifest of \(id) not read: \(error)")
+                log("record", "manifest of \(id) not read: \(error)")
             }
         }
     }
 
-    /// Forgets the manifests of recordings the listing no longer holds, and a selection or an
-    /// opened card among them.
+    /// Forgets the manifests of recordings the listing no longer holds, except the running job's
+    /// on the tuned channel (the listing can lag its start), and a selection or an opened card
+    /// among them.
     private func prunePage() {
-        let listed = Set(recordings.map(\.jobID))
-        for id in pageManifests.keys where !listed.contains(id) { pageManifests[id] = nil }
-        for (id, task) in pageLoads where !listed.contains(id) {
+        var listed = Set(recordings.map(\.jobID))
+        if let running = recordingJob?.jobID { listed.insert(running) }
+        for id in manifests.keys where !listed.contains(id) { manifests[id] = nil }
+        for (id, task) in manifestLoads where !listed.contains(id) {
             task.cancel()
-            pageLoads[id] = nil
+            manifestLoads[id] = nil
         }
+        staleManifests.formIntersection(listed)
         if let uri = selectedPartURI, let ref = RecordingPartRef(uri: uri),
             !listed.contains(ref.jobID)
         {
@@ -2296,15 +2264,16 @@ final class AppSession {
     /// `ley://recordings/<id>/<part>`). The live channel's sink is detached meanwhile and attached
     /// again when the clip ends, so the clip is heard alone; one playback at a time, so a clip
     /// already playing is stopped first, and a clip replays from its start. A Play all in
-    /// progress is ended: this part is the one asked for.
-    func play(partURI uri: String) async {
+    /// progress is ended: this part is the one asked for. `row` is the start of the log row whose
+    /// ▶ was clicked (`playingRowStart`), nil from anywhere else.
+    func play(partURI uri: String, row: Leyline_V1_SampleTime? = nil) async {
         playQueue.clear()
-        await startPlayback(uri)
+        await startPlayback(uri, row: row)
     }
 
     /// `play(partURI:)` without touching Play all's queue, which `playAll` and `endPlayback`
     /// have set for the parts after this one.
-    private func startPlayback(_ uri: String) async {
+    private func startPlayback(_ uri: String, row: Leyline_V1_SampleTime? = nil) async {
         guard let daemon else { return }
         if let old = playbackID {
             // Cleared first, so the old one's tombstone is not read as this one ending.
@@ -2317,6 +2286,7 @@ final class AppSession {
             reattachAfterPlayback = sink != nil
         }
         playingURI = uri
+        playingRowStart = row
         if let s = sink {
             var detach = Leyline_V1_DetachSinkRequest()
             detach.sinkID = s.sinkID
@@ -2351,6 +2321,7 @@ final class AppSession {
             log("playback", "\(uri) not played: \(e.code) \(e.message)")
             notice = "Could not play the part: \(e.message.isEmpty ? e.code : e.message)"
             playingURI = nil
+            playingRowStart = nil
             playQueue.clear()
             await attachAfterPlayback()
         }
@@ -2393,6 +2364,7 @@ final class AppSession {
         log("playback", "\(id) ended")
         playbackID = nil
         playbackSeen = false
+        playingRowStart = nil
         var queue = playQueue
         if let next = queue.next() {
             playQueue = queue
@@ -2470,13 +2442,9 @@ final class AppSession {
         return (uri, m, part)
     }
 
-    /// A recording's manifest as the window has read it: the channel page's, else the tuned
-    /// channel's, which is where a kept row's ▶ in the Radio plays from.
-    private func manifest(ofJob id: String) -> RecordingManifest? {
-        if let m = pageManifests[id] { return m }
-        if let m = shownManifest, m.jobID == id { return m }
-        return nil
-    }
+    /// A recording's manifest as the window has read it, for the channel page or for the tuned
+    /// channel, which is where a kept row's ▶ in the Radio plays from.
+    private func manifest(ofJob id: String) -> RecordingManifest? { manifests[id] }
 
     /// What the player calls the channel a recording belongs to: its Library row's title (the
     /// bookmark's name, else the frequency), else the frequency.

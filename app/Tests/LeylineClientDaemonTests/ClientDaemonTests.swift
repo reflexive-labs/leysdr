@@ -413,6 +413,42 @@ final class ClientDaemonTests: XCTestCase {
         )
         XCTAssertTrue(
             manifest.uri(of: part).hasPrefix(summary.uri + "/"), "the kept row plays its part")
+        XCTAssertEqual(
+            manifest.gate?.hangMs, Recordings.windowHangMs,
+            "the window's hang, not the daemon's 5 s")
+        XCTAssertEqual(manifest.gate?.preRollMs, Recordings.windowPreRollMs)
+
+        // The switch turned on again: a second recording on the channel, its manifest empty or
+        // not yet written. The row the first one kept is still kept.
+        let again = try await app.jobs.startJob(start)
+        await assertEventually("the second record job never ran") {
+            Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz, mode: .nfm)?.jobID
+                == again.jobID
+        }
+        let relisted = try await app.resources.listResources(list).resources.map(
+            RecordingSummary.init)
+        let ids = Recordings.recordingIDs(
+            onFrequencyHz: hz, mode: .nfm, in: relisted, running: again.jobID)
+        XCTAssertEqual(ids.first, again.jobID, "the running recording first")
+        XCTAssertTrue(ids.contains(job.jobID), "the earlier recording is the channel's too")
+        var manifests: [RecordingManifest] = []
+        for id in ids {
+            var r = Leyline_V1_ResourceRef()
+            r.uri = "ley://recordings/\(id)"
+            guard let path = try? await app.resources.resolveLocalPath(r).path,
+                let m = try? RecordingManifest.read(at: URL(fileURLWithPath: path))
+            else { continue }
+            manifests.append(m)
+        }
+        XCTAssertEqual(
+            RecordingParts.keptPartURI(of: heard, in: manifests), manifest.uri(of: part),
+            "the new recording's manifest does not hide the old one's parts")
+        var againRef = Leyline_V1_JobRef()
+        againRef.jobID = again.jobID
+        _ = try await app.jobs.cancelJob(againRef)
+        await assertEventually("the second job never ended") {
+            mirror.state.jobs.first { $0.jobID == again.jobID }?.isActive == false
+        }
         // The channel page's card and the inspector on that part, from the daemon's own files.
         let card = RecordingGroup(summary: summary, manifest: manifest, running: false)
         XCTAssertEqual(card.chips.map(\.uri), manifest.parts.map { manifest.uri(of: $0) })

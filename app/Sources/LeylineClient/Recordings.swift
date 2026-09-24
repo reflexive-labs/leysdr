@@ -390,6 +390,21 @@ public enum RecordingParts {
                 && p.startSample <= t.start.sampleIndex && t.end.sampleIndex <= p.endSample
         }
     }
+
+    /// The URI of the part that holds `t` in any of `manifests`, searched in order (newest
+    /// first, as `Recordings.recordingIDs` lists them), or nil for a heard row. A log row is
+    /// matched against every recording of its channel, not only the newest: switching the
+    /// switch off and on starts a new recording whose manifest is empty at first, and until
+    /// 2026-09-25 that one replaced the old and the rows the old one kept lost their ▶
+    /// (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)").
+    public static func keptPartURI(of t: Transmission, in manifests: [RecordingManifest])
+        -> String?
+    {
+        for m in manifests {
+            if let p = match(transmission: t, in: m.parts) { return m.uri(of: p) }
+        }
+        return nil
+    }
 }
 
 /// A recording as `Resources.ListResources(RECORDING)` lists it, read from the resource's frozen
@@ -535,14 +550,27 @@ public enum Recordings {
         }
     }
 
+    /// The window's hang: how long a part stays open after the squelch closes. The daemon's
+    /// default of 5 s (`RecordConfig.hang_ms`) keeps an exchange of several overs in one part,
+    /// and on the owner's second run (2026-09-25) one 25 s part held four 4 s log rows, so one ▶
+    /// lit three rows and the Library showed one part where the log showed four. The switch's
+    /// line promises `Each transmission becomes a part, cut at dead air.`, so the window asks for
+    /// the pre-roll's length: a gap shorter than half a second stays one part, as the log's
+    /// quarter-second rule (`TransmissionLog.shortestSeconds`) keeps a kerchunk out of the log.
+    /// `ley record` keeps the daemon's default.
+    public static let windowHangMs: UInt32 = 500
+    /// The window's pre-roll, the daemon's default (`RecordConfig.pre_roll_ms`) sent explicitly,
+    /// so the gate the window asks for is stated in one place.
+    public static let windowPreRollMs: UInt32 = 500
+
     /// The window's recording: the frequency form of `RecordConfig` with the channel's settings
     /// copied at the start, so the job owns its channel and outlives the window, a retune and a
     /// quit (docs/plans/app.md, APP-5). Gated by squelch, because the daemon's gate cuts a part
     /// at dead air and a channel that never goes quiet is one long part; an ungated recording is
-    /// `ley record` without `--gate` (docs/design/app-design-handoff-m3.md, 8a). Pre-roll, hang
-    /// and part length are left at the daemon's defaults, with no duration and no stop after
-    /// quiet. A squelch that is off (NaN) is sent as NaN, which the daemon reads as the channel
-    /// default.
+    /// `ley record` without `--gate` (docs/design/app-design-handoff-m3.md, 8a). Pre-roll and hang
+    /// are the window's (`windowPreRollMs`, `windowHangMs`), so each transmission is its own
+    /// part; part length is the daemon's default, with no duration and no stop after quiet. A
+    /// squelch that is off (NaN) is sent as NaN, which the daemon reads as the channel default.
     public static func config(
         frequencyHz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32, squelchDBFS: Double
     ) -> Leyline_V1_RecordConfig {
@@ -552,14 +580,35 @@ public enum Recordings {
             $0.bandwidthHz = bandwidthHz
             $0.squelchDbfs = squelchDBFS
             $0.gate = .squelch
+            $0.preRollMs = windowPreRollMs
+            $0.hangMs = windowHangMs
         }
+    }
+
+    /// The job ids of every recording on `frequencyHz` and `mode`, newest first: the running
+    /// job's (`running`, which may not be listed yet), then the listing's by start. A recording
+    /// or `mode` without a mode matches any, as `activeJob` does. The log's kept rows and the
+    /// time gutter's bars come from these recordings' manifests together.
+    public static func recordingIDs(
+        onFrequencyHz frequencyHz: UInt64, mode: Leyline_V1_DemodMode,
+        in recordings: [RecordingSummary], running: String? = nil
+    ) -> [String] {
+        let listed = recordings.filter { r in
+            r.frequencyHz == frequencyHz
+                && (r.mode == mode || r.mode == .unspecified || mode == .unspecified)
+        }
+        .sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
+        .map(\.jobID)
+        guard let running else { return listed }
+        return [running] + listed.filter { $0 != running }
     }
 
     /// The channel page's switch: the frequency form on the page's channel, from the store's
     /// listing alone, since the page may have read no manifest yet. The width is the newest
     /// recording's (`channelWidth`), 0 for the mode's default when none states one, and the
     /// squelch is NaN, which asks a gated recording for the daemon's auto squelch: the page has
-    /// no channel of its own to copy one from.
+    /// no channel of its own to copy one from. The gate's pre-roll and hang are `config`'s, so a
+    /// recording started from either switch is cut the same way.
     public static func pageConfig(_ c: RecordingChannel, groups: [RecordingGroup])
         -> Leyline_V1_RecordConfig
     {

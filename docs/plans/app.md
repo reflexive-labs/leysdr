@@ -1060,6 +1060,42 @@ until a Mac: `AppSession.swift` (`noticeFailedRecordJobs`, the switch letting go
 `SpectrumFeed.swift` (the log starting over on a retune, the inspector's On air and time on air
 with it), and `RecordingsPage.swift` (the notice strip at the page's foot, over the cards).
 
+Fixed 2026-09-25 (second run), five items from the owner's second run of the recording build
+(`../design/app-design-handoff-m3.md`, "Decided after the second run"). **One part held several
+transmissions**: the window left `hang_ms` at the daemon's 5 s, so a simplex exchange of four
+4 s overs was one 25 s part in the Library and one ▶ lit three of the log's four rows. Both
+switches now send `hang_ms` 500 and `pre_roll_ms` 500 (`Recordings.config`, which
+`pageConfig` calls), so each transmission is its own part, as the switch's line says; `ley
+record` keeps the daemon's defaults. **Kept rows lost their ▶ when the switch went off and on**:
+the rows were matched against one manifest, the running job's else the newest record job's, and
+the new job's empty manifest replaced the old. The session's manifests are now one cache by job
+id for the channel page and the tuned channel (`AppSession.manifests`), every recording on the
+tuned frequency and mode is read (`Recordings.recordingIDs`, the running job first), and a row is
+kept when any of them holds it (`RecordingParts.keptPartURI`); the gutter's bars take the same
+parts. **Every row in the playing part showed ■**: the rows compared the playing URI only; the
+session now keeps the clicked row's start sample (`playingRowStart`), cleared when the playback
+ends. **Switching channel lost the transmissions**: the first fix of the day started the log over
+on a retune; `ChannelTelemetryFeed` now keeps a `TransmissionLog` per frequency and mode for the
+session (`TransmissionLogs`, 32 at most, the least recently tuned dropped), shows the tuned one
+and folds edges into it only. The daemon's close on retune can reach the window after the retune's
+event, so a log left on air takes the next close edge (several, in the order they were left),
+and an open edge first drops the old transmission. **The place switch's unselected segment was
+light**: `PlaceSwitch` is now `chrome` inside a 1 pt `border` stroke, the selected segment alone
+on `border` in `ink`, and both Record transmissions switches are tinted `accentRec` only while
+on. Verified by `RecordingsTests` (the config's gate, a match across two manifests, the tuned
+channel's recording ids), `TransmissionsTests` (rows surviving a switch away and back, a mode as
+its own log, the close after a switch, two quick switches, an open edge first, a new channel on a
+known frequency, the bound), and in `LeylineClientDaemonTests`
+`testTheWindowsRecordingHoldsTheTransmissionsHeardLive`, where the daemon's manifest carries the
+window's 500 ms hang and pre-roll and a row the first recording kept still matches after a second
+recording starts on the channel. Unverified until a Mac: `AppSession.swift` (the shared manifest
+cache, `followTunedRecordings`, `playingRowStart`), `SpectrumFeed.swift` (the log switching on a
+retune, On air and time on air following it), `InspectorGroups.swift` (■ and the progress line on
+the clicked row only, the switch's conditional tint), `WaterfallView.swift` (`KeptBars` from every
+recording's parts), `RecordingsPage.swift` (the page switch's tint), and `MainWindow.swift`
+(`PlaceSwitch`'s grounds and stroke in the toolbar, and whether `.tint(nil)` leaves the system's
+off track).
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

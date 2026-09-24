@@ -12,7 +12,8 @@
 // from the close edge the way `listenSummary.apply` does (`go/internal/cli/mcp_tools.go`), so a
 // client that subscribes mid-transmission still logs it. Every time here is a `SampleTime` on
 // the capture's timeline (invariant 5); `SampleClock` turns one into a wall clock, when an
-// anchor covers it.
+// anchor covers it. The window keeps one log per frequency and mode for the session
+// (`TransmissionLogs`), so a retune switches logs rather than emptying one.
 
 import Foundation
 import LeylineProto
@@ -86,7 +87,9 @@ public struct TransmissionLog: Sendable, Equatable {
     /// kerchunk runs longer. `ley tune`'s `shortestTransmissionSeconds`.
     public static let shortestSeconds = 0.25
 
-    public let channelID: String
+    /// The channel whose edges are folded. A log kept for a frequency (`TransmissionLogs`) is
+    /// handed to the next channel tuned there, which is why it can change.
+    public private(set) var channelID: String
     public private(set) var closed: [Transmission] = []
     public private(set) var onAir: OnAir?
     /// The capture rate the last edge was folded at; 0 until one has been.
@@ -141,6 +144,21 @@ public struct TransmissionLog: Sendable, Equatable {
         }
     }
 
+    /// Drops the open transmission without logging it: its close edge will never reach this log,
+    /// because the log's subscription ended or it now folds another channel.
+    mutating func endUnheard() {
+        onAir = nil
+        tone = nil
+    }
+
+    /// Folds `channelID`'s edges from now on. The open transmission belonged to the old channel,
+    /// whose close edge the new one's subscription does not carry, so it is dropped.
+    mutating func rebind(channelID: String) {
+        guard channelID != self.channelID else { return }
+        self.channelID = channelID
+        endUnheard()
+    }
+
     /// Seconds the open transmission has run at `now`, or nil when nothing is on air, `now` is
     /// on another timeline or before the open edge, or the rate is unknown.
     public func timeOnAir(at now: Leyline_V1_SampleTime) -> Double? {
@@ -161,9 +179,10 @@ public struct TransmissionLog: Sendable, Equatable {
     }
 }
 
-/// Tells a retune of a channel from a move of its capture, so a transmission log can start over
-/// when the channel's frequency changes: the log is the transmissions heard on this frequency,
-/// and one from before a retune was not (plans/app.md, APP-5, "Fixed 2026-09-25"). A channel
+/// Tells a retune of a channel from a move of its capture, so the window can switch to the
+/// transmission log of the channel's new frequency (`TransmissionLogs`): a log is the
+/// transmissions heard on one frequency, and one from before a retune was not heard on this
+/// (plans/app.md, APP-5, "Fixed 2026-09-25" and "Fixed 2026-09-25 (second run)"). A channel
 /// follows its absolute frequency when its capture moves, and the daemon publishes the capture
 /// before the channel's recomputed offset, so the mirror passes through the new centre with the
 /// old offset for one event. The frequency is therefore read only when the channel's own offset
@@ -186,5 +205,114 @@ public struct ChannelFrequencyWatch: Sendable, Equatable {
         defer { tunedHz = UInt64(hz) }
         guard let before = tunedHz else { return false }
         return UInt64(hz) != before
+    }
+}
+
+/// The window's transmission logs, one per frequency and mode tuned this session, so switching
+/// channel and back keeps what was heard there (plans/app.md, APP-5, "Fixed 2026-09-25 (second
+/// run)"). Until then the log started over on every retune and the owner lost the history.
+/// Edges fold into the current log only. A retune closes the open transmission in the daemon
+/// (docs/dev/engine-internals.md, "Squelch and meters"), but that close arrives on the telemetry
+/// stream and the retune on the event stream, so it can reach the window after the log has
+/// switched. A log left on air therefore waits for the next squelch edge: the daemon sends one
+/// close per retune off an open squelch, in order and before any edge at the new frequency, so
+/// the logs left waiting take the close edges in the order they were left. An open edge while
+/// one waits means the daemon sent no close, and every waiting transmission is dropped rather
+/// than left running.
+public struct TransmissionLogs: Sendable, Equatable {
+    /// How many frequencies keep a log; the least recently tuned goes first. A session that
+    /// walks a band's channels one by one tunes more than this, and the oldest of them is the
+    /// one least likely to be tuned again.
+    public static let capacity = 32
+
+    /// A channel by frequency and mode, the shape a recording's channel has (`RecordingChannel`).
+    public struct Key: Sendable, Hashable {
+        public var frequencyHz: UInt64
+        public var mode: Leyline_V1_DemodMode
+
+        public init(frequencyHz: UInt64, mode: Leyline_V1_DemodMode) {
+            self.frequencyHz = frequencyHz
+            self.mode = mode
+        }
+    }
+
+    private var logs: [Key: TransmissionLog] = [:]
+    /// Least recently tuned first.
+    private var order: [Key] = []
+    /// The log edges fold into and the inspector shows; nil with no channel.
+    public private(set) var current: Key?
+    /// The logs switched away from while their transmission was open, oldest first, each
+    /// waiting for its close edge.
+    private var waiting: [Key] = []
+
+    public init() {}
+
+    /// The current log.
+    public var log: TransmissionLog? { current.flatMap { logs[$0] } }
+
+    /// The log kept for `key`, current or not.
+    public func log(for key: Key) -> TransmissionLog? { logs[key] }
+
+    public var count: Int { logs.count }
+
+    /// Makes `key`'s log current, creating it if this frequency and mode are new, for
+    /// `channelID`'s edges. Returns whether the current log changed.
+    @discardableResult
+    public mutating func tune(_ key: Key, channelID: String) -> Bool {
+        if current == key, logs[key]?.channelID == channelID { return false }
+        if let c = current, let old = logs[c] {
+            if old.channelID != channelID {
+                // The new channel's subscription carries none of the old one's edges.
+                endWaiting()
+                logs[c]?.endUnheard()
+            } else if c != key, old.onAir != nil, !waiting.contains(c) {
+                waiting.append(c)
+            }
+        }
+        var log = logs[key] ?? TransmissionLog(channelID: channelID)
+        log.rebind(channelID: channelID)
+        logs[key] = log
+        order.removeAll { $0 == key }
+        order.append(key)
+        current = key
+        while order.count > Self.capacity {
+            let dropped = order.removeFirst()
+            logs[dropped] = nil
+            waiting.removeAll { $0 == dropped }
+        }
+        return true
+    }
+
+    /// No channel, or the subscription ended: nothing is current, and no close edge will reach
+    /// any open transmission, so each is dropped. The logs are kept.
+    public mutating func leave() {
+        endWaiting()
+        if let c = current { logs[c]?.endUnheard() }
+        current = nil
+    }
+
+    /// Folds one message into the current log, after giving a close edge to the oldest log
+    /// waiting for one.
+    public mutating func fold(_ msg: Leyline_V1_TelemetryMsg, captureRate: UInt64) {
+        // In place through the dictionary's subscript, so a meter ten times a second copies
+        // nothing.
+        if case .squelch(let sq)? = msg.body, let first = waiting.first,
+            logs[first]?.channelID == sq.channelID
+        {
+            if !sq.open {
+                waiting.removeFirst()
+                logs[first]?.fold(msg, captureRate: captureRate)
+                return
+            }
+            endWaiting()
+        }
+        guard let c = current else { return }
+        logs[c]?.fold(msg, captureRate: captureRate)
+    }
+
+    /// Every waiting transmission dropped, except the current log's own: it is still on air here.
+    private mutating func endWaiting() {
+        for k in waiting where k != current { logs[k]?.endUnheard() }
+        waiting = []
     }
 }

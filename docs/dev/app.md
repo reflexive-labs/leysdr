@@ -12,7 +12,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
 | `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items; APP-5), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`; APP-5b), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
@@ -105,7 +105,13 @@ joined, its start read back from the close edge the way `ley mcp`'s `listen` doe
 or one under a quarter second (a squelch near the floor opening on noise), is ignored, the CTCSS tone or DCS code reported while a transmission ran stays with it (`SubAudibleTone`, printed ` · PL 100.0` or ` · DCS 023`; a later report of the other kind replaces it), the 1 Hz heartbeat
 that repeats a tone is not a new one, and a measurement between two standard tones is not reported
 as a tone. `onAir` is the open transmission and `timeOnAir(at:)` its length at a `SampleTime`, so the
-view asks with the newest time it has rather than a clock of its own. `SampleClock` is the Swift
+view asks with the newest time it has rather than a clock of its own. `TransmissionLogs` keeps
+one such log per frequency and mode for the window's session, 32 at most with the least recently
+tuned dropped, so a retune switches to the new frequency's log and coming back finds the rows
+heard there; edges fold into the current log only, and a log left while its transmission was
+open takes the next close edge, which is the daemon's close on retune arriving after the
+retune's event (an open edge first drops the old transmission instead). Until the owner's second
+run on 2026-09-25 a retune emptied the one log. `SampleClock` is the Swift
 mirror of `leyline.AnchorWallTime` and `RecordWallTime`: a `SampleTime` becomes a `Date` through
 a dated `CaptureAnchor` on the same capture that applies from a sample not past it, drift
 applied as the anchor states it, and nil otherwise (a capture's anchor has host time 0 until its
@@ -156,7 +162,9 @@ in words, and every word is a presentation of a number the daemon measured: sign
 `freq_error_hz` and `deviation_hz` through `TuningWord` and `DeviationWord` (`Reading.swift`,
 where the thresholds live and are tested), time on air and the log of recent transmissions from
 `ChannelTelemetryFeed`, which subscribes one channel's meter, squelch edges and sub-audible
-reports and folds the last two into the façade's `TransmissionLog`. The number is one click away
+reports and folds the last two into the tuned frequency's `TransmissionLog` in the façade's
+`TransmissionLogs`, switching logs when `ChannelFrequencyWatch` reads a new frequency or the
+channel's mode changes. The number is one click away
 under each word, and a row whose measurement is NaN is hidden rather than dashed. Wall clock in
 the log comes through `SampleClock` from the capture's anchor and is relative otherwise. The panel
 keeps no state of its own; its one write is a bookmark's name, through `BookmarkStore`. The
@@ -170,22 +178,32 @@ recording" sections; the design is `../design/app-design-handoff-m3.md`, 8a and 
 recording is kept, and nothing offers to play what is not on disk. The log's head row is the
 Record transmissions switch. On starts `Jobs.StartJob` in the frequency form of `RecordConfig`,
 gated by squelch, with the tuned channel's frequency, mode, width and squelch copied
-(`Recordings.config`); off is `CancelJob`; the job owns its channel and outlives the window. The
+(`Recordings.config`) and a hang and pre-roll of 500 ms each (`windowHangMs`, `windowPreRollMs`),
+so each transmission is its own part: the daemon's default 5 s hang folded a simplex exchange of
+four overs into one part on the owner's second run (2026-09-25), and `ley record` keeps that
+default; off is `CancelJob`; the job owns its channel and outlives the window. The
 switch shows `Recordings.activeJob`, the running or degraded record job on the tuned channel's
 frequency and mode in the mirror's `jobs`, whoever started it, and keeps only a click until that
 job's event arrives (`recordSwitchOn`); File ▸ Record Transmissions (⌘R) is the same switch.
+Its track is tinted `accentRec` only while it is on; off it has no tint, the system's own dark
+track.
 While it is on, the line under it is `Recordings.statusLine` (`Since 09:12 · 3 parts · 1.1 MB.
 Keeps going if you tune away.`, from the job's `created_at_ns` and the manifest), or the job's
-`status_detail` in `caution` while it is degraded. The store is read, not mirrored: the manifest
+`status_detail` in `caution` while it is degraded. The store is read, not mirrored: a manifest
 is `recording.json` read through `ResolveLocalPath`, because the window is local as `ley
-recordings show` is, for the running job on the tuned channel or else the newest record job there
-that the mirror holds, and it is read again on each of that job's events. The log's rows are the
-live transmissions only and never back-fill from a recording. A closed row whose transmission
-lies inside a part (same capture, the part's start at or before the transmission's start, its end
-at or before the part's end; `RecordingParts.match`) is kept: its time and length in `ink`, ▶ in
+recordings show` is, into one cache by job id (`AppSession.manifests`) that the channel page
+shares. For the tuned channel every recording on its frequency and mode is read
+(`Recordings.recordingIDs`: the running job first, then the listing, newest first), each once
+and again on each of its job's events. The log's rows are the live transmissions only and never
+back-fill from a recording. A closed row whose transmission lies inside a part of any of those
+recordings (same capture, the part's start at or before the transmission's start, its end at or
+before the part's end; `RecordingParts.match` and `keptPartURI`) is kept, so a row an earlier
+recording kept keeps its ▶ after the switch goes off and on: its time and length in `ink`, ▶ in
 a ring that plays the part through `Control.StartPlayback` while the live sink is detached, the
 progress line from the mirror's `playbacks` (the daemon publishes a playing playback four times a
-second), and Show in Finder on its context menu. A heard row is `inkTertiary` with no glyph. The
+second), and Show in Finder on its context menu. ■ and the progress line are on the clicked row
+only (`playingRowStart`, its start sample, cleared when the playback ends), since rows a short
+gap apart share a part. A heard row is `inkTertiary` with no glyph. The
 `now` row has an `accentRec` dot while the job runs and the squelch is open, a bookmark whose
 frequency and mode are recording has one 6 pt left of its frequency in the sidebar. The
 waterfall's time gutter (`WaterfallGutter`, 64 pt on `panel` at the right of both charts, so the
@@ -208,7 +226,8 @@ it runs on a Mac (`../plans/app.md`, APP-5); the façade's rules are tested in `
 **Two places: the Radio and the Library** (`MainWindow.swift`, `LibraryView.swift`,
 `PlayerBar.swift`; `../design/app-design-handoff-m3.md`, "Decided 2026-09-25: the Library").
 The toolbar's leading edge has a `Radio | Library` switch (`PlaceSwitch`, two plain buttons on
-the pop-ups' ground; View ▸ Radio ⌘1 and Library ⌘2), which sets `AppSession.place`, remembered
+the toolbar's `chrome` inside a 1 pt `border` stroke, the place showing on a `border` ground in
+`ink` and the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which sets `AppSession.place`, remembered
 in the defaults. `MainWindow` switches its whole body under the toolbar on it: `RadioBody` is the
 window above, with the sidebar holding only bands and bookmarks, and `LibraryBody` is what has
 been kept. The radio runs the same in both, because the capture, the channel, the sink and the
@@ -227,8 +246,8 @@ mode (one job state with the log's switch, the click in flight keyed by frequenc
 Tune, which goes to the Radio by the bookmark path; then the recordings as cards grouped `today`,
 `yesterday`, the day before by name and a folded `earlier` (`Recordings.days`), each card's parts
 as chips that wrap (`FlowLayout` over `FlowRows.lines`). The cards come from the listing and each
-recording's manifest, read through `ResolveLocalPath` into `pageManifests` and read again on each
-of its job's events. A chip's click selects the part and plays it by the log's playback path;
+recording's manifest, read through `ResolveLocalPath` into the session's `manifests` and read
+again on each of its job's events. A chip's click selects the part and plays it by the log's playback path;
 Play all queues the parts and starts each on the tombstone of the one before (`PlayQueue`), with
 the live sink held detached until the last ends. The inspector (`LibraryInspector`) is the part
 selected or playing (`PartInspector`: its words from `Recordings.partWords` and `partTable`, Show

@@ -260,4 +260,150 @@ final class TransmissionsTests: XCTestCase {
         XCTAssertFalse(watch.observe(offsetHz: 25_000, centerHz: nil), "no capture, no frequency")
         XCTAssertTrue(watch.observe(offsetHz: 25_000, centerHz: 146_520_000))
     }
+
+    // MARK: One log per frequency
+
+    private let gmrs3 = TransmissionLogs.Key(frequencyHz: 462_612_500, mode: .nfm)
+    private let gmrs1 = TransmissionLogs.Key(frequencyHz: 462_562_500, mode: .nfm)
+
+    /// A transmission of `seconds` closing at `end`, with its open edge seen.
+    private func heard(_ logs: inout TransmissionLogs, openAt start: UInt64, seconds: UInt64) {
+        logs.fold(edge(open: true, at: start), captureRate: rate)
+        logs.fold(
+            edge(open: false, at: start + seconds * rate, duration: seconds * rate),
+            captureRate: rate)
+    }
+
+    /// The owner, 2026-09-25: "switching channel lost the transmissions". Each frequency keeps
+    /// its own rows for the session, and edges fold only into the one tuned.
+    func testRowsSurviveASwitchAwayAndBack() {
+        var logs = TransmissionLogs()
+        XCTAssertNil(logs.log, "no channel, no log")
+        XCTAssertTrue(logs.tune(gmrs3, channelID: channel))
+        heard(&logs, openAt: 2_400_000, seconds: 2)
+        heard(&logs, openAt: 12_000_000, seconds: 1)
+        XCTAssertEqual(logs.log?.closed.count, 2)
+
+        XCTAssertTrue(logs.tune(gmrs1, channelID: channel), "a retune switches logs")
+        XCTAssertEqual(logs.log?.closed.count, 0, "a new frequency starts empty")
+        heard(&logs, openAt: 30_000_000, seconds: 3)
+        XCTAssertEqual(logs.log?.closed.map(\.seconds), [3])
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.count, 2, "the old frequency's rows are kept")
+
+        XCTAssertTrue(logs.tune(gmrs3, channelID: channel))
+        XCTAssertEqual(logs.log?.closed.map(\.seconds), [1, 2], "back again: the rows are there")
+        XCTAssertFalse(logs.tune(gmrs3, channelID: channel), "tuning the current one is nothing")
+        XCTAssertEqual(logs.count, 2)
+        XCTAssertEqual(logs.log(for: gmrs1)?.closed.count, 1, "the other frequency's are kept")
+    }
+
+    func testAModeIsItsOwnLog() {
+        var logs = TransmissionLogs()
+        logs.tune(gmrs3, channelID: channel)
+        heard(&logs, openAt: 2_400_000, seconds: 2)
+        logs.tune(.init(frequencyHz: gmrs3.frequencyHz, mode: .am), channelID: channel)
+        XCTAssertEqual(logs.log?.closed.count, 0)
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.count, 1)
+    }
+
+    /// The daemon's close on retune travels on the telemetry stream and the retune on the event
+    /// stream, so it can arrive after the switch; it belongs to the log left on air.
+    func testTheRetunesCloseEndsTheLogLeftOnAir() {
+        var logs = TransmissionLogs()
+        logs.tune(gmrs3, channelID: channel)
+        logs.fold(edge(open: true, at: 2_400_000), captureRate: rate)
+        XCTAssertNotNil(logs.log?.onAir)
+        logs.tune(gmrs1, channelID: channel)
+        XCTAssertNil(logs.log?.onAir, "nothing is on air on the new frequency yet")
+        logs.fold(
+            edge(open: false, at: 7_200_000, duration: 4_800_000), captureRate: rate)
+        XCTAssertEqual(logs.log?.closed.count, 0, "the close is not the new frequency's")
+        XCTAssertNil(logs.log(for: gmrs3)?.onAir, "the old log ends cleanly")
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.map(\.seconds), [2])
+        // The next transmission is the new frequency's.
+        heard(&logs, openAt: 9_600_000, seconds: 1)
+        XCTAssertEqual(logs.log?.closed.map(\.seconds), [1])
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.count, 1)
+    }
+
+    /// A daemon that sends no close on retune: the new frequency's open edge comes first, and
+    /// the old transmission is dropped rather than left on air for the next visit.
+    func testAnOpenEdgeFirstDropsTheTransmissionLeftOnAir() {
+        var logs = TransmissionLogs()
+        logs.tune(gmrs3, channelID: channel)
+        logs.fold(edge(open: true, at: 2_400_000), captureRate: rate)
+        logs.tune(gmrs1, channelID: channel)
+        logs.fold(edge(open: true, at: 4_800_000), captureRate: rate)
+        XCTAssertEqual(logs.log?.onAir?.since, at(4_800_000), "the open edge is the new one's")
+        XCTAssertNil(logs.log(for: gmrs3)?.onAir)
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.count, 0)
+    }
+
+    /// Two retunes off open transmissions before either close arrives: the closes come in the
+    /// order the retunes were made, and each goes to its own log.
+    func testClosesAfterTwoQuickRetunesGoToTheirLogsInOrder() {
+        var logs = TransmissionLogs()
+        let calling = TransmissionLogs.Key(frequencyHz: 146_520_000, mode: .nfm)
+        logs.tune(gmrs3, channelID: channel)
+        logs.fold(edge(open: true, at: 2_400_000), captureRate: rate)
+        logs.tune(gmrs1, channelID: channel)
+        logs.tune(calling, channelID: channel)
+        logs.fold(edge(open: false, at: 4_800_000, duration: 2_400_000), captureRate: rate)
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.map(\.seconds), [1])
+        XCTAssertNil(logs.log(for: gmrs3)?.onAir)
+        XCTAssertEqual(logs.log(for: gmrs1)?.closed.count, 0, "nothing was on air there")
+        heard(&logs, openAt: 7_200_000, seconds: 2)
+        XCTAssertEqual(logs.log?.closed.map(\.seconds), [2], "then edges are the current log's")
+    }
+
+    /// Tuned away and straight back before the close arrives: the close ends the current log's
+    /// own transmission.
+    func testBackBeforeTheCloseLogsItHere() {
+        var logs = TransmissionLogs()
+        logs.tune(gmrs3, channelID: channel)
+        logs.fold(edge(open: true, at: 2_400_000), captureRate: rate)
+        logs.tune(gmrs1, channelID: channel)
+        logs.tune(gmrs3, channelID: channel)
+        XCTAssertNotNil(logs.log?.onAir, "still waiting for its close")
+        logs.fold(edge(open: false, at: 4_800_000, duration: 2_400_000), captureRate: rate)
+        XCTAssertEqual(logs.log?.closed.map(\.seconds), [1])
+        XCTAssertNil(logs.log?.onAir)
+    }
+
+    /// A new channel on a frequency already logged (a reconnect, another radio): its rows are
+    /// kept and its edges are the new channel's; the old channel's open transmission never
+    /// closes on the new subscription, so it is dropped.
+    func testANewChannelOnAKnownFrequencyKeepsItsRowsAndDropsTheOpenOne() {
+        var logs = TransmissionLogs()
+        logs.tune(gmrs3, channelID: channel)
+        heard(&logs, openAt: 2_400_000, seconds: 2)
+        logs.fold(edge(open: true, at: 12_000_000), captureRate: rate)
+        logs.leave()
+        XCTAssertNil(logs.log)
+        XCTAssertNil(logs.log(for: gmrs3)?.onAir, "the subscription ended: nothing closes it")
+        XCTAssertTrue(logs.tune(gmrs3, channelID: "chan_b"))
+        XCTAssertEqual(logs.log?.channelID, "chan_b")
+        XCTAssertEqual(logs.log?.closed.count, 1)
+        logs.fold(edge(open: true, at: 14_400_000), captureRate: rate)
+        XCTAssertNil(logs.log?.onAir, "the old channel's edges are not folded")
+        logs.fold(edge(open: true, at: 14_400_000, channel: "chan_b"), captureRate: rate)
+        XCTAssertNotNil(logs.log?.onAir)
+    }
+
+    func testTheLeastRecentlyTunedLogGoesFirst() {
+        var logs = TransmissionLogs()
+        for i in 0..<TransmissionLogs.capacity {
+            logs.tune(
+                .init(frequencyHz: 146_000_000 + UInt64(i) * 12_500, mode: .nfm),
+                channelID: channel)
+        }
+        let first = TransmissionLogs.Key(frequencyHz: 146_000_000, mode: .nfm)
+        let second = TransmissionLogs.Key(frequencyHz: 146_012_500, mode: .nfm)
+        logs.tune(first, channelID: channel)
+        heard(&logs, openAt: 2_400_000, seconds: 1)
+        logs.tune(gmrs3, channelID: channel)
+        XCTAssertEqual(logs.count, TransmissionLogs.capacity)
+        XCTAssertNil(logs.log(for: second), "the least recently tuned was dropped")
+        XCTAssertEqual(logs.log(for: first)?.closed.count, 1, "tuned again, so it was kept")
+    }
 }
