@@ -110,9 +110,9 @@ actor RecordingStore {
     /// What is left of a recording the last daemon was still writing (docs/design/recording.md,
     /// "Retune, detach and restart"): the part's WAV header is repaired from the file's length and
     /// the manifest is closed with `ended_by = restart`. The recording is not resumed; a
-    /// longer one needs a new job.
+    /// longer one needs a new job. One with no part holding samples is removed instead.
     ///
-    /// Returns the job ids it closed, so the daemon can log them.
+    /// Returns the job ids it closed or removed, so the daemon can log them.
     @discardableResult
     func repairUnfinished() -> [String] {
         var repaired: [String] = []
@@ -149,6 +149,14 @@ actor RecordingStore {
             }
             manifest.endedBy = "restart"
             manifest.endedAtNs = realtimeNs()
+            // A recording that heard nothing before the last daemon went is discarded, as one
+            // that ends under a running daemon is (docs/design/recording.md, "Nothing heard").
+            if !manifest.parts.contains(where: { $0.samples > 0 }) {
+                log.info("dropping \(entry.path): the recording the last daemon left heard nothing")
+                try? FileManager.default.removeItem(atPath: entry.path)
+                repaired.append(manifest.jobID)
+                continue
+            }
             do {
                 try PartWriter.writeManifest(manifest, to: entry.path)
                 repaired.append(manifest.jobID)

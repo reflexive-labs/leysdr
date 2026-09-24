@@ -250,6 +250,11 @@ public nonisolated struct Leyline_V1_Job: @unchecked Sendable {
   /// Resources service resolves them. A scan job's ley://scans/<scan_id> is resolved by
   /// Jobs.GetScan for as long as the daemon remembers the job (its last sixteen finished ones,
   /// forgotten on restart); a persisted scan arrives with the durable job store.
+  ///
+  /// A record job that ends with no part written -- a gated recording whose squelch never opened
+  /// -- is discarded: its directory is removed, it ends COMPLETED with status_detail "nothing was
+  /// heard", and its ley://recordings/<job_id> stays here but resolves to JOB_NOT_FOUND, because
+  /// there is nothing to hear (docs/design/recording.md, "Nothing heard").
   public var resultUris: [String] {
     get {_storage._resultUris}
     set {_uniqueStorage()._resultUris = newValue}

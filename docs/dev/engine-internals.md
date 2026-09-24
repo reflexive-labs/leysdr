@@ -624,7 +624,11 @@ like the meter's audio peak. It rides with `CaptureActivity` on capture and daem
 a channel scope. The clients take the fraction: `ley levels`' OVER and `ley tune`'s failure line
 (`clippingFloor`, one in ten thousand) report clipping only when the count shows it,
 and fall back to the loudest-bin rule only when no `CaptureLevel` arrives
-(an older daemon).
+(an older daemon). A record job is the one in-process reader besides the telemetry service:
+`RecordRunner.followLevel` reads the same meter at the same 100 ms and hands each new generation to
+`PartWriter`, whose `ClipLedger` charges each part its `clipped_ms` at the same one-in-ten-thousand
+floor (`docs/design/recording.md`, "The part sidecar"). It is a seqlock read of four words, not a
+reader on the DSP ring.
 
 ### Bulk service
 

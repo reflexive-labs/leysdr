@@ -40,9 +40,12 @@ struct PartSidecar: Codable, Sendable {
         var peakDbfs: Double?
         var meanDbfs: Double?
         var squelchOpens: [RecordingSquelchOpen]
+        /// The manifest part's `clipped_ms`, omitted when nothing clipped.
+        var clippedMs: Int64? = nil
 
         enum CodingKeys: String, CodingKey {
             case part, kind
+            case clippedMs = "clipped_ms"
             case jobID = "job_id"
             case startSample = "start_sample"
             case endSample = "end_sample"
@@ -130,6 +133,62 @@ enum WAVHeader {
     }
 }
 
+/// Clipped time from the capture's `CaptureLevel` readings, for a part's `clipped_ms`
+/// (docs/design/recording.md, "The part sidecar"). A reading covers the quarter second of capture
+/// samples before its `sampleIndex`; it counts as clipping when at least `floor` of its samples
+/// were at a rail, the rule the window's clipping marks and `ley tune`'s warning use, and a part
+/// is charged the stretch of each clipping reading that lies inside it.
+///
+/// The readings arrive on the runner's poll, not with the audio, so they are kept as intervals and
+/// matched against a part when it closes. A reading still being measured when a part closes is
+/// not counted, so a part can be up to a quarter second short at its end.
+struct ClipLedger: Sendable {
+    /// The window's `clippingFloor` (`app/Sources/LeylineClient/FailureState.swift`) and
+    /// `ley tune`'s (`go/internal/cli/failure.go`).
+    static let floor = 1e-4
+    /// Clipping readings kept: a minute at four a second, far longer than a part is open before
+    /// it is matched. Only clipping readings are kept, so a clean radio keeps none.
+    static let capacity = 256
+
+    struct Interval: Sendable, Equatable {
+        var from: UInt64
+        var to: UInt64
+    }
+
+    private(set) var intervals: [Interval] = []
+
+    /// Keeps a reading when it clipped. Readings are consecutive intervals of one meter, so they
+    /// do not overlap one another; a reading already kept is not kept twice.
+    mutating func note(_ reading: CaptureLevelReading) {
+        guard reading.totalSamples > 0,
+              Double(reading.clippedSamples) / Double(reading.totalSamples) >= Self.floor
+        else { return }
+        let from = reading.sampleIndex > reading.totalSamples ? reading.sampleIndex - reading.totalSamples : 0
+        let interval = Interval(from: from, to: reading.sampleIndex)
+        guard intervals.last != interval else { return }
+        intervals.append(interval)
+        if intervals.count > Self.capacity { intervals.removeFirst(intervals.count - Self.capacity) }
+    }
+
+    /// Capture samples in `from ..< to` that a clipping reading covered.
+    func clippedSamples(from: UInt64, to: UInt64) -> UInt64 {
+        guard to > from else { return 0 }
+        return intervals.reduce(UInt64(0)) { sum, i in
+            let lo = Swift.max(i.from, from), hi = Swift.min(i.to, to)
+            return hi > lo ? sum + (hi - lo) : sum
+        }
+    }
+
+    /// Drops what ended before `sample`, which no later part reaches back to.
+    mutating func forget(before sample: UInt64) {
+        intervals.removeAll { $0.to <= sample }
+    }
+
+    /// A capture that restarted or was replaced starts a new timeline, and readings from the old
+    /// one would be charged to samples they never covered.
+    mutating func reset() { intervals.removeAll() }
+}
+
 /// Owns one recording's directory: its manifest, and the one part file that is open at a time.
 ///
 /// Parts close when the part timer elapses, when the gate closes, when the capture's centre or
@@ -156,6 +215,10 @@ actor PartWriter {
     private var sumSquares: Double = 0
     private var squelchOpens: [RecordingSquelchOpen] = []
     private var pendingOpen: UInt64?
+    /// The capture's clipping, matched against each part as it closes.
+    private var clips = ClipLedger()
+    /// The capture rate the ledger's samples are counted at; 0 until the first reading.
+    private var clipRate: UInt64 = 0
     /// The capture whose timeline the current part's samples are on.
     private var captureID: String
     private var centerHz: UInt64
@@ -183,8 +246,18 @@ actor PartWriter {
     /// The capture the following samples are on, and where it sits. An IQ part is closed by the
     /// caller before this changes, so the next part carries the new centre.
     func retarget(captureID: String, centerHz: UInt64) {
+        if captureID != self.captureID { clips.reset() }
         self.captureID = captureID
         self.centerHz = centerHz
+    }
+
+    /// One `CaptureLevel` reading of the capture the recording is on, at its sample rate, read off
+    /// the meter `TelemetryService` publishes from (`RecordRunner.followLevel`).
+    func noteLevel(_ reading: CaptureLevelReading, captureRate: UInt64) {
+        guard captureRate > 0 else { return }
+        if clipRate != 0, clipRate != captureRate { clips.reset() }
+        clipRate = captureRate
+        clips.note(reading)
     }
 
     /// A capture's anchor, for the manifest. A capture publishes its anchor with its first block,
@@ -319,10 +392,17 @@ actor PartWriter {
         // A part with no samples in it has no level: nothing was measured, so no level is written.
         let peakDb: Double? = partSamples > 0 ? dbfs(peak) : nil
         let meanDb: Double? = partSamples > 0 ? dbfs((sumSquares / Double(partSamples)).squareRoot()) : nil
+        let clippedSamples = clips.clippedSamples(from: partStartSample, to: endSample)
+        let clippedMs: Int64? = clippedSamples > 0 && clipRate > 0
+            ? Swift.max(1, Int64((Double(clippedSamples) / Double(clipRate) * 1000).rounded())) : nil
+        // Kept from this part's start on: a gated part's pre-roll can reach back before the
+        // previous part's end, never before its start.
+        clips.forget(before: partStartSample)
         let part = RecordingPart(part: partNumber, file: (path as NSString).lastPathComponent,
                                  startSample: partStartSample, endSample: endSample,
                                  samples: partSamples, bytes: partBytes,
-                                 peakDbfs: peakDb, meanDbfs: meanDb, squelchOpens: squelchOpens.count)
+                                 peakDbfs: peakDb, meanDbfs: meanDb, squelchOpens: squelchOpens.count,
+                                 clippedMs: clippedMs)
         manifest.parts.append(part)
         manifest.bytes += partBytes
         // The per-part accumulators belong to the part that just closed. `bytes` adds the open
@@ -409,7 +489,8 @@ actor PartWriter {
                              startSample: part.startSample, endSample: part.endSample,
                              bandwidthHz: manifest.bandwidthHz,
                              squelchDbfs: manifest.squelchDbfs.isFinite ? manifest.squelchDbfs : nil,
-                             peakDbfs: peak, meanDbfs: mean, squelchOpens: squelchOpens))
+                             peakDbfs: peak, meanDbfs: mean, squelchOpens: squelchOpens,
+                             clippedMs: part.clippedMs))
         let base = (part.file as NSString).deletingPathExtension
         do {
             let encoder = JSONEncoder()

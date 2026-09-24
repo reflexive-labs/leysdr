@@ -387,7 +387,8 @@ and the URI for a script.
 `--kind`, `--freq` and `--since` filter on the resource's own metadata, whose keys are frozen
 because `metadata_filter` matches them by exact string: `kind` (`audio`|`iq`), `frequency_hz`,
 `mode`, `bandwidth_hz` (`0` for IQ), `sample_rate`, `format`, `duration_ms`, `parts`,
-`started_at_ns`, `ended_at_ns`, `ended_by`, `device`. `ley recordings show <id>` prints the manifest and `ley recordings path
+`started_at_ns`, `ended_at_ns`, `ended_by`, `device`. `ley recordings show <id>` prints the manifest, with a `CLIP` column in its part table (`0.4 s`)
+only when a part clipped, and `ley recordings path
 <id> [--part N]` the directory or one part's samples file, so `open -R "$(ley recordings path
 job_…)"` reveals it in Finder. Every id argument takes a full job id, an id prefix or a
 `ley://recordings/` URI, `ley play` included: `ley play job_01J…` plays a recording's first part,
@@ -410,22 +411,34 @@ to decode — attaching it as a radio would put a fictional capture and a fictio
 `ley state`, and demodulating audio gives noise. **The daemon plays it instead**
 (`Control.StartPlayback`), through the same audio device a channel's audio comes out of, so the
 sound comes out on the daemon's machine, and `ley play` holds the
-terminal with a position until Ctrl-C stops it — the same shape as every other listening verb. A
+terminal with a position until Ctrl-C stops it — the same shape as every other listening verb.
+When stdin is a terminal, space pauses and resumes it (`Control.SetPlaybackPaused`): the hint
+line reads `Space pauses, Ctrl-C stops.` and the position line `0:02 / 0:05, paused; space
+resumes`, and a pause another client made shows there too. A pipe on stdin takes no keys. A
 daemon with no audio device answers `PLATFORM_UNSUPPORTED` and `ley` then hands the file to this
 machine's own player (`$LEYLINE_PLAYER` when set — `afplay`, `mpv`, `vlc` — else `open` on macOS
 and `xdg-open` elsewhere), saying which happened. Under `--json` nothing is played at all and the
 `LocalPath` is printed instead: a script wants the path, not a sound.
 
 A **`Playback`** is daemon state like everything else (`playback_id`, `resource_uri`, `path`,
-`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`), so it appears in
+`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`, `paused`), so it appears in
 `GetState` and on the event stream, `ley state` lists what is playing and how far in, and a second
 client — the Mac app — renders a position and a stop button without polling. It is not a job (a
 job's output is a resource; a playback produces nothing) and not a sink (a sink is where a
 *channel's* audio goes; a playback has no channel). It belongs to the client that started it and
 stops when that client goes, which is what makes Ctrl-C stop the sound; `Control.StopPlayback`
 stops one early, and the final event carries `state` unset as the tombstone, so a client can tell
-"it reached the end" from "somebody stopped it". Seeking, pausing and looping are not in v1:
-`position` is reported and not writable.
+"it reached the end" from "somebody stopped it". `Control.SetPlaybackPaused` pauses and resumes
+one, and any client may: `position` holds while `paused` is true, resuming continues from it, and
+the four-a-second event is not sent while paused. Seeking and looping are not in v1: `position` is
+reported and not writable.
+
+**A recording that heard nothing is not kept.** A record job that ends with no part written (a
+gated recording whose squelch never opened) ends `COMPLETED` with `status_detail` `nothing was
+heard`, and the daemon removes its directory, so its URI resolves to `JOB_NOT_FOUND`. `ley record`
+then prints `Recorded nothing: the squelch never opened.` on stderr, nothing on stdout, and exits
+0; a continuous recording that ended before any audio arrived says `no audio arrived before it
+ended.` instead.
 
 `ley record --json` prints the `Job` as each state change arrives, one object per line, and
 nothing else on stdout — the URI is in its `resultUris`. `ley recordings --json` prints a
@@ -436,9 +449,10 @@ document beside the files, because the daemon owns that format and a client that
 would drift from what Finder shows. Its keys are snake_case: `{job_id, uri, kind, frequency_hz,
 mode, bandwidth_hz, sample_rate, format, device, gains, squelch_dbfs, gate, part_ms, started_at_ns,
 ended_at_ns, ended_by, created_by, anchors, parts, coverage_gaps, bytes}`, where `parts` is
-`[{part, file, start_sample, end_sample, samples, bytes, peak_dbfs, mean_dbfs, squelch_opens}]`
-(`peak_dbfs` and `mean_dbfs` absent on a part nobody finished measuring, such as one a restart
-repaired), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
+`[{part, file, start_sample, end_sample, samples, bytes, peak_dbfs, mean_dbfs, squelch_opens,
+clipped_ms}]` (`peak_dbfs` and `mean_dbfs` absent on a part nobody finished measuring, such as one
+a restart repaired; `clipped_ms`, how long the capture's `CaptureLevel` reported clipping inside the
+part, absent when nothing clipped), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
 capture the recording spanned, each dating its own capture's samples. `ended_by` is one of
 `duration`, `quiet`, `cancelled`, `channel ended`, `restart`, `store full`, `error`. Beside each
 part is its own sidecar — the `iqfile` document (`iq-files.md`) with a `recording` block — which is

@@ -247,6 +247,20 @@ type playback struct {
 	owner   string
 	started time.Time
 	done    chan struct{}
+	// pausedAt is when the current pause began, zero while playing; pausedFor is the time
+	// spent in earlier pauses. The position is the time since started less both, so a pause
+	// holds it and a resume continues from it.
+	pausedAt  time.Time
+	pausedFor time.Duration
+}
+
+// playedFor is how long the playback has been playing, pauses left out.
+func (p *playback) playedFor(now time.Time) time.Duration {
+	d := now.Sub(p.started) - p.pausedFor
+	if !p.pausedAt.IsZero() {
+		d -= now.Sub(p.pausedAt)
+	}
+	return d
 }
 
 // StartPlayback implements Control.
@@ -325,9 +339,42 @@ func (d *Daemon) StopPlayback(ctx context.Context, req *leylinev1.StopPlaybackRe
 	return &leylinev1.Empty{}, nil
 }
 
+// SetPlaybackPaused implements Control: the position holds while paused and a resume continues
+// from it. Any client may pause a playback, as any client may stop one; the event names who did,
+// and asking for the state it is already in sends no event.
+func (d *Daemon) SetPlaybackPaused(ctx context.Context, req *leylinev1.SetPlaybackPausedRequest) (*leylinev1.Playback, error) {
+	ci := clientFrom(ctx)
+	d.touchUnary(ci)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	p := d.playbacks[req.GetPlaybackId()]
+	if p == nil {
+		return nil, fail(ctx, errorf(leyline.CodeSinkNotFound, req.GetPlaybackId(), "no such playback"))
+	}
+	if p.proto.GetPaused() != req.GetPaused() {
+		now := time.Now()
+		if req.GetPaused() {
+			p.pausedAt = now
+		} else {
+			p.pausedFor += now.Sub(p.pausedAt)
+			p.pausedAt = time.Time{}
+		}
+		p.proto.Paused = req.GetPaused()
+		p.proto.Position = p.position(now)
+		d.emit(ci, proto.Clone(p.proto).(*leylinev1.Playback))
+	}
+	return proto.Clone(p.proto).(*leylinev1.Playback), nil
+}
+
+// position is the frames played by now, at the file's rate.
+func (p *playback) position(now time.Time) uint64 {
+	return uint64(max(p.playedFor(now).Seconds(), 0) * float64(p.proto.GetSampleRate()))
+}
+
 // runPlayback advances the position at the file's own rate, publishes the whole playback every
 // playbackInterval as the daemon does, and ends it when the file runs out, so a client following
-// one sees it move and finish from the event plane alone.
+// one sees it move and finish from the event plane alone. A paused playback is not published:
+// its position has not moved, and the pause already sent its state.
 func (d *Daemon) runPlayback(p *playback) {
 	rate := float64(p.proto.GetSampleRate())
 	if rate <= 0 {
@@ -342,12 +389,16 @@ func (d *Daemon) runPlayback(p *playback) {
 		case <-p.done:
 			return
 		case <-tick.C:
-			elapsed := time.Since(p.started)
 			d.mu.Lock()
 			if d.playbacks[p.proto.PlaybackId] == nil {
 				d.mu.Unlock()
 				return
 			}
+			if p.proto.GetPaused() {
+				d.mu.Unlock()
+				continue
+			}
+			elapsed := p.playedFor(time.Now())
 			if elapsed >= total {
 				d.endPlaybackLocked(p.proto.PlaybackId, byDaemon())
 				d.mu.Unlock()

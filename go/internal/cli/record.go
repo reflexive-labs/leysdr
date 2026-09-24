@@ -415,10 +415,31 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 		return &ExitError{Code: 1, Message: recordFailureDetail(final)}
 	}
 	if !s.app.JSON {
+		// A recording that heard nothing is not kept, so there is no URI to hand a script and
+		// nothing for `ley recordings show` to find (docs/design/recording.md, "Nothing heard").
+		if final.GetStatusDetail() == leyline.NothingHeard {
+			s.say("%s\n", recordedNothing(s, o))
+			return nil
+		}
 		s.say("%s\n", recordClosing(s, final, job.GetJobId(), o.iq))
 		fmt.Fprintln(s.app.Stdout, uri)
 	}
 	return nil
+}
+
+// recordedNothing is the closing line of a recording the daemon discarded because no part was
+// written. A gated recording heard nothing because its squelch stayed shut; a continuous one
+// because no audio reached it before it ended.
+func recordedNothing(s *session, o recordOptions) string {
+	return s.app.ErrStyle.Label("Recorded nothing:") + " " + nothingHeardReason(o.gated)
+}
+
+// nothingHeardReason is why a discarded recording held nothing, for the CLI and the MCP tool.
+func nothingHeardReason(gated bool) string {
+	if gated {
+		return "the squelch never opened."
+	}
+	return "no audio arrived before it ended."
 }
 
 // attachRecordAudio puts this terminal's speakers on the channel the recording is writing from,

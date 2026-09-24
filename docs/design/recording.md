@@ -101,7 +101,7 @@ rest, so a part plays with no change to the reader.
     "job_id": "job_01J…", "part": 1, "kind": "audio",
     "start_sample": 244800000, "end_sample": 290400000,
     "bandwidth_hz": 12500, "squelch_dbfs": -80,
-    "peak_dbfs": -6.2, "mean_dbfs": -18.4,
+    "peak_dbfs": -6.2, "mean_dbfs": -18.4, "clipped_ms": 400,
     "squelch_opens": [ { "open_sample": 246000000, "close_sample": 262800000 },
                        { "open_sample": 268800000, "close_sample": 278400000 } ]
   }
@@ -116,6 +116,25 @@ timeline as the telemetry and the decode records from that capture. `center_hz` 
 is the channel's frequency, on an IQ part the capture's centre. `squelch_opens` is every
 open-and-close of the squelch inside the part, on the same timeline; a continuous recording
 with no gate has none.
+
+`clipped_ms` is how long inside the part the radio clipped (added 2026-09-25 for the Library's
+inspector, `app-design-handoff-m3.md`, "10a · The Library, revised"). It comes from the capture's
+`CaptureLevel` readings, the same count the window's clipping marks and `ley tune`'s warning use:
+a reading is a quarter second of capture samples, it counts when at least 1e-4 of its samples
+were at a converter rail, and the part is charged the stretch of each counting reading that lies
+inside `start_sample` … `end_sample`. The key is absent when nothing clipped, and on a part a
+restart repaired, because nobody measured it. The runner reads the level off the meter
+`TelemetryService` publishes from (`CaptureLevelMeter`, a seqlock of four words, polled at the
+telemetry service's 100 ms), so recording adds no second reader on the DSP ring (invariant 4). A
+reading still being measured when a part closes is not counted, so a part can come up to a quarter
+second short at its end. `RecordingTests` charges a part from a synthetic level feed, and
+`RecordingJobTests` records a file whose every sample is at +1 and reads back more than 1000 ms of
+a 1500 ms part.
+
+`peak_dbfs` does not report clipping. It is measured on the audio the channel produced, and an NFM
+discriminator's output reads near full scale on a clean strong carrier as readily as on an
+overloaded one; a part whose IQ hit the rails reports 0.0 dBFS only by coincidence. A client
+prints `0.0 dBFS · clipped` from `clipped_ms > 0`, never from the peak.
 
 ### The manifest
 
@@ -143,7 +162,7 @@ parts, and what `ley recordings show` prints.
   "created_by": { "client_id": "cli_01J…", "kind": "cli", "label": "ley record" },
   "anchors": [ { "capture_id": "cap_01J…", "host_time_ns": 1789653700000000000, "sample_rate": 2400000, "drift_ppm": 0, "from_sample": 0 } ],
   "parts": [
-    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2 }
+    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "clipped_ms": 400 }
   ],
   "coverage_gaps": [ { "from_sample": 300000000, "to_sample": 312000000, "reason": "out of capture" } ],
   "bytes": 1824044
@@ -154,6 +173,21 @@ parts, and what `ley recordings show` prints.
 `error`. `anchors` is a list for the same reason the kept-records sidecar's is: a recording that
 spans a device detach and reattach spans two captures, and each part's samples are dated by the
 anchor of its own capture.
+
+### Nothing heard
+
+A record job that ends with no part written is discarded (decided 2026-09-25, the Library's
+engine ask 4): a gated recording switched on and off while the squelch never opened, or a
+continuous one that ended before any audio reached it. It has nothing to play, and listing it put
+`0 parts · 0 s · 0 B` in every client. When the job ends (cancelled, duration, quiet, the channel
+closing, a restart) the runner removes the directory through `RecordingStore.delete` before the
+job's terminal state goes out, so a client that sees the job end never lists it, and the job ends
+`COMPLETED` with `status_detail` `nothing was heard`. A job that failed keeps `FAILED` and its
+reason, and its empty directory goes the same way. The job still names
+`ley://recordings/<job_id>` in `result_uris`, because clients read the URI from there while the
+job runs; after the discard it resolves to `JOB_NOT_FOUND`, like a recording deleted in Finder.
+`ley record` prints `Recorded nothing: the squelch never opened.` and exits 0 with nothing on
+stdout, and the MCP `record` tool returns the job with the same sentence.
 
 ### Retention
 
@@ -475,18 +509,30 @@ message Playback {
   double volume = 7;
   ClientInfo created_by = 8;
   PlaybackState state = 9;      // PLAYBACK_PLAYING; unset on the final event is the tombstone
+  bool paused = 10;             // position held (SetPlaybackPaused), added 2026-09-25
 }
 ```
 
-`Control.StartPlayback` and `Control.StopPlayback`, `Event.playback` and
-`GetStateResponse.playbacks` on the pattern every other object already follows: full state, never
-a delta, and a tombstone with `state` unset when it ends, so a client watching its own playback can
+`Control.StartPlayback`, `Control.StopPlayback` and `Control.SetPlaybackPaused`,
+`Event.playback` and `GetStateResponse.playbacks` on the pattern every other object already
+follows: full state, never a delta, and a tombstone with `state` unset when it ends, so a client watching its own playback can
 tell "it finished" from "somebody stopped it". While it plays the daemon publishes the whole
 playback four times a second with `position` current (`SessionStore.playbackInterval`, added
 2026-09-24), so `ley play` and the app render elapsed time from the event plane and neither polls
 `GetState`. A playback counts against the 256 events the daemon retains for `since_seq` replay
 like any other event: at four a second it fills them in about a minute, and a client resuming
 from an older seq re-reads `GetState` by the seq-gap rule.
+
+**A playback can be paused** (added 2026-09-25, the Library's engine ask 3).
+`Control.SetPlaybackPaused(playback_id, paused)` holds the position: the reader stops pushing
+blocks, the sink's ring runs dry and the device plays silence, and `position` stays where it was;
+resuming continues from it, with the pacing clock moved so the time spent paused is not owed as a
+burst. `Playback.paused` carries the state. The change is published at once, caused by the client
+that asked, and the four-a-second event is not sent while paused, since the position has not
+moved and repeating it would only push real events out of the replay window. Any client may pause
+a playback, as any client may stop one; the event names who did. `ley play` pauses and resumes on
+space when stdin is a terminal, and its progress line reads `0:02 / 0:05, paused; space resumes`.
+`RecordingJobTests` holds the position across half a second paused and sees it move after resume.
 
 **A playback belongs to the client that started it**, like a non-persistent channel: it stops when
 that client goes, which is what makes Ctrl-C in `ley play` stop the sound. There is no `persistent`
@@ -525,9 +571,9 @@ case where the file is local anyway, because a headless daemon is usually the on
   the two ways in, and the data-planes doc's "no lossless network stream" holds. A playback moves
   no samples over the socket either: the daemon opens the file itself and the client sees a
   position.
-- **Seeking, pausing and looping a playback.** `position` is reported and not writable; a person
-  who wants to hear a passage again plays the part again. `Playback.paused` is the additive field
-  when somebody asks, and a seek is one more.
+- **Seeking and looping a playback.** `position` is reported and not writable; a person who wants
+  to hear a passage again plays the part again. A seek is one additive request field when somebody
+  asks. Pausing landed on 2026-09-25 ("Playing a recording back").
 - **Opus or any compressed audio.** Tied to the remote-access milestone, as the data-planes doc
   says, and measurement (2026-09-18) shows disk space is not a reason for it. On the owner's
   own captures, lossless compression buys 25% on NFM transmissions (75% of PCM) and 39% on

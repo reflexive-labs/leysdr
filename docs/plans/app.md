@@ -703,6 +703,22 @@ grouped by frequency, the switch as a segmented control by the traffic lights, a
 that pauses. Engine lane first: `clipped_ms` a part, `Playback.paused` with
 `SetPlaybackPaused` and `ley play`'s space, and empty recordings discarded at job end.
 
+**Engine lane built 2026-09-25** (the four asks; the window's side is still to come).
+`RecordingPart.clippedMs` and the sidecar's `recording.clipped_ms` come from the capture's
+`CaptureLevel` readings, read by the runner off the meter the telemetry service publishes from and
+charged to a part by overlap at the 1e-4 floor (`ClipLedger`); `ley recordings show` gains `CLIP`
+when a part clipped. `Playback.paused` and `Control.SetPlaybackPaused` hold the position, the
+4 Hz event is not sent while paused, any client may pause as any may stop, and `ley play` pauses
+on space on a terminal. A record job that writes no part removes its directory and ends
+`COMPLETED`, `nothing was heard`; `ley record` and the MCP `record` tool say `Recorded nothing:
+the squelch never opened.` Verified by `RecordingTests` (a synthetic level feed),
+`RecordingJobTests` (a file at the rails, pause across 0.5 s, `noise_floor` gated and cancelled),
+the fake's own tests and the CLI and MCP tests against it (`../design/recording.md`, "The part
+sidecar", "Nothing heard", "Playing a recording back"). For the window: `0.0 dBFS · clipped` and
+`Clipped for 0.4 s.` read `clipped_ms`, never the peak; the player's ⏸ is `SetPlaybackPaused` and
+renders `Playback.paused` from the mirror; a recording that heard nothing never reaches
+`ListResources`, so the Library needs no filter of its own for it.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,

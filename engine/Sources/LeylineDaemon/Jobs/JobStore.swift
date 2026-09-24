@@ -243,8 +243,11 @@ actor JobStore {
             // (docs/design/recording.md).
             await runner.stop(endedBy: shuttingDown ? "restart" : "cancelled")
             let detail = entries[id].map { $0.proto.statusDetail } ?? ""
+            // A recording that heard nothing was discarded and ended COMPLETED with the detail
+            // that says so (docs/design/recording.md, "Nothing heard"); that detail stands.
+            let kept = detail.hasPrefix("recorded ") || detail == RecordRunner.nothingHeard
             await finish(id, state: entries[id]?.proto.state == .completed ? .completed : .cancelled,
-                         detail: detail.hasPrefix("recorded ") ? detail : "stopped; the recording is complete")
+                         detail: kept ? detail : "stopped; the recording is complete")
             return entries[id]?.proto
         }
         // Wait for the sweep to put down what it found before answering. Without this the caller

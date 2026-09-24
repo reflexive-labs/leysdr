@@ -284,6 +284,15 @@ func (d *Daemon) runRecord(jobID string) {
 		time.Sleep(fakeRecordTick)
 		elapsed := time.Since(started).Milliseconds()
 		if d.jobCancelled(jobID) {
+			// A part open at the cancel is closed with what it holds, as the daemon's teardown
+			// closes it, so a cancelled recording is complete.
+			if partOpen {
+				d.mu.Lock()
+				if j := d.jobs[jobID]; j != nil && j.record != nil {
+					j.record.closePart(partStartMs, elapsed, d.clippingLocked(j.captureID))
+				}
+				d.mu.Unlock()
+			}
 			d.finishRecord(jobID, leylinev1.JobState_CANCELLED, "cancelled")
 			return
 		}
@@ -295,20 +304,21 @@ func (d *Daemon) runRecord(jobID string) {
 		}
 		cfg := j.proto.GetRecord()
 		rec := j.record
+		clipped := d.clippingLocked(j.captureID)
 		want := rec.wantsPart(elapsed)
 		switch {
 		case want && !partOpen:
 			partOpen, partStartMs = true, elapsed
 		case !want && partOpen:
 			partOpen = false
-			rec.closePart(partStartMs, elapsed)
+			rec.closePart(partStartMs, elapsed, clipped)
 		}
 		j.proto.StatusDetail = fmt.Sprintf("recording %s: %s, %d part%s, %d KB",
 			rec.manifest.Kind, forSeconds(elapsed), rec.parts(partOpen), plural(rec.parts(partOpen)), rec.kb(partOpen, elapsed-partStartMs))
 		done := cfg.GetDurationMs() > 0 && elapsed >= cfg.GetDurationMs()
 		if done && partOpen {
 			partOpen = false
-			rec.closePart(partStartMs, elapsed)
+			rec.closePart(partStartMs, elapsed, clipped)
 		}
 		d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
 		d.mu.Unlock()
@@ -354,9 +364,22 @@ func (r *recordJob) kb(partOpen bool, openMs int64) uint64 {
 	return total / 1024
 }
 
+// clippingLocked reports whether the capture's CaptureLevel is over the
+// window's 1e-4 clipping floor, from Options.Clipping, which is what the fake's
+// telemetry reports too. Caller holds the lock.
+func (d *Daemon) clippingLocked(captureID string) bool {
+	if d.opts.Clipping == nil {
+		return false
+	}
+	clipped, total, _ := d.opts.Clipping(captureID)
+	return total > 0 && float64(clipped)/float64(total) >= 1e-4
+}
+
 // closePart writes the part's samples, its sidecar and the manifest, exactly as
 // the daemon's PartWriter does: a synthetic 1 kHz tone at the recording's rate.
-func (r *recordJob) closePart(startMs, endMs int64) {
+// clipped charges the whole part to clipped_ms: the fake's level does not vary
+// over a part, so every reading inside it clipped or none did.
+func (r *recordJob) closePart(startMs, endMs int64, clipped bool) {
 	if endMs <= startMs {
 		return
 	}
@@ -394,6 +417,9 @@ func (r *recordJob) closePart(startMs, endMs int64) {
 	}
 	if m.Gate != nil {
 		entry.SquelchOpens = 1
+	}
+	if clipped {
+		entry.ClippedMs = endMs - startMs
 	}
 	// A gated recording's gaps are stated rather than hidden inside a file.
 	if last := len(m.Parts) - 1; last >= 0 && m.Parts[last].EndSample < entry.StartSample {
@@ -461,10 +487,19 @@ func (d *Daemon) finishRecord(jobID string, state leylinev1.JobState, endedBy st
 		d.destroyCaptureLocked(j.captureID, by)
 		j.createdCapture = false
 	}
+	heardNothing := false
 	if rec := j.record; rec != nil {
 		rec.manifest.EndedBy = endedBy
 		rec.manifest.EndedAtNS = time.Now().UnixNano()
 		_ = writeManifest(rec)
+		// A recording with no part has nothing to hear and is not kept: the directory goes,
+		// and the URI the job still names resolves to JOB_NOT_FOUND, as the daemon does it
+		// (docs/design/recording.md, "Nothing heard").
+		if len(rec.manifest.Parts) == 0 {
+			heardNothing = true
+			_ = os.RemoveAll(rec.dir)
+			j.record = nil
+		}
 	}
 	if j.proto.State != leylinev1.JobState_RUNNING {
 		return
@@ -472,6 +507,11 @@ func (d *Daemon) finishRecord(jobID string, state leylinev1.JobState, endedBy st
 	j.proto.State = state
 	j.proto.StatusDetail = fmt.Sprintf("recorded %s in %s",
 		forSeconds(recordedMs(j.record)), partsPhrase(j.record))
+	if heardNothing {
+		// Cancelled or not, the job did what it was asked and nothing was on the air.
+		j.proto.State = leylinev1.JobState_COMPLETED
+		j.proto.StatusDetail = leyline.NothingHeard
+	}
 	d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
 	d.trimJobsLocked()
 }
@@ -543,6 +583,9 @@ func writePartSidecar(r *recordJob, p leyline.RecordingPart) {
 			"bandwidth_hz": m.BandwidthHz, "peak_dbfs": p.PeakDBFS, "mean_dbfs": p.MeanDBFS,
 			"squelch_opens": []any{},
 		},
+	}
+	if p.ClippedMs > 0 {
+		doc["recording"].(map[string]any)["clipped_ms"] = p.ClippedMs
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

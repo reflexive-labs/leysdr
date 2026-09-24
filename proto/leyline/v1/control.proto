@@ -218,6 +218,12 @@ service Control {
   // another machine, and a local client needs no player of its own (docs/design/recording.md).
   rpc StartPlayback(StartPlaybackRequest) returns (Playback);
   rpc StopPlayback(StopPlaybackRequest) returns (Empty);
+  // Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+  // device and keeps `position` where it was, and resuming continues from it. Any client may pause
+  // a playback, as any client may stop one; the event names who did. The reply is the playback's
+  // full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+  // such playback, the code StopPlayback answers with.
+  rpc SetPlaybackPaused(SetPlaybackPausedRequest) returns (Playback);
 
   rpc WriteParams(stream ParamWrite) returns (WriteSummary);
 
@@ -273,6 +279,10 @@ message Playback {
   // it a start and an end are the same bytes, and a client cannot tell a playback that finished
   // from one somebody stopped.
   PlaybackState state = 9;
+  // True while the playback is paused (Control.SetPlaybackPaused): `position` holds, and the
+  // four-a-second event is not sent until it resumes. The playback still belongs to its client
+  // and still ends when that client goes. The tombstone carries the value it had.
+  bool paused = 10;
 }
 enum PlaybackState { PLAYBACK_STATE_UNSPECIFIED = 0; PLAYBACK_PLAYING = 1; }
 
@@ -284,6 +294,10 @@ message StartPlaybackRequest {
   string audio_device_uid = 3;  // empty = the daemon's default output
 }
 message StopPlaybackRequest { string playback_id = 1; }
+message SetPlaybackPausedRequest {
+  string playback_id = 1;
+  bool paused = 2;  // true pauses, false resumes; asking for the state it is already in is not an error
+}
 
 message CreateCaptureRequest { string device_id = 1; uint64 center_hz = 2; uint64 sample_rate = 3; }
 message DestroyCaptureRequest { string capture_id = 1; }

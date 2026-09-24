@@ -4,6 +4,20 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- A recording's parts say how long the radio clipped during them: `clipped_ms` in the manifest
+  and each part's sidecar, from the capture's own clipping count, and a `CLIP` column in
+  `ley recordings show` when any part clipped. A part's peak is measured on the audio, so a peak
+  of 0.0 dBFS does not by itself mean the radio clipped.
+
+- `ley play` pauses and resumes a recording on space while the daemon plays it, and the position
+  line says `paused`. The contract gains `Control.SetPlaybackPaused` and `Playback.paused`, and
+  the position holds while paused.
+
+- A recording that heard nothing is no longer kept. A gated recording switched on and off while
+  the squelch never opened used to leave an empty recording in every list; the daemon now removes
+  it when the job ends, the job ends with `nothing was heard`, and `ley record` prints
+  `Recorded nothing: the squelch never opened.`
+
 - The Mac app's Record transmissions switches no longer go grey. Their red tint was switched off
   along with the switch, and on the owner's third run a switch went grey until it was clicked
   again. The tint now stays set; macOS paints it on the on track only, so an off switch still

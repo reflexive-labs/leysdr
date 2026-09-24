@@ -11,6 +11,10 @@ case the channel and the device outlive the command; 'ley stop' removes the
 channel and 'ley devices detach <id>' the pretend radio. No hardware is
 needed.
 
+A recording 'ley record' made is named by its id or its ley://recordings/
+URI. An IQ recording is tuned as above; an audio one is played by the daemon
+through its own speakers, and on a terminal space pauses and resumes it.
+
 Usage:
   ley play <file.cf32> [flags]
 

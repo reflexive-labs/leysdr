@@ -8,9 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -662,6 +665,98 @@ func TestRecordingsDeleteRefusesARunningRecording(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(dir, jobID)); serr != nil {
 		t.Fatalf("the refusal removed the recording: %v", serr)
 	}
+	// Long enough for the fake to have written some audio: a recording cancelled before it heard
+	// anything is discarded at the cancel and there would be nothing left to delete.
+	time.Sleep(200 * time.Millisecond)
 	mustRun(t, sock, "jobs", "cancel", jobID)
 	mustRun(t, sock, "recordings", "delete", jobID, "--yes")
+}
+
+// A gated recording whose squelch never opens is discarded by the daemon: ley record says so in
+// one sentence, prints no URI (there is nothing at it) and exits 0, because the recording did
+// what it was asked.
+func TestRecordThatHearsNothingSaysSo(t *testing.T) {
+	// The fake's squelch opens an hour in: never, for a test.
+	sock, dir := recordHarness(t, 3_600_000)
+	out, errOut, err := run(t, t.Context(), sock, "record", "146.52", "--gate", "squelch", "--for", "400ms")
+	if err != nil {
+		t.Fatalf("a recording that heard nothing is not a failure: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "Recorded nothing: the squelch never opened.") {
+		t.Errorf("the closing line must say nothing was heard:\n%s", errOut)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("stdout must not name a recording that is not kept: %q", out)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the store still holds %d entries", len(entries))
+	}
+}
+
+// The part table gains a CLIP column only when a part clipped, with the clipped time from the
+// manifest's clipped_ms.
+func TestRecordingsShowClipsOnlyWhenAPartClipped(t *testing.T) {
+	dir := t.TempDir()
+	var clean atomic.Bool
+	sock, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, Clipping: func(string) (uint64, uint64, float64) {
+		if clean.Load() {
+			return 0, 600_000, -12
+		}
+		return 600, 600_000, 0
+	}})
+	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "400ms"))
+	jobID, _, _ := leyline.ParseRecordingURI(uri)
+	show := mustRun(t, sock, "recordings", "show", jobID)
+	if !strings.Contains(show, "CLIP") || !regexp.MustCompile(`\b0\.[3-5] s\b`).MatchString(show) {
+		t.Errorf("a part that clipped shows for how long:\n%s", show)
+	}
+	clean.Store(true)
+	uri = strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "300ms"))
+	jobID, _, _ = leyline.ParseRecordingURI(uri)
+	if show := mustRun(t, sock, "recordings", "show", jobID); strings.Contains(show, "CLIP") {
+		t.Errorf("a clean recording's table has no CLIP column:\n%s", show)
+	}
+}
+
+// Space pauses and resumes a daemon playback that ley play follows on a terminal, and the
+// progress line says paused. A pipe on stdin takes no keys.
+func TestPlaySpacePausesAndResumes(t *testing.T) {
+	sock, _ := recordHarness(t)
+	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "1s"))
+	keys, press := io.Pipe()
+	var out, errb syncBuffer
+	app := &App{
+		Stdout: &out, Stderr: &errb, Stdin: keys, IsInTTY: func() bool { return true },
+		LookupEnv: func(string) (string, bool) { return "", false },
+	}
+	done := make(chan error, 1)
+	go func() { done <- Execute(t.Context(), app, []string{"--socket", sock, "play", uri}) }()
+	waitFor(t, "the key hint", func() bool { return strings.Contains(errb.String(), "Space pauses") })
+	time.Sleep(200 * time.Millisecond)
+	_, _ = press.Write([]byte(" "))
+	waitFor(t, "the paused line", func() bool { return strings.Contains(errb.String(), ", paused; space resumes") })
+	paused := mustRun(t, sock, "state", "--json")
+	time.Sleep(500 * time.Millisecond)
+	if again := mustRun(t, sock, "state", "--json"); positionOf(again) != positionOf(paused) || positionOf(paused) == "" {
+		t.Errorf("paused, the position moved: %s then %s", positionOf(paused), positionOf(again))
+	}
+	_, _ = press.Write([]byte(" "))
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("play: %v\n%s", err, errb.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("resumed, the playback never finished:\n%s", errb.String())
+	}
+	_ = press.Close()
+}
+
+// positionOf pulls the one playback's position out of `ley state --json`.
+func positionOf(stateJSON string) string {
+	m := regexp.MustCompile(`"position":\s*"?(\d+)`).FindStringSubmatch(stateJSON)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }

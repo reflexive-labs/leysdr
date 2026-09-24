@@ -198,7 +198,11 @@ func writePlaybacks(b *strings.Builder, s ui.Style, st *leylinev1.GetStateRespon
 	}
 	fmt.Fprintf(b, "\n%s\n", s.Muted("playing through the daemon's audio"))
 	for _, p := range st.GetPlaybacks() {
-		fmt.Fprintf(b, "  %s  %s  %s\n", playbackPosition(p), p.GetResourceUri(),
+		at := playbackPosition(p)
+		if p.GetPaused() {
+			at += ", paused"
+		}
+		fmt.Fprintf(b, "  %s  %s  %s\n", at, p.GetResourceUri(),
 			s.Muted(clientString(p.GetCreatedBy())))
 	}
 }

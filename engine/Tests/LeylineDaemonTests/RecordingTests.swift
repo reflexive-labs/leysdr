@@ -75,6 +75,55 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(sidecar.anchor.captureID, "cap_x")
     }
 
+    /// `clipped_ms` from a synthetic level feed: the capture's `CaptureLevel` readings, each a
+    /// quarter second ending at its `sampleIndex`, charged to a part by overlap when they clipped
+    /// (docs/design/recording.md, "The part sidecar"). A clean part leaves the key out of both files.
+    func testAPartIsChargedTheClippingThatOverlapsIt() async throws {
+        let dir = try tempDir("rec")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let rate: UInt64 = 2_400_000
+        let quarter = rate / 4
+        func reading(endingAt end: UInt64, clipped: UInt64) -> CaptureLevelReading {
+            CaptureLevelReading(sampleIndex: end, clippedSamples: clipped, totalSamples: quarter, peak: 1)
+        }
+        let writer = try PartWriter(directory: dir, manifest: manifest(), captureID: "cap_x", centerHz: 146_520_000)
+        // Part 1 spans 0 ..< 1 s. Two readings clip (0.25 s each, over the floor), one is under the
+        // 1e-4 floor (59 of 600,000), and one straddles the part's end by half.
+        await writer.openPart(at: 0)
+        await writer.append(audio: [Float](repeating: 0.5, count: 48000))
+        await writer.noteLevel(reading(endingAt: quarter, clipped: 600), captureRate: rate)
+        await writer.noteLevel(reading(endingAt: 2 * quarter, clipped: 59), captureRate: rate)
+        await writer.noteLevel(reading(endingAt: 3 * quarter, clipped: 60), captureRate: rate)
+        await writer.noteLevel(reading(endingAt: 3 * quarter, clipped: 60), captureRate: rate) // read twice
+        await writer.noteLevel(reading(endingAt: rate + quarter / 2, clipped: 1000), captureRate: rate)
+        await writer.closePart(endSample: rate)
+        // Part 2 spans 2 s ..< 3 s with nothing clipping inside it.
+        await writer.openPart(at: 2 * rate)
+        await writer.append(audio: [Float](repeating: 0.5, count: 48000))
+        await writer.noteLevel(reading(endingAt: 2 * rate + quarter, clipped: 0), captureRate: rate)
+        await writer.closePart(endSample: 3 * rate)
+        await writer.finish(endedBy: "duration", endSample: 3 * rate)
+
+        let parts = await writer.manifest.parts
+        XCTAssertEqual(parts.count, 2)
+        // 0.25 + 0.25 + the 0.125 s of the straddling reading inside the part.
+        XCTAssertEqual(parts[0].clippedMs, 625)
+        XCTAssertNil(parts[1].clippedMs, "a part that did not clip has no clipped_ms")
+
+        let manifestJSON = try String(contentsOfFile: dir + "/recording.json", encoding: .utf8)
+        XCTAssertEqual(manifestJSON.components(separatedBy: "\"clipped_ms\"").count - 1, 1,
+                       "only the part that clipped carries the key: \(manifestJSON)")
+        func sidecar(_ part: RecordingPart) throws -> String {
+            try String(contentsOfFile: dir + "/" + (part.file as NSString).deletingPathExtension + ".json", encoding: .utf8)
+        }
+        let first = try JSONDecoder().decode(PartSidecar.self, from: Data(try sidecar(parts[0]).utf8))
+        XCTAssertEqual(first.recording.clippedMs, 625)
+        XCTAssertFalse(try sidecar(parts[1]).contains("clipped_ms"))
+        // The manifest reads back with the field, and one written before it existed still reads.
+        let back = try JSONDecoder().decode(RecordingManifest.self, from: Data(manifestJSON.utf8))
+        XCTAssertEqual(back.parts.map(\.clippedMs), [625, nil])
+    }
+
     func testACF32PartsByteCountIsItsSampleCount() async throws {
         let dir = try tempDir("rec")
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -268,6 +317,21 @@ final class RecordingTests: XCTestCase {
         // Idempotent: a second boot finds nothing to do.
         let again = await store.repairUnfinished()
         XCTAssertTrue(again.isEmpty)
+    }
+
+    /// A gated recording the last daemon left before its squelch ever opened holds no part; the
+    /// repair discards it, as a job ending under a running daemon would.
+    func testARecordingLeftOpenThatHeardNothingIsDiscardedAtRepair() async throws {
+        let dir = try tempDir("recordings")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let store = RecordingStore(directory: dir, capBytes: 1 << 30, ageDays: 0)
+        let id = JobID()
+        _ = try await store.open(job: id, manifest: manifest(jobID: id.string), captureID: "cap_x", centerHz: 146_520_000)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir + "/" + id.string))
+        _ = await store.repairUnfinished()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/" + id.string))
+        let left = await store.manifests()
+        XCTAssertTrue(left.isEmpty)
     }
 
     func testTheManifestCarriesTheFrozenResourceKeys() {

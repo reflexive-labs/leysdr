@@ -1178,6 +1178,11 @@ public nonisolated struct Leyline_V1_Playback: Sendable {
   /// from one somebody stopped.
   public var state: Leyline_V1_PlaybackState = .unspecified
 
+  /// True while the playback is paused (Control.SetPlaybackPaused): `position` holds, and the
+  /// four-a-second event is not sent until it resumes. The playback still belongs to its client
+  /// and still ends when that client goes. The tombstone carries the value it had.
+  public var paused: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1220,6 +1225,21 @@ public nonisolated struct Leyline_V1_StopPlaybackRequest: Sendable {
   // methods supported on all messages.
 
   public var playbackID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Leyline_V1_SetPlaybackPausedRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var playbackID: String = String()
+
+  /// true pauses, false resumes; asking for the state it is already in is not an error
+  public var paused: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2842,7 +2862,7 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Playback"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0\u{1}paused\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2859,6 +2879,7 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
       case 7: try { try decoder.decodeSingularDoubleField(value: &self.volume) }()
       case 8: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
       case 9: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      case 10: try { try decoder.decodeSingularBoolField(value: &self.paused) }()
       default: break
       }
     }
@@ -2896,6 +2917,9 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
     if self.state != .unspecified {
       try visitor.visitSingularEnumField(value: self.state, fieldNumber: 9)
     }
+    if self.paused != false {
+      try visitor.visitSingularBoolField(value: self.paused, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2909,6 +2933,7 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.volume != rhs.volume {return false}
     if lhs._createdBy != rhs._createdBy {return false}
     if lhs.state != rhs.state {return false}
+    if lhs.paused != rhs.paused {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2983,6 +3008,41 @@ nonisolated extension Leyline_V1_StopPlaybackRequest: SwiftProtobuf.Message, Swi
 
   public static func ==(lhs: Leyline_V1_StopPlaybackRequest, rhs: Leyline_V1_StopPlaybackRequest) -> Bool {
     if lhs.playbackID != rhs.playbackID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_SetPlaybackPausedRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetPlaybackPausedRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{1}paused\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.playbackID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.paused) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.playbackID.isEmpty {
+      try visitor.visitSingularStringField(value: self.playbackID, fieldNumber: 1)
+    }
+    if self.paused != false {
+      try visitor.visitSingularBoolField(value: self.paused, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_SetPlaybackPausedRequest, rhs: Leyline_V1_SetPlaybackPausedRequest) -> Bool {
+    if lhs.playbackID != rhs.playbackID {return false}
+    if lhs.paused != rhs.paused {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

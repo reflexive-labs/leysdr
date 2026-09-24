@@ -26,6 +26,11 @@ struct RecordingPart: Codable, Sendable {
     var meanDbfs: Double?
     /// How many times the squelch opened inside this part. A continuous recording has none.
     var squelchOpens: Int
+    /// Milliseconds inside the part during which the capture's `CaptureLevel` reported clipping
+    /// (`ClipLedger`). Absent when nothing clipped, and on a part a restart repaired, for the
+    /// reason the levels are: nobody measured it. A client prints `0.0 dBFS · clipped` from this,
+    /// not from `peak_dbfs`, which measures the audio rather than the IQ.
+    var clippedMs: Int64? = nil
 
     enum CodingKeys: String, CodingKey {
         case part, file, samples, bytes
@@ -34,6 +39,7 @@ struct RecordingPart: Codable, Sendable {
         case peakDbfs = "peak_dbfs"
         case meanDbfs = "mean_dbfs"
         case squelchOpens = "squelch_opens"
+        case clippedMs = "clipped_ms"
     }
 }
 

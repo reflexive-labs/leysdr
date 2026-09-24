@@ -127,6 +127,12 @@ actor PlaybackEngine {
     private var task: Task<Void, Never>?
     private var played: UInt64 = 0
     private var stopped = false
+    /// Set by `setPaused`: the loop stops pushing blocks and `played` holds. The sink's ring runs
+    /// dry and the device plays silence, as it does between a channel's blocks.
+    private(set) var paused = false
+    /// How often a paused loop looks to see whether it has been resumed: one block's length, so a
+    /// resume is heard as promptly as a block would be.
+    static let pausedPoll: Duration = .milliseconds(20)
 
     /// `makeSink` opens the audio output: the daemon's audio device in the daemon, a sink that
     /// discards the audio in a test on a host with none (`SessionStore.setPlaybackSinkFactory`).
@@ -157,6 +163,10 @@ actor PlaybackEngine {
         task = Task { [weak self] in await self?.play() }
     }
 
+    /// Pauses or resumes. The position holds while paused and playing continues from it
+    /// (docs/design/recording.md, "Playing a recording back").
+    func setPaused(_ on: Bool) { paused = on }
+
     func stop() async {
         task?.cancel()
         await finish()
@@ -173,9 +183,16 @@ actor PlaybackEngine {
     /// absorbed without a dropout; a tick that would overfill it simply waits, which is what keeps
     /// a two-hour recording from being read into memory.
     private func play() async {
-        let started = ContinuousClock.now
+        var started = ContinuousClock.now
         var pushed: UInt64 = 0
         while !Task.isCancelled, !stopped {
+            if paused {
+                // Nothing is pushed while paused. On resume the pacing clock is moved so that
+                // `pushed` is due now: the time spent paused is not owed as a burst of blocks.
+                try? await Task.sleep(for: Self.pausedPoll)
+                if !paused { started = ContinuousClock.now - .seconds(Double(pushed) / Double(sampleRate)) }
+                continue
+            }
             let block = reader.read(frames: Self.blockFrames)
             if block.isEmpty { break }
             block.withUnsafeBufferPointer { buf in

@@ -24,22 +24,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Control_ListDevices_FullMethodName      = "/leyline.v1.Control/ListDevices"
-	Control_WatchEvents_FullMethodName      = "/leyline.v1.Control/WatchEvents"
-	Control_GetState_FullMethodName         = "/leyline.v1.Control/GetState"
-	Control_CreateCapture_FullMethodName    = "/leyline.v1.Control/CreateCapture"
-	Control_DestroyCapture_FullMethodName   = "/leyline.v1.Control/DestroyCapture"
-	Control_CreateChannel_FullMethodName    = "/leyline.v1.Control/CreateChannel"
-	Control_DestroyChannel_FullMethodName   = "/leyline.v1.Control/DestroyChannel"
-	Control_AttachSink_FullMethodName       = "/leyline.v1.Control/AttachSink"
-	Control_DetachSink_FullMethodName       = "/leyline.v1.Control/DetachSink"
-	Control_StartPlayback_FullMethodName    = "/leyline.v1.Control/StartPlayback"
-	Control_StopPlayback_FullMethodName     = "/leyline.v1.Control/StopPlayback"
-	Control_WriteParams_FullMethodName      = "/leyline.v1.Control/WriteParams"
-	Control_AttachDevice_FullMethodName     = "/leyline.v1.Control/AttachDevice"
-	Control_DetachDevice_FullMethodName     = "/leyline.v1.Control/DetachDevice"
-	Control_AttachFileDevice_FullMethodName = "/leyline.v1.Control/AttachFileDevice"
-	Control_DetachFileDevice_FullMethodName = "/leyline.v1.Control/DetachFileDevice"
+	Control_ListDevices_FullMethodName       = "/leyline.v1.Control/ListDevices"
+	Control_WatchEvents_FullMethodName       = "/leyline.v1.Control/WatchEvents"
+	Control_GetState_FullMethodName          = "/leyline.v1.Control/GetState"
+	Control_CreateCapture_FullMethodName     = "/leyline.v1.Control/CreateCapture"
+	Control_DestroyCapture_FullMethodName    = "/leyline.v1.Control/DestroyCapture"
+	Control_CreateChannel_FullMethodName     = "/leyline.v1.Control/CreateChannel"
+	Control_DestroyChannel_FullMethodName    = "/leyline.v1.Control/DestroyChannel"
+	Control_AttachSink_FullMethodName        = "/leyline.v1.Control/AttachSink"
+	Control_DetachSink_FullMethodName        = "/leyline.v1.Control/DetachSink"
+	Control_StartPlayback_FullMethodName     = "/leyline.v1.Control/StartPlayback"
+	Control_StopPlayback_FullMethodName      = "/leyline.v1.Control/StopPlayback"
+	Control_SetPlaybackPaused_FullMethodName = "/leyline.v1.Control/SetPlaybackPaused"
+	Control_WriteParams_FullMethodName       = "/leyline.v1.Control/WriteParams"
+	Control_AttachDevice_FullMethodName      = "/leyline.v1.Control/AttachDevice"
+	Control_DetachDevice_FullMethodName      = "/leyline.v1.Control/DetachDevice"
+	Control_AttachFileDevice_FullMethodName  = "/leyline.v1.Control/AttachFileDevice"
+	Control_DetachFileDevice_FullMethodName  = "/leyline.v1.Control/DetachFileDevice"
 )
 
 // ControlClient is the client API for Control service.
@@ -60,6 +61,12 @@ type ControlClient interface {
 	// another machine, and a local client needs no player of its own (docs/design/recording.md).
 	StartPlayback(ctx context.Context, in *StartPlaybackRequest, opts ...grpc.CallOption) (*Playback, error)
 	StopPlayback(ctx context.Context, in *StopPlaybackRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+	// device and keeps `position` where it was, and resuming continues from it. Any client may pause
+	// a playback, as any client may stop one; the event names who did. The reply is the playback's
+	// full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+	// such playback, the code StopPlayback answers with.
+	SetPlaybackPaused(ctx context.Context, in *SetPlaybackPausedRequest, opts ...grpc.CallOption) (*Playback, error)
 	WriteParams(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ParamWrite, WriteSummary], error)
 	// Virtual devices. A device a client attaches appears in ListDevices/events like any
 	// hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
@@ -196,6 +203,16 @@ func (c *controlClient) StopPlayback(ctx context.Context, in *StopPlaybackReques
 	return out, nil
 }
 
+func (c *controlClient) SetPlaybackPaused(ctx context.Context, in *SetPlaybackPausedRequest, opts ...grpc.CallOption) (*Playback, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Playback)
+	err := c.cc.Invoke(ctx, Control_SetPlaybackPaused_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controlClient) WriteParams(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ParamWrite, WriteSummary], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Control_ServiceDesc.Streams[1], Control_WriteParams_FullMethodName, cOpts...)
@@ -267,6 +284,12 @@ type ControlServer interface {
 	// another machine, and a local client needs no player of its own (docs/design/recording.md).
 	StartPlayback(context.Context, *StartPlaybackRequest) (*Playback, error)
 	StopPlayback(context.Context, *StopPlaybackRequest) (*Empty, error)
+	// Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+	// device and keeps `position` where it was, and resuming continues from it. Any client may pause
+	// a playback, as any client may stop one; the event names who did. The reply is the playback's
+	// full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+	// such playback, the code StopPlayback answers with.
+	SetPlaybackPaused(context.Context, *SetPlaybackPausedRequest) (*Playback, error)
 	WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error
 	// Virtual devices. A device a client attaches appears in ListDevices/events like any
 	// hot-plugged SDR. AttachDevice is the general form; the file RPCs are sugar over it.
@@ -316,6 +339,9 @@ func (UnimplementedControlServer) StartPlayback(context.Context, *StartPlaybackR
 }
 func (UnimplementedControlServer) StopPlayback(context.Context, *StopPlaybackRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopPlayback not implemented")
+}
+func (UnimplementedControlServer) SetPlaybackPaused(context.Context, *SetPlaybackPausedRequest) (*Playback, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPlaybackPaused not implemented")
 }
 func (UnimplementedControlServer) WriteParams(grpc.ClientStreamingServer[ParamWrite, WriteSummary]) error {
 	return status.Error(codes.Unimplemented, "method WriteParams not implemented")
@@ -544,6 +570,24 @@ func _Control_StopPlayback_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Control_SetPlaybackPaused_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPlaybackPausedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).SetPlaybackPaused(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_SetPlaybackPaused_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).SetPlaybackPaused(ctx, req.(*SetPlaybackPausedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Control_WriteParams_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(ControlServer).WriteParams(&grpc.GenericServerStream[ParamWrite, WriteSummary]{ServerStream: stream})
 }
@@ -669,6 +713,10 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopPlayback",
 			Handler:    _Control_StopPlayback_Handler,
+		},
+		{
+			MethodName: "SetPlaybackPaused",
+			Handler:    _Control_SetPlaybackPaused_Handler,
 		},
 		{
 			MethodName: "AttachDevice",

@@ -24,6 +24,13 @@ public struct CaptureLevelReading: Hashable, Sendable {
     /// The largest component magnitude in the interval, 1 at full scale.
     public var peak: Float
 
+    public init(sampleIndex: UInt64, clippedSamples: UInt64, totalSamples: UInt64, peak: Float) {
+        self.sampleIndex = sampleIndex
+        self.clippedSamples = clippedSamples
+        self.totalSamples = totalSamples
+        self.peak = peak
+    }
+
     /// `peak` against full scale; -inf when the interval was digitally silent.
     public var peakDBFS: Double { peak > 0 ? 20 * log10(Double(peak)) : -.infinity }
 }

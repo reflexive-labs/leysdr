@@ -85,7 +85,11 @@ mode to the first 'expect' entry's mode; --mode and --freq override. The
 pretend radio is removed on exit unless --persistent is given, in which
 case the channel and the device outlive the command; 'ley stop' removes the
 channel and 'ley devices detach <id>' the pretend radio. No hardware is
-needed.`,
+needed.
+
+A recording 'ley record' made is named by its id or its ley://recordings/
+URI. An IQ recording is tuned as above; an audio one is played by the daemon
+through its own speakers, and on a terminal space pauses and resumes it.`,
 		Example: `  ley play fixtures/nfm_tone.cf32              # decode a fixture and listen
   ley play recording.cf32 --loop               # keep playing until Ctrl-C
   ley play recording.cf32 --freq 146.52 --mode nfm
@@ -349,14 +353,23 @@ func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part 
 		return err
 	}
 	st := app.ErrStyle
+	// Space pauses only when somebody is at a keyboard: a pipe on stdin is a script's input.
+	keys, stopKeys := keyPresses(app)
+	defer stopKeys()
 	fmt.Fprintln(app.Stderr, leadLabel(st, "Playing", where+" through the daemon's audio"))
-	fmt.Fprintln(app.Stderr, st.Muted(playbackLength(pb)+". Ctrl-C stops."))
+	hint := "Ctrl-C stops."
+	if keys != nil {
+		hint = "Space pauses, Ctrl-C stops."
+	}
+	fmt.Fprintln(app.Stderr, st.Muted(playbackLength(pb)+". "+hint))
 	defer func() {
 		cctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
 		defer cancel()
 		_ = c.StopPlayback(cctx, pb.GetPlaybackId())
 	}()
-	s.followPlayback(ctx, pb)
+	if err := s.followPlayback(ctx, pb, keys); err != nil {
+		return err
+	}
 	return errDone
 }
 
@@ -374,30 +387,65 @@ func playbackLength(pb *leylinev1.Playback) string {
 // stream the session already holds carries the position; it is the daemon's own count of frames
 // pushed, not a clock here. A stream that ends takes the playback with it, since the daemon ends
 // a playback whose client has gone.
-func (s *session) followPlayback(ctx context.Context, pb *leylinev1.Playback) {
+//
+// keys, when not nil, is the terminal's key presses: space pauses and resumes through the
+// daemon (Control.SetPlaybackPaused), and the line shows `paused` from the playback's own
+// event, so a pause from another client (the app's player) shows here too.
+func (s *session) followPlayback(ctx context.Context, pb *leylinev1.Playback, keys <-chan byte) error {
 	progress := newScanProgress(s.app)
 	defer progress.clear()
 	total := float64(pb.GetSamples()) / float64(max(pb.GetSampleRate(), 1))
+	live := pb
+	show := func() {
+		at := float64(live.GetPosition()) / float64(max(live.GetSampleRate(), 1))
+		line := fmt.Sprintf("%s / %s", clockPhrase(at), clockPhrase(total))
+		if live.GetPaused() {
+			line += ", paused"
+			if keys != nil {
+				line += "; space resumes"
+			}
+		}
+		progress.show(line)
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
+		case k, ok := <-keys:
+			if !ok {
+				keys = nil
+				continue
+			}
+			if k != ' ' {
+				continue
+			}
+			// The reply is the playback's full state; the event carrying the same state follows
+			// on the stream, so the line is drawn from whichever arrives first.
+			got, err := s.client.SetPlaybackPaused(ctx, pb.GetPlaybackId(), !live.GetPaused())
+			if err != nil {
+				if ctx.Err() != nil || leyline.Code(err) == leyline.CodeSinkNotFound {
+					// Gone between the key and the call: its tombstone ends the loop.
+					continue
+				}
+				return err
+			}
+			live = got
+			show()
 		case ev, ok := <-s.events:
 			if !ok {
-				return
+				return nil
 			}
 			b, isPlayback := ev.Body.(*leylinev1.Event_Playback)
 			if !isPlayback || b.Playback.GetPlaybackId() != pb.GetPlaybackId() {
 				s.apply(ev)
 				continue
 			}
-			live := b.Playback
-			if live.GetState() == leylinev1.PlaybackState_PLAYBACK_STATE_UNSPECIFIED {
+			if b.Playback.GetState() == leylinev1.PlaybackState_PLAYBACK_STATE_UNSPECIFIED {
 				// The tombstone: the file ran out, or another client stopped it.
-				return
+				return nil
 			}
-			at := float64(live.GetPosition()) / float64(max(live.GetSampleRate(), 1))
-			progress.show(fmt.Sprintf("%s / %s", clockPhrase(at), clockPhrase(total)))
+			live = b.Playback
+			show()
 		}
 	}
 }

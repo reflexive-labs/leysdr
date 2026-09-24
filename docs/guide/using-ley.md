@@ -695,6 +695,10 @@ Left running; ley jobs cancel 1 stops it
 The squelch it shows is the one it measured from the channel's own noise floor, the way
 `ley tune` does; `--squelch -40` sets one yourself.
 
+A gated recording during which the squelch never opened holds nothing, and is not kept:
+`ley record` ends with `Recorded nothing: the squelch never opened.` and no recording is listed.
+Lower `--squelch` if something was on the air.
+
 The pauses *between overs* stay inside one file (`--hang`, 5 s by default) and half a second
 before each key-up is kept (`--pre`), so an exchange plays back whole. Silence is never edited out
 of a file: the gaps between files are stated in the manifest instead, so playback keeps the
@@ -735,8 +739,9 @@ $ ley play job_01J8 --part 2      # or any other part
 `ley play` works on either kind: an IQ recording is tuned back
 as if it were a radio, and an audio recording is played by the daemon through the same speakers
 `ley tune` uses — a WAV holds what the demodulator already produced, and there is no signal left
-in it to tune. Either way Ctrl-C stops it. (If the daemon has no audio device, `ley play` hands
-the file to your own player instead and says so.)
+in it to tune. Either way Ctrl-C stops it, and while an audio recording plays, space pauses and
+resumes it. (If the daemon has no audio device, `ley play` hands the file to your own player
+instead and says so.)
 
 Moving the radio while a recording runs leaves a gap in it, so `ley tune` and `ley set freq`
 refuse and name the job; `--retune` goes ahead, and the recording logs the gap rather than

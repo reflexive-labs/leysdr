@@ -1183,3 +1183,25 @@ func TestMCPRecordGateReportsTheOvers(t *testing.T) {
 		t.Errorf("hang_ms without a gate: %s", resultText(r))
 	}
 }
+
+// A gated recording whose squelch never opened is discarded by the daemon: the tool returns the
+// finished job and says nothing was heard, rather than a URI that resolves to nothing.
+func TestMCPRecordThatHeardNothingSaysSo(t *testing.T) {
+	h := newMCPHarnessWith(t, fakedaemon.Options{
+		RecordingsDir: t.TempDir(),
+		RecordGateAt:  []int64{3_600_000},
+	})
+	res := h.must(t, "record", map[string]any{"target": "146.52", "duration_s": 1, "gate": "squelch"})
+	var job leylinev1.Job
+	structured(t, res, &job)
+	if job.GetState() != leylinev1.JobState_COMPLETED || job.GetStatusDetail() != leyline.NothingHeard {
+		t.Fatalf("the job: %v %q", job.GetState(), job.GetStatusDetail())
+	}
+	text := resultText(res)
+	if !strings.Contains(text, "Recorded nothing: the squelch never opened.") {
+		t.Errorf("the text must say nothing was heard:\n%s", text)
+	}
+	if strings.Contains(text, "get_recording") {
+		t.Errorf("the text must not offer a recording that is not kept:\n%s", text)
+	}
+}

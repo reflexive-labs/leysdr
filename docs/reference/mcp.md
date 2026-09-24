@@ -217,7 +217,9 @@ Notes a table cell cannot hold:
   only while something is on the air and writes one file per exchange, so a quiet band costs no
   disk; the text then says how many times the squelch opened, which is usually what the agent needs.
   The recording outlives the call and the server: it is a file, and `find_recordings` finds it in
-  the next session.
+  the next session. A gated recording whose squelch never opened is not kept: the job ends
+  `COMPLETED` with `status_detail` `nothing was heard`, and the text reads `Recorded nothing: the
+  squelch never opened.` with no recording to fetch.
 - **`get_recording`** returns the manifest and every part's path on the daemon's machine, never the
   samples. Audio and IQ do not cross this connection (`docs/design/data-planes.md`, "no lossless
   network stream"); an agent that wants to transcribe a recording hands the path to a tool that can

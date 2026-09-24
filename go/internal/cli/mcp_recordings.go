@@ -95,6 +95,13 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 	if final.GetState() == leylinev1.JobState_FAILED {
 		return nil, nil, toolError(fmt.Errorf("%s", recordFailureDetail(final)))
 	}
+	// A recording that heard nothing was discarded: its URI resolves to nothing, so the tool says
+	// what happened instead of handing the agent a recording to fetch.
+	if final.GetStatusDetail() == leyline.NothingHeard {
+		fmt.Fprintf(&b, "Recorded nothing: %s The daemon keeps no recording that heard nothing, so %s does not exist.",
+			nothingHeardReason(o.gated), uri)
+		return protoResult(final, b.String())
+	}
 	fmt.Fprintf(&b, "%s: %s", final.GetStatusDetail(), uri)
 	if m, merr := srv.manifestFor(ctx, job.GetJobId()); merr == nil {
 		fmt.Fprintf(&b, "\n%s", recordingSummary(m))

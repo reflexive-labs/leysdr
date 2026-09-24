@@ -87,6 +87,11 @@ type RecordingPart struct {
 	PeakDBFS     *float64 `json:"peak_dbfs,omitempty"`
 	MeanDBFS     *float64 `json:"mean_dbfs,omitempty"`
 	SquelchOpens int      `json:"squelch_opens"`
+	// ClippedMs is how long inside the part the capture's CaptureLevel
+	// reported clipping, at the window's 1e-4 floor; 0 (absent in the file)
+	// when nothing clipped. It is the clipping fact: PeakDBFS measures the
+	// audio, not the radio's converter.
+	ClippedMs int64 `json:"clipped_ms,omitempty"`
 }
 
 // RecordingGap is time the recording does not cover, and why.

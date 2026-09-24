@@ -168,6 +168,19 @@ public enum Leyline_V1_Control: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "SetPlaybackPaused" metadata.
+        public enum SetPlaybackPaused: Sendable {
+            /// Request type for "SetPlaybackPaused".
+            public typealias Input = Leyline_V1_SetPlaybackPausedRequest
+            /// Response type for "SetPlaybackPaused".
+            public typealias Output = Leyline_V1_Playback
+            /// Descriptor for "SetPlaybackPaused".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Control"),
+                method: "SetPlaybackPaused",
+                type: .unary
+            )
+        }
         /// Namespace for "WriteParams" metadata.
         public enum WriteParams: Sendable {
             /// Request type for "WriteParams".
@@ -246,6 +259,7 @@ public enum Leyline_V1_Control: Sendable {
             DetachSink.descriptor,
             StartPlayback.descriptor,
             StopPlayback.descriptor,
+            SetPlaybackPaused.descriptor,
             WriteParams.descriptor,
             AttachDevice.descriptor,
             DetachDevice.descriptor,
@@ -440,6 +454,28 @@ extension Leyline_V1_Control {
             request: GRPCCore.StreamingServerRequest<Leyline_V1_StopPlaybackRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "SetPlaybackPaused" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+        /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+        /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+        /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+        /// > such playback, the code StopPlayback answers with.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_SetPlaybackPausedRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Playback` messages.
+        func setPlaybackPaused(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_SetPlaybackPausedRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Playback>
 
         /// Handle the "WriteParams" method.
         ///
@@ -689,6 +725,28 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
 
+        /// Handle the "SetPlaybackPaused" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+        /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+        /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+        /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+        /// > such playback, the code StopPlayback answers with.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SetPlaybackPausedRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Playback` message.
+        func setPlaybackPaused(
+            request: GRPCCore.ServerRequest<Leyline_V1_SetPlaybackPausedRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Playback>
+
         /// Handle the "WriteParams" method.
         ///
         /// - Parameters:
@@ -936,6 +994,28 @@ extension Leyline_V1_Control {
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_Empty
 
+        /// Handle the "SetPlaybackPaused" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+        /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+        /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+        /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+        /// > such playback, the code StopPlayback answers with.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_SetPlaybackPausedRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Playback` to respond with.
+        func setPlaybackPaused(
+            request: Leyline_V1_SetPlaybackPausedRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Playback
+
         /// Handle the "WriteParams" method.
         ///
         /// - Parameters:
@@ -1139,6 +1219,17 @@ extension Leyline_V1_Control.StreamingServiceProtocol {
             }
         )
         router.registerHandler(
+            forMethod: Leyline_V1_Control.Method.SetPlaybackPaused.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_SetPlaybackPausedRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Playback>(),
+            handler: { request, context in
+                try await self.setPlaybackPaused(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
             forMethod: Leyline_V1_Control.Method.WriteParams.descriptor,
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ParamWrite>(),
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_WriteSummary>(),
@@ -1314,6 +1405,17 @@ extension Leyline_V1_Control.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
         let response = try await self.stopPlayback(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func setPlaybackPaused(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_SetPlaybackPausedRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Playback> {
+        let response = try await self.setPlaybackPaused(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -1519,6 +1621,19 @@ extension Leyline_V1_Control.SimpleServiceProtocol {
     ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
         return GRPCCore.ServerResponse<Leyline_V1_Empty>(
             message: try await self.stopPlayback(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func setPlaybackPaused(
+        request: GRPCCore.ServerRequest<Leyline_V1_SetPlaybackPausedRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Playback> {
+        return GRPCCore.ServerResponse<Leyline_V1_Playback>(
+            message: try await self.setPlaybackPaused(
                 request: request.message,
                 context: context
             ),
@@ -1818,6 +1933,33 @@ extension Leyline_V1_Control {
             deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetPlaybackPaused" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+        /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+        /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+        /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+        /// > such playback, the code StopPlayback answers with.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SetPlaybackPausedRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_SetPlaybackPausedRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Playback` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setPlaybackPaused<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_SetPlaybackPausedRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_SetPlaybackPausedRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Playback>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "WriteParams" method.
@@ -2275,6 +2417,44 @@ extension Leyline_V1_Control {
             )
         }
 
+        /// Call the "SetPlaybackPaused" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+        /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+        /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+        /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+        /// > such playback, the code StopPlayback answers with.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SetPlaybackPausedRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_SetPlaybackPausedRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Playback` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setPlaybackPaused<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_SetPlaybackPausedRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_SetPlaybackPausedRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Playback>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Control.Method.SetPlaybackPaused.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "WriteParams" method.
         ///
         /// - Parameters:
@@ -2713,6 +2893,39 @@ extension Leyline_V1_Control.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_StopPlaybackRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetPlaybackPaused" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+    /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+    /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+    /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+    /// > such playback, the code StopPlayback answers with.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_SetPlaybackPausedRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setPlaybackPaused<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_SetPlaybackPausedRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setPlaybackPaused(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_SetPlaybackPausedRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Playback>(),
             options: options,
             onResponse: handleResponse
         )
@@ -3173,6 +3386,43 @@ extension Leyline_V1_Control.ClientProtocol {
             metadata: metadata
         )
         return try await self.stopPlayback(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetPlaybackPaused" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Pause or resume a playback. Pausing holds the position: the daemon stops feeding the audio
+    /// > device and keeps `position` where it was, and resuming continues from it. Any client may pause
+    /// > a playback, as any client may stop one; the event names who did. The reply is the playback's
+    /// > full state, and the same state goes out on Event.playback. SINK_NOT_FOUND when there is no
+    /// > such playback, the code StopPlayback answers with.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setPlaybackPaused<Result>(
+        _ message: Leyline_V1_SetPlaybackPausedRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Playback>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_SetPlaybackPausedRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setPlaybackPaused(
             request: request,
             options: options,
             onResponse: handleResponse

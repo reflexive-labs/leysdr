@@ -133,11 +133,22 @@ actor RecordRunner: RecordRunning {
         guard !stopped else { return }
         stopped = true
         for action in gate.finish(at: now) { await apply(action) }
-        if await writer.isPartOpen { await writer.closePart(endSample: now) }
+        if await writer.isPartOpen { await closePart(endSample: now) }
         await writer.finish(endedBy: reason, endSample: now)
         switch source {
         case .audio(let lease, _): await lease.release()
         case .iq(let lease): await lease.release()
+        }
+        // A recording that heard nothing has nothing to play, and is not kept
+        // (docs/design/recording.md, "Nothing heard"): the directory goes before the job ends, so
+        // a client that sees the job finish never lists an empty recording.
+        let heardNothing = await !writer.manifest.parts.contains { $0.samples > 0 }
+        if heardNothing {
+            do {
+                _ = try await recordings.delete(jobID: jobID.string, by: "the record job, which heard nothing")
+            } catch {
+                log.warning("\(writer.directory): an empty recording could not be removed (\(error))")
+            }
         }
         // The store is brought back inside its cap once the recording has stopped growing. A
         // running one is never dropped, so this is the first moment this recording could be.
@@ -145,12 +156,51 @@ actor RecordRunner: RecordRunning {
         // The terminal state goes out last, after the files are closed and the radio is back, the
         // same order a scan and a decode job end in: a client that sees the job finish finds the
         // recording finished too, rather than a manifest missing the part still being written.
-        if let end = pendingEnd {
-            pendingEnd = nil
+        let end = pendingEnd
+        pendingEnd = nil
+        if heardNothing, end?.state != .failed {
+            // Cancelled, duration, quiet or the channel closing: the job did what it was asked
+            // and there was nothing on the air. A client's CancelJob lands here too, and
+            // `JobStore.cancel` keeps this state and detail.
+            await onStatus(.completed, Self.nothingHeard, nil)
+        } else if let end {
             var detail = end.detail
             if detail == nil { detail = await completedDetail() }
             await onStatus(end.state, detail ?? "", end.code)
         }
+    }
+
+    /// The status detail of a record job that ended with no part written. Clients match it
+    /// (`ley record`, the MCP `record` tool), so it does not change.
+    static let nothingHeard = "nothing was heard"
+
+    // MARK: The capture's level
+
+    /// The last `CaptureLevelMeter` generation handed to the writer, so a reading goes in once.
+    private var levelGeneration: UInt64 = 0
+
+    /// The capture's clipping, for each part's `clipped_ms`. Read off the same seqlock
+    /// `TelemetryService` publishes `CaptureLevel` from, at its cadence: a copy of four words, and
+    /// never a second reader on the DSP ring (invariant 4).
+    private func followLevel() async {
+        while !Task.isCancelled, !stopped {
+            await readLevel()
+            try? await Task.sleep(nanoseconds: TelemetryService.levelPollNs)
+        }
+    }
+
+    private func readLevel() async {
+        guard let engine = await store.captureEngine(captureID),
+              let (reading, generation) = engine.core.level.read(), generation != levelGeneration
+        else { return }
+        levelGeneration = generation
+        await writer.noteLevel(reading, captureRate: captureRateHz)
+    }
+
+    /// Closes the open part, with the reading published since the last poll counted first.
+    private func closePart(endSample: UInt64) async {
+        await readLevel()
+        await writer.closePart(endSample: endSample)
     }
 
     // MARK: The loop
@@ -179,6 +229,7 @@ actor RecordRunner: RecordRunning {
         let squelch = Task { [weak self] in await self?.followSquelch(lease: lease) }
         let health = Task { [weak self] in await self?.followChannel(lease: lease) }
         let liveness = Task { [weak self] in await self?.followLiveness() }
+        let level = Task { [weak self] in await self?.followLevel() }
         let deadline = startDeadline()
         // A continuous recording opens its one part at the first frame; a gated one waits for the
         // squelch. Either way the part starts on a real sample index, not an estimate.
@@ -193,6 +244,7 @@ actor RecordRunner: RecordRunning {
         squelch.cancel()
         health.cancel()
         liveness.cancel()
+        level.cancel()
         deadline?.cancel()
         audio.wake()
         await engine.detach(audio.sink.id)
@@ -228,6 +280,7 @@ actor RecordRunner: RecordRunning {
         wake = { ring.wake() }
         let liveness = Task { [weak self] in await self?.followLiveness() }
         let health = Task { [weak self] in await self?.followCapture(lease: lease) }
+        let level = Task { [weak self] in await self?.followLevel() }
         let deadline = startDeadline()
         for await _ in ring.poke {
             if Task.isCancelled || stopped { break }
@@ -242,6 +295,7 @@ actor RecordRunner: RecordRunning {
         }
         liveness.cancel()
         health.cancel()
+        level.cancel()
         deadline?.cancel()
         await lease.capture.removeTap(id: tapID)
         ring.finish()
@@ -331,7 +385,7 @@ actor RecordRunner: RecordRunning {
     private func cutPartIfDue(at sample: UInt64) async {
         guard partSamples > 0, await writer.isPartOpen else { return }
         guard sample >= currentPartStart + partSamples else { return }
-        await writer.closePart(endSample: sample)
+        await closePart(endSample: sample)
         await openPart(at: sample)
     }
 
@@ -397,7 +451,7 @@ actor RecordRunner: RecordRunning {
         case .closePart(let endSample):
             // The part ends at the close transition plus the hang, which the drain may not have
             // reached yet; never past what has actually been written.
-            await writer.closePart(endSample: Swift.min(endSample, now))
+            await closePart(endSample: Swift.min(endSample, now))
             // The gap between this part and the next is not recorded, and is listed as a gap.
             currentPartStart = 0
         case .quiet:
@@ -544,7 +598,7 @@ actor RecordRunner: RecordRunning {
             squelchKnown = false
             preRoll.removeAll(keepingCapacity: true)
         }
-        if await writer.isPartOpen { await writer.closePart(endSample: now) }
+        if await writer.isPartOpen { await closePart(endSample: now) }
         outOfCaptureFrom = now
         let when = Date().formatted(date: .omitted, time: .standard)
         await onStatus(.degraded, "out of capture since \(when), will resume when \(fmtMHz(await writer.manifest.frequencyHz)) is back", nil)

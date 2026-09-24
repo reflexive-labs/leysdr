@@ -852,9 +852,34 @@ actor SessionStore {
         // Checked again after the await: an `endPlayback` that ran meanwhile has already emitted the
         // tombstone, and a playing event after it would bring the playback back in every mirror.
         guard playbacks[id] != nil else { return false }
+        // A paused playback's position does not move, and `setPlaybackPaused` already published
+        // it: repeating it four times a second would only push real events out of the replay
+        // window. The ticker keeps running and speaks again on resume.
+        if proto.paused { return true }
         proto.state = .playbackPlaying
         emit(.playback(proto), captureID: nil, by: .daemon)
         return true
+    }
+
+    /// Pauses or resumes a playback and publishes its full state at once, caused by `by`. Any
+    /// client may, as any client may stop one (`stopPlaybackChecked`); the event names who did.
+    /// Asking for the state it is already in publishes nothing new and is not an error.
+    func setPlaybackPaused(id: PlaybackID, paused: Bool, by: ClientContext) async throws -> Leyline_V1_Playback {
+        guard let entry = playbacks[id] else {
+            throw EngineError(code: EngineError.Code.sinkNotFound, message: "no such playback", target: id.string)
+        }
+        let was = await entry.engine.paused
+        await entry.engine.setPaused(paused)
+        guard var proto = await playbackProto(id, entry: entry) else {
+            throw EngineError(code: EngineError.Code.sinkNotFound, message: "no such playback", target: id.string)
+        }
+        // The playback may have ended during the awaits above, and its tombstone is already out.
+        guard playbacks[id] != nil else {
+            proto.state = .unspecified
+            return proto
+        }
+        if was != paused { emit(.playback(proto), captureID: nil, by: by) }
+        return proto
     }
 
     func stopPlaybackChecked(id: PlaybackID, by: ClientContext) async throws {
@@ -885,6 +910,7 @@ actor SessionStore {
         p.sampleRate = entry.engine.sampleRate
         p.samples = entry.engine.frames
         p.position = await entry.engine.position
+        p.paused = await entry.engine.paused
         p.volume = entry.engine.volume
         p.createdBy = entry.owner.proto
         p.state = .playbackPlaying

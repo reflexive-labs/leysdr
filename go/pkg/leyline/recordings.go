@@ -101,6 +101,19 @@ func (c *Client) StartPlayback(ctx context.Context, uri string, volume float64) 
 	return c.Control.StartPlayback(ctx, req)
 }
 
+// SetPlaybackPaused pauses or resumes a playback. Paused, the daemon holds the
+// position and stops feeding the audio device; resumed, it continues from
+// there. The reply is the playback's full state.
+func (c *Client) SetPlaybackPaused(ctx context.Context, playbackID string, paused bool) (*leylinev1.Playback, error) {
+	return c.Control.SetPlaybackPaused(ctx, &leylinev1.SetPlaybackPausedRequest{PlaybackId: playbackID, Paused: paused})
+}
+
+// NothingHeard is the status_detail of a record job that ended with no part
+// written. The daemon discards such a recording, so its URI resolves to
+// JOB_NOT_FOUND; a client says so rather than reading a manifest that is gone
+// (docs/design/recording.md, "Nothing heard").
+const NothingHeard = "nothing was heard"
+
 // StopPlayback stops one the daemon is playing.
 func (c *Client) StopPlayback(ctx context.Context, playbackID string) error {
 	_, err := c.Control.StopPlayback(ctx, &leylinev1.StopPlaybackRequest{PlaybackId: playbackID})

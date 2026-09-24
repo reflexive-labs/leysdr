@@ -188,6 +188,7 @@ final class RecordingJobTests: XCTestCase {
             XCTAssertEqual(manifest.mode, "NFM")
             XCTAssertEqual(manifest.frequencyHz, recordFrequencyHz)
             XCTAssertEqual(manifest.parts.count, 1, "a continuous audio recording is one part")
+            XCTAssertNil(manifest.parts[0].clippedMs, "a -20 dBFS tone never reaches a rail")
             XCTAssertEqual(manifest.coverageGaps.count, 0, "and it covers everything it claims")
             XCTAssertEqual(manifest.anchors.count, 1)
             XCTAssertFalse(manifest.anchors[0].captureID?.isEmpty ?? true, "the anchor dates its own capture")
@@ -769,6 +770,167 @@ final class RecordingJobTests: XCTestCase {
             }
             let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertTrue(state.playbacks.isEmpty, "the finished playback is out of the daemon's state")
+        }
+    }
+
+    /// Pausing holds the position across half a second, resuming moves it on, and the paused
+    /// state is on the event and in `GetState`. Any client may pause, as any client may stop a
+    /// playback; the event names who did.
+    func testPausingAPlaybackHoldsItsPosition() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            let done = try await self.playableRecording(c)
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            defer { Task { await events.stop() } }
+            let pb = try await self.play(c, "ley://recordings/\(done.jobID)/1")
+            XCTAssertFalse(pb.paused)
+            try await Task.sleep(nanoseconds: 200_000_000)
+
+            var pause = Leyline_V1_SetPlaybackPausedRequest()
+            pause.playbackID = pb.playbackID
+            pause.paused = true
+            let paused = try await c.control.setPlaybackPaused(pause, metadata: testMetadata)
+            XCTAssertTrue(paused.paused)
+            XCTAssertEqual(paused.state, .playbackPlaying, "a paused playback is still a playback")
+            XCTAssertGreaterThan(paused.position, 0)
+            let event = await events.waitFor { $0.playback.playbackID == pb.playbackID && $0.playback.paused }
+            XCTAssertEqual(event?.causedBy.clientID, testClientID, "the pause is the pausing client's event")
+
+            try await Task.sleep(nanoseconds: 500_000_000)
+            let held = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let still = try XCTUnwrap(held.playbacks.first { $0.playbackID == pb.playbackID })
+            XCTAssertTrue(still.paused)
+            XCTAssertEqual(still.position, paused.position, "half a second paused and the position has not moved")
+
+            pause.paused = false
+            let resumed = try await c.control.setPlaybackPaused(pause, metadata: testMetadata)
+            XCTAssertFalse(resumed.paused)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let moving = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let later = try XCTUnwrap(moving.playbacks.first { $0.playbackID == pb.playbackID })
+            XCTAssertGreaterThan(later.position, paused.position, "resuming continues from where it was")
+            // From where it was, not from where the clock says: 0.3 s of a 48 kHz file is 14,400
+            // frames, and the pause is not owed as a burst.
+            XCTAssertLessThan(later.position - paused.position, 48000 * 6 / 10)
+
+            // Another client pauses it too, and the event is theirs.
+            let other: Metadata = ["leyline-client-id": .string("cli_OTHER"), "leyline-client-kind": .string("app")]
+            pause.paused = true
+            let theirs = try await c.control.setPlaybackPaused(pause, metadata: other)
+            XCTAssertTrue(theirs.paused)
+            let otherEvent = await events.waitFor {
+                $0.playback.playbackID == pb.playbackID && $0.playback.paused && $0.causedBy.clientID == "cli_OTHER"
+            }
+            XCTAssertNotNil(otherEvent)
+
+            pause.playbackID = "pb_01J8XQ2M7V3N9K5R4T6W8Y0ZAB"
+            do {
+                _ = try await c.control.setPlaybackPaused(pause, metadata: testMetadata)
+                XCTFail("paused a playback that does not exist")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, EngineError.Code.sinkNotFound)
+            }
+
+            var stop = Leyline_V1_StopPlaybackRequest()
+            stop.playbackID = pb.playbackID
+            _ = try await c.control.stopPlayback(stop, metadata: testMetadata)
+            let tomb = await events.waitFor { $0.playback.playbackID == pb.playbackID && $0.playback.state == .unspecified }
+            XCTAssertNotNil(tomb, "a paused playback stops like any other")
+        }
+    }
+
+    // MARK: What a recording holds
+
+    /// A capture whose every sample is at the rails: the recording's part reports how long the
+    /// capture's `CaptureLevel` said it clipped, read off the meter the telemetry service
+    /// publishes from.
+    func testAPartRecordedWhileTheRadioClipsSaysForHowLong() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let fixtures = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: fixtures) }
+        // Half a second at 2.4 MSPS with I at +1 on every sample: a DC carrier at full scale.
+        let samples = 1_200_000
+        var data = Data(count: samples * 8)
+        data.withUnsafeMutableBytes { raw in
+            let f = raw.bindMemory(to: Float32.self)
+            for i in 0..<samples { f[2 * i] = 1; f[2 * i + 1] = 0 }
+        }
+        let path = fixtures + "/rails.cf32"
+        try data.write(to: URL(fileURLWithPath: path))
+        let sidecar = #"{"format":"cf32","sample_rate":2400000,"center_hz":146520000,"samples":1200000,"created_at_ns":0,"anchor":{"host_time_ns":0,"drift_ppm":0}}"#
+        try Data(sidecar.utf8).write(to: URL(fileURLWithPath: fixtures + "/rails.json"))
+
+        try await withDaemon(recordingsPath: dir) { c in
+            var request = Leyline_V1_AttachFileDeviceRequest()
+            request.path = path
+            request.loop = true
+            _ = try await c.control.attachFileDevice(request, metadata: testMetadata)
+            var config = Leyline_V1_RecordConfig()
+            config.frequencyHz = 146_520_000
+            config.mode = .nfm
+            config.durationMs = 1500
+            config.squelchDbfs = -120
+            let done = try await self.waitForEnd(c, try await self.start(c, config).jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            let manifest = try self.manifest(dir, done.jobID)
+            XCTAssertEqual(manifest.parts.count, 1)
+            let clipped = try XCTUnwrap(manifest.parts[0].clippedMs, "a part recorded at the rails says it clipped")
+            // Every reading clipped, so the part is charged all of it but the reading still being
+            // measured when it closed (at most a quarter second) and whatever the first reading
+            // spent before the part opened.
+            XCTAssertGreaterThan(clipped, 1000, "\(clipped) ms of 1500")
+            XCTAssertLessThanOrEqual(clipped, 1500)
+        }
+    }
+
+    /// A gated recording of the noise floor with a squelch nothing reaches never opens a part.
+    /// Cancelled after a second, it leaves no directory, the job ends COMPLETED saying nothing was
+    /// heard, and the recording's URI resolves to nothing (docs/design/recording.md, "Nothing
+    /// heard").
+    func testARecordingThatHeardNothingIsDiscarded() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            try await self.attach(c, fixture: "noise_floor.cf32", loop: true)
+            var config = Leyline_V1_RecordConfig()
+            config.frequencyHz = recordFrequencyHz
+            config.mode = .nfm
+            config.gate = .squelch
+            config.squelchDbfs = -10
+            let started = try await self.start(c, config)
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: dir + "/" + started.jobID),
+                          "the recording exists while it runs")
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = started.jobID
+            let cancelled = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+            XCTAssertEqual(cancelled.state, .completed)
+            XCTAssertEqual(cancelled.statusDetail, "nothing was heard")
+            XCTAssertEqual(cancelled.resultUris, ["ley://recordings/\(started.jobID)"])
+            XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/" + started.jobID),
+                           "the directory went with it")
+
+            var list = Leyline_V1_ListResourcesRequest()
+            list.kind = .recording
+            let listed = try await c.resources.listResources(list, metadata: testMetadata)
+            XCTAssertTrue(listed.resources.isEmpty, "\(listed.resources.map(\.uri))")
+            var resource = Leyline_V1_ResourceRef()
+            resource.uri = "ley://recordings/\(started.jobID)"
+            do {
+                _ = try await c.resources.getResource(resource, metadata: testMetadata)
+                XCTFail("a discarded recording resolved")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, EngineError.Code.jobNotFound)
+            }
+
+            // The same on its own ending: a duration that runs out with nothing heard.
+            config.durationMs = 600
+            let timed = try await self.waitForEnd(c, try await self.start(c, config).jobID)
+            XCTAssertEqual(timed.state, .completed)
+            XCTAssertEqual(timed.statusDetail, "nothing was heard")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/" + timed.jobID))
         }
     }
 

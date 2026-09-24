@@ -296,6 +296,8 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 			{head: "STARTED"},
 			{head: "LENGTH"},
 			{head: "PEAK", drop: 1},
+			// Only when a part clipped: a clean recording's table is unchanged.
+			{head: "CLIP", drop: 1, hideEmpty: true},
 			{head: "OVERS", drop: 2},
 			{head: "FILE", min: 12},
 		}
@@ -316,7 +318,15 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 			if p.SquelchOpens > 0 {
 				overs = strconv.Itoa(p.SquelchOpens)
 			}
-			add(cols, strconv.Itoa(p.Part), started, length, peak, overs, p.File)
+			clip := "-"
+			switch {
+			case p.ClippedMs >= 100:
+				clip = fmt.Sprintf("%.1f s", float64(p.ClippedMs)/1000)
+			case p.ClippedMs > 0:
+				// Under a tenth of a second would print as 0.0 s, which reads as none.
+				clip = fmt.Sprintf("%d ms", p.ClippedMs)
+			}
+			add(cols, strconv.Itoa(p.Part), started, length, peak, clip, overs, p.File)
 		}
 		fmt.Fprintln(out)
 		_, _ = printColumns(out, tableStyle(app), cols, nil)

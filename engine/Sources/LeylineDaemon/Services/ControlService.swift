@@ -148,6 +148,18 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         }
     }
 
+    /// Pauses or resumes a playback; the position holds while it is paused
+    /// (docs/design/recording.md, "Playing a recording back").
+    func setPlaybackPaused(request: Leyline_V1_SetPlaybackPausedRequest, context: ServerContext) async throws -> Leyline_V1_Playback {
+        await store.touchUnary(client)
+        return try await mapErrors {
+            guard let id = PlaybackID(string: request.playbackID) else {
+                throw EngineError(code: EngineError.Code.sinkNotFound, message: "no such playback", target: request.playbackID)
+            }
+            return try await store.setPlaybackPaused(id: id, paused: request.paused, by: client)
+        }
+    }
+
     func writeParams(request: RPCAsyncSequence<Leyline_V1_ParamWrite, any Error>, context: ServerContext) async throws -> Leyline_V1_WriteSummary {
         let c = client
         await store.streamOpened(c)
