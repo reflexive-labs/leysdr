@@ -558,6 +558,39 @@ community submits and who curates, and the licence per pack (data, not code: CC-
 decided per source). The daemon-side home for the data is D6 (bookmarks live in the daemon), so the
 document also specifies which pack contents become daemon state and which stay files.
 
+### R-23 `[ ]` One gain syntax, one gain line (S, Opus)
+
+Asked 2026-09-24 after M2-10 gave `--gain` stage pairs: "let's align all the gain flags." The
+inventory found four surfaces still on older shapes and one print form that differs by command.
+
+**One syntax.** `auto`, a bare number (the first stage), or `STAGE=dB,...` in any order, case
+matched against the device's elements, parsed by `leyline.ParseGains` everywhere:
+
+- `ley set gain LNA=0,VGA=20` replaces `ley set gain 20 --element VGA`; `--element` goes (there
+  is no release to keep it for). The confirm line names every stage set.
+- `ley scan --gain` takes the same. `ScanConfig` gains `repeated GainWrite gains` (additive,
+  beside `gain`, which stays and loses when both are sent, as `RecordConfig` does); the sweep's
+  pin applies each in order through the shared element helper and fails the sweep on the first
+  refusal, and `Scan.gains` keeps reporting every stage.
+- `ley set gain`, `--gain` on every verb, and the MCP `tune`, `listen_summary`, `record` and
+  `scan` tools share one help sentence, "receiver gain: auto, dB such as 30 for the first stage,
+  or stages such as LNA=0,VGA=20 (ley help gain)", and `ley help gain` is the one place the
+  syntax is explained. `docs/reference/mcp.md` states it once for the four tools, and
+  `docs/design/recording.md`'s sketch of `ley record` follows the real flag.
+
+**One line.** A capture's gains print the same way wherever they print: `gain 28 dB` for a
+one-stage radio, `gain LNA 0 dB, VGA 20 dB, AMP off` for several, a two-value stage as `on` or
+`off`, numbers with a decimal only when the step has one (49.6 dB), element names as the device
+spells them. One helper (`stageGainWords`, made to follow this) serves `ley state` (tree and
+`--wide`), `ley scan`'s summary (`lna 8.0 dB` today), `ley recordings show` (first stage only
+today, the one renderer M2-10 missed), both banners, and `ley set`'s confirm line.
+`ley devices`' elements column stays a range (`LNA 0–40 dB`, `TUNER 0–49.6 dB auto`) with the
+same names and number form. `--json` is untouched.
+
+Not applicable, and left so: `monitor`, `decode`, `watch` and `track` (the daemon's gain is the
+daemon's, as `monitor.go` says), `devices attach`. The app already writes one `GainWrite` per
+stage and prints nothing as a string.
+
 ### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
 
 Today a dongle served by `rtl_tcp` is a daemon flag (`leylined --rtltcp host:port`) or an environment
