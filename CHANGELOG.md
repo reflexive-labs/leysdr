@@ -4,6 +4,31 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- A recording gated by squelch now keeps a signal that was already on the air when it started.
+  A broadcast station or any carrier that never stops holds the squelch open from before the
+  recording begins, so no opening ever came, and switching the recording off left a recording of
+  0 s and 0 B. The daemon now reads the squelch's state from the channel's meter when the
+  recording starts, and after the radio comes back from being moved away, and opens a part at
+  once when it is open. `ley record --gate squelch` and the Mac app's switch both get this.
+
+- Retuning a channel ends the transmission it was hearing. The window retunes by moving the same
+  channel, and the daemon's squelch stayed open across the move, so the log kept the last
+  frequency's transmission on air (`not audible`, 2:48 and counting). The daemon now closes an
+  open squelch whenever a channel's frequency, width or mode changes or its radio moves off it,
+  and opens a new transmission if the new frequency carries a signal; every client's log sees
+  the close. The Mac app's log also starts over when the tuned frequency changes, since a
+  transmission on the last frequency was not one on this. `ley tune` makes a new channel for
+  each tune and was not affected.
+
+- The Record transmissions switch on a Recordings channel page records. When the radio is
+  listening somewhere else the daemon declines the recording after accepting the request, and
+  the window dropped the reason, so the switch went back off with nothing said; the reason is now
+  a notice on the page, with what to do: `Could not record: the app is listening on 146.520 MHz.
+  Tune to 462.6125 MHz first, and the recording shares the radio.` The page asks for the daemon's
+  auto squelch, which the daemon read as "squelch off" and then measured from the channel's own
+  level, above any carrier on it; a gated recording now takes NaN as auto, and the auto squelch
+  sits 10 dB over the band's noise floor, as `ley tune`'s does.
+
 - The Mac app's Recordings source has channel pages. Select a channel in the sidebar and the
   centre of the window lists what it has kept, grouped Today, Yesterday, the day before, and
   Earlier, where older recordings fold to one line until clicked. Each recording is a card with

@@ -449,6 +449,76 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertFalse(after.resources.contains { $0.uri == summary.uri }, "deleted, still listed")
     }
 
+    /// The channel page's Record transmissions switch, by the page's own path: the channel is a
+    /// row of the store's listing, with no manifest read and no channel of the window's to copy,
+    /// so the request carries the listing's frequency, mode and width and no squelch. The job it
+    /// starts must run and be the one the page's switch finds (plans/app.md, APP-5, "Fixed
+    /// 2026-09-25").
+    @MainActor
+    func testTheChannelPagesSwitchStartsARecordingThatRuns() async throws {
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
+        let hz = UInt64(Int64(capture.centerHz) + channel.offsetHz)
+
+        // A recording already in the store, which is what gives the page its channel.
+        var first = Leyline_V1_StartJobRequest()
+        first.record = Recordings.config(
+            frequencyHz: hz, mode: .nfm, bandwidthHz: channel.bandwidthHz, squelchDBFS: -40)
+        first.record.durationMs = 500
+        let earlier = try await app.jobs.startJob(first)
+        await assertEventually("the first recording never finished", timeout: .seconds(10)) {
+            mirror.state.jobs.first { $0.jobID == earlier.jobID }?.isActive == false
+        }
+
+        var list = Leyline_V1_ListResourcesRequest()
+        list.kind = .recording
+        let summaries = try await app.resources.listResources(list).resources.map(
+            RecordingSummary.init)
+        let channels = Recordings.channels(summaries, bookmarks: [], jobs: mirror.state.jobs)
+        let page = try XCTUnwrap(
+            channels.first { $0.frequencyHz == hz }, "the recording has no channel row")
+        XCTAssertNil(
+            Recordings.activeJob(
+                in: mirror.state.jobs, frequencyHz: page.frequencyHz, mode: page.mode),
+            "the switch starts off")
+
+        // `AppSession.setRecording(_:channel:)`, with no manifest loaded.
+        var req = Leyline_V1_StartJobRequest()
+        req.record = Recordings.pageConfig(page, groups: [])
+        let job = try await app.jobs.startJob(req)
+        XCTAssertEqual(job.state, .running, job.statusDetail)
+        await assertEventually(
+            "the page's switch never found its job running", timeout: .seconds(10)
+        ) {
+            Recordings.activeJob(
+                in: mirror.state.jobs, frequencyHz: page.frequencyHz, mode: page.mode)?
+                .jobID == job.jobID
+        }
+        // Still running once the squelch is measured and the gate has had time to act: a job
+        // that failed after starting leaves the switch off as surely as a refusal does.
+        try await Task.sleep(for: .seconds(1.5))
+        let now = try XCTUnwrap(mirror.state.jobs.first { $0.jobID == job.jobID })
+        XCTAssertEqual(now.state, .running, now.statusDetail)
+
+        var ref = Leyline_V1_JobRef()
+        ref.jobID = job.jobID
+        _ = try await app.jobs.cancelJob(ref)
+        await assertEventually("the job never ended") {
+            mirror.state.jobs.first { $0.jobID == job.jobID }?.state == .cancelled
+        }
+        let after = try await app.resources.listResources(list).resources.map(
+            RecordingSummary.init)
+        let summary = try XCTUnwrap(
+            after.first { $0.jobID == job.jobID }, "the page's recording is not listed")
+        XCTAssertGreaterThan(summary.parts, 0, "the carrier holds the squelch open: one part")
+    }
+
     func testErrorCodesSurviveTheTrip() async throws {
         let app = try DaemonConnection(
             socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))

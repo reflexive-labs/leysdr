@@ -112,6 +112,41 @@ func TestRecordAgainstRealDaemon(t *testing.T) {
 	}
 }
 
+// A carrier that never stops holds the squelch open from before the recording starts, so no
+// transition arrives; the gate is seeded from the channel's meter and the recording is one part
+// as long as the recording. Until 2026-09-25 it wrote nothing (docs/design/recording.md, "The
+// gate").
+func TestGatedRecordOfACarrierHoldsOnePart(t *testing.T) {
+	fixture, err := filepath.Abs("../../../fixtures/nfm_tone.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e, _ := setup(t, "--recordings", filepath.Join(t.TempDir(), "recordings"))
+	attachFixture(e, fixture)
+
+	// ley play attaches the fixture once through, and nfm_tone is 1 s long, so the recording is
+	// shorter than the file.
+	out := e.mustRun("record", "146.62", "--gate", "squelch", "--squelch", "-40", "--hang", "1s", "--for", "800ms")
+	jobID := strings.TrimPrefix(strings.TrimSpace(out), "ley://recordings/")
+	manifest := parseJSON(t, e.mustRun("recordings", "show", jobID, "--json"))
+	parts := list(manifest, "parts")
+	if len(parts) != 1 {
+		t.Fatalf("want one part for a carrier that never stops, got %d: %v", len(parts), manifest)
+	}
+	p := parts[0].(map[string]any)
+	rate := anchorRate(t, manifest)
+	seconds := (number(t, p, "end_sample") - number(t, p, "start_sample")) / rate
+	if math.Abs(seconds-0.8) > 0.2 {
+		t.Errorf("the part is %.2f s long, want about the 0.8 s recorded: %v", seconds, manifest)
+	}
+	if number(t, p, "squelch_opens") != 1 {
+		t.Errorf("%v overs, want the 1 already in progress", p["squelch_opens"])
+	}
+}
+
 // An IQ recording is cut into parts that are contiguous on the sample timebase, and ley play
 // tunes one back through the same file-device reader a fixture goes through.
 func TestRecordIQRoundTripAgainstRealDaemon(t *testing.T) {

@@ -254,9 +254,13 @@ extension JobStore {
                               gated: Bool, job: JobID) async
     {
         // 0 dBFS is not a squelch anybody means: proto3 has no "absent" for a double, so an unset
-        // field and a request to mute everything look the same, so 0 is read as unset.
+        // field and a request to mute everything look the same, so 0 is read as unset. NaN is
+        // the channel default too for a gated recording (`jobs.proto`, `squelch_dbfs`): a gate
+        // with the squelch off has nothing to watch, and the app's channel page, which has no
+        // squelch of its own to copy, sends NaN (plans/app.md, APP-5, "Fixed 2026-09-25").
+        // `ley record --squelch off` sends NaN for a continuous recording, where it means off.
         var want = config.squelchDbfs
-        if want == 0 {
+        if want == 0 || (gated && want.isNaN) {
             // No level asked for. A continuous recording needs none; a gated one needs one or it
             // has nothing to watch, so the daemon measures the channel's own floor and sits above
             // it -- the same "auto" a person gets from `ley tune`, done where the channel is
@@ -272,19 +276,27 @@ extension JobStore {
         await store.publishChannel(lease.channelID)
     }
 
-    /// The channel's noise floor plus 10 dB, from its own meter. Bounded: a channel whose meter
-    /// never arrives leaves the squelch alone, and the gate then sees a squelch that is off --
-    /// which the runner reports rather than silently recording nothing.
+    /// The noise floor at the channel's width plus 10 dB, from its own meter: the band's floor,
+    /// which is the meter's power less its SNR, once the capture has measured one, else the
+    /// channel's own power. The channel's power is its floor only while nothing is on it; on a
+    /// broadcast carrier it is the carrier, and a squelch 10 dB above that never opens, so a
+    /// gated recording from the channel page wrote nothing (plans/app.md, APP-5, "Fixed
+    /// 2026-09-25"). `ley tune`'s auto sits over the band's floor for the same reason. Bounded: a
+    /// channel whose meter never arrives leaves the squelch alone, and the gate then sees a
+    /// squelch that is off -- which the runner reports rather than silently recording nothing.
     private func autoSquelch(_ lease: any ChannelLease) async -> Double? {
         let subscription = lease.engine.telemetrySubscription()
-        var readings: [Double] = []
+        var floors: [Double] = []
+        var powers: [Double] = []
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(Self.autoSquelchMs))
         for await t in subscription.stream {
-            if case .meter(_, let power, _, _, _, _, _, _) = t, power.isFinite {
-                readings.append(power)
+            if case .meter(_, let power, let snr, _, _, _, _, _) = t, power.isFinite {
+                powers.append(power)
+                if snr.isFinite { floors.append(power - snr) }
             }
-            if readings.count >= 5 || ContinuousClock.now >= deadline { break }
+            if floors.count >= 5 || ContinuousClock.now >= deadline { break }
         }
+        var readings = floors.isEmpty ? powers : floors
         guard !readings.isEmpty else { return nil }
         readings.sort()
         let floor = readings[readings.count / 2]

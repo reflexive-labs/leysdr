@@ -215,7 +215,10 @@ final class SpectrumFeed {
 /// inspector's readings, and the squelch edges and sub-audible reports folded into a
 /// `TransmissionLog` for the inspector's log and its time on air (docs/design/
 /// app-design-handoff-m2.md, Regions 3 and 4). One subscription per channel, reset with it: the
-/// log is the channel's, and a transmission on the last channel is not one on this. The capture
+/// log is the channel's, and a transmission on the last channel is not one on this. The log and
+/// the last tone are reset when the channel is retuned as well, since the window retunes by
+/// writing the same channel's offset: a transmission on the last frequency is not one on this
+/// either (`ChannelFrequencyWatch`; plans/app.md, APP-5, "Fixed 2026-09-25"). The capture
 /// rate is `duration_samples`' unit and comes from the session's capture, which can change under
 /// a live subscription, so it is taken on every `follow` and not only at subscribe time.
 @MainActor
@@ -241,17 +244,34 @@ final class ChannelTelemetryFeed {
     private var meters = 0
     private var task: Task<Void, Never>?
     private var channel: String?
+    private var frequency = ChannelFrequencyWatch()
 
-    func follow(_ channelID: String?, captureRate: UInt64, connection: DaemonConnection?) {
+    /// `offsetHz` and `centerHz` are the mirror's for the channel and its capture, read on every
+    /// call so a retune of the same channel starts the log over.
+    func follow(
+        _ channelID: String?, offsetHz: Int64?, centerHz: UInt64?, captureRate: UInt64,
+        connection: DaemonConnection?
+    ) {
         self.captureRate = captureRate
         guard let channelID, let connection else {
             stop()
             return
         }
-        if channelID == channel, task != nil { return }
+        if channelID == channel, task != nil {
+            if let offsetHz, frequency.observe(offsetHz: offsetHz, centerHz: centerHz) {
+                log(
+                    "telemetry",
+                    "retuned to \(frequency.tunedHz ?? 0) Hz; the transmission log starts over")
+                lastTone = nil
+                transmissions = TransmissionLog(channelID: channelID)
+            }
+            return
+        }
         stop()
         channel = channelID
         lastTone = nil
+        frequency = ChannelFrequencyWatch()
+        if let offsetHz { _ = frequency.observe(offsetHz: offsetHz, centerHz: centerHz) }
         transmissions = TransmissionLog(channelID: channelID)
         var sub = Leyline_V1_TelemetrySubscription()
         sub.channelID = channelID

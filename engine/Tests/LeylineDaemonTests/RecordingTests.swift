@@ -176,6 +176,25 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(g.finish(at: 4 * rate), [.squelchClosed(at: 4 * rate), .closePart(endSample: 4 * rate)])
     }
 
+    func testASquelchAlreadyOpenSeedsAPartAtTheFirstFrameWithNoPreRoll() {
+        var g = gate()
+        XCTAssertEqual(g.seedOpen(at: 3 * rate), [.openPart(startSample: 3 * rate), .squelchOpened(at: 3 * rate)],
+                       "there is no audio from before the recording to keep")
+        XCTAssertTrue(g.squelchIsOpen)
+        XCTAssertTrue(g.seedOpen(at: 4 * rate).isEmpty, "a gate already open is not seeded twice")
+        XCTAssertEqual(g.finish(at: 5 * rate), [.squelchClosed(at: 5 * rate), .closePart(endSample: 5 * rate)],
+                       "cancel closes the seeded part with what it holds")
+    }
+
+    func testLosingCoverageClosesThePartAndTheNextOpeningStartsANewOne() {
+        var g = gate(hangMs: 5000)
+        _ = g.squelch(open: true, at: 1 * rate)
+        XCTAssertEqual(g.coverageLost(at: 2 * rate), [.squelchClosed(at: 2 * rate), .closePart(endSample: 2 * rate)])
+        XCTAssertFalse(g.partIsOpen)
+        XCTAssertEqual(g.seedOpen(at: 4 * rate).first, .openPart(startSample: 4 * rate),
+                       "back in capture on an open squelch, a new part")
+    }
+
     // MARK: The store
 
     func testRetentionDropsTheOldestAndNeverTheRunningOne() async throws {

@@ -11,8 +11,13 @@ import Synchronization
 public final class ChannelSlot: @unchecked Sendable {
     private let lock = NSLock()
     private var core: ChannelDSPCore?
+    /// The channel's transmission, for the DSP thread to end on a block where there is no core.
+    public let transmission: ChannelTransmission?
 
-    public init(core: ChannelDSPCore?) { self.core = core }
+    public init(core: ChannelDSPCore?, transmission: ChannelTransmission? = nil) {
+        self.core = core
+        self.transmission = transmission
+    }
 
     /// Hot path: copy the reference under the lock, release, return.
     public func load() -> ChannelDSPCore? {
@@ -35,6 +40,8 @@ public actor DefaultChannelEngine: ChannelEngine {
     private nonisolated let audioRateBox = Atomic<UInt32>(0)
     /// Internal so tests can overflow the ring directly; production pushes come from `ChannelDSPCore`.
     nonisolated let telemetryQueue = ChannelTelemetryQueue()
+    /// What the squelch announced, kept across core swaps so a retune ends it (`ChannelTransmission`).
+    private nonisolated let transmission: ChannelTransmission
     private nonisolated let hub = TelemetryHub()
 
     private var currentConfig: ChannelConfig
@@ -62,8 +69,11 @@ public actor DefaultChannelEngine: ChannelEngine {
         self.floor = floor
         currentConfig = config
         absoluteHz = Int64(centerHz) + config.offsetHz
-        let core = try ChannelDSPCore(captureRate: captureRate, config: config, telemetry: telemetryQueue, floor: floor)
-        slot = ChannelSlot(core: core)
+        let transmission = ChannelTransmission(telemetry: telemetryQueue)
+        self.transmission = transmission
+        let core = try ChannelDSPCore(captureRate: captureRate, config: config, telemetry: telemetryQueue, floor: floor,
+                                      transmission: transmission)
+        slot = ChannelSlot(core: core, transmission: transmission)
         audioRateBox.store(core.audioRate, ordering: .relaxed)
         let queue = telemetryQueue
         let hub = self.hub
@@ -242,6 +252,8 @@ public actor DefaultChannelEngine: ChannelEngine {
 
     /// The capture retuned: recompute the offset from the absolute frequency. If the channel no
     /// longer fits, it goes `.outOfCapture` (core removed, sinks kept); it resumes when it fits again.
+    /// Either way an open squelch closes: the rebuilt core's first block ends the transmission, and
+    /// with no core the DSP thread ends it on the next block (`ChannelTransmission`).
     public func captureMoved(newCenterHz: UInt64) async {
         centerHz = newCenterHz
         let offset = absoluteHz - Int64(newCenterHz)
@@ -300,7 +312,10 @@ public actor DefaultChannelEngine: ChannelEngine {
         var cfg = currentConfig
         cfg.offsetHz = offsetHz
         currentConfig = cfg
-        let core = try ChannelDSPCore(captureRate: captureRate, config: cfg, telemetry: telemetryQueue, floor: floor)
+        // The new core shares the channel's transmission: its first block ends the one the old core
+        // announced, since its squelch starts over at the new frequency, width or mode.
+        let core = try ChannelDSPCore(captureRate: captureRate, config: cfg, telemetry: telemetryQueue, floor: floor,
+                                      transmission: transmission)
         core.setSinks(sinkTable)
         audioRateBox.store(core.audioRate, ordering: .relaxed)
         slot.store(core)

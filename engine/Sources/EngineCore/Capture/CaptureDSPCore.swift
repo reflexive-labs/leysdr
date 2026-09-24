@@ -316,7 +316,12 @@ public final class CaptureDSPCore: @unchecked Sendable {
         tableLock.unlock()
         floor.observe(block, at: time, spanHz: sampleRate)
         for slot in slots {
-            if let core = slot.load() { core.process(block: block, at: time) }
+            if let core = slot.load() {
+                core.process(block: block, at: time)
+            } else {
+                // Out of capture: the channel's open transmission, if any, is over.
+                slot.transmission?.noCore()
+            }
         }
         ladder.process(block: block, at: time, centerHz: centerHz, spanHz: sampleRate)
         for tap in tapTable { tap.write(iq: block, at: time) }

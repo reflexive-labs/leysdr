@@ -750,6 +750,121 @@ final class ChannelTests: XCTestCase {
         XCTAssertNil(queue.pop())
     }
 
+    /// A retune swaps the channel's core, and the new core's squelch starts over. The transmission
+    /// the old core announced ends at the swap, with its duration so far, so a client's log does
+    /// not keep the old frequency's transmission running; the new frequency then opens one of its
+    /// own when it carries a signal (docs/dev/engine-internals.md, "Squelch and meters").
+    func testACoreSwapClosesTheOpenSquelchThenTheNewFrequencyReopens() throws {
+        let rate: UInt64 = 240_000
+        let queue = ChannelTelemetryQueue()
+        let tx = ChannelTransmission(telemetry: queue)
+        let config = ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40)
+        let before = try ChannelDSPCore(captureRate: rate, config: config, telemetry: queue, transmission: tx)
+        let block = 4096
+        let loud = DSPTest.storage(DSPTest.fmTone(carrierHz: 0, audioHz: 1000, deviationHz: 2500, rate: Double(rate), count: block))
+        let quiet = DSPTest.storage([Float](repeating: 0, count: block * 2))
+        let cap = CaptureID()
+        var index: UInt64 = 0
+        func feed(_ core: ChannelDSPCore, _ storage: SampleStorage, blocks: Int) {
+            for _ in 0 ..< blocks {
+                core.process(block: storage.view(count: block), at: SampleTime(captureID: cap, sampleIndex: index))
+                index &+= UInt64(block)
+            }
+        }
+        func edges() -> [ChannelTelemetryRecord] {
+            var out: [ChannelTelemetryRecord] = []
+            while let r = queue.pop() { if r.kind == .squelch { out.append(r) } }
+            return out
+        }
+
+        feed(before, loud, blocks: 8)
+        XCTAssertEqual(edges().map(\.squelchOpen), [true])
+        let lastBlock = index - UInt64(block)
+
+        // To a frequency that carries a signal: close, then open.
+        let carrying = try ChannelDSPCore(captureRate: rate, config: config, telemetry: queue, transmission: tx)
+        feed(carrying, loud, blocks: 2)
+        let swapped = edges()
+        XCTAssertEqual(swapped.map(\.squelchOpen), [false, true], "the swap ends the old transmission, then the new signal opens one")
+        let close = try XCTUnwrap(swapped.first)
+        XCTAssertEqual(close.time.sampleIndex, lastBlock, "stamped with the old core's last block")
+        XCTAssertEqual(close.openSamples, UInt64(8 * block), "the close carries the duration so far")
+        XCTAssertFalse(close.peakPowerDBFS.isNaN, "and the peak the old frequency reached")
+
+        // To a quiet frequency: close only.
+        let empty = try ChannelDSPCore(captureRate: rate, config: config, telemetry: queue, transmission: tx)
+        feed(empty, quiet, blocks: 4)
+        let quietSwap = edges()
+        XCTAssertEqual(quietSwap.map(\.squelchOpen), [false], "nothing reopens where there is no signal")
+        XCTAssertEqual(quietSwap.first?.openSamples, UInt64(2 * block), "the duration counts the new core's blocks only")
+
+        // A swap with the squelch closed has nothing to end.
+        let again = try ChannelDSPCore(captureRate: rate, config: config, telemetry: queue, transmission: tx)
+        feed(again, quiet, blocks: 2)
+        XCTAssertEqual(edges().count, 0)
+    }
+
+    /// Out of capture the channel has no core, and the DSP thread ends its open transmission on the
+    /// next block rather than when the channel fits again.
+    func testAChannelWithNoCoreEndsItsOpenTransmission() throws {
+        let rate: UInt64 = 240_000
+        let queue = ChannelTelemetryQueue()
+        let tx = ChannelTransmission(telemetry: queue)
+        let core = try ChannelDSPCore(captureRate: rate,
+                                      config: ChannelConfig(offsetHz: 0, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40),
+                                      telemetry: queue, transmission: tx)
+        let block = 4096
+        let loud = DSPTest.storage(DSPTest.fmTone(carrierHz: 0, audioHz: 1000, deviationHz: 2500, rate: Double(rate), count: block))
+        let cap = CaptureID()
+        for i in 0 ..< 4 {
+            core.process(block: loud.view(count: block), at: SampleTime(captureID: cap, sampleIndex: UInt64(i * block)))
+        }
+        while queue.pop() != nil {}
+        tx.noCore()
+        tx.noCore()
+        var closes: [ChannelTelemetryRecord] = []
+        while let r = queue.pop() { if r.kind == .squelch { closes.append(r) } }
+        XCTAssertEqual(closes.map(\.squelchOpen), [false], "one close, however many blocks go by without a core")
+        XCTAssertEqual(closes.first?.openSamples, UInt64(4 * block))
+    }
+
+    /// The same through the engine: an offset write away from `nfm_tone`'s carrier closes the
+    /// squelch it held open, and writing the carrier's offset back opens it again.
+    func testAnOffsetWriteClosesTheOpenSquelchAndReopensOnTheCarrier() async throws {
+        let path = try nfmTonePath()
+        let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
+        let capture = DefaultCaptureEngine(device: device, centerHz: UInt64(device.sidecar.centerHz), sampleRate: UInt64(device.sidecar.sampleRate))
+        let onCarrier = ChannelConfig(offsetHz: 100_000, bandwidthHz: 12_500, mode: .nfm, squelchDB: -40)
+        let channel = try await capture.addChannel(onCarrier) as! DefaultChannelEngine
+        let edges = EdgeLog()
+        let subscription = channel.telemetrySubscription()
+        let follow = Task {
+            for await t in subscription.stream {
+                if case let .squelch(_, open, samples, _, _) = t { edges.append(open, samples) }
+            }
+        }
+        try await capture.start()
+        func wait(for count: Int) async throws {
+            let deadline = Date().addingTimeInterval(10)
+            while edges.all.count < count, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        }
+        try await wait(for: 1)
+        XCTAssertEqual(edges.all.map(\.open), [true], "the carrier opens the squelch")
+        var away = onCarrier
+        away.offsetHz = -300_000
+        try await channel.update(away)
+        try await wait(for: 2)
+        // Long enough for a stray open to show, at 2.4 MSPS a few dozen blocks.
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(edges.all.map(\.open), [true, false], "the retune ends the transmission and nothing is there")
+        XCTAssertGreaterThan(edges.all.last?.samples ?? 0, 0, "the close carries the duration so far")
+        try await channel.update(onCarrier)
+        try await wait(for: 3)
+        XCTAssertEqual(edges.all.map(\.open), [true, false, true], "back on the carrier, it opens again")
+        await capture.stop()
+        follow.cancel()
+    }
+
     func testStopLeavesNoEngineThreads() async throws {
         let path = try nfmTonePath()
         let device = try FilePlaybackDevice(path: path, loop: true, realtime: true)
@@ -805,4 +920,19 @@ final class ChannelTests: XCTestCase {
         #endif
     }
     #endif
+}
+
+/// Squelch edges as a subscription saw them, read from the test's own task.
+private final class EdgeLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var edges: [(open: Bool, samples: UInt64)] = []
+
+    func append(_ open: Bool, _ samples: UInt64) {
+        lock.lock(); edges.append((open, samples)); lock.unlock()
+    }
+
+    var all: [(open: Bool, samples: UInt64)] {
+        lock.lock(); defer { lock.unlock() }
+        return edges
+    }
 }

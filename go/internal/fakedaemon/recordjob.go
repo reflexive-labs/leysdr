@@ -220,8 +220,9 @@ func (d *Daemon) openRecordingLocked(j *fakeJob, cfg *leylinev1.RecordConfig, hz
 			PreRollMs: defaultUint32(cfg.GetPreRollMs(), 500),
 			HangMs:    defaultUint32(cfg.GetHangMs(), 5000),
 		}
+		// 0 and NaN both ask a gated recording for the channel default, as the daemon reads them.
 		db := cfg.GetSquelchDbfs()
-		if db == 0 {
+		if db == 0 || math.IsNaN(db) {
 			db = -80
 		}
 		m.SquelchDBFS = &db

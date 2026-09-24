@@ -454,4 +454,44 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(Recordings.shortDayWords(hours(13), now: now, calendar: utc), "Wed")
         XCTAssertEqual(Recordings.shortDayWords(hours(1), now: now, calendar: utc), "today")
     }
+
+    // MARK: The channel page's switch
+
+    func testThePagesRequestComesFromTheListingAndAsksForTheAutoSquelch() {
+        let c = RecordingChannel(
+            frequencyHz: 462_612_500, mode: .nfm, bookmarkName: nil, recordings: [], running: false,
+            latest: nil)
+        let r = Recordings.pageConfig(c, groups: [])
+        XCTAssertEqual(r.frequencyHz, 462_612_500)
+        XCTAssertEqual(r.mode, .nfm)
+        XCTAssertEqual(r.bandwidthHz, 0, "no recording states a width: the mode's default")
+        XCTAssertTrue(r.squelchDbfs.isNaN, "NaN asks a gated recording for the auto squelch")
+        XCTAssertEqual(r.gate, .squelch)
+        XCTAssertTrue(r.channelID.isEmpty, "the frequency form, which the switch finds its job by")
+    }
+
+    func testAJobTheDaemonDeclinedIsANoticeThatSaysWhatToDo() {
+        var job = Leyline_V1_Job()
+        job.jobID = "job_a"
+        job.state = .running
+        job.record = Recordings.config(
+            frequencyHz: 462_612_500, mode: .nfm, bandwidthHz: 0, squelchDBFS: .nan)
+        XCTAssertNil(Recordings.failureNotice(job), "a running job is no notice")
+        job.state = .failed
+        job.statusDetail = "the app is listening on 146.520 MHz"
+        job.error = .with {
+            $0.code = "DEVICE_BUSY"
+            $0.message = "the app is listening on 146.520 MHz"
+        }
+        XCTAssertEqual(
+            Recordings.failureNotice(job),
+            "Could not record: the app is listening on 146.520 MHz. Tune to 462.6125 MHz first, and the recording shares the radio."
+        )
+        job.error = .with { $0.code = "NO_DEVICE" }
+        job.statusDetail = "no radio here can hear 462.612 MHz"
+        XCTAssertEqual(
+            Recordings.failureNotice(job), "Could not record: no radio here can hear 462.612 MHz")
+        job.state = .cancelled
+        XCTAssertNil(Recordings.failureNotice(job), "switched off is not a failure")
+    }
 }

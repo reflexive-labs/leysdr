@@ -555,6 +555,37 @@ public enum Recordings {
         }
     }
 
+    /// The channel page's switch: the frequency form on the page's channel, from the store's
+    /// listing alone, since the page may have read no manifest yet. The width is the newest
+    /// recording's (`channelWidth`), 0 for the mode's default when none states one, and the
+    /// squelch is NaN, which asks a gated recording for the daemon's auto squelch: the page has
+    /// no channel of its own to copy one from.
+    public static func pageConfig(_ c: RecordingChannel, groups: [RecordingGroup])
+        -> Leyline_V1_RecordConfig
+    {
+        config(
+            frequencyHz: c.frequencyHz, mode: c.mode,
+            bandwidthHz: channelWidth(groups, channel: c) ?? 0, squelchDBFS: .nan)
+    }
+
+    /// The notice for a record job a switch started that the daemon then ended FAILED, or nil
+    /// while it runs or once it ended any other way. `StartJob` answers before the radio is
+    /// allocated, so a job the allocator declines fails after the call returned, and its reason
+    /// reaches the window only on its event; until 2026-09-25 the window dropped it, and the
+    /// channel page's switch went back off with nothing said (plans/app.md, APP-5). A busy radio
+    /// is the page's usual case, a channel outside the band the window is listening to, and the
+    /// notice says what to do about it.
+    public static func failureNotice(_ job: Leyline_V1_Job) -> String? {
+        guard job.state == .failed else { return nil }
+        let why = job.error.message.isEmpty ? job.statusDetail : job.error.message
+        var words = "Could not record: \(why.isEmpty ? job.error.code : why)"
+        if job.error.code == "DEVICE_BUSY", let r = job.recordConfig, r.frequencyHz > 0 {
+            let mhz = FrequencyEntry.fieldParts(r.frequencyHz).major
+            words += ". Tune to \(mhz) MHz first, and the recording shares the radio."
+        }
+        return words
+    }
+
     /// The line under the switch while it is on: `Since 09:12 · 3 parts · 1.1 MB. Keeps going
     /// if you tune away.` The time is the job's `created_at_ns` as wall clock in `timeZone`; the
     /// parts and bytes are the manifest's (closed parts only, since a part joins the manifest

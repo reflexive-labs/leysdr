@@ -277,6 +277,17 @@ Per block the channel computes mean power of the post-filter IQ in dBFS (`10·lo
 Squelch opens when power > threshold, closes when power < threshold − 2 dB (hysteresis). While
 closed the channel writes zeros to sinks so audio timing stays continuous. Meter cadence: every
 100 ms of samples, emit `.meter`; on state change emit `.squelch` with the exact block start time.
+A retune closes an open squelch. An offset write, a capture centre move the channel follows, a new
+width or mode all build a new `ChannelDSPCore`, and its squelch starts over; the transmission the
+old core announced lives in the channel's `ChannelTransmission`, shared by every core the channel
+builds, and the new core's first block ends it with a close record stamped with the old core's
+last block and carrying its duration and peaks so far. That block then decides afresh, so a
+signal at the new frequency opens a new transmission and a quiet one does not. A channel the
+capture no longer covers has no core, and the DSP thread ends its transmission on the next block
+(`ChannelTransmission.noCore`). Until 2026-09-25 no close was sent, so every client's log kept the
+old frequency's transmission running after a retune. Everything in `ChannelTransmission` belongs
+to the capture's one DSP thread, which is also the telemetry queue's single producer. A channel
+whose squelch is off reports no edges, before or after a retune, because it never announced one.
 `snrDB` is the block's power over the band's floor at the channel's width: the capture's
 `BandFloor` reads a 1024-bin row of its own four times a second on the DSP thread (one transform
 and one selection per row; `CaptureDSPCore.processBlock` runs it before the channels so the first
@@ -735,8 +746,13 @@ open a part at *this* sample, note an over, close the part at the close transiti
 end the job on quiet. Deciding at frame granularity sets the accuracy: a cut lands within one
 capture block of the transition (16384 samples, 6.8 ms at 2.4 MSPS). Audio arriving while no part
 is open goes into a pre-roll ring allocated once at start, so a part can begin before the squelch
-did. A gated recording with no squelch on its channel measures one from the channel's own meter
-and sits 10 dB above it, which is `ley tune`'s auto squelch done where the channel is.
+did. The first meter seeds the gate: a squelch already open when the recording starts sends no
+transition (a broadcast carrier holds it open), so the part opens at the first frame, and a meter
+that later disagrees with the gate is applied as the edge it missed (docs/design/recording.md, "The
+gate"). A gated recording with no squelch on its channel, or one asking for NaN, measures one from
+the channel's own meter and sits 10 dB above the band's floor at the channel's width (the meter's
+power less its SNR), which is `ley tune`'s auto squelch done where the channel is; the channel's
+own power is the fallback before the capture has a floor.
 
 `duration_ms` is enforced twice, on the samples and on the clock, and whichever comes first ends
 the job: the sample check is the accurate one, but a radio that stops delivering -- a file device

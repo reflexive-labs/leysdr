@@ -124,6 +124,71 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
     public func finish() { pokeContinuation.finish() }
 }
 
+/// The transmission a channel has announced and not yet ended, shared by every core the channel
+/// builds. A structural change (a retune by offset or by the capture's centre, a new width or
+/// mode) swaps the core, and the new core's squelch starts over; without this, the open edge the
+/// old core sent would never get its close, and every client's log would keep a transmission
+/// from the old frequency running (docs/dev/engine-internals.md, "Squelch and meters").
+///
+/// Everything in it belongs to the capture's DSP thread: each core reads and writes it only from
+/// `process(block:at:)`, the slot touches it only on a block where the channel has no core, and
+/// `ChannelDSPCore.reset()` only while no block is in flight. That single owner is what makes
+/// `@unchecked Sendable` safe, and it is also the telemetry queue's single producer.
+public final class ChannelTransmission: @unchecked Sendable {
+    private let telemetry: ChannelTelemetryQueue
+    /// An open edge went out and its close has not.
+    var announced = false
+    /// Capture samples since the squelch opened, and the loudest values seen in that interval.
+    var openSamples: UInt64 = 0
+    var peakPowerDBFS: Float = .nan
+    var peakSNRDB: Float = .nan
+    /// Start time of the most recent block: the last moment the channel had signal, so a close
+    /// the channel synthesises is stamped with it.
+    var lastBlockTime: SampleTime?
+    /// The generation of the core that processed the last block; 0 before the first block and
+    /// while the channel has no core.
+    var owner: UInt64 = 0
+
+    public init(telemetry: ChannelTelemetryQueue) {
+        self.telemetry = telemetry
+    }
+
+    /// Ends the announced transmission with a close edge carrying its summary, as if the squelch
+    /// had shut on the last block. Returns true when there was one to end. DSP thread only.
+    @discardableResult
+    func end() -> Bool {
+        defer { clear() }
+        guard announced, let time = lastBlockTime else { return false }
+        announced = false
+        telemetry.push(closeRecord(at: time))
+        return true
+    }
+
+    /// The close edge's record, summarising the interval so far.
+    func closeRecord(at time: SampleTime) -> ChannelTelemetryRecord {
+        var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: .nan, snrDB: .nan, squelchOpen: false)
+        rec.openSamples = openSamples
+        rec.peakPowerDBFS = peakPowerDBFS
+        rec.peakSNRDB = peakSNRDB
+        return rec
+    }
+
+    func clear() {
+        openSamples = 0
+        peakPowerDBFS = .nan
+        peakSNRDB = .nan
+    }
+
+    /// A block went by while the channel had no core (it is out of capture): the transmission it
+    /// announced is over, and ends here rather than when the channel next fits. One compare on
+    /// every later block. DSP thread only.
+    public func noCore() {
+        guard owner != 0 else { return }
+        owner = 0
+        end()
+    }
+}
+
 /// Immutable-by-structure DSP core for one channel. Built on the control plane, run on the DSP
 /// thread. Squelch threshold and AGC are adjustable in place through atomics; anything else
 /// (offset, bandwidth, mode, capture rate) requires a new core.
@@ -165,13 +230,24 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private var samplesSinceMeter = 0
     private let blocksProcessed = Atomic<UInt64>(0)
     private let squelchCloses = Atomic<UInt64>(0)
+    /// The transmission in progress, shared with the cores before and after this one, and this
+    /// core's place in that line: the first block this core sees with another generation as the
+    /// owner is the first block after a swap.
+    private let transmission: ChannelTransmission
+    private let generation: UInt64
+    private static let generations = Atomic<UInt64>(0)
     /// The capture sample index just past the last block processed, for the sub-audible task to
     /// stamp its hops with (invariant 5). One relaxed store per block.
     private let sampleEnd = Atomic<UInt64>(0)
 
     /// - Throws: `INVALID_ARGUMENT`, `OFFSET_OUT_OF_CAPTURE`, `MODE_UNSUPPORTED` (from the demodulator).
+    ///
+    /// `transmission` is the channel's, shared by every core it builds so a swap can end what the
+    /// last core announced; a core built alone gets one of its own.
     public init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384,
-                floor: BandFloor? = nil) throws {
+                floor: BandFloor? = nil, transmission: ChannelTransmission? = nil) throws {
+        self.transmission = transmission ?? ChannelTransmission(telemetry: telemetry)
+        generation = Self.generations.wrappingAdd(1, ordering: .relaxed).newValue
         self.captureRate = captureRate
         self.config = config
         self.telemetry = telemetry
@@ -219,17 +295,10 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private var audioSamples: Int = 0
     private var audioPeak: Float = 0
 
-    /// The transmission in progress, owned by the DSP thread alone. `openSamples` counts CAPTURE
-    /// samples since the squelch opened -- the same rate `SampleTime` uses, which is the one a
-    /// client already knows from the capture; the channel's own rate is not on the wire. The peaks
-    /// are the loudest values seen in that interval. Reset on every open edge, drained on the close.
-    private var openSamples: UInt64 = 0
-    private var peakPowerDBFS: Float = .nan
-    private var peakSNRDB: Float = .nan
-    /// Start time of the most recent block, owned by the DSP thread alone. `reset()` needs a time to
-    /// stamp the close edge it synthesises, and the last block is the last moment this channel had
-    /// signal; nothing after it belongs to the transmission being ended.
-    private var lastBlockTime: SampleTime?
+    // The transmission in progress lives in `transmission`. `openSamples` there counts CAPTURE
+    // samples since the squelch opened -- the same rate `SampleTime` uses, which is the one a
+    // client already knows from the capture; the channel's own rate is not on the wire. The peaks
+    // are the loudest values seen in that interval. Reset on every open edge, drained on the close.
 
     /// Blocks processed so far.
     public var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
@@ -280,6 +349,15 @@ public final class ChannelDSPCore: @unchecked Sendable {
     public func process(block: SampleBuffer, at time: SampleTime) {
         let sp = Signpost.begin(.channelProcess)
         defer { Signpost.end(.channelProcess, sp) }
+        let tx = transmission
+        if tx.owner != generation {
+            // The first block since this core replaced another: its squelch starts over, so the
+            // transmission the old core announced ends here, stamped with the old core's last
+            // block, and this block decides afresh whether the new one is open. The old core is
+            // not in flight: the capture's one DSP thread finished its block before this one.
+            tx.end()
+            tx.owner = generation
+        }
         var iq = iqOut.view()
         let n = channelizer.process(input: block, output: &iq)
         guard n > 0 else { return }
@@ -288,29 +366,29 @@ public final class ChannelDSPCore: @unchecked Sendable {
         // Power over the band's floor at this channel's width; NaN until the capture has read a
         // row. The squelch is not involved: it compares `power` to its own dBFS threshold.
         let snr = floor.map { power - ($0.densityDBFS + bandwidthDB) } ?? .nan
-        lastBlockTime = time
+        tx.lastBlockTime = time
         squelch.thresholdDB = Float(bitPattern: squelchBits.load(ordering: .relaxed))
         // Track the transmission in progress: two compares, no branch on the common path. The block
         // that opens the squelch counts, so a short transmission is never measured as zero samples.
         if squelch.isOpen {
-            openSamples &+= UInt64(block.count)
-            if !(power <= peakPowerDBFS) { peakPowerDBFS = power }
-            if !(snr <= peakSNRDB) { peakSNRDB = snr }
+            tx.openSamples &+= UInt64(block.count)
+            if !(power <= tx.peakPowerDBFS) { tx.peakPowerDBFS = power }
+            if !(snr <= tx.peakSNRDB) { tx.peakSNRDB = snr }
         }
         if squelch.update(powerDB: power) {
             var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: power, snrDB: snr, squelchOpen: squelch.isOpen)
             if squelch.isOpen {
                 // Opening: start a fresh interval. This block belongs to it.
-                openSamples = UInt64(block.count)
-                peakPowerDBFS = power
-                peakSNRDB = snr
+                tx.openSamples = UInt64(block.count)
+                tx.peakPowerDBFS = power
+                tx.peakSNRDB = snr
+                tx.announced = true
             } else {
-                rec.openSamples = openSamples
-                rec.peakPowerDBFS = peakPowerDBFS
-                rec.peakSNRDB = peakSNRDB
-                openSamples = 0
-                peakPowerDBFS = .nan
-                peakSNRDB = .nan
+                rec.openSamples = tx.openSamples
+                rec.peakPowerDBFS = tx.peakPowerDBFS
+                rec.peakSNRDB = tx.peakSNRDB
+                tx.clear()
+                tx.announced = false
                 squelchCloses.wrappingAdd(1, ordering: .relaxed)
             }
             telemetry.push(rec)
@@ -396,14 +474,12 @@ public final class ChannelDSPCore: @unchecked Sendable {
         // the edge -- the transmission summary, the sub-audible task's phase history -- would carry
         // pre-gap state into the new stream. The telemetry queue has one producer, and the caller's
         // contract above (no block in flight) is what makes this push that one producer.
-        if squelch.isOpen, let time = lastBlockTime {
-            var rec = ChannelTelemetryRecord(kind: .squelch, time: time, powerDBFS: .nan, snrDB: .nan, squelchOpen: false)
-            rec.openSamples = openSamples
-            rec.peakPowerDBFS = peakPowerDBFS
-            rec.peakSNRDB = peakSNRDB
+        let tx = transmission
+        if squelch.isOpen, let time = tx.lastBlockTime {
             squelchCloses.wrappingAdd(1, ordering: .relaxed)
-            telemetry.push(rec)
+            telemetry.push(tx.closeRecord(at: time))
         }
+        tx.announced = false
         channelizer.reset()
         demodulator.reset()
         meter.reset()
@@ -412,10 +488,8 @@ public final class ChannelDSPCore: @unchecked Sendable {
         subAudibleTap?.requestFlush()
         samplesSinceMeter = 0
         squelch = Squelch(thresholdDB: squelch.thresholdDB)
-        lastBlockTime = nil
-        openSamples = 0
-        peakPowerDBFS = .nan
-        peakSNRDB = .nan
+        tx.lastBlockTime = nil
+        tx.clear()
         audioSumSquares = 0
         audioSamples = 0
         audioPeak = 0

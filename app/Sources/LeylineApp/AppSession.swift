@@ -193,6 +193,10 @@ final class AppSession {
     /// channel, and two states when they do not.
     private var recordSwitchPending: RecordSwitchClick?
     @ObservationIgnored private var recordSwitchExpiry: Task<Void, Never>?
+    /// The record jobs either switch started, until each ends: `StartJob` answers before the
+    /// radio is allocated, so a decline arrives as the job's FAILED event and is shown from
+    /// there (`Recordings.failureNotice`).
+    @ObservationIgnored private var switchStartedJobs: Set<String> = []
     /// The channel page's manifests by job id (docs/design/app-design-handoff-m3.md, 8c), read
     /// through `ResolveLocalPath` for each recording of the selected channel, kept while the
     /// listing holds the recording, and read again on each event of its job, which is how a
@@ -582,7 +586,9 @@ final class AppSession {
             channelSeen = false
         }
         spectrum.follow(capture, connection: daemon)
-        telemetry.follow(channelID, captureRate: capture?.sampleRate ?? 0, connection: daemon)
+        telemetry.follow(
+            channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
+            captureRate: capture?.sampleRate ?? 0, connection: daemon)
         captureLevel.follow(capture?.captureID, connection: daemon)
         followAudioLevels()
         nameFailure()
@@ -1908,12 +1914,12 @@ final class AppSession {
             recordSwitchPending = nil
             return
         }
-        let width = Recordings.channelWidth(pageGroups(for: c), channel: c) ?? 0
         var req = Leyline_V1_StartJobRequest()
-        req.record = Recordings.config(
-            frequencyHz: c.frequencyHz, mode: c.mode, bandwidthHz: width, squelchDBFS: .nan)
+        req.record = Recordings.pageConfig(c, groups: pageGroups(for: c))
+        let width = req.record.bandwidthHz
         do {
             let started = try await daemon.jobs.startJob(req)
+            switchStartedJobs.insert(started.jobID)
             log(
                 "record",
                 "\(started.jobID) started from the channel page: \(c.frequencyHz) Hz \(c.mode.word) \(width) Hz, auto squelch, gated by squelch"
@@ -1936,6 +1942,28 @@ final class AppSession {
             try? await Task.sleep(for: .seconds(Self.neverSeenDropSeconds))
             guard let self, !Task.isCancelled, self.recordSwitchPending == click else { return }
             self.recordSwitchPending = nil
+        }
+    }
+
+    /// A job a switch started has ended. FAILED is a notice with the daemon's reason, and the
+    /// switch lets go of the click at once rather than after its expiry, so it goes back off with
+    /// the reason beside it.
+    private func noticeFailedRecordJobs() {
+        for id in switchStartedJobs {
+            guard let job = state.jobs.first(where: { $0.jobID == id }), !job.isActive else {
+                continue
+            }
+            switchStartedJobs.remove(id)
+            guard let words = Recordings.failureNotice(job) else { continue }
+            log("record", "\(id) failed: \(job.error.code) \(job.statusDetail)")
+            notice = words
+            if let r = job.recordConfig,
+                recordSwitchPending?.key == Self.recordKey(r.frequencyHz, r.mode)
+            {
+                recordSwitchPending = nil
+                recordSwitchExpiry?.cancel()
+                recordSwitchExpiry = nil
+            }
         }
     }
 
@@ -1967,6 +1995,7 @@ final class AppSession {
         let squelch = ch.squelchDb.isFinite ? String(format: "%.0f dBFS", ch.squelchDb) : "auto"
         do {
             let job = try await daemon.jobs.startJob(req)
+            switchStartedJobs.insert(job.jobID)
             log(
                 "record",
                 "\(job.jobID) started: \(hz) Hz \(ch.mode.word) \(ch.bandwidthHz) Hz, squelch \(squelch), gated by squelch"
@@ -2018,6 +2047,7 @@ final class AppSession {
         }
         followRecording()
         followPage()
+        noticeFailedRecordJobs()
         settleRecordSwitch()
     }
 

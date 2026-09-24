@@ -960,6 +960,43 @@ page and selection refreshing after a delete; Show in Finder selecting the part'
 switching to Radio and tuning, with and without a radio open; the running card growing as
 parts land.
 
+Fixed 2026-09-25, three defects from the owner's first run of the recording build. **A gated
+recording of a carrier that never stops wrote nothing** ("I have 2 0 s 0 B recordings now"):
+the gate opened a part only on a squelch transition, and a broadcast holds the squelch open from
+before the job starts, so none came and cancel finalised an empty recording. The runner now
+seeds the gate from the first meter and after a coverage gap (`../design/recording.md`, "The
+gate"). **A retune left the previous transmission open in the log** ("a GMRS transmission 'not
+audible' and 2:48 in"): the window retunes by writing the same channel's offset, the daemon's
+squelch stayed open across the new core, and `ChannelTelemetryFeed` reset its log only on a new
+channel id. The daemon now closes an open squelch at every core swap and when the channel leaves
+the capture (`ChannelTransmission`, `../dev/engine-internals.md`, "Squelch and meters"), and the
+feed starts its `TransmissionLog` and last tone over when the channel's own offset event moves
+its frequency (`ChannelFrequencyWatch`, which skips the capture's event, where the mirror briefly
+holds the new centre with the old offset). `ley tune` makes a new channel per tune and was not
+affected. **The channel page's Record transmissions switch did nothing**: `StartJob` answers
+`RUNNING` before the radio is allocated, and a page whose channel lies outside the window's
+capture is declined by the allocator's don't-disturb check (`DEVICE_BUSY`, "the app is listening
+on …") after the call returned. The job's `FAILED` event was never read and the page covers the
+notice strip, so the switch went back off after its three seconds with nothing said. The session
+now watches every job either switch started and shows a failure as a notice
+(`Recordings.failureNotice`, which tells a busy radio to tune there first), the page carries a
+notice strip of its own, and the page's request is `Recordings.pageConfig`. Two daemon faults sat
+behind it: the page's NaN squelch was read as "off" rather than auto, so its gate had nothing to
+watch, and the auto squelch was the channel's own level plus 10 dB, above any carrier on it; a
+gated recording now takes NaN as auto, and auto sits over the band's floor at the channel's width
+(the meter's power less its SNR). Verified by `RecordingJobTests` (a gated `nfm_tone` cancelled
+after 2 s is one part of about 2 s holding the tone, in the frequency and channel forms, and
+with a NaN squelch; the `nfm_keyed` cases unchanged), `RecordingTests` (the seed and coverage
+loss), `ChannelTests` (a core swap closes then reopens on a signal, closes only on a quiet one,
+a coreless block closes once, and an offset write on `nfm_tone` closes and reopens through the
+engine), `TransmissionsTests` (the watch), `RecordingsTests` (the page's request and the notice),
+`TestGatedRecordOfACarrierHoldsOnePart` against the real daemon, and in
+`LeylineClientDaemonTests` `testTheChannelPagesSwitchStartsARecordingThatRuns`, which starts a
+recording from a channel row of the listing with no manifest and sees it running. Unverified
+until a Mac: `AppSession.swift` (`noticeFailedRecordJobs`, the switch letting go on a failure),
+`SpectrumFeed.swift` (the log starting over on a retune, the inspector's On air and time on air
+with it), and `RecordingsPage.swift` (the notice strip at the page's foot, over the cards).
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

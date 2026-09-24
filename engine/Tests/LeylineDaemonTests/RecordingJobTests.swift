@@ -436,6 +436,118 @@ final class RecordingJobTests: XCTestCase {
         }
     }
 
+    // MARK: The gate on a carrier that never stops
+
+    /// Cancels the job after `seconds` and returns the manifest it left. The part on disk must
+    /// agree with the manifest either way.
+    private func cancelAfter(_ c: DaemonClients, _ dir: String, _ jobID: String,
+                             seconds: Double) async throws -> RecordingManifest {
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
+        var ref = Leyline_V1_JobRef()
+        ref.jobID = jobID
+        _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+        let done = try await waitForEnd(c, jobID)
+        XCTAssertEqual(done.state, .cancelled, done.statusDetail)
+        return try manifest(dir, jobID)
+    }
+
+    /// What a gated recording of `nfm_tone` cancelled after two seconds must hold: one part of
+    /// about two seconds, opened by the squelch that was already open.
+    private func assertOneTwoSecondPart(_ manifest: RecordingManifest, _ dir: String, _ jobID: String) throws {
+        XCTAssertEqual(manifest.endedBy, "cancelled")
+        XCTAssertEqual(manifest.parts.count, 1, "the carrier holds the squelch open, so the whole recording is one part")
+        let part = try XCTUnwrap(manifest.parts.first)
+        let rate = Double(manifest.anchors[0].sampleRate)
+        let seconds = Double(part.endSample - part.startSample) / rate
+        // The sleep is two seconds of wall clock; the file device plays in real time, and the
+        // first frame arrives a block or two after the job starts.
+        XCTAssertEqual(seconds, 2, accuracy: 0.5, "about two seconds on the capture's timeline")
+        XCTAssertEqual(Double(part.samples) / Double(manifest.sampleRate), seconds, accuracy: 0.1,
+                       "and the WAV holds that much audio")
+        XCTAssertEqual(part.squelchOpens, 1, "one over: the one already in progress")
+        let file = dir + "/" + jobID + "/" + part.file
+        XCTAssertFalse(WAVHeader.needsRepair(path: file), "cancel finalised the open part")
+        let tone = dominantTone(try readWAVSamples(file), rate: Double(manifest.sampleRate))
+        XCTAssertEqual(tone.hz, 1000, accuracy: 20, "the part holds the fixture's tone, not silence")
+    }
+
+    /// A broadcast's squelch is open before the recording starts and never closes, so no
+    /// transition arrives. The job's own channel gets its squelch after it is built, in place, and
+    /// the carrier keeps it open across that write: no edge there either. Until 2026-09-25 this
+    /// finalised an empty recording on cancel.
+    func testAGatedRecordingOfACarrierThatNeverStopsHoldsOnePart() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            try await self.attach(c, fixture: "nfm_tone.cf32", loop: true)
+            var config = self.gatedConfig(hangMs: 1000)
+            config.durationMs = 0
+            let started = try await self.start(c, config)
+            let manifest = try await self.cancelAfter(c, dir, started.jobID, seconds: 2)
+            try self.assertOneTwoSecondPart(manifest, dir, started.jobID)
+        }
+    }
+
+    /// The app's channel page has no squelch to copy and sends NaN, which asks a gated recording
+    /// for the channel default. Until 2026-09-25 the daemon read NaN as "off", and a gate with the
+    /// squelch off has nothing to watch; the auto squelch it now measures sits over the band's
+    /// floor, so the carrier opens it.
+    func testAGatedRecordingAskingForNoSquelchGetsTheAutoSquelchUnderTheCarrier() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            try await self.attach(c, fixture: "nfm_tone.cf32", loop: true)
+            var config = self.gatedConfig(hangMs: 1000)
+            config.durationMs = 0
+            config.squelchDbfs = .nan
+            let started = try await self.start(c, config)
+            let manifest = try await self.cancelAfter(c, dir, started.jobID, seconds: 2)
+            XCTAssertTrue(manifest.squelchDbfs.isFinite, "a gated recording always has a squelch")
+            // The fixture's carrier is at -20 dBFS.
+            XCTAssertLessThan(manifest.squelchDbfs, -30, "the auto squelch sits over the floor, under the carrier")
+            XCTAssertEqual(manifest.parts.count, 1, "and the carrier holds it open")
+        }
+    }
+
+    /// The same through the channel form: somebody listening with the squelch set and open, and
+    /// the switch that records their channel.
+    func testAGatedRecordingOfABorrowedChannelAlreadyOpenHoldsOnePart() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            try await self.attach(c, fixture: "nfm_tone.cf32", loop: true)
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let device = try XCTUnwrap(state.devices.first)
+            var capture = Leyline_V1_CreateCaptureRequest()
+            capture.deviceID = device.deviceID
+            capture.centerHz = 146_520_000
+            capture.sampleRate = device.sampleRates.first ?? 2_400_000
+            let made = try await c.control.createCapture(capture, metadata: testMetadata)
+            var channel = Leyline_V1_CreateChannelRequest()
+            channel.captureID = made.captureID
+            channel.offsetHz = 100_000
+            channel.mode = .nfm
+            let listening = try await c.control.createChannel(channel, metadata: testMetadata)
+            // The listener sets a squelch under the carrier, which it holds open: a squelch that
+            // was off starts open, so no edge has gone out at all.
+            var squelch = Leyline_V1_ParamWrite()
+            squelch.tag = 1
+            squelch.targetID = listening.channelID
+            squelch.squelchDb = -40
+            let summary = try await c.control.writeParams(metadata: testMetadata) { try await $0.write(squelch) }
+            XCTAssertEqual(summary.writesApplied, 1)
+            try await Task.sleep(nanoseconds: 500_000_000)
+
+            var config = Leyline_V1_RecordConfig()
+            config.channelID = listening.channelID
+            config.gate = .squelch
+            config.hangMs = 1000
+            let started = try await self.start(c, config)
+            let manifest = try await self.cancelAfter(c, dir, started.jobID, seconds: 2)
+            try self.assertOneTwoSecondPart(manifest, dir, started.jobID)
+        }
+    }
+
     // MARK: IQ
 
     func testAnIQRecordingIsCutIntoContiguousParts() async throws {

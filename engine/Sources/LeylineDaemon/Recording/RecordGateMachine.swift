@@ -61,6 +61,32 @@ struct RecordGateMachine: Sendable {
         }
     }
 
+    /// Whether the machine holds the squelch open, as opposed to closed or hanging: what a meter's
+    /// `squelch_open` is compared with to find an edge the machine never saw.
+    var squelchIsOpen: Bool { state == .open }
+
+    /// The squelch was already open when the recording started, so no transition will come: a
+    /// broadcast carrier keeps it open for as long as it is on the air. The part opens at `sample`,
+    /// the recording's first, with no pre-roll, since there is no audio from before the recording
+    /// began (docs/design/recording.md, "The gate").
+    mutating func seedOpen(at sample: UInt64) -> [Action] {
+        guard !finished, state == .closed else { return [] }
+        state = .open
+        return [.openPart(startSample: sample), .squelchOpened(at: sample)]
+    }
+
+    /// The channel left the capture: the open part closes at `now` and the machine is closed, but
+    /// the job goes on, and the next opening begins a new part. The quiet timer runs from here.
+    mutating func coverageLost(at now: UInt64) -> [Action] {
+        guard !finished else { return [] }
+        var out: [Action] = []
+        if case .open = state { out.append(.squelchClosed(at: now)) }
+        if partIsOpen { out.append(.closePart(endSample: now)) }
+        state = .closed
+        quietSince = now
+        return out
+    }
+
     /// A squelch edge, at the sample the channel reports it at.
     mutating func squelch(open: Bool, at sample: UInt64) -> [Action] {
         guard !finished else { return [] }

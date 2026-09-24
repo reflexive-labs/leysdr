@@ -33,6 +33,12 @@ struct RecordingsPage: View {
                 .multilineTextAlignment(.center)
                 .padding(20)
             }
+            // The page covers the canvas and the notice strip on it, so the page carries its own:
+            // a switch the daemon refused has to say why where it was clicked.
+            VStack {
+                Spacer()
+                NoticeStrip()
+            }
         }
         // Opaque and taking the clicks, so nothing of the live canvas under it is tuned.
         .contentShape(Rectangle())

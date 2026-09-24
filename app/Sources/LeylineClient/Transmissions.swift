@@ -160,3 +160,31 @@ public struct TransmissionLog: Sendable, Equatable {
         return start
     }
 }
+
+/// Tells a retune of a channel from a move of its capture, so a transmission log can start over
+/// when the channel's frequency changes: the log is the transmissions heard on this frequency,
+/// and one from before a retune was not (plans/app.md, APP-5, "Fixed 2026-09-25"). A channel
+/// follows its absolute frequency when its capture moves, and the daemon publishes the capture
+/// before the channel's recomputed offset, so the mirror passes through the new centre with the
+/// old offset for one event. The frequency is therefore read only when the channel's own offset
+/// changes, which is after the daemon has published both.
+public struct ChannelFrequencyWatch: Sendable, Equatable {
+    /// The channel's absolute frequency as last read; nil until the first.
+    public private(set) var tunedHz: UInt64?
+    private var offsetHz: Int64?
+
+    public init() {}
+
+    /// Folds the mirror's current offset for the channel and its capture's centre. Returns true
+    /// when the channel's frequency changed from one it already had.
+    public mutating func observe(offsetHz: Int64, centerHz: UInt64?) -> Bool {
+        guard offsetHz != self.offsetHz, let centerHz else { return false }
+        self.offsetHz = offsetHz
+        let hz = Int64(centerHz) + offsetHz
+        // Below 0 Hz is not a frequency (`MirrorState.frequencyHz(of:)`), and not a retune either.
+        guard hz >= 0 else { return false }
+        defer { tunedHz = UInt64(hz) }
+        guard let before = tunedHz else { return false }
+        return UInt64(hz) != before
+    }
+}

@@ -80,6 +80,13 @@ actor RecordRunner: RecordRunning {
     private var wake: (@Sendable () -> Void)?
     /// The last squelch state the channel reported, for the status detail.
     private var squelchOpen = false
+    /// Whether the gate has learned the squelch's state from the channel's telemetry: the first
+    /// transition or meter the recording sees, and again after a coverage gap. Until then a meter
+    /// reporting an open squelch is an opening that came before the recording did.
+    private var squelchKnown = false
+    /// What the channel reported before the first frame: an open squelch then opens the first
+    /// part at that frame.
+    private var seedPending = false
     private var squelchChangedAt: ContinuousClock.Instant = .now
     private var degraded = false
     /// Set once the capture's real anchor has replaced the placeholder read at allocation.
@@ -277,7 +284,13 @@ actor RecordRunner: RecordRunning {
             gate = RecordGateMachine(preRollSamples: gate.preRollSamples, hangSamples: gate.hangSamples,
                                      quietSamples: gate.quietSamples, startSample: frame.sampleStart)
             preRollStart = frame.sampleStart
-            if !gated { await openPart(at: frame.sampleStart) }
+            if !gated {
+                await openPart(at: frame.sampleStart)
+            } else if seedPending {
+                // The squelch was open before the first frame, so the first part starts with it.
+                seedPending = false
+                for action in gate.seedOpen(at: frame.sampleStart) { await apply(action) }
+            }
         }
         if frame.droppedSamples > 0 {
             await writer.noteGap(from: now, to: frame.sampleStart, reason: "samples dropped")
@@ -373,8 +386,10 @@ actor RecordRunner: RecordRunning {
     private func apply(_ action: RecordGateMachine.Action) async {
         switch action {
         case .openPart(let startSample):
-            await openPart(at: startSample)
-            await flushPreRoll(from: startSample)
+            // The pre-roll cannot reach back before the recording's first frame.
+            let start = Swift.max(startSample, self.startSample)
+            await openPart(at: start)
+            await flushPreRoll(from: start)
         case .squelchOpened(let sample):
             await writer.noteSquelch(open: true, at: sample)
         case .squelchClosed(let sample):
@@ -422,11 +437,8 @@ actor RecordRunner: RecordRunning {
             switch t {
             case .squelch(let time, let open, _, _, _):
                 await noteSquelch(open: open, at: time.sampleIndex)
-            case .meter(_, _, _, let open, _, _, _, _):
-                if open != squelchOpen {
-                    squelchOpen = open
-                    squelchChangedAt = .now
-                }
+            case .meter(let time, _, _, let open, _, _, _, _):
+                await noteMeter(open: open, at: time.sampleIndex)
             default:
                 break
             }
@@ -436,7 +448,46 @@ actor RecordRunner: RecordRunning {
     private func noteSquelch(open: Bool, at sample: UInt64) async {
         squelchOpen = open
         squelchChangedAt = .now
-        guard gated, !stopped else { return }
+        // Out of capture the part is already closed; what the channel reports on the way back is
+        // learned afresh from the first meter after it (`noteMeter`).
+        guard gated, !stopped, !degraded else { return }
+        squelchKnown = true
+        guard started else {
+            seedPending = open
+            return
+        }
+        for action in gate.squelch(open: open, at: sample) { await apply(action) }
+    }
+
+    /// A meter carries the squelch's state every 100 ms. The gate opens on transitions, and a
+    /// squelch that was open before the recording started sends none: a broadcast carrier holds it
+    /// open for as long as it is on the air, and a gated recording of one wrote nothing until
+    /// 2026-09-25. So the first meter seeds the gate, opening a part at once when the squelch is
+    /// already open (docs/design/recording.md, "The gate"). After that a meter that disagrees
+    /// with the gate is an edge the recording never saw -- one sent before it subscribed, or lost
+    /// to the fan-out buffer -- and is applied at the meter's sample.
+    private func noteMeter(open: Bool, at sample: UInt64) async {
+        if open != squelchOpen {
+            squelchOpen = open
+            squelchChangedAt = .now
+        }
+        guard gated, !stopped, !degraded else { return }
+        guard started else {
+            squelchKnown = true
+            seedPending = open
+            return
+        }
+        guard squelchKnown else {
+            squelchKnown = true
+            guard open else { return }
+            // From the oldest audio the pre-roll holds: the first frame's unless the ring has
+            // wrapped, or the first after a coverage gap. With nothing held yet the part starts
+            // where the audio will, never inside the gap.
+            let start = preRoll.isEmpty ? Swift.max(now, sample) : Swift.max(startSample, preRollStart)
+            for action in gate.seedOpen(at: start) { await apply(action) }
+            return
+        }
+        guard open != gate.squelchIsOpen else { return }
         for action in gate.squelch(open: open, at: sample) { await apply(action) }
     }
 
@@ -485,6 +536,14 @@ actor RecordRunner: RecordRunning {
     private func outOfCapture() async {
         guard !degraded else { return }
         degraded = true
+        if gated {
+            // The gate closes with the part, so the channel's first opening after the gap begins
+            // a new one rather than being taken for the over already in progress. What the squelch
+            // is doing then is learned again, and the pre-roll from before the gap is not kept.
+            for action in gate.coverageLost(at: now) { await apply(action) }
+            squelchKnown = false
+            preRoll.removeAll(keepingCapacity: true)
+        }
         if await writer.isPartOpen { await writer.closePart(endSample: now) }
         outOfCaptureFrom = now
         let when = Date().formatted(date: .omitted, time: .standard)

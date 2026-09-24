@@ -282,6 +282,17 @@ transition record carries the exact sample the state changed at. The runner subs
 channel's squelch transitions through the same in-process path `TelemetryService` uses (never a
 second reader on the channel's DSP-side ring), and drives a small state machine:
 
+- **seeded**: a squelch that is already open when the recording starts sends no transition,
+  since a broadcast carrier holds it open for as long as it is on the air. The first meter the
+  runner sees (`Meter.squelch_open`, every 100 ms) seeds the machine: open, and a part opens at
+  once with `start_sample` at the recording's first frame and no pre-roll, because there is no
+  audio from before the recording began. The same happens after a coverage gap, when the channel
+  comes back into a squelch that is already open. After that, a meter that disagrees with the
+  machine is applied as the transition it missed (one sent before the runner subscribed, or lost
+  to the fan-out buffer), at the meter's sample. Cancel closes the seeded part with what it
+  holds. Found 2026-09-25 by the owner, whose gated recordings of an FM station were 0 s and 0 B;
+  `RecordingJobTests` holds a gated recording of `nfm_tone` cancelled after 2 s to one part of
+  about 2 s, in both the frequency form and the channel form.
 - **closed**: audio goes into a pre-roll ring of `pre_roll_ms` at the audio rate (24000 floats,
   96 KB, at 48 kHz and 500 ms; allocated when the runner starts, never on the hot path). No file
   is open.

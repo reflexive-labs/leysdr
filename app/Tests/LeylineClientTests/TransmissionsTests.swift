@@ -227,4 +227,37 @@ final class TransmissionsTests: XCTestCase {
             "newest first")
         XCTAssertEqual(log.closed.last?.start.sampleIndex, 4 * 4_800_000, "the oldest three left")
     }
+
+    // MARK: Retunes
+
+    /// The window retunes by writing the capture's centre and then the channel's offset. The
+    /// daemon publishes the capture, the channel's offset recomputed to keep its frequency, then
+    /// the channel at the offset written: only the last is a new frequency.
+    func testARetuneIsTheChannelsOwnOffsetChangingItsFrequency() {
+        var watch = ChannelFrequencyWatch()
+        XCTAssertFalse(
+            watch.observe(offsetHz: 100_000, centerHz: 462_000_000),
+            "the first reading is not a change")
+        XCTAssertEqual(watch.tunedHz, 462_100_000)
+        // The capture's event: new centre, the old offset still in the mirror.
+        XCTAssertFalse(
+            watch.observe(offsetHz: 100_000, centerHz: 463_000_000),
+            "the capture's event alone is not a retune")
+        // The channel's recomputed offset: the same frequency as before.
+        XCTAssertFalse(
+            watch.observe(offsetHz: -900_000, centerHz: 463_000_000),
+            "the channel followed its frequency")
+        XCTAssertEqual(watch.tunedHz, 462_100_000)
+        // The offset the window wrote.
+        XCTAssertTrue(watch.observe(offsetHz: 150_000, centerHz: 463_000_000), "the channel moved")
+        XCTAssertEqual(watch.tunedHz, 463_150_000)
+        XCTAssertFalse(watch.observe(offsetHz: 150_000, centerHz: 463_000_000), "nothing changed")
+    }
+
+    func testAnOffsetOnlyRetuneIsARetuneAndAnUnknownCentreIsNot() {
+        var watch = ChannelFrequencyWatch()
+        _ = watch.observe(offsetHz: 0, centerHz: 146_520_000)
+        XCTAssertFalse(watch.observe(offsetHz: 25_000, centerHz: nil), "no capture, no frequency")
+        XCTAssertTrue(watch.observe(offsetHz: 25_000, centerHz: 146_520_000))
+    }
 }
