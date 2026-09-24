@@ -393,70 +393,121 @@ public nonisolated struct Leyline_V1_ScanConfig: Sendable {
 /// nothing indexes, while a job goes through the allocator (invariant 9), outlives the client that
 /// started it, and produces a resource (invariant 8). The job's id is the recording's id, so
 /// `Job.result_uris` holds ley://recordings/<job_id>.
-public nonisolated struct Leyline_V1_RecordConfig: Sendable {
+public nonisolated struct Leyline_V1_RecordConfig: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var frequencyHz: UInt64 = 0
+  public var frequencyHz: UInt64 {
+    get {_storage._frequencyHz}
+    set {_uniqueStorage()._frequencyHz = newValue}
+  }
 
   /// RAW_IQ records the capture's IQ; anything else records audio
-  public var mode: Leyline_V1_DemodMode = .unspecified
+  public var mode: Leyline_V1_DemodMode {
+    get {_storage._mode}
+    set {_uniqueStorage()._mode = newValue}
+  }
 
   /// 0 = now; a later start is refused UNIMPLEMENTED in v1
-  public var startAtNs: Int64 = 0
+  public var startAtNs: Int64 {
+    get {_storage._startAtNs}
+    set {_uniqueStorage()._startAtNs = newValue}
+  }
 
   /// 0 = until cancelled or stop_after_quiet_ms
-  public var durationMs: Int64 = 0
+  public var durationMs: Int64 {
+    get {_storage._durationMs}
+    set {_uniqueStorage()._durationMs = newValue}
+  }
 
   /// Record what an existing channel hears, with its mode, bandwidth and squelch. frequency_hz
   /// and mode are ignored. The job borrows the channel and does not own it: when the channel's
   /// owner destroys it the job ends COMPLETED, "channel ended". With RAW_IQ the channel's capture
   /// is recorded.
-  public var channelID: String = String()
+  public var channelID: String {
+    get {_storage._channelID}
+    set {_uniqueStorage()._channelID = newValue}
+  }
 
   /// empty = the daemon picks, as a scan or decode does
-  public var deviceID: String = String()
+  public var deviceID: String {
+    get {_storage._deviceID}
+    set {_uniqueStorage()._deviceID = newValue}
+  }
 
   /// retune a capture somebody is using; off by default
-  public var takeOver: Bool = false
+  public var takeOver: Bool {
+    get {_storage._takeOver}
+    set {_uniqueStorage()._takeOver = newValue}
+  }
 
   /// 0 = the mode's default, as CreateChannel
-  public var bandwidthHz: UInt32 = 0
+  public var bandwidthHz: UInt32 {
+    get {_storage._bandwidthHz}
+    set {_uniqueStorage()._bandwidthHz = newValue}
+  }
 
   /// NaN or unset = the channel default (auto), as ley tune
-  public var squelchDbfs: Double = 0
+  public var squelchDbfs: Double {
+    get {_storage._squelchDbfs}
+    set {_uniqueStorage()._squelchDbfs = newValue}
+  }
 
   /// absent = leave the radio's gain alone
   public var gain: Leyline_V1_GainWrite {
-    get {_gain ?? Leyline_V1_GainWrite()}
-    set {_gain = newValue}
+    get {_storage._gain ?? Leyline_V1_GainWrite()}
+    set {_uniqueStorage()._gain = newValue}
   }
   /// Returns true if `gain` has been explicitly set.
-  public var hasGain: Bool {self._gain != nil}
+  public var hasGain: Bool {_storage._gain != nil}
   /// Clears the value of `gain`. Subsequent reads from it will return its default value.
-  public mutating func clearGain() {self._gain = nil}
+  public mutating func clearGain() {_uniqueStorage()._gain = nil}
 
   /// NONE (default) or SQUELCH
-  public var gate: Leyline_V1_RecordGate = .unspecified
+  public var gate: Leyline_V1_RecordGate {
+    get {_storage._gate}
+    set {_uniqueStorage()._gate = newValue}
+  }
 
   /// audio kept from before the squelch opened; default 500
-  public var preRollMs: UInt32 = 0
+  public var preRollMs: UInt32 {
+    get {_storage._preRollMs}
+    set {_uniqueStorage()._preRollMs = newValue}
+  }
 
   /// how long after the squelch closes a part stays open; default 5000
-  public var hangMs: UInt32 = 0
+  public var hangMs: UInt32 {
+    get {_storage._hangMs}
+    set {_uniqueStorage()._hangMs = newValue}
+  }
 
   /// end the job after this long with the squelch closed; 0 = never
-  public var stopAfterQuietMs: Int64 = 0
+  public var stopAfterQuietMs: Int64 {
+    get {_storage._stopAfterQuietMs}
+    set {_uniqueStorage()._stopAfterQuietMs = newValue}
+  }
 
   /// cut parts on this timer; 0 = audio: one part, IQ: 60000
-  public var partMs: Int64 = 0
+  public var partMs: Int64 {
+    get {_storage._partMs}
+    set {_uniqueStorage()._partMs = newValue}
+  }
+
+  /// Gains to set on the capture the job makes, applied in order, each read as `gain` is (an empty
+  /// element is the device's first). A refusal fails the job with the device's code and message.
+  /// When `gains` is non-empty `gain` is ignored; `gain` stays for a client that sends one stage.
+  /// A borrowed channel's capture is left as its owner set it, whichever is sent.
+  public var gains: [Leyline_V1_GainWrite] {
+    get {_storage._gains}
+    set {_uniqueStorage()._gains = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _gain: Leyline_V1_GainWrite? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// Watch one band -- narrow enough to fit a single capture -- and report the carriers that come and
@@ -1217,103 +1268,174 @@ nonisolated extension Leyline_V1_ScanConfig: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_RecordConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RecordConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequency_hz\0\u{1}mode\0\u{3}start_at_ns\0\u{3}duration_ms\0\u{3}channel_id\0\u{3}device_id\0\u{3}take_over\0\u{3}bandwidth_hz\0\u{3}squelch_dbfs\0\u{1}gain\0\u{1}gate\0\u{3}pre_roll_ms\0\u{3}hang_ms\0\u{3}stop_after_quiet_ms\0\u{3}part_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequency_hz\0\u{1}mode\0\u{3}start_at_ns\0\u{3}duration_ms\0\u{3}channel_id\0\u{3}device_id\0\u{3}take_over\0\u{3}bandwidth_hz\0\u{3}squelch_dbfs\0\u{1}gain\0\u{1}gate\0\u{3}pre_roll_ms\0\u{3}hang_ms\0\u{3}stop_after_quiet_ms\0\u{3}part_ms\0\u{1}gains\0")
+
+  fileprivate class _StorageClass {
+    var _frequencyHz: UInt64 = 0
+    var _mode: Leyline_V1_DemodMode = .unspecified
+    var _startAtNs: Int64 = 0
+    var _durationMs: Int64 = 0
+    var _channelID: String = String()
+    var _deviceID: String = String()
+    var _takeOver: Bool = false
+    var _bandwidthHz: UInt32 = 0
+    var _squelchDbfs: Double = 0
+    var _gain: Leyline_V1_GainWrite? = nil
+    var _gate: Leyline_V1_RecordGate = .unspecified
+    var _preRollMs: UInt32 = 0
+    var _hangMs: UInt32 = 0
+    var _stopAfterQuietMs: Int64 = 0
+    var _partMs: Int64 = 0
+    var _gains: [Leyline_V1_GainWrite] = []
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _frequencyHz = source._frequencyHz
+      _mode = source._mode
+      _startAtNs = source._startAtNs
+      _durationMs = source._durationMs
+      _channelID = source._channelID
+      _deviceID = source._deviceID
+      _takeOver = source._takeOver
+      _bandwidthHz = source._bandwidthHz
+      _squelchDbfs = source._squelchDbfs
+      _gain = source._gain
+      _gate = source._gate
+      _preRollMs = source._preRollMs
+      _hangMs = source._hangMs
+      _stopAfterQuietMs = source._stopAfterQuietMs
+      _partMs = source._partMs
+      _gains = source._gains
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.frequencyHz) }()
-      case 2: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
-      case 3: try { try decoder.decodeSingularInt64Field(value: &self.startAtNs) }()
-      case 4: try { try decoder.decodeSingularInt64Field(value: &self.durationMs) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.channelID) }()
-      case 6: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
-      case 7: try { try decoder.decodeSingularBoolField(value: &self.takeOver) }()
-      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.bandwidthHz) }()
-      case 9: try { try decoder.decodeSingularDoubleField(value: &self.squelchDbfs) }()
-      case 10: try { try decoder.decodeSingularMessageField(value: &self._gain) }()
-      case 11: try { try decoder.decodeSingularEnumField(value: &self.gate) }()
-      case 12: try { try decoder.decodeSingularUInt32Field(value: &self.preRollMs) }()
-      case 13: try { try decoder.decodeSingularUInt32Field(value: &self.hangMs) }()
-      case 14: try { try decoder.decodeSingularInt64Field(value: &self.stopAfterQuietMs) }()
-      case 15: try { try decoder.decodeSingularInt64Field(value: &self.partMs) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularUInt64Field(value: &_storage._frequencyHz) }()
+        case 2: try { try decoder.decodeSingularEnumField(value: &_storage._mode) }()
+        case 3: try { try decoder.decodeSingularInt64Field(value: &_storage._startAtNs) }()
+        case 4: try { try decoder.decodeSingularInt64Field(value: &_storage._durationMs) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._channelID) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._deviceID) }()
+        case 7: try { try decoder.decodeSingularBoolField(value: &_storage._takeOver) }()
+        case 8: try { try decoder.decodeSingularUInt32Field(value: &_storage._bandwidthHz) }()
+        case 9: try { try decoder.decodeSingularDoubleField(value: &_storage._squelchDbfs) }()
+        case 10: try { try decoder.decodeSingularMessageField(value: &_storage._gain) }()
+        case 11: try { try decoder.decodeSingularEnumField(value: &_storage._gate) }()
+        case 12: try { try decoder.decodeSingularUInt32Field(value: &_storage._preRollMs) }()
+        case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._hangMs) }()
+        case 14: try { try decoder.decodeSingularInt64Field(value: &_storage._stopAfterQuietMs) }()
+        case 15: try { try decoder.decodeSingularInt64Field(value: &_storage._partMs) }()
+        case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._gains) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if self.frequencyHz != 0 {
-      try visitor.visitSingularUInt64Field(value: self.frequencyHz, fieldNumber: 1)
-    }
-    if self.mode != .unspecified {
-      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 2)
-    }
-    if self.startAtNs != 0 {
-      try visitor.visitSingularInt64Field(value: self.startAtNs, fieldNumber: 3)
-    }
-    if self.durationMs != 0 {
-      try visitor.visitSingularInt64Field(value: self.durationMs, fieldNumber: 4)
-    }
-    if !self.channelID.isEmpty {
-      try visitor.visitSingularStringField(value: self.channelID, fieldNumber: 5)
-    }
-    if !self.deviceID.isEmpty {
-      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 6)
-    }
-    if self.takeOver != false {
-      try visitor.visitSingularBoolField(value: self.takeOver, fieldNumber: 7)
-    }
-    if self.bandwidthHz != 0 {
-      try visitor.visitSingularUInt32Field(value: self.bandwidthHz, fieldNumber: 8)
-    }
-    if self.squelchDbfs.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.squelchDbfs, fieldNumber: 9)
-    }
-    try { if let v = self._gain {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
-    } }()
-    if self.gate != .unspecified {
-      try visitor.visitSingularEnumField(value: self.gate, fieldNumber: 11)
-    }
-    if self.preRollMs != 0 {
-      try visitor.visitSingularUInt32Field(value: self.preRollMs, fieldNumber: 12)
-    }
-    if self.hangMs != 0 {
-      try visitor.visitSingularUInt32Field(value: self.hangMs, fieldNumber: 13)
-    }
-    if self.stopAfterQuietMs != 0 {
-      try visitor.visitSingularInt64Field(value: self.stopAfterQuietMs, fieldNumber: 14)
-    }
-    if self.partMs != 0 {
-      try visitor.visitSingularInt64Field(value: self.partMs, fieldNumber: 15)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if _storage._frequencyHz != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._frequencyHz, fieldNumber: 1)
+      }
+      if _storage._mode != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._mode, fieldNumber: 2)
+      }
+      if _storage._startAtNs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._startAtNs, fieldNumber: 3)
+      }
+      if _storage._durationMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._durationMs, fieldNumber: 4)
+      }
+      if !_storage._channelID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._channelID, fieldNumber: 5)
+      }
+      if !_storage._deviceID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._deviceID, fieldNumber: 6)
+      }
+      if _storage._takeOver != false {
+        try visitor.visitSingularBoolField(value: _storage._takeOver, fieldNumber: 7)
+      }
+      if _storage._bandwidthHz != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._bandwidthHz, fieldNumber: 8)
+      }
+      if _storage._squelchDbfs.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._squelchDbfs, fieldNumber: 9)
+      }
+      try { if let v = _storage._gain {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      } }()
+      if _storage._gate != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._gate, fieldNumber: 11)
+      }
+      if _storage._preRollMs != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._preRollMs, fieldNumber: 12)
+      }
+      if _storage._hangMs != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._hangMs, fieldNumber: 13)
+      }
+      if _storage._stopAfterQuietMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._stopAfterQuietMs, fieldNumber: 14)
+      }
+      if _storage._partMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._partMs, fieldNumber: 15)
+      }
+      if !_storage._gains.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._gains, fieldNumber: 16)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_RecordConfig, rhs: Leyline_V1_RecordConfig) -> Bool {
-    if lhs.frequencyHz != rhs.frequencyHz {return false}
-    if lhs.mode != rhs.mode {return false}
-    if lhs.startAtNs != rhs.startAtNs {return false}
-    if lhs.durationMs != rhs.durationMs {return false}
-    if lhs.channelID != rhs.channelID {return false}
-    if lhs.deviceID != rhs.deviceID {return false}
-    if lhs.takeOver != rhs.takeOver {return false}
-    if lhs.bandwidthHz != rhs.bandwidthHz {return false}
-    if lhs.squelchDbfs != rhs.squelchDbfs {return false}
-    if lhs._gain != rhs._gain {return false}
-    if lhs.gate != rhs.gate {return false}
-    if lhs.preRollMs != rhs.preRollMs {return false}
-    if lhs.hangMs != rhs.hangMs {return false}
-    if lhs.stopAfterQuietMs != rhs.stopAfterQuietMs {return false}
-    if lhs.partMs != rhs.partMs {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._frequencyHz != rhs_storage._frequencyHz {return false}
+        if _storage._mode != rhs_storage._mode {return false}
+        if _storage._startAtNs != rhs_storage._startAtNs {return false}
+        if _storage._durationMs != rhs_storage._durationMs {return false}
+        if _storage._channelID != rhs_storage._channelID {return false}
+        if _storage._deviceID != rhs_storage._deviceID {return false}
+        if _storage._takeOver != rhs_storage._takeOver {return false}
+        if _storage._bandwidthHz != rhs_storage._bandwidthHz {return false}
+        if _storage._squelchDbfs != rhs_storage._squelchDbfs {return false}
+        if _storage._gain != rhs_storage._gain {return false}
+        if _storage._gate != rhs_storage._gate {return false}
+        if _storage._preRollMs != rhs_storage._preRollMs {return false}
+        if _storage._hangMs != rhs_storage._hangMs {return false}
+        if _storage._stopAfterQuietMs != rhs_storage._stopAfterQuietMs {return false}
+        if _storage._partMs != rhs_storage._partMs {return false}
+        if _storage._gains != rhs_storage._gains {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

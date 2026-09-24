@@ -5,6 +5,7 @@ package cli
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 )
@@ -22,43 +23,62 @@ const fullScaleMarginDb = 3
 // 4 ms, which is audible.
 const clippingFloor = 1e-4
 
-// clipping reports whether a CaptureLevel says the radio is clipping: more of
-// the interval's samples at the rails than clippingFloor allows. Nil, or an
-// empty interval, is not clipping, because nothing was measured.
+// clipping reports whether a CaptureLevel says the radio is clipping: at least
+// clippingFloor of the interval's samples at the rails, the app's rule
+// (FailureState.name). Nil, or an empty interval, is not clipping, because
+// nothing was measured.
 func clipping(level *leylinev1.CaptureLevel) bool {
 	total := level.GetTotalSamples()
 	if total == 0 {
 		return false
 	}
-	return float64(level.GetClippedSamples())/float64(total) > clippingFloor
+	return float64(level.GetClippedSamples())/float64(total) >= clippingFloor
 }
 
 // failureWords describes what the capture's level and one spectrum row show is
-// wrong, or "" when nothing is: the radio clipping (the level's rail count),
-// or nothing peakAboveFloorDb above the floor (the row's median), suggesting
-// the gain when it is set by hand to its lowest.
-// The level is the clipping authority: while one is in hand a bin near full
-// scale is not named at all, because a strong steady carrier sits there all
-// day with nothing wrong. Only without a level (an older daemon) does the
-// loudest bin within fullScaleMarginDb of full scale stand in for it. The
-// app's FailureState (app/Sources/LeylineClient/FailureState.swift) is the
-// same rule, so both clients report the same band the same way. It reports a
+// wrong, or "" when nothing is: the radio clipping (clippingWords), or what
+// the row shows (bandWords). It is the one-shot reading a persistent tune and
+// the MCP adapter's tune tool print; a live `ley tune` prints bandWords once
+// in its banner and leaves clipping to clipHold, which says it once it has
+// lasted.
+func failureWords(bins []float64, level *leylinev1.CaptureLevel, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
+	if words := clippingWords(level, gains, elements); words != "" {
+		return words
+	}
+	return bandWords(bins, level != nil, gains, elements)
+}
+
+// clippingWords is the clipping line for one CaptureLevel, with the gain
+// clause (gainAdvice), or "" when the level is not clipping. The app's
+// FailureState.detail (app/Sources/LeylineClient/FailureState.swift) is the
+// same sentence, so both clients report the same radio the same way.
+func clippingWords(level *leylinev1.CaptureLevel, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
+	if !clipping(level) {
+		return ""
+	}
+	reads := fmt.Sprintf("The radio is clipping: %d of %d samples (%s) hit the converter's rails",
+		level.GetClippedSamples(), level.GetTotalSamples(),
+		percentWords(float64(level.GetClippedSamples())/float64(level.GetTotalSamples())))
+	switch {
+	case gainAtMinimum(gains, elements):
+		return reads + " at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
+	case gainAuto(gains):
+		return reads + " with the gain on auto. Take the gain by hand and lower it."
+	default:
+		return reads + ". " + lowerGainWords(gains, elements) + "."
+	}
+}
+
+// bandWords is what one spectrum row shows is wrong, or "": nothing
+// peakAboveFloorDb above the floor (the row's median), suggesting the gain
+// when every stage is set by hand to its lowest. The level is the clipping
+// authority: while one is in hand (haveLevel) a bin near full scale is not
+// named at all, because a strong steady carrier sits there all day with
+// nothing wrong. Only without a level (an older daemon) does the loudest bin
+// within fullScaleMarginDb of full scale stand in for it. It reports a
 // measurement and a suggestion, not a diagnosis: a quiet band and a missing
 // antenna look the same from here.
-func failureWords(bins []float64, level *leylinev1.CaptureLevel, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
-	if clipping(level) {
-		reads := fmt.Sprintf("The radio is clipping: %d of %d samples (%s) hit the converter's rails",
-			level.GetClippedSamples(), level.GetTotalSamples(),
-			percentWords(float64(level.GetClippedSamples())/float64(level.GetTotalSamples())))
-		switch {
-		case gainAtMinimum(gains, elements):
-			return reads + " at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
-		case gainAuto(gains):
-			return reads + " with the gain on auto. Take the gain by hand and lower it."
-		default:
-			return reads + ". Lower the gain."
-		}
-	}
+func bandWords(bins []float64, haveLevel bool, gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
 	if len(bins) == 0 {
 		return ""
 	}
@@ -71,7 +91,7 @@ func failureWords(bins []float64, level *leylinev1.CaptureLevel, gains []*leylin
 	if math.IsInf(peak, 0) || math.IsNaN(peak) {
 		return ""
 	}
-	if level == nil && peak >= -fullScaleMarginDb {
+	if !haveLevel && peak >= -fullScaleMarginDb {
 		reads := fmt.Sprintf("A signal is within %d dB of full scale: the loudest bin reads %.0f dBFS", fullScaleMarginDb, peak)
 		switch {
 		case gainAtMinimum(gains, elements):
@@ -79,7 +99,7 @@ func failureWords(bins []float64, level *leylinev1.CaptureLevel, gains []*leylin
 		case gainAuto(gains):
 			return reads + " with the gain on auto. Take the gain by hand and lower it before the radio clips."
 		default:
-			return reads + ". Lower the gain before the radio clips."
+			return reads + ". " + lowerGainWords(gains, elements) + " before the radio clips."
 		}
 	}
 	floor := medianDb(bins)
@@ -114,29 +134,86 @@ func gainAuto(gains []*leylinev1.GainState) bool {
 	return false
 }
 
-// gainAtMinimum reports whether any gain element is set by hand to the lowest
-// level it offers: the bottom of its table, or its minimum. Auto is never at
-// the minimum, whatever level it chose.
-func gainAtMinimum(gains []*leylinev1.GainState, elements []*leylinev1.GainElement) bool {
-	for _, g := range gains {
-		if g.GetAuto() {
+// switchStage reports whether a gain element is a two-value switch rather
+// than a gain to set: exactly two table entries and no step, as a HackRF
+// advertises its AMP (0 or 11 dB). A switch is left out of "the lowest gain",
+// because the HackRF at LNA 8, VGA 20 and the AMP off was once told it was at
+// its lowest (plans/app.md, M2-10).
+func switchStage(el *leylinev1.GainElement) bool {
+	return len(el.GetValidDb()) == 2 && el.GetStepDb() == 0
+}
+
+// lowestDb is the lowest level a gain element offers: the bottom of its table,
+// or its minimum.
+func lowestDb(el *leylinev1.GainElement) float64 {
+	if len(el.GetValidDb()) == 0 {
+		return el.GetMinDb()
+	}
+	lowest := math.Inf(1)
+	for _, v := range el.GetValidDb() {
+		lowest = math.Min(lowest, v)
+	}
+	return lowest
+}
+
+// gainStates pairs each continuous or table stage, in the device's order,
+// with the capture's state for it (nil when the capture reports none).
+func gainStates(gains []*leylinev1.GainState, elements []*leylinev1.GainElement) (stages []*leylinev1.GainElement, states []*leylinev1.GainState) {
+	for _, el := range elements {
+		if switchStage(el) {
 			continue
 		}
-		for _, el := range elements {
-			if el.GetName() != g.GetElement() {
-				continue
-			}
-			lowest := el.GetMinDb()
-			if len(el.GetValidDb()) > 0 {
-				lowest = math.Inf(1)
-				for _, v := range el.GetValidDb() {
-					lowest = math.Min(lowest, v)
-				}
-			}
-			if g.GetDb() <= lowest+0.05 {
-				return true
+		var state *leylinev1.GainState
+		for _, g := range gains {
+			if g.GetElement() == el.GetName() {
+				state = g
+				break
 			}
 		}
+		stages = append(stages, el)
+		states = append(states, state)
 	}
-	return false
+	return stages, states
+}
+
+// gainAtMinimum reports whether every continuous or table stage is set by hand
+// to its lowest level: then the radio cannot be turned down, and the advice is
+// the antenna. A two-value stage does not count (switchStage), a stage on auto
+// is never at its lowest whatever level it chose, and a radio with no stage to
+// count has no gain to be at the bottom of. The app's
+// FailureState.gainAtMinimum is the same rule.
+func gainAtMinimum(gains []*leylinev1.GainState, elements []*leylinev1.GainElement) bool {
+	stages, states := gainStates(gains, elements)
+	for i, el := range stages {
+		g := states[i]
+		if g == nil || g.GetAuto() || g.GetDb() > lowestDb(el)+0.05 {
+			return false
+		}
+	}
+	return len(stages) > 0
+}
+
+// lowerGainWords is the advice for a radio set by hand above its lowest, with
+// no full stop: "Lower the gain" on a radio with one stage to set, and on a
+// radio with several the stages above their lowest in the device's order,
+// "Lower the VGA gain" or "Lower the LNA or VGA gain". The app's
+// FailureState.detail builds the same words.
+func lowerGainWords(gains []*leylinev1.GainState, elements []*leylinev1.GainElement) string {
+	stages, states := gainStates(gains, elements)
+	if len(stages) < 2 {
+		return "Lower the gain"
+	}
+	var above []string
+	for i, el := range stages {
+		if g := states[i]; g != nil && !g.GetAuto() && g.GetDb() > lowestDb(el)+0.05 {
+			above = append(above, el.GetName())
+		}
+	}
+	switch len(above) {
+	case 0:
+		return "Lower the gain"
+	case 1:
+		return "Lower the " + above[0] + " gain"
+	}
+	return "Lower the " + strings.Join(above[:len(above)-1], ", ") + " or " + above[len(above)-1] + " gain"
 }

@@ -38,7 +38,7 @@ Flags:
       --detach                    start the recording and exit, printing its job id and URI (for scripts; 'ley jobs cancel' stops it)
       --device string             which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
       --for string                how long to record, e.g. 30s, 5m, 2h (default: until Ctrl-C or ley jobs cancel)
-      --gain string               receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting)
+      --gain string               receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)
       --gate string               record only while something is on the air: squelch (default: record continuously)
       --hang string               how long a file stays open after a key-down, so the pauses between overs stay in one file, e.g. 5s (default 5s; needs --gate)
   -h, --help                      help for record

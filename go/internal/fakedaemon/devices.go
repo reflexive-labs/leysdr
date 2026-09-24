@@ -53,6 +53,30 @@ func fakeRTLSDR() *leylinev1.DeviceDescriptor {
 	}
 }
 
+// HackRFPro builds the descriptor of a HackRF Pro as the daemon advertises one
+// (engine/Sources/EngineCore/Devices/HackRFDevice.swift): three gain stages, the
+// LNA and VGA in steps and the AMP a two-value switch, none of them on auto. It
+// is for tests of what a client does with a radio of several stages; attach it
+// with ExtraDevices.
+func HackRFPro() *leylinev1.DeviceDescriptor {
+	return &leylinev1.DeviceDescriptor{
+		DeviceId:     newID("dev_"),
+		Driver:       "hackrf",
+		Model:        "HackRF Pro",
+		Serial:       "0000000000000000a06063c8234e925f",
+		UsbLocation:  "fake-usb-2",
+		State:        leylinev1.DeviceState_AVAILABLE,
+		TuningRanges: []*leylinev1.FrequencyRange{{MinHz: 100_000, MaxHz: 6_000_000_000}},
+		SampleRates:  []uint64{2_400_000, 8_000_000, 10_000_000, 20_000_000},
+		NativeFormat: leylinev1.SampleFormat_CS8,
+		GainElements: []*leylinev1.GainElement{
+			{Name: "LNA", MinDb: 0, MaxDb: 40, StepDb: 8},
+			{Name: "VGA", MinDb: 0, MaxDb: 62, StepDb: 2},
+			{Name: "AMP", MinDb: 0, MaxDb: 11, ValidDb: []float64{0, 11}},
+		},
+	}
+}
+
 // HeldRTLSDR builds the descriptor of an RTL-SDR another program holds, the
 // way the real daemon reports one it never managed to open: IN_USE with the
 // held_externally flag and a TUNER gain element whose table could not be read

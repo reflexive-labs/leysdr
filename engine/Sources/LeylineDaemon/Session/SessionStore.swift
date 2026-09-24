@@ -1006,13 +1006,9 @@ actor SessionStore {
                 guard let d = devices[entry.deviceID] else {
                     throw EngineError.gainElementUnknown(g.element, target: w.targetID)
                 }
-                let element = g.element.isEmpty ? (d.gainElements.first?.name ?? "") : g.element
+                let element = resolvedGainElement(g.element, in: d.gainElements)
                 guard let el = d.gainElement(named: element) else {
-                    if element.isEmpty {
-                        throw EngineError(code: EngineError.Code.gainElementUnknown,
-                                          message: "this radio reports no gain elements", target: w.targetID)
-                    }
-                    throw EngineError.gainElementUnknown(element, target: w.targetID)
+                    throw unknownGainElement(element, in: d.gainElements, target: w.targetID)
                 }
                 func manual(_ db: Double) -> Double { el.validDB.isEmpty ? db : el.snapped(db) }
                 let value: GainValue

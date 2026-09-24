@@ -109,6 +109,11 @@ message RecordConfig {
   uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 5000
   int64 stop_after_quiet_ms = 14; // end the job after this long with the squelch closed; 0 = never
   int64 part_ms = 15;         // cut parts on this timer; 0 = audio: one part, IQ: 60000
+  // Gains to set on the capture the job makes, applied in order, each read as `gain` is (an empty
+  // element is the device's first). A refusal fails the job with the device's code and message.
+  // When `gains` is non-empty `gain` is ignored; `gain` stays for a client that sends one stage.
+  // A borrowed channel's capture is left as its owner set it, whichever is sent.
+  repeated GainWrite gains = 16;
 }
 
 // What opens and closes a recording's parts. A gated recording writes no file while the squelch is

@@ -120,7 +120,11 @@ extension JobStore {
             frequencyHz = config.frequencyHz
             // The squelch and the gain the request asked for, on the channel the allocator built.
             // A borrowed channel is left exactly as its owner set it.
-            await applyGain(config, capture: made.captureID)
+            if let failure = await applyGain(config, capture: made.captureID) {
+                await lease.release()
+                await failRecordGain(id, failure)
+                return
+            }
             await applySquelch(config, to: made, gated: config.gate == .squelch, job: id)
         }
         // Allocating suspends, and a cancel that arrived in that window has already returned.
@@ -191,7 +195,11 @@ extension JobStore {
                 return
             }
             lease = made
-            await applyGain(config, capture: made.captureID)
+            if let failure = await applyGain(config, capture: made.captureID) {
+                await lease.release()
+                await failRecordGain(id, failure)
+                return
+            }
         }
         guard jobIsLive(id) else {
             await lease.release()
@@ -287,16 +295,50 @@ extension JobStore {
     /// meter intervals, short enough that the recording starts promptly.
     static let autoSquelchMs = 600
 
-    private func applyGain(_ config: Leyline_V1_RecordConfig, capture: CaptureID) async {
-        guard config.hasGain, let engine = await store.captureEngine(capture) else { return }
-        let value: GainValue
-        switch config.gain.value {
-        case .db(let db): value = .db(db)
-        case .auto(true): value = .auto
-        default: return
+    /// Sets the gains the request asked for on the capture the allocator made, in order, and
+    /// returns why one could not be set, or nil. `gains` wins over `gain` when both are sent
+    /// (`jobs.proto`, `RecordConfig`). An empty element is the first the device lists and a name
+    /// matches ignoring case (`resolvedGainElement`), as a gain write and a sweep read it. Until
+    /// 2026-09-24 this passed the empty element through and dropped the refusal, so `ley record
+    /// --gain` never reached a real radio: a HackRF take asked for 0 dB ran at LNA 8
+    /// (plans/app.md, M2-10).
+    private func applyGain(_ config: Leyline_V1_RecordConfig, capture: CaptureID) async -> EngineError? {
+        let writes = config.gains.isEmpty ? (config.hasGain ? [config.gain] : []) : config.gains
+        guard !writes.isEmpty else { return nil }
+        guard let engine = await store.captureEngine(capture) else {
+            return EngineError.captureNotFound(capture.string)
         }
-        try? await engine.setGain(element: config.gain.element, value: value)
+        let elements = await store.deviceDescriptor(for: capture)?.gainElements ?? []
+        var failure: EngineError?
+        for write in writes {
+            let value: GainValue
+            switch write.value {
+            case .db(let db): value = .db(db)
+            case .auto(true): value = .auto
+            default: continue
+            }
+            let element = resolvedGainElement(write.element, in: elements)
+            guard elements.contains(where: { $0.name == element }) else {
+                failure = unknownGainElement(write.element, in: elements, target: capture.string)
+                break
+            }
+            do {
+                try await engine.setGain(element: element, value: value)
+            } catch {
+                failure = error as? EngineError ?? EngineError.invalidArgument("\(error)", target: element)
+                break
+            }
+        }
+        // The stages set before a refusal did move, so the capture event says where they are.
         await store.publishCapture(capture)
+        return failure
+    }
+
+    /// A recording at a gain other than the one asked for is not the take that was requested, so
+    /// it does not start; the job fails with the radio's own reason, as a sweep's does.
+    private func failRecordGain(_ id: JobID, _ failure: EngineError) async {
+        await finishRecord(id, state: .failed, detail: "the gain asked for could not be set: \(failure.message)",
+                           code: failure.code)
     }
 
     private func preRollMs(_ config: Leyline_V1_RecordConfig) -> UInt32 {

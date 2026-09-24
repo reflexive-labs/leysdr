@@ -12,7 +12,7 @@ the [MCP adapter reference](mcp.md).
 
 ```
 ley                                  # bare: orientation screen on a TTY (see below); the verb list when piped
-├── tune <freq|preset> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
+├── tune <freq|preset> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto|STAGE=dB,...] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
 │                                    # capture+channel+system-audio sink in one verb; prints every decision it made;
 │                                    # refuses to retune a capture other active channels ride on unless --retune
 ├── set [param value] [--channel SEL] [--capture SEL] [--element E]
@@ -25,22 +25,22 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # scrolling history of FFT rows as a terminal heatmap; a band plan covers the whole band, not one frequency
 ├── phosphor [frequency] [--span N] [--band NAME] [--bins N] [--levels N] [--half-life S] [--rate N] [--count N] [--device SEL] [--retune] [--width N]
 │                                    # per-bin amplitude histogram decayed over time, the "which bins are ever busy" view
-├── scope <freq|preset|chan_ID> [--tap audio|demod] [--window MS] [--trigger auto|free] [--scale auto|full|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
+├── scope <freq|preset|chan_ID> [--tap audio|demod] [--window MS] [--trigger auto|free] [--scale auto|full|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--retune] [--width N]
 │                                    # the demodulated waveform, one window a frame, as a braille trace (three ASCII
 │                                    # levels with --ascii); --tap demod draws the detector's own output, where an
 │                                    # NFM channel still carries its CTCSS tone and its tuning error; --scale auto,
 │                                    # the default, fits the trace to the signal; --scale full is the tap's whole range
-├── levels <freq|preset|chan_ID> [--tap audio|demod] [--bands octave|third] [--watch] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N] [--height N]
+├── levels <freq|preset|chan_ID> [--tap audio|demod] [--bands octave|third] [--watch] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--retune] [--width N] [--height N]
 │                                    # the rack unit's band meter over the daemon's audio spectrum: one LED ladder
 │                                    # per octave band, and the meter's rms/peak pair at the right; one still by
 │                                    # default and the live meter (caps, ballistics, --rate, --count) under --watch,
 │                                    # as spectrum does; the ladders draw unlit while the squelch is shut;
 │                                    # --tap demod is where a CTCSS tone still stands in the 125 Hz band
-├── waveform <freq|preset|chan_ID> [--tap audio|demod] [--seconds S] [--scale auto|full|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--retune] [--width N]
+├── waveform <freq|preset|chan_ID> [--tap audio|demod] [--seconds S] [--scale auto|full|N] [--rate N] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--retune] [--width N]
 │                                    # the clip view: seconds of audio as a peak envelope about the centre, newest
 │                                    # at the right, blank where the squelch was shut
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
-├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto] [--device SEL] [--rate N] [--retune]
+├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
 ├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--gain dB|auto] [--take-over] [--device SEL]
 │                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
@@ -80,7 +80,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # Mac app reads too, so one kept from a terminal is in its sidebar
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
-├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto] [--device SEL] [--take-over]
+├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
 │                                    # Jobs.StartJob(RecordConfig): the daemon finds or makes the capture and
 │                                    # writes WAV (or .cf32 with --iq) into its store; the job's id is the
 │                                    # recording's, and ley://recordings/<job_id> is on stdout when it ends
@@ -88,7 +88,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │   ├── show <id>                    # the manifest: the radio, the parts, the coverage gaps, how it ended
 │   └── path <id> [--part N]         # where it is on this machine, for Finder or another tool
 │                                    # Resources.ListResources / GetResource / ResolveLocalPath
-├── play <file.cf32 | job_ID | ley://recordings/ID[/PART]> [--part N] [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto] [--loop] [--persistent] [--no-audio]
+├── play <file.cf32 | job_ID | ley://recordings/ID[/PART]> [--part N] [--freq F] [--mode M] [--bw N] [--squelch L] [--volume V] [--gain dB|auto|STAGE=dB,...] [--loop] [--persistent] [--no-audio]
 │                                    # FilePlaybackDevice through the same pipeline; a recording's id or URI
 │                                    # is resolved to its part file first. An audio part holds what a
 │                                    # demodulator already produced, so there is nothing left to tune: play

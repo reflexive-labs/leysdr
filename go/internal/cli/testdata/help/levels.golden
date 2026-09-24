@@ -50,7 +50,7 @@ Flags:
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
       --count int        with --watch: stop after this many rows, e.g. 10 (0 = until Ctrl-C)
       --device string    which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)
-      --gain string      receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)
+      --gain string      receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)
       --height int       ladder height in rows (6..24, clamped to the terminal) (default 12)
   -h, --help             help for levels
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)

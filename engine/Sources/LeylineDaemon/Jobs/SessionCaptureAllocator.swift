@@ -11,6 +11,29 @@ import Logging
 /// How long after somebody's last interactive write a capture still counts as in use.
 let dontDisturbNs: UInt64 = 60_000_000_000
 
+/// The gain element a request means: the first the device lists when it names none (`common.proto`,
+/// `GainWrite`), else the device's element whose name matches ignoring case, so `ley record --gain
+/// vga=0` reaches the VGA. A name the device does not list comes back as given, for the device to
+/// refuse. A gain write, a sweep's pin and a recording's gains all read it here, so a client that
+/// names the element and one that does not reach the same stage.
+func resolvedGainElement(_ requested: String, in elements: [GainElement]) -> String {
+    if requested.isEmpty { return elements.first?.name ?? "" }
+    return elements.first { $0.name.caseInsensitiveCompare(requested) == .orderedSame }?.name ?? requested
+}
+
+/// The refusal for a gain element the device does not list, with the ones it does, so the reader
+/// can retype the name without a second command (`ley devices`).
+func unknownGainElement(_ name: String, in elements: [GainElement], target: String) -> EngineError {
+    guard !elements.isEmpty else {
+        return EngineError(code: EngineError.Code.gainElementUnknown, message: "this radio reports no gain elements",
+                           target: target)
+    }
+    let names = elements.map(\.name)
+    let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names.last!
+    return EngineError(code: EngineError.Code.gainElementUnknown,
+                       message: "no gain element named \(name); this radio's are \(list)", target: target)
+}
+
 actor SessionCaptureAllocator: CaptureAllocator {
     private let store: SessionStore
     private let log = Logger(label: "leyline.jobs.allocator")
@@ -498,7 +521,7 @@ actor SessionCaptureLease: CaptureLease {
     func pinGain(device: (any RadioDevice)?, requested: GainRequest? = nil) async {
         entryGains = await engine.snapshot.gains
         if let requested {
-            let element = requested.element.isEmpty ? (gainElements.first?.name ?? requested.element) : requested.element
+            let element = resolvedGainElement(requested.element, in: gainElements)
             do {
                 try await engine.setGain(element: element, value: requested.value)
                 if requested.value == .auto {

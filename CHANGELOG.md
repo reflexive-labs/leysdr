@@ -4,6 +4,17 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- `ley tune` says the radio is clipping once, after it has clipped for a second, with the count
+  that raised it, and says nothing more until it has been clean for two seconds; the "Nothing is
+  above the noise" line is said once, at tune. "At the lowest gain" now needs every gain stage you
+  can set at its lowest, so a HackRF at LNA 8 and VGA 20 is told "Lower the LNA or VGA gain."
+  rather than to move the antenna; the Mac app's clipping words follow the same rule.
+- `ley record --gain` reaches the radio. The daemon had dropped it on every real radio and
+  recorded at whatever gain the radio was on. A gain the radio refuses now fails the job with the
+  reason, and the banner's `Radio` line lists the gain the take started at. `--gain` on `tune`,
+  `record` and the other verbs that take it accepts stage=dB pairs, `--gain LNA=0,VGA=0`, for a
+  radio with several stages (`RecordConfig.gains`), and a banner on such a radio lists every stage.
+
 - `ley tune` prints a DCS code the daemon reports as `DCS  023`, once per change as it prints a
   PL tone, and `ley levels` and `ley scope` show it in their headers. The MCP `listen_summary`
   keeps a DCS report over a CTCSS one. A code sent inverted is named as the standard code the same

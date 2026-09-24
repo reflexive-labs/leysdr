@@ -41,7 +41,7 @@ func addSignalFlags(cmd *cobra.Command, f *tuneFlags, withDevice bool) {
 	if withDevice {
 		addRadioFlags(cmd, f, true)
 	}
-	cmd.Flags().StringVar(&f.gain, "gain", "", "receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting; ley help gain)")
+	cmd.Flags().StringVar(&f.gain, "gain", "", "receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)")
 	cmd.Flags().StringVar(&f.squelch, "squelch", "", "mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)")
 }
 
@@ -71,7 +71,7 @@ type modeDefault struct {
 func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOptions, error) {
 	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
 	if f.gain != "" {
-		if _, _, err := leyline.ParseGain(f.gain); err != nil {
+		if _, err := leyline.ParseGains(f.gain); err != nil {
 			return nil, usageError(fmt.Errorf("--gain %w", err))
 		}
 	}
@@ -363,10 +363,11 @@ func (s *session) banner(o *tuneOptions) string {
 		s.bannerSource(st),
 		leadWord(st, squelch),
 	}
-	// The problem the squelch measurement row showed, if any. This is the
-	// line a newcomer with no antenna or an overloaded front end most needs.
-	if s.failureNote != "" {
-		lines = append(lines, leadWord(st, s.failureNote))
+	// The problem the squelch measurement row showed, if any: the line a
+	// newcomer with no antenna most needs, said here and nowhere else in the
+	// session. Clipping is the live loop's, once the hold has seen it last.
+	if s.bandNote != "" {
+		lines = append(lines, leadWord(st, s.bandNote))
 	}
 	lines = append(lines,
 		st.Muted("Ctrl-C stops."),
@@ -380,7 +381,7 @@ func (s *session) banner(o *tuneOptions) string {
 // FilePlaybackDevice, no gain control" would be a wasted line.
 func (s *session) bannerSource(st ui.Style) string {
 	if s.sourceLine == "" {
-		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, gainString(s.capture)))
+		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, stageGainWords(s.capture.GetGains())))
 	}
 	// An unknown width is not a narrow one: piped, the line must arrive whole.
 	line := s.sourceLine
@@ -434,10 +435,8 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	if err != nil {
 		return err
 	}
-	// The capture's level, for the failure line: the banner's note was read
-	// against the first reading, and a radio that starts or stops clipping
-	// while the session runs is worth a line. One more subscription, scoped
-	// to the capture, because the level is the capture's and not the
+	// The capture's level, for the clipping line: one more subscription,
+	// scoped to the capture, because the level is the capture's and not the
 	// channel's.
 	levels := s.watchLevel(tctx, s.channel.GetCaptureId())
 	// ended handles a stream's end: Ctrl-C and a daemon error are the
@@ -517,15 +516,14 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			if !ok {
 				continue
 			}
-			// Only a change prints a line: the level arrives four times a
-			// second, and a radio that is still clipping was already reported.
-			// A note that clears is printed too, since the banner still shows it.
-			if note, changed := s.readLevel(b.CaptureLevel); changed {
-				clear()
-				if note == "" {
-					note = "The radio has stopped clipping."
+			// One line when the hold raises clipping, carrying the reading
+			// that raised it, and nothing when it clears: the transmission's
+			// own line already carries its peak (plans/app.md, M2-10).
+			if s.clip.fold(b.CaptureLevel, m.Time, leyline.ChannelCaptureRate(s.state, s.channel)) {
+				if note := clippingWords(b.CaptureLevel, s.capture.GetGains(), s.device.GetGainElements()); note != "" {
+					clear()
+					fmt.Fprintln(s.app.Stderr, leadWord(s.app.ErrStyle, note))
 				}
-				fmt.Fprintln(s.app.Stderr, leadWord(s.app.ErrStyle, note))
 			}
 		case ev, ok := <-s.events:
 			if !ok {

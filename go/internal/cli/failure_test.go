@@ -58,7 +58,8 @@ func TestFailureWords(t *testing.T) {
 		{"clipping with no row", nil, level(6000), nil, "The radio is clipping"},
 		{"a fraction just over the floor keeps its digits", row(-64, -30), level(66), nil, "66 of 600000 samples (0.01 %)"},
 		{"one sample at a rail is not clipping", row(-64, -30), level(1), nil, ""},
-		{"the floor itself is not clipping", row(-64, -30), level(60), nil, ""},
+		{"just under the floor is not clipping", row(-64, -30), level(59), nil, ""},
+		{"the floor itself is clipping, as in the app", row(-64, -30), level(60), nil, "The radio is clipping: 60 of 600000"},
 		{"a clean level leaves the floor rule alone", row(-64, -55), level(0), nil, "Nothing is above the noise"},
 		{"nothing above the floor", row(-64, -55), nil, nil, "Nothing is above the noise: no bin is 15 dB above the floor (-64 dBFS). Check the antenna; FM broadcast is the band most antennas hear."},
 		{"nothing above the floor at the lowest gain", row(-64, -55), nil, manual(0), "Nothing is above the noise: no bin is 15 dB above the floor (-64 dBFS), and the gain is at its lowest. Turn it up, or set it to auto."},
@@ -73,5 +74,63 @@ func TestFailureWords(t *testing.T) {
 		if c.want != "" && !strings.Contains(got, c.want) {
 			t.Errorf("%s: said %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// A HackRF's three stages as the daemon advertises them
+// (engine/Sources/EngineCore/Devices/HackRFDevice.swift): LNA and VGA in steps,
+// and the AMP a two-value switch that "the lowest gain" leaves out. The owner's
+// radio on 2026-09-24 was at LNA 8, VGA 20, AMP 0 and was told it was at its
+// lowest (plans/app.md, M2-10). The app's FailureStateTests hold the same cases.
+func TestFailureWordsOnAMultiStageRadio(t *testing.T) {
+	hackrf := []*leylinev1.GainElement{
+		{Name: "LNA", MinDb: 0, MaxDb: 40, StepDb: 8},
+		{Name: "VGA", MinDb: 0, MaxDb: 62, StepDb: 2},
+		{Name: "AMP", MinDb: 0, MaxDb: 11, ValidDb: []float64{0, 11}},
+	}
+	set := func(lna, vga, amp float64) []*leylinev1.GainState {
+		return []*leylinev1.GainState{{Element: "LNA", Db: lna}, {Element: "VGA", Db: vga}, {Element: "AMP", Db: amp}}
+	}
+	level := &leylinev1.CaptureLevel{ClippedSamples: 35108, TotalSamples: 655360}
+	quiet := make([]float64, 256)
+	for i := range quiet {
+		quiet[i] = -90
+	}
+	loud := append([]float64(nil), quiet...)
+	loud[40] = -2
+	cases := []struct {
+		name  string
+		bins  []float64
+		level *leylinev1.CaptureLevel
+		gains []*leylinev1.GainState
+		want  string
+	}{
+		{
+			"the owner's radio names both stages above their lowest", nil, level, set(8, 20, 0),
+			"The radio is clipping: 35108 of 655360 samples (5.4 %) hit the converter's rails. Lower the LNA or VGA gain.",
+		},
+		{"one stage above its lowest is named", nil, level, set(0, 20, 0), "hit the converter's rails. Lower the VGA gain."},
+		{"every stage at its lowest", nil, level, set(0, 0, 0), "at the lowest gain. Move the antenna away from the transmitter, or add attenuation."},
+		{"the AMP does not count", nil, level, set(0, 0, 11), "at the lowest gain. Move the antenna away"},
+		{"a quiet band above the lowest gain", quiet, nil, set(8, 20, 0), "Check the antenna"},
+		{"a quiet band at the lowest gain", quiet, nil, set(0, 0, 0), "and the gain is at its lowest. Turn it up, or set it to auto."},
+		{"full scale without a level names the stage", loud, nil, set(0, 20, 0), "Lower the VGA gain before the radio clips."},
+	}
+	for _, c := range cases {
+		if got := failureWords(c.bins, c.level, c.gains, hackrf); !strings.Contains(got, c.want) {
+			t.Errorf("%s: said %q, want %q", c.name, got, c.want)
+		}
+	}
+	if gainAtMinimum(set(8, 20, 0), hackrf) {
+		t.Error("LNA 8, VGA 20, AMP 0 is not the lowest gain")
+	}
+	if !gainAtMinimum(set(0, 0, 0), hackrf) {
+		t.Error("LNA 0, VGA 0, AMP 0 is the lowest gain")
+	}
+	if gainAtMinimum(nil, hackrf) {
+		t.Error("a capture that reports no gains is not at its lowest")
+	}
+	if gainAtMinimum([]*leylinev1.GainState{{Element: "LNA", Db: 0}, {Element: "VGA", Auto: true}}, hackrf) {
+		t.Error("a stage on auto is never at its lowest")
 	}
 }

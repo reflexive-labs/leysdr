@@ -87,6 +87,48 @@ func ParseGain(s string) (db float64, auto bool, err error) {
 	return v, false, nil
 }
 
+// GainSetting is one stage's gain as typed to --gain: Element is the stage's
+// name as the user spelled it, or "" for the radio's first stage.
+type GainSetting struct {
+	Element string
+	DB      float64
+	Auto    bool
+}
+
+// ParseGains parses --gain: a bare level or auto for the radio's first stage
+// ("30", "auto"), or stage=level pairs separated by commas for a radio with
+// several ("LNA=0,VGA=0"), applied in the order given. The stage names are
+// not checked here: the daemon matches them against the device, ignoring case,
+// and refuses one it does not have with the ones it does.
+func ParseGains(s string) ([]GainSetting, error) {
+	if !strings.Contains(s, "=") {
+		db, auto, err := ParseGain(s)
+		if err != nil {
+			return nil, err
+		}
+		return []GainSetting{{DB: db, Auto: auto}}, nil
+	}
+	var out []GainSetting
+	seen := map[string]bool{}
+	for _, pair := range strings.Split(s, ",") {
+		name, value, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("cannot read %q; name each stage in a list, e.g. LNA=0,VGA=0", strings.TrimSpace(pair))
+		}
+		if seen[strings.ToLower(name)] {
+			return nil, fmt.Errorf("names %s twice; give each stage once, e.g. LNA=0,VGA=0", name)
+		}
+		seen[strings.ToLower(name)] = true
+		db, auto, err := ParseGain(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		out = append(out, GainSetting{Element: name, DB: db, Auto: auto})
+	}
+	return out, nil
+}
+
 // CheckGain reports an error when db is outside the element's range, naming
 // the range (and "auto" when the element supports it). A nil element passes.
 func CheckGain(db float64, el *leylinev1.GainElement) error {

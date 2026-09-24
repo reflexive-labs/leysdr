@@ -4,6 +4,7 @@ package leyline
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -270,5 +271,39 @@ func TestSnapGain(t *testing.T) {
 	}
 	if got := SnapGain(nil, 6.2); got != 6.2 {
 		t.Errorf("SnapGain(nil) = %v", got)
+	}
+}
+
+// --gain takes a bare level for the first stage or stage=level pairs for several, and leaves the
+// names to the daemon (plans/app.md, M2-10).
+func TestParseGains(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []GainSetting
+		err  string
+	}{
+		{"30", []GainSetting{{DB: 30}}, ""},
+		{"auto", []GainSetting{{Auto: true}}, ""},
+		{"VGA=0", []GainSetting{{Element: "VGA", DB: 0}}, ""},
+		{"LNA=0,VGA=8dB", []GainSetting{{Element: "LNA", DB: 0}, {Element: "VGA", DB: 8}}, ""},
+		{" lna = 16 , TUNER=auto", []GainSetting{{Element: "lna", DB: 16}, {Element: "TUNER", Auto: true}}, ""},
+		{"LNA=0,20", nil, "name each stage"},
+		{"=0", nil, "name each stage"},
+		{"LNA=0,lna=8", nil, "names lna twice"},
+		{"VGA=-2", nil, "VGA: \"-2\" is negative"},
+		{"VGA=", nil, "VGA: empty"},
+		{"loud", nil, "cannot read"},
+	}
+	for _, c := range cases {
+		got, err := ParseGains(c.in)
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("ParseGains(%q) err = %v, want containing %q", c.in, err, c.err)
+			}
+			continue
+		}
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("ParseGains(%q) = %v, %v; want %v", c.in, got, err, c.want)
+		}
 	}
 }

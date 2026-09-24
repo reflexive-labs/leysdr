@@ -139,6 +139,17 @@ printed when the code stops, or on a channel that never had one. A DCS code sent
 same bit stream as another code sent normal (023 inverted is 047 normal), and the daemon names the
 normal reading, so a radio set to 023 inverted shows `DCS  047`.
 
+Two problems the radio's numbers show get a line of their own. When nothing on the band stands
+15 dB above the floor, the banner says so once, at tune (`Nothing is above the noise: …`), and
+never again in the session. When the radio clips (the daemon counts samples at the converter's
+rails), one line appears once the clipping has lasted a second, with the count that raised it
+and the thing to try: `The radio is clipping: 20494 of 655360 samples (3.1 %) hit the
+converter's rails. Lower the LNA or VGA gain.` Nothing more is printed while it goes on, and
+nothing when it stops; after two seconds clean, the next second of clipping prints again. On a
+radio with several gain stages the line names the ones above their lowest, and "at the lowest
+gain" means every stage you can set is at the bottom; the HackRF's AMP, an on/off switch, does
+not count.
+
 ```console
 $ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try noaa2..7
 $ ley tune 101.1 --mode fm          # FM broadcast; fm means WFM here
@@ -567,7 +578,10 @@ refused rather than silencing the channels already on it: `the radio is on 146.5
 or free it with: ley stop --all`. `--retune` (on `tune` and `spectrum`) moves the radio and the
 others fall silent; a capture with no active channels is retuned without asking, and `tune`
 says so. `--gain 30` (or `auto`) on `tune` and `play` sets the receiver gain once the radio is
-tuned, and the banner shows the value the radio applied.
+tuned, and the banner shows the value the radio applied. On a radio with several gain stages a
+bare value sets the first; `--gain LNA=0,VGA=0` sets each stage named, in that order, and the
+banner lists every stage (`Radio HackRF Pro, gain LNA 0.0 dB, VGA 0.0 dB, AMP 0.0 dB`). A stage
+the radio does not have is refused with the ones it has.
 
 `--channel`, `--capture` and `--device` all accept the same selectors: a full id, an id prefix,
 the row number from the printed list (`ley state`, `ley devices`) or a frequency
@@ -650,6 +664,15 @@ speakers while it records, so you can hear what is going into the file without a
 keeps; everything else is for you. Ctrl-C stops the job and leaves a complete recording, not a
 damaged one: the file is closed properly and the manifest says it was cancelled. `--detach`
 starts it and exits, printing the id `ley jobs cancel` takes.
+
+`--gain` sets the receiver gain for the take, as on `tune`: `--gain 20` sets the first stage, and
+`--gain LNA=0,VGA=0` each stage named, which is what a HackRF a metre from a keyed handheld needs.
+When a stage was set, the banner gains a line with every stage the take started at, read from
+the recording's manifest (`Radio     HackRF Pro, gain LNA 0.0 dB, VGA 0.0 dB, AMP 0.0 dB`), so a
+gain that did not apply shows before the file does. A stage the radio does not have fails the job
+before anything is written: `ley: the gain asked for could not be set: no gain element named IF;
+this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]`. Before 2026-09-24 the daemon dropped
+`--gain` on every real radio and recorded at whatever gain it was on.
 
 Recording a busy channel continuously fills a disk with silence, so `--gate squelch` records only
 while something is on the air, one file per exchange:

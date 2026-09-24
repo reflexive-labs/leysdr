@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -511,5 +512,77 @@ func TestChannelSaysWhetherItListensForATone(t *testing.T) {
 		if want := ch.Mode == "NFM"; ch.SubaudibleDetect != want {
 			t.Errorf("%s channel: subaudible_detect %v, want %v", ch.Mode, ch.SubaudibleDetect, want)
 		}
+	}
+}
+
+// tune --gain writes each stage named, in order, and the banner lists every stage on a radio
+// with several, where "gain 8.0 dB" once read as the whole of a HackRF's gain (plans/app.md,
+// M2-10). A stage the radio does not have is the daemon's refusal, with the stages it has.
+func TestTuneGainSetsEachStageNamed(t *testing.T) {
+	hackrf := fakedaemon.HackRFPro()
+	sock, _ := harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
+	out, errOut, err := run(t, t.Context(), sock, "tune", "462.5625", "--device", hackrf.DeviceId, "--no-audio", "--persistent", "--squelch", "off", "--gain", "lna=16,VGA=4")
+	if err != nil {
+		t.Fatalf("tune: %v\n%s\n%s", err, out, errOut)
+	}
+	st := mustRun(t, sock, "--json", "state")
+	for _, want := range []string{`"element":"LNA","db":16`, `"element":"VGA","db":4`} {
+		if !strings.Contains(strings.ReplaceAll(st, " ", ""), want) {
+			t.Errorf("the capture does not carry %s:\n%s", want, st)
+		}
+	}
+	mustRun(t, sock, "stop", "all")
+	_, errOut, err = run(t, t.Context(), sock, "tune", "462.5625", "--device", hackrf.DeviceId, "--no-audio", "--persistent", "--squelch", "off", "--gain", "IF=0")
+	if err == nil || !strings.Contains(err.Error(), "no gain element named IF; this radio's are LNA, VGA and AMP") {
+		t.Errorf("an unknown stage should be the daemon's refusal with the list, got %v\n%s", err, errOut)
+	}
+	if got := stageGainWords([]*leylinev1.GainState{{Element: "LNA", Db: 8}, {Element: "VGA", Db: 20}, {Element: "AMP", Db: 0}}); got != "gain LNA 8.0 dB, VGA 20.0 dB, AMP 0.0 dB" {
+		t.Errorf("a HackRF's banner gain reads %q", got)
+	}
+	if got := stageGainWords([]*leylinev1.GainState{{Element: "TUNER", Auto: true}}); got != "gain auto" {
+		t.Errorf("a dongle's banner gain reads %q", got)
+	}
+}
+
+// A handheld keyed beside the radio clips it for the whole transmission. The line is said once,
+// after the hold's second, and nothing is said while it holds; the banner carries no clipping
+// line of its own, and the quiet-band line is said at most once (plans/app.md, M2-10).
+func TestTuneSaysClippingOnce(t *testing.T) {
+	// Each reading counts a different number of samples at the rails, as the owner's did
+	// (1092, 20494, 35108 ...): a rule that printed on every change of words printed each one.
+	var readings atomic.Uint64
+	sock, _ := harness(t, fakedaemon.Options{
+		MeterInterval: 20 * time.Millisecond,
+		Clipping: func(string) (uint64, uint64, float64) {
+			return 35108 + 100*readings.Add(1), 600_000, 1
+		},
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	var out, errOut syncBuffer
+	app := &App{Stdout: &out, Stderr: &errOut, LookupEnv: func(string) (string, bool) { return "", false }}
+	go func() { done <- Execute(ctx, app, []string{"--socket", sock, "tune", "146.52", "--no-audio"}) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(errOut.String(), "The radio is clipping") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Two seconds more of the same readings: a hold that let a reading through would print again.
+	time.Sleep(2 * time.Second)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("tune: %v\n%s", err, errOut.String())
+	}
+	got := errOut.String()
+	if n := strings.Count(got, "The radio is clipping"); n != 1 {
+		t.Errorf("the clipping line was said %d times, want once:\n%s", n, got)
+	}
+	if !strings.Contains(got, " of 600000 samples (") || !strings.Contains(got, "%) hit the converter's rails with the gain on auto. Take the gain by hand and lower it.") {
+		t.Errorf("the line does not carry the reading that raised it:\n%s", got)
+	}
+	if strings.Contains(got, "stopped clipping") {
+		t.Errorf("nothing is said when clipping clears:\n%s", got)
+	}
+	if n := strings.Count(got, "Nothing is above the noise"); n > 1 {
+		t.Errorf("the quiet-band line was said %d times, want at most once:\n%s", n, got)
 	}
 }

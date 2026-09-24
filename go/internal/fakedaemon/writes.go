@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -258,10 +259,10 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 }
 
 func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g *leylinev1.GainWrite, target string) *leyline.Error {
-	unknown := errorf(leyline.CodeGainElementUnknown, target, "no gain element named "+g.GetElement())
 	if g == nil || dev == nil {
-		return unknown
+		return errorf(leyline.CodeGainElementUnknown, target, "no gain element named "+g.GetElement())
 	}
+	unknown := unknownGainElement(g.GetElement(), dev, target)
 	// Checked before the element is looked up, because every comparison in the snap is false for a
 	// NaN and it would come back as the first entry in the table.
 	if db, ok := g.Value.(*leylinev1.GainWrite_Db); ok && (math.IsNaN(db.Db) || math.IsInf(db.Db, 0)) {
@@ -269,12 +270,18 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 	}
 	// An empty element is the first the device lists (common.proto, GainWrite), as the daemon
 	// reads it; a radio with no gain stage has nothing for it to name.
+	// A name matches ignoring case, as the daemon's resolvedGainElement does.
 	element := g.Element
 	if element == "" {
 		if len(dev.GainElements) == 0 {
 			return errorf(leyline.CodeGainElementUnknown, target, "this radio reports no gain elements")
 		}
 		element = dev.GainElements[0].Name
+	}
+	for _, el := range dev.GainElements {
+		if strings.EqualFold(el.Name, element) {
+			element = el.Name
+		}
 	}
 	for _, el := range dev.GainElements {
 		if el.Name != element {
@@ -316,6 +323,23 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 		}
 	}
 	return unknown
+}
+
+// unknownGainElement is the daemon's refusal for a stage the device does not list, with the ones
+// it does (engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift, unknownGainElement).
+func unknownGainElement(name string, dev *leylinev1.DeviceDescriptor, target string) *leyline.Error {
+	names := make([]string, len(dev.GetGainElements()))
+	for i, el := range dev.GetGainElements() {
+		names[i] = el.GetName()
+	}
+	switch len(names) {
+	case 0:
+		return errorf(leyline.CodeGainElementUnknown, target, "this radio reports no gain elements")
+	case 1:
+		return errorf(leyline.CodeGainElementUnknown, target, "no gain element named "+name+"; this radio's are "+names[0])
+	}
+	list := strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	return errorf(leyline.CodeGainElementUnknown, target, "no gain element named "+name+"; this radio's are "+list)
 }
 
 // midGain is the level `auto: false` falls back to for an element nothing has set by hand: the

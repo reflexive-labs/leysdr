@@ -6,12 +6,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/fakedaemon"
 	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/leyline"
@@ -426,4 +429,56 @@ func runStyled(t *testing.T, sock string, color bool, args ...string) (string, s
 		t.Fatalf("ley %v: %v\n%s\n%s", args, err, out, errOut)
 	}
 	return out, errOut
+}
+
+// --gain names stages on a radio with several: each pair is its own write, in the order typed,
+// the names go to the daemon as typed, and the banner lists every stage the take started at
+// (plans/app.md, M2-10). A stage the radio does not have fails the job with the ones it does.
+func TestRecordGainSetsEachStageNamed(t *testing.T) {
+	hackrf := fakedaemon.HackRFPro()
+	dir := t.TempDir()
+	sock, c := harness(t, fakedaemon.Options{RecordingsDir: dir, ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
+	out, errOut, err := run(t, t.Context(), sock, "record", "462.5625", "--device", hackrf.DeviceId, "--for", "300ms", "--gain", "LNA=0,vga=0")
+	if err != nil {
+		t.Fatalf("ley record: %v\n%s\n%s", err, out, errOut)
+	}
+	if !strings.Contains(errOut, "Radio     HackRF Pro, gain LNA 0.0 dB, VGA 0.0 dB, AMP ") {
+		t.Errorf("the banner does not list the stages the take started at:\n%s", errOut)
+	}
+	jobID, _, _ := leyline.ParseRecordingURI(strings.TrimSpace(out))
+	job, err := c.Jobs.GetJob(t.Context(), &leylinev1.JobRef{JobId: jobID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, g := range job.GetRecord().GetGains() {
+		got = append(got, fmt.Sprintf("%s=%g", g.GetElement(), g.GetDb()))
+	}
+	if strings.Join(got, ",") != "LNA=0,vga=0" || job.GetRecord().GetGain() != nil {
+		t.Errorf("the job's writes are %v (gain %v), want LNA=0,vga=0 in gains alone", got, job.GetRecord().GetGain())
+	}
+
+	// A bare level is one write with no element: the daemon's first stage.
+	if cfg := (&recordOptions{gain: "30"}).config(); len(cfg.GetGains()) != 1 || cfg.GetGains()[0].GetElement() != "" || cfg.GetGains()[0].GetDb() != 30 {
+		t.Errorf("--gain 30 is %v, want one write of 30 dB with no element", cfg.GetGains())
+	}
+	if cfg := (&recordOptions{}).config(); cfg.GetGains() != nil || cfg.GetGain() != nil {
+		t.Errorf("no --gain leaves the radio alone, got %v %v", cfg.GetGains(), cfg.GetGain())
+	}
+
+	_, errOut, err = run(t, t.Context(), sock, "record", "462.5625", "--device", hackrf.DeviceId, "--for", "300ms", "--gain", "IF=0")
+	var ee *ExitError
+	if !errors.As(err, &ee) || ee.Code != 1 {
+		t.Fatalf("a stage the radio does not have should fail the job (exit 1), got %v\n%s", err, errOut)
+	}
+	if want := "the gain asked for could not be set: no gain element named IF; this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]"; ee.Message != want {
+		t.Errorf("the refusal is %q, want %q", ee.Message, want)
+	}
+	if strings.Contains(errOut, "Recording") {
+		t.Errorf("a job that failed before writing should print no banner:\n%s", errOut)
+	}
+
+	if _, _, err := run(t, t.Context(), sock, "record", "462.5625", "--gain", "LNA=0,20"); err == nil || !strings.Contains(err.Error(), "name each stage") {
+		t.Errorf("a bare value in a list is a usage error, got %v", err)
+	}
 }

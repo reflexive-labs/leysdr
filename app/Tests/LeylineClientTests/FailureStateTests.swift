@@ -76,6 +76,68 @@ final class FailureStateTests: XCTestCase {
         XCTAssertFalse(clipping(300, atMinimum: true).namesGain)
     }
 
+    /// A HackRF's three stages as the daemon advertises them
+    /// (`engine/Sources/EngineCore/Devices/HackRFDevice.swift`): the AMP is a two-value switch
+    /// that "the lowest gain" leaves out. The owner's radio on 2026-09-24 was at LNA 8, VGA 20,
+    /// AMP 0 and was told it was at its lowest (plans/app.md, M2-10); `ley`'s
+    /// `TestFailureWordsOnAMultiStageRadio` holds the same cases.
+    private let hackrf: [Leyline_V1_GainElement] = [
+        .with {
+            $0.name = "LNA"
+            $0.maxDb = 40
+            $0.stepDb = 8
+        },
+        .with {
+            $0.name = "VGA"
+            $0.maxDb = 62
+            $0.stepDb = 2
+        },
+        .with {
+            $0.name = "AMP"
+            $0.maxDb = 11
+            $0.validDb = [0, 11]
+        },
+    ]
+    private func hackrfGains(_ lna: Double, _ vga: Double, _ amp: Double) -> [Leyline_V1_GainState]
+    {
+        zip(["LNA", "VGA", "AMP"], [lna, vga, amp]).map { name, db in
+            .with {
+                $0.element = name
+                $0.db = db
+            }
+        }
+    }
+
+    func testTheLowestGainCountsEveryStageButASwitch() {
+        XCTAssertFalse(FailureState.gainAtMinimum(gains: hackrfGains(8, 20, 0), elements: hackrf))
+        XCTAssertTrue(FailureState.gainAtMinimum(gains: hackrfGains(0, 0, 0), elements: hackrf))
+        XCTAssertTrue(
+            FailureState.gainAtMinimum(gains: hackrfGains(0, 0, 11), elements: hackrf),
+            "the AMP does not count")
+        XCTAssertTrue(
+            FailureState.gainAtMinimum(gains: [gain(0)], elements: [tuner]), "an RTL at 0")
+        XCTAssertFalse(FailureState.gainAtMinimum(gains: [], elements: hackrf), "no gains reported")
+    }
+
+    func testAMultiStageRadioIsToldWhichStagesToLower() {
+        let level = level(clipped: 35108, total: 655_360)
+        let owners = FailureState.name(level: level, gains: hackrfGains(8, 20, 0), elements: hackrf)
+        XCTAssertEqual(
+            owners?.detail,
+            "35108 of 655360 samples (5.4 %) hit the converter's rails. Lower the LNA or VGA gain.")
+        XCTAssertEqual(owners?.namesGain, true)
+        let vga = FailureState.name(level: level, gains: hackrfGains(0, 20, 0), elements: hackrf)
+        XCTAssertEqual(
+            vga?.detail,
+            "35108 of 655360 samples (5.4 %) hit the converter's rails. Lower the VGA gain.")
+        let lowest = FailureState.name(level: level, gains: hackrfGains(0, 0, 0), elements: hackrf)
+        XCTAssertEqual(
+            lowest?.detail,
+            "35108 of 655360 samples (5.4 %) hit the converter's rails at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
+        )
+        XCTAssertEqual(lowest?.namesGain, false)
+    }
+
     /// Quarter-second readings at 600 kS/s, as the daemon sends them: `clipped` samples of
     /// 150 000 in each, the time the interval's end.
     private struct Readings {

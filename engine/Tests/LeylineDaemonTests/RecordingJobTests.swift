@@ -240,6 +240,61 @@ final class RecordingJobTests: XCTestCase {
         }
     }
 
+    // MARK: The gain
+
+    /// `ley record --gain 20` sends a level with no element, which is the device's first stage
+    /// (`common.proto`, `GainWrite`). Until 2026-09-24 the record path passed the empty element to
+    /// the radio and dropped its refusal, so a real radio kept whatever gain it had
+    /// (plans/app.md, M2-10); the synthetic device refuses any element but TUNER, as a real
+    /// driver does.
+    func testTheGainAskedForReachesTheRadio() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            _ = try await c.daemon.registry.attachVirtualDevice(SyntheticBandDevice(carriers: []))
+            try await Task.sleep(nanoseconds: 200_000_000)
+            var config = Leyline_V1_RecordConfig()
+            config.frequencyHz = 146_520_000
+            config.mode = .rawIq
+            config.durationMs = 300
+            config.gain = .with { $0.db = 20 }
+            let one = try await self.waitForEnd(c, try await self.start(c, config).jobID)
+            XCTAssertEqual(one.state, .completed, one.statusDetail)
+            var manifest = try self.manifest(dir, one.jobID)
+            XCTAssertEqual(manifest.gains.map(\.element), ["TUNER"])
+            XCTAssertEqual(manifest.gains.first?.valueDb ?? -1, 20, accuracy: 0.5, "the take ran at the gain asked for")
+
+            // `gains` wins over `gain`, its writes land in order, and a name matches ignoring case.
+            config.gains = [.with { $0.db = 10 }, .with { $0.element = "tuner"; $0.db = 30 }]
+            let two = try await self.waitForEnd(c, try await self.start(c, config).jobID)
+            XCTAssertEqual(two.state, .completed, two.statusDetail)
+            manifest = try self.manifest(dir, two.jobID)
+            XCTAssertEqual(manifest.gains.first?.valueDb ?? -1, 30, accuracy: 0.5, "the last write is the one in force")
+        }
+    }
+
+    /// A stage the radio does not have fails the job before a sample is written, with the
+    /// device's code and the stages it does have, because a take at some other gain is not the
+    /// one asked for.
+    func testAGainTheRadioRefusesFailsTheJob() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            _ = try await c.daemon.registry.attachVirtualDevice(SyntheticBandDevice(carriers: []))
+            try await Task.sleep(nanoseconds: 200_000_000)
+            var config = Leyline_V1_RecordConfig()
+            config.frequencyHz = 146_520_000
+            config.mode = .rawIq
+            config.durationMs = 300
+            config.gains = [.with { $0.db = 20 }, .with { $0.element = "IF"; $0.db = 20 }]
+            let failed = try await self.waitForEnd(c, try await self.start(c, config).jobID)
+            XCTAssertEqual(failed.state, .failed, failed.statusDetail)
+            XCTAssertEqual(failed.error.code, EngineError.Code.gainElementUnknown)
+            XCTAssertEqual(failed.statusDetail,
+                           "the gain asked for could not be set: no gain element named IF; this radio's are TUNER")
+        }
+    }
+
     func testTheRadioGoesBackWhenTheRecordingEnds() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }

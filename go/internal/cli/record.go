@@ -137,7 +137,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	cmd.Flags().StringVar(&bw, "bandwidth", "", "another spelling of --bw")
 	_ = cmd.Flags().MarkHidden("bandwidth")
 	cmd.Flags().StringVar(&squelch, "squelch", "", "mute below this level: auto (default with --gate), off, or a level like -40 (dBFS)")
-	cmd.Flags().StringVar(&o.gain, "gain", "", "receiver gain once the radio is tuned: auto, or dB such as 30 (default: leave the radio's setting)")
+	cmd.Flags().StringVar(&o.gain, "gain", "", "receiver gain once the radio is tuned: auto, dB such as 30, or stage=dB pairs such as LNA=0,VGA=0 on a radio with several (default: leave the radio's setting; ley help gain)")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "record even when somebody is using the radio; it is theirs again afterwards")
 	return cmd
@@ -298,7 +298,7 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 		}
 	}
 	if o.gain != "" {
-		if _, _, gerr := leyline.ParseGain(o.gain); gerr != nil {
+		if _, gerr := leyline.ParseGains(o.gain); gerr != nil {
 			return usageError(fmt.Errorf("--gain %w", gerr))
 		}
 	}
@@ -341,9 +341,7 @@ func (o *recordOptions) config() *leylinev1.RecordConfig {
 	if o.gated {
 		cfg.Gate = leylinev1.RecordGate_SQUELCH
 	}
-	if o.gain != "" {
-		cfg.Gain = scanGain(o.gain)
-	}
+	cfg.Gains = recordGains(o.gain)
 	return cfg
 }
 
@@ -377,7 +375,12 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 		// The banner states what the daemon decided, not what was asked for, so a recording of
 		// the wrong thing is caught in the first line rather than in the file. That means waiting
 		// for the manifest, which appears as soon as the job has its radio.
-		manifest, dir := awaitManifest(ctx, s, job.GetJobId())
+		manifest, dir, ended := awaitManifest(ctx, s, job.GetJobId())
+		if ended.GetState() == leylinev1.JobState_FAILED {
+			// It failed before it wrote anything (a gain the radio refused, a radio gone): a
+			// banner would describe a recording that does not exist.
+			return &ExitError{Code: 1, Message: recordFailureDetail(ended)}
+		}
 		s.say("%s\n", recordBanner(s, o, manifest, dir, playing))
 	}
 	if o.detach {
@@ -473,22 +476,27 @@ func (s *session) recordChannel(ctx context.Context, job *leylinev1.Job, o recor
 }
 
 // awaitManifest waits briefly for the recording the daemon is writing, so the banner can state
-// the rate, format and radio it really chose. A job still looking for a radio has no manifest
-// yet; the banner falls back to what was asked for rather than making the reader wait.
-func awaitManifest(ctx context.Context, s *session, jobID string) (*leyline.RecordingManifest, string) {
+// the rate, format, radio and gain it really chose. A job still looking for a radio has no
+// manifest yet; the banner falls back to what was asked for rather than making the reader wait.
+// A job that ended before writing one is returned as well, so a gain the radio refused is
+// reported at once rather than after the wait.
+func awaitManifest(ctx context.Context, s *session, jobID string) (*leyline.RecordingManifest, string, *leylinev1.Job) {
 	deadline := time.Now().Add(recordManifestWait)
 	for {
 		if dir, err := s.client.ResolveLocalPath(ctx, leyline.RecordingURI(jobID)); err == nil {
 			if m, merr := leyline.ReadRecordingManifest(dir); merr == nil {
-				return m, dir
+				return m, dir, nil
 			}
 		}
+		if j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: jobID}); err == nil && !isLiveJob(j) {
+			return nil, "", j
+		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
-			return nil, ""
+			return nil, "", nil
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ""
+			return nil, "", nil
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
@@ -615,6 +623,9 @@ func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir
 		}
 		lines = append(lines, leadLabel(st, "Gate     ", gate))
 	}
+	if radio := recordRadio(m); radio != "" {
+		lines = append(lines, leadLabel(st, "Radio    ", radio))
+	}
 	lines = append(lines, leadLabel(st, "Until    ", recordUntil(o)))
 	if playing {
 		lines = append(lines, leadLabel(st, "Audio    ", "playing through the daemon's speakers while it records"))
@@ -626,6 +637,43 @@ func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir
 		lines = append(lines, st.Muted("Ctrl-C stops; the recording stays."))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// recordGains is --gain as the job's writes, in the order typed: one with no element for a bare
+// level (the daemon's first stage, common.proto GainWrite), one per stage for pairs. The stage
+// names go as typed; the daemon matches them ignoring case and fails the job on one the radio
+// does not have. nil leaves the radio's gain alone.
+func recordGains(flag string) []*leylinev1.GainWrite {
+	settings, err := leyline.ParseGains(flag)
+	if flag == "" || err != nil {
+		return nil
+	}
+	writes := make([]*leylinev1.GainWrite, len(settings))
+	for i, g := range settings {
+		writes[i] = &leylinev1.GainWrite{Element: g.Element}
+		if g.Auto {
+			writes[i].Value = &leylinev1.GainWrite_Auto{Auto: true}
+		} else {
+			writes[i].Value = &leylinev1.GainWrite_Db{Db: g.DB}
+		}
+	}
+	return writes
+}
+
+// recordRadio is the banner's radio line: the model and the gain the take started at, from the
+// manifest, so a gain the daemon did not apply shows here rather than in the file. Every stage
+// is named on a radio with several (stageGainWords). A stage on auto has no level in the
+// manifest and is left out, and the line is "" without a manifest, a device or a stage set by
+// hand.
+func recordRadio(m *leyline.RecordingManifest) string {
+	if m == nil || m.Device == nil || m.Device.Model == "" || len(m.Gains) == 0 {
+		return ""
+	}
+	gains := make([]*leylinev1.GainState, len(m.Gains))
+	for i, g := range m.Gains {
+		gains[i] = &leylinev1.GainState{Element: g.Element, Db: g.ValueDB}
+	}
+	return m.Device.Model + ", " + stageGainWords(gains)
 }
 
 // recordWhat is the banner's first value: where the recording is listening, and what that is.

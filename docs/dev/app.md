@@ -117,10 +117,14 @@ mirror keeps each capture's newest anchor on the capture, and the daemon-backed 
 rather than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from
 the daemon's `CaptureLevel` (samples at the converter's rails, one in ten thousand raises it, half
 that clears it; `CaptureLevelFeed` subscribes it per capture), with the gain as the suggested fix
-(on auto, take it by hand; at the lowest manual gain, move the antenna). A measured fact
+(on auto, take it by hand; above the lowest, lower it, naming the stages above their lowest on a
+radio with several, "Lower the LNA or VGA gain."; at the lowest, move the antenna). "The lowest"
+means every continuous or table stage set by hand to its lowest; a two-value stage, the HackRF's
+AMP, does not count (`../plans/app.md`, M2-10). A measured fact
 with its number and one action; not a detector (invariant 12). `ley tune` reports the same state
-from the same count (`go/internal/cli/failure.go`), and also warns once, at tune, when nothing
-on the band is 15 dB above the floor. The window showed that warning too until 2026-09-21. It
+from the same count and words (`go/internal/cli/failure.go`), held by the same rule
+(`cliphold.go`) and said once when raised, and also warns once, in its banner at tune, when
+nothing on the band is 15 dB above the floor. The window showed that warning too until 2026-09-21. It
 was removed because repeating it every few seconds on a quiet band distracted more than it helped.
 The daemon
 not running, no radio and an unplugged radio are the mirror's states and live in

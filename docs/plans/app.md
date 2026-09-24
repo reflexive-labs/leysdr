@@ -568,7 +568,7 @@ until a run on the Mac are the label positions against the chip and the end labe
 visibility in `borderStrong` under the traces, the half-drawn top grid line at y = 0, and the
 badge's width (about 310 pt for the full clause) and clamp near the right edge.
 
-### M2-10 `[ ]` Clipping said once, in both clients
+### M2-10 `[x]` Clipping said once, in both clients
 
 Seen 2026-09-24 in `ley tune 462.5625` with a keyed handheld a metre from the HackRF: the
 clipping line printed on every quarter-second reading, seven times with seven counts across one
@@ -591,6 +591,45 @@ clipping alerts more gracefully."
   the VGA) and at 0 / 0 / off (at the lowest).
 - **`ley record --gain 0` on the HackRF left LNA at 8 dB** (the take's sidecar). Find out whether
   the flag reaches the job's capture and fix it if it is a plumbing gap.
+
+Landed 2026-09-24. `ley tune`: `clipHold` (`go/internal/cli/cliphold.go`) is `FailureHold`'s rule
+in Go, timed on the readings' `SampleTime`; the live loop prints one line when it raises,
+carrying the reading that raised it, and nothing when it clears. The banner's failure line is now
+`bandWords` alone, the quiet-band or full-scale reading of the first row, so it is said once at
+tune and never re-raised; the persistent tune and the MCP adapter's tune tool, which have no live
+phase, still print the one-shot `failureWords`. `clipping` counts a reading at the floor itself,
+as the app always did (`>=`), where `ley` had used `>`. "At the lowest gain" is now every
+continuous or table stage by hand at its lowest, a two-value stage (`valid_db` of two entries,
+`step_db` 0: the HackRF's AMP) left out, in `gainAtMinimum` and in the façade's
+`FailureState.gainAtMinimum`; with some stage above its lowest the advice names the stages above
+it in the device's order ("Lower the VGA gain.", "Lower the LNA or VGA gain." for the owner's
+LNA 8 / VGA 20), and a radio with one stage keeps "Lower the gain." The case carries the names
+(`lower:`), `namesGain` follows, and both clients' tests hold the HackRF at 8/20/0 and 0/0/0 and
+an RTL at 0 (`TestFailureWordsOnAMultiStageRadio`, `FailureStateTests`). `--json` is untouched:
+it never carried these lines. `ley record` has no failure line; `ley levels`' OVER reads
+`clipping` and its two-second hold is its own.
+
+The gain finding: the record job's `applyGain` (`JobStore+Record.swift`) passed the CLI's empty
+element straight to the device, and `try?` dropped the refusal, so `ley record --gain` has never
+reached a real radio; the synthetic test device refuses an element that is not its own, which is
+how `RecordingJobTests` now shows it. An empty element now resolves to the first stage through
+`resolvedGainElement`, which the gain write and the sweep's pin share and which matches a name
+ignoring case, and a refusal fails the job with the device's code and "the gain asked for could
+not be set: …". Asked by the owner in the same session ("could you do --gain 0 --element VGA
+--gain 0 --element LNA?"), `--gain` on `tune`, `record`, `play`, `listen`, `levels`, `scope` and
+`waveform` also takes stage=dB pairs, `--gain LNA=0,VGA=0`, applied in the order given:
+`RecordConfig.gains = 16` carries them to a job (additive; `gains` wins over `gain`), `tune`
+writes them one `ParamWrite` at a time, and a stage the radio does not have is the daemon's
+refusal with the stages it has ("no gain element named IF; this radio's are LNA, VGA and AMP").
+Both banners list every stage on a radio with several (`Radio HackRF Pro, gain LNA 0.0 dB, VGA
+0.0 dB, AMP 0.0 dB`); the record banner's `Radio` line is new and appears when a stage was set
+by hand. `ley set gain N --element X` and `ley scan --gain` are unchanged, and the app sends no
+`RecordConfig` yet, so the contract addition's mirror is `ley record` itself. The fake applies
+the writes, fails the job the same way and gained a HackRF descriptor (`fakedaemon.HackRFPro`).
+On the same afternoon `ley tune` read the owner's handheld on DCS 023, 754 and 664 correctly on
+the first key-up of each; the 664 seen in that session's transcript was the radio's setting, not a misread.
+Not verified here: the whole thing against the HackRF itself, and `ley recordings show`, which
+still names only the first stage.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 

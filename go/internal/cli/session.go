@@ -42,7 +42,8 @@ type tuneOptions struct {
 	volume      float64
 	// retune allows moving a shared capture even when other channels ride on it.
 	retune bool
-	// gain, when non-empty, is applied to the capture once it exists ("auto" or dB).
+	// gain, when non-empty, is applied to the capture once it exists: "auto",
+	// dB, or stage=dB pairs (leyline.ParseGains).
 	gain string
 }
 
@@ -78,20 +79,19 @@ type session struct {
 	seq uint64
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
-	// failureNote is the problem the capture's level and the squelch
+	// failureNote is the problem the capture's first level and the squelch
 	// measurement row show (failureWords), or "": the radio clipping, or
-	// nothing above the floor. Printed beside squelchNote, because it was
-	// measured with it.
+	// nothing above the floor. A persistent tune and the MCP adapter's tune
+	// tool print it beside squelchNote, because it was measured with it; they
+	// have no live phase to hold a reading in.
 	failureNote string
-	// failureRow is the row failureNote was read from, kept so the note can be
-	// re-evaluated against each CaptureLevel that arrives while the session
-	// runs: the row shows what is above the floor, the level shows whether the
-	// radio is clipping, and only the level keeps changing.
-	failureRow []float64
-	// level is the capture's newest CaptureLevel, nil until one arrives and for
-	// ever against an older daemon, when the note falls back to the row's own
-	// full-scale rule.
-	level *leylinev1.CaptureLevel
+	// bandNote is what the same row shows (bandWords), or "": the one line a
+	// live tune's banner carries about the band, said once at tune and never
+	// again in the session (plans/app.md, M2-10). Clipping is not in it: a
+	// live tune leaves that to clip, which says it once it has lasted.
+	bandNote string
+	// clip is the hold on the capture's CaptureLevel readings in a live tune.
+	clip clipHold
 	// proseToStderr forces say() to stderr even without --json, for verbs
 	// whose stdout carries a stream a person never reads (listen).
 	proseToStderr bool
@@ -659,35 +659,58 @@ func themOrIt(n int) string {
 	return "them"
 }
 
-// applyGain writes --gain to the capture's first gain element and waits for
-// the confirming capture event so the banner shows the value the daemon
-// settled on (the daemon snaps to the element's table, as set.go mirrors).
+// applyGain writes --gain to the capture, one stage at a time in the order
+// given (the first stage for a bare level), and waits for each confirming
+// capture event so the banner shows the values the daemon settled on (the
+// daemon snaps to the element's table, as set.go mirrors).
 func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 	if o.gain == "" {
 		return nil
 	}
-	db, auto, err := leyline.ParseGain(o.gain)
+	settings, err := leyline.ParseGains(o.gain)
 	if err != nil {
 		return fmt.Errorf("--gain %w", err)
 	}
 	if len(s.device.GainElements) == 0 {
 		return fmt.Errorf("%s reports no gain stages, so --gain has nothing to set; leave it off", deviceName(s.device))
 	}
+	for _, g := range settings {
+		if err := s.writeGain(ctx, g); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeGain writes one stage's gain and waits for the daemon to confirm or
+// refuse it. A named stage is matched against the device ignoring case; one
+// the device does not list is sent as typed, so the refusal is the daemon's,
+// with the stages the radio has.
+func (s *session) writeGain(ctx context.Context, g leyline.GainSetting) error {
 	el := s.device.GainElements[0]
-	tol := 1.0
-	if !auto {
+	name := el.GetName()
+	if g.Element != "" {
+		el, name = nil, g.Element
+		for _, e := range s.device.GainElements {
+			if strings.EqualFold(e.GetName(), g.Element) {
+				el, name = e, e.GetName()
+			}
+		}
+	}
+	db, auto, tol := g.DB, g.Auto, 1.0
+	if el != nil && !auto {
 		if err := leyline.CheckGain(db, el); err != nil {
 			return fmt.Errorf("--gain %w", err)
 		}
 		db, tol = leyline.SnapGain(el, db), leyline.GainTolerance(el)
 	}
-	g := &leylinev1.GainWrite{Element: el.Name}
+	gw := &leylinev1.GainWrite{Element: name}
 	if auto {
-		g.Value = &leylinev1.GainWrite_Auto{Auto: true}
+		gw.Value = &leylinev1.GainWrite_Auto{Auto: true}
 	} else {
-		g.Value = &leylinev1.GainWrite_Db{Db: db}
+		gw.Value = &leylinev1.GainWrite_Db{Db: db}
 	}
-	w := &leylinev1.ParamWrite{Tag: 3, TargetId: s.capture.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: g}}
+	w := &leylinev1.ParamWrite{Tag: 3, TargetId: s.capture.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: gw}}
 	if _, err := s.client.WriteParams(ctx, w); err != nil {
 		return fmt.Errorf("--gain was not applied: %w", err)
 	}
@@ -698,7 +721,7 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 				return false
 			}
 			for _, gs := range b.Capture.Gains {
-				if gs.Element == el.Name && (auto && gs.Auto || !auto && !gs.Auto && math.Abs(gs.Db-db) <= tol) {
+				if gs.Element == name && (auto && gs.Auto || !auto && !gs.Auto && math.Abs(gs.Db-db) <= tol) {
 					return true
 				}
 			}
@@ -833,21 +856,6 @@ func awaitLevel(ctx context.Context, msgs <-chan *leylinev1.TelemetryMsg, wait t
 	}
 }
 
-// readLevel folds a CaptureLevel into the session and re-reads the failure
-// note against it. It returns the new note and whether it changed: the row
-// is the one the squelch was measured from, the gains are the mirror's, so a
-// radio that starts or stops clipping, or a gain someone moved, changes the
-// words.
-func (s *session) readLevel(level *leylinev1.CaptureLevel) (string, bool) {
-	s.level = level
-	note := failureWords(s.failureRow, level, s.capture.GetGains(), s.device.GetGainElements())
-	if note == s.failureNote {
-		return note, false
-	}
-	s.failureNote = note
-	return note, true
-}
-
 // measureSquelch derives a squelch threshold from one FFT row of the capture:
 // the row's median bin is the noise floor per bin (a median is presentation,
 // the spectrum itself is the daemon's), scaled to the channel bandwidth with
@@ -886,9 +894,9 @@ func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw
 	// subscription would be another wait for the same numbers. The level
 	// answers whether the radio is clipping, and a daemon that sends none
 	// leaves the row's own full-scale rule to say so.
-	s.failureRow = vals
-	s.level = awaitLevel(sctx, levels, levelProbeTimeout)
-	s.failureNote = failureWords(vals, s.level, cap.GetGains(), s.device.GetGainElements())
+	level := awaitLevel(sctx, levels, levelProbeTimeout)
+	s.failureNote = failureWords(vals, level, cap.GetGains(), s.device.GetGainElements())
+	s.bandNote = bandWords(vals, level != nil, cap.GetGains(), s.device.GetGainElements())
 	median := medianDb(vals)
 	binWidth := float64(cap.SampleRate) / float64(len(vals))
 	floor = median + 10*math.Log10(float64(bw)/binWidth)
@@ -975,6 +983,26 @@ func meterGate(m *leylinev1.Meter, air onAir) string {
 	default:
 		return "audio"
 	}
+}
+
+// stageGainWords renders a capture's gain for a banner: "gain 29.7 dB" or
+// "gain auto" on a radio with one stage, and every stage by name on a radio
+// with several ("gain LNA 0.0 dB, VGA 20.0 dB, AMP 0.0 dB"), because "gain
+// 8.0 dB" on a HackRF read as the radio's whole gain when it was the LNA alone
+// (plans/app.md, M2-10).
+func stageGainWords(gains []*leylinev1.GainState) string {
+	if len(gains) < 2 {
+		return gainString(&leylinev1.Capture{Gains: gains})
+	}
+	stages := make([]string, len(gains))
+	for i, g := range gains {
+		if g.GetAuto() {
+			stages[i] = g.GetElement() + " auto"
+		} else {
+			stages[i] = fmt.Sprintf("%s %.1f dB", g.GetElement(), g.GetDb())
+		}
+	}
+	return "gain " + strings.Join(stages, ", ")
 }
 
 // gainString renders a capture's first gain element as "gain auto" / "gain 29.7 dB".

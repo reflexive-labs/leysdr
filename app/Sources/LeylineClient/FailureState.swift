@@ -17,7 +17,10 @@ public enum FailureState: Sendable, Equatable {
     /// radio is clipping, measured rather than read off a bin (plans/app.md, M2-5). `gainAuto`
     /// and `gainAtMinimum` pick the thing to try: on auto, switch to manual gain and lower it;
     /// at the lowest manual gain the radio cannot be turned down, so the antenna has to change.
-    case clipping(clipped: UInt64, total: UInt64, gainAuto: Bool, gainAtMinimum: Bool)
+    /// `lower` is the stages to turn down on a radio with several (`stagesToLower`), empty on a
+    /// radio with one.
+    case clipping(
+        clipped: UInt64, total: UInt64, gainAuto: Bool, gainAtMinimum: Bool, lower: [String] = [])
 
     /// The clipped fraction of an interval that triggers the state: one sample in ten thousand,
     /// `ley tune`'s floor too (`go/internal/cli/failure.go`, `clippingFloor`). Not zero, because
@@ -42,7 +45,8 @@ public enum FailureState: Sendable, Equatable {
         return .clipping(
             clipped: level.clippedSamples, total: level.totalSamples,
             gainAuto: gainAuto(gains: gains),
-            gainAtMinimum: gainAtMinimum(gains: gains, elements: elements))
+            gainAtMinimum: gainAtMinimum(gains: gains, elements: elements),
+            lower: stagesToLower(gains: gains, elements: elements))
     }
 
     /// Whether any gain element is on auto: then "lower the gain" means switching to manual first.
@@ -50,24 +54,62 @@ public enum FailureState: Sendable, Equatable {
         gains.contains { $0.auto }
     }
 
-    /// Whether any gain element is set manually to the lowest level it offers: the bottom of its
-    /// table, or its minimum. Auto is never at the minimum, whatever level it chose.
+    /// Whether a gain element is a two-value switch rather than a gain to set: exactly two table
+    /// entries and no step, as a HackRF advertises its AMP (0 or 11 dB). A switch is left out of
+    /// "the lowest gain", because a HackRF at LNA 8, VGA 20 and the AMP off was once told it was
+    /// at its lowest (plans/app.md, M2-10). `ley`'s `switchStage` is the same rule.
+    static func isSwitch(_ el: Leyline_V1_GainElement) -> Bool {
+        el.validDb.count == 2 && el.stepDb == 0
+    }
+
+    /// The lowest level an element offers: the bottom of its table, or its minimum.
+    static func lowestDB(_ el: Leyline_V1_GainElement) -> Double {
+        el.validDb.min() ?? el.minDb
+    }
+
+    /// The continuous and table stages in the device's order, each with the capture's state for
+    /// it, nil when the capture reports none.
+    static func stages(
+        gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement]
+    ) -> [(element: Leyline_V1_GainElement, state: Leyline_V1_GainState?)] {
+        elements.filter { !isSwitch($0) }.map { el in
+            (el, gains.first { $0.element == el.name })
+        }
+    }
+
+    /// Whether every continuous or table stage is set by hand to its lowest level: then the
+    /// radio cannot be turned down, and the advice is the antenna. A two-value stage does not
+    /// count (`isSwitch`), a stage on auto is never at its lowest whatever level it chose, and a
+    /// radio with no stage to count has no gain to be at the bottom of. `ley`'s `gainAtMinimum`
+    /// (`go/internal/cli/failure.go`) is the same rule.
     public static func gainAtMinimum(
         gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement]
     ) -> Bool {
-        gains.contains { g in
-            guard !g.auto, let el = elements.first(where: { $0.name == g.element }) else {
-                return false
+        let counted = stages(gains: gains, elements: elements)
+        return !counted.isEmpty
+            && counted.allSatisfy { el, state in
+                guard let state, !state.auto else { return false }
+                return state.db <= lowestDB(el) + 0.05
             }
-            let lowest = el.validDb.min() ?? el.minDb
-            return g.db <= lowest + 0.05
+    }
+
+    /// The stages to lower on a radio with more than one to set, in the device's order: those set
+    /// by hand above their lowest. Empty on a radio with one, where "Lower the gain." is enough.
+    public static func stagesToLower(
+        gains: [Leyline_V1_GainState], elements: [Leyline_V1_GainElement]
+    ) -> [String] {
+        let counted = stages(gains: gains, elements: elements)
+        guard counted.count >= 2 else { return [] }
+        return counted.compactMap { el, state in
+            guard let state, !state.auto, state.db > lowestDB(el) + 0.05 else { return nil }
+            return el.name
         }
     }
 
     /// Whether the thing to try is the gain: unless it is already at its lowest.
     public var namesGain: Bool {
         switch self {
-        case .clipping(_, _, _, let atMinimum): return !atMinimum
+        case .clipping(_, _, _, let atMinimum, _): return !atMinimum
         }
     }
 
@@ -80,7 +122,7 @@ public enum FailureState: Sendable, Equatable {
     /// The number it was read from and the thing to try.
     public var detail: String {
         switch self {
-        case .clipping(let clipped, let total, let auto, let atMinimum):
+        case .clipping(let clipped, let total, let auto, let atMinimum, let lower):
             let percent = total > 0 ? 100 * Double(clipped) / Double(total) : 0
             let reads = String(
                 format: "%llu of %llu samples (%@) hit the converter's rails", clipped, total,
@@ -90,9 +132,20 @@ public enum FailureState: Sendable, Equatable {
                 return reads
                     + " at the lowest gain. Move the antenna away from the transmitter, or add attenuation."
             }
-            return auto
-                ? reads + " with the gain on auto. Take the gain by hand and lower it."
-                : reads + ". Lower the gain."
+            if auto { return reads + " with the gain on auto. Take the gain by hand and lower it." }
+            return reads + ". " + Self.lowerWords(lower) + "."
+        }
+    }
+
+    /// "Lower the gain", or on a radio with several stages the ones to lower: "Lower the VGA
+    /// gain", "Lower the LNA or VGA gain". `ley`'s `lowerGainWords` builds the same words.
+    static func lowerWords(_ stages: [String]) -> String {
+        switch stages.count {
+        case 0: return "Lower the gain"
+        case 1: return "Lower the \(stages[0]) gain"
+        default:
+            return "Lower the " + stages.dropLast().joined(separator: ", ") + " or "
+                + stages[stages.count - 1] + " gain"
         }
     }
 }

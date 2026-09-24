@@ -252,12 +252,16 @@ their ranges.
 Rules of thumb: start with auto. If a distant station is faint and the
 noise floor in 'ley spectrum' is low, raise the gain about 5 dB at a time.
 If the floor rises as fast as the signal, or ghost stations appear, lower
-it. Radios with more than one gain stage take --element to pick one; the
-first stage is used otherwise.
+it. A radio with more than one gain stage (a HackRF has LNA, VGA and an
+AMP switch) takes a bare value on its first stage. 'ley set' takes
+--element to pick another; tune, record and the other verbs that take
+--gain take stage=dB pairs instead, several at once, set in the order
+given.
 
   ley set gain 30              fixed 30 dB, snapped to the radio's step
   ley set gain auto            back to automatic
-  ley set gain 20 --element IF one stage of a multi-stage radio`
+  ley set gain 20 --element IF one stage of a multi-stage radio
+  ley record 462.5625 --gain LNA=0,VGA=0   a HackRF's LNA and VGA at 0 dB`
 }
 
 // topicPresets is generated from the preset and band tables so the help

@@ -96,6 +96,24 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 			return nil, fail(ctx, err)
 		}
 	}
+	// The gain the request asked for, on the capture the lease made; a borrowed channel is left
+	// as its owner set it. An empty element is the first the device lists, and a refusal fails
+	// the job with the radio's reason, as the daemon's record path does.
+	// `gains` wins over `gain` when both are sent (jobs.proto, RecordConfig), and the writes land
+	// in order; the stages set before a refusal stay set, as on the radio.
+	var gainErr *leyline.Error
+	writes := cfg.GetGains()
+	if len(writes) == 0 && cfg.GetGain() != nil {
+		writes = []*leylinev1.GainWrite{cfg.GetGain()}
+	}
+	if c := d.captures[lease.captureID]; cfg.GetChannelId() == "" && c != nil && len(writes) > 0 {
+		for _, w := range writes {
+			if gainErr = d.applyGainLocked(c, d.devices[c.GetDeviceId()], w, lease.captureID); gainErr != nil {
+				break
+			}
+		}
+		d.emit(byDaemon(), c.Capture)
+	}
 	job := &leylinev1.Job{
 		JobId:        newID("job_"),
 		State:        leylinev1.JobState_RUNNING,
@@ -110,6 +128,18 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 		channelID: lease.channelID, captureID: lease.captureID, createdCapture: lease.created,
 		// A recording outlives the client that started it, exactly as a kept decode job does.
 		keep: true,
+	}
+	if gainErr != nil {
+		// The daemon answers with the running job and fails it from the job's task, once the
+		// allocation it waited on has returned; the fake does the same a tick later.
+		d.jobs[job.JobId] = fj
+		d.jobOrder = append(d.jobOrder, job.JobId)
+		d.trimJobsLocked()
+		d.emit(byDaemon(), job)
+		reply := proto.Clone(job).(*leylinev1.Job)
+		d.mu.Unlock()
+		go d.failRecord(job.JobId, gainErr.Code, "the gain asked for could not be set: "+gainErr.Message)
+		return reply, nil
 	}
 	rec, err := d.openRecordingLocked(fj, cfg, hz, iq, gated)
 	if err != nil {
@@ -198,6 +228,13 @@ func (d *Daemon) openRecordingLocked(j *fakeJob, cfg *leylinev1.RecordConfig, hz
 	}
 	if dev := d.devices[c.GetDeviceId()]; dev != nil {
 		m.Device = &leyline.RecordingDevice{Driver: dev.GetDriver(), Model: dev.GetModel(), Serial: dev.GetSerial()}
+	}
+	// The gains the take starts at, each stage set by hand; the daemon leaves a stage on auto out,
+	// because it has no level to write down.
+	for _, g := range c.GetGains() {
+		if !g.GetAuto() {
+			m.Gains = append(m.Gains, leyline.RecordingGain{Element: g.GetElement(), ValueDB: g.GetDb()})
+		}
 	}
 	if a := c.GetAnchor(); a != nil {
 		m.Anchors = []leyline.RecordingAnchor{{
@@ -377,6 +414,32 @@ func partTag(m *leyline.RecordingManifest) string {
 		return "REC"
 	}
 	return m.Mode
+}
+
+// failRecord ends a record job that never started writing: the channel and any capture it made
+// go back, and the job is FAILED with the reason in status_detail and the code in error.
+func (d *Daemon) failRecord(jobID, code, reason string) {
+	time.Sleep(fakeRecordTick)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	j := d.jobs[jobID]
+	if j == nil || j.proto.State != leylinev1.JobState_RUNNING {
+		return
+	}
+	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "job", Label: "record"}
+	if j.channelID != "" && j.proto.GetRecord().GetChannelId() == "" {
+		d.destroyChannelLocked(j.channelID, by)
+		j.channelID = ""
+	}
+	if j.createdCapture && j.captureID != "" {
+		d.destroyCaptureLocked(j.captureID, by)
+		j.createdCapture = false
+	}
+	j.proto.State = leylinev1.JobState_FAILED
+	j.proto.StatusDetail = reason
+	j.proto.Error = &leylinev1.ErrorDetail{Code: code, Message: reason, Target: jobID}
+	d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
+	d.trimJobsLocked()
 }
 
 // finishRecord ends the job: the channel and any capture it made go back, the

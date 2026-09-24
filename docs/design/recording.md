@@ -193,6 +193,7 @@ message RecordConfig {
   uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 5000
   int64 stop_after_quiet_ms = 14; // end the job after this long with the squelch closed; 0 = never
   int64 part_ms = 15;         // cut parts on this timer; 0 = audio: one part, IQ: 60000
+  repeated GainWrite gains = 16; // in order; wins over gain when set (2026-09-24, plans/app.md M2-10)
 }
 
 enum RecordGate { RECORD_GATE_UNSPECIFIED = 0; NONE = 1; SQUELCH = 2; }
