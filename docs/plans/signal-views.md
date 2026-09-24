@@ -190,7 +190,7 @@ an ambiguous measurement; confidence is zero without a classification), `SubAudi
 tone survives the tap and does **not** survive the audio, measured on both), and the CLI tracker
 tests.
 
-## SV-7 `[ ]` DCS
+## SV-7 `[x]` DCS
 
 Same tap, same message, `kind = DCS`. A DCS lock suppresses the CTCSS claim.
 
@@ -354,6 +354,11 @@ normal within 3 s; it skips when no DCS report arrives, and the skip goes once t
 on main. Against the `leylined` built in the main checkout at 00:08 on 2026-09-24 it passed, and
 the same daemon named `nfm_dcs_754` as 754 and `nfm_dcs_inverted` as 047 normal, at 554 Hz of
 deviation.
+
+**Landed (app) 2026-09-24.** The façade's `CTCSSTone` is `SubAudibleTone` with a `ctcss` and a
+`dcs` case, the fold keeps the newest report of either kind under its transmission, and the
+Recent log row reads ` · DCS 023` in `good` (`TransmissionsTests`; the view was not compiled in the
+container).
 
 ## Decisions
 

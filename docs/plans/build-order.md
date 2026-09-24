@@ -94,8 +94,8 @@ changed shape since D.13, and it waits until after the app.
   4x, and lossless for an RTL-SDR -- measured 2026-09-18, `docs/design/recording.md`,
   "Deliberately not in v1"). The first thing to reopen when the recordings store hurts, and
   ahead of anything about the audio format. Backlogged behind the app, not forgotten.
-- **D.14, D.15, MCP-8 to MCP-11, DEC-12/13/14/15/19, SV-7, SV-9, BW-2, BW-3, R-21, R-22.**
-  Deferred behind Milestone E. The three terminal live views already prove D.14's stated purpose,
+- **D.14, D.15, MCP-8 to MCP-11, DEC-12/13/14/15/19, SV-9, BW-2, BW-3, R-21, R-22.**
+  Deferred behind Milestone E (SV-7, DCS, was on this list until it landed 2026-09-24). The three terminal live views already prove D.14's stated purpose,
   a constrained consumer negotiating streams.
 
 ## Milestone E — the Mac app

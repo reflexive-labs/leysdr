@@ -4,9 +4,10 @@
 // telemetry plane with no daemon and no clock in it (docs/plans/app.md, "The M2 cut", M2-1).
 // The daemon summarises a transmission on the close edge of a `SquelchTransition` (its length
 // in capture samples, the peaks it reached), so the log keeps the last ones without timing
-// anything itself, and the tone under each is the CTCSS `SubAudible` reported while it ran. The
-// rules are `ley tune`'s (`go/internal/cli/transmission.go`: a close edge with no duration, or
-// one shorter than a quarter second, is ignored; `subaudible.go`: the 1 Hz heartbeat repeats a tone and is not a new one, and a tone's
+// anything itself, and the tone under each is the CTCSS tone or DCS code `SubAudible` reported
+// while it ran. The rules are `ley tune`'s (`go/internal/cli/transmission.go`: a close edge
+// with no duration, or one shorter than a quarter second, is ignored; `subaudible.go`: the 1 Hz
+// heartbeat repeats a tone and is not a new one, and a tone's
 // loss is not logged), and the start of a transmission whose open edge was never seen is read back
 // from the close edge the way `listenSummary.apply` does (`go/internal/cli/mcp_tools.go`), so a
 // client that subscribes mid-transmission still logs it. Every time here is a `SampleTime` on
@@ -16,22 +17,38 @@
 import Foundation
 import LeylineProto
 
-/// A CTCSS tone the daemon classified: `standardHz` is the EIA tone it reported, `measuredHz`
-/// what it measured. A measurement two standard tones could both explain is not a tone here,
-/// because picking one would be a guess (`proto/leyline/v1/telemetry.proto`, `SubAudible`).
-public struct CTCSSTone: Sendable, Equatable {
-    public var standardHz: Double
-    public var measuredHz: Double
+/// The sub-audible signalling the daemon reported under a transmission: a CTCSS tone or a DCS
+/// code (`proto/leyline/v1/telemetry.proto`, `SubAudible`).
+public enum SubAudibleTone: Sendable, Equatable {
+    /// `standardHz` is the EIA tone the daemon classified, `measuredHz` what it measured.
+    case ctcss(standardHz: Double, measuredHz: Double)
+    /// `code` is octal written as decimal, as the wire carries it (023 is 23). `inverted` is
+    /// false on every report today: the daemon names an inverted code by its normal alias.
+    case dcs(code: Int, inverted: Bool)
 
-    public init(standardHz: Double, measuredHz: Double) {
-        self.standardHz = standardHz
-        self.measuredHz = measuredHz
+    /// The tone a `SubAudible` reports, or nil. A CTCSS measurement two standard tones could
+    /// both explain is not a tone here, because picking one would be a guess; a DCS report is a
+    /// code only when it names one, since `dcs_code` is 0 for every other kind.
+    public init?(_ sa: Leyline_V1_SubAudible) {
+        switch sa.kind {
+        case .subAudibleCtcss where sa.standardToneHz > 0:
+            self = .ctcss(standardHz: sa.standardToneHz, measuredHz: sa.toneHz)
+        case .subAudibleDcs where sa.dcsCode > 0:
+            self = .dcs(code: Int(sa.dcsCode), inverted: sa.dcsInverted)
+        default:
+            return nil
+        }
     }
 
-    /// The tone a `SubAudible` reports, or nil: only CTCSS, and only when it was classified.
-    public init?(_ sa: Leyline_V1_SubAudible) {
-        guard sa.kind == .subAudibleCtcss, sa.standardToneHz > 0 else { return nil }
-        self.init(standardHz: sa.standardToneHz, measuredHz: sa.toneHz)
+    /// `PL 100.0`, or `DCS 023` (three octal digits) with ` inverted` when the code was read
+    /// from the complemented stream: `ley tune`'s words.
+    public var words: String {
+        switch self {
+        case .ctcss(let standardHz, _):
+            return String(format: "PL %.1f", standardHz)
+        case .dcs(let code, let inverted):
+            return String(format: "DCS %03d", code) + (inverted ? " inverted" : "")
+        }
     }
 }
 
@@ -48,13 +65,13 @@ public struct Transmission: Sendable, Equatable {
     /// dB over the noise floor; NaN before the meter warms up.
     public var peakSNRDB: Double
     public var peakAudioDBFS: Double
-    public var tone: CTCSSTone?
+    public var tone: SubAudibleTone?
 }
 
 /// A transmission in progress: the open edge's time, and the tone reported so far.
 public struct OnAir: Sendable, Equatable {
     public var since: Leyline_V1_SampleTime
-    public var tone: CTCSSTone?
+    public var tone: SubAudibleTone?
 }
 
 /// The last `capacity` closed transmissions on one channel, newest first, and the open one.
@@ -75,7 +92,7 @@ public struct TransmissionLog: Sendable, Equatable {
     /// The capture rate the last edge was folded at; 0 until one has been.
     public private(set) var captureRate: UInt64 = 0
     /// The tone reported since the last edge, waiting for the close edge to attach it to.
-    private var tone: CTCSSTone?
+    private var tone: SubAudibleTone?
 
     public init(channelID: String) {
         self.channelID = channelID
@@ -111,8 +128,9 @@ public struct TransmissionLog: Sendable, Equatable {
             if closed.count > Self.capacity { closed.removeLast(closed.count - Self.capacity) }
         case .subAudible(let sa) where sa.channelID == channelID:
             // A heartbeat repeats the tone and a loss changes nothing: the tone a transmission had
-            // stays with it. Only a classified CTCSS report is a tone at all.
-            guard let heard = CTCSSTone(sa) else { return }
+            // stays with it. Only a classified CTCSS tone or a DCS code is a tone at all, and a
+            // different one replaces it, the newest winning.
+            guard let heard = SubAudibleTone(sa) else { return }
             if onAir != nil {
                 onAir?.tone = heard
             } else {

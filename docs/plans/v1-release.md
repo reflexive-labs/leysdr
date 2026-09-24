@@ -156,8 +156,8 @@ Undocumented extras the plan never mentions: `RTLTCPDevice` (a remote dongle ove
 tested — it is what made the Linux real-RF verification possible), `ley phosphor`, `ley waterfall`,
 `leyfix` (the fixture generator is a substantial second binary with its own FFT and analysis), and
 the sub-audible tone detector. None is a problem; all need to be in the docs. Three plan items are
-open repo-wide and none is a build-order task — SV-7 (DCS decode), BW-2 (channel occupancy), BW-3
-(burst capture) — so `docs/plans/` looks nearly finished only because it lists the work that was
+open repo-wide and none is a build-order task — SV-7 (DCS decode; landed 2026-09-24), BW-2 (channel
+occupancy), BW-3 (burst capture) — so `docs/plans/` looks nearly finished only because it lists the work that was
 chosen, not the milestones. The build order's closing rule, `os_signpost` on any new sample-path
 code, has slipped: the six signpost names cover capture ingest, channel processing, the ladder, the
 FFT and ring overruns (`Signposts.swift:21-31`), and nothing in `Sinks/` (`AudioSink.write` is a named

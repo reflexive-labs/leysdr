@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The transmissions log, without a daemon: edges to transmissions, the reconstructed start,
-// the tone under a transmission and its heartbeat, the ring, and another channel's edges. The
-// edge rules are the ones `go/internal/cli/transmission_test.go` holds `ley tune` to.
+// the tone or DCS code under a transmission and its heartbeat, the ring, and another channel's
+// edges. The edge rules are the ones `go/internal/cli/transmission_test.go` holds `ley tune` to.
 
 import LeylineProto
 import XCTest
@@ -37,7 +37,8 @@ final class TransmissionsTests: XCTestCase {
     }
 
     private func tone(
-        _ kind: Leyline_V1_SubAudibleKind, standard: Double, measured: Double, at index: UInt64
+        _ kind: Leyline_V1_SubAudibleKind, standard: Double = 0, measured: Double = .nan,
+        dcs code: UInt32 = 0, inverted: Bool = false, at index: UInt64
     ) -> Leyline_V1_TelemetryMsg {
         .with {
             $0.time = at(index)
@@ -46,6 +47,8 @@ final class TransmissionsTests: XCTestCase {
                 $0.kind = kind
                 $0.standardToneHz = standard
                 $0.toneHz = measured
+                $0.dcsCode = code
+                $0.dcsInverted = inverted
             }
         }
     }
@@ -129,7 +132,7 @@ final class TransmissionsTests: XCTestCase {
         log.fold(edge(open: true, at: 0), captureRate: rate)
         log.fold(
             tone(.subAudibleCtcss, standard: 100, measured: 100.2, at: 240_000), captureRate: rate)
-        XCTAssertEqual(log.onAir?.tone, CTCSSTone(standardHz: 100, measuredHz: 100.2))
+        XCTAssertEqual(log.onAir?.tone, .ctcss(standardHz: 100, measuredHz: 100.2))
         var before = log
         log.fold(
             tone(.subAudibleCtcss, standard: 100, measured: 100.2, at: 2_640_000), captureRate: rate
@@ -141,7 +144,7 @@ final class TransmissionsTests: XCTestCase {
             tone(.subAudibleNone, standard: 0, measured: .nan, at: 4_000_000), captureRate: rate)
         XCTAssertEqual(log, before)
         log.fold(edge(open: false, at: 4_800_000, duration: 4_800_000), captureRate: rate)
-        XCTAssertEqual(log.closed[0].tone, CTCSSTone(standardHz: 100, measuredHz: 100.2))
+        XCTAssertEqual(log.closed[0].tone, .ctcss(standardHz: 100, measuredHz: 100.2))
 
         // A measurement between two standard tones is not a tone here: picking one is a guess.
         log.fold(edge(open: true, at: 6_000_000), captureRate: rate)
@@ -153,6 +156,37 @@ final class TransmissionsTests: XCTestCase {
         XCTAssertEqual(log.closed.count, 2)
     }
 
+    func testADCSCodeAttachesToItsTransmission() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        log.fold(tone(.subAudibleDcs, dcs: 23, at: 1_300_000), captureRate: rate)
+        XCTAssertEqual(log.onAir?.tone, .dcs(code: 23, inverted: false))
+        log.fold(edge(open: false, at: 4_800_000, duration: 4_800_000), captureRate: rate)
+        XCTAssertEqual(log.closed[0].tone, .dcs(code: 23, inverted: false))
+        XCTAssertEqual(log.closed[0].tone?.words, "DCS 023")
+        XCTAssertEqual(SubAudibleTone.dcs(code: 754, inverted: true).words, "DCS 754 inverted")
+        XCTAssertEqual(SubAudibleTone.ctcss(standardHz: 100, measuredHz: 100.2).words, "PL 100.0")
+    }
+
+    func testAReportThatNamesNothingIsNoTone() {
+        XCTAssertNil(SubAudibleTone(tone(.subAudibleNone, at: 0).subAudible))
+        XCTAssertNil(SubAudibleTone(tone(.unspecified, at: 0).subAudible))
+        // A DCS report with no code is not one: a client reads the kind and the code together.
+        XCTAssertNil(SubAudibleTone(tone(.subAudibleDcs, at: 0).subAudible))
+    }
+
+    func testAToneThenACodeInOneTransmissionEndsWithTheCode() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        // A change of kind is a new tone, as a change of standard tone is: the newest wins.
+        log.fold(
+            tone(.subAudibleCtcss, standard: 131.8, measured: 131.6, at: 240_000),
+            captureRate: rate)
+        log.fold(tone(.subAudibleDcs, dcs: 23, at: 1_300_000), captureRate: rate)
+        log.fold(edge(open: false, at: 4_800_000, duration: 4_800_000), captureRate: rate)
+        XCTAssertEqual(log.closed[0].tone, .dcs(code: 23, inverted: false))
+    }
+
     func testAToneHeardBeforeAnUnseenOpenEdgeGoesWithThatClose() {
         var log = TransmissionLog(channelID: channel)
         // Subscribed mid-transmission: the heartbeat arrives before any edge does.
@@ -160,7 +194,7 @@ final class TransmissionsTests: XCTestCase {
             tone(.subAudibleCtcss, standard: 123, measured: 123.0, at: 1_000), captureRate: rate)
         XCTAssertNil(log.onAir)
         log.fold(edge(open: false, at: 2_400_000, duration: 2_400_000), captureRate: rate)
-        XCTAssertEqual(log.closed[0].tone?.standardHz, 123)
+        XCTAssertEqual(log.closed[0].tone, .ctcss(standardHz: 123, measuredHz: 123.0))
         // And it does not leak into the next transmission.
         log.fold(edge(open: true, at: 3_000_000), captureRate: rate)
         log.fold(edge(open: false, at: 4_200_000, duration: 1_200_000), captureRate: rate)

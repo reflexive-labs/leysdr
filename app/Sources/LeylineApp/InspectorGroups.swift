@@ -116,7 +116,7 @@ struct LogRow: View {
     let time: Text
     let length: String
     let signal: String
-    let tone: CTCSSTone?
+    let tone: SubAudibleTone?
     let open: Bool
 
     var body: some View {
@@ -136,10 +136,11 @@ struct LogRow: View {
         .background(open ? Theme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
     }
 
-    /// ` · PL 100.0` in `good` when the daemon reported a tone under this transmission.
+    /// ` · PL 100.0` or ` · DCS 023` in `good` when the daemon reported a CTCSS tone or DCS code
+    /// under this transmission.
     private var toneText: Text {
         guard let tone else { return Text("") }
-        return Text(String(format: " · PL %.1f", tone.standardHz)).foregroundStyle(Theme.good)
+        return Text(" · " + tone.words).foregroundStyle(Theme.good)
     }
 }
 

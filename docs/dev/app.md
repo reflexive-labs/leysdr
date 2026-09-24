@@ -102,7 +102,7 @@ squelch edges and nothing else: the daemon summarises a transmission on the clos
 the log times nothing itself and a client that subscribes mid-transmission still logs the one it
 joined, its start read back from the close edge the way `ley mcp`'s `listen` does. The rules are
 `ley tune`'s (`go/internal/cli/transmission.go`, `subaudible.go`): a close edge with no duration,
-or one under a quarter second (a squelch near the floor opening on noise), is ignored, the CTCSS tone reported while a transmission ran stays with it, the 1 Hz heartbeat
+or one under a quarter second (a squelch near the floor opening on noise), is ignored, the CTCSS tone or DCS code reported while a transmission ran stays with it (`SubAudibleTone`, printed ` · PL 100.0` or ` · DCS 023`; a later report of the other kind replaces it), the 1 Hz heartbeat
 that repeats a tone is not a new one, and a measurement between two standard tones is not reported
 as a tone. `onAir` is the open transmission and `timeOnAir(at:)` its length at a `SampleTime`, so the
 view asks with the newest time it has rather than a clock of its own. `SampleClock` is the Swift

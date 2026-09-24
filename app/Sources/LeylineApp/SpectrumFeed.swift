@@ -225,10 +225,11 @@ final class ChannelTelemetryFeed {
     /// steadied reading from it (`ChannelReading`).
     var onMeter: ((Leyline_V1_Meter, Double) -> Void)?
     private var captureRate: UInt64 = 0
-    /// The last tone logged, so the heartbeat does not write a line a second: nil until the
-    /// first sub-audible report, which is logged whether it names a tone or not, so a log with no
-    /// PL in it shows whether the daemon reported anything (0 is a report of no tone).
-    private var lastToneHz: Double?
+    /// The last tone logged, by its words (`PL 100.0`, `DCS 023`; `none` for a report of no
+    /// tone), so the heartbeat does not write a line a second and a changing measured frequency
+    /// does not either: nil until the first sub-audible report, which is logged whether it names
+    /// a tone or not, so a log with no tone in it shows whether the daemon reported anything.
+    private var lastTone: String?
     /// Meters folded since the channel was followed, for the thirty-second log line.
     private var meters = 0
     private var task: Task<Void, Never>?
@@ -243,7 +244,7 @@ final class ChannelTelemetryFeed {
         if channelID == channel, task != nil { return }
         stop()
         channel = channelID
-        lastToneHz = nil
+        lastTone = nil
         transmissions = TransmissionLog(channelID: channelID)
         var sub = Leyline_V1_TelemetrySubscription()
         sub.channelID = channelID
@@ -283,18 +284,27 @@ final class ChannelTelemetryFeed {
                         m.squelchOpen ? "open" : "closed"))
             }
         case .subAudible(let sa)?:
-            // One line per change of tone, not per heartbeat: the tone the daemon reported, or
-            // that it found none, so a missing PL in the log can be explained from here.
-            let now = sa.kind == .subAudibleCtcss ? sa.standardToneHz : 0
-            if now != lastToneHz {
-                lastToneHz = now
-                log(
-                    "telemetry",
-                    now > 0
-                        ? String(
-                            format: "PL %.1f Hz (measured %.1f, dev %.0f Hz, tone/band %.0f dB)",
-                            sa.standardToneHz, sa.toneHz, sa.deviationHz, sa.toneSnrDb)
-                        : "no PL (\(sa.kind))")
+            // One line per change of tone, not per heartbeat: the CTCSS tone or DCS code the
+            // daemon reported, or that it found none, so a missing tone in the log can be
+            // explained from here.
+            let heard = SubAudibleTone(sa)
+            let now = heard?.words ?? "none"
+            if now != lastTone {
+                lastTone = now
+                let line: String
+                switch heard {
+                case .ctcss?:
+                    line = String(
+                        format: "%@ Hz (measured %.1f, dev %.0f Hz, tone/band %.0f dB)", now,
+                        sa.toneHz, sa.deviationHz, sa.toneSnrDb)
+                case .dcs?:
+                    line = String(
+                        format: "%@ (dev %.0f Hz, confidence %.2f)", now, sa.deviationHz,
+                        sa.confidence)
+                case nil:
+                    line = "no tone (\(sa.kind))"
+                }
+                log("telemetry", line)
             }
         default:
             break
@@ -306,7 +316,7 @@ final class ChannelTelemetryFeed {
             // no entry and no tone clause.
             let entry = transmissions?.closed.first.flatMap { $0.end == msg.time ? $0 : nil }
             let tone = entry.map { t in
-                t.tone.map { String(format: " · PL %.1f", $0.standardHz) } ?? " · no tone"
+                t.tone.map { " · " + $0.words } ?? " · no tone"
             }
             log(
                 "telemetry",
