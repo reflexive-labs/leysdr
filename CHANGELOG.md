@@ -4,6 +4,19 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app has two places, Radio and Library, switched at the left of the toolbar or with ⌘1
+  and ⌘2. Radio is the window as before, and its sidebar is back to bands and bookmarks only.
+  Library replaces the whole window below the toolbar with what has been kept while the radio
+  keeps running: a sidebar with a search field, the recorded channels and the store's footer,
+  the channel's page of recordings in the centre, the selected part (or the channel's name,
+  frequency, size and Show in Finder) in the inspector, and a player in place of the transport
+  bar. The player plays and stops the selected part, or the first part of the newest recording,
+  steps to the previous and next part of that recording, shows the part as `GMRS CH3 · Tuesday
+  14:02 · part 5 of 11` and `16:11:04 · 10.0 s` with how far it has played, and keeps the
+  volume, captioned `GMRS CH3 · live` between parts. Space plays and stops, ← and → step, from
+  the new Library menu. The Recordings source in the sidebar is gone; its pages moved to the
+  Library unchanged.
+
 - A recording gated by squelch now keeps a signal that was already on the air when it started.
   A broadcast station or any carrier that never stops holds the squelch open from before the
   recording begins, so no opening ever came, and switching the recording off left a recording of

@@ -4,7 +4,10 @@
 // below a body of two panels, and a third on the right since M2, the inspector (docs/design/
 // app-design-handoff-m2.md, "The panel"). The sidebar, the inspector and the transport bar are
 // fixed; the waterfall takes what is left. The inspector can be closed, and the window works
-// without it.
+// without it. Two places share the toolbar (docs/design/app-design-handoff-m3.md, "Decided
+// 2026-09-25: the Library"): the Radio is that window, and the Library replaces the whole body
+// under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps running,
+// because the capture, the channel and the feeds are the session's, not the body's.
 
 import LeylineClient
 import SwiftUI
@@ -13,26 +16,19 @@ struct MainWindow: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
+        // One container for both places, so the toolbar and the alert stay put across a switch.
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                SidebarView()
-                    .frame(width: Theme.Layout.sidebarWidth)
-                Rectangle().fill(Theme.border).frame(width: 1)
-                canvas
-                if session.inspectorShown {
-                    Rectangle().fill(Theme.hairline).frame(width: 1)
-                    InspectorView()
-                        .frame(width: Theme.Layout.inspectorWidth)
-                }
+            switch session.place {
+            case .radio: RadioBody()
+            case .library: LibraryBody()
             }
-            Rectangle().fill(Theme.border).frame(height: 1)
-            TransportBarView()
-                .frame(height: Theme.Layout.transportHeight)
         }
         .background(Theme.ground)
         .toolbar {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
             // is hidden and each item draws the pop-ups' ground instead.
+            ToolbarItem(placement: .navigation) { PlaceSwitch() }
+                .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) { DeviceChip() }
                 .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -56,12 +52,34 @@ struct MainWindow: View {
             Text(q.words)
         }
     }
+}
+
+/// The Radio: bands and bookmarks, the canvas, the inspector and the transport bar, as M1 and
+/// M2 built them with 8a and 8b. Switching to the Library and back makes the Metal view again;
+/// the waterfall's rows are the feed's, so it comes back with its history.
+struct RadioBody: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                SidebarView()
+                    .frame(width: Theme.Layout.sidebarWidth)
+                Rectangle().fill(Theme.border).frame(width: 1)
+                canvas
+                if session.inspectorShown {
+                    Rectangle().fill(Theme.hairline).frame(width: 1)
+                    InspectorView()
+                        .frame(width: Theme.Layout.inspectorWidth)
+                }
+            }
+            Rectangle().fill(Theme.border).frame(height: 1)
+            TransportBarView()
+                .frame(height: Theme.Layout.transportHeight)
+        }
+    }
 
     /// Band rail, spectrum and waterfall, or the message explaining why there is nothing to draw.
-    /// While the sidebar's Recordings source shows with a row selected, that channel's page
-    /// covers it (`RecordingsPage`, M3 handoff, 8c): an overlay, as the empty state is, so the
-    /// Metal view and its subscription carry on underneath and come back as they were, and the
-    /// transport bar below stays live.
     private var canvas: some View {
         VStack(spacing: 0) {
             BandRailView()
@@ -87,9 +105,6 @@ struct MainWindow: View {
                 }
             }
         }
-        .overlay {
-            if session.recordingsPageShown { RecordingsPage() }
-        }
     }
 
     /// The waterfall's time gutter, on the right of both charts: beside the waterfall it is the
@@ -108,6 +123,35 @@ struct MainWindow: View {
             .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
         }
         .frame(width: Theme.Layout.waterfallGutterWidth + 1)
+    }
+}
+
+/// The toolbar's `Radio | Library` switch, at its leading edge (M3 handoff, "Decided 2026-09-25:
+/// the Library"): two segments in `label` on the pop-ups' ground (`border`, 6 pt corners), the
+/// place showing in `ink` and the other in `inkTertiary`; ⌘1 and ⌘2 are the View menu's. Two
+/// plain buttons rather than a segmented `Picker`, because the system draws a segmented
+/// control's selected segment and its text in its own colours, which `Theme`'s inks cannot set.
+struct PlaceSwitch: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(WindowPlace.allCases) { p in
+                let shown = session.place == p
+                Button {
+                    session.place = p
+                } label: {
+                    Text(p.title).font(Theme.Font.label)
+                        .foregroundStyle(shown ? Theme.ink : Theme.inkTertiary)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("\(p.title) (⌘\(p.shortcut))")
+                .accessibilityAddTraits(shown ? .isSelected : [])
+            }
+        }
+        .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

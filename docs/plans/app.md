@@ -631,7 +631,7 @@ the first key-up of each; the 664 seen in that session's transcript was the radi
 Not verified here: the whole thing against the HackRF itself, and `ley recordings show`, which
 still names only the first stage.
 
-### APP-5b `[ ]` The Library: two places, one switch
+### APP-5b `[x]` The Library: two places, one switch
 
 Decided 2026-09-25 with the owner after the first run of the recording screens
 (`../design/app-design-handoff-m3.md`, "Decided 2026-09-25: the Library"): a `Radio | Library`
@@ -640,6 +640,59 @@ footer; Library replaces the body with the channel list and store footer in its 
 channel page in the centre, the part in the inspector, and a player in the transport bar's
 place (play/stop, previous/next part, the part's words, a display-only progress track, the
 volume caption); the live radio keeps running underneath and is held silent while a part plays.
+
+Landed 2026-09-25 (the handoff's "Decided in the build" bullets record what the build decided:
+the switch as two plain buttons, the body switched rather than overlaid, the selection rule, the
+channel's lines, the player's part, the keys and the caption). Façade, `RecordingPages.swift`:
+`PlayerWords` and `Recordings.playerWords` (`GMRS CH3 · Tuesday 14:02 · part 5 of 11`,
+`16:11:04 · 10.0 s`, `0:03.8` and `0:10.0`, the fraction), `Recordings.neighbourPart` (⏮ and ⏭
+in part order, nil at the ends and for another recording's part) and `PlayQueue.start(_:at:)`
+(Play all from a part); `partWords`' title shares `recordingStartWords` with the player. Session:
+`place: WindowPlace` in the defaults under `place` replaces `sidebarSource`; arriving in the
+Library selects the first channel, as does a listing that arrives with none selected; the audio
+ladder follows only in the Radio; `player`, `canStepPart`, `stepPart`, `togglePlayer`,
+`channelTitle(of:)`, and `pressSpace`/`pressArrow`, the one dispatch both menus' bare keys go
+through; `revealInFinder(uri:)` takes a recording's URI as well as a part's. Window:
+`MainWindow` switches its body between `RadioBody` (today's window) and `LibraryBody`
+(`LibraryView.swift`: `LibrarySidebar` with the search field, `CHANNELS`, the rows and
+`StoreFooter`, moved from `SidebarView.swift`; `RecordingsPage`; `LibraryInspector`, the part or
+`ChannelSummary`; and `PlayerBar.swift`), and draws `PlaceSwitch` at the toolbar's leading edge.
+`SidebarView` is bands and bookmarks only, `InspectorView` the Channel panel only, and the
+`Radio | Recordings` picker, the Radio's store footer and the canvas overlay are gone. Menus: View
+▸ Radio (⌘1) and Library (⌘2), checked by the place; the Library menu's Play/Stop (space),
+Previous Part (←) and Next Part (→); the Tune menu's Tune Up, Tune Down and Mute disabled in the
+Library; `TextFieldKeys` gives a bare key back to a text field being typed into. Theme:
+`Font.transportGlyph`, `Layout.transportButton` and `Layout.playerWordsWidth`. `VolumeControl`
+takes `library` for the `GMRS CH3 · live` caption.
+
+Verified in the container: `RecordingPagesTests` (the player's words idle, playing, clamped at
+the part's length and undated; ⏮ and ⏭ in part order from a shuffled manifest, at both ends and
+for another recording's part; Play all from a part and a step back), and in
+`LeylineClientDaemonTests` the recording case, which now builds the player's words and checks ⏮
+and ⏭ against the daemon's own manifest. `make app-lint`, `swift test --filter
+LeylineClientTests` and `make app-e2e` pass.
+
+Unverified until the first `make app-run` on a Mac: every change in `AppSession.swift`,
+`LeylineApp.swift`, `MainWindow.swift`, `LibraryView.swift`, `PlayerBar.swift`,
+`RecordingsPage.swift`, `PartInspector.swift`, `InspectorView.swift`, `InspectorGroups.swift`,
+`SidebarView.swift`, `TransportBarView.swift` and `Theme.swift`. Named behaviours: the switch at
+the toolbar's `navigation` placement with its hidden shared background, beside the window title,
+its two inks and hit areas; ⌘1 and ⌘2 and their check marks; the Radio's Metal view made again
+on ⌘1, how long the shader's compile from source takes there, and the waterfall coming back with
+its rows; the Radio's sidebar starting at the Bands header with the picker gone; the Library's
+sidebar at 236 pt with the empty sentence wrapping, the `CHANNELS` header, the footer at its foot;
+the first channel selected on arrival and on a cold start in the Library; the page in the centre
+without the canvas under it, and its notice strip; the channel's lines and Show in Finder
+selecting the newest recording's directory; the player at 88 pt: the circle, the mini bordered
+⏮ ⏭ and their disabled state at the ends, the two lines at 260 pt truncating, the track and its
+ends moving four times a second, the caption `GMRS CH3 · live` and `playing a part · GMRS CH3
+held`; ▶ with no selection playing the top card's first part; ⏭ during Play all walking on and
+the live sink not coming back between parts; space, ← and → reaching the Library menu and not
+the Tune menu in the Library (and the reverse in the Radio), including when the Commands body has
+not re-evaluated; a space and the arrows typed into the search field staying in the field
+(`TextFieldKeys`, which assumes the field editor is the key window's first responder and that
+`insertText(_:replacementRange:)` with the selection is what typing a space does); the bookmark
+rename field in the Radio, which the Tune menu's bare keys may reach first as they could before.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 

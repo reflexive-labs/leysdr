@@ -90,7 +90,7 @@ struct RecentLog: View {
                 .contextMenu {
                     if let uri {
                         Button("Show in Finder") {
-                            Task { await session.revealInFinder(partURI: uri) }
+                            Task { await session.revealInFinder(uri: uri) }
                         }
                     }
                 }

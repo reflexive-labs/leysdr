@@ -305,6 +305,78 @@ final class RecordingPagesTests: XCTestCase {
         XCTAssertTrue(q.isEmpty)
     }
 
+    func testPlayAllFromAPartQueuesTheRestOfTheRecording() throws {
+        let m = try manifest(
+            "job_a", days: 0,
+            parts: [(seconds(9, 0), 5, 1), (seconds(9, 5), 5, 1), (seconds(9, 10), 5, 1)])
+        let g = RecordingGroup(summary: listed(m), manifest: m, running: false)
+        var q = PlayQueue()
+        XCTAssertEqual(q.start(g, at: "ley://recordings/job_a/2"), "ley://recordings/job_a/2")
+        XCTAssertEqual(q.pending, ["ley://recordings/job_a/3"], "the parts after it, in order")
+        XCTAssertEqual(q.start(g, at: "ley://recordings/job_a/1"), "ley://recordings/job_a/1")
+        XCTAssertEqual(q.pending.count, 2, "a step back queues the later parts again")
+        XCTAssertNil(q.start(g, at: "ley://recordings/job_b/1"), "another recording's part")
+        XCTAssertTrue(q.isEmpty)
+    }
+
+    // MARK: The player
+
+    func testThePlayersWords() throws {
+        let m = try manifest(
+            "job_tue", days: 2,
+            parts: [(seconds(14, 2, 18), 9, 1), (seconds(16, 11, 4), 10, 2)])
+        let idle = Recordings.playerWords(
+            channelTitle: "GMRS CH3", part: m.parts[1], of: m, positionFrames: nil,
+            positionRate: 0, now: now, calendar: utc)
+        XCTAssertEqual(idle.title, "GMRS CH3 · Tuesday 14:02 · part 2 of 2")
+        XCTAssertEqual(idle.time, "16:11:04 · 10.0 s")
+        XCTAssertEqual(idle.played, "0:00.0")
+        XCTAssertEqual(idle.length, "0:10.0")
+        XCTAssertEqual(idle.fraction, 0)
+        let playing = Recordings.playerWords(
+            channelTitle: "GMRS CH3", part: m.parts[1], of: m, positionFrames: 182_400,
+            positionRate: 48_000, now: now, calendar: utc)
+        XCTAssertEqual(playing.played, "0:03.8")
+        XCTAssertEqual(playing.fraction, 0.38, accuracy: 1e-9)
+        let over = Recordings.playerWords(
+            channelTitle: "GMRS CH3", part: m.parts[1], of: m, positionFrames: 600_000,
+            positionRate: 48_000, now: now, calendar: utc)
+        XCTAssertEqual(over.played, "0:10.0", "the position never reads past the part's length")
+
+        var undated = m
+        undated.anchors = []
+        undated.startedAtNs = 0
+        let bare = Recordings.playerWords(
+            channelTitle: "462.6125", part: undated.parts[0], of: undated, positionFrames: nil,
+            positionRate: 0, now: now, calendar: utc)
+        XCTAssertEqual(bare.title, "462.6125 · part 1 of 2", "no day clause without a date")
+        XCTAssertEqual(bare.time, "part 1 · 9.0 s")
+    }
+
+    func testThePlayerStepsWithinTheRecording() throws {
+        let m = try manifest(
+            "job_a", days: 0,
+            parts: [(seconds(9, 0), 5, 1), (seconds(9, 5), 5, 1), (seconds(9, 10), 5, 1)])
+        var shuffled = m
+        shuffled.parts = [m.parts[2], m.parts[0], m.parts[1]]
+        let two = "ley://recordings/job_a/2"
+        XCTAssertEqual(
+            Recordings.neighbourPart(of: two, in: shuffled, step: -1), "ley://recordings/job_a/1",
+            "part order, not file order")
+        XCTAssertEqual(
+            Recordings.neighbourPart(of: two, in: shuffled, step: 1), "ley://recordings/job_a/3")
+        XCTAssertNil(
+            Recordings.neighbourPart(of: "ley://recordings/job_a/1", in: m, step: -1),
+            "nothing before the first part")
+        XCTAssertNil(
+            Recordings.neighbourPart(of: "ley://recordings/job_a/3", in: m, step: 1),
+            "nothing after the last")
+        XCTAssertNil(
+            Recordings.neighbourPart(of: "ley://recordings/job_b/2", in: m, step: 1),
+            "another recording's part")
+        XCTAssertNil(Recordings.neighbourPart(of: "ley://recordings/job_a/9", in: m, step: -1))
+    }
+
     func testAPartURIComesApart() {
         let ref = RecordingPartRef(uri: "ley://recordings/job_a/5")
         XCTAssertEqual(ref?.jobID, "job_a")

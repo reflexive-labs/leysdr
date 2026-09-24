@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Recordings source's channel page (docs/design/app-design-handoff-m3.md, 8c, and "The
-// screens, read against the prose", 8c): the centre column while the source shows and a channel
-// row is selected. A 56 pt header with the channel's name, what it is and how much is kept, the
-// same Record transmissions switch as the log's (one job state, read from the mirror) and Tune;
-// under it the recordings as cards grouped by day, newest first, each card's parts as chips that
-// wrap. A click on a chip plays that part through the playback path the log's ▶ uses and selects
-// it for the inspector (`PartInspector`); Play all plays the parts in order. The page keeps no
-// state of its own beyond hover: which cards are open, the selected part and the queue are the
-// session's, and every card is built from the listing and the manifests the session read
+// The channel page (docs/design/app-design-handoff-m3.md, 8c, and "The screens, read against the
+// prose", 8c): the Library's centre column ("Decided 2026-09-25: the Library"). A 56 pt header
+// with the channel's name, what it is and how much is kept, the same Record transmissions switch
+// as the log's (one job state, read from the mirror) and Tune; under it the recordings as cards
+// grouped by day, newest first, each card's parts as chips that wrap. A click on a chip plays
+// that part through the playback path the log's ▶ uses and selects it for the inspector
+// (`PartInspector`) and the player; Play all plays the parts in order. The page keeps no state of
+// its own beyond hover: which cards are open, the selected part and the queue are the session's,
+// and every card is built from the listing and the manifests the session read
 // (`Recordings.groups`, `Recordings.days`).
 
 import LeylineClient
@@ -23,9 +23,10 @@ struct RecordingsPage: View {
             Theme.ground
             if let channel = session.selectedChannel {
                 content(channel)
-            } else {
+            } else if session.selectedRecordingChannel != nil {
                 // The row was selected and every recording on it has gone since (a delete here,
-                // `ley recordings delete`, retention).
+                // `ley recordings delete`, retention). With no row selected the store is empty,
+                // and the sidebar's sentence says so.
                 Text(
                     "Nothing is kept on this channel any more. Pick another row, or Radio to listen."
                 )
@@ -33,14 +34,13 @@ struct RecordingsPage: View {
                 .multilineTextAlignment(.center)
                 .padding(20)
             }
-            // The page covers the canvas and the notice strip on it, so the page carries its own:
-            // a switch the daemon refused has to say why where it was clicked.
+            // The Library has no canvas, so the page carries the notice strip: a switch the
+            // daemon refused has to say why where it was clicked.
             VStack {
                 Spacer()
                 NoticeStrip()
             }
         }
-        // Opaque and taking the clicks, so nothing of the live canvas under it is tuned.
         .contentShape(Rectangle())
     }
 
@@ -76,7 +76,8 @@ struct RecordingsPage: View {
 }
 
 /// `GMRS CH3` over `462.6125 MHz · NFM 12.5 kHz · 4 recordings · 13.1 MB`, and at the right
-/// `Record transmissions`, its switch, and a bordered `Tune` (8c, "The channel page").
+/// `Record transmissions`, its switch, and a bordered `Tune`, which goes to the Radio and tunes
+/// there (8c, "The channel page").
 struct RecordingsPageHeader: View {
     let channel: RecordingChannel
     let groups: [RecordingGroup]
@@ -114,16 +115,21 @@ struct RecordingsPageHeader: View {
         .padding(.horizontal, Theme.Layout.pageInset)
     }
 
-    /// `462.6125 MHz · NFM 12.5 kHz · 4 recordings · 13.1 MB`; the mode and width are left out
-    /// when the recordings name none.
+    /// `462.6125 MHz · NFM 12.5 kHz · 4 recordings · 13.1 MB`.
     private var detail: String {
+        "\(Self.tuningWords(channel, groups)) · \(Recordings.pageWords(groups))"
+    }
+
+    /// `462.6125 MHz · NFM 12.5 kHz`: the header's first clauses and the Library inspector's
+    /// second line (`ChannelSummary`); the mode and width are left out when the recordings name
+    /// none.
+    static func tuningWords(_ channel: RecordingChannel, _ groups: [RecordingGroup]) -> String {
         var parts = [Frequency.format(channel.frequencyHz)]
         if channel.mode != .unspecified {
             let width = Recordings.channelWidth(groups, channel: channel)
             parts.append(
                 width.map { "\(channel.mode.word) \(Frequency.width($0))" } ?? channel.mode.word)
         }
-        parts.append(Recordings.pageWords(groups))
         return parts.joined(separator: " · ")
     }
 }

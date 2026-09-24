@@ -589,9 +589,12 @@ struct SquelchTrack: View {
 /// app-design-handoff-m3.md, "In every screen"): `playing GMRS CH3` (the bookmark's name, else
 /// the frequency) while the live sink is attached, `muted · GMRS CH3` while it is detached, and
 /// `playing a part · GMRS CH3 held` while a kept part plays and the live channel is held silent.
-/// The output device's name is the caption's tooltip.
+/// In the Library's player (`library`) the live channel heard between parts reads `GMRS CH3 ·
+/// live` ("Decided 2026-09-25: the Library", "The player"). The output device's name is the
+/// caption's tooltip.
 struct VolumeControl: View {
     @Environment(AppSession.self) private var session
+    var library = false
 
     var body: some View {
         let sink = session.sink
@@ -612,6 +615,7 @@ struct VolumeControl: View {
     private func caption(_ sink: Leyline_V1_Sink?) -> String {
         guard let name = session.listeningName else { return "not playing" }
         if session.playingURI != nil { return "playing a part · \(name) held" }
+        if library, sink != nil { return "\(name) · live" }
         return sink == nil ? "muted · \(name)" : "playing \(name)"
     }
 

@@ -153,6 +153,24 @@ public struct PartWords: Sendable, Equatable {
     public var fraction: Double
 }
 
+/// The Library's player's words for one part (docs/design/app-design-handoff-m3.md, "Decided
+/// 2026-09-25: the Library", "The player"): two lines beside the play button and the two ends of
+/// its progress track.
+public struct PlayerWords: Sendable, Equatable {
+    /// `GMRS CH3 · Tuesday 14:02 · part 5 of 11`: the channel, the recording's start, and the
+    /// part's place among the recording's parts.
+    public var title: String
+    /// `16:11:04 · 10.0 s`, the inspector's time line.
+    public var time: String
+    /// `0:03.8`: how far the part has played, at the track's left; `0:00.0` while it is not
+    /// playing.
+    public var played: String
+    /// `0:10.0`: the part's length, at the track's right.
+    public var length: String
+    /// The track's fill, 0 to 1; 0 while the part is not playing.
+    public var fraction: Double
+}
+
 /// One row of the inspector's table: `Peak` and `−6.2 dBFS`.
 public struct PartTableRow: Sendable, Equatable, Identifiable {
     public var label: String
@@ -171,9 +189,18 @@ public struct PlayQueue: Sendable, Equatable {
     public init() {}
 
     /// Queues `group`'s parts in part order and returns the first, which the caller plays now;
-    /// nil for a recording with no closed part.
-    public mutating func start(_ group: RecordingGroup) -> String? {
-        let uris = group.chips.map(\.uri)
+    /// nil for a recording with no closed part. With `at`, the queue starts from that part
+    /// instead, which is how the player's ⏮ and ⏭ move a Play all on without ending it; nil
+    /// when `at` is not one of the recording's parts.
+    public mutating func start(_ group: RecordingGroup, at uri: String? = nil) -> String? {
+        var uris = group.chips.map(\.uri)
+        if let uri {
+            guard let i = uris.firstIndex(of: uri) else {
+                clear()
+                return nil
+            }
+            uris = Array(uris[i...])
+        }
         guard let first = uris.first else {
             clear()
             return nil
@@ -332,18 +359,9 @@ extension Recordings {
         positionRate: UInt32, now: Date, calendar: Calendar = .current
     ) -> PartWords {
         let tz = calendar.timeZone
-        let recordingStart =
-            manifest.parts.min { $0.part < $1.part }.flatMap { manifest.startTime(of: $0) }
-            ?? manifest.startedAt
-        let title: String
-        if let d = recordingStart {
-            let day = dayWords(d, now: now, calendar: calendar)
-            title =
-                "Part \(part.part) of \(day.prefix(1).uppercased() + day.dropFirst()) "
-                + clock(d, "HH:mm", tz)
-        } else {
-            title = "Part \(part.part)"
-        }
+        let title =
+            recordingStartWords(manifest, now: now, calendar: calendar)
+            .map { "Part \(part.part) of \($0)" } ?? "Part \(part.part)"
         let length = manifest.seconds(of: part)
         let start = manifest.startTime(of: part).map { clock($0, "HH:mm:ss", tz) }
         let time =
@@ -357,6 +375,57 @@ extension Recordings {
         let fraction =
             positionFrames != nil && length > 0 ? min(1, max(0, played / length)) : 0
         return PartWords(title: title, time: time, progress: progress, fraction: fraction)
+    }
+
+    /// `Tuesday 14:02`: the recording's start, its first part's through the anchor, else the
+    /// job's `started_at_ns`, with the day as `dayWords` gives it and a capital; nil when nothing
+    /// dates it.
+    static func recordingStartWords(
+        _ manifest: RecordingManifest, now: Date, calendar: Calendar
+    ) -> String? {
+        let start =
+            manifest.parts.min { $0.part < $1.part }.flatMap { manifest.startTime(of: $0) }
+            ?? manifest.startedAt
+        guard let d = start else { return nil }
+        let day = dayWords(d, now: now, calendar: calendar)
+        return day.prefix(1).uppercased() + day.dropFirst() + " "
+            + clock(d, "HH:mm", calendar.timeZone)
+    }
+
+    /// The player's words for `part` of `manifest` on the channel titled `channelTitle`
+    /// (`PlayerWords`). `part 5 of 11` counts the manifest's parts; the time line, the position
+    /// and the fraction are `partWords`'.
+    public static func playerWords(
+        channelTitle: String, part: RecordingPart, of manifest: RecordingManifest,
+        positionFrames: UInt64?, positionRate: UInt32, now: Date, calendar: Calendar = .current
+    ) -> PlayerWords {
+        let words = partWords(
+            part: part, of: manifest, positionFrames: positionFrames, positionRate: positionRate,
+            now: now, calendar: calendar)
+        let title = [
+            channelTitle, recordingStartWords(manifest, now: now, calendar: calendar),
+            "part \(part.part) of \(manifest.parts.count)",
+        ].compactMap { $0 }.joined(separator: " · ")
+        let length = manifest.seconds(of: part)
+        let rate = positionRate > 0 ? Double(positionRate) : Double(manifest.sampleRate)
+        let played = positionFrames.map { rate > 0 ? Double($0) / rate : 0 } ?? 0
+        return PlayerWords(
+            title: title, time: words.time, played: elapsedWords(min(played, length)),
+            length: elapsedWords(length), fraction: words.fraction)
+    }
+
+    /// The part `step` places from the part `uri` names, in `manifest`'s part order, as the URI
+    /// that plays it: the player's ⏮ (`-1`) and ⏭ (`1`). nil past either end, and for a URI that
+    /// is not one of this recording's parts, which is when the buttons are disabled.
+    public static func neighbourPart(
+        of uri: String, in manifest: RecordingManifest, step: Int
+    ) -> String? {
+        guard let ref = RecordingPartRef(uri: uri), ref.jobID == manifest.jobID else { return nil }
+        let ordered = manifest.parts.sorted { $0.part < $1.part }
+        guard let i = ordered.firstIndex(where: { $0.part == ref.part }) else { return nil }
+        let j = i + step
+        guard ordered.indices.contains(j) else { return nil }
+        return manifest.uri(of: ordered[j])
     }
 
     /// The inspector's table for a part: label and value, `—` for what nobody measured.

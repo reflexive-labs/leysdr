@@ -12,8 +12,8 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the sidebar's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the sidebar's `Radio | Recordings` sources and store footer, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items, the Recordings source's channel page in `RecordingsPage.swift` and the inspector on a part in `PartInspector.swift`; APP-5), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items; APP-5), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`; APP-5b), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
@@ -196,33 +196,55 @@ returns runs of row age, one device pixel a row, re-evaluated on each row the fe
 (`KeptBars`). The shader draws only the clipping marks. A band switch, the rail drag's release and a sample-rate change that would leave a
 running recording outside the span ask first with `Recordings.retuneWords`, `ley tune`'s
 sentence, for the jobs `Recordings.leftOut` finds riding the capture by `ley`'s rule; tuning
-inside the span never asks, and the daemon records the gap if the move goes ahead. The sidebar
-has two sources under a segmented control (`AppSession.sidebarSource`, remembered in the
-defaults): Radio is the bands and bookmarks, Recordings a search field and one row per frequency
-and mode (`Recordings.channels` over `AppSession.recordings`, the `ListResources(RECORDING)`
-listing re-read on every record job change and on adoption), titled by the matching bookmark or
-the frequency, running rows first and then by most recent activity. A selected row covers the
-canvas with its channel page (`RecordingsPage`, 8c): a header with a Record transmissions switch
-on the page's frequency and mode (one job state with the log's switch, the click in flight keyed
-by frequency and mode) and Tune, which goes back to Radio by the bookmark path; then the
-recordings as cards grouped `today`, `yesterday`, the day before by name and a folded `earlier`
-(`Recordings.days`), each card's parts as chips that wrap (`FlowLayout` over `FlowRows.lines`).
-The cards come from the listing and each recording's manifest, read through `ResolveLocalPath`
-into `pageManifests` and read again on each of its job's events. A chip's click selects the part
-and plays it by the log's playback path; Play all queues the parts and starts each on the
-tombstone of the one before (`PlayQueue`), with the live sink held detached until the last ends.
-While the Recordings source shows and a part is selected or playing, the inspector is that part
-(`PartInspector`: its words from `Recordings.partWords` and `partTable`, Show in Finder, and
-Delete recording…, `Resources.DeleteResource` on the whole recording, disabled with the daemon's
-refusal while its job runs). File ▸ Show Recordings in Finder opens the store. Under both sources the store footer draws the used
-fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`) and `944 MB of 20 GB · oldest
-go first` (`Recordings.storeWords`). The transport bar's button is the mute (`toggleMute`, the
-sink detached), and the caption under the volume slider says what is heard (`playing GMRS CH3`,
-`muted · GMRS CH3`, `playing a part · GMRS CH3 held`) with the output device as its tooltip.
+inside the span never asks, and the daemon records the gap if the move goes ahead. The transport
+bar's button is the mute (`toggleMute`, the sink detached), and the caption under the volume
+slider says what is heard (`playing GMRS CH3`, `muted · GMRS CH3`, `playing a part · GMRS CH3
+held`) with the output device as its tooltip. File ▸ Show Recordings in Finder opens the store.
 Tune ▸ Stop Listening removes the channel and destroys the capture only when this window made it
-and no other channel rides on it. The window was written in the container and is unverified until it runs on a Mac
-(`../plans/app.md`, APP-5); the façade's rules are tested in `RecordingsTests` and
+and no other channel rides on it. The window was written in the container and is unverified until
+it runs on a Mac (`../plans/app.md`, APP-5); the façade's rules are tested in `RecordingsTests` and
 `ClippedRowsTests`, and against the daemon's own manifest by the daemon-backed suite.
+
+**Two places: the Radio and the Library** (`MainWindow.swift`, `LibraryView.swift`,
+`PlayerBar.swift`; `../design/app-design-handoff-m3.md`, "Decided 2026-09-25: the Library").
+The toolbar's leading edge has a `Radio | Library` switch (`PlaceSwitch`, two plain buttons on
+the pop-ups' ground; View ▸ Radio ⌘1 and Library ⌘2), which sets `AppSession.place`, remembered
+in the defaults. `MainWindow` switches its whole body under the toolbar on it: `RadioBody` is the
+window above, with the sidebar holding only bands and bookmarks, and `LibraryBody` is what has
+been kept. The radio runs the same in both, because the capture, the channel, the sink and the
+feeds are the session's; the Radio's Metal view is made again on the way back and draws the
+feed's rows, and the audio ladder unsubscribes while the Library shows. The Library's sidebar
+(`LibrarySidebar`, 236 pt) is a search field, a `CHANNELS` section of one row per frequency and
+mode (`Recordings.channels` over `AppSession.recordings`, the `ListResources(RECORDING)` listing
+re-read on every record job change and on adoption), titled by the matching bookmark or the
+frequency, running rows first and then by most recent activity, and the store footer, which
+draws the used fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`) and `3.3 GB of 20
+GB · oldest go first` (`Recordings.storeWords`). With nothing kept its body is one sentence. The
+first row is selected on arrival and whenever the listing arrives with none selected, and a
+click on a row always selects it, so the centre is never blank. The centre is that channel's page
+(`RecordingsPage`, 8c): a header with a Record transmissions switch on the page's frequency and
+mode (one job state with the log's switch, the click in flight keyed by frequency and mode) and
+Tune, which goes to the Radio by the bookmark path; then the recordings as cards grouped `today`,
+`yesterday`, the day before by name and a folded `earlier` (`Recordings.days`), each card's parts
+as chips that wrap (`FlowLayout` over `FlowRows.lines`). The cards come from the listing and each
+recording's manifest, read through `ResolveLocalPath` into `pageManifests` and read again on each
+of its job's events. A chip's click selects the part and plays it by the log's playback path;
+Play all queues the parts and starts each on the tombstone of the one before (`PlayQueue`), with
+the live sink held detached until the last ends. The inspector (`LibraryInspector`) is the part
+selected or playing (`PartInspector`: its words from `Recordings.partWords` and `partTable`, Show
+in Finder, and Delete recording…, `Resources.DeleteResource` on the whole recording, disabled
+with the daemon's refusal while its job runs), else the channel's lines (`ChannelSummary`: name,
+frequency and mode, recordings and size, Show in Finder for the newest recording). The player
+(`PlayerBar`) takes the transport bar's place: ▶/■ plays `AppSession.player` (the part playing,
+else the selected one, else the first part of the top card) or stops it, ⏮ and ⏭ move within
+that recording (`Recordings.neighbourPart`, disabled at the ends; while a part plays the
+neighbour starts, and a Play all walks on from it through `PlayQueue.start(_:at:)`), the two
+lines and the track's ends are `Recordings.playerWords`, and the volume caption reads `GMRS CH3 ·
+live` between parts. The Library menu puts Play/Stop on space and Previous/Next Part on ← and →;
+the Tune menu's bare arrows and space are disabled in the Library, both menus act through
+`pressSpace`/`pressArrow` for the place showing, and a text field being typed into gets the key
+back (`TextFieldKeys`). Unverified until the Mac (`../plans/app.md`, APP-5b); the façade's rules
+are tested in `RecordingPagesTests` and against the daemon's manifest in the daemon-backed suite.
 
 **The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`; the handoff's "Region 3b:
 audio"). Between the reading and the log, the panel draws the meter `ley levels --watch` draws:

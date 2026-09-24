@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The inspector on a part (docs/design/app-design-handoff-m3.md, 8c, "The inspector, on a part",
-// and its screen): in place of the Channel panel's regions while the Recordings source shows and
-// a part is selected or playing (`AppSession.inspectedPart`). The part's place in its recording,
+// and its screen): the Library's inspector while a part is selected or playing
+// (`AppSession.inspectedPart`; "Decided 2026-09-25: the Library"). The part's place in its recording,
 // its time and length, the playback's position (the mirror's `Playback.position`; there is no
 // seeking in v1, so the bar is display only), the levels and settings the manifest recorded, and
 // the two things that can be done to a recording from here: its file shown in Finder, and the
@@ -59,7 +59,7 @@ struct PartInspector: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Button("Show in Finder") {
-                        Task { await session.revealInFinder(partURI: uri) }
+                        Task { await session.revealInFinder(uri: uri) }
                     }
                     .help("Select this part's file in Finder")
                     // The tooltip sits on a wrapper: a disabled button shows none of its own.

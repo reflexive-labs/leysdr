@@ -48,7 +48,7 @@ enum Theme {
     static var recordingRGB: SIMD3<Float> { rgb(recordingHex) }
     /// `accent-rec`, what is being kept: the Record transmissions switch's track while on, the
     /// log's live-row dot while a part is written, a recording bookmark's dot, the time gutter's
-    /// kept bars and the Recordings rows' running dot (M3 handoff, 8a to 8c). Nothing else, so
+    /// kept bars and the Library rows' running dot (M3 handoff, 8a to 8c). Nothing else, so
     /// red always means kept.
     static let accentRecHex: UInt32 = 0xE5484D
     static let accentRec = Color(hex: accentRecHex)
@@ -100,8 +100,8 @@ enum Theme {
         static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
-        /// `label` in mono: a frequency standing where a name would, the Recordings source's
-        /// title for a channel with no bookmark (M3 handoff, 8c).
+        /// `label` in mono: a frequency standing where a name would, the Library's title
+        /// for a channel with no bookmark (M3 handoff, 8c).
         static let labelMono = SwiftUI.Font.system(size: 12.5, design: .monospaced)
             .monospacedDigit()
         /// A view's own headline: the band rail's band name, the empty-state headline.
@@ -121,8 +121,10 @@ enum Theme {
         static let footnote = SwiftUI.Font.system(size: 10.5)
         /// A clause under a sentence, or a condition line under the identity's frequency.
         static let aside = SwiftUI.Font.system(size: 11.5)
-        /// The play and stop glyphs in a kept row's ring.
+        /// The play and stop glyphs in a kept row's ring, and the player's ⏮ and ⏭.
         static let glyph = SwiftUI.Font.system(size: 8, weight: .semibold)
+        /// The glyph in the transport bar's 44 pt circle: the player's ▶ and ■.
+        static let transportGlyph = SwiftUI.Font.system(size: 16, weight: .bold)
     }
 
     /// `0.14em` at 9.5 pt; was `0.16em`, brought down a step on 2026-09-19.
@@ -138,6 +140,12 @@ enum Theme {
         static let bandRailHeight: CGFloat = 40
         static let spectrumHeight: CGFloat = 150
         static let transportHeight: CGFloat = 88
+        /// The transport bar's circle, the speaker in the Radio and ▶/■ in the Library's player.
+        static let transportButton: CGFloat = 44
+        /// The player's words beside its buttons: wide enough for `GMRS CH3 · Tuesday 14:02 ·
+        /// part 5 of 11` in `Font.label` (about 250 pt, a guess until the Mac); a longer title
+        /// truncates.
+        static let playerWordsWidth: CGFloat = 260
         /// The inspector, fixed on the right (M2 handoff, "The panel"); the window works
         /// without it.
         static let inspectorWidth: CGFloat = 312
@@ -182,7 +190,7 @@ enum Theme {
         static let gutterTickSeconds = 10
         /// The store footer's bar at the sidebar's foot (M3 handoff, "In every screen").
         static let storeBarHeight: CGFloat = 3
-        /// The Recordings source's channel page (M3 handoff, 8c): its header is 56 pt, as the
+        /// The Library's channel page (M3 handoff, 8c): its header is 56 pt, as the
         /// handoff specifies; the rest are read off the 8c screen (`tmp/recordings3.png`, 1.31
         /// device pixels a point there): the page's side and bottom inset, the gap above a day's
         /// header, the gap between cards, a card's inset and corner, and a chip's gap, inset and

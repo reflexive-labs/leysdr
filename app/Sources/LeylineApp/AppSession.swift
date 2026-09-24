@@ -105,22 +105,30 @@ final class AppSession {
             followAudioLevels()
         }
     }
-    /// Which of the sidebar's two sources shows, `Radio | Recordings` (docs/design/
-    /// app-design-handoff-m3.md, "In every screen"). Remembered in the defaults under
-    /// `sidebarSourceKey`, the way `inspectorShown` is.
-    var sidebarSource =
-        UserDefaults.standard.string(forKey: AppSession.sidebarSourceKey)
-        .flatMap(SidebarSource.init(rawValue:)) ?? .radio
+    /// Which of the window's two places shows, the toolbar's `Radio | Library` (docs/design/
+    /// app-design-handoff-m3.md, "Decided 2026-09-25: the Library"). The live radio keeps
+    /// running in the Library: its channel, sink and subscriptions are the session's, not the
+    /// Radio body's. Remembered in the defaults under `placeKey`, the way `inspectorShown` is.
+    /// Arriving in the Library selects its first channel when none is selected, so the centre
+    /// is never blank.
+    var place =
+        UserDefaults.standard.string(forKey: AppSession.placeKey)
+        .flatMap(WindowPlace.init(rawValue:)) ?? .radio
     {
         didSet {
-            UserDefaults.standard.set(sidebarSource.rawValue, forKey: Self.sidebarSourceKey)
-            if sidebarSource != oldValue { followPage() }
+            UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey)
+            guard place != oldValue else { return }
+            log("session", "place: \(place.rawValue)")
+            if place == .library { selectFirstChannel() }
+            followPage()
+            // The audio ladder is drawn only by the Radio's inspector.
+            followAudioLevels()
         }
     }
-    /// The Recordings source's selected channel row (`RecordingChannel.id`), or nil. While one is
-    /// selected and the source shows, the centre column is that channel's page
-    /// (`RecordingsPage`), and the manifests of its recordings are read. Another row, or none,
-    /// clears the selected part: the inspector then shows a part only while one plays.
+    /// The Library's selected channel row (`RecordingChannel.id`), or nil. While one is selected
+    /// and the Library shows, the centre column is that channel's page (`RecordingsPage`), and
+    /// the manifests of its recordings are read. Another row, or none, clears the selected part:
+    /// the inspector then shows a part only while one plays.
     var selectedRecordingChannel: String? {
         didSet {
             guard selectedRecordingChannel != oldValue else { return }
@@ -128,7 +136,7 @@ final class AppSession {
             followPage()
         }
     }
-    /// The Recordings source's search field.
+    /// The Library sidebar's search field.
     var recordingsQuery = ""
     /// One sentence about the last thing that happened, or nil.
     /// Every message the window shows is also logged (`AppLog.swift`): the notice and the error
@@ -170,7 +178,7 @@ final class AppSession {
     // channel's recording as read from disk, and the switch's click until its job's event
     // arrives.
     /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
-    /// every change to a record job and once on adoption. The sidebar's Recordings source and the
+    /// every change to a record job and once on adoption. The Library's sidebar and the
     /// store footer render it.
     private(set) var recordings: [RecordingSummary] = []
     @ObservationIgnored private var recordingsLoad: Task<Void, Never>?
@@ -208,7 +216,7 @@ final class AppSession {
     /// Job ids whose read failed, not tried again until their job changes or the listing is read
     /// again: a mirror change arrives four times a second while a part plays.
     @ObservationIgnored private var pageFailed: Set<String> = []
-    /// The part the inspector shows while the Recordings source does: the last chip clicked, and
+    /// The part the Library's inspector and player show: the last chip clicked, and
     /// the part Play all moved on to. Cleared when its recording is deleted.
     var selectedPartURI: String?
     /// The folded cards (older than `Recordings.collapseAfterDays`) opened by a click, by
@@ -270,7 +278,7 @@ final class AppSession {
         } ?? want
     }
     private static let inspectorShownKey = "inspectorShown"
-    private static let sidebarSourceKey = "sidebarSource"
+    private static let placeKey = "place"
 
     // MARK: Derived
 
@@ -1750,10 +1758,11 @@ final class AppSession {
         log("spectrum", "max hold cleared")
     }
 
-    /// The inspector's audio ladder follows the tuned channel while the panel is shown.
+    /// The inspector's audio ladder follows the tuned channel while the Radio's panel is shown.
     private func followAudioLevels() {
         audioLevels.follow(
-            channel, captureRate: capture?.sampleRate ?? 0, shown: inspectorShown,
+            channel, captureRate: capture?.sampleRate ?? 0,
+            shown: inspectorShown && place == .radio,
             connection: daemon)
     }
 
@@ -2121,6 +2130,9 @@ final class AppSession {
                 if list != self.recordings { self.recordings = list }
                 self.prunePage()
                 self.pageFailed = []
+                if self.place == .library, self.selectedRecordingChannel == nil {
+                    self.selectFirstChannel()
+                }
                 self.followPage()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -2129,7 +2141,7 @@ final class AppSession {
         }
     }
 
-    /// The sidebar's Recordings rows (`Recordings.channels`), before the search.
+    /// The Library's channel rows (`Recordings.channels`), before the search.
     var recordingChannels: [RecordingChannel] {
         Recordings.channels(recordings, bookmarks: bookmarks.list, jobs: state.jobs)
     }
@@ -2146,12 +2158,20 @@ final class AppSession {
         return tunedBookmark?.name ?? Frequency.format(hz)
     }
 
-    /// Whether the centre column shows the channel page instead of the canvas: the Recordings
-    /// source is showing and a row is selected. A selected channel whose recordings have all gone
-    /// is still a page, with one sentence (`RecordingsPage`), so a delete of the last recording
-    /// does not drop the window back onto the radio under the pointer.
+    /// Whether the Library's centre column shows a channel page: the Library is showing and a
+    /// row is selected. A selected channel whose recordings have all gone is still a page, with
+    /// one sentence (`RecordingsPage`), so a delete of the last recording leaves the page in
+    /// place rather than selecting another channel under the pointer.
     var recordingsPageShown: Bool {
-        sidebarSource == .recordings && selectedRecordingChannel != nil
+        place == .library && selectedRecordingChannel != nil
+    }
+
+    /// Arriving in the Library, or its listing arriving while it shows: the first row is
+    /// selected when none is, or when the selected one has gone from the listing.
+    private func selectFirstChannel() {
+        guard selectedRecordingChannel == nil || selectedChannel == nil else { return }
+        let first = recordingChannels.first?.id
+        if first != selectedRecordingChannel { selectedRecordingChannel = first }
     }
 
     /// The selected row's channel while the listing holds it.
@@ -2165,10 +2185,10 @@ final class AppSession {
         Recordings.groups(c.recordings, manifests: pageManifests, jobs: state.jobs)
     }
 
-    /// The part the inspector shows while the Recordings source does: the selected part, else the
-    /// one playing, once its recording's manifest has been read. nil shows the Channel panel.
+    /// The part the inspector shows while the Library does: the selected part, else the one
+    /// playing, once its recording's manifest has been read. nil shows the channel's summary.
     var inspectedPart: (manifest: RecordingManifest, part: RecordingPart, group: RecordingGroup)? {
-        guard sidebarSource == .recordings,
+        guard place == .library,
             let uri = selectedPartURI ?? playingURI, let ref = RecordingPartRef(uri: uri),
             let m = pageManifests[ref.jobID],
             let part = m.parts.first(where: { $0.part == ref.part }),
@@ -2411,12 +2431,12 @@ final class AppSession {
         }
     }
 
-    /// The page's Tune: back to the Radio source and tuned to the channel, by the path a bookmark
+    /// The page's Tune: back to the Radio and tuned to the channel, by the path a bookmark
     /// click takes (`tune(bookmark:)`), which opens the band that holds the frequency when no
     /// radio is open and otherwise tunes the frequency and lets the band follow it, then applies
     /// the mode and the width of the channel's newest recording.
     func tune(recordingChannel c: RecordingChannel) {
-        sidebarSource = .radio
+        place = .radio
         let mode =
             c.mode == .unspecified ? Bands.defaultMode(at: c.frequencyHz, in: bands) : c.mode
         let width = Recordings.channelWidth(pageGroups(for: c), channel: c) ?? 0
@@ -2424,6 +2444,114 @@ final class AppSession {
         tune(
             bookmark: Bookmark(
                 id: "", name: c.title, hz: c.frequencyHz, mode: mode, bandwidthHz: width))
+    }
+
+    // MARK: The Library's player
+
+    /// The part the player shows and ▶ plays (docs/design/app-design-handoff-m3.md, "Decided
+    /// 2026-09-25: the Library", "The player"): the one playing, else the selected part, else
+    /// the first part of the selected channel's top card, once the manifest that holds it has
+    /// been read. nil leaves the player with nothing to play.
+    var player: (uri: String, manifest: RecordingManifest, part: RecordingPart)? {
+        let uri: String
+        if let u = playingURI ?? selectedPartURI {
+            uri = u
+        } else if let c = selectedChannel,
+            let first = Recordings.days(pageGroups(for: c), now: Date())
+                .flatMap(\.recordings).first(where: { !$0.chips.isEmpty })?.chips.first
+        {
+            uri = first.uri
+        } else {
+            return nil
+        }
+        guard let ref = RecordingPartRef(uri: uri), let m = manifest(ofJob: ref.jobID),
+            let part = m.parts.first(where: { $0.part == ref.part })
+        else { return nil }
+        return (uri, m, part)
+    }
+
+    /// A recording's manifest as the window has read it: the channel page's, else the tuned
+    /// channel's, which is where a kept row's ▶ in the Radio plays from.
+    private func manifest(ofJob id: String) -> RecordingManifest? {
+        if let m = pageManifests[id] { return m }
+        if let m = shownManifest, m.jobID == id { return m }
+        return nil
+    }
+
+    /// What the player calls the channel a recording belongs to: its Library row's title (the
+    /// bookmark's name, else the frequency), else the frequency.
+    func channelTitle(of manifest: RecordingManifest) -> String {
+        recordingChannels.first { c in c.recordings.contains { $0.jobID == manifest.jobID } }?
+            .title ?? Frequency.format(manifest.frequencyHz)
+    }
+
+    /// Whether ⏮ (`-1`) or ⏭ (`1`) has a part to go to in the player's recording.
+    func canStepPart(_ step: Int) -> Bool {
+        guard let p = player else { return false }
+        return Recordings.neighbourPart(of: p.uri, in: p.manifest, step: step) != nil
+    }
+
+    /// ⏮ and ⏭, ← and → in the Library: the previous or next part of the player's recording.
+    /// While a part plays it is stopped and the neighbour started, and a Play all walks on from
+    /// the neighbour; with nothing playing the neighbour is selected, so the inspector and the
+    /// player show it, and ▶ plays it. Nothing happens at the ends.
+    func stepPart(_ step: Int) async {
+        guard let p = player,
+            let n = Recordings.neighbourPart(of: p.uri, in: p.manifest, step: step)
+        else { return }
+        selectedPartURI = n
+        guard playingURI != nil else { return }
+        log("playback", "player: \(step < 0 ? "previous" : "next") part \(n)")
+        if let q = playQueue.recordingURI, let ref = RecordingPartRef(uri: n),
+            q == ref.recordingURI,
+            let summary = recordings.first(where: { $0.jobID == ref.jobID })
+        {
+            let running = state.jobs.contains { $0.jobID == ref.jobID && $0.isActive }
+            var queue = PlayQueue()
+            let group = RecordingGroup(summary: summary, manifest: p.manifest, running: running)
+            if let first = queue.start(group, at: n) {
+                playQueue = queue
+                await startPlayback(first)
+                return
+            }
+        }
+        await play(partURI: n)
+    }
+
+    /// The player's ▶ and ■, and space in the Library: ■ stops the part playing (and a Play
+    /// all), ▶ plays the player's part and selects it.
+    func togglePlayer() async {
+        if playingURI != nil {
+            await stopPlayback()
+            return
+        }
+        guard let p = player else { return }
+        selectedPartURI = p.uri
+        await play(partURI: p.uri)
+    }
+
+    /// Space from the menu bar: the player's ▶/■ in the Library, Mute/Unmute in the Radio. The
+    /// Tune menu's space and the Library menu's are one key; each item is disabled in the other
+    /// place, and because a Commands body is not guaranteed to re-evaluate when `place`
+    /// changes, whichever item fires does what the place showing means (`LeylineApp.swift`).
+    func pressSpace() {
+        if place == .library {
+            if TextFieldKeys.forward(.space) { return }
+            Task { await togglePlayer() }
+        } else {
+            Task { await toggleMute() }
+        }
+    }
+
+    /// ← and → from the menu bar: the previous and next part in the Library, the band's step in
+    /// the Radio (see `pressSpace`).
+    func pressArrow(_ direction: Int) {
+        if place == .library {
+            if TextFieldKeys.forward(direction < 0 ? .leftArrow : .rightArrow) { return }
+            Task { await stepPart(direction) }
+        } else {
+            step(direction)
+        }
     }
 
     /// The live sink back on the tuned channel, when it was attached before the clip.
@@ -2439,9 +2567,10 @@ final class AppSession {
         }
     }
 
-    /// A kept row's context menu: the part's file selected in Finder, found through
-    /// `ResolveLocalPath` of the part's URI.
-    func revealInFinder(partURI uri: String) async {
+    /// A kept row's context menu, the part inspector and the channel summary: the file of a
+    /// part, or a recording's directory, selected in Finder, found through `ResolveLocalPath` of
+    /// its URI.
+    func revealInFinder(uri: String) async {
         guard let path = await localPath(uri) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
         log("record", "revealed \(path)")
@@ -2581,12 +2710,15 @@ struct RecordSwitchClick: Equatable {
     var key: String { AppSession.recordKey(frequencyHz, mode) }
 }
 
-/// The sidebar's two sources (docs/design/app-design-handoff-m3.md, "In every screen"): Radio is
-/// the bands and bookmarks, Recordings the store grouped by channel. Presentation only.
-enum SidebarSource: String, CaseIterable, Identifiable {
+/// The window's two places (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the
+/// Library"): Radio is the live window, the Library what has been kept. Presentation only; the
+/// radio runs the same in both.
+enum WindowPlace: String, CaseIterable, Identifiable {
     case radio
-    case recordings
+    case library
 
     var id: String { rawValue }
-    var title: String { self == .radio ? "Radio" : "Recordings" }
+    var title: String { self == .radio ? "Radio" : "Library" }
+    /// ⌘1 and ⌘2, the View menu's items and the switch's tooltip.
+    var shortcut: Character { self == .radio ? "1" : "2" }
 }

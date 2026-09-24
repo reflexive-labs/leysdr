@@ -424,6 +424,24 @@ final class ClientDaemonTests: XCTestCase {
             part: part, of: manifest, positionFrames: nil, positionRate: 0, now: Date())
         XCTAssertTrue(words.title.hasPrefix("Part \(part.part) of "), words.title)
         XCTAssertTrue(words.progress.hasPrefix("0:00.0 of "), words.progress)
+        // The Library's player on the same part: its words, and ⏮ and ⏭ within the recording.
+        let player = Recordings.playerWords(
+            channelTitle: "GMRS CH3", part: part, of: manifest, positionFrames: nil,
+            positionRate: 0, now: Date())
+        XCTAssertTrue(
+            player.title.hasPrefix("GMRS CH3 · ")
+                && player.title.hasSuffix(" · part \(part.part) of \(manifest.parts.count)"),
+            player.title)
+        XCTAssertEqual(player.time, words.time)
+        XCTAssertEqual(player.played, "0:00.0")
+        let uri = manifest.uri(of: part)
+        let ordered = manifest.parts.sorted { $0.part < $1.part }
+        XCTAssertEqual(
+            Recordings.neighbourPart(of: uri, in: manifest, step: -1) == nil,
+            ordered.first?.part == part.part, "⏮ is disabled only at the first part")
+        XCTAssertEqual(
+            Recordings.neighbourPart(of: uri, in: manifest, step: 1) == nil,
+            ordered.last?.part == part.part, "⏭ is disabled only at the last part")
         // The gutter's kept bars: a row on the capture's timeline inside the part is held, the
         // newer one after every part is not.
         var rows = ClippedRows(capacity: 8)
@@ -431,8 +449,8 @@ final class ClientDaemonTests: XCTestCase {
         let last = manifest.parts.map(\.endSample).max() ?? part.endSample
         rows.append(sampleIndex: last + 1, captureID: capture.captureID)
         XCTAssertEqual(rows.keptRuns(manifest.parts), [1..<2])
-        // The sidebar's Recordings source and its store footer, from the same listing and the
-        // cap the daemon reports.
+        // The Library's channel rows and its store footer, from the same listing and the cap the
+        // daemon reports.
         let summaries = listed.resources.map(RecordingSummary.init)
         let channels = Recordings.channels(summaries, bookmarks: [], jobs: mirror.state.jobs)
         XCTAssertTrue(
