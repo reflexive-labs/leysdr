@@ -131,6 +131,8 @@ parameter.
 | `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works, the band is quiet. (Its first version put a strong tone under the job and called it quiet; the agent measured the tone, saw no records and called the decoder broken, which was a correct reading of a faulty scenario) |
 | `pl-tone-absent` | `rf-captures/noaa-wx2-auto` (local) | no PL is reported on a station that sends none |
 | `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is reported |
+| `dcs-code-present` | `rf-captures/ht-dcs-754` (local) | the GMRS handheld's DCS 754 is named, normal, with no PL tone invented |
+| `dcs-code-absent` | `ht-narrow` (local) | asked for a tone or a code, the agent names the 100 Hz PL and no DCS code. `pl-tone-absent` already covers a station that sends neither |
 | `record-squelch-opens` | `nfm_keyed` tuned | a gated recording is made and the three transmissions counted. The count comes from the manifest's `squelch_opens`, not from the part count: at the default 5 s hang the fixture's 3 s gaps keep all three overs in one part, so an agent that counts parts answers 1 |
 
 Not yet: a restart mid-task (the daemon killed and restarted while the agent works, which should

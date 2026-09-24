@@ -328,10 +328,32 @@ on any hop, nor do synthesised voice, noise, and every standard tone under voice
 `leylined` from the 023 take (`SubAudibleDCSDaemonTests`, runs where `LEYLINE_CAPTURES` is set), the
 wire carries `kind = DCS`, `dcs_code = 23`, `first_seen` at 2.950 s.
 
-Still to do for this item: the fake daemon's DCS option (step 3), the `leyfix` source and its
-fixtures (step 4), and every client (step 5), which today print or show nothing for `kind = DCS`.
-The MCP `listen` summary keeps the first report unless a CTCSS one follows, so a DCS lock that
-arrives after a `NONE` is lost there until step 5 gives it the daemon's preference.
+The Go lane below landed the same day; the app's log row (` · DCS 023`) is the one client left.
+
+**Landed (Go lane) 2026-09-24.** `go/pkg/dcs` holds the 104-code list, `Encode`, `Parity` and
+`Decode` with the rule above; its tests reproduce the handheld's parity from both takes
+(`11000110111` for 023, `11110000010` for 754) and the alias sets. The list was checked against
+the RadioReference wiki's DCS table, which has these 104 plus eight extended codes (006 007 015
+017 021 050 141 214), and the 83-code common chart is a subset of it. Checking the rule against
+the whole list found one consequence: **the list is closed under inversion.** Every standard
+code's complemented word reads as exactly one other standard code in the received polarity (52
+pairs: 023/047, 754/116, ...), so a decoder that prefers the received polarity reports
+`dcs_inverted = false` for every word, and a radio set to 023 inverted is named 047. The two
+readings are one signal on the air, so this is not wrong, but `dcs_inverted` as specified is never
+set; reporting "023 inverted" for such a radio needs a different rule (the lower code of the
+pair, say), which is the owner's decision. `leyfix` gains a `dcsCode` source (the word NRZ at
+134.4 bit/s through a 300 Hz Butterworth low-pass under the voice tone at ±550 Hz, the measured
+deviation rather than the 700 Hz step 4 guessed) and `nfm_dcs` (023), `nfm_dcs_754` and
+`nfm_dcs_inverted` (023 sent inverted, which expects 047 normal and says why); `SubExpect` gains
+`dcs_code` and `dcs_inverted`. The fake's `Options.DCS` puts a code on a carrier. `ley tune`
+prints `DCS  023` through the PL tracker's rules, `ley levels` and `ley scope` put `DCS 023` in
+their headers, the MCP `listen_summary` keeps a DCS report over a CTCSS one and its text says
+"CTCSS tone or DCS code", and the evals gain `dcs-code-present` (on `ht-dcs-754`) and
+`dcs-code-absent` (on `ht-narrow`). `TestDCSAgainstRealDaemon` plays `nfm_dcs` and wants DCS 023
+normal within 3 s; it skips when no DCS report arrives, and the skip goes once the engine half is
+on main. Against the `leylined` built in the main checkout at 00:08 on 2026-09-24 it passed, and
+the same daemon named `nfm_dcs_754` as 754 and `nfm_dcs_inverted` as 047 normal, at 554 Hz of
+deviation.
 
 ## Decisions
 

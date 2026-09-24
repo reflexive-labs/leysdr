@@ -313,16 +313,30 @@ var fakeCarriers = []struct {
 	{101_100_000, 198_000, 41.5, 0},
 }
 
-// carrierTone is the tone on the carrier a channel at hz is sitting on, or 0 when there is no
-// carrier there or it is sent in the clear.
-func carrierTone(hz uint64) float64 {
+// carrierAt is the fake carrier a channel at hz is sitting on: its own frequency and its CTCSS
+// tone, 0 when it is sent in the clear.
+func carrierAt(hz uint64) (carrierHz uint64, tone float64, ok bool) {
 	for _, sig := range fakeCarriers {
 		half := uint64(sig.bw / 2)
 		if hz+half >= sig.hz && hz <= sig.hz+half {
-			return sig.tone
+			return sig.hz, sig.tone, true
 		}
 	}
-	return 0
+	return 0, 0, false
+}
+
+// subTone is what the carrier a channel at hz is sitting on sends below the voice: its CTCSS
+// tone, or the DCS code Options.DCS puts on it in its place. A DCS carrier reports no CTCSS tone,
+// as the daemon suppresses the CTCSS claim while DCS is locked (docs/plans/signal-views.md, SV-7).
+func (d *Daemon) subTone(hz uint64) (tone float64, code *DCSCode) {
+	at, tone, ok := carrierAt(hz)
+	if !ok {
+		return 0, nil
+	}
+	if c, ok := d.opts.DCS[at]; ok {
+		return 0, &c
+	}
+	return tone, nil
 }
 
 const fakeFloorDbfs = -88.2

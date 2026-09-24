@@ -64,7 +64,7 @@ func (srv *mcpServer) registerTools() {
 	}, srv.scan)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "listen_summary",
-		Description: "Listen on a frequency, preset or existing channel for duration_s seconds and summarise what the daemon's squelch and meter saw: the transmissions (squelch-open intervals with their length and peak), the signal level range, and any CTCSS tone (Telemetry.Subscribe, bounded; ley tune / ley listen). " +
+		Description: "Listen on a frequency, preset or existing channel for duration_s seconds and summarise what the daemon's squelch and meter saw: the transmissions (squelch-open intervals with their length and peak), the signal level range, and any CTCSS tone or DCS code (Telemetry.Subscribe, bounded; ley tune / ley listen). " +
 			"No audio is returned or played. Returns {channel: Channel, transcript: Transcript, meter: {...}, tone: SubAudible|null}.",
 		Annotations: mutates,
 	}, srv.listenSummary)
@@ -724,10 +724,28 @@ func (sum *listenSummary) apply(m *leylinev1.TelemetryMsg) {
 		}
 		sum.transcript.Segments = append(sum.transcript.Segments, seg)
 	case *leylinev1.TelemetryMsg_SubAudible:
-		if b.SubAudible.GetKind() == leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS || sum.tone == nil {
+		// A report that found a code beats one that found nothing, and DCS beats CTCSS: the
+		// daemon suppresses the CTCSS claim while DCS is locked (docs/plans/signal-views.md,
+		// SV-7), so a CTCSS report next to a DCS one is from before the lock or after it, and
+		// the code is the answer. Among reports of one kind the latest wins.
+		if subAudibleRank(b.SubAudible) >= subAudibleRank(sum.tone) {
 			sum.tone = b.SubAudible
 		}
 	}
+}
+
+// subAudibleRank orders reports for the summary: none yet, then nothing
+// found, then a CTCSS tone, then a DCS code.
+func subAudibleRank(sa *leylinev1.SubAudible) int {
+	switch {
+	case sa == nil:
+		return 0
+	case sa.GetKind() == leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS:
+		return 3
+	case sa.GetKind() == leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS:
+		return 2
+	}
+	return 1
 }
 
 // summarise subscribes to the channel's meter, squelch and sub-audible

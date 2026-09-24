@@ -108,7 +108,14 @@ type SubExpect struct {
 	// the plausible deviation for CTCSS is hum, not a tone, and calling it a
 	// tone is the failure mode this exists to catch.
 	Detect bool `json:"detect"`
-	// Why records the reason when Detect disagrees with ToneHz being present.
+	// DCSCode is the DCS code a decoder is expected to name, its octal digits read as decimal as
+	// the contract's dcs_code carries them (023 is 23); 0 for a fixture carrying no DCS. ToneHz is
+	// 0 on a DCS fixture: a DCS lock suppresses the CTCSS claim.
+	DCSCode int `json:"dcs_code,omitempty"`
+	// DCSInverted is the dcs_inverted a decoder is expected to report.
+	DCSInverted bool `json:"dcs_inverted,omitempty"`
+	// Why records the reason when Detect disagrees with ToneHz being present, or when the code
+	// expected is not the one the generator sent.
 	Why string `json:"why,omitempty"`
 }
 

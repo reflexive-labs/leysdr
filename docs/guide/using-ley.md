@@ -131,6 +131,14 @@ a signal`. It is written to stderr and redrawn in place; redirected or piped it 
 prints one whole line a second instead, so a `tee`d session stays readable. Ctrl-C stops, removes
 the channel and reports what happened to the radio (exit 0).
 
+On an NFM channel the daemon also listens under the voice for a squelch code, and `tune` prints
+one line above the meter when it finds one and again when it changes: `PL  100.0 Hz  dev 620 Hz
+tone/band 18 dB` for a CTCSS tone, `DCS  023  dev 550 Hz` for a DCS code, in the three octal
+digits a radio's menu shows. A move from a PL tone to a DCS code is a change and prints. Nothing is
+printed when the code stops, or on a channel that never had one. A DCS code sent inverted is the
+same bit stream as another code sent normal (023 inverted is 047 normal), and the daemon names the
+normal reading, so a radio set to 023 inverted shows `DCS  047`.
+
 ```console
 $ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try noaa2..7
 $ ley tune 101.1 --mode fm          # FM broadcast; fm means WFM here
@@ -411,7 +419,8 @@ refuses `--tap demod` on one and says why.
 `--json` prints the frame statistics and no samples: one object per frame,
 `{seq, sample_index, sample_rate, tap, window_ms, peak_dbfs, rms_dbfs, dc, scale, tone_hz}`, where
 `scale` is the vertical scale the frame was drawn at and `tone_hz` is absent until the daemon has
-reported a tone. The samples themselves are
+reported a tone. A DCS code is not a tone and leaves `tone_hz` absent; the header shows it as
+`DCS 023` where a PL would go, and `ley levels` does the same. The samples themselves are
 `ley listen --format json`.
 
 ## 8. Hear it with your eyes

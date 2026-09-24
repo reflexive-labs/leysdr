@@ -622,6 +622,43 @@ func TestMCPQueryRecordsExplainsAnEmptyPage(t *testing.T) {
 // The listen fold alone: a close edge with no open before it is the squelch
 // having been open when listening began, not a transmission, and a real
 // open-then-close is one segment with the meter's mean while open.
+// The summary keeps the report that found the most: a DCS code over a CTCSS tone over nothing,
+// whatever order they arrive in, because the daemon suppresses the CTCSS claim while DCS is
+// locked. The text names the code as ley tune prints it.
+func TestListenSummaryKeepsDCSOverCTCSS(t *testing.T) {
+	sa := func(kind leylinev1.SubAudibleKind, code uint32) *leylinev1.TelemetryMsg {
+		return &leylinev1.TelemetryMsg{Body: &leylinev1.TelemetryMsg_SubAudible{SubAudible: &leylinev1.SubAudible{
+			Kind: kind, DcsCode: code, StandardToneHz: 100, ToneHz: 100.1, DeviationHz: 550, ToneSnrDb: math.NaN(),
+		}}}
+	}
+	none := sa(leylinev1.SubAudibleKind_SUB_AUDIBLE_NONE, 0)
+	ctcss := sa(leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS, 0)
+	dcs := sa(leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS, 23)
+	for name, order := range map[string][]*leylinev1.TelemetryMsg{
+		"dcs last":  {none, ctcss, dcs, none},
+		"dcs first": {dcs, ctcss, none},
+	} {
+		sum := newListenSummary(-40, 2_400_000)
+		for _, m := range order {
+			sum.apply(m)
+		}
+		if got := sum.tone.GetKind(); got != leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS || sum.tone.GetDcsCode() != 23 {
+			t.Errorf("%s: kept %v code %d, want DCS 23", name, got, sum.tone.GetDcsCode())
+		}
+	}
+	sum := newListenSummary(-40, 2_400_000)
+	sum.apply(ctcss)
+	sum.apply(none)
+	if sum.tone.GetKind() != leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS {
+		t.Errorf("a tone is not forgotten for a later report that found nothing: %v", sum.tone)
+	}
+	sum.apply(dcs)
+	s := &session{capture: &leylinev1.Capture{CenterHz: 146_520_000}, channel: &leylinev1.Channel{Mode: leylinev1.DemodMode_NFM}}
+	if text := sum.text(s, 10*time.Second); !strings.Contains(text, "DCS  023") {
+		t.Errorf("the text names the code: %q", text)
+	}
+}
+
 func TestListenSummaryFold(t *testing.T) {
 	at := func(idx uint64) *leylinev1.SampleTime {
 		return &leylinev1.SampleTime{CaptureId: "cap_1", SampleIndex: idx}

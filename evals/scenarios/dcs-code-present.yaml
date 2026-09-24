@@ -1,0 +1,37 @@
+# A GMRS handheld set to DCS 754 normal, recorded on 2026-09-23 with the HackRF (SV-7). The
+# capture lives only on the checkout that recorded it (rf-captures/). 754's word also reads 076
+# and 203 at other rotations, and 116 inverted, so the answer is the one code the daemon names.
+name: dcs-code-present
+description: Listening to a handheld with a DCS code, the agent names the code and no PL tone.
+fixtures:
+  - file: ../rf-captures/ht-dcs-754.cf32
+    as: radio-g
+    optional: true
+task: |
+  Listen to 462.5625 MHz for about fifteen seconds and tell me whether the transmitter sends a
+  sub-audible squelch code, either a CTCSS (PL) tone or a DCS code, and which one. Say how
+  confident the daemon was.
+answer_schema: |
+  {"tone_hz": <number, or null when no CTCSS tone>, "dcs_code": <the DCS code's three octal digits as a string, e.g. "023", or null when none>, "dcs_inverted": <true or false, or null when no DCS code>, "confidence": <number 0 to 1, or null>}
+truth:
+  tone_hz: null
+  dcs_code: 754
+  dcs_inverted: false
+checks:
+  - type: answered
+  - type: json_equals
+    path: dcs_code
+    truth: dcs_code
+    why: the handheld was set to 754 normal; 076 and 203 are rotations of the same word and not standard codes
+  - type: json_equals
+    path: dcs_inverted
+    truth: dcs_inverted
+  - type: json_equals
+    path: tone_hz
+    truth: tone_hz
+    why: a DCS lock suppresses the CTCSS claim, so a PL tone here is invented
+  - type: used_tool
+    tool: listen_summary
+  - type: no_shell
+  - type: max_tool_calls
+    n: 6

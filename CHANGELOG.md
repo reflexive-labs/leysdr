@@ -4,6 +4,12 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- `ley tune` prints a DCS code the daemon reports as `DCS  023`, once per change as it prints a
+  PL tone, and `ley levels` and `ley scope` show it in their headers. The MCP `listen_summary`
+  keeps a DCS report over a CTCSS one. A code sent inverted is named as the standard code the same
+  bit stream reads as normal: 023 inverted shows as 047. `make fixtures` adds `nfm_dcs`,
+  `nfm_dcs_754` and `nfm_dcs_inverted`.
+
 - The RTL-SDR and HackRF native backends are now optional runtime-loaded components. The daemon
   builds and starts with neither library, logs a missing backend once, and continues with the other
   backend, `rtl_tcp`, and file playback. CI tests neither, either one alone, and both with mocks.

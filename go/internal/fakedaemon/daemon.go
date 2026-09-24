@@ -72,6 +72,20 @@ type Options struct {
 	// open, ... Empty keeps the gate open for the whole recording, which is
 	// what a continuous recording wants anyway.
 	RecordGateAt []int64
+	// DCS puts a DCS code on fake carriers, keyed by the carrier's frequency in the fake's band
+	// (145.23, 146.52, 146.94, 162.4 or 101.1 MHz, in Hz). A channel on such a carrier reports
+	// SUB_AUDIBLE_DCS with that code, on the same edges and heartbeat as a CTCSS tone, and no
+	// CTCSS tone, which the daemon suppresses while DCS is locked. The demod tap then carries no
+	// sub-audible tone either. Empty keeps every carrier as the table has it.
+	DCS map[uint64]DCSCode
+}
+
+// DCSCode is a DCS code the fake sends on a carrier (Options.DCS).
+type DCSCode struct {
+	// Code is the contract's dcs_code: the octal digits read as decimal, 23 for DCS 023.
+	Code uint32
+	// Inverted is the contract's dcs_inverted.
+	Inverted bool
 }
 
 // Daemon is the in-memory state store plus all six service implementations.

@@ -1,0 +1,32 @@
+# The other half of dcs-code-present: the handheld's 100 Hz PL take (the pl-tone-present
+# recording), asked the same question. A CTCSS tone is a sub-audible code too, so the right answer
+# names the tone and no DCS code; pl-tone-absent already covers a station that sends neither.
+name: dcs-code-absent
+description: Listening to a handheld with a PL tone and no DCS, the agent names the tone and no code.
+fixtures:
+  - file: ht-narrow.cu8
+    as: radio-h
+    optional: true
+task: |
+  Listen to 147.435 MHz for about fifteen seconds and tell me whether the transmitter sends a
+  sub-audible squelch code, either a CTCSS (PL) tone or a DCS code, and which one. Say how
+  confident the daemon was.
+answer_schema: |
+  {"tone_hz": <number, or null when no CTCSS tone>, "dcs_code": <the DCS code's three octal digits as a string, e.g. "023", or null when none>, "dcs_inverted": <true or false, or null when no DCS code>, "confidence": <number 0 to 1, or null>}
+truth:
+  tone_hz: 100.0
+  dcs_code: null
+checks:
+  - type: answered
+  - type: json_equals
+    path: dcs_code
+    truth: dcs_code
+    why: the handheld sends PL 100 and no DCS; a code here is invented
+  - type: json_equals
+    path: tone_hz
+    truth: tone_hz
+  - type: used_tool
+    tool: listen_summary
+  - type: no_shell
+  - type: max_tool_calls
+    n: 6
