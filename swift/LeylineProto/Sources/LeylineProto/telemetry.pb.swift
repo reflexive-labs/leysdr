@@ -285,10 +285,11 @@ public nonisolated struct Leyline_V1_CaptureLevel: Sendable {
   public init() {}
 }
 
-/// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
+/// Sub-audible signalling under an FM transmission: a CTCSS/PL tone or a DCS
+/// code.
 ///
-/// Edge-triggered on a change of identity or confidence band, plus a 1 Hz
-/// heartbeat while a tone is held (the telemetry plane has no GetState, so a
+/// Edge-triggered on a change of identity (kind, standard tone, DCS code or
+/// polarity), plus a heartbeat about once a second (the telemetry plane has no GetState, so a
 /// client that subscribes mid-transmission has to be told what is already
 /// there). Full state every message.
 ///
@@ -300,9 +301,17 @@ public nonisolated struct Leyline_V1_CaptureLevel: Sendable {
 ///   - confidence is a STATED SCORE, not a probability:
 ///       clamp((tone_snr_db-6)/14) * clamp(1-|tone_hz-standard_tone_hz|/tol)
 ///                                 * min(hops_agreeing,3)/3
+///     For kind = DCS the score is the decoder's own:
+///       min(words_agreeing,3)/3 * clamp((eye-2)/6)
+///     where eye is mean |sample| over the standard deviation of |sample| at the
+///     sliced bit centres; a lock needs three agreeing words, so it is the eye
+///     term alone whenever DCS is reported.
 ///     Calibrating a real probability needs a corpus of off-air recordings we do
 ///     not have. The measured fields are always populated, so a client can
 ///     threshold on those and ignore the score.
+///   - A DCS lock suppresses the CTCSS claim: the code's broadband sub-audible
+///     energy feeds the tone bank. While DCS is reported, tone_hz is NaN and
+///     standard_tone_hz 0.
 ///   - Known false positive: 50 Hz mains hum lands on exactly 100.0 Hz, is
 ///     perfectly stable, and passes every frequency test; 100.0 Hz is also one
 ///     of the commonest real PL tones. Only deviation_hz separates them.
@@ -321,13 +330,20 @@ public nonisolated struct Leyline_V1_SubAudible: Sendable {
   /// classified; 0 = measured but not classifiable
   public var standardToneHz: Double = 0
 
-  /// Reserved for the DCS decoder, which does not exist yet: the CTCSS detector leaves both at
-  /// their zero values, so a client cannot read `dcs_code == 0` as "not a DCS squelch".
+  /// Set only when kind = DCS; 0 and false otherwise, so a client reads kind, not
+  /// `dcs_code == 0`, to tell whether a code was found. The daemon reports a code only
+  /// when three consecutive 23-bit words at one bit phase read as one of the 104
+  /// standard codes, and never the nearest listed code to a word that is not one.
   public var dcsCode: UInt32 = 0
 
+  /// True when the code was read from the complemented stream. Every standard code's
+  /// complement is another standard code's normal stream (023 inverted is on the air as
+  /// 047 normal, bit for bit), and the daemon prefers the received polarity, so it
+  /// reports the normal alias and leaves this false.
   public var dcsInverted: Bool = false
 
-  /// peak deviation the tone was sent at
+  /// CTCSS: peak deviation the tone was sent at. DCS: the mean deviation at the bit
+  /// centres, the code's bit amplitude.
   public var deviationHz: Double = 0
 
   /// the tone against the rest of the 60-260 Hz band
@@ -336,6 +352,9 @@ public nonisolated struct Leyline_V1_SubAudible: Sendable {
   /// stated score, not a probability; formula above
   public var confidence: Double = 0
 
+  /// The sample time of the analysis hop at which the current claim (this tone, or this
+  /// code and polarity) was first made, good to a few milliseconds of tap filter delay.
+  /// Unset when kind = NONE.
   public var firstSeen: Leyline_V1_SampleTime {
     get {_firstSeen ?? Leyline_V1_SampleTime()}
     set {_firstSeen = newValue}

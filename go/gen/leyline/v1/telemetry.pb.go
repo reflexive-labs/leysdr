@@ -484,10 +484,11 @@ func (x *CaptureLevel) GetPeakDbfs() float64 {
 	return 0
 }
 
-// A sub-audible tone under an FM transmission: CTCSS/PL today, DCS later.
+// Sub-audible signalling under an FM transmission: a CTCSS/PL tone or a DCS
+// code.
 //
-// Edge-triggered on a change of identity or confidence band, plus a 1 Hz
-// heartbeat while a tone is held (the telemetry plane has no GetState, so a
+// Edge-triggered on a change of identity (kind, standard tone, DCS code or
+// polarity), plus a heartbeat about once a second (the telemetry plane has no GetState, so a
 // client that subscribes mid-transmission has to be told what is already
 // there). Full state every message.
 //
@@ -499,9 +500,17 @@ func (x *CaptureLevel) GetPeakDbfs() float64 {
 //   - confidence is a STATED SCORE, not a probability:
 //     clamp((tone_snr_db-6)/14) * clamp(1-|tone_hz-standard_tone_hz|/tol)
 //   - min(hops_agreeing,3)/3
+//     For kind = DCS the score is the decoder's own:
+//     min(words_agreeing,3)/3 * clamp((eye-2)/6)
+//     where eye is mean |sample| over the standard deviation of |sample| at the
+//     sliced bit centres; a lock needs three agreeing words, so it is the eye
+//     term alone whenever DCS is reported.
 //     Calibrating a real probability needs a corpus of off-air recordings we do
 //     not have. The measured fields are always populated, so a client can
 //     threshold on those and ignore the score.
+//   - A DCS lock suppresses the CTCSS claim: the code's broadband sub-audible
+//     energy feeds the tone bank. While DCS is reported, tone_hz is NaN and
+//     standard_tone_hz 0.
 //   - Known false positive: 50 Hz mains hum lands on exactly 100.0 Hz, is
 //     perfectly stable, and passes every frequency test; 100.0 Hz is also one
 //     of the commonest real PL tones. Only deviation_hz separates them.
@@ -511,14 +520,25 @@ type SubAudible struct {
 	Kind           SubAudibleKind         `protobuf:"varint,2,opt,name=kind,proto3,enum=leyline.v1.SubAudibleKind" json:"kind,omitempty"`
 	ToneHz         float64                `protobuf:"fixed64,3,opt,name=tone_hz,json=toneHz,proto3" json:"tone_hz,omitempty"`                           // measured; NaN when nothing was measured
 	StandardToneHz float64                `protobuf:"fixed64,4,opt,name=standard_tone_hz,json=standardToneHz,proto3" json:"standard_tone_hz,omitempty"` // classified; 0 = measured but not classifiable
-	// Reserved for the DCS decoder, which does not exist yet: the CTCSS detector leaves both at
-	// their zero values, so a client cannot read `dcs_code == 0` as "not a DCS squelch".
-	DcsCode     uint32      `protobuf:"varint,5,opt,name=dcs_code,json=dcsCode,proto3" json:"dcs_code,omitempty"` // octal as decimal (023 -> 23)
-	DcsInverted bool        `protobuf:"varint,6,opt,name=dcs_inverted,json=dcsInverted,proto3" json:"dcs_inverted,omitempty"`
-	DeviationHz float64     `protobuf:"fixed64,7,opt,name=deviation_hz,json=deviationHz,proto3" json:"deviation_hz,omitempty"` // peak deviation the tone was sent at
-	ToneSnrDb   float64     `protobuf:"fixed64,8,opt,name=tone_snr_db,json=toneSnrDb,proto3" json:"tone_snr_db,omitempty"`     // the tone against the rest of the 60-260 Hz band
-	Confidence  float64     `protobuf:"fixed64,9,opt,name=confidence,proto3" json:"confidence,omitempty"`                      // stated score, not a probability; formula above
-	FirstSeen   *SampleTime `protobuf:"bytes,10,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
+	// Set only when kind = DCS; 0 and false otherwise, so a client reads kind, not
+	// `dcs_code == 0`, to tell whether a code was found. The daemon reports a code only
+	// when three consecutive 23-bit words at one bit phase read as one of the 104
+	// standard codes, and never the nearest listed code to a word that is not one.
+	DcsCode uint32 `protobuf:"varint,5,opt,name=dcs_code,json=dcsCode,proto3" json:"dcs_code,omitempty"` // octal as decimal (023 -> 23)
+	// True when the code was read from the complemented stream. Every standard code's
+	// complement is another standard code's normal stream (023 inverted is on the air as
+	// 047 normal, bit for bit), and the daemon prefers the received polarity, so it
+	// reports the normal alias and leaves this false.
+	DcsInverted bool `protobuf:"varint,6,opt,name=dcs_inverted,json=dcsInverted,proto3" json:"dcs_inverted,omitempty"`
+	// CTCSS: peak deviation the tone was sent at. DCS: the mean deviation at the bit
+	// centres, the code's bit amplitude.
+	DeviationHz float64 `protobuf:"fixed64,7,opt,name=deviation_hz,json=deviationHz,proto3" json:"deviation_hz,omitempty"`
+	ToneSnrDb   float64 `protobuf:"fixed64,8,opt,name=tone_snr_db,json=toneSnrDb,proto3" json:"tone_snr_db,omitempty"` // the tone against the rest of the 60-260 Hz band
+	Confidence  float64 `protobuf:"fixed64,9,opt,name=confidence,proto3" json:"confidence,omitempty"`                  // stated score, not a probability; formula above
+	// The sample time of the analysis hop at which the current claim (this tone, or this
+	// code and polarity) was first made, good to a few milliseconds of tap filter delay.
+	// Unset when kind = NONE.
+	FirstSeen *SampleTime `protobuf:"bytes,10,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
 	// How many recent analysis hops agreed on the tone. The detector counts them for the
 	// confidence formula above but does not report the count, so this stays 0; a client reads
 	// confidence rather than deriving its own from this.

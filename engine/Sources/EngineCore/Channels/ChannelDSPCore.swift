@@ -165,6 +165,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
     private var samplesSinceMeter = 0
     private let blocksProcessed = Atomic<UInt64>(0)
     private let squelchCloses = Atomic<UInt64>(0)
+    /// The capture sample index just past the last block processed, for the sub-audible task to
+    /// stamp its hops with (invariant 5). One relaxed store per block.
+    private let sampleEnd = Atomic<UInt64>(0)
 
     /// - Throws: `INVALID_ARGUMENT`, `OFFSET_OUT_OF_CAPTURE`, `MODE_UNSUPPORTED` (from the demodulator).
     public init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384,
@@ -236,6 +239,15 @@ public final class ChannelDSPCore: @unchecked Sendable {
     /// stale. A count rather than a flag because a whole transmission can
     /// come and go between two of that task's 50 ms polls.
     public var squelchCloseCount: UInt64 { squelchCloses.load(ordering: .relaxed) }
+
+    /// The capture sample index just past the last block this core processed; 0 before the first.
+    public var sampleIndexEnd: UInt64 { sampleEnd.load(ordering: .relaxed) }
+
+    /// Capture samples per sub-audible tap sample, for converting what is still unread in the tap
+    /// into capture time. 0 when there is no tap.
+    public var captureSamplesPerTapSample: Double {
+        subAudibleRate > 0 ? Double(captureRate) / subAudibleRate : 0
+    }
 
     /// Adjust the squelch threshold (dBFS, NaN = off) without rebuilding. Takes effect next block.
     public func setSquelch(thresholdDB: Double) {
@@ -369,6 +381,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
             }
             telemetry.push(rec)
         }
+        sampleEnd.store(time.sampleIndex &+ UInt64(block.count), ordering: .relaxed)
         blocksProcessed.wrappingAdd(1, ordering: .relaxed)
     }
 

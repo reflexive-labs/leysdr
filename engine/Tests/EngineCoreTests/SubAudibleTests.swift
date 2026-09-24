@@ -6,9 +6,10 @@ import XCTest
 
 /// Synthesise decimated discriminator output: a sub-audible tone, optional voice, and noise, in the
 /// units the detector takes (±1.0 is full-scale deviation).
-private func discriminatorSamples(count: Int, rate: Double, fullScale: Double,
-                                  toneHz: Double, toneDevHz: Double,
-                                  voice: Bool, noise: Double, seed: UInt64) -> [Float]
+/// Internal rather than private so the DCS tests can put the same voice under a code.
+func discriminatorSamples(count: Int, rate: Double, fullScale: Double,
+                          toneHz: Double, toneDevHz: Double,
+                          voice: Bool, noise: Double, seed: UInt64) -> [Float]
 {
     var rng = SplitMix64(seed: seed)
     var out = [Float](repeating: 0, count: count)
@@ -28,7 +29,7 @@ private func discriminatorSamples(count: Int, rate: Double, fullScale: Double,
 }
 
 /// Deterministic RNG: the fixtures must not move between runs.
-private struct SplitMix64 {
+struct SplitMix64 {
     var state: UInt64
     init(seed: UInt64) { state = seed }
     mutating func next() -> UInt64 {

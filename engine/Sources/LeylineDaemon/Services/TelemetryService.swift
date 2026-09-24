@@ -114,12 +114,23 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
                         guard wants(.subAudible) else { continue }
                         msg.time = ProtoMapping.sampleTime(time)
                         msg.subAudible.channelID = id.string
-                        msg.subAudible.kind = r.detected ? .subAudibleCtcss : .subAudibleNone
+                        switch r.kind {
+                        case .none: msg.subAudible.kind = .subAudibleNone
+                        case .ctcss: msg.subAudible.kind = .subAudibleCtcss
+                        case .dcs: msg.subAudible.kind = .subAudibleDcs
+                        }
+                        // A DCS lock carries no tone: the merged result leaves toneHz NaN and the
+                        // standard tone 0, so a client cannot read a CTCSS claim into it.
                         msg.subAudible.toneHz = r.toneHz
                         msg.subAudible.standardToneHz = r.standardToneHz
                         msg.subAudible.deviationHz = r.deviationHz
                         msg.subAudible.toneSnrDb = r.toneSNRDB
                         msg.subAudible.confidence = r.confidence
+                        if let d = r.dcs {
+                            msg.subAudible.dcsCode = UInt32(d.code)
+                            msg.subAudible.dcsInverted = d.inverted
+                        }
+                        if let first = r.firstSeen { msg.subAudible.firstSeen = ProtoMapping.sampleTime(first) }
                     }
                     yieldMerged(msg, gap: gap)
                     gap = 0

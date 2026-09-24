@@ -118,7 +118,7 @@ final class SubAudibleCaptureTests: XCTestCase {
         guard let outDir = ProcessInfo.processInfo.environment["LEYLINE_CAPTURE_WRITE_TAPS"], !outDir.isEmpty else {
             throw XCTSkip("set LEYLINE_CAPTURE_WRITE_TAPS to a directory to write the taps")
         }
-        for name in ["noaa-wx2-auto.cu8", "ht-narrow.cu8"] {
+        for name in ["noaa-wx2-auto.cu8", "ht-narrow.cu8", "ht-dcs-023.cf32", "ht-dcs-754.cf32"] {
             let t = try Self.tap(of: try capture(name))
             XCTAssertEqual(t.rate, Self.tapRate, "\(name): the tap rate moved; the committed taps assume \(Self.tapRate)")
             XCTAssertEqual(t.fullScale, Self.tapFullScale)

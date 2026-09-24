@@ -291,6 +291,48 @@ is settled by the two takes:
 Not settled, and not needed for the decoder: the turn-off burst (the takes end with the
 carrier dropping, and the tap shows no distinct tone before it at this resolution).
 
+**Landed (engine), 2026-09-24.** Steps 2 and 3 on the daemon side. `DCSDecoder` in
+`engine/Sources/EngineCore/DSP/DCS.swift` takes the CTCSS detector's 128-sample hop, keeps its own
+history of three words, removes the tuning error with a one-pole tracker (τ = 1 s, seeded from the
+first hop's mean), slices at 134.4 bit/s from eight phases within a bit, and locks when three
+consecutive words at one phase are codewords under 0xAE3 reading, in some rotation with `001` in
+place, as one of the 104 standard codes; the received polarity is tried first, then the
+complement. Matching is exact: no bit is corrected, and `bitErrors` is always 0. The tracker alone
+left the 023 take's eye opening for two seconds after the lock (mean |sample| over its standard
+deviation rose from 2.2 to 20 over 2.3 s), so once a word has read the tracker and the history are
+moved onto the midpoint of the ones' and zeros' means, which the bit pattern does not bend; the
+eye then reads 30 to 68 from the first lock. `confidence = min(words_agreeing, 3) / 3 ·
+clamp((eye − 2) / 6)`, stated in the decoder's doc comment and the proto. The 104-code list was
+checked against the RadioReference wiki's DCS chart on 2026-09-24: it lists these 104 and eight
+more (006, 007, 015, 017, 021, 050, 141, 214) that scanners accept, which the decoder does not
+claim.
+
+`makeSubAudibleTask` runs both detectors on each hop, publishes `kind = SUB_AUDIBLE_DCS` with the
+code while the lock holds and suppresses the CTCSS claim (`SubAudibleResult.merged`), treats a
+change of kind, tone, code or polarity as an edge, and resets both on a squelch close.
+`TelemetryService` maps the three kinds and sets `dcs_code`, `dcs_inverted`, `deviation_hz`,
+`confidence` and `first_seen`. Every sub-audible message now carries the capture sample time of its
+hop (it carried sample index 0 before) and `first_seen` is set for CTCSS claims too, both from
+`ChannelDSPCore.sampleIndexEnd` less what is unread in the tap. `dcs_inverted` is false on every
+lock: the standard list is closed under complement (each listed code's complemented word reads as
+exactly one other listed code at received polarity, `DCSTests`), so an inverted code is reported
+as its normal alias, 023 inverted as 047. `hops_agreeing` is still never set.
+
+Measured by `DCSTests` on the committed taps (`ht-dcs-023.f32`, `ht-dcs-754.f32`, written by
+`testWriteTaps` from the two takes): 023 keys up at 2.4 s and locks at 2.944 s, 0.54 s later; 754
+keys up at 0.7 s and locks at 1.152 s, 0.45 s later; each is read as its code, normal, on every
+hop until the carrier goes, confidence 1.00 at the lock, deviation 599 and 600 Hz (the mean at the
+bit centres; the ±550 Hz above is the numpy chain's figure), and the CTCSS detector claims no tone
+anywhere in either keyed span. The CTCSS takes (`ht-narrow`, `noaa-wx2-auto`) produce no DCS claim
+on any hop, nor do synthesised voice, noise, and every standard tone under voice. Played through a
+`leylined` from the 023 take (`SubAudibleDCSDaemonTests`, runs where `LEYLINE_CAPTURES` is set), the
+wire carries `kind = DCS`, `dcs_code = 23`, `first_seen` at 2.950 s.
+
+Still to do for this item: the fake daemon's DCS option (step 3), the `leyfix` source and its
+fixtures (step 4), and every client (step 5), which today print or show nothing for `kind = DCS`.
+The MCP `listen` summary keeps the first report unless a CTCSS one follows, so a DCS lock that
+arrives after a `NONE` is lost there until step 5 gives it the daemon's preference.
+
 ## Decisions
 
 - Half-blocks rejected for the waterfall: level would live only in colour, so `NO_COLOR`/`--ascii`

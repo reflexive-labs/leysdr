@@ -191,9 +191,9 @@ Unimplemented, and the proto documents it or should: `StreamPosition.at_sample` 
 `Sink.file` (`SessionStore.swift:651`), `Sink.stream` via `AttachSink` (deliberate: use
 `Bulk.Subscribe`), `StreamKind.DECODED`, `Jobs.StartJob` watch and record, `ScanConfig.recurring`,
 `Jobs.GetTranscript`, the entire `Resources` service. `Job.result_uris` carries `ley://scans/<id>`
-that nothing can resolve. The Swift daemon never sets `SubAudible.dcs_code`, `dcs_inverted`,
-`first_seen` or `hops_agreeing`: `SUB_AUDIBLE_DCS` is unreachable until the DCS decoder (SV-7, open)
-exists.
+that nothing can resolve. The Swift daemon never sets `SubAudible.hops_agreeing`, and sets `dcs_inverted`
+to false on every lock because the standard list is closed under complement (SV-7, "Landed
+(engine)").
 
 Client library (`go/pkg/leyline`): wrappers for 5 of the 25 RPCs; the rest are reachable only as raw
 stubs. `Control.DetachSink` and `Jobs.ListJobs` are implemented in both daemons and called by nothing.

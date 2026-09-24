@@ -77,9 +77,9 @@ public actor DefaultChannelEngine: ChannelEngine {
         subAudibleTask = Self.makeSubAudibleTask(core: core, captureID: captureID, hub: hub)
     }
 
-    /// The slow half of sub-audible detection. Everything branchy -- the bank, the phase estimate,
-    /// every accept and reject rule -- happens here, at normal priority, where allocating is fine.
-    /// The DSP thread's whole contribution is decimating into a ring.
+    /// The slow half of sub-audible detection. Everything branchy -- the CTCSS bank, the phase
+    /// estimate, the DCS slicer, every accept and reject rule -- happens here, at utility priority,
+    /// where allocating is fine. The DSP thread's whole contribution is decimating into a ring.
     /// It is `nonisolated` and takes everything it needs by argument because `init` is not an
     /// isolated context: referencing an actor-isolated method from there is a warning today and an
     /// error under the Swift 6 language mode. `drainTask` is built inline for exactly this reason.
@@ -91,11 +91,16 @@ public actor DefaultChannelEngine: ChannelEngine {
         let fullScale = core.subAudibleFullScale
         let id = captureID
         let detector = SubAudibleDetector(rate: rate, windowSize: 512, hop: 128)
+        // Both detectors read the same hop. The DCS decoder keeps its own history, so it is handed
+        // only the samples that are new since its last call.
+        let dcs = DCSDecoder(rate: rate)
+        let perTapSample = core.captureSamplesPerTapSample
         return Task.detached(priority: .utility) { [core] in
             var window = [Float](repeating: 0, count: detector.windowSize)
             var filled = 0
             var hop = [Float](repeating: 0, count: detector.hop)
             var lastReported: SubAudibleResult?
+            var claimSince: SampleTime?
             var heartbeat = 0
             var closes = core.squelchCloseCount
             while !Task.isCancelled {
@@ -106,7 +111,8 @@ public actor DefaultChannelEngine: ChannelEngine {
                     try? await Task.sleep(nanoseconds: 50_000_000)
                     continue
                 }
-                if filled < window.count {
+                let firstWindow = filled < window.count
+                if firstWindow {
                     let got = window.withUnsafeMutableBufferPointer {
                         ring.pop(into: UnsafeMutableBufferPointer(rebasing: $0[filled...]))
                     }
@@ -118,25 +124,35 @@ public actor DefaultChannelEngine: ChannelEngine {
                     window.removeFirst(detector.hop)
                     window.append(contentsOf: hop)
                 }
+                // The hop's last sample, in capture samples: what the core has processed, less what
+                // is still waiting in the tap. Good to within the tap filters' delay, a few ms.
+                let unread = Double(ring.available) * perTapSample
+                let end = core.sampleIndexEnd
+                let now = SampleTime(captureID: id, sampleIndex: end - Swift.min(end, UInt64(unread)))
                 // A transmission ended while these samples were arriving, so whatever comes next is
                 // a different signal: measuring its first hop against the old one's phase would
-                // fabricate a stable estimate out of two unrelated tones.
+                // fabricate a stable estimate out of two unrelated tones, and slicing it against
+                // the old one's tuning error and bit history would do the same to a code.
                 let closesNow = core.squelchCloseCount
                 if closesNow != closes {
                     closes = closesNow
                     detector.reset()
+                    dcs.reset()
                 }
-                let result = detector.analyse(window, fullScaleDeviationHz: fullScale)
-                // Edge-triggered on identity, plus a heartbeat: the telemetry plane has no GetState,
-                // so a client that subscribes mid-transmission has to be told what is already there.
+                let tone = detector.analyse(window, fullScaleDeviationHz: fullScale)
+                let code = dcs.analyse(firstWindow ? window : hop, fullScaleDeviationHz: fullScale)
+                var result = SubAudibleResult.merged(ctcss: tone, dcs: code)
+                // Edge-triggered on the claim (its kind, tone, code or polarity), plus a heartbeat:
+                // the telemetry plane has no GetState, so a client that subscribes mid-transmission
+                // has to be told what is already there.
                 heartbeat += 1
-                let changed = lastReported.map {
-                    $0.detected != result.detected || $0.standardToneHz != result.standardToneHz
-                } ?? true
+                let changed = lastReported.map { !$0.sameClaim(as: result) } ?? true
+                if changed { claimSince = result.kind == .none ? nil : now }
+                result.firstSeen = claimSince
                 if changed || heartbeat >= 8 {
                     heartbeat = 0
                     lastReported = result
-                    hub.publishSubAudible(time: SampleTime(captureID: id, sampleIndex: 0), result: result)
+                    hub.publishSubAudible(time: now, result: result)
                 }
             }
         }

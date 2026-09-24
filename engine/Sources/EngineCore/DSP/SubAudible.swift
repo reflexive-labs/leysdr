@@ -51,7 +51,13 @@ public enum CTCSS {
     public static let maxDeviationHz: Double = 1500
 }
 
-/// What a sub-audible detector concluded about one window.
+/// Which sub-audible signalling a result claims.
+public enum SubAudibleKind: Sendable, Equatable {
+    case none, ctcss, dcs
+}
+
+/// What the sub-audible detectors concluded about one window: the CTCSS detector's measurements,
+/// and the DCS decoder's lock when it has one.
 public struct SubAudibleResult: Sendable, Equatable {
     /// Measured tone frequency, Hz. NaN when nothing was measured.
     public var toneHz: Double = .nan
@@ -64,10 +70,48 @@ public struct SubAudibleResult: Sendable, Equatable {
     public var toneSNRDB: Double = .nan
     /// A stated score, not a probability: see `confidence(...)`.
     public var confidence: Double = 0
-    /// Whether the detector is willing to report a tone at all.
+    /// Whether the CTCSS detector is willing to report a tone at all. False whenever `dcs` is set.
     public var detected: Bool = false
     /// Why nothing was reported, for the log. Empty when `detected`.
     public var reason: String = ""
+    /// The DCS decoder's lock, or nil. When set, the result claims DCS and no tone: `toneHz` is NaN,
+    /// `standardToneHz` 0, and `deviationHz` and `confidence` are the decoder's.
+    public var dcs: DCSResult?
+    /// The sample time of the hop at which the current claim (this kind, and this tone or this
+    /// code and polarity) was first made; nil while nothing is claimed. Set by the channel's
+    /// sub-audible task, which knows the time, never by a detector.
+    public var firstSeen: SampleTime?
+
+    public init() {}
+
+    public var kind: SubAudibleKind {
+        if dcs != nil { return .dcs }
+        return detected ? .ctcss : .none
+    }
+
+    /// Whether `other` claims the same thing: the same kind, and the same standard tone or the same
+    /// code and polarity. What the task treats as an edge.
+    public func sameClaim(as other: SubAudibleResult) -> Bool {
+        guard kind == other.kind else { return false }
+        switch kind {
+        case .none: return true
+        case .ctcss: return standardToneHz == other.standardToneHz
+        case .dcs: return dcs?.code == other.dcs?.code && dcs?.inverted == other.dcs?.inverted
+        }
+    }
+
+    /// One hop's answer from both detectors. A DCS lock suppresses the CTCSS claim, because the
+    /// code's broadband sub-audible energy feeds the Goertzel bank (docs/design/signal-views.md,
+    /// "DCS"); without a lock the CTCSS result stands as it is.
+    public static func merged(ctcss: SubAudibleResult, dcs: DCSResult) -> SubAudibleResult {
+        guard dcs.detected else { return ctcss }
+        var out = SubAudibleResult()
+        out.dcs = dcs
+        out.deviationHz = dcs.deviationHz
+        out.confidence = dcs.confidence
+        out.reason = "DCS lock suppresses the CTCSS claim"
+        return out
+    }
 }
 
 /// A Goertzel bank over the standard tones, plus the tests that decide whether its winner is a tone

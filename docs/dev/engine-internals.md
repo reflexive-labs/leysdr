@@ -28,7 +28,7 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   ├── Capture/              DefaultCaptureEngine (actor façade) + CaptureDSPCore (hot path, DSP thread)
 │   ├── Channels/             DefaultChannelEngine (actor façade) + ChannelDSPCore (hot path)
 │   ├── DSP/                  Kernels (Accelerate + portable), FIR, NCO, Channelizer, Demodulators, FFT, SpectrumLadder,
-│   │                         SweepPlan (scan job sweep math), EnergyDetector (carrier detection), SubAudible (CTCSS),
+│   │                         SweepPlan (scan job sweep math), EnergyDetector (carrier detection), SubAudible (CTCSS), DCS,
 │   │                         Persistence (phosphor histogram)
 │   └── Sinks/                CoreAudioSink (AVFoundation), NullSink, CallbackSink
 ├── Sources/LeylineDaemon     `leylined`: gRPC over UDS; maps EngineCore <-> leyline.v1
@@ -775,13 +775,24 @@ streamed: a client on this machine opens the file (invariant 3).
 ### Detections on the telemetry plane
 
 A scan's carrier detections (`SpectrumDetect.detect` in `DSP/EnergyDetector.swift`, driven off the
-FFT ladder rows the sweep already collects) and a channel's CTCSS measurements (`SubAudibleDetector`
-in `DSP/SubAudible.swift`, run over the demod chain's sub-audible tap) both reach clients as
-telemetry, not as job results: `JobStore` fans live `Detection` messages out to subscribers
-(drop-oldest, 64 deep, optionally filtered to one capture) the moment each is found, and
+FFT ladder rows the sweep already collects) and a channel's sub-audible measurements both reach
+clients as telemetry, not as job results: `JobStore` fans live `Detection` messages out to
+subscribers (drop-oldest, 64 deep, optionally filtered to one capture) the moment each is found, and
 `TelemetryService` merges that stream into `Subscribe` alongside `SubAudible` and the rest. The
 aggregate a finished scan returns from `Jobs.GetScan` is the same detections folded into one summary,
 not a second source of truth.
+
+The sub-audible measurements come from two detectors reading the same 128-sample hop of the NFM
+chain's sub-audible tap in the channel's detached utility-priority task, never on the DSP thread:
+`SubAudibleDetector` (`DSP/SubAudible.swift`, CTCSS) and `DCSDecoder` (`DSP/DCS.swift`, DCS). The
+decoder removes the tuning error with a one-second one-pole tracker, recentred on the middle of the
+eye once a word has read, slices the tap at 134.4 bit/s from eight phases within a bit, and locks
+when three consecutive 23-bit words at one phase are Golay codewords reading as one of the 104
+standard codes; its buffers are allocated at init and a hop allocates nothing. A lock publishes
+`kind = SUB_AUDIBLE_DCS` and suppresses the CTCSS claim for as long as it holds
+(`SubAudibleResult.merged`); both detectors are reset when the squelch closes. The task stamps each
+message, and `first_seen`, with the capture sample index the core last processed less what is still
+unread in the tap (`ChannelDSPCore.sampleIndexEnd`, one relaxed atomic store per block).
 
 ### Persistence stream
 
