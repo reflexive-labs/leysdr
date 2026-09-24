@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 
+	"github.com/dpup/leysdr/go/pkg/dcs"
 	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
 	"github.com/dpup/leysdr/go/pkg/iqfile"
 )
@@ -68,6 +69,30 @@ func toneExpect(mode string, offset, bw, tone, minSNR float64) iqfile.Expect {
 const plSNRDB = 8
 
 func hz(v float64) string { return fmt.Sprintf("%.0f", v) }
+
+// dcsDeviationHz is the DCS deviation the owner's GMRS handheld sends, measured on both takes of
+// 2026-09-23 (docs/plans/signal-views.md, SV-7).
+const dcsDeviationHz = 550
+
+// dcsFixture is the voice tone of the pl fixtures with a DCS word under it in place of the CTCSS
+// tone.
+func dcsFixture(rate float64, code int, inverted bool) *dcsCode {
+	return &dcsCode{
+		rate: rate, carrierHz: 100_000, toneHz: 1000, devHz: 2500, dbfs: signalDBFS,
+		code: code, inverted: inverted, subDevHz: dcsDeviationHz,
+	}
+}
+
+// dcsExpect is a DCS fixture's expectation: the voice tone at the pl fixtures' SNR, and the code a
+// decoder names, octal-as-decimal as the contract carries it.
+func dcsExpect(code int, inverted bool, why string) []iqfile.Expect {
+	e := toneExpect("NFM", 100_000, 12_500, 1000, plSNRDB)
+	e.SubAudible = &iqfile.SubExpect{
+		DeviationHz: dcsDeviationHz, Detect: true,
+		DCSCode: int(dcs.Wire(code)), DCSInverted: inverted, Why: why,
+	}
+	return []iqfile.Expect{e}
+}
 
 // The keying schedule of nfm_keyed, and the file length it needs. Absolute
 // rather than proportional to --duration: the 3.0 s gaps are what make the
@@ -215,6 +240,44 @@ var catalog = []fixture{
 				SubAudible: &iqfile.SubExpect{ToneHz: 123.0, DeviationHz: 700, Detect: true},
 			}}
 		},
+	},
+	{
+		// DCS 023, the first code on every radio's list, at the ±550 Hz the owner's handheld
+		// sends (docs/plans/signal-views.md, SV-7). No CTCSS rides with it: a DCS lock suppresses
+		// the CTCSS claim, so tone_hz is 0 and detect is true for the code.
+		name: "nfm_dcs", centerHz: 146_520_000,
+		description: "NFM 1 kHz tone at +100 kHz with DCS 023 normal at 550 Hz deviation",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{dcsFixture(rate, 0o23, false)}
+		},
+		expect: func(float64) []iqfile.Expect { return dcsExpect(0o23, false, "") },
+	},
+	{
+		// DCS 023 sent inverted. Every standard code's complemented word reads as exactly one
+		// other standard code, and 023 inverted is the bit stream of 047 normal, so a decoder
+		// that prefers the received polarity names 047 (go/pkg/dcs, Decode). The expectation is
+		// what that rule reads, and why says what was sent.
+		name: "nfm_dcs_inverted", centerHz: 146_520_000,
+		description: "NFM 1 kHz tone at +100 kHz with DCS 023 inverted at 550 Hz deviation",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{dcsFixture(rate, 0o23, true)}
+		},
+		expect: func(float64) []iqfile.Expect {
+			return dcsExpect(0o47, false, "sent as 023 inverted, which is the bit stream of 047 normal; the decoder prefers the received polarity")
+		},
+	},
+	{
+		// DCS 754, the owner's second take: its word also reads 076 and 203 with the fixed
+		// bits in place, so only the standard list names it.
+		name: "nfm_dcs_754", centerHz: 146_520_000,
+		description: "NFM 1 kHz tone at +100 kHz with DCS 754 normal at 550 Hz deviation; the word also reads 076 and 203",
+		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
+		build: func(rate float64) []source {
+			return []source{dcsFixture(rate, 0o754, false)}
+		},
+		expect: func(float64) []iqfile.Expect { return dcsExpect(0o754, false, "") },
 	},
 	{
 		name: "am_tone", centerHz: 1_000_000,

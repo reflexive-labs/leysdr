@@ -90,6 +90,9 @@ and the channelizer's NCO are exercised.
 | `nfm_pl_69` | NFM voice plus a 69.3 Hz CTCSS tone | detect 69.3, **not** 67.0 |
 | `nfm_hum` | NFM voice plus 100.0 Hz at only 40 Hz deviation | detect **nothing**: this is mains hum |
 | `nfm_pl_only` | keyed carrier with a 123.0 Hz CTCSS tone and no voice | detect 123.0 |
+| `nfm_dcs` | NFM voice plus DCS 023 normal at 550 Hz deviation, no CTCSS | detect DCS 023, not inverted |
+| `nfm_dcs_inverted` | NFM voice plus DCS 023 sent inverted | detect DCS 047, not inverted: the same bit stream |
+| `nfm_dcs_754` | NFM voice plus DCS 754 normal | detect DCS 754, not 076 or 203 |
 | `nfm_keyed` | the `nfm_tone` carrier keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between and 1.0 s before the first | a gated recording: `record.segments` states the three transmissions. Always generated at its own length (10.5 s) whatever `--duration` says, because the timing is what the fixture tests: the 3 s gaps are inside the recorder's default 5 s hang and outside a 1 s one, so one file tests both rules |
 
 ### The sub-audible set
@@ -108,7 +111,27 @@ These five test a CTCSS detector against specific failure modes:
 - **`nfm_pl_only` is the start of every transmission**, before anyone speaks: a keyed carrier with a
   tone and nothing else to distinguish it from.
 
-The `sub_audible` block of an `expect` entry records what a detector should report:
+### The DCS set
+
+These three carry a DCS word under the voice tone in place of a CTCSS tone: the 23-bit word
+repeated at 134.4 bit/s, NRZ with a one as positive deviation, through a 300 Hz low-pass, at the
+±550 Hz the owner's GMRS handheld sends. The format and the deviation were read from two
+recordings of that handheld on 2026-09-23 (`docs/plans/signal-views.md`, SV-7), and
+`go/pkg/dcs` holds the encoder and the rule that names a code.
+
+- **`nfm_dcs` is the everyday case**: 023, the first code on every radio's list.
+- **`nfm_dcs_754` needs the code list.** Its word, rotated, also reads 076 and 203 with the fixed
+  bits in place; neither is a standard code, so the decoder names 754.
+- **`nfm_dcs_inverted` sends 023 inverted and expects 047 normal.** An inverted code is the
+  complemented stream, and every standard code's complement reads as exactly one other standard
+  code in the received polarity (023 inverted is 047, 754 inverted is 116). A decoder that
+  prefers the received polarity names the partner, so the fixture expects what the rule reads and
+  its `why` records what was sent.
+
+The `sub_audible` block of an `expect` entry records what a detector should report. A CTCSS
+fixture gives `tone_hz`; a DCS fixture gives `dcs_code`, the code's octal digits read as decimal as
+the contract's `SubAudible.dcs_code` carries them (023 is `23`), and `dcs_inverted`, with
+`tone_hz` 0 because a DCS lock suppresses the CTCSS claim:
 
 ```json
 "sub_audible": {
@@ -119,12 +142,27 @@ The `sub_audible` block of an `expect` entry records what a detector should repo
 }
 ```
 
+```json
+"sub_audible": {
+  "tone_hz": 0,
+  "deviation_hz": 550,
+  "detect": true,
+  "dcs_code": 47,
+  "why": "sent as 023 inverted, which is the bit stream of 047 normal; the decoder prefers the received polarity"
+}
+```
+
+`dcs_code` and `dcs_inverted` are left out when zero and false, so a CTCSS fixture's block is
+unchanged.
+
 The three fixtures carrying a real 700 Hz PL tone expect a much lower **audio** SNR (8 dB, measured
 ~11) than `nfm_tone`'s 30. The lower threshold comes from the signal, not a loose test: 700 Hz of
 sub-audible deviation is only 11 dB under the 2.5 kHz voice deviation, the 300 Hz high-pass takes
 about 20 dB off it, and de-emphasis then pulls the 1 kHz tone down by another 10 while leaving the
 sub-audible residue alone. `nfm_tone` remains the fixture that pins audio quality; these exist to
-exercise the tone detector.
+exercise the tone detector. The DCS fixtures assert the same 8 dB; `leyfix check` measured 18 to
+19 dB on them on 2026-09-24, and the bar was not raised because the engine's chain has not been
+measured on them yet.
 
 `detect` is separate from `tone_hz`: a fixture can carry a tone and still expect no
 detection, which is exactly what `nfm_hum` asserts.

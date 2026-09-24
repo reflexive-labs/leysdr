@@ -266,6 +266,9 @@ func (v *levelsView) header(f levelsFrame) []string {
 	if hz := scopeToneHz(f.tone); hz != nil {
 		segs = append(segs, headerSeg{name: "PL ", value: fmt.Sprintf("%.1f Hz", *hz)})
 	}
+	if code := dcsHeader(f.tone); code != "" {
+		segs = append(segs, headerSeg{name: "DCS ", value: code})
+	}
 	return packSegments(v.st, segs, v.width)
 }
 

@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -93,6 +94,84 @@ func TestSubAudibleStripsToPlain(t *testing.T) {
 		styled, _ := b.line(sa, ui.Style{Color: true, Unicode: true, Profile: ui.ProfileTrueColor})
 		if ui.Strip(styled) != plain {
 			t.Errorf("styled != plain:\n plain  %q\n styled %q", plain, ui.Strip(styled))
+		}
+	}
+}
+
+func dcsReport(code uint32, inverted bool) *leylinev1.SubAudible {
+	return &leylinev1.SubAudible{
+		Kind:    leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS,
+		DcsCode: code, DcsInverted: inverted, DeviationHz: 550,
+		ToneHz: math.NaN(), ToneSnrDb: math.NaN(), Confidence: 0.9,
+	}
+}
+
+// A DCS code prints as radios print it, three octal digits with the zero kept, and says when the
+// daemon read the complemented stream. dcs_code carries the digits read as decimal (023 -> 23).
+func TestSubAudibleDCSLine(t *testing.T) {
+	for _, tc := range []struct {
+		sa   *leylinev1.SubAudible
+		want string
+	}{
+		{dcsReport(23, false), "DCS  023  dev 550 Hz"},
+		{dcsReport(23, true), "DCS  023 inverted  dev 550 Hz"},
+		{dcsReport(754, false), "DCS  754  dev 550 Hz"},
+	} {
+		var tr subAudibleTracker
+		got, ok := tr.line(tc.sa, ui.Style{})
+		if !ok || got != tc.want {
+			t.Errorf("line = %q %v, want %q", got, ok, tc.want)
+		}
+	}
+}
+
+// The tracker's rules hold for DCS as for PL: once per change, nothing on loss, and a move from
+// a tone to a code or back is a change.
+func TestSubAudibleDCSReportsOnlyChanges(t *testing.T) {
+	var tr subAudibleTracker
+	none := &leylinev1.SubAudible{Kind: leylinev1.SubAudibleKind_SUB_AUDIBLE_NONE}
+	for i, s := range []struct {
+		sa    *leylinev1.SubAudible
+		print bool
+		why   string
+	}{
+		{dcsReport(23, false), true, "the first code is news"},
+		{dcsReport(23, false), false, "the heartbeat repeating it is not"},
+		{dcsReport(23, true), true, "the same digits read inverted are a different code"},
+		{dcsReport(754, true), true, "a different code is news"},
+		{none, false, "loss prints nothing"},
+		{dcsReport(754, true), true, "the code coming back is news again"},
+		{ctcss(100, 100.1, 700, 20), true, "DCS to PL is a change"},
+		{dcsReport(754, true), true, "and PL to DCS"},
+		{ctcss(0, 68.15, 700, 20), true, "an unclassified tone after a code is a change"},
+	} {
+		if line, ok := tr.line(s.sa, ui.Style{}); ok != s.print {
+			t.Errorf("step %d (%s): printed %v %q", i, s.why, ok, line)
+		}
+	}
+}
+
+// A DCS report has no tone, so it carries no tone/band clause even if the field is set.
+func TestSubAudibleDCSHasNoToneClause(t *testing.T) {
+	sa := dcsReport(23, false)
+	sa.ToneSnrDb = 12
+	var tr subAudibleTracker
+	line, _ := tr.line(sa, ui.Style{})
+	if strings.Contains(line, "tone/band") || strings.Contains(line, "PL") {
+		t.Errorf("a DCS line names no tone: %q", line)
+	}
+}
+
+func TestSubAudibleDCSStripsToPlain(t *testing.T) {
+	for _, sa := range []*leylinev1.SubAudible{dcsReport(23, false), dcsReport(23, true)} {
+		var a, b subAudibleTracker
+		plain, _ := a.line(sa, ui.Style{})
+		styled, _ := b.line(sa, ui.Style{Color: true, Unicode: true, Profile: ui.ProfileTrueColor})
+		if ui.Strip(styled) != plain {
+			t.Errorf("styled != plain:\n plain  %q\n styled %q", plain, ui.Strip(styled))
+		}
+		if styled == plain {
+			t.Errorf("the DCS label takes Label ink as PL does: %q", styled)
 		}
 	}
 }

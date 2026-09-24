@@ -295,7 +295,7 @@ func (d *Daemon) renderAudioLocked(s *stream, p *leylinev1.AudioParams, now time
 	if p.Tap == leylinev1.AudioTap_TAP_DEMOD {
 		if ch := d.channels[s.channelID]; ch != nil {
 			if c := d.captures[ch.CaptureId]; c != nil {
-				tone = carrierTone(uint64(int64(c.CenterHz) + ch.OffsetHz))
+				tone, _ = d.subTone(uint64(int64(c.CenterHz) + ch.OffsetHz))
 			}
 		}
 	}
@@ -362,7 +362,7 @@ func (d *Daemon) renderAudioSpectrumLocked(s *stream, c *capture, p *leylinev1.F
 	pl := 0.0
 	if p.GetTap() == leylinev1.AudioTap_TAP_DEMOD {
 		if ch := d.channels[s.channelID]; ch != nil {
-			pl = carrierTone(uint64(int64(c.CenterHz) + ch.OffsetHz))
+			pl, _ = d.subTone(uint64(int64(c.CenterHz) + ch.OffsetHz))
 		}
 	}
 	return encodeFFTRow(audioSpectrumRow(int(p.GetBins()), float64(audioRate(c.GetSampleRate())), pl, now), p.GetBinFormat())

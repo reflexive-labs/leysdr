@@ -163,7 +163,11 @@ Notes a table cell cannot hold:
   steady signal just under the auto squelch's margin, with `squelch: off` as the remedy, since "0
   transmissions" on a weak carrier was read as an empty channel. Given a channel id it taps a
   channel already running and refuses the tune arguments, as `ley listen chan_…` does. A channel it
-  made is removed when it returns.
+  made is removed when it returns. `tone` is the report that found the most: a DCS code over a
+  CTCSS tone over nothing found, the latest of its kind. The daemon suppresses the CTCSS claim
+  while DCS is locked, so a CTCSS report beside a DCS one came before the lock or after it. The
+  text names the code as `ley tune` prints it (`DCS  023`); `dcs_code` in the JSON is the octal
+  digits read as decimal (`23`).
 - **`snapshot`** draws one FFT row as a PNG (`image/png` content, beside the text) and returns the
   row as numbers. The plot is one pixel per negotiated bin on a dark ground: the trace, a dashed
   floor line, a dB grid, the loudest bins marked with their frequencies, and the frequency asked for

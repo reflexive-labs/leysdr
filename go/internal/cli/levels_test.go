@@ -551,6 +551,22 @@ func TestLevelsMetersTheDaemonsBands(t *testing.T) {
 	}
 }
 
+// A carrier sending DCS puts the code in the header where a PL tone would go,
+// and no PL, because a DCS lock suppresses the CTCSS claim.
+func TestLevelsHeaderCarriesADCSCode(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{DCS: map[uint64]fakedaemon.DCSCode{145_230_000: {Code: 23, Inverted: true}}})
+	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod")
+	if err != nil {
+		t.Fatalf("ley levels: %v\nstdout: %s\nstderr: %s", err, out, errOut)
+	}
+	if !strings.Contains(out, "DCS 023 inverted") {
+		t.Errorf("the header does not carry the code:\n%s", out)
+	}
+	if strings.Contains(out, "PL ") {
+		t.Errorf("a DCS carrier reports no PL:\n%s", out)
+	}
+}
+
 // --watch is the meter itself: it keeps drawing until --count says stop, and
 // the prose says what is happening and how to end it.
 func TestLevelsWatchKeepsDrawing(t *testing.T) {

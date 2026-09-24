@@ -143,6 +143,9 @@ func (v *scopeView) header(f scopeFrame) []string {
 	if tone := scopeToneText(f.tone); tone != "" {
 		segs = append(segs, headerSeg{name: "PL ", value: tone})
 	}
+	if code := dcsHeader(f.tone); code != "" {
+		segs = append(segs, headerSeg{name: "DCS ", value: code})
+	}
 	lines := packSegments(v.st, segs, v.width)
 	if f.muted {
 		for _, l := range scopeMutedNote(v.width) {
@@ -166,6 +169,17 @@ func scopeMutedNote(width int) []string {
 		return []string{what + " " + where}
 	}
 	return []string{what, where}
+}
+
+// dcsHeader is the DCS code for a view's header, "023" or "023 inverted", or
+// nothing when the daemon reports no code. The JSON rows carry no code: tone_hz
+// is a CTCSS tone's, and the code is the telemetry's (docs/plans/signal-views.md,
+// SV-7).
+func dcsHeader(sa *leylinev1.SubAudible) string {
+	if sa == nil || sa.Kind != leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS {
+		return ""
+	}
+	return dcsText(sa)
 }
 
 // scopeToneText is the daemon's sub-audible report as one phrase: the tone it

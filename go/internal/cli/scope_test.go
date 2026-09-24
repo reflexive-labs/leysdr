@@ -274,6 +274,19 @@ func TestScopeDemodHeaderCarriesTheDaemonsTone(t *testing.T) {
 	}
 }
 
+// A DCS code goes in the header as the code, in place of the PL a CTCSS
+// carrier shows.
+func TestScopeDemodHeaderCarriesADCSCode(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{DCS: map[uint64]fakedaemon.DCSCode{145_230_000: {Code: 754}}})
+	out, errOut, err := run(t, context.Background(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
+	if err != nil {
+		t.Fatalf("ley scope: %v\nstdout: %s\nstderr: %s", err, out, errOut)
+	}
+	if !strings.Contains(out, "DCS 754") || strings.Contains(out, "PL ") {
+		t.Errorf("the header should carry DCS 754 and no PL:\n%s", out)
+	}
+}
+
 // The audio tap is what the speakers get: the same channel, with neither the
 // sub-audible tone nor the offset the demod tap carries.
 func TestScopeAudioTapHasNoTuningError(t *testing.T) {

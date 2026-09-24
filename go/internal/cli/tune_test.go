@@ -453,6 +453,26 @@ func TestTuneShowsTheTone(t *testing.T) {
 	}
 }
 
+// The DCS line, end to end: a carrier the fake sends DCS 023 on gets one line naming the code in
+// three octal digits, and no PL line, because a DCS lock suppresses the CTCSS claim.
+func TestTuneShowsTheDCSCode(t *testing.T) {
+	sock, _ := harness(t, fakedaemon.Options{
+		MeterInterval: 20 * time.Millisecond,
+		DCS:           map[uint64]fakedaemon.DCSCode{146_940_000: {Code: 23}},
+	})
+	stdout, errOut := liveTune(t, sock, "DCS", "tune", "146.94", "--no-audio", "--squelch", "-45")
+	out := stdout + errOut
+	if !strings.Contains(out, "DCS  023  dev 550 Hz") {
+		t.Fatalf("expected the code line:\n%s", out)
+	}
+	if n := strings.Count(out, "DCS"); n != 1 {
+		t.Errorf("the code is news once, not on every heartbeat: %d lines\n%s", n, out)
+	}
+	if strings.Contains(out, "PL") {
+		t.Errorf("146.94 sends 123.0 Hz in the fake's table, but DCS replaces it:\n%s", out)
+	}
+}
+
 // A frequency that carries no tone prints no tone line: a channel that never had one must not
 // report the absence.
 func TestTuneSaysNothingWithoutATone(t *testing.T) {

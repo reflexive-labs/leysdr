@@ -187,9 +187,11 @@ func (t telemetrySvc) Subscribe(sub *leylinev1.TelemetrySubscription, srv grpc.S
 				// subscribed mid-transmission has to be told what is already there.
 				if wants(leylinev1.TelemetryType_SUB_AUDIBLE) && ch.SubaudibleDetect {
 					hz := uint64(int64(c.CenterHz) + ch.OffsetHz)
-					sa := subAudibleReport(ch.ChannelId, carrierTone(hz), open)
+					tone, code := d.subTone(hz)
+					sa := subAudibleReport(ch.ChannelId, tone, code, open)
 					prev := subAudible[ch.ChannelId]
-					changed := prev == nil || prev.Kind != sa.Kind || prev.StandardToneHz != sa.StandardToneHz
+					changed := prev == nil || prev.Kind != sa.Kind || prev.StandardToneHz != sa.StandardToneHz ||
+						prev.DcsCode != sa.DcsCode || prev.DcsInverted != sa.DcsInverted
 					if changed || tick-subAudibleTick[ch.ChannelId] >= activityEvery {
 						subAudible[ch.ChannelId], subAudibleTick[ch.ChannelId] = sa, tick
 						out = append(out, &leylinev1.TelemetryMsg{Time: st, Body: &leylinev1.TelemetryMsg_SubAudible{SubAudible: sa}})
@@ -257,8 +259,10 @@ func syntheticPower(now time.Time) float64 {
 // subAudibleReport is what the detector concluded about one window. A tone it does not
 // report leaves every measured field NaN: "not measured" is not the same as zero, and only
 // deviation separates a real 100.0 Hz PL from 50 Hz mains hum, so the fake sends a deviation a
-// transmitter would.
-func subAudibleReport(channelID string, toneHz float64, open bool) *leylinev1.SubAudible {
+// transmitter would. A DCS code, when the carrier sends one, is reported in place of any tone:
+// no tone was measured, so tone_hz and tone_snr_db stay NaN, and the deviation is the bit
+// amplitude the owner's handheld sends (docs/plans/signal-views.md, SV-7).
+func subAudibleReport(channelID string, toneHz float64, code *DCSCode, open bool) *leylinev1.SubAudible {
 	sa := &leylinev1.SubAudible{
 		ChannelId:      channelID,
 		Kind:           leylinev1.SubAudibleKind_SUB_AUDIBLE_NONE,
@@ -267,7 +271,17 @@ func subAudibleReport(channelID string, toneHz float64, open bool) *leylinev1.Su
 		ToneSnrDb:      math.NaN(),
 		StandardToneHz: 0,
 	}
-	if !open || toneHz == 0 {
+	if !open {
+		return sa
+	}
+	if code != nil {
+		sa.Kind = leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS
+		sa.DcsCode, sa.DcsInverted = code.Code, code.Inverted
+		sa.DeviationHz = 550
+		sa.Confidence = 0.9
+		return sa
+	}
+	if toneHz == 0 {
 		return sa
 	}
 	sa.Kind = leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS
