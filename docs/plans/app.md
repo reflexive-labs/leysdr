@@ -631,6 +631,16 @@ the first key-up of each; the 664 seen in that session's transcript was the radi
 Not verified here: the whole thing against the HackRF itself, and `ley recordings show`, which
 still names only the first stage.
 
+### APP-5b `[ ]` The Library: two places, one switch
+
+Decided 2026-09-25 with the owner after the first run of the recording screens
+(`../design/app-design-handoff-m3.md`, "Decided 2026-09-25: the Library"): a `Radio | Library`
+switch in the toolbar (⌘1, ⌘2); Radio is the window with 8a and 8b and no sidebar source or
+footer; Library replaces the body with the channel list and store footer in its sidebar, 8c's
+channel page in the centre, the part in the inspector, and a player in the transport bar's
+place (play/stop, previous/next part, the part's words, a display-only progress track, the
+volume caption); the live radio keeps running underneath and is held silent while a part plays.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,
