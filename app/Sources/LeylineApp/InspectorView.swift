@@ -57,19 +57,66 @@ struct InspectorView: View {
     }
 }
 
-/// The word `Channel`, nothing else: no tabs, and no close control, because the toolbar's
-/// toggle beside it already hides the panel. The tab strip (`Channel` / `Processors` / `＋`) is
-/// M4's and appears when there is a second tab to put in it; a one-tab tab bar now would
-/// advertise tabs that do not exist until M4 (M2 handoff, "The panel").
+/// The word `Channel` on the left and the record control on the right: no tabs, and no close
+/// control, because the toolbar's toggle beside it already hides the panel. The tab strip
+/// (`Channel` / `Processors` / `＋`) is M4's and appears when there is a second tab to put in it
+/// (M2 handoff, "The panel"). `● Record` starts a recording gated by the squelch; while one runs
+/// on the tuned frequency the header shows the `recording` dot, the job's `status_detail` (the
+/// daemon's words, `caution` while the job is degraded) and `■ Stop` (M3 handoff, "Region 1").
 struct InspectorHeader: View {
+    @Environment(AppSession.self) private var session
+
     var body: some View {
-        HStack {
+        HStack(spacing: 6) {
             Text("Channel").font(Theme.Font.menuTitle).foregroundStyle(Theme.inkSecondary)
-            Spacer()
+                .layoutPriority(1)
+            Spacer(minLength: 8)
+            if let job = session.recordingJob {
+                RecordingDot()
+                Text(Recordings.statusWords(session.recordingStatus ?? ""))
+                    .font(Theme.Font.valueSmall)
+                    .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkTertiary)
+                    .lineLimit(1).truncationMode(.tail)
+                    .help(
+                        job.statusDetail.isEmpty
+                            ? "Recording. The daemon reports its length and size every two seconds."
+                            : job.statusDetail)
+                Button {
+                    Task { await session.stopRecording() }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "stop.fill").font(Theme.Font.glyph)
+                        Text("Stop")
+                    }
+                }
+                .help("Stop the recording; its parts stay in Recordings")
+            } else if session.tunedHz != nil {
+                Button {
+                    Task { await session.startRecording(continuous: false) }
+                } label: {
+                    HStack(spacing: 4) {
+                        RecordingDot()
+                        Text("Record")
+                    }
+                }
+                .help(
+                    "Record this channel while its squelch is open (⌘R). The daemon keeps recording after the window closes."
+                )
+            }
         }
+        .buttonStyle(.bordered).controlSize(.mini)
         .padding(.horizontal, 16)
         .frame(height: Theme.Layout.inspectorHeaderHeight)
         .background(Theme.panelHeader)
+    }
+}
+
+/// The `recording` dot beside Record, a running recording's status and its sidebar row.
+struct RecordingDot: View {
+    var size: CGFloat = Theme.Layout.recordingDot
+
+    var body: some View {
+        Circle().fill(Theme.recording).frame(width: size, height: size)
     }
 }
 
@@ -249,7 +296,7 @@ struct NameField: View {
     private static func handToEditor(keyCode: UInt16, shift: Bool) -> Bool {
         guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return false }
         switch keyCode {
-        case 49:  // Space: the Tune menu's Play/Pause, and a word break in a name
+        case 49:  // Space: the Tune menu's Mute/Unmute, and a word break in a name
             editor.insertText(" ", replacementRange: editor.selectedRange())
             return true
         case 123:  // Left arrow: Tune Down, and Fine Tune Down with ⇧

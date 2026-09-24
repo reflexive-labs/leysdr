@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 1: bands and bookmarks (docs/design/app-design-handoff.md). A band is a frequency
-// range; a bookmark is a saved station. Selecting a band applies all of its settings and the
-// expanded row shows them.
+// Region 1: bands, bookmarks and recordings (docs/design/app-design-handoff.md; the recordings
+// section is docs/design/app-design-handoff-m3.md, "Region 3"). A band is a frequency range; a
+// bookmark is a saved station; a recording is a record job's output, listed from the daemon's
+// store. Selecting a band applies all of its settings and the expanded row shows them.
 
 import LeylineClient
 import LeylineProto
@@ -10,6 +11,8 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppSession.self) private var session
+    /// The recording Delete… asked about, until the alert is answered.
+    @State private var pendingDelete: RecordingSummary?
 
     var body: some View {
         ScrollView {
@@ -78,10 +81,58 @@ struct SidebarView: View {
                         Button("Remove", role: .destructive) { session.remove(bookmark: b) }
                     }
                 }
+                recordingsSection
                 Spacer(minLength: 12)
             }
         }
         .background(Theme.panel)
+        .alert(
+            "Delete this recording?",
+            isPresented: Binding(
+                get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { r in
+            Button("Delete", role: .destructive) {
+                Task { await session.deleteRecording(r) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { r in
+            Text(
+                "\(RecordingRow.title(r)) from \(r.startedAt.map { WallClock.dayHM($0) } ?? "an unknown time"), \(RecordingSummary.partsWords(r.parts)). Its parts and its manifest are removed from disk."
+            )
+        }
+    }
+
+    /// Newest first, the running ones at the top with their dot and the daemon's live counters.
+    /// A click tunes there and the log shows the recording's parts; the menu reveals it in
+    /// Finder, deletes it (the daemon refuses while its job runs) or stops the running one.
+    @ViewBuilder private var recordingsSection: some View {
+        header("Recordings") { EmptyView() }
+        let list = session.sidebarRecordings
+        if list.isEmpty {
+            Text(
+                "Nothing recorded yet. ⌘R records the tuned channel; `ley recordings` lists the same store."
+            )
+            .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            .padding(.horizontal, 14).padding(.vertical, 6)
+        }
+        ForEach(list) { r in
+            let job = session.activeRecordJob(r.jobID)
+            RecordingRow(
+                recording: r, running: job, selected: session.recording?.jobID == r.jobID
+            )
+            .contentShape(Rectangle())
+            .onTapGesture { Task { await session.tune(recording: r) } }
+            .contextMenu {
+                Button("Reveal in Finder") { Task { await session.revealInFinder(r) } }
+                if job != nil {
+                    Button("Stop Recording") {
+                        Task { await session.stopRecording(jobID: r.jobID) }
+                    }
+                }
+                Button("Delete…", role: .destructive) { pendingDelete = r }
+            }
+        }
     }
 
     private func header(_ text: String, @ViewBuilder trailing: () -> some View) -> some View {
@@ -173,5 +224,53 @@ struct BookmarkRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
         .background(selected ? Theme.selected : Color.clear)
+    }
+}
+
+/// `462.5625 NFM` over `Tue 18:09 · 12 min · 4 parts`: two lines, because one did not fit the
+/// sidebar's 236 pt (M3 handoff, "Decided 2026-09-24"). A running recording's dot is `recording`
+/// and its second line is the daemon's live counters, in `caution` while the job is degraded; a
+/// finished one has the faint dot the bookmark rows have.
+struct RecordingRow: View {
+    let recording: RecordingSummary
+    let running: Leyline_V1_Job?
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if running != nil {
+                RecordingDot(size: Theme.Layout.sidebarDot)
+            } else {
+                Circle().fill(Theme.borderStrong)
+                    .frame(width: Theme.Layout.sidebarDot, height: Theme.Layout.sidebarDot)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.title(recording)).font(Theme.Font.label)
+                    .foregroundStyle(selected ? Theme.ink : Theme.inkSecondary).lineLimit(1)
+                Text(detail).font(Theme.Font.valueSmall)
+                    .foregroundStyle(running?.state == .degraded ? Theme.caution : Theme.inkFaint)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .background(selected ? Theme.selected : Color.clear)
+        .help(running.map { $0.statusDetail.isEmpty ? "Recording" : $0.statusDetail } ?? "")
+    }
+
+    /// `462.5625 NFM`: the frequency as the bookmark rows print it, and the mode.
+    static func title(_ r: RecordingSummary) -> String {
+        let hz = Frequency.fieldParts(r.frequencyHz).major
+        return r.mode == .unspecified ? hz : "\(hz) \(r.mode.word)"
+    }
+
+    private var detail: String {
+        let day = recording.startedAt.map { WallClock.dayHM($0) } ?? Reading.absent
+        if let running {
+            return "\(day) · \(Recordings.statusWords(running.statusDetail))"
+        }
+        return
+            "\(day) · \(RecordingSummary.durationWords(ms: recording.durationMs)) · \(RecordingSummary.partsWords(recording.parts))"
     }
 }

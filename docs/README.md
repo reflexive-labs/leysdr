@@ -62,7 +62,9 @@ changes the doc first.
 | [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | draft; persistence implemented, the rest not |
 | [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | draft; APRS being built (D.17) |
 | [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented (C.12) |
-| [App design handoff](design/app-design-handoff.md) | the M1 window read against the code: regions, palette and type tokens, the bands and bookmarks files, tuning gestures, what M1 deliberately leaves out | reconciled 2026-09-18; M1 being built |
+| [App design handoff](design/app-design-handoff.md) | the M1 window read against the code: regions, palette and type tokens, the bands and bookmarks files, tuning gestures, what M1 deliberately leaves out | reconciled 2026-09-18; M1 built |
+| [App design handoff, M2](design/app-design-handoff-m2.md) | the inspector panel: identity, the reading, the audio ladder, the log, Measurements, and every decision taken against the code since | landed 2026-09-20; revised through 2026-09-24 |
+| [App design handoff, M3-1](design/app-design-handoff-m3.md) | recording from the window: the transport button as the audio control, the header's record control, the log's rows as the chunks, recordings in the sidebar | landed 2026-09-24; unverified on a Mac |
 
 ### Decisions (`decisions/`)
 

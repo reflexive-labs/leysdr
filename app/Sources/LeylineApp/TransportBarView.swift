@@ -50,24 +50,29 @@ struct Block<Content: View>: View {
     }
 }
 
+/// The audio control, drawn as what it is (plans/app.md, APP-5): a speaker. Muting detaches the
+/// channel's sink and unmuting attaches one; the radio, the channel and the waterfall carry on,
+/// because the radio is the daemon's and shared. Stopping the radio is Tune ▸ Stop Listening.
 struct PlayButton: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
         Button {
-            Task { await session.togglePlay() }
+            Task { await session.toggleMute() }
         } label: {
             ZStack {
                 Circle().fill(Theme.accent).frame(width: 44, height: 44)
-                Image(systemName: session.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: session.isMuted ? "speaker.slash" : "speaker.wave.2")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Theme.ground)
-                    .offset(x: session.isPlaying ? 0 : 1.5)
             }
         }
         .buttonStyle(.plain)
         .disabled(session.channel == nil)
-        .help(session.isPlaying ? "Pause: the channel's audio is detached" : "Play")
+        .help(
+            session.isMuted
+                ? "Unmute: the channel's audio is attached again"
+                : "Mute: the channel's audio is detached; the radio keeps running")
     }
 }
 

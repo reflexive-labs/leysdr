@@ -39,7 +39,8 @@ enum Theme {
     /// Squelch open, a connected device, a bookmarked frequency.
     static let good = Color(hex: 0x2FB6A3)
     /// The device dot for an unplugged radio or no daemon; the waterfall's clipped-row marks and
-    /// the gain slider's knob while the radio clips (plans/app.md, M2-8).
+    /// the gain slider's knob while the radio clips (plans/app.md, M2-8); the dot on Record, on a
+    /// running recording and on its sidebar row (APP-5).
     static let recordingHex: UInt32 = 0xB8483C
     static let recording = Color(hex: recordingHex)
     /// `recording` as an RGB triple in [0, 1], for the waterfall shader's row marks.
@@ -109,6 +110,8 @@ enum Theme {
         static let footnote = SwiftUI.Font.system(size: 10.5)
         /// A clause under a sentence, or a condition line under the identity's frequency.
         static let aside = SwiftUI.Font.system(size: 11.5)
+        /// The play and stop glyphs in the log's trailing column and the header's Stop.
+        static let glyph = SwiftUI.Font.system(size: 8, weight: .semibold)
     }
 
     /// `0.14em` at 9.5 pt; was `0.16em`, brought down a step on 2026-09-19.
@@ -147,6 +150,14 @@ enum Theme {
         static let logLengthWidth: CGFloat = 40
         /// One log row, fixed so the log can count how many fit in the height it is given.
         static let logRowHeight: CGFloat = 19
+        /// The log's trailing column: a row's play or stop glyph (plans/app.md, APP-5).
+        static let logPlayWidth: CGFloat = 16
+        /// The line along a playing row's bottom, as far as the clip has played.
+        static let logProgressHeight: CGFloat = 2
+        /// The `recording` dot: the header's Record and running status, the log's recording line.
+        static let recordingDot: CGFloat = 7
+        /// A sidebar row's dot, the size the bookmark rows draw theirs.
+        static let sidebarDot: CGFloat = 6
         /// The inspector's audio ladder (M2 handoff, "Region 3b: audio"): a 64 pt plot beside a
         /// 22 pt dB gutter, eleven 14 pt bars in 22 pt slots with a gap before rms and peak,
         /// 272 pt in all inside the panel's 280. The rows under the plot are the labels and the

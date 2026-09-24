@@ -27,7 +27,10 @@ struct LeylineApp: App {
             width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height
         )
         .windowToolbarStyle(.unified)
-        .commands { TuneCommands(session: session) }
+        .commands {
+            TuneCommands(session: session)
+            RecordCommands(session: session)
+        }
     }
 }
 
@@ -82,11 +85,14 @@ struct TuneCommands: Commands {
             Divider()
             Button("Bookmark This Frequency") { session.bookmarkCurrent() }
                 .keyboardShortcut("d", modifiers: [.command])
-            Button(session.isPlaying ? "Pause" : "Play") { Task { await session.togglePlay() } }
+            Button(session.isMuted ? "Unmute" : "Mute") { Task { await session.toggleMute() } }
                 .keyboardShortcut(.space, modifiers: [])
+            // `ley stop`'s act: the channel removed, the capture this window made destroyed.
+            Button("Stop Listening") { Task { await session.stopListening() } }
+                .keyboardShortcut(".", modifiers: [.command])
         }
         CommandGroup(after: .sidebar) {
-            // The title is read when the menu is built; as with Play/Pause above, a Commands
+            // The title is read when the menu is built; as with Mute/Unmute above, a Commands
             // body is not guaranteed to re-evaluate, so the toolbar's toggle is the live one.
             Button(session.inspectorShown ? "Hide Inspector" : "Show Inspector") {
                 session.toggleInspector()
@@ -103,4 +109,25 @@ struct TuneCommands: Commands {
     }
 
     static let modes: [Leyline_V1_DemodMode] = [.am, .nfm, .wfm, .usb, .lsb, .cw]
+}
+
+/// File ▸ the recording items (plans/app.md, APP-5). Each one checks its own precondition in the
+/// session and says what is missing in a notice, rather than being disabled: a Commands body is
+/// not guaranteed to re-evaluate when the session changes, so a disabled item could stay stale.
+struct RecordCommands: Commands {
+    let session: AppSession
+
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Divider()
+            Button("Record Channel") { Task { await session.startRecording(continuous: false) } }
+                .keyboardShortcut("r", modifiers: [.command])
+            Button("Record Continuously") {
+                Task { await session.startRecording(continuous: true) }
+            }
+            Button("Stop Recording") { Task { await session.stopRecording() } }
+            Divider()
+            Button("Show Recordings in Finder") { Task { await session.showRecordingsInFinder() } }
+        }
+    }
 }

@@ -638,7 +638,7 @@ and an unplug is the `CAPTURE_DETACHED` transition the mirror keeps. Left for M2
 the daemon, which waits for APP-7's launchd job. Nothing to build until then; recorded so APP-6 is
 not read as untouched.
 
-### APP-5 `[ ]` Recording from the window (E.5)
+### APP-5 `[x]` Recording from the window (E.5)
 
 Start and stop over C.12 (`Jobs.StartJob(RecordConfig)`), the job rendered from the mirror's
 `jobs`, reveal in Finder through `Resources.ResolveLocalPath`.
@@ -714,6 +714,53 @@ Verified by `RecordingJobTests` (`testDeletingAFinishedRecordingRemovesItsDirect
 `TestMCPDeleteRecording` and the help goldens. No eval scenario: `docs/dev/evals.md` has no rule
 for destructive tools, and the unit test grades everything a scenario could. The façade and
 window lanes are open, so the item stays `[ ]`.
+
+Landed 2026-09-24 (façade and window), from the design above and the handoff written from it,
+`../design/app-design-handoff-m3.md`, whose "Decided 2026-09-24" records where the build and
+the design differ. With both lanes in, the item is `[x]`. Façade: `Recordings.swift`, with
+`RecordingManifest` and `RecordingPart` (`recording.json` decoded with the daemon's defaults for a
+missing key, NaN for an absent squelch, and `read(at:)` for the directory `ResolveLocalPath`
+returns), `RecordingParts.match` (the containment rule on the part's capture, from the manifest's
+one anchor capture or, across two captures, the part's sidecar), `RecordingParts.merge` (the
+log's rows: each live transmission with its part, each part no live row lies inside as a row,
+merged by start sample; chosen over a `TransmissionLog.seed` so the log stays a fold of squelch
+edges alone), `Recordings.config` (the frequency form, gated by squelch or `NONE`),
+`Recordings.activeJob`, `Recordings.statusWords` and `RecordingSummary` (a `ListResources` row).
+Window: `AppSession`'s recording section (`startRecording(continuous:)`, `stopRecording`,
+`recordingJob`, `recordingStatus`, `recording`, `recordings`, `logEntries`, `play(partURI:)`,
+`stopPlayback`, `deleteRecording`, `revealInFinder`, `showRecordingsInFinder`, `stopListening`,
+`toggleMute`, `isMuted`), the inspector header's `● Record` and running status with `■ Stop`,
+the log's play column with its progress line and recording line, the sidebar's `Recordings`
+with its context menu and delete confirmation, the speaker glyphs, File's four items and Tune ▸
+Stop Listening (⌘.). Two things the design did not foresee: the daemon emits a playback's event
+only at its start and its end, so the position is polled from `GetState` at 4 Hz as `ley play`
+polls it; and a record job rides the window's capture (the allocator reuses a capture that
+covers the frequency), so Stop Listening destroys the capture only when no other channel is on
+it, or it would end the recording.
+
+Verified in the container: `RecordingsTests` (11 cases: the manifest parsed from a hand-written
+file and from its directory, two captures resolved through a sidecar, the match inside, on the
+edges, outside and on another capture, the seeded rows newest first with the anchor's wall time,
+the merge with live rows and with another capture's parts, the summary and its words, the
+record config, the active job, the status words), and in `LeylineClientDaemonTests`
+`testTheWindowsRecordingHoldsTheTransmissionsHeardLive`, which starts the window's record job on
+`nfm_keyed.cf32`, reads the daemon's own manifest through `ResolveLocalPath`, finds the newest
+live transmission inside a part, and deletes the finished recording; `make app-lint` passes.
+
+Unverified until the first `make app-run` on a Mac, because nothing in `LeylineApp` compiles in
+the container: every change in `AppSession.swift`, `InspectorView.swift`,
+`InspectorGroups.swift`, `SidebarView.swift`, `TransportBarView.swift`, `LeylineApp.swift` and
+`Theme.swift`. Named behaviours to check there: the header fits `Channel`, the dot, the status
+and `Stop` in 280 pt (the status truncates, with the sentence as its tooltip); the degraded
+detail in `caution` after a band switch; the play column's alignment with the column head and
+the 2 pt line along the bottom of the playing row; the live sink detached for a clip and attached
+again after it, including after a clip replaced by another and after a clip shorter than the
+first poll; the recording line under the log's header and the log's row count with it; part
+rows' times against the manifest's anchor; the two-line sidebar row, its running counters and the
+delete alert's wording; a sidebar click tuning through the band and taking the recording's mode;
+the speaker glyphs and their help; ⌘R and ⌘. in the menus, and ⌘. not caught by a text field;
+Stop Listening's empty state, and a band, bookmark or recording click opening the radio again;
+Reveal in Finder and Show Recordings in Finder.
 
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 

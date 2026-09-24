@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The inspector's lower half (docs/design/app-design-handoff-m2.md, Regions 4 and 5): the log
-// of recent transmissions on the tuned channel, straight from the façade's `TransmissionLog`,
-// and the Measurements group holding the raw levels the reading rows do not print. Nothing here
-// controls the radio: the log's rows are not clickable (the shared selection with the waterfall
-// is M3's, and a clickable row that highlights nothing would be misleading).
+// of recent transmissions on the tuned channel, straight from the façade's `TransmissionLog`
+// and merged with the parts of the tuned frequency's recording (`RecordingParts.merge`), and the
+// Measurements group holding the raw levels the reading rows do not print. Nothing here controls
+// the radio: a row is not clickable (the shared selection with the waterfall is M3's, and a
+// clickable row that highlights nothing would be misleading); the play glyph in a recorded row's
+// trailing column is the one control (docs/design/app-design-handoff-m3.md, "Region 2").
 
 import Foundation
 import LeylineClient
@@ -18,7 +20,10 @@ import SwiftUI
 /// relative (`−2:14`) when it does not; both formats can appear in one list, because the
 /// alternative is a timestamp nobody measured. Tone is not a column: a CTCSS tone the daemon
 /// reported is appended to that row's signal cell in `good`, and a row without one leaves the
-/// tone blank.
+/// tone blank. A row whose transmission lies inside a recorded part plays it; a part no live row
+/// lies inside is a row of its own, with the part's wall time through the manifest's anchor, its
+/// length, and its peak in dBFS in the signal cell, since a part has no floor to give a word. A
+/// line under the header names the recording the rows come from.
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
@@ -39,7 +44,9 @@ struct RecentLog: View {
     private func content(rows: Int) -> some View {
         let log = session.transmissions
         let open = log?.onAir
-        let closed = Array((log?.closed ?? []).prefix(rows - (open == nil ? 0 : 1)))
+        let recordingWords = recordingLine(session.recording)
+        let room = rows - (open == nil ? 0 : 1) - (recordingWords == nil ? 0 : 1)
+        let entries = Array(session.logEntries.prefix(max(0, room)))
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 SectionHeader(text: "Recent on this channel")
@@ -50,6 +57,16 @@ struct RecentLog: View {
                 }
             }
             .padding(.bottom, 6)
+            if let recordingWords {
+                // Beside the count it did not fit the panel's 280 pt; a line of its own under
+                // the header, the height of one row (M3 handoff, "Decided 2026-09-24").
+                HStack(spacing: 6) {
+                    if session.recordingJob != nil { RecordingDot() }
+                    Text(recordingWords).font(Theme.Font.valueSmall)
+                        .foregroundStyle(Theme.inkFaint).lineLimit(1)
+                }
+                .frame(height: Theme.Layout.logRowHeight)
+            }
             head
             if let open {
                 LogRow(
@@ -58,16 +75,19 @@ struct RecentLog: View {
                     signal: session.channelReading?.signalWord?.word ?? Reading.absent,
                     tone: open.tone, open: true)
             }
-            // Keyed by the start time, so a new transmission adds a row instead of changing
-            // what every row's position means.
-            ForEach(closed, id: \.start) { t in
+            // Keyed by capture and start sample, so a new transmission adds a row instead of
+            // changing what every row's position means.
+            ForEach(entries) { e in
+                let t = e.transmission
                 LogRow(
-                    time: Text(timeWords(t.start)).foregroundStyle(Theme.inkSecondary),
+                    time: Text(timeWords(e)).foregroundStyle(Theme.inkSecondary),
                     length: Reading.seconds(t.seconds),
-                    signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
-                    tone: t.tone, open: false)
+                    signal: e.fromPart
+                        ? Measure.dbfs(t.peakAudioDBFS)
+                        : SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
+                    tone: t.tone, open: false, part: part(e))
             }
-            if open == nil, closed.isEmpty {
+            if open == nil, entries.isEmpty {
                 Text(
                     log == nil
                         ? "No channel."
@@ -85,6 +105,7 @@ struct RecentLog: View {
             Text("time").frame(width: Theme.Layout.logTimeWidth, alignment: .leading)
             Text("length").frame(width: Theme.Layout.logLengthWidth, alignment: .trailing)
             Text("signal").frame(maxWidth: .infinity, alignment: .trailing)
+            Color.clear.frame(width: Theme.Layout.logPlayWidth, height: 1)
         }
         .font(Theme.Font.columnHead).foregroundStyle(Theme.inkFaintest)
         .padding(.horizontal, 6).padding(.bottom, 2)
@@ -105,19 +126,60 @@ struct RecentLog: View {
         return "\(count) this session"
     }
 
-    private func timeWords(_ start: Leyline_V1_SampleTime) -> String {
-        if let date = session.wallTime(of: start) { return WallClock.hms(date) }
+    /// A live row's wall clock through the tuned capture's anchor, a part row's through the
+    /// manifest's; relative when neither dates it.
+    private func timeWords(_ e: LogEntry) -> String {
+        let start = e.transmission.start
+        if let date = e.startDate ?? session.wallTime(of: start) { return WallClock.hms(date) }
         return Reading.relative(secondsAgo: session.secondsAgo(start) ?? .nan)
+    }
+
+    /// `recording since 18:09` while the job runs, `recorded Tue 18:09` after; nil with no
+    /// recording on the tuned frequency.
+    private func recordingLine(_ m: RecordingManifest?) -> String? {
+        guard let m else { return nil }
+        let running = session.recordingJob?.jobID == m.jobID
+        guard let started = m.startedAt else { return running ? "recording" : "recorded" }
+        return running
+            ? "recording since \(WallClock.hm(started))" : "recorded \(WallClock.dayHM(started))"
+    }
+
+    /// The row's play control, when a part holds it.
+    private func part(_ e: LogEntry) -> LogRow.Part? {
+        guard let uri = e.partURI else { return nil }
+        let playing = session.playingURI == uri
+        return LogRow.Part(
+            playing: playing, progress: playing ? session.playbackProgress : nil
+        ) {
+            Task {
+                if playing {
+                    await session.stopPlayback()
+                } else {
+                    await session.play(partURI: uri)
+                }
+            }
+        }
     }
 }
 
-/// One row of the log, mono and tabular; not styled as a control.
+/// One row of the log, mono and tabular; not styled as a control. The trailing 16 pt column holds
+/// `play.fill` when a recorded part holds the row and `stop.fill` while that part plays, with a
+/// 2 pt `accent` line along the row's bottom as far as it has played.
 struct LogRow: View {
+    /// A recorded part's control on the row.
+    struct Part {
+        let playing: Bool
+        /// 0 to 1; nil before the first position arrives or when the length is unknown.
+        let progress: Double?
+        let toggle: () -> Void
+    }
+
     let time: Text
     let length: String
     let signal: String
     let tone: SubAudibleTone?
     let open: Bool
+    var part: Part?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -130,10 +192,46 @@ struct LogRow: View {
                 toneText
             }.font(Theme.Font.valueSmall)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+            playColumn.frame(width: Theme.Layout.logPlayWidth)
         }
         .padding(.horizontal, 6)
         .frame(height: Theme.Layout.logRowHeight)
         .background(open ? Theme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(alignment: .bottomLeading) { progressLine }
+    }
+
+    @ViewBuilder private var playColumn: some View {
+        if let part {
+            Button(action: part.toggle) {
+                Image(systemName: part.playing ? "stop.fill" : "play.fill")
+                    .font(Theme.Font.glyph).foregroundStyle(Theme.inkTertiary)
+                    .frame(width: Theme.Layout.logPlayWidth, height: Theme.Layout.logRowHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(
+                part.playing
+                    ? "Stop the clip; the channel's audio comes back"
+                    : "Play the recorded part through the daemon's speakers; the channel's audio is detached until it ends"
+            )
+        } else {
+            Color.clear
+        }
+    }
+
+    /// As far as the clip has played, along the row's bottom edge.
+    @ViewBuilder private var progressLine: some View {
+        if let part, part.playing, let progress = part.progress {
+            GeometryReader { geo in
+                Rectangle().fill(Theme.accent)
+                    .frame(
+                        width: geo.size.width * min(max(progress, 0), 1),
+                        height: Theme.Layout.logProgressHeight
+                    )
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+            .allowsHitTesting(false)
+        }
     }
 
     /// ` · PL 100.0` or ` · DCS 023` in `good` when the daemon reported a CTCSS tone or DCS code
@@ -274,8 +372,9 @@ enum Measure {
     }
 }
 
-/// `11:41:58` for the log and `11:38` for the On air row, in the machine's zone. Main-actor
-/// statics because a `DateFormatter` is not `Sendable`, and the panel is the only reader.
+/// `11:41:58` for the log, `11:38` for the On air row and `Tue 18:09` for a recording, in the
+/// machine's zone. Main-actor statics because a `DateFormatter` is not `Sendable`, and the
+/// views are the only readers.
 enum WallClock {
     @MainActor private static let hmsFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -290,6 +389,15 @@ enum WallClock {
         return f
     }()
 
+    @MainActor private static let dayHMFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE HH:mm"
+        return f
+    }()
+
     @MainActor static func hms(_ date: Date) -> String { hmsFormatter.string(from: date) }
     @MainActor static func hm(_ date: Date) -> String { hmFormatter.string(from: date) }
+    /// `Tue 18:09`: a recording's start in the sidebar and the log's recording line.
+    @MainActor static func dayHM(_ date: Date) -> String { dayHMFormatter.string(from: date) }
 }

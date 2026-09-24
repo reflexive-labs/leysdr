@@ -149,8 +149,8 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 - Milestone E (the Mac app, `docs/plans/app.md`): E.1 to E.3 done -- the `app/` package, a Swift
   client façade tested against the real daemon (`docs/dev/app.md`), and a window with the spectrum,
   the waterfall, click to hear and the layer 1 controls, confirmed on the owner's Mac (the M1 cut).
-  The file half of E.4 (bookmarks) is in, and the M2 inspector has landed;
-  CHIRP import (E.4), recording from the window (E.5), lifecycle (E.6) and the bundle (E.7) are open.
+  The file half of E.4 (bookmarks) is in, the M2 inspector has landed, and recording from the
+  window (E.5) with it; CHIRP import (E.4), lifecycle (E.6) and the bundle (E.7) are open.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
   audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
   with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered

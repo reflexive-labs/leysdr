@@ -140,6 +140,44 @@ final class AppSession {
     private var busy = false
     private var rejectionsSeen = 0
 
+    // Recording (plans/app.md, APP-5). The jobs and the playbacks are the mirror's; what is here
+    // is the window's copy of the store on disk and which of it the log shows.
+    /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
+    /// every record job's event and once on adoption.
+    private(set) var recordings: [RecordingSummary] = []
+    /// The manifest the log shows, read from disk through `ResolveLocalPath`; `recording` gives it
+    /// only while its frequency is the tuned one.
+    private var shownManifest: RecordingManifest?
+    /// The recording whose manifest is being read or was read last.
+    @ObservationIgnored private var manifestLoadingID: String?
+    /// A job event for the shown recording arrived while the list was being read: the manifest
+    /// is read again when the list lands.
+    @ObservationIgnored private var manifestStale = false
+    @ObservationIgnored private var recordingsLoad: Task<Void, Never>?
+    @ObservationIgnored private var manifestLoad: Task<Void, Never>?
+    /// The record jobs as last seen, so a change to one is noticed.
+    @ObservationIgnored private var recordJobsSeen: [Leyline_V1_Job] = []
+    /// The recording clicked in the sidebar: the log shows it while its frequency is tuned, over
+    /// the newest one there.
+    private var pinnedRecordingID: String?
+    /// The playback this window started, by the id `StartPlayback` returned, and the part it
+    /// plays, until its tombstone. One at a time.
+    private var playbackID: String?
+    private(set) var playingURI: String?
+    /// Frames played, polled from the daemon's state while a clip plays: a playback's event is
+    /// sent when it starts and when it ends, not as it goes, so `ley play` polls it too
+    /// (`go/internal/cli/play.go`, `followPlayback`).
+    private(set) var playbackPosition: UInt64 = 0
+    @ObservationIgnored private var playbackPoll: Task<Void, Never>?
+    @ObservationIgnored private var playbackSeen = false
+    @ObservationIgnored private var playbackStartedAt = Date.distantPast
+    /// Whether the live channel's sink was attached when the clip started, so it is attached
+    /// again when the clip ends and the clip is heard alone meanwhile.
+    @ObservationIgnored private var reattachAfterPlayback = false
+    /// Set by Stop listening: the window adopts nothing until a band or a frequency is picked,
+    /// or the next snapshot would put a capture back.
+    private var listeningStopped = false
+
     private static let lastBandKey = "lastBand"
     /// The capture rate the window opens a radio at: the plan's default, 2.4 MSPS, until the
     /// device menu's picker sets another, which is remembered. The radio's setting, not the
@@ -194,7 +232,9 @@ final class AppSession {
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
     var displayHz: UInt64? { requestedHz ?? tunedHz }
-    var isPlaying: Bool { sink != nil }
+    /// The transport bar's speaker: muted is no sink on the channel (the daemon has no mute), and
+    /// the channel, its squelch and the meter carry on.
+    var isMuted: Bool { sink == nil }
     var meter: Leyline_V1_Meter? { telemetry.meter }
     /// The inspector's reading, steadied (`ChannelReading`): folded from every meter in
     /// `foldReading`. Presentation only; the raw meter is `meter`.
@@ -446,6 +486,8 @@ final class AppSession {
                 isLive
                     ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures"
                     : "not live: \(connection)")
+            // Once on adoption: the store as it is, and the manifest read afresh.
+            if isLive { reloadRecordings(forceManifest: true) }
         }
         if let r = requestedHz, r == tunedHz { clearRequested() }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted. One
@@ -480,7 +522,7 @@ final class AppSession {
             }
         }
         if case .live = connection {
-            if !adopted { adopt() }
+            if !adopted, !listeningStopped { adopt() }
         } else {
             adopted = false
             captureSeen = false
@@ -492,6 +534,8 @@ final class AppSession {
         followAudioLevels()
         nameFailure()
         holdOutOfCapture()
+        followRecordJobs()
+        followPlayback()
         logShownWords()
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
         if state.rejections.count != rejectionsSeen {
@@ -591,6 +635,7 @@ final class AppSession {
         }
         busy = true
         defer { busy = false }
+        listeningStopped = false
         selectedBandID = band.id
         UserDefaults.standard.set(band.id, forKey: Self.lastBandKey)
         lastError = nil
@@ -1137,21 +1182,67 @@ final class AppSession {
         Task { await writes.volume(v.clamped(to: 0...1), sink: s.sinkID) }
     }
 
-    /// Pause detaches the sink and play attaches one; the channel and its squelch stay.
-    func togglePlay() async {
+    /// Mute detaches the sink and unmute attaches one; the channel and its squelch stay, and so
+    /// does the radio (plans/app.md, APP-5: the button is the audio control).
+    func toggleMute() async {
         guard let daemon, let ch = channel else { return }
         do {
             if let s = sink {
                 var req = Leyline_V1_DetachSinkRequest()
                 req.sinkID = s.sinkID
                 _ = try await daemon.control.detachSink(req)
-                log("session", "paused: sink \(s.sinkID) detached")
+                log("session", "muted: sink \(s.sinkID) detached")
             } else {
                 try await ensureSink(on: ch)
-                log("session", "playing: sink attached")
+                log("session", "unmuted: sink attached")
             }
         } catch {
             lastError = LeylineError(error)
+        }
+    }
+
+    /// `ley stop`'s act (Tune ▸ Stop Listening, ⌘.): the channel removed and the capture this
+    /// window made destroyed, so the waterfall shows its empty state and the radio is free. A
+    /// capture another client made, or one another channel still rides on (a recording's, say),
+    /// is left running: destroying it would silence them. The window adopts nothing afterwards
+    /// until a band or a frequency is picked.
+    func stopListening() async {
+        guard let daemon, let ch = channel else { return }
+        let cap = capture
+        var req = Leyline_V1_DestroyChannelRequest()
+        req.channelID = ch.channelID
+        do { _ = try await daemon.control.destroyChannel(req) } catch {
+            lastError = LeylineError(error)
+            log("session", "stop listening: \(ch.channelID) not removed: \(LeylineError(error))")
+            return
+        }
+        listeningStopped = true
+        dropCapture()
+        guard let cap else {
+            log("session", "stopped; radio free")
+            return
+        }
+        let others = state.channels(in: cap.captureID).filter { $0.channelID != ch.channelID }
+        guard cap.createdBy.clientID == daemon.identity.id, others.isEmpty else {
+            log(
+                "session",
+                "stopped; capture \(cap.captureID) left running: \(others.isEmpty ? "another client made it" : "\(others.count) other channels on it")"
+            )
+            notice =
+                others.isEmpty
+                ? "Stopped. The radio stays tuned: another client opened it."
+                : "Stopped. The radio stays tuned for the other channels on it."
+            return
+        }
+        var destroy = Leyline_V1_DestroyCaptureRequest()
+        destroy.captureID = cap.captureID
+        do {
+            _ = try await daemon.control.destroyCapture(destroy)
+            log("session", "stopped; radio free")
+        } catch {
+            log(
+                "session", "stopped; capture \(cap.captureID) not destroyed: \(LeylineError(error))"
+            )
         }
     }
 
@@ -1494,6 +1585,22 @@ final class AppSession {
     func tune(bookmark: Bookmark) {
         selectedBandID = nil
         log("tune", "bookmark \(bookmark.name) at \(bookmark.hz) Hz")
+        // No capture (after Stop listening): the band opens the radio there first, then the
+        // bookmark's settings are applied, the way a recording's row tunes.
+        if capture == nil, let b = Bands.band(containing: bookmark.hz, in: bands),
+            outOfRangeWords(b) == nil
+        {
+            Task {
+                await select(band: b, at: bookmark.hz)
+                if let ch = channel, bookmark.mode != .unspecified {
+                    let bw =
+                        bookmark.bandwidthHz == 0
+                        ? bookmark.mode.defaultBandwidthHz : bookmark.bandwidthHz
+                    await apply(mode: bookmark.mode, bandwidthHz: bw, to: ch)
+                }
+            }
+            return
+        }
         tuningBookmark = bookmark.mode != .unspecified
         tune(to: bookmark.hz)
         if let ch = channel, bookmark.mode != .unspecified {
@@ -1580,6 +1687,414 @@ final class AppSession {
             log("failure", "\(now.headline): \(now.detail)")
         } else {
             log("failure", "cleared")
+        }
+    }
+
+    // MARK: Recording
+
+    /// The record job on the tuned frequency, running or degraded, from the mirror's jobs: the
+    /// inspector header's control and status follow it.
+    var recordingJob: Leyline_V1_Job? {
+        tunedHz.flatMap { Recordings.activeJob(in: state.jobs, frequencyHz: $0) }
+    }
+
+    /// The daemon's words for the running job: `recording audio: 12 m 04 s, 4 parts, 6.9 MB`, or
+    /// the degraded job's `out of capture since …`.
+    var recordingStatus: String? { recordingJob?.statusDetail }
+
+    /// The manifest for the tuned frequency: the running job's, else the recording picked in the
+    /// sidebar, else the newest one on this frequency. Nil while the one read last is for
+    /// another frequency.
+    var recording: RecordingManifest? {
+        guard let m = shownManifest, let hz = tunedHz, m.frequencyHz == hz else { return nil }
+        return m
+    }
+
+    /// The log's rows: the live transmissions with the parts they lie inside, and every other
+    /// part of `recording` as a row of its own, merged by sample time (`RecordingParts.merge`).
+    var logEntries: [LogEntry] {
+        RecordingParts.merge(closed: transmissions?.closed ?? [], manifest: recording)
+    }
+
+    /// The window's playback, by the id `StartPlayback` returned, while the mirror carries it.
+    var playback: Leyline_V1_Playback? {
+        playbackID.flatMap { id in state.playbacks.first { $0.playbackID == id } }
+    }
+
+    /// How far the clip has played, 0 to 1: the polled position over the frames the mirror's
+    /// playback states; nil when nothing plays or its length is unknown.
+    var playbackProgress: Double? {
+        guard playingURI != nil, let p = playback, p.samples > 0 else { return nil }
+        return min(1, Double(playbackPosition) / Double(p.samples))
+    }
+
+    /// The sidebar's list: the recordings whose jobs are running first, then the rest newest
+    /// first, as the daemon lists them.
+    var sidebarRecordings: [RecordingSummary] {
+        let running = Set(state.jobs.filter { $0.isActive && $0.recordConfig != nil }.map(\.jobID))
+        return recordings.filter { running.contains($0.jobID) }
+            + recordings.filter { !running.contains($0.jobID) }
+    }
+
+    /// The running or degraded job that is writing `jobID`'s recording, or nil once it finished.
+    func activeRecordJob(_ jobID: String) -> Leyline_V1_Job? {
+        state.jobs.first { $0.jobID == jobID && $0.isActive }
+    }
+
+    /// `Record Channel` (gated by squelch) and `Record Continuously`: the frequency form of
+    /// `RecordConfig` with the tuned channel's frequency, mode, width and squelch copied now, so
+    /// the job owns its channel and outlives the window, a retune and a quit. The confirmation is
+    /// the job's event, which the header renders; a refusal is a notice with the daemon's words.
+    func startRecording(continuous: Bool) async {
+        guard let daemon, let ch = channel, let hz = tunedHz else {
+            notice =
+                "Tune a channel first: a recording copies its frequency, mode, width and squelch."
+            return
+        }
+        if recordingJob != nil {
+            notice = "\(Frequency.format(hz)) is already being recorded."
+            return
+        }
+        var req = Leyline_V1_StartJobRequest()
+        req.record = Recordings.config(
+            frequencyHz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz, squelchDBFS: ch.squelchDb,
+            continuous: continuous)
+        let squelch = ch.squelchDb.isFinite ? String(format: "%.0f dBFS", ch.squelchDb) : "auto"
+        do {
+            let job = try await daemon.jobs.startJob(req)
+            log(
+                "record",
+                "\(job.jobID) started: \(hz) Hz \(ch.mode.word) \(ch.bandwidthHz) Hz, squelch \(squelch), \(continuous ? "continuous" : "gated by squelch")"
+            )
+        } catch {
+            let e = LeylineError(error)
+            log("record", "refused at \(hz) Hz: \(e.code) \(e.message)")
+            notice = "Could not record: \(e.message.isEmpty ? e.code : e.message)"
+        }
+    }
+
+    /// `CancelJob`: the daemon finalises the files and the job ends `CANCELLED`, which is how an
+    /// open-ended recording is meant to stop. Without an id, the job on the tuned frequency.
+    func stopRecording(jobID: String? = nil) async {
+        guard let daemon else { return }
+        guard let id = jobID ?? recordingJob?.jobID else {
+            notice = "Nothing is recording on the tuned frequency."
+            return
+        }
+        var ref = Leyline_V1_JobRef()
+        ref.jobID = id
+        do {
+            let job = try await daemon.jobs.cancelJob(ref)
+            log("record", "\(id) stopped: \(job.statusDetail)")
+        } catch {
+            let e = LeylineError(error)
+            log("record", "\(id) not stopped: \(e.code) \(e.message)")
+            notice = "Could not stop the recording: \(e.message.isEmpty ? e.code : e.message)"
+        }
+    }
+
+    /// A record job changed: the list is read again, and the shown manifest too when the job was
+    /// the shown recording's (a part closed, the job ended). Otherwise the log's recording follows
+    /// the tuned frequency.
+    private func followRecordJobs() {
+        let jobs = state.jobs.filter { $0.recordConfig != nil }
+        guard jobs != recordJobsSeen else {
+            followRecording(force: false)
+            return
+        }
+        let changed = Set(jobs.filter { !recordJobsSeen.contains($0) }.map(\.jobID))
+        recordJobsSeen = jobs
+        reloadRecordings(forceManifest: shownManifest.map { changed.contains($0.jobID) } ?? true)
+    }
+
+    /// `ListResources(RECORDING)`, then the log's recording resolved against the new list.
+    private func reloadRecordings(forceManifest: Bool) {
+        guard let daemon else { return }
+        if forceManifest { manifestStale = true }
+        recordingsLoad?.cancel()
+        recordingsLoad = Task { [weak self] in
+            var req = Leyline_V1_ListResourcesRequest()
+            req.kind = .recording
+            do {
+                let listed = try await daemon.resources.listResources(req)
+                guard let self, !Task.isCancelled else { return }
+                self.recordings = listed.resources.map(RecordingSummary.init)
+            } catch {
+                guard !Task.isCancelled else { return }
+                log("record", "recordings not listed: \(LeylineError(error))")
+            }
+            self?.followRecording(force: false)
+        }
+    }
+
+    /// Which recording the log shows for the tuned frequency: the running job's, else the one
+    /// picked in the sidebar while its frequency is tuned, else the newest on this frequency.
+    private var wantedRecordingID: String? {
+        guard let hz = tunedHz else { return nil }
+        if let job = recordingJob { return job.jobID }
+        if let p = pinnedRecordingID,
+            recordings.contains(where: { $0.jobID == p && $0.frequencyHz == hz })
+        {
+            return p
+        }
+        return recordings.first { $0.frequencyHz == hz }?.jobID
+    }
+
+    /// Reads the wanted manifest when it is another recording than the one read last, or when a
+    /// job event made the shown one stale.
+    private func followRecording(force: Bool) {
+        guard let want = wantedRecordingID else {
+            manifestLoad?.cancel()
+            manifestLoadingID = nil
+            if shownManifest != nil { shownManifest = nil }
+            return
+        }
+        guard force || manifestStale || want != manifestLoadingID else { return }
+        manifestStale = false
+        loadManifest(want)
+    }
+
+    /// `ResolveLocalPath(ley://recordings/<id>)`, then `recording.json` from that directory:
+    /// the window is local, as `ley recordings show` is, and samples are never streamed.
+    private func loadManifest(_ id: String) {
+        guard let daemon else { return }
+        manifestLoad?.cancel()
+        manifestLoadingID = id
+        manifestLoad = Task { [weak self] in
+            var ref = Leyline_V1_ResourceRef()
+            ref.uri = "ley://recordings/\(id)"
+            do {
+                let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
+                let path = local.path
+                let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: path))
+                guard let self, !Task.isCancelled, self.manifestLoadingID == id else { return }
+                if manifest.jobID != self.shownManifest?.jobID
+                    || manifest.parts.count != self.shownManifest?.parts.count
+                {
+                    log("record", "\(id): \(manifest.parts.count) parts read from \(path)")
+                }
+                if manifest != self.shownManifest { self.shownManifest = manifest }
+            } catch {
+                guard let self, !Task.isCancelled, self.manifestLoadingID == id else { return }
+                log("record", "manifest of \(id) not read: \(error)")
+                if self.shownManifest?.jobID != id { self.shownManifest = nil }
+            }
+        }
+    }
+
+    /// A sidebar row: the band the recording's frequency is in, then the frequency and the mode,
+    /// as a bookmark's row tunes; the log then shows this recording's parts.
+    func tune(recording r: RecordingSummary) async {
+        guard r.frequencyHz > 0 else { return }
+        pinnedRecordingID = r.jobID
+        log("tune", "recording \(r.jobID) at \(r.frequencyHz) Hz \(r.mode.word)")
+        let mode: Leyline_V1_DemodMode? = r.mode == .unspecified ? nil : r.mode
+        if let b = Bands.band(containing: r.frequencyHz, in: bands), outOfRangeWords(b) == nil,
+            capture == nil || band?.id != b.id
+        {
+            await select(band: b, at: r.frequencyHz)
+        } else if capture != nil {
+            selectedBandID = nil
+            // The recording's mode wins over the band's, as a bookmark's does.
+            tuningBookmark = mode != nil
+            tune(to: r.frequencyHz)
+        } else {
+            notice = "\(Frequency.format(r.frequencyHz)) is in no band this radio reaches."
+            return
+        }
+        if let mode, let ch = channel, ch.mode != mode {
+            await apply(mode: mode, bandwidthHz: mode.defaultBandwidthHz, to: ch)
+        }
+        followRecording(force: true)
+    }
+
+    /// Plays one part through the daemon's speakers (`Control.StartPlayback` on
+    /// `ley://recordings/<id>/<part>`). The live channel's sink is detached meanwhile and attached
+    /// again when the clip ends, so the clip is heard alone; one playback at a time, so a clip
+    /// already playing is stopped first, and a clip replays from its start.
+    func play(partURI uri: String) async {
+        guard let daemon else { return }
+        if let old = playbackID {
+            // Cleared first, so the old one's tombstone is not read as this one ending.
+            playbackID = nil
+            var stop = Leyline_V1_StopPlaybackRequest()
+            stop.playbackID = old
+            _ = try? await daemon.control.stopPlayback(stop)
+            log("playback", "\(old) stopped for \(uri)")
+        } else if playingURI == nil {
+            reattachAfterPlayback = sink != nil
+        }
+        playingURI = uri
+        playbackPosition = 0
+        if let s = sink {
+            var detach = Leyline_V1_DetachSinkRequest()
+            detach.sinkID = s.sinkID
+            do {
+                _ = try await daemon.control.detachSink(detach)
+                log("playback", "live sink \(s.sinkID) detached for the clip")
+            } catch {
+                log("playback", "live sink \(s.sinkID) not detached: \(LeylineError(error))")
+            }
+        }
+        var req = Leyline_V1_StartPlaybackRequest()
+        req.resourceUri = uri
+        do {
+            let pb = try await daemon.control.startPlayback(req)
+            playbackID = pb.playbackID
+            playbackSeen = false
+            playbackStartedAt = Date()
+            log(
+                "playback",
+                "\(pb.playbackID) playing \(uri): \(pb.samples) frames at \(pb.sampleRate) Hz")
+            pollPlayback(pb.playbackID)
+        } catch {
+            let e = LeylineError(error)
+            log("playback", "\(uri) not played: \(e.code) \(e.message)")
+            notice = "Could not play the part: \(e.message.isEmpty ? e.code : e.message)"
+            playingURI = nil
+            await attachAfterPlayback()
+        }
+    }
+
+    /// Stops the window's clip; its tombstone ends it here and attaches the live sink again.
+    func stopPlayback() async {
+        guard let daemon, let id = playbackID else { return }
+        var req = Leyline_V1_StopPlaybackRequest()
+        req.playbackID = id
+        do {
+            _ = try await daemon.control.stopPlayback(req)
+            log("playback", "\(id) stopped")
+        } catch {
+            log("playback", "\(id) not stopped: \(LeylineError(error))")
+        }
+    }
+
+    /// The playback's position, four times a second from the daemon's state, the rate `ley play`
+    /// polls at, until the playback is no longer this window's. A state without it means the clip
+    /// ended, as `ley play` reads it, which covers a clip whose tombstone the mirror folded before
+    /// `StartPlayback` answered.
+    private func pollPlayback(_ id: String) {
+        playbackPoll?.cancel()
+        playbackPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let session = self, session.playbackID == id, let daemon = session.daemon
+                else { return }
+                guard let st = try? await daemon.state() else { continue }
+                guard session.playbackID == id else { return }
+                guard let p = st.playbacks.first(where: { $0.playbackID == id }) else {
+                    session.endPlayback(id)
+                    return
+                }
+                session.playbackPosition = p.position
+            }
+        }
+    }
+
+    /// The playback's tombstone (or a playback the mirror never carried within 3 s) ends the
+    /// clip: the row loses its stop glyph and the live sink comes back.
+    private func followPlayback() {
+        guard let id = playbackID else { return }
+        if state.playbacks.contains(where: { $0.playbackID == id }) {
+            playbackSeen = true
+            return
+        }
+        guard
+            playbackSeen || Date().timeIntervalSince(playbackStartedAt) > Self.neverSeenDropSeconds
+        else { return }
+        endPlayback(id)
+    }
+
+    private func endPlayback(_ id: String) {
+        guard playbackID == id else { return }
+        log("playback", "\(id) ended")
+        playbackID = nil
+        playingURI = nil
+        playbackSeen = false
+        playbackPoll?.cancel()
+        playbackPoll = nil
+        Task { await attachAfterPlayback() }
+    }
+
+    /// The live sink back on the tuned channel, when it was attached before the clip.
+    private func attachAfterPlayback() async {
+        guard reattachAfterPlayback else { return }
+        reattachAfterPlayback = false
+        guard let ch = channel else { return }
+        do {
+            try await ensureSink(on: ch)
+            log("playback", "live sink attached again")
+        } catch {
+            lastError = LeylineError(error)
+        }
+    }
+
+    /// `DeleteResource`, then the list read again. The daemon refuses while the job runs, and
+    /// the refusal is shown in its words.
+    func deleteRecording(_ r: RecordingSummary) async {
+        guard let daemon else { return }
+        var ref = Leyline_V1_ResourceRef()
+        ref.uri = r.uri
+        do {
+            let gone = try await daemon.resources.deleteResource(ref)
+            log("record", "deleted \(r.uri): \(gone.freedBytes) bytes freed")
+            if pinnedRecordingID == r.jobID { pinnedRecordingID = nil }
+            if shownManifest?.jobID == r.jobID {
+                shownManifest = nil
+                manifestLoadingID = nil
+            }
+            reloadRecordings(forceManifest: true)
+        } catch {
+            let e = LeylineError(error)
+            log("record", "\(r.uri) not deleted: \(e.code) \(e.message)")
+            notice = e.message.isEmpty ? e.code : e.message
+        }
+    }
+
+    /// The recording's directory selected in Finder.
+    func revealInFinder(_ r: RecordingSummary) async {
+        guard let path = await localPath(r.uri) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        log("record", "revealed \(path)")
+    }
+
+    /// File ▸ Show Recordings in Finder: the store's directory, found through any recording's
+    /// path, else the daemon's default store on macOS when it exists.
+    func showRecordingsInFinder() async {
+        let dir: URL
+        if let first = recordings.first, let path = await localPath(first.uri) {
+            dir = URL(fileURLWithPath: path).deletingLastPathComponent()
+        } else {
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let store = home.appendingPathComponent(Self.defaultRecordingsPath)
+            guard FileManager.default.fileExists(atPath: store.path) else {
+                notice =
+                    "Nothing has been recorded yet. Record Channel (⌘R) records the tuned channel."
+                return
+            }
+            dir = store
+        }
+        NSWorkspace.shared.open(dir)
+        log("record", "opened \(dir.path)")
+    }
+
+    /// The daemon's store under the home directory on macOS (docs/design/recording.md, "Files");
+    /// `leylined --recordings` moves it, which is why a recording's own path is tried first.
+    static let defaultRecordingsPath = "Library/Application Support/Leyline/recordings"
+
+    /// `ResolveLocalPath`, with a refusal shown as a notice.
+    private func localPath(_ uri: String) async -> String? {
+        guard let daemon else { return nil }
+        var ref = Leyline_V1_ResourceRef()
+        ref.uri = uri
+        do {
+            let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
+            return local.path
+        } catch {
+            let e = LeylineError(error)
+            log("record", "\(uri) not resolved: \(e.code) \(e.message)")
+            notice = e.message.isEmpty ? e.code : e.message
+            return nil
         }
     }
 

@@ -10,6 +10,8 @@
 //     tones are;
 //   - a keyed carrier's squelch edges fold into transmissions as long as the fixture keyed them,
 //     and the capture's anchor gives one a wall clock;
+//   - the window's record job writes a manifest the façade reads, whose parts hold the
+//     transmissions heard live, and a finished recording deletes;
 //   - the daemon's error code survives the trip.
 
 import Foundation
@@ -291,6 +293,100 @@ final class ClientDaemonTests: XCTestCase {
         var elsewhere = transmission.start
         elsewhere.captureID = "cap_00000000000000000000000000"
         XCTAssertNil(SampleClock.wallTime(of: elsewhere, anchor: anchor))
+    }
+
+    @MainActor
+    func testTheWindowsRecordingHoldsTheTransmissionsHeardLive() async throws {
+        Harness.stop(daemon)
+        daemon = try await Harness.start(fixture: "nfm_keyed.cf32")
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
+        try await Harness.setSquelch(-40, channel: channel.channelID, via: app, mirror: mirror)
+        let hz = UInt64(Int64(capture.centerHz) + channel.offsetHz)
+
+        // The job the header's Record starts: the channel copied, gated by the squelch.
+        var start = Leyline_V1_StartJobRequest()
+        start.record = Recordings.config(
+            frequencyHz: hz, mode: .nfm, bandwidthHz: channel.bandwidthHz, squelchDBFS: -40,
+            continuous: false)
+        let job = try await app.jobs.startJob(start)
+        await assertEventually("the record job never ran on the tuned frequency") {
+            Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz)?.jobID == job.jobID
+        }
+
+        // Two transmissions heard after the job started: the first the fold sees may have
+        // begun before the job did, and its start is then outside every part.
+        var sub = Leyline_V1_TelemetrySubscription()
+        sub.channelID = channel.channelID
+        sub.types = [.squelchTransition]
+        let edges = app.telemetry(sub)
+        let rate = capture.sampleRate
+        let channelID = channel.channelID
+        let folder = Task { () -> TransmissionLog in
+            var log = TransmissionLog(channelID: channelID)
+            for try await msg in edges {
+                log.fold(msg, captureRate: rate)
+                if log.closed.count >= 2 { break }
+            }
+            return log
+        }
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(25))
+            folder.cancel()
+        }
+        let log = try await folder.value
+        deadline.cancel()
+        let heard = try XCTUnwrap(log.closed.first, "nothing heard on the keyed fixture")
+
+        var ref = Leyline_V1_JobRef()
+        ref.jobID = job.jobID
+        let cancelled = try await app.jobs.cancelJob(ref)
+        XCTAssertEqual(cancelled.jobID, job.jobID)
+        await assertEventually("the job never ended") {
+            mirror.state.jobs.first { $0.jobID == job.jobID }?.state == .cancelled
+        }
+
+        var list = Leyline_V1_ListResourcesRequest()
+        list.kind = .recording
+        let listed = try await app.resources.listResources(list)
+        let summary = try XCTUnwrap(
+            listed.resources.map(RecordingSummary.init).first { $0.jobID == job.jobID },
+            "the recording is not listed")
+        XCTAssertEqual(summary.frequencyHz, hz)
+        XCTAssertEqual(summary.mode, .nfm)
+        XCTAssertGreaterThan(summary.parts, 0)
+
+        var resource = Leyline_V1_ResourceRef()
+        resource.uri = summary.uri
+        let local: Leyline_V1_LocalPath = try await app.resources.resolveLocalPath(resource)
+        let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
+        XCTAssertEqual(manifest.jobID, job.jobID)
+        XCTAssertEqual(manifest.frequencyHz, hz)
+        XCTAssertEqual(manifest.demodMode, .nfm)
+        XCTAssertEqual(manifest.gate?.kind, "squelch")
+        XCTAssertEqual(manifest.parts.count, summary.parts)
+        XCTAssertTrue(
+            manifest.parts.allSatisfy { $0.captureID == capture.captureID },
+            "the job rode the window's capture, so its parts are on that timeline")
+        let part = try XCTUnwrap(
+            RecordingParts.match(transmission: heard, in: manifest.parts),
+            "the newest transmission \(heard.start.sampleIndex)–\(heard.end.sampleIndex) lies in no part of \(manifest.parts.map { ($0.startSample, $0.endSample) })"
+        )
+        let rows = RecordingParts.merge(closed: log.closed, manifest: manifest)
+        XCTAssertEqual(rows.first?.partURI, manifest.uri(of: part), "the newest row plays its part")
+        XCTAssertFalse(rows.first?.fromPart ?? true)
+
+        let gone = try await app.resources.deleteResource(resource)
+        XCTAssertEqual(gone.uri, summary.uri)
+        XCTAssertGreaterThan(gone.freedBytes, 0)
+        let after = try await app.resources.listResources(list)
+        XCTAssertFalse(after.resources.contains { $0.uri == summary.uri }, "deleted, still listed")
     }
 
     func testErrorCodesSurviveTheTrip() async throws {

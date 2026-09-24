@@ -177,5 +177,5 @@ Nothing has been released yet. This file starts with everything that exists on `
   job started with `--job` comes back after a daemon restart as the same job; the tone detector
   waits one second before reporting a PL, so synthesised voice is no longer reported as a tone.
 - Not yet: durable watch jobs and transcripts (D.15), the terminal dashboard (D.14), and in the
-  Mac app, recording (E.5), CHIRP import (E.4) and a signed bundle (E.7)
+  Mac app, CHIRP import (E.4) and a signed bundle (E.7)
   (`docs/plans/build-order.md` has the order).
