@@ -1109,6 +1109,15 @@ bootstraps `com.leyline.daemon` on its own `leylined` the way `ley daemon instal
 `ley` and the decoders where a terminal finds them, and is signed with a Developer ID and
 notarized (`../dev/release-checklist.md`). D3, the trademark check, gates the first public build.
 
+## Backlog
+
+- **The band rail's scrubber at a wide capture** (seen 2026-09-25). When the radio's sample rate
+  spans more than the band (20 MSPS on GMRS, say), the rail draws the band's region over the
+  whole capture and the scrubber's scale no longer matches the waterfall's: GMRS CH2 and CH3 sit
+  closer together on the waterfall than on the scrubber. Which of the two should own the scale
+  when the capture is wider than the band is undecided (`BandRailView.swift`, `select(band:at:)`,
+  the region drag); the owner asked for it to be kept rather than guessed at.
+
 ## Open for the owner
 
 - `[d]` **The handoff itself.** The terminal handoff was reconciled item by item against
