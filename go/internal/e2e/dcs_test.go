@@ -22,7 +22,6 @@ const dcsWindow = 3 * time.Second
 // for the daemon's sub-audible telemetry to name the code. The fixture comes from go/pkg/dcs, the
 // same encoder the Go side reads the handheld's words with, so this is the check that the engine's
 // decoder and the Go encoder agree on the frame.
-//
 func TestDCSAgainstRealDaemon(t *testing.T) {
 	e, _ := setup(t)
 	fixture, err := filepath.Abs("../../../fixtures/nfm_dcs.cf32")
