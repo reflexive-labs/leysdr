@@ -1124,6 +1124,10 @@ public nonisolated struct Leyline_V1_DaemonInfo: Sendable {
 
   public var socketPath: String = String()
 
+  /// The recording store's cap in bytes (`leylined --recordings-cap`), for a client that shows use
+  /// against it; use is the sum of ListResources' size_bytes. 0 from a daemon that predates it.
+  public var recordingsCapBytes: UInt64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -2788,7 +2792,7 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonInfo"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}version\0\u{1}pid\0\u{3}started_at_ns\0\u{3}socket_path\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}version\0\u{1}pid\0\u{3}started_at_ns\0\u{3}socket_path\0\u{3}recordings_cap_bytes\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2800,6 +2804,7 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
       case 2: try { try decoder.decodeSingularInt64Field(value: &self.pid) }()
       case 3: try { try decoder.decodeSingularInt64Field(value: &self.startedAtNs) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.socketPath) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.recordingsCapBytes) }()
       default: break
       }
     }
@@ -2818,6 +2823,9 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
     if !self.socketPath.isEmpty {
       try visitor.visitSingularStringField(value: self.socketPath, fieldNumber: 4)
     }
+    if self.recordingsCapBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.recordingsCapBytes, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2826,6 +2834,7 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
     if lhs.pid != rhs.pid {return false}
     if lhs.startedAtNs != rhs.startedAtNs {return false}
     if lhs.socketPath != rhs.socketPath {return false}
+    if lhs.recordingsCapBytes != rhs.recordingsCapBytes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

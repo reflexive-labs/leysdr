@@ -345,4 +345,113 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(
             Recordings.leftOut(capture: "cap_a", movingTo: 144_800_000...147_200_000, in: away), [])
     }
+
+    // MARK: The sidebar's Recordings source and the store footer
+
+    private var utc: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }
+
+    /// Thursday 2026-09-24 12:00 UTC.
+    private let now = Date(timeIntervalSince1970: 1_790_251_200)
+
+    private func listed(
+        _ id: String, hz: UInt64, mode: String = "NFM", startedHoursAgo: Double,
+        endedHoursAgo: Double? = nil, size: UInt64 = 1 << 20
+    ) -> RecordingSummary {
+        let ns = { (h: Double) in String(Int64((self.now.timeIntervalSince1970 - h * 3600) * 1e9)) }
+        return RecordingSummary(
+            .with {
+                $0.uri = "ley://recordings/\(id)"
+                $0.originatingJobID = id
+                $0.sizeBytes = size
+                $0.metadata = [
+                    "frequency_hz": String(hz), "mode": mode, "started_at_ns": ns(startedHoursAgo),
+                    "ended_at_ns": endedHoursAgo.map(ns) ?? "0",
+                ]
+            })
+    }
+
+    func testChannelsGroupByFrequencyAndModeNewestActivityFirst() {
+        let recordings = [
+            listed("job_a", hz: 462_612_500, startedHoursAgo: 1, endedHoursAgo: 0.5),
+            listed("job_b", hz: 462_612_500, startedHoursAgo: 30, endedHoursAgo: 29),
+            listed("job_c", hz: 146_520_000, startedHoursAgo: 3, endedHoursAgo: 2),
+            listed("job_d", hz: 146_520_000, mode: "AM", startedHoursAgo: 72, endedHoursAgo: 71),
+            listed("job_e", hz: 462_562_500, startedHoursAgo: 80),
+        ]
+        let bookmarks = [
+            Bookmark(id: "bm_1", name: "GMRS CH3", hz: 462_612_500, mode: .nfm),
+            Bookmark(id: "bm_2", name: "2 m calling", hz: 146_520_000, mode: .nfm),
+        ]
+        let jobs = [job("job_e", .running, hz: 462_562_500), job("job_a", .completed, hz: 1)]
+        let rows = Recordings.channels(recordings, bookmarks: bookmarks, jobs: jobs)
+        XCTAssertEqual(
+            rows.map(\.title), ["462.5625", "GMRS CH3", "2 m calling", "146.5200"],
+            "running first, then newest end; AM on 146.52 is not the NFM bookmark")
+        XCTAssertEqual(rows.map(\.running), [true, false, false, false])
+        XCTAssertEqual(rows[1].recordings.map(\.jobID), ["job_a", "job_b"], "newest first")
+        XCTAssertEqual(rows[0].subtitle(now: now, calendar: utc), "1 recording · latest now")
+        XCTAssertEqual(rows[1].subtitle(now: now, calendar: utc), "2 recordings · latest today")
+        XCTAssertEqual(
+            rows[3].subtitle(now: now, calendar: utc), "1 recording · latest Mon",
+            "71 hours before Thursday noon is Monday")
+        XCTAssertEqual(Recordings.channels([], bookmarks: bookmarks, jobs: jobs), [])
+    }
+
+    func testSearchFindsNameFrequencyAndDay() {
+        let rows = Recordings.channels(
+            [
+                listed("job_a", hz: 462_612_500, startedHoursAgo: 1, endedHoursAgo: 0.5),
+                listed("job_d", hz: 146_520_000, startedHoursAgo: 72, endedHoursAgo: 71),
+            ],
+            bookmarks: [Bookmark(id: "bm_1", name: "GMRS CH3", hz: 462_612_500, mode: .nfm)],
+            jobs: [])
+        let found = { (q: String) in
+            rows.filter { $0.matches(q, now: self.now, calendar: self.utc) }.map(\.title)
+        }
+        XCTAssertEqual(found(""), ["GMRS CH3", "146.5200"])
+        XCTAssertEqual(found("  gmrs "), ["GMRS CH3"])
+        XCTAssertEqual(found("462.61"), ["GMRS CH3"], "a bookmarked row keeps its frequency")
+        XCTAssertEqual(found("146.52"), ["146.5200"])
+        XCTAssertEqual(found("mon"), ["146.5200"], "the weekday it started")
+        XCTAssertEqual(found("thursday"), ["GMRS CH3"])
+        XCTAssertEqual(found("today"), ["GMRS CH3"])
+        XCTAssertEqual(found("NOAA"), [])
+    }
+
+    func testTheStoreFooter() {
+        let used = Recordings.storeUsedBytes([
+            listed("job_a", hz: 1, startedHoursAgo: 1, size: 900 << 20),
+            listed("job_b", hz: 1, startedHoursAgo: 1, size: 44 << 20),
+        ])
+        XCTAssertEqual(used, 944 << 20)
+        XCTAssertEqual(
+            Recordings.storeWords(usedBytes: used, capBytes: 20 << 30),
+            "944 MB of 20 GB · oldest go first")
+        XCTAssertEqual(
+            Recordings.storeWords(usedBytes: used, capBytes: 0), "944 MB · oldest go first",
+            "a daemon that reports no cap")
+        XCTAssertEqual(
+            Recordings.storeFraction(usedBytes: used, capBytes: 20 << 30)!, 0.0461, accuracy: 1e-4)
+        XCTAssertNil(Recordings.storeFraction(usedBytes: used, capBytes: 0))
+        XCTAssertEqual(Recordings.storeFraction(usedBytes: 30 << 30, capBytes: 20 << 30), 1)
+        XCTAssertEqual(Recordings.storeSizeWords(0), "0 B")
+        XCTAssertEqual(Recordings.storeSizeWords(1_153_434), "1.1 MB")
+        XCTAssertEqual(Recordings.storeSizeWords(3 << 29), "1.5 GB")
+    }
+
+    func testDayWords() {
+        let hours = { (h: Double) in self.now.addingTimeInterval(-h * 3600) }
+        XCTAssertEqual(Recordings.dayWords(hours(11), now: now, calendar: utc), "today")
+        XCTAssertEqual(Recordings.dayWords(hours(13), now: now, calendar: utc), "yesterday")
+        XCTAssertEqual(Recordings.dayWords(hours(72), now: now, calendar: utc), "Monday")
+        XCTAssertEqual(Recordings.dayWords(hours(24 * 9), now: now, calendar: utc), "15 Sep")
+        XCTAssertEqual(
+            Recordings.dayWords(hours(-30), now: now, calendar: utc), "today", "a clock step")
+        XCTAssertEqual(Recordings.shortDayWords(hours(13), now: now, calendar: utc), "Wed")
+        XCTAssertEqual(Recordings.shortDayWords(hours(1), now: now, calendar: utc), "today")
+    }
 }

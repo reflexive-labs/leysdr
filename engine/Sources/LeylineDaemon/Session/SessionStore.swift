@@ -66,6 +66,8 @@ struct DaemonInfo: Sendable {
     var pid: Int64
     var startedAtNs: Int64
     var socketPath: String
+    /// The recording store's cap (`--recordings-cap`), so a client can show use against it.
+    var recordingsCapBytes: UInt64 = 0
 
     var proto: Leyline_V1_DaemonInfo {
         var out = Leyline_V1_DaemonInfo()
@@ -73,6 +75,7 @@ struct DaemonInfo: Sendable {
         out.pid = pid
         out.startedAtNs = startedAtNs
         out.socketPath = socketPath
+        out.recordingsCapBytes = recordingsCapBytes
         return out
     }
 }

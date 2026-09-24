@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Two flags per waterfall row: captured while the radio clipped (plans/app.md, M2-8), and kept by
-// a recording (docs/design/app-design-handoff-m3.md, 8b). The app's `WaterfallBuffer` keeps one
-// of these beside its ring of levels, and the shader paints a `recording` mark at the left edge
-// of every clipped row and an `accentRec` bar at the right edge of every kept one. Here rather
-// than in the app so the ring arithmetic runs in the Linux tests. Both flags are set after the
-// rows they cover arrive, so marking is retroactive: each row's sample index and capture are
-// kept. A `CaptureLevel` flags the held rows whose index lies in its interval; the raw
-// per-interval fraction decides, not `FailureHold`'s state, because the mark records when the
-// radio clipped and the hold only keeps the chip steady. A manifest's parts flag the held rows on
-// their capture inside their span each time the manifest is read, since a part joins the
-// manifest only when it closes.
+// One flag per waterfall row: captured while the radio clipped (plans/app.md, M2-8). The app's
+// `WaterfallBuffer` keeps one of these beside its ring of levels, and the shader paints a
+// `recording` mark at the left edge of every clipped row. Here rather than in the app so the ring
+// arithmetic runs in the Linux tests. The flag is set after the rows it covers arrive, so marking
+// is retroactive: each row's sample index and capture are kept. A `CaptureLevel` flags the held
+// rows whose index lies in its interval; the raw per-interval fraction decides, not
+// `FailureHold`'s state, because the mark records when the radio clipped and the hold only keeps
+// the chip steady. The same indices place the waterfall's kept bars: `keptRuns` answers which
+// held rows a recording's parts hold, as runs of row ages, and the time gutter draws them
+// (docs/design/app-design-handoff-m3.md, "In every screen"). Nothing about a recording is stored
+// per row, so a manifest read again redraws the bars and leaves no stale flag behind.
 
 import Foundation
 import LeylineProto
@@ -25,8 +25,6 @@ public struct ClippedRows: Sendable, Equatable {
     public private(set) var captureID: [String]
     /// One byte a slot, 1 when the row was captured while the radio clipped: the shader's column.
     public private(set) var flags: [UInt8]
-    /// One byte a slot, 1 when a recorded part holds the row: the shader's second column.
-    public private(set) var kept: [UInt8]
     /// Rows appended since the last reset; the slot of the newest is `(count - 1) % capacity`,
     /// as in the levels' ring, so a slot here is the same row there.
     public private(set) var count = 0
@@ -36,14 +34,12 @@ public struct ClippedRows: Sendable, Equatable {
         sampleIndex = [UInt64](repeating: 0, count: capacity)
         captureID = [String](repeating: "", count: capacity)
         flags = [UInt8](repeating: 0, count: capacity)
-        kept = [UInt8](repeating: 0, count: capacity)
     }
 
     public mutating func reset() {
         sampleIndex = [UInt64](repeating: 0, count: capacity)
         captureID = [String](repeating: "", count: capacity)
         flags = [UInt8](repeating: 0, count: capacity)
-        kept = [UInt8](repeating: 0, count: capacity)
         count = 0
     }
 
@@ -54,7 +50,6 @@ public struct ClippedRows: Sendable, Equatable {
         sampleIndex[slot] = index
         captureID[slot] = capture
         flags[slot] = 0
-        kept[slot] = 0
         count += 1
     }
 
@@ -92,29 +87,43 @@ public struct ClippedRows: Sendable, Equatable {
         return markClipped(from: start, to: end)
     }
 
-    /// Sets the kept flag on exactly the held rows that lie in one of `parts`: the part's
-    /// capture, its start sample at or before the row's, the row's at or before its end. Every
-    /// other row's kept flag is cleared, so a manifest read again leaves the bars what it says,
-    /// and an empty list clears them. A part whose capture is unknown flags nothing.
-    /// Returns how many rows are flagged.
-    @discardableResult
-    public mutating func markKept(_ parts: [RecordingPart]) -> Int {
-        var marked = 0
-        kept = [UInt8](repeating: 0, count: capacity)
+    /// The held rows that lie in one of `parts` (the part's capture, its start sample at or
+    /// before the row's, the row's at or before its end), as runs of row ages: age 0 is the newest
+    /// row, which the shader draws at the top, and age `a` is `a` device pixels down. Newest run
+    /// first. A part whose capture is unknown holds nothing. Parts outside the held rows' sample
+    /// range are dropped before the rows are walked, so a recording of hundreds of parts costs
+    /// what the few on screen cost.
+    public func keptRuns(_ parts: [RecordingPart]) -> [Range<Int>] {
+        let held = min(count, capacity)
+        guard held > 0 else { return [] }
+        var lo = UInt64.max
+        var hi = UInt64.min
+        for age in 0..<held {
+            let index = sampleIndex[(count - 1 - age) % capacity]
+            lo = min(lo, index)
+            hi = max(hi, index)
+        }
         let spans = parts.compactMap { p -> (String, ClosedRange<UInt64>)? in
-            guard let c = p.captureID, !c.isEmpty, p.startSample <= p.endSample else { return nil }
+            guard let c = p.captureID, !c.isEmpty, p.startSample <= p.endSample,
+                p.endSample >= lo, p.startSample <= hi
+            else { return nil }
             return (c, p.startSample...p.endSample)
         }
-        guard !spans.isEmpty else { return 0 }
-        for row in max(0, count - capacity)..<count {
-            let slot = row % capacity
+        guard !spans.isEmpty else { return [] }
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for age in 0..<held {
+            let slot = (count - 1 - age) % capacity
             let capture = captureID[slot]
             let index = sampleIndex[slot]
             if spans.contains(where: { $0.0 == capture && $0.1.contains(index) }) {
-                kept[slot] = 1
-                marked += 1
+                if start == nil { start = age }
+            } else if let s = start {
+                runs.append(s..<age)
+                start = nil
             }
         }
-        return marked
+        if let s = start { runs.append(s..<held) }
+        return runs
     }
 }

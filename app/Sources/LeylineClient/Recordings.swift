@@ -393,9 +393,9 @@ public enum RecordingParts {
 }
 
 /// A recording as `Resources.ListResources(RECORDING)` lists it, read from the resource's frozen
-/// metadata keys (`proto/leyline/v1/jobs.proto`, `Resource.metadata`). The window lists no
-/// recordings until M3's Recordings source (docs/design/app-design-handoff-m3.md, 8c), whose rows
-/// these are; File ▸ Show Recordings in Finder reads the list for a recording's path.
+/// metadata keys (`proto/leyline/v1/jobs.proto`, `Resource.metadata`). The sidebar's Recordings
+/// source groups these into channels (`Recordings.channels`) and its store footer sums their
+/// sizes (docs/design/app-design-handoff-m3.md, "In every screen" and 8c).
 public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var uri: String
     public var jobID: String
@@ -405,6 +405,8 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
     /// from a daemon older than the key (2026-09-24).
     public var bandwidthHz: UInt32
     public var startedAt: Date?
+    /// When the job ended, from `ended_at_ns`; nil while it runs.
+    public var endedAt: Date?
     /// The parts' durations summed: what the recording holds, not the wall clock it ran.
     public var durationMs: Int64
     public var parts: Int
@@ -426,6 +428,9 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
         startedAt = m["started_at_ns"].flatMap { Int64($0) }.flatMap {
             $0 > 0 ? Date(timeIntervalSince1970: Double($0) / 1e9) : nil
         }
+        endedAt = m["ended_at_ns"].flatMap { Int64($0) }.flatMap {
+            $0 > 0 ? Date(timeIntervalSince1970: Double($0) / 1e9) : nil
+        }
         durationMs = m["duration_ms"].flatMap { Int64($0) } ?? 0
         parts = m["parts"].flatMap { Int($0) } ?? 0
         endedBy = m["ended_by"] ?? ""
@@ -443,6 +448,64 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
 
     /// `1 part`, `4 parts`.
     public static func partsWords(_ n: Int) -> String { n == 1 ? "1 part" : "\(n) parts" }
+
+    /// The last time the recording changed: when it ended, else when it started. A running one's
+    /// activity is now, which `RecordingChannel` decides from the job, not from here.
+    public var lastActivity: Date? { endedAt ?? startedAt }
+}
+
+/// One row of the sidebar's Recordings source: every recording on one frequency and mode, never
+/// one row per recording (docs/design/app-design-handoff-m3.md, 8c). Titled by the bookmark on
+/// that frequency and mode when there is one, else by the frequency.
+public struct RecordingChannel: Sendable, Equatable, Identifiable {
+    public var frequencyHz: UInt64
+    public var mode: Leyline_V1_DemodMode
+    /// The name of the bookmark whose frequency and mode are the channel's, or nil.
+    public var bookmarkName: String?
+    /// Newest first.
+    public var recordings: [RecordingSummary]
+    /// A record job of one of `recordings` is running or degraded.
+    public var running: Bool
+    /// The newest recording's end or start; nil when none is dated.
+    public var latest: Date?
+
+    public var id: String { "\(frequencyHz)/\(mode.rawValue)" }
+
+    /// `462.5625`: the frequency as the bookmark rows print it, which the title falls back to.
+    public var frequencyText: String { FrequencyEntry.fieldParts(frequencyHz).major }
+
+    public var title: String { bookmarkName ?? frequencyText }
+
+    /// `4 recordings · latest now`, `· latest today`, `· latest Wed`: now while one runs, else the
+    /// newest one's day (`Recordings.shortDayWords`).
+    public func subtitle(now: Date, calendar: Calendar = .current) -> String {
+        let count = recordings.count == 1 ? "1 recording" : "\(recordings.count) recordings"
+        guard let when = latestWords(now: now, calendar: calendar) else { return count }
+        return "\(count) · latest \(when)"
+    }
+
+    private func latestWords(now: Date, calendar: Calendar) -> String? {
+        if running { return "now" }
+        return latest.map { Recordings.shortDayWords($0, now: now, calendar: calendar) }
+    }
+
+    /// Whether the search field's `query` finds this row: a case-blind substring of the title,
+    /// the frequency as the title prints it (`462.56` finds `462.5625`), the weekday any of its recordings started on
+    /// (`wed`, `Wednesday`) or the subtitle's day word (`today`, `now`). An empty query finds
+    /// every row.
+    public func matches(_ query: String, now: Date, calendar: Calendar = .current) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return true }
+        var words = [title, frequencyText]
+        if let w = latestWords(now: now, calendar: calendar) { words.append(w) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        f.dateFormat = "EEEE"
+        for r in recordings { if let d = r.startedAt { words.append(f.string(from: d)) } }
+        return words.contains { $0.lowercased().contains(q) }
+    }
 }
 
 extension Leyline_V1_Job {
@@ -527,6 +590,123 @@ public enum Recordings {
         if bytes >= 1 << 20 { return String(format: "%.1f MB", Double(bytes) / Double(1 << 20)) }
         if bytes >= 1024 { return String(format: "%.0f KB", Double(bytes) / 1024) }
         return "\(bytes) B"
+    }
+
+    /// `944 MB`, `20 GB`, `1.1 MB`: a store amount in binary units, whole from ten up and one
+    /// decimal below, the store footer's rule and `ley state`'s (`storeSize` in
+    /// `go/internal/cli/state.go`). `sizeWords` stays the daemon's own rule for one recording.
+    public static func storeSizeWords(_ bytes: UInt64) -> String {
+        func words(_ v: Double, _ unit: String) -> String {
+            String(format: v < 10 ? "%.1f %@" : "%.0f %@", v, unit)
+        }
+        if bytes >= 1 << 30 { return words(Double(bytes) / Double(1 << 30), "GB") }
+        if bytes >= 1 << 20 { return words(Double(bytes) / Double(1 << 20), "MB") }
+        if bytes >= 1 << 10 { return words(Double(bytes) / Double(1 << 10), "KB") }
+        return "\(bytes) B"
+    }
+
+    /// What the store holds: the listing's `size_bytes` summed.
+    public static func storeUsedBytes(_ recordings: [RecordingSummary]) -> UInt64 {
+        recordings.reduce(0) { $0 &+ $1.sizeBytes }
+    }
+
+    /// The store footer's line: `944 MB of 20 GB · oldest go first`, the use against the cap
+    /// the daemon reports (`DaemonInfo.recordings_cap_bytes`, `leylined --recordings-cap`), whose
+    /// retention removes the oldest recordings first. Without a cap (a daemon older than the
+    /// field) the `of …` clause is left out.
+    public static func storeWords(usedBytes: UInt64, capBytes: UInt64) -> String {
+        let used = storeSizeWords(usedBytes)
+        let of = capBytes > 0 ? "\(used) of \(storeSizeWords(capBytes))" : used
+        return "\(of) · oldest go first"
+    }
+
+    /// How much of the bar the use fills, 0 to 1; nil without a cap, when the bar has no fill.
+    public static func storeFraction(usedBytes: UInt64, capBytes: UInt64) -> Double? {
+        guard capBytes > 0 else { return nil }
+        return min(1, Double(usedBytes) / Double(capBytes))
+    }
+
+    /// The sidebar's Recordings rows: `recordings` grouped by frequency and mode, each titled by
+    /// the first bookmark on that frequency whose mode is the recording's (a bookmark or a
+    /// recording without a mode matches any), running when one of its recordings' jobs is active
+    /// in `jobs`, sorted by most recent activity: running rows first, then the newest end or
+    /// start, then frequency.
+    public static func channels(
+        _ recordings: [RecordingSummary], bookmarks: [Bookmark], jobs: [Leyline_V1_Job]
+    ) -> [RecordingChannel] {
+        let active = Set(jobs.filter { $0.isActive && $0.recordConfig != nil }.map(\.jobID))
+        var order: [String] = []
+        var groups: [String: RecordingChannel] = [:]
+        for r in recordings {
+            let key = "\(r.frequencyHz)/\(r.mode.rawValue)"
+            if groups[key] == nil {
+                order.append(key)
+                let name = bookmarks.first {
+                    $0.hz == r.frequencyHz
+                        && ($0.mode == r.mode || $0.mode == .unspecified || r.mode == .unspecified)
+                }?.name
+                groups[key] = RecordingChannel(
+                    frequencyHz: r.frequencyHz, mode: r.mode, bookmarkName: name, recordings: [],
+                    running: false, latest: nil)
+            }
+            groups[key]?.recordings.append(r)
+            if active.contains(r.jobID) { groups[key]?.running = true }
+            if let a = r.lastActivity, a > (groups[key]?.latest ?? .distantPast) {
+                groups[key]?.latest = a
+            }
+        }
+        return order.compactMap { key -> RecordingChannel? in
+            guard var c = groups[key] else { return nil }
+            c.recordings.sort {
+                ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
+            }
+            return c
+        }
+        .sorted { a, b in
+            if a.running != b.running { return a.running }
+            let la = a.latest ?? .distantPast
+            let lb = b.latest ?? .distantPast
+            if la != lb { return la > lb }
+            return a.frequencyHz < b.frequencyHz
+        }
+    }
+
+    /// `today`, `yesterday`, `Wednesday` for the six days before, `12 Sep` before that: the day
+    /// of `date` in `calendar`'s zone, for the Transmissions header (M3 handoff, "In every
+    /// screen").
+    public static func dayWords(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        let days = daysBefore(date, now: now, calendar: calendar)
+        if days == 0 { return "today" }
+        if days == 1 { return "yesterday" }
+        return format(date, days < 7 ? "EEEE" : "d MMM", calendar)
+    }
+
+    /// `today`, `Wed` for the six days before, `12 Sep` before that: the sidebar's
+    /// `latest …` word, short because it shares a row with a count.
+    public static func shortDayWords(_ date: Date, now: Date, calendar: Calendar = .current)
+        -> String
+    {
+        let days = daysBefore(date, now: now, calendar: calendar)
+        if days == 0 { return "today" }
+        return format(date, days < 7 ? "EEE" : "d MMM", calendar)
+    }
+
+    /// Whole calendar days from `date` to `now`; a date after now (a clock step) is today.
+    private static func daysBefore(_ date: Date, now: Date, calendar: Calendar) -> Int {
+        let days =
+            calendar.dateComponents(
+                [.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)
+            ).day ?? 0
+        return max(0, days)
+    }
+
+    private static func format(_ date: Date, _ pattern: String, _ calendar: Calendar) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        f.dateFormat = pattern
+        return f.string(from: date)
     }
 
     /// The running or degraded record jobs whose channel rides `captureID`: the channel form's

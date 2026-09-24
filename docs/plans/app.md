@@ -846,6 +846,62 @@ Cancel putting it back and releasing the centre in flight) and on the sample-rat
 device popover; File ▸ Record Transmissions' check mark and ⌘R. Moves the handoff does not list
 (a click, a typed frequency or a bookmark outside the span, `Tune inside`) do not ask.
 
+Screens 2026-09-24. The owner's exports of the handoff's screens (`tmp/recordings1.png` and
+`2.png`, 8a and 8b) put chrome in every screen that the prose had filed under 8c or not drawn
+(`../design/app-design-handoff-m3.md`, "The screens, read against the prose", and the bullets
+this adds to its "Decided" section). Contract: `DaemonInfo.recordings_cap_bytes = 5`, the daemon's
+`--recordings-cap` (`DaemonInfo` in `SessionStore.swift`, filled in `Daemon.init`), the fake
+reporting leylined's 20 GiB default, and `ley state`'s first line ending `recordings 944 MB of
+20 GB` when a cap is reported, the use summed from `ListRecordings` (`storeClause`,
+`storeSize`); `ley mcp`'s `get_state` text leaves it out. Sidebar: a segmented `Radio |
+Recordings` above BANDS (`AppSession.sidebarSource`, remembered in the defaults); Recordings
+shows a search field and one row per frequency and mode from `ListResources(RECORDING)`
+(`Recordings.channels`, `RecordingChannel`: the bookmark's name or the frequency in mono, `N
+recordings · latest now|today|Wed`, the `accentRec` dot while one runs, running first then most
+recent activity, a search over name, frequency and weekday); selecting a row covers the canvas
+with `The channel page is coming; the files are in Finder.` until 8c; the store footer under both
+sources (a 3 pt bar and `Recordings.storeWords`, used from the listing, the cap from the mirror's
+`daemon`). `AppSession.recordings` is back, re-read on every record job change and on adoption.
+Waterfall: the 5 s `TimeAxis` over the waterfall is gone for a 64 pt time gutter at the right on
+`panel` with 10 s ticks (`WaterfallGutter`), the gutter column continuing beside the spectrum so
+both charts keep one frequency axis; the kept bars are 3 pt `accentRec` at its left edge in a
+`Canvas` (`KeptBars`), from `ClippedRows.keptRuns` over the manifest's parts, re-evaluated on each
+row the feed counts. The shader's kept path (buffer 3, `keptR`…`keptWidth`) and `ClippedRows`'
+kept flag and `markKept` are removed; the clipping marks stay. Transmissions: `TRANSMISSIONS` with
+the day at the right (`Recordings.dayWords` through the anchor), no column head and no count, a
+20 pt trailing column, and room for the switch's two-line status line. Volume: `playing GMRS
+CH3`, `muted · GMRS CH3`, `playing a part · GMRS CH3 held` (`AppSession.listeningName`), the
+output device in the tooltip. The bookmark's recording dot sits 6 pt left of the frequency.
+
+Verified in the container: `DaemonTests.testGetStateCarriesTheRecordingsCap` and the cap in
+`testGetStateEmptyWithDaemonInfo`; `TestState` (`recordings 0 B of 20 GB` against the fake),
+`TestStateHeaderAndTables` (the clause with a cap and a use, and without either) and
+`TestStoreSize`; `RecordingsTests` (grouping by frequency and mode, bookmark titles with and
+without a matching mode, the sort, the subtitle's day words, the search, the footer's words and
+fraction with and without a cap, the day words) and `ClippedRowsTests` (kept runs by age on the
+part's capture only, moving as rows arrive); and in `LeylineClientDaemonTests` the recording case,
+which now places a kept run from the daemon's own manifest, finds the recording's channel row
+from the real listing, and reads a non-zero cap from the mirror. `make proto-check` shows only
+the regenerated `DaemonInfo`; `make lint`, `make go-test`, `make app-lint` and `make app-e2e` pass.
+
+Unverified until the first `make app-run` on a Mac: every change in `AppSession.swift`,
+`SidebarView.swift`, `MainWindow.swift`, `WaterfallView.swift`, `WaterfallShader.swift`,
+`SpectrumFeed.swift`, `InspectorGroups.swift`, `TransportBarView.swift` and `Theme.swift`. Named
+behaviours: the segmented picker's look in `Theme` inks (a `.segmented` `Picker` may ignore
+`.tint`); the search field and the rows at 236 pt; a row's selection and deselection, and the
+sentence covering the canvas and taking its clicks while the Metal view keeps drawing
+underneath; the footer's bar and line at the sidebar's foot under a long bookmark list; the
+shader compiling without buffer 3; the 1 pt hairline beside the Metal view (a hosted view has
+covered a line laid beside it before); the spectrum narrowed with the waterfall and the pointer's
+hairline aligned across the seam; the tick labels at 10 s on a 2x and a 1x display; the kept
+bars against the right rows as the waterfall scrolls, after a retune within the span and after a
+new subscription empties the ring; the gutter redrawing at the row rate without slowing the
+window; the Transmissions header's day beside `TRANSMISSIONS`, the rows fitting under the two-line
+status line, and the 18 pt ring in the 20 pt column; the volume caption truncating at 142 pt
+(`playing a part · 462.6125 MHz held` is longer than the block) and its tooltip; the bookmark dot
+6 pt from the frequency. `docs/guide/using-ley.md`'s `ley state` transcript predates the
+recordings clause and needs recording again on a radio.
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

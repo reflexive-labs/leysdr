@@ -248,6 +248,9 @@ message DaemonInfo {
   int64 pid = 2;
   int64 started_at_ns = 3;  // CLOCK_REALTIME
   string socket_path = 4;
+  // The recording store's cap in bytes (`leylined --recordings-cap`), for a client that shows use
+  // against it; use is the sum of ListResources' size_bytes. 0 from a daemon that predates it.
+  uint64 recordings_cap_bytes = 5;
 }
 // A recording the daemon is playing through its own audio device (docs/design/recording.md,
 // "Playing a recording back"). It is not a sink: a sink is where a *channel's* audio goes, and a

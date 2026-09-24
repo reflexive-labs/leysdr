@@ -38,7 +38,7 @@ and 'ley state --json' is the snapshot scripts and agents should read.`,
 			if app.JSON {
 				return app.printJSON(st)
 			}
-			printState(app, st, wide)
+			printState(app, st, wide, recordingsUsed(cmd.Context(), app, st))
 			return nil
 		},
 	}
@@ -62,6 +62,59 @@ func stateSnapshot(ctx context.Context, app *App) (*leylinev1.GetStateResponse, 
 	return st, nil
 }
 
+// recordingsUsed sums the recording store's sizes for the header's
+// recordings clause, or returns -1 when the daemon reports no cap or the
+// listing fails: a use without its cap, or a cap with a wrong use, is left out.
+func recordingsUsed(ctx context.Context, app *App, st *leylinev1.GetStateResponse) int64 {
+	if st.GetDaemon().GetRecordingsCapBytes() == 0 {
+		return -1
+	}
+	c, err := app.dial(ctx)
+	if err != nil {
+		return -1
+	}
+	defer c.Close()
+	recs, err := c.ListRecordings(ctx, nil)
+	if err != nil {
+		return -1
+	}
+	var used int64
+	for _, r := range recs {
+		used += int64(r.GetSizeBytes())
+	}
+	return used
+}
+
+// storeClause is `recordings 944 MB of 20 GB`: the recording store's use
+// against its cap (`leylined --recordings-cap`), "" when either is unknown.
+func storeClause(d *leylinev1.DaemonInfo, used int64) string {
+	if d.GetRecordingsCapBytes() == 0 || used < 0 {
+		return ""
+	}
+	return fmt.Sprintf("recordings %s of %s", storeSize(uint64(used)), storeSize(d.GetRecordingsCapBytes()))
+}
+
+// storeSize is a store amount in binary units, whole above ten and one decimal
+// below (`944 MB`, `20 GB`, `1.1 MB`), the app's store footer rule
+// (Recordings.storeSizeWords in app/Sources/LeylineClient/Recordings.swift).
+func storeSize(n uint64) string {
+	f := func(v float64, unit string) string {
+		if v < 10 {
+			return fmt.Sprintf("%.1f %s", v, unit)
+		}
+		return fmt.Sprintf("%.0f %s", v, unit)
+	}
+	switch {
+	case n >= 1<<30:
+		return f(float64(n)/float64(1<<30), "GB")
+	case n >= 1<<20:
+		return f(float64(n)/float64(1<<20), "MB")
+	case n >= 1<<10:
+		return f(float64(n)/float64(1<<10), "KB")
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
 func daemonLine(d *leylinev1.DaemonInfo) string {
 	if d == nil {
 		return "daemon: (no info)"
@@ -73,8 +126,9 @@ func daemonLine(d *leylinev1.DaemonInfo) string {
 // printState renders the whole daemon picture: a header, then either the tree
 // (device to capture to channel to sink, hierarchy carried by indentation) or,
 // behind --wide, the flat tables with every id and owner in a column.
-func printState(app *App, st *leylinev1.GetStateResponse, wide bool) {
-	fmt.Fprint(app.Stdout, stateHeader(app.Style, st, time.Now()))
+// recordingsUsed is the store's use in bytes for the header, -1 to leave it out.
+func printState(app *App, st *leylinev1.GetStateResponse, wide bool, recordingsUsed int64) {
+	fmt.Fprint(app.Stdout, stateHeader(app.Style, st, time.Now(), recordingsUsed))
 	if wide {
 		printStateTables(app, st)
 		return
@@ -84,14 +138,19 @@ func printState(app *App, st *leylinev1.GetStateResponse, wide bool) {
 
 // stateHeader is the two-line preamble: what the daemon is on the first line,
 // where it is on a muted second one. The event sequence stays in the header
-// for reconnect debugging, but not on the first line.
-func stateHeader(s ui.Style, st *leylinev1.GetStateResponse, now time.Time) string {
+// for reconnect debugging, but not on the first line. The recording store's use
+// against its cap ends the first line when both are known (used >= 0).
+func stateHeader(s ui.Style, st *leylinev1.GetStateResponse, now time.Time, used int64) string {
 	d := st.GetDaemon()
 	if d == nil {
 		return fmt.Sprintf("%s (no info)\n%s\n\n", s.Label("daemon"), s.Muted(fmt.Sprintf("event seq %d", st.GetEventSeq())))
 	}
 	up := now.Sub(time.Unix(0, d.StartedAtNs)).Truncate(time.Second)
-	return fmt.Sprintf("%s %s  up %s\n%s\n\n", s.Label("daemon"), d.Version, up,
+	store := ""
+	if c := storeClause(d, used); c != "" {
+		store = "  " + c
+	}
+	return fmt.Sprintf("%s %s  up %s%s\n%s\n\n", s.Label("daemon"), d.Version, up, store,
 		s.Muted(fmt.Sprintf("pid %d  socket %s  event seq %d", d.Pid, d.SocketPath, st.GetEventSeq())))
 }
 

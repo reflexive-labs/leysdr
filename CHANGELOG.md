@@ -4,6 +4,21 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app's sidebar has two sources, Radio and Recordings, under a switch above the bands.
+  Recordings lists one row per channel that has been recorded, titled by its bookmark or its
+  frequency, with how many recordings it holds and when the latest was (`latest now` while one
+  is running), and a search field that matches a name, a frequency or a weekday. Selecting a row
+  says the channel page is coming and that the files are in Finder; the page itself is M3. Under
+  both sources a footer shows how much of the recordings cap the store uses, `944 MB of 20 GB ·
+  oldest go first`. The waterfall has a time gutter at its right, with `now` at the top and a mark
+  every ten seconds, and the red bars for what a recording kept are drawn in it instead of over
+  the waterfall's edge. The log's heading reads `TRANSMISSIONS` with the day beside it and drops
+  its column heads and count. The line under the volume slider says what you hear: `playing GMRS
+  CH3`, `muted · GMRS CH3`, or `playing a part · GMRS CH3 held` while a kept part plays; hover it
+  for the output device. `ley state` ends its first line with the same store use,
+  `recordings 944 MB of 20 GB`, and the contract's `DaemonInfo` gains `recordings_cap_bytes`, the
+  daemon's `--recordings-cap`.
+
 - The Mac app records from its log. "Recent on this channel" opens with a Record transmissions
   switch: on, the daemon records the tuned channel while its squelch is open, one part per
   transmission, and keeps going after a retune or a quit; the line under the switch reads

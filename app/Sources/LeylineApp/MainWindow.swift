@@ -58,18 +58,25 @@ struct MainWindow: View {
     }
 
     /// Band rail, spectrum and waterfall, or the message explaining why there is nothing to draw.
+    /// While the sidebar's Recordings source shows with a row selected, one sentence covers it
+    /// until 8c's channel page lands (M3 handoff, "In every screen"): an overlay, as the empty
+    /// state is, so the Metal view and its subscription carry on underneath and come back as
+    /// they were.
     private var canvas: some View {
         VStack(spacing: 0) {
             BandRailView()
                 .frame(height: Theme.Layout.bandRailHeight)
             Rectangle().fill(Theme.border).frame(height: 1)
             ZStack {
-                VStack(spacing: 0) {
-                    SpectrumView()
-                        .frame(height: Theme.Layout.spectrumHeight)
-                    // The seam between them is drawn by the waterfall, over its Metal view: a
-                    // line laid here sat under the hosted view's rounded-out frame.
-                    WaterfallView()
+                HStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        SpectrumView()
+                            .frame(height: Theme.Layout.spectrumHeight)
+                        // The seam between them is drawn by the waterfall, over its Metal view:
+                        // a line laid here sat under the hosted view's rounded-out frame.
+                        WaterfallView()
+                    }
+                    gutterColumn
                 }
                 if let words = session.emptyWords {
                     EmptyWords(headline: words.headline, detail: words.detail)
@@ -80,6 +87,43 @@ struct MainWindow: View {
                 }
             }
         }
+        .overlay {
+            if session.recordingsPageShown { RecordingsPagePending() }
+        }
+    }
+
+    /// The waterfall's time gutter, on the right of both charts: beside the waterfall it is the
+    /// gutter, beside the spectrum the spectrum's ground, so the spectrum narrows with the
+    /// waterfall and the two keep one frequency axis (the tuned band, the pointer's hairline and
+    /// a peak line up across the seam). The screens draw the spectrum full width over a narrower
+    /// waterfall; with one axis that would put every frequency at two x positions.
+    private var gutterColumn: some View {
+        VStack(spacing: 0) {
+            Theme.ground.frame(height: Theme.Layout.spectrumHeight)
+            HStack(spacing: 0) {
+                Rectangle().fill(Theme.hairline).frame(width: 1)
+                WaterfallGutter()
+            }
+            // The seam the waterfall draws over its Metal view, continued across the gutter.
+            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
+        }
+        .frame(width: Theme.Layout.waterfallGutterWidth + 1)
+    }
+}
+
+/// The centre column while the Recordings source shows a selected channel: one sentence where
+/// 8c's channel page will be, never a broken page (M3 handoff, "In every screen"). Opaque, and it
+/// takes the clicks, so nothing of the live canvas under it can be tuned by accident.
+struct RecordingsPagePending: View {
+    var body: some View {
+        ZStack {
+            Theme.ground
+            Text("The channel page is coming; the files are in Finder.")
+                .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+                .multilineTextAlignment(.center)
+                .padding(20)
+        }
+        .contentShape(Rectangle())
     }
 }
 

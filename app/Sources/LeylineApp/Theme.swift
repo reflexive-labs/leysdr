@@ -47,12 +47,11 @@ enum Theme {
     /// `recording` as an RGB triple in [0, 1], for the waterfall shader's row marks.
     static var recordingRGB: SIMD3<Float> { rgb(recordingHex) }
     /// `accent-rec`, what is being kept: the Record transmissions switch's track while on, the
-    /// log's live-row dot while a part is written, a recording bookmark's dot and the
-    /// waterfall's kept bars (M3 handoff, 8a and 8b). Nothing else, so red always means kept.
+    /// log's live-row dot while a part is written, a recording bookmark's dot, the time gutter's
+    /// kept bars and the Recordings rows' running dot (M3 handoff, 8a to 8c). Nothing else, so
+    /// red always means kept.
     static let accentRecHex: UInt32 = 0xE5484D
     static let accentRec = Color(hex: accentRecHex)
-    /// `accentRec` as an RGB triple in [0, 1], for the waterfall shader's kept bars.
-    static var accentRecRGB: SIMD3<Float> { rgb(accentRecHex) }
     /// A reading that needs attention but is not an alarm: off tune, overdeviating, the radio
     /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
     /// with `accent` for the tuned channel.
@@ -101,6 +100,10 @@ enum Theme {
         static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
+        /// `label` in mono: a frequency standing where a name would, the Recordings source's
+        /// title for a channel with no bookmark (M3 handoff, 8c).
+        static let labelMono = SwiftUI.Font.system(size: 12.5, design: .monospaced)
+            .monospacedDigit()
         /// A view's own headline: the band rail's band name, the empty-state headline.
         static let title = SwiftUI.Font.system(size: 15, weight: .medium)
         /// A popover's header: the device menu's, smaller than `title` because it sits over a
@@ -158,8 +161,9 @@ enum Theme {
         static let logLengthWidth: CGFloat = 40
         /// One log row, fixed so the log can count how many fit in the height it is given.
         static let logRowHeight: CGFloat = 19
-        /// The log's trailing column: a kept row's ring, or the live row's dot (M3 handoff, 8b).
-        static let logPlayWidth: CGFloat = 18
+        /// The log's trailing column: a kept row's ring, the live row's dot, or nothing (M3
+        /// handoff, "In every screen").
+        static let logPlayWidth: CGFloat = 20
         /// The ring round a kept row's play or stop glyph.
         static let logRingSize: CGFloat = 18
         /// The line along a playing row's bottom, as far as the clip has played.
@@ -168,9 +172,16 @@ enum Theme {
         static let recordingDot: CGFloat = 6
         /// A sidebar row's dot, the size the bookmark rows draw theirs.
         static let sidebarDot: CGFloat = 6
-        /// The waterfall's kept bars, at the right edge, in device pixels: the clipping marks'
-        /// mirror at the left (M3 handoff, "Decided 2026-09-24").
-        static let keptBarPixels: Float = 3
+        /// A recording bookmark's dot to the frequency beside it (M3 handoff, 8b).
+        static let bookmarkDotGap: CGFloat = 6
+        /// The waterfall's time gutter at its right, on `panel` (M3 handoff, "In every
+        /// screen"), about 64 pt in the screens. The 1 pt hairline beside it is extra.
+        static let waterfallGutterWidth: CGFloat = 64
+        /// The kept bars at the gutter's left edge, and the tick spacing down it.
+        static let keptBarWidth: CGFloat = 3
+        static let gutterTickSeconds = 10
+        /// The store footer's bar at the sidebar's foot (M3 handoff, "In every screen").
+        static let storeBarHeight: CGFloat = 3
         /// The inspector's audio ladder (M2 handoff, "Region 3b: audio"): a 64 pt plot beside a
         /// 22 pt dB gutter, eleven 14 pt bars in 22 pt slots with a gap before rms and peak,
         /// 272 pt in all inside the panel's 280. The rows under the plot are the labels and the

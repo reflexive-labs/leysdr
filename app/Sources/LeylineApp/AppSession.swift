@@ -105,6 +105,21 @@ final class AppSession {
             followAudioLevels()
         }
     }
+    /// Which of the sidebar's two sources shows, `Radio | Recordings` (docs/design/
+    /// app-design-handoff-m3.md, "In every screen"). Remembered in the defaults under
+    /// `sidebarSourceKey`, the way `inspectorShown` is.
+    var sidebarSource =
+        UserDefaults.standard.string(forKey: AppSession.sidebarSourceKey)
+        .flatMap(SidebarSource.init(rawValue:)) ?? .radio
+    {
+        didSet { UserDefaults.standard.set(sidebarSource.rawValue, forKey: Self.sidebarSourceKey) }
+    }
+    /// The Recordings source's selected channel row (`RecordingChannel.id`), or nil. Selecting a
+    /// row only selects it until 8c's channel page lands; while one is selected and the source
+    /// shows, the centre column says where the files are (`MainWindow`).
+    var selectedRecordingChannel: String?
+    /// The Recordings source's search field.
+    var recordingsQuery = ""
     /// One sentence about the last thing that happened, or nil.
     /// Every message the window shows is also logged (`AppLog.swift`): the notice and the error
     /// when set, the empty-state and out-of-capture messages when they change, and the failure
@@ -141,14 +156,18 @@ final class AppSession {
     private var rejectionsSeen = 0
 
     // Recording (plans/app.md, APP-5; docs/design/app-design-handoff-m3.md, 8a and 8b). The
-    // jobs and the playbacks are the mirror's; what is here is the tuned channel's recording as
-    // read from disk, and the switch's click until its job's event arrives.
-    /// The manifest the log's kept rows and the waterfall's kept bars come from, read from disk
+    // jobs and the playbacks are the mirror's; what is here is the store's listing, the tuned
+    // channel's recording as read from disk, and the switch's click until its job's event
+    // arrives.
+    /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
+    /// every change to a record job and once on adoption. The sidebar's Recordings source and the
+    /// store footer render it.
+    private(set) var recordings: [RecordingSummary] = []
+    @ObservationIgnored private var recordingsLoad: Task<Void, Never>?
+    /// The manifest the log's kept rows and the time gutter's kept bars come from, read from disk
     /// through `ResolveLocalPath`; `recording` gives it only while its frequency is the tuned
-    /// one. Each read re-marks the waterfall's kept rows (`markKeptRows`).
+    /// one.
     private var shownManifest: RecordingManifest?
-    /// How many waterfall rows the last mark flagged, so a change logs one line.
-    @ObservationIgnored private var keptRowsMarked = 0
     /// The recording whose manifest is being read or was read last.
     @ObservationIgnored private var manifestLoadingID: String?
     /// A job event for the shown recording arrived: the manifest is read again.
@@ -214,6 +233,7 @@ final class AppSession {
         } ?? want
     }
     private static let inspectorShownKey = "inspectorShown"
+    private static let sidebarSourceKey = "sidebarSource"
 
     // MARK: Derived
 
@@ -483,8 +503,11 @@ final class AppSession {
                 isLive
                     ? "live: leylined \(state.daemon.version), \(state.devices.count) devices, \(state.captures.count) captures"
                     : "not live: \(connection)")
-            // Once on adoption: the manifest read afresh.
-            if isLive { manifestStale = true }
+            // Once on adoption: the store as it is, and the manifest read afresh.
+            if isLive {
+                manifestStale = true
+                reloadRecordings()
+            }
         }
         if let r = requestedHz, r == tunedHz { clearRequested() }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted. One
@@ -1874,16 +1897,18 @@ final class AppSession {
         }
     }
 
-    /// A record job changed: the manifest being shown is read again when its job is among the
-    /// changed ones (a part closed, the liveness report, the job ended), because its parts,
-    /// bytes and the waterfall's kept bars come from it. Then the manifest follows the tuned
-    /// channel, and the switch settles.
+    /// A record job changed: the store's listing is read again (a part closed, a job started or
+    /// ended, so the sidebar's rows and the footer's use moved), and so is the manifest being
+    /// shown when its job is among the changed ones, because its parts, bytes and the gutter's
+    /// kept bars come from it. Then the manifest follows the tuned channel, and the switch
+    /// settles.
     private func followRecordJobs() {
         let jobs = state.jobs.filter { $0.recordConfig != nil }
         if jobs != recordJobsSeen {
             let changed = Set(jobs.filter { !recordJobsSeen.contains($0) }.map(\.jobID))
             recordJobsSeen = jobs
             if let shown = manifestLoadingID, changed.contains(shown) { manifestStale = true }
+            reloadRecordings()
         }
         followRecording()
         settleRecordSwitch()
@@ -1932,27 +1957,62 @@ final class AppSession {
                     log("record", "\(id): \(manifest.parts.count) parts read from \(path)")
                 }
                 if manifest != self.shownManifest { self.shownManifest = manifest }
-                // Every read, not only a changed one: the waterfall's ring is emptied on each
-                // new subscription and the next read puts the bars back.
-                self.markKeptRows()
             } catch {
                 guard let self, !Task.isCancelled, self.manifestLoadingID == id else { return }
                 // A job's first second has no manifest on disk yet; its next event reads again.
                 log("record", "manifest of \(id) not read: \(error)")
-                if self.shownManifest?.jobID != id {
-                    self.shownManifest = nil
-                    self.markKeptRows()
-                }
+                if self.shownManifest?.jobID != id { self.shownManifest = nil }
             }
         }
     }
 
-    /// The waterfall's kept bars from the manifest's closed parts, each time it is read.
-    private func markKeptRows() {
-        let n = spectrum.waterfall.markKept(shownManifest?.parts ?? [])
-        guard n != keptRowsMarked else { return }
-        keptRowsMarked = n
-        log("record", "\(shownManifest?.jobID ?? "no recording"): \(n) waterfall rows kept")
+    /// `ListResources(RECORDING)` into `recordings`. A listing already in flight is replaced,
+    /// so a burst of job events costs one read that lands.
+    private func reloadRecordings() {
+        guard let daemon else { return }
+        recordingsLoad?.cancel()
+        recordingsLoad = Task { [weak self] in
+            var req = Leyline_V1_ListResourcesRequest()
+            req.kind = .recording
+            do {
+                let listed = try await daemon.resources.listResources(req)
+                guard let self, !Task.isCancelled else { return }
+                let list = listed.resources.map(RecordingSummary.init)
+                if list.count != self.recordings.count {
+                    log("record", "\(list.count) recordings listed")
+                }
+                if list != self.recordings { self.recordings = list }
+            } catch {
+                guard !Task.isCancelled else { return }
+                log("record", "recordings not listed: \(LeylineError(error))")
+            }
+        }
+    }
+
+    /// The sidebar's Recordings rows (`Recordings.channels`), before the search.
+    var recordingChannels: [RecordingChannel] {
+        Recordings.channels(recordings, bookmarks: bookmarks.list, jobs: state.jobs)
+    }
+
+    /// The store footer's use, the listing's sizes summed, and the daemon's cap (0 from a daemon
+    /// that predates `DaemonInfo.recordings_cap_bytes`).
+    var storeUsedBytes: UInt64 { Recordings.storeUsedBytes(recordings) }
+    var storeCapBytes: UInt64 { state.daemon.recordingsCapBytes }
+
+    /// What the tuned channel is called where it is heard: the bookmark's name, else the
+    /// frequency (`Frequency.format`); nil with no channel. The volume caption's name.
+    var listeningName: String? {
+        guard let hz = tunedHz else { return nil }
+        return tunedBookmark?.name ?? Frequency.format(hz)
+    }
+
+    /// Whether the centre column shows the Recordings source's sentence instead of the canvas:
+    /// the source is showing and a listed row is selected, so a selection whose recordings were
+    /// all deleted selects nothing (docs/design/app-design-handoff-m3.md, "In every screen":
+    /// "never a broken page").
+    var recordingsPageShown: Bool {
+        guard sidebarSource == .recordings, let id = selectedRecordingChannel else { return false }
+        return recordingChannels.contains { $0.id == id }
     }
 
     /// Plays one part through the daemon's speakers (`Control.StartPlayback` on
@@ -2189,4 +2249,14 @@ extension FailureState {
 
 extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
+}
+
+/// The sidebar's two sources (docs/design/app-design-handoff-m3.md, "In every screen"): Radio is
+/// the bands and bookmarks, Recordings the store grouped by channel. Presentation only.
+enum SidebarSource: String, CaseIterable, Identifiable {
+    case radio
+    case recordings
+
+    var id: String { rawValue }
+    var title: String { self == .radio ? "Radio" : "Recordings" }
 }

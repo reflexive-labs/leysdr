@@ -10,6 +10,15 @@ import LeylineProto
 import XCTest
 
 final class DaemonTests: XCTestCase {
+    /// `DaemonInfo.recordings_cap_bytes` is `--recordings-cap`, so a client shows the store's use
+    /// against the cap the daemon enforces (docs/design/app-design-handoff-m3.md, "In every screen").
+    func testGetStateCarriesTheRecordingsCap() async throws {
+        try await withDaemon(recordingsCapBytes: 5 << 20) { c in
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.daemon.recordingsCapBytes, 5 << 20)
+        }
+    }
+
     func testGetStateEmptyWithDaemonInfo() async throws {
         try await withDaemon { c in
             let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
@@ -21,6 +30,7 @@ final class DaemonTests: XCTestCase {
             XCTAssertEqual(state.daemon.pid, Int64(getpid()))
             XCTAssertEqual(state.daemon.socketPath, c.socketPath)
             XCTAssertGreaterThan(state.daemon.startedAtNs, 1_600_000_000_000_000_000)
+            XCTAssertEqual(state.daemon.recordingsCapBytes, 20 << 30)  // the harness's default cap
             XCTAssertEqual(state.eventSeq, 0)
 
             // Scan jobs are implemented (D.13): an idle daemon has none, and that is not an error.

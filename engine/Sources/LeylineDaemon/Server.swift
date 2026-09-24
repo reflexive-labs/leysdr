@@ -79,7 +79,8 @@ final class Daemon: @unchecked Sendable {
         self.config = config
         registry = DefaultDeviceRegistry(persistPath: config.registryPersistPath, pollIntervalMs: config.pollMs,
                                          enumerateHardware: config.enumerateHardware)
-        let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath)
+        let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath,
+                              recordingsCapBytes: config.recordingsCapBytes)
         remembered = RememberedDevices(path: config.devicesPath ?? RememberedDevices.pathBeside(socket: config.socketPath))
         store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs, remembered: remembered)
         streams = StreamRegistry(store: store)

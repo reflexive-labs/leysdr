@@ -2201,13 +2201,16 @@ func (x *GetStateResponse) GetPlaybacks() []*Playback {
 }
 
 type DaemonInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
-	Pid           int64                  `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
-	StartedAtNs   int64                  `protobuf:"varint,3,opt,name=started_at_ns,json=startedAtNs,proto3" json:"started_at_ns,omitempty"` // CLOCK_REALTIME
-	SocketPath    string                 `protobuf:"bytes,4,opt,name=socket_path,json=socketPath,proto3" json:"socket_path,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Version     string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Pid         int64                  `protobuf:"varint,2,opt,name=pid,proto3" json:"pid,omitempty"`
+	StartedAtNs int64                  `protobuf:"varint,3,opt,name=started_at_ns,json=startedAtNs,proto3" json:"started_at_ns,omitempty"` // CLOCK_REALTIME
+	SocketPath  string                 `protobuf:"bytes,4,opt,name=socket_path,json=socketPath,proto3" json:"socket_path,omitempty"`
+	// The recording store's cap in bytes (`leylined --recordings-cap`), for a client that shows use
+	// against it; use is the sum of ListResources' size_bytes. 0 from a daemon that predates it.
+	RecordingsCapBytes uint64 `protobuf:"varint,5,opt,name=recordings_cap_bytes,json=recordingsCapBytes,proto3" json:"recordings_cap_bytes,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DaemonInfo) Reset() {
@@ -2266,6 +2269,13 @@ func (x *DaemonInfo) GetSocketPath() string {
 		return x.SocketPath
 	}
 	return ""
+}
+
+func (x *DaemonInfo) GetRecordingsCapBytes() uint64 {
+	if x != nil {
+		return x.RecordingsCapBytes
+	}
+	return 0
 }
 
 // A recording the daemon is playing through its own audio device (docs/design/recording.md,
@@ -3355,14 +3365,15 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\tevent_seq\x18\x05 \x01(\x04R\beventSeq\x12.\n" +
 	"\x06daemon\x18\x06 \x01(\v2\x16.leyline.v1.DaemonInfoR\x06daemon\x12#\n" +
 	"\x04jobs\x18\a \x03(\v2\x0f.leyline.v1.JobR\x04jobs\x122\n" +
-	"\tplaybacks\x18\b \x03(\v2\x14.leyline.v1.PlaybackR\tplaybacks\"}\n" +
+	"\tplaybacks\x18\b \x03(\v2\x14.leyline.v1.PlaybackR\tplaybacks\"\xaf\x01\n" +
 	"\n" +
 	"DaemonInfo\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x10\n" +
 	"\x03pid\x18\x02 \x01(\x03R\x03pid\x12\"\n" +
 	"\rstarted_at_ns\x18\x03 \x01(\x03R\vstartedAtNs\x12\x1f\n" +
 	"\vsocket_path\x18\x04 \x01(\tR\n" +
-	"socketPath\"\xb9\x02\n" +
+	"socketPath\x120\n" +
+	"\x14recordings_cap_bytes\x18\x05 \x01(\x04R\x12recordingsCapBytes\"\xb9\x02\n" +
 	"\bPlayback\x12\x1f\n" +
 	"\vplayback_id\x18\x01 \x01(\tR\n" +
 	"playbackId\x12!\n" +

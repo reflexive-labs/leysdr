@@ -229,7 +229,8 @@ func TestGainsStringUnknownTable(t *testing.T) {
 func TestState(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "state", "--wide")
-	for _, want := range []string{"daemon fake-0.1", "Devices", "Captures", "Channels", "Sinks"} {
+	// The fake reports leylined's default cap and holds no recordings.
+	for _, want := range []string{"daemon fake-0.1", "recordings 0 B of 20 GB", "Devices", "Captures", "Channels", "Sinks"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("state missing %q:\n%s", want, out)
 		}

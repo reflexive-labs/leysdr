@@ -12,14 +12,15 @@ import LeylineClient
 import LeylineProto
 import SwiftUI
 
-/// Region 4: a section header with the count beside it, the Record transmissions switch, a
-/// three-column head, then the rows, newest first, the open one on `raised` ground with `now`
-/// in `accent`. The log takes the height the panel leaves it and shows as many rows as fit, five
-/// at least, which is the handoff's count at its 820 pt window. Time is wall clock when the
-/// anchor covers it and relative (`−2:14`) when it does not; both formats can appear in one list,
-/// because the alternative is a timestamp nobody measured. Tone is not a column: a CTCSS tone the
-/// daemon reported is appended to that row's signal cell in `good`, and a row without one leaves
-/// the tone blank. Every row is a transmission heard live; the log never back-fills from a
+/// Region 4: `TRANSMISSIONS` with the newest row's day at the right, the Record transmissions
+/// switch and its line, then the rows, newest first, the open one on `raised` ground with `now`
+/// in `accent`; no column head and no count, as the recording handoff's screens draw it
+/// (docs/design/app-design-handoff-m3.md, "In every screen"). The log takes the height the panel
+/// leaves it and shows as many rows as fit, five at least, which is the handoff's count at its
+/// 820 pt window. Time is wall clock when the anchor covers it and relative (`−2:14`) when it
+/// does not; both formats can appear in one list, because the alternative is a timestamp nobody
+/// measured. Tone is not a column: a CTCSS tone the daemon reported is appended to that row's
+/// signal cell in `good`, and a row without one leaves the tone blank. Every row is a transmission heard live; the log never back-fills from a
 /// recording (M3 handoff, "The rule"). A row whose transmission lies inside a part of the tuned
 /// channel's recording is kept: its time and length in `ink`, ▶ in a ring at its right, and
 /// Show in Finder in its context menu. A heard row's time and length are `inkTertiary` and it has
@@ -28,11 +29,13 @@ struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
     static let minRows = 5
-    /// The height above and below the rows: the padding, the section header and the column
-    /// head, rounded up so the count errs toward one row fewer rather than a clipped one.
-    static let chromeHeight: CGFloat = 60
-    /// The switch's row and its two-line help or status line under it, rounded up the same way.
-    static let switchHeight: CGFloat = 56
+    /// The height above and below the rows: the padding and the section header, rounded up so
+    /// the count errs toward one row fewer rather than a clipped one.
+    static let chromeHeight: CGFloat = 44
+    /// The switch's row, its line under it at two lines (the status line wraps at the panel's
+    /// width, and the region gives it the room rather than a row) and the gap before the rows,
+    /// rounded up the same way.
+    static let switchHeight: CGFloat = 62
 
     var body: some View {
         GeometryReader { geo in
@@ -57,16 +60,13 @@ struct RecentLog: View {
         let writing = open != nil && session.recordingJob?.state == .running
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                SectionHeader(text: "Recent on this channel")
+                SectionHeader(text: "Transmissions")
                 Spacer(minLength: 8)
-                if let summary = summary(log) {
-                    Text(summary).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
-                        .lineLimit(1)
-                }
+                Text(dayWords(log)).font(Theme.Font.columnHead).foregroundStyle(Theme.inkFaint)
+                    .lineLimit(1)
             }
             .padding(.bottom, 6)
             RecordSwitch().padding(.bottom, 8)
-            head
             if let open {
                 LogRow(
                     time: Text("now").foregroundStyle(Theme.accent),
@@ -108,30 +108,14 @@ struct RecentLog: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
-    private var head: some View {
-        HStack(spacing: 0) {
-            Text("time").frame(width: Theme.Layout.logTimeWidth, alignment: .leading)
-            Text("length").frame(width: Theme.Layout.logLengthWidth, alignment: .trailing)
-            Text("signal").frame(maxWidth: .infinity, alignment: .trailing)
-            Color.clear.frame(width: Theme.Layout.logPlayWidth, height: 1)
-        }
-        .font(Theme.Font.columnHead).foregroundStyle(Theme.inkFaintest)
-        .padding(.horizontal, 6).padding(.bottom, 2)
-    }
-
-    /// `23 since 11:38`: the log's count, the open one included, and the wall clock of the
-    /// oldest transmission it holds when the anchor dates it; otherwise `23 this session`,
-    /// because a wall-clock time is printed only when the daemon's anchor provides one (M2-1's
-    /// rule). nil with nothing logged, where the empty line says so.
-    private func summary(_ log: TransmissionLog?) -> String? {
-        guard let log else { return nil }
-        let count = log.closed.count + (log.onAir == nil ? 0 : 1)
-        guard count > 0 else { return nil }
-        let first = log.closed.last?.start ?? log.onAir?.since
-        if let since = first.flatMap({ session.wallTime(of: $0) }) {
-            return "\(count) since \(WallClock.hm(since))"
-        }
-        return "\(count) this session"
+    /// The header's day: `today`, `yesterday`, a weekday, of the newest row's start as wall
+    /// clock through the tuned capture's anchor (`Recordings.dayWords`); blank with no row or no
+    /// anchor, because a day nobody measured is not printed (M2-1's rule).
+    private func dayWords(_ log: TransmissionLog?) -> String {
+        guard let newest = log?.onAir?.since ?? log?.closed.first?.start,
+            let date = session.wallTime(of: newest)
+        else { return "" }
+        return Recordings.dayWords(date, now: Date())
     }
 
     /// A row's wall clock through the tuned capture's anchor; relative when it does not date it.
@@ -203,10 +187,11 @@ struct RecordSwitch: View {
     }
 }
 
-/// One row of the log, mono and tabular; not styled as a control. The trailing 18 pt column holds
-/// a kept row's ▶ (`play.fill`) in an 18 pt ring, ■ (`stop.fill`) while that part plays with a
-/// 2 pt `accent` line along the row's bottom as far as it has played, or on the open row a 6 pt
-/// `accentRec` dot while a part is being written.
+/// One row of the log, mono and tabular; not styled as a control: time, length, word, then a
+/// trailing 20 pt column that holds a kept row's ▶ (`play.fill`, `inkSecondary`) in an 18 pt ring
+/// with a `border` stroke, ■ (`stop.fill`) while that part plays with a 2 pt `accent` line along
+/// the row's bottom as far as it has played, on the open row a 6 pt `accentRec` dot while a part
+/// is being written, and on a heard row nothing.
 struct LogRow: View {
     /// A recorded part's control on the row.
     struct Part {

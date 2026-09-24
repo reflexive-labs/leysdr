@@ -114,6 +114,10 @@ func (d *Daemon) streamContext(ctx context.Context) (context.Context, context.Ca
 	return sctx, cancel
 }
 
+// RecordingsCapBytes is the recording store cap the fake reports, leylined's
+// own --recordings-cap default.
+const RecordingsCapBytes uint64 = 20 << 30
+
 // snapshot builds a GetStateResponse. Call with d.mu held.
 func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateResponse {
 	capFilter := ""
@@ -126,6 +130,7 @@ func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateRespon
 		EventSeq: d.seq,
 		Daemon: &leylinev1.DaemonInfo{
 			Version: Version, Pid: int64(pid()), StartedAtNs: d.startedNs, SocketPath: d.socket,
+			RecordingsCapBytes: RecordingsCapBytes,
 		},
 	}
 	for _, dev := range d.devices {

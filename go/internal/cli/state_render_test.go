@@ -204,12 +204,25 @@ func TestStateEmptyIsOneLine(t *testing.T) {
 func TestStateHeaderAndTables(t *testing.T) {
 	st := busyState()
 	now := time.Unix(0, 0).Add(39 * time.Second)
-	plain := stateHeader(ui.Style{}, st, now)
+	plain := stateHeader(ui.Style{}, st, now, -1)
 	if !strings.Contains(plain, "daemon 0.1.0-dev  up 39s") || !strings.Contains(plain, "pid 4711") || !strings.Contains(plain, "event seq 42") {
 		t.Fatalf("header:\n%s", plain)
 	}
-	if got := ui.Strip(stateHeader(ui.Style{Color: true, Unicode: true}, st, now)); got != plain {
+	if got := ui.Strip(stateHeader(ui.Style{Color: true, Unicode: true}, st, now, -1)); got != plain {
 		t.Fatalf("Strip(styled header) = %q, want %q", got, plain)
+	}
+
+	// A reported cap and a known use end the first line; either missing leaves it off.
+	capped := busyState()
+	capped.Daemon.RecordingsCapBytes = 20 << 30
+	if got := stateHeader(ui.Style{}, capped, now, 944<<20); !strings.HasPrefix(got, "daemon 0.1.0-dev  up 39s  recordings 944 MB of 20 GB\n") {
+		t.Fatalf("capped header:\n%s", got)
+	}
+	if got := stateHeader(ui.Style{}, capped, now, -1); strings.Contains(got, "recordings") {
+		t.Fatalf("header with unknown use:\n%s", got)
+	}
+	if got := stateHeader(ui.Style{}, st, now, 944<<20); strings.Contains(got, "recordings") {
+		t.Fatalf("header without a cap:\n%s", got)
 	}
 
 	render := func(s ui.Style) string {
@@ -281,5 +294,24 @@ func TestStateTreeShowsWhatIsPlaying(t *testing.T) {
 	st.Playbacks = nil
 	if quiet := renderStateTree(ui.Style{Unicode: true, Width: 80}, st); strings.Contains(quiet, "playing through") {
 		t.Errorf("an idle daemon must not mention playback:\n%s", quiet)
+	}
+}
+
+func TestStoreSize(t *testing.T) {
+	for _, c := range []struct {
+		n    uint64
+		want string
+	}{
+		{0, "0 B"},
+		{900, "900 B"},
+		{1 << 10, "1.0 KB"},
+		{1153434, "1.1 MB"},
+		{944 << 20, "944 MB"},
+		{20 << 30, "20 GB"},
+		{(3 << 30) / 2, "1.5 GB"},
+	} {
+		if got := storeSize(c.n); got != c.want {
+			t.Errorf("storeSize(%d) = %q, want %q", c.n, got, c.want)
+		}
 	}
 }

@@ -585,6 +585,11 @@ struct SquelchTrack: View {
     }
 }
 
+/// The sink's volume, and under it a caption that says what is heard (docs/design/
+/// app-design-handoff-m3.md, "In every screen"): `playing GMRS CH3` (the bookmark's name, else
+/// the frequency) while the live sink is attached, `muted · GMRS CH3` while it is detached, and
+/// `playing a part · GMRS CH3 held` while a kept part plays and the live channel is held silent.
+/// The output device's name is the caption's tooltip.
 struct VolumeControl: View {
     @Environment(AppSession.self) private var session
 
@@ -597,14 +602,26 @@ struct VolumeControl: View {
                     .controlSize(.small)
                     .tint(Theme.inkTertiary)
                     .disabled(sink == nil)
-                Text(outputName(sink))
+                Text(caption(sink))
                     .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest).lineLimit(1)
+                    .help(outputWords(sink))
             }
         }
     }
 
-    private func outputName(_ sink: Leyline_V1_Sink?) -> String {
-        guard let sink else { return "not playing" }
-        return AudioOutputName.lookup(uid: sink.systemAudio.audioDeviceUid) ?? "the daemon's output"
+    private func caption(_ sink: Leyline_V1_Sink?) -> String {
+        guard let name = session.listeningName else { return "not playing" }
+        if session.playingURI != nil { return "playing a part · \(name) held" }
+        return sink == nil ? "muted · \(name)" : "playing \(name)"
+    }
+
+    /// Where the sound goes: the sink's CoreAudio device while the live channel plays; a part
+    /// plays through the daemon's own output (`Control.StartPlayback`).
+    private func outputWords(_ sink: Leyline_V1_Sink?) -> String {
+        if session.playingURI != nil { return "Playing through the daemon's output" }
+        guard let sink else { return "Muted: the channel has no audio sink" }
+        let name =
+            AudioOutputName.lookup(uid: sink.systemAudio.audioDeviceUid) ?? "the daemon's output"
+        return "Playing through \(name)"
     }
 }

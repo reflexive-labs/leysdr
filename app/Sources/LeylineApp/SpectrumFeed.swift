@@ -15,9 +15,9 @@ import os
 let signposter = OSSignposter(subsystem: "com.leyline.app", category: "waterfall")
 
 /// Rows as the waterfall's texture wants them: DB_U8 bytes, newest last, in a ring the renderer
-/// copies from by row count, and beside it which rows were captured while the radio clipped
-/// (plans/app.md, M2-8) and which a recording kept (docs/design/app-design-handoff-m3.md, 8b),
-/// both in `ClippedRows`. Main-actor only: the renderer draws on the main thread.
+/// copies from by row count, and beside it each row's sample index and which rows were captured
+/// while the radio clipped (plans/app.md, M2-8), in `ClippedRows`; the indices also place the
+/// time gutter's kept bars (docs/design/app-design-handoff-m3.md, "In every screen"). Main-actor only: the renderer draws on the main thread.
 @MainActor
 final class WaterfallBuffer {
     nonisolated static let capacity = 2048
@@ -27,7 +27,7 @@ final class WaterfallBuffer {
     private(set) var count = 0
     /// The seq of the newest row, for the draw-side signpost.
     private(set) var newestSeq: UInt64 = 0
-    /// Each slot's sample index, capture, clipping flag and kept flag; its slots are the ring's.
+    /// Each slot's sample index, capture and clipping flag; its slots are the ring's.
     private(set) var clipped = ClippedRows(capacity: WaterfallBuffer.capacity)
 
     func reset(bins: Int) {
@@ -56,11 +56,10 @@ final class WaterfallBuffer {
         clipped.mark(level, at: time)
     }
 
-    /// Flags the held rows a recording's closed parts hold, and clears the rest; returns how
-    /// many are flagged.
-    @discardableResult
-    func markKept(_ parts: [RecordingPart]) -> Int {
-        clipped.markKept(parts)
+    /// The held rows a recording's closed parts hold, as runs of row age: where the time
+    /// gutter draws its kept bars (`ClippedRows.keptRuns`).
+    func keptRuns(_ parts: [RecordingPart]) -> [Range<Int>] {
+        clipped.keptRuns(parts)
     }
 
     /// The row at ring slot `slot`, as a pointer for a texture upload.

@@ -2,8 +2,9 @@
 
 // The waterfall's clipping marks on numbers (plans/app.md, M2-8): which held rows a reading
 // flags, that a new row in a reused slot starts unflagged, and the floor the reading must reach.
-// And its kept bars (docs/design/app-design-handoff-m3.md, 8b): which held rows a recording's
-// parts flag, on their own capture only, and that a manifest read again replaces them.
+// And the rows the time gutter's kept bars stand against (docs/design/app-design-handoff-m3.md,
+// "In every screen"): which held rows a recording's parts hold, on their own capture only, as
+// runs of row age that move down as rows arrive.
 
 import LeylineProto
 import XCTest
@@ -106,37 +107,33 @@ final class ClippedRowsTests: XCTestCase {
             captureID: capture)
     }
 
-    private func kept(_ r: ClippedRows) -> [UInt64] {
-        (max(0, r.count - r.capacity)..<r.count).compactMap { row in
-            let slot = row % r.capacity
-            return r.kept[slot] == 1 ? r.sampleIndex[slot] : nil
-        }
-    }
-
-    func testPartsFlagTheRowsTheyHoldOnTheirCapture() {
+    func testPartsHoldTheRowsOnTheirCaptureAsRunsOfAge() {
         var r = ClippedRows(capacity: 8)
-        // Three rows of an earlier capture on the same sample numbers, then five of this one.
+        // Three rows of an earlier capture on the same sample numbers, then five of this one:
+        // ages 0...4 are cap_a's 4000, 3000, 2000, 1000, 0; ages 5...7 cap_old's 2000, 1000, 0.
         for i in 0..<3 { r.append(sampleIndex: UInt64(i) * 1000, captureID: "cap_old") }
         for i in 0..<5 { r.append(sampleIndex: UInt64(i) * 1000, captureID: "cap_a") }
-        XCTAssertEqual(r.markKept([part(1, 1000, 2000), part(2, 3500, 9000)]), 3)
-        XCTAssertEqual(kept(r), [1000, 2000, 4000], "cap_old's 1000 and 2000 are another time")
+        XCTAssertEqual(
+            r.keptRuns([part(1, 1000, 2000), part(2, 3500, 9000)]), [0..<1, 2..<4],
+            "cap_old's 1000 and 2000 are another time")
         XCTAssertEqual(flagged(r), [], "a kept row is not a clipped one")
         // Read again after part 2 was dropped: its bar goes.
-        XCTAssertEqual(r.markKept([part(1, 1000, 2000)]), 2)
-        XCTAssertEqual(kept(r), [1000, 2000])
-        XCTAssertEqual(r.markKept([part(1, 1000, 2000, capture: nil)]), 0, "no capture, no bar")
-        XCTAssertEqual(kept(r), [])
+        XCTAssertEqual(r.keptRuns([part(1, 1000, 2000)]), [2..<4])
+        XCTAssertEqual(r.keptRuns([part(1, 1000, 2000, capture: nil)]), [], "no capture, no bar")
+        XCTAssertEqual(r.keptRuns([part(1, 0, 9000, capture: "cap_old")]), [5..<8])
+        XCTAssertEqual(r.keptRuns([part(1, 20_000, 30_000)]), [], "after every held row")
     }
 
-    func testAReusedSlotStartsUnkept() {
+    func testARunFollowsTheRingAsRowsArrive() {
         var r = ClippedRows(capacity: 4)
+        XCTAssertEqual(r.keptRuns([part(1, 0, 3000)]), [], "no rows, no runs")
         for i in 0..<4 { r.append(sampleIndex: UInt64(i) * 1000, captureID: "cap_a") }
-        r.markKept([part(1, 0, 3000)])
+        XCTAssertEqual(r.keptRuns([part(1, 0, 1000)]), [2..<4])
+        // One more row pushes the oldest out of the ring: the run moves down and shortens.
         r.append(sampleIndex: 4000, captureID: "cap_a")
-        XCTAssertEqual(kept(r), [1000, 2000, 3000])
-        r.markClipped(from: 0, to: 9000)
+        XCTAssertEqual(r.keptRuns([part(1, 0, 1000)]), [3..<4])
         r.reset()
-        XCTAssertEqual(r.kept, [0, 0, 0, 0])
+        XCTAssertEqual(r.keptRuns([part(1, 0, 9000)]), [])
         XCTAssertEqual(r.captureID, ["", "", "", ""])
     }
 }

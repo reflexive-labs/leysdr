@@ -401,12 +401,23 @@ final class ClientDaemonTests: XCTestCase {
         )
         XCTAssertTrue(
             manifest.uri(of: part).hasPrefix(summary.uri + "/"), "the kept row plays its part")
-        // The waterfall's kept bars: rows on the capture's timeline inside the part are flagged.
+        // The gutter's kept bars: a row on the capture's timeline inside the part is held, the
+        // newer one after every part is not.
         var rows = ClippedRows(capacity: 8)
         rows.append(sampleIndex: part.startSample, captureID: capture.captureID)
         let last = manifest.parts.map(\.endSample).max() ?? part.endSample
         rows.append(sampleIndex: last + 1, captureID: capture.captureID)
-        XCTAssertEqual(rows.markKept(manifest.parts), 1)
+        XCTAssertEqual(rows.keptRuns(manifest.parts), [1..<2])
+        // The sidebar's Recordings source and its store footer, from the same listing and the
+        // cap the daemon reports.
+        let summaries = listed.resources.map(RecordingSummary.init)
+        let channels = Recordings.channels(summaries, bookmarks: [], jobs: mirror.state.jobs)
+        XCTAssertTrue(
+            channels.contains { $0.frequencyHz == hz && $0.recordings.contains(summary) },
+            "the recording has no channel row")
+        XCTAssertGreaterThan(Recordings.storeUsedBytes(summaries), 0)
+        XCTAssertGreaterThan(
+            mirror.state.daemon.recordingsCapBytes, 0, "the daemon reports its recordings cap")
 
         let gone = try await app.resources.deleteResource(resource)
         XCTAssertEqual(gone.uri, summary.uri)

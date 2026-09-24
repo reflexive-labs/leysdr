@@ -231,7 +231,7 @@ func (srv *mcpServer) getState(ctx context.Context, _ *mcp.CallToolRequest, _ mc
 		return nil, nil, toolError(srv.app.notRunning(err))
 	}
 	app, out, _ := srv.toolApp()
-	printState(app, st, false)
+	printState(app, st, false, -1)
 	return protoResult(st, out.String())
 }
 

@@ -12,8 +12,8 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped or kept by a recording (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, and a listing's summary (`Recordings.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's kept bars, the retune question, the File items; APP-5), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the sidebar's channel rows and search, the store footer's words and the day words (`Recordings.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the sidebar's `Radio | Recordings` sources and store footer, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items; APP-5), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
@@ -187,18 +187,29 @@ a ring that plays the part through `Control.StartPlayback` while the live sink i
 progress line from the mirror's `playbacks` (the daemon publishes a playing playback four times a
 second), and Show in Finder on its context menu. A heard row is `inkTertiary` with no glyph. The
 `now` row has an `accentRec` dot while the job runs and the squelch is open, a bookmark whose
-frequency and mode are recording has one in the sidebar, and `ClippedRows` flags every waterfall
-row inside a part, on the part's capture, on each manifest read, which the shader draws as 3 px of
-`accentRec` at the right edge (the clipping marks' mirror; the design's time gutter does not
-exist yet). A band switch, the rail drag's release and a sample-rate change that would leave a
+frequency and mode are recording has one 6 pt left of its frequency in the sidebar. The
+waterfall's time gutter (`WaterfallGutter`, 64 pt on `panel` at the right of both charts, so the
+spectrum narrows with the waterfall and they keep one frequency axis) prints `now` and a tick
+every 10 s, and draws 3 pt `accentRec` bars at its left edge against the rows a part holds:
+`ClippedRows.keptRuns` walks the ring's own sample indices for the parts on each row's capture and
+returns runs of row age, one device pixel a row, re-evaluated on each row the feed counts
+(`KeptBars`). The shader draws only the clipping marks. A band switch, the rail drag's release and a sample-rate change that would leave a
 running recording outside the span ask first with `Recordings.retuneWords`, `ley tune`'s
 sentence, for the jobs `Recordings.leftOut` finds riding the capture by `ley`'s rule; tuning
 inside the span never asks, and the daemon records the gap if the move goes ahead. The sidebar
-lists no recordings and the window deletes none until M3's Recordings source (8c): File ▸ Show
-Recordings in Finder opens the store, and `ley recordings` lists and deletes. The transport bar's
-button is the mute (`toggleMute`, the sink detached), and Tune ▸ Stop Listening removes the
-channel and destroys the capture only when this window made it and no other channel rides on
-it. The window was written in the container and is unverified until it runs on a Mac
+has two sources under a segmented control (`AppSession.sidebarSource`, remembered in the
+defaults): Radio is the bands and bookmarks, Recordings a search field and one row per frequency
+and mode (`Recordings.channels` over `AppSession.recordings`, the `ListResources(RECORDING)`
+listing re-read on every record job change and on adoption), titled by the matching bookmark or
+the frequency, running rows first and then by most recent activity. A selected row covers the
+canvas with one sentence until 8c's channel page lands; the window deletes nothing, and File ▸
+Show Recordings in Finder opens the store. Under both sources the store footer draws the used
+fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`) and `944 MB of 20 GB · oldest
+go first` (`Recordings.storeWords`). The transport bar's button is the mute (`toggleMute`, the
+sink detached), and the caption under the volume slider says what is heard (`playing GMRS CH3`,
+`muted · GMRS CH3`, `playing a part · GMRS CH3 held`) with the output device as its tooltip.
+Tune ▸ Stop Listening removes the channel and destroys the capture only when this window made it
+and no other channel rides on it. The window was written in the container and is unverified until it runs on a Mac
 (`../plans/app.md`, APP-5); the façade's rules are tested in `RecordingsTests` and
 `ClippedRowsTests`, and against the daemon's own manifest by the daemon-backed suite.
 
@@ -251,8 +262,8 @@ the meter's numbers every thirty seconds,
 the FFT subscription's descriptor and a row count every thirty seconds, the audio ladder's
 subscription, its end or failure and a row count every thirty seconds, whether the shader
 compiled, the inspector shown or hidden, every bookmark added, renamed or removed, every
-recording started, stopped or refused, each manifest read with its part count, the waterfall's
-kept rows when their count changes, and every retune question asked and answered (`record`), every clip played, stopped or ended and the live sink detached and attached around it
+recording started, stopped or refused, each manifest read with its part count, the store's
+listing when its count changes, and every retune question asked and answered (`record`), every clip played, stopped or ended and the live sink detached and attached around it
 (`playback`), and Stop Listening with whether the radio was freed. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,

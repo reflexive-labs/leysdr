@@ -2,9 +2,12 @@
 
 // Region 4: the waterfall. The Metal view draws rows from the feed's ring, newest at the top,
 // one row per display pixel at 30 rows a second; SwiftUI draws what sits over it: the tuned
-// channel, the pointer's hairline and badge, the time axis in seconds. Every gesture is handled
-// by the Metal view (it handles the mouse, through `ChartMouse` like the spectrum) and lands in
-// `AppSession.tune(to:)`.
+// channel, the pointer's hairline and badge. Every gesture is handled by the Metal view (it
+// handles the mouse, through `ChartMouse` like the spectrum) and lands in
+// `AppSession.tune(to:)`. Beside it, not over it, the time gutter: seconds down a `panel` column
+// and the tuned channel's kept bars (`WaterfallGutter`; docs/design/app-design-handoff-m3.md,
+// "In every screen"). `MainWindow` lays the gutter out, because the spectrum above narrows by
+// the same width.
 
 import Foundation
 import LeylineClient
@@ -13,7 +16,6 @@ import SwiftUI
 
 struct WaterfallView: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.displayScale) private var displayScale
     @State private var pointer: CGPoint?
     @State private var problem: String?
 
@@ -82,34 +84,72 @@ struct WaterfallView: View {
                 x0: columns.x(of: hz - UInt64(ch.bandwidthHz) / 2),
                 x1: columns.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: size.height)
         }
-        TimeAxis(rowsPerPoint: Double(displayScale), height: size.height)
-            .allowsHitTesting(false)
         PointerOverlay(columns: columns, size: size, point: pointer)
     }
 }
 
-/// `now` at the top, a tick every 5 s down the right edge, relative only.
-struct TimeAxis: View {
-    let rowsPerPoint: Double
-    let height: CGFloat
+/// The waterfall's time gutter (M3 handoff, "In every screen"): `now` at the top and a tick every
+/// `Theme.Layout.gutterTickSeconds` down it, relative only, in `valueSmall` `inkFaint`, and the
+/// kept bars at its left edge. A row is one device pixel (the shader's `rowsPerPixel`), so ten
+/// seconds are `10 × rowsPerSecond / displayScale` points. Nothing is drawn but the ground while
+/// there is no capture, since the rows would be nobody's. The ticks are the rows' nominal rate;
+/// the bars are placed by each held row's own sample index, so a row the daemon dropped
+/// (latest-wins) moves the bars with the rows rather than off them.
+struct WaterfallGutter: View {
+    @Environment(AppSession.self) private var session
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        let secondsPerPoint = rowsPerPoint / SpectrumFeed.rowsPerSecond
-        let tickEvery: CGFloat = CGFloat(5 / secondsPerPoint)
-        let ticks = tickEvery > 0 ? Int(height / tickEvery) : 0
-        ZStack(alignment: .topTrailing) {
-            Text("now").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary).padding(
-                .trailing, 8
-            ).padding(.top, 4)
-            ForEach(1...max(ticks, 1), id: \.self) { i in
-                if i <= ticks {
-                    Text("−\(i * 5) s").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
-                        .padding(.trailing, 8)
-                        .offset(y: CGFloat(i) * tickEvery - 6)
+        GeometryReader { geo in
+            if session.capture != nil {
+                let every = CGFloat(
+                    Double(Theme.Layout.gutterTickSeconds) * SpectrumFeed.rowsPerSecond
+                        / Double(max(displayScale, 1)))
+                let ticks = every > 0 ? Int(geo.size.height / every) : 0
+                ZStack(alignment: .topLeading) {
+                    KeptBars(displayScale: displayScale)
+                    ZStack(alignment: .topTrailing) {
+                        Text("now").padding(.top, 4)
+                        ForEach(0..<ticks, id: \.self) { i in
+                            Text("−\((i + 1) * Theme.Layout.gutterTickSeconds) s")
+                                .offset(y: CGFloat(i + 1) * every - 6)
+                        }
+                    }
+                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                    .padding(.trailing, 8)
+                    .frame(width: geo.size.width, alignment: .topTrailing)
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topTrailing)
+        .background(Theme.panel)
+        .clipped()
+        .allowsHitTesting(false)
+    }
+}
+
+/// The tuned channel's kept bars: a `keptBarWidth` `accentRec` bar against each run of held rows
+/// a closed part of its recording holds (`WaterfallBuffer.keptRuns`, from the manifest's parts on
+/// the capture clock). Its own view so that only it is re-evaluated as rows arrive: reading the
+/// feed's `rows` is what subscribes it to each row.
+struct KeptBars: View {
+    @Environment(AppSession.self) private var session
+    let displayScale: CGFloat
+
+    var body: some View {
+        let feed = session.spectrum
+        let parts = session.recording?.parts ?? []
+        let runs = feed.rows > 0 && !parts.isEmpty ? feed.waterfall.keptRuns(parts) : []
+        let scale = max(displayScale, 1)
+        Canvas { ctx, size in
+            for run in runs {
+                let y0 = CGFloat(run.lowerBound) / scale
+                let y1 = min(size.height, CGFloat(run.upperBound) / scale)
+                guard y0 < size.height, y1 > y0 else { continue }
+                let bar = CGRect(x: 0, y: y0, width: Theme.Layout.keptBarWidth, height: y1 - y0)
+                ctx.fill(Path(bar), with: .color(Theme.accentRec))
+            }
+        }
     }
 }
 
@@ -224,11 +264,6 @@ struct WaterfallUniforms {
     var markR: Float = 0
     var markG: Float = 0
     var markB: Float = 0
-    /// `Theme.accentRec`, the colour of a kept row's bar, and the bar's width in pixels.
-    var keptR: Float = 0
-    var keptG: Float = 0
-    var keptB: Float = 0
-    var keptWidth: Float = 0
 }
 
 /// Fills a byte texture from the feed's ring and draws it through the ramp. S1's client half:
@@ -244,7 +279,6 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     private var lastSlowDrawableLog: CFAbsoluteTime = 0
     private var stops: [SIMD4<Float>] = Theme.levelStopsRGB.map { SIMD4($0, 1) }
     private let mark = Theme.recordingRGB
-    private let keptColour = Theme.accentRecRGB
 
     var buffer: WaterfallBuffer?
     var viewLo: Float = 0
@@ -335,10 +369,6 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         u.markR = mark.x
         u.markG = mark.y
         u.markB = mark.z
-        u.keptR = keptColour.x
-        u.keptG = keptColour.y
-        u.keptB = keptColour.z
-        u.keptWidth = Theme.Layout.keptBarPixels
 
         guard let cmd = queue.makeCommandBuffer(),
             let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
@@ -352,10 +382,6 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         // drawn, and 2048 bytes is under the 4 KB `setFragmentBytes` takes without a buffer.
         buffer.clipped.flags.withUnsafeBytes {
             enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2)
-        }
-        // The kept flags the same way (M3 handoff, 8b): a manifest read flags rows already drawn.
-        buffer.clipped.kept.withUnsafeBytes {
-            enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 3)
         }
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
