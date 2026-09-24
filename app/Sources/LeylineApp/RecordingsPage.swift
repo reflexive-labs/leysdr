@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The channel page (docs/design/app-design-handoff-m3.md, 8c, and "The screens, read against the
-// prose", 8c): the Library's centre column ("Decided 2026-09-25: the Library"). A 56 pt header
-// with the channel's name, what it is and how much is kept, the same Record transmissions switch
-// as the log's (one job state, read from the mirror) and Tune; under it the recordings as cards
-// grouped by day, newest first, each card's parts as chips that wrap. A click on a chip plays
-// that part through the playback path the log's ▶ uses and selects it for the inspector
-// (`PartInspector`) and the player; Play all plays the parts in order. The page keeps no state of
-// its own beyond hover: which cards are open, the selected part and the queue are the session's,
-// and every card is built from the listing and the manifests the session read
-// (`Recordings.groups`, `Recordings.days`).
+// The channel page (docs/design/app-design-handoff-m3.md, 8c, revised by "10a · The Library,
+// revised"): the Library's centre column. A 56 pt header with the channel's name, what it is and
+// how much is kept, the same Record transmissions switch as the log's (one job state, read from
+// the mirror) and Tune; under it the parts as rows, by the day each started. A day opens with its
+// head (`TODAY  7 parts · 1 m 17 s`, `Play day`) and a 24-hour strip; a recording of several
+// parts is a bracket in the gutter and recordings are separated by a gap; days older than two are
+// EARLIER, one line each, opening in place. A click on a row plays that part through the playback
+// path the log's ▶ uses and selects it for the inspector (`PartInspector`) and the player; a click
+// on the playing row pauses or resumes it. The page keeps no state of its own: the selection, the
+// opened days, the queue and the level graphs are the session's, and every row is built from the
+// listing and the manifests the session read (`Recordings.dayRows`). 8c's notice strip is gone
+// with 10a: a refusal is the session's notice, which the Radio shows over its canvas.
 
 import LeylineClient
 import LeylineProto
@@ -34,37 +36,30 @@ struct RecordingsPage: View {
                 .multilineTextAlignment(.center)
                 .padding(20)
             }
-            // The Library has no canvas, so the page carries the notice strip: a switch the
-            // daemon refused has to say why where it was clicked.
-            VStack {
-                Spacer()
-                NoticeStrip()
-            }
         }
         .contentShape(Rectangle())
     }
 
     private func content(_ channel: RecordingChannel) -> some View {
-        let now = Date()
         let groups = session.pageGroups(for: channel)
-        let days = Recordings.days(groups, now: now)
+        let days = Recordings.dayRows(groups, now: Date())
+        let recent = days.filter { !$0.earlier }
+        let earlier = days.filter(\.earlier)
         return VStack(spacing: 0) {
             RecordingsPageHeader(channel: channel, groups: groups)
                 .frame(height: Theme.Layout.pageHeaderHeight)
             Rectangle().fill(Theme.border).frame(height: 1)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(days) { day in
-                        SectionHeader(text: day.title)
-                            .padding(.top, Theme.Layout.pageDayGap).padding(.bottom, 10)
-                        ForEach(day.recordings) { g in
-                            RecordingCard(
-                                group: g,
-                                collapsed: day.collapsed
-                                    && !session.openedRecordings.contains(g.uri),
-                                foldable: day.collapsed, now: now
-                            )
-                            .padding(.bottom, Theme.Layout.cardGap)
+                    ForEach(recent) { day in
+                        DaySection(day: day)
+                            .padding(.top, Theme.Layout.pageDayGap)
+                    }
+                    if !earlier.isEmpty {
+                        SectionHeader(text: "Earlier")
+                            .padding(.top, Theme.Layout.pageDayGap).padding(.bottom, 8)
+                        ForEach(earlier) { day in
+                            EarlierDay(day: day, opened: session.openedDays.contains(day.id))
                         }
                     }
                 }
@@ -135,166 +130,284 @@ struct RecordingsPageHeader: View {
     }
 }
 
-/// One recording (8c): a card on `panel` with a 1 pt `border`, `accentRec` at 40 % while it
-/// runs. The header line is `● 09:12 — now` in mono (the dot only while running), `3 parts · 24 s
-/// · 1.1 MB` beside it, and at the right `recording` or Play all; the parts wrap under it as
-/// chips. A card in the earlier group is its header line alone with a chevron until clicked open,
-/// and a click on an open one folds it again.
-struct RecordingCard: View {
-    let group: RecordingGroup
-    let collapsed: Bool
-    /// In the earlier group, so the header line opens and folds it.
-    let foldable: Bool
-    let now: Date
+/// A day of the page (10a): `TODAY` in `section` with `7 parts · 1 m 17 s` in `value` `inkMuted`
+/// and `Play day` in `accent` at the right, then the 24-hour strip, the column head and the rows.
+struct DaySection: View {
+    let day: DayRows
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                SectionHeader(text: day.title)
+                Text(day.headWords).font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                PlayDayButton(day: day)
+            }
+            .padding(.bottom, 10)
+            DayBody(day: day)
+        }
+    }
+}
+
+/// `Play day`: the day's parts oldest first, as Play all plays a recording's
+/// (`AppSession.playDay`).
+struct PlayDayButton: View {
+    let day: DayRows
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-            if !collapsed, !group.chips.isEmpty {
-                FlowLayout(spacing: Theme.Layout.chipGap, lineSpacing: Theme.Layout.chipGap) {
-                    ForEach(group.chips) { chip in
-                        PartChip(
-                            chip: chip, playing: session.playingURI == chip.uri,
-                            selected: session.selectedPartURI == chip.uri
-                        ) {
-                            Task { await session.clickChip(chip.uri) }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(Theme.Layout.cardInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.Layout.cardRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Layout.cardRadius)
-                .stroke(group.running ? Theme.accentRec.opacity(0.4) : Theme.border))
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            if group.running { RecordingDot() }
-            Text(group.rangeWords(collapsed: foldable, now: now))
-                .font(Theme.Font.value).foregroundStyle(Theme.ink).lineLimit(1)
-            Text(group.countWords(collapsed: collapsed))
-                .font(Theme.Font.label).foregroundStyle(Theme.inkMuted).lineLimit(1)
-            Spacer(minLength: 8)
-            if group.running {
-                Text("recording").font(Theme.Font.label).foregroundStyle(Theme.accentRec)
-            } else if !collapsed {
-                playAll
-            }
-            if foldable {
-                // An opened card keeps its chevron, turned down, and its header folds it again.
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.inkFaint)
-                    .rotationEffect(.degrees(collapsed ? 0 : 90))
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { if foldable { session.toggleOpened(group.uri) } }
-    }
-
-    private var playAll: some View {
         Button {
-            Task { await session.playAll(group) }
+            Task { await session.playDay(day) }
         } label: {
-            Text("Play all").font(Theme.Font.label)
-                .foregroundStyle(group.chips.isEmpty ? Theme.inkDisabled : Theme.accent)
+            Text("Play day").font(Theme.Font.label).foregroundStyle(Theme.accent)
         }
         .buttonStyle(.plain)
-        .disabled(group.chips.isEmpty)
-        .help("Play all")
+        .help("Play day")
     }
 }
 
-/// `▶ 09:12:40 · 8 s` in `valueSmall` mono on `ground` with a `border` stroke; while that part
-/// plays `■` on `accent` at 15 % with an `accent` stroke. The selected part (the last one
-/// clicked, which the inspector shows) has a `borderFocus` stroke when it is not playing.
-struct PartChip: View {
-    let chip: RecordingChip
-    let playing: Bool
-    let selected: Bool
-    let action: () -> Void
+/// The strip, the column head and the rows of one day: under its head, or under an EARLIER line
+/// that has been opened.
+struct DayBody: View {
+    let day: DayRows
+    @Environment(AppSession.self) private var session
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: playing ? "stop.fill" : "play.fill").font(Theme.Font.glyph)
-                Text(chip.words()).font(Theme.Font.valueSmall).lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            DayStrip(marks: day.marks, playingURI: session.playingURI)
+                .frame(height: Theme.Layout.stripHeight)
+                .padding(.bottom, 12)
+            PartColumnHead().padding(.bottom, 4)
+            ForEach(day.rows) { row in
+                PartRowView(row: row)
+                    .padding(.top, row.gapBefore ? Theme.Layout.recordingGap : 0)
             }
-            .foregroundStyle(playing ? Theme.accent : Theme.inkSecondary)
-            .padding(.horizontal, Theme.Layout.chipInsetH)
-            .padding(.vertical, Theme.Layout.chipInsetV)
-            .background(
-                playing ? Theme.accent.opacity(0.15) : Theme.ground,
-                in: RoundedRectangle(cornerRadius: Theme.Layout.chipRadius)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.chipRadius)
-                    .stroke(playing ? Theme.accent : selected ? Theme.borderFocus : Theme.border)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Layout.chipRadius))
         }
-        .buttonStyle(.plain)
-        .help(playing ? "Stop" : "Play")
     }
 }
 
-/// Subviews left to right, a subview moved to the next line when it would cross the proposed
-/// width, by `FlowRows.lines` so the rule is the one the façade tests. Each subview takes its
-/// ideal size.
-struct FlowLayout: Layout {
-    var spacing: CGFloat
-    var lineSpacing: CGFloat
+/// An EARLIER day (10a): `›  Monday  5 parts · 3 recordings` between hairlines; a click opens the
+/// day's strip and rows in place under the line, the chevron turned down, and a second click
+/// folds it. The session holds which are open (`openedDays`).
+struct EarlierDay: View {
+    let day: DayRows
+    let opened: Bool
+    @Environment(AppSession.self) private var session
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let limit: CGFloat
-        if let w = proposal.width, w.isFinite {
-            limit = w
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "chevron.right").font(Theme.Font.glyph)
+                    .foregroundStyle(Theme.inkFaint)
+                    .rotationEffect(.degrees(opened ? 90 : 0))
+                    .frame(width: Theme.Layout.ringColumnWidth)
+                Text(day.title).font(Theme.Font.label).foregroundStyle(Theme.ink).lineLimit(1)
+                    .frame(width: Theme.Layout.earlierDayWidth, alignment: .leading)
+                Text(day.earlierWords).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if opened { PlayDayButton(day: day) }
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { session.toggleOpened(day: day.id) }
+            .help(opened ? "Fold \(day.title)" : "Show \(day.title)'s parts")
+            if opened {
+                DayBody(day: day).padding(.top, 4).padding(.bottom, 12)
+            }
+        }
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+    }
+}
+
+/// The day's 24-hour strip (10a): a `border` track `stripTrackHeight` tall, ticks at 00, 06, 12,
+/// 18 and 24 in `ground` with their labels under in `columnHead` `inkFaintest`, and a 2 pt mark
+/// at each part's start in `inkSecondary`, the playing part's in `accent` and drawn last, so it
+/// is never under another. A mark is placed by its fraction of the day and kept inside the track.
+struct DayStrip: View {
+    let marks: [DayMark]
+    let playingURI: String?
+
+    var body: some View {
+        Canvas { ctx, size in
+            // Local rather than a static of this view: a view's static is main-actor isolated,
+            // and the renderer is not guaranteed to be (docs/dev/swift-style.md, "Working as an
+            // agent on this repository").
+            let hours = [0, 6, 12, 18, 24]
+            let track = Theme.Layout.stripTrackHeight
+            let markHeight = Theme.Layout.stripMarkHeight
+            let trackTop = (markHeight - track) / 2
+            ctx.fill(
+                Path(
+                    roundedRect: CGRect(x: 0, y: trackTop, width: size.width, height: track),
+                    cornerRadius: 2), with: .color(Theme.border))
+            for h in hours {
+                let x = min(max(0, size.width * CGFloat(h) / 24), size.width - 1)
+                if h != 0, h != 24 {
+                    ctx.fill(
+                        Path(CGRect(x: x, y: trackTop, width: 1, height: track)),
+                        with: .color(Theme.ground))
+                }
+                let anchor: UnitPoint = h == 0 ? .topLeading : h == 24 ? .topTrailing : .top
+                ctx.draw(
+                    Text(String(format: "%02d", h)).font(Theme.Font.columnHead)
+                        .foregroundStyle(Theme.inkFaintest),
+                    at: CGPoint(
+                        x: h == 0 ? 0 : h == 24 ? size.width : x,
+                        y: markHeight + Theme.Layout.stripLabelGap),
+                    anchor: anchor)
+            }
+            let width = Theme.Layout.stripMarkWidth
+            let ordered =
+                marks.filter { $0.uri != playingURI } + marks.filter { $0.uri == playingURI }
+            for m in ordered {
+                let f = m.fraction.isFinite ? m.fraction : 0
+                let x = min(max(0, size.width * CGFloat(f) - width / 2), size.width - width)
+                ctx.fill(
+                    Path(CGRect(x: x, y: 0, width: width, height: markHeight)),
+                    with: .color(m.uri == playingURI ? Theme.accent : Theme.inkSecondary))
+            }
+        }
+        .accessibilityLabel("\(marks.count) parts through the day")
+    }
+}
+
+/// `STARTS  LENGTH  LEVEL  …  PEAK  SIZE` in `columnHead` `inkFaintest`, on the rows' columns.
+struct PartColumnHead: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: Theme.Layout.ringColumnWidth + Theme.Layout.bracketColumnWidth)
+            head("Starts").frame(width: Theme.Layout.startsWidth, alignment: .leading)
+            head("Length").frame(width: Theme.Layout.lengthWidth, alignment: .leading)
+            head("Level").frame(maxWidth: .infinity, alignment: .leading)
+            head("Peak").frame(width: Theme.Layout.peakWidth, alignment: .trailing)
+            head("Size").frame(width: Theme.Layout.sizeWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, Theme.Layout.partRowInset)
+    }
+
+    private func head(_ text: String) -> some View {
+        Text(text.uppercased()).font(Theme.Font.columnHead).tracking(Theme.sectionTracking)
+            .foregroundStyle(Theme.inkFaintest).lineLimit(1)
+    }
+}
+
+/// One part (10a): the ring, the gutter's bracket, `STARTS`, `LENGTH`, the level graph, `PEAK`
+/// and `SIZE`. The ring is 18 pt with ▶ in `inkSecondary`; the playing row's is a 28 pt `accent`
+/// circle with ⏸, or ▶ while paused, and the row sits on `raised`. The whole row is the button:
+/// a click plays the part, and on the playing row pauses or resumes it (`AppSession.clickRow`).
+/// The level graph is read as the row appears (`AppSession.loadLevelGraph`).
+struct PartRowView: View {
+    let row: PartRow
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let playing = session.playingURI == row.uri
+        let paused = playing && session.isPaused
+        let words = row.words()
+        Button {
+            Task { await session.clickRow(row.uri) }
+        } label: {
+            HStack(spacing: 0) {
+                ring(playing: playing, paused: paused)
+                    .frame(width: Theme.Layout.ringColumnWidth)
+                bracket.frame(width: Theme.Layout.bracketColumnWidth)
+                Text(words.starts).font(Theme.Font.value).foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                    .frame(width: Theme.Layout.startsWidth, alignment: .leading)
+                Text(words.length).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
+                    .lineLimit(1)
+                    .frame(width: Theme.Layout.lengthWidth, alignment: .leading)
+                LevelBars(levels: session.levelGraphs[row.uri] ?? [], playing: playing)
+                    .frame(height: Theme.Layout.levelGraphHeight)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(words.peak).font(Theme.Font.value)
+                    .foregroundStyle(row.clipped ? Theme.accentRec : Theme.inkSecondary)
+                    .lineLimit(1)
+                    .frame(width: Theme.Layout.peakWidth, alignment: .trailing)
+                Text(words.size).font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
+                    .lineLimit(1)
+                    .frame(width: Theme.Layout.sizeWidth, alignment: .trailing)
+            }
+            .padding(.horizontal, Theme.Layout.partRowInset)
+            .frame(height: Theme.Layout.partRowHeight)
+            .background(
+                playing ? Theme.raised : Color.clear,
+                in: RoundedRectangle(cornerRadius: Theme.Layout.partRowRadius)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(playing ? (paused ? "Resume" : "Pause") : "Play")
+        .onAppear { session.loadLevelGraph(row) }
+    }
+
+    @ViewBuilder private func ring(playing: Bool, paused: Bool) -> some View {
+        if playing {
+            let size = Theme.Layout.playingRingSize
+            Image(systemName: paused ? "play.fill" : "pause.fill")
+                .font(Theme.Font.playingGlyph).foregroundStyle(Theme.ground)
+                .frame(width: size, height: size)
+                .background(Theme.accent, in: Circle())
         } else {
-            limit = .greatestFiniteMagnitude
-        }
-        let lines = lineIndices(sizes, width: limit)
-        var height: CGFloat = 0
-        var widest: CGFloat = 0
-        for (n, line) in lines.enumerated() {
-            var lineWidth: CGFloat = 0
-            var lineHeight: CGFloat = 0
-            for (k, i) in line.enumerated() {
-                lineWidth += sizes[i].width + (k == 0 ? 0 : spacing)
-                lineHeight = max(lineHeight, sizes[i].height)
-            }
-            widest = max(widest, lineWidth)
-            height += lineHeight + (n == 0 ? 0 : lineSpacing)
-        }
-        let width = limit == .greatestFiniteMagnitude ? widest : limit
-        return CGSize(width: width, height: height)
-    }
-
-    func placeSubviews(
-        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
-    ) {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        var y = bounds.minY
-        for line in lineIndices(sizes, width: bounds.width) {
-            var x = bounds.minX
-            var lineHeight: CGFloat = 0
-            for i in line {
-                subviews[i].place(
-                    at: CGPoint(x: x, y: y), anchor: .topLeading,
-                    proposal: ProposedViewSize(sizes[i]))
-                x += sizes[i].width + spacing
-                lineHeight = max(lineHeight, sizes[i].height)
-            }
-            y += lineHeight + lineSpacing
+            let size = Theme.Layout.logRingSize
+            Image(systemName: "play.fill")
+                .font(Theme.Font.glyph).foregroundStyle(Theme.inkSecondary)
+                .frame(width: size, height: size)
+                .overlay(Circle().stroke(Theme.border))
         }
     }
 
-    private func lineIndices(_ sizes: [CGSize], width: CGFloat) -> [[Int]] {
-        FlowRows.lines(
-            widths: sizes.map { Double($0.width) }, spacing: Double(spacing), width: Double(width))
+    /// The recording's bracket down the gutter: a 1 pt `border` line at the column's centre,
+    /// from this row's middle down on its first row, through the middle rows, and to the middle
+    /// on its last, so the line spans the recording's rows from the first part's ring line to the
+    /// last's. The rows of one recording have no gap between them, so the pieces join.
+    @ViewBuilder private var bracket: some View {
+        let line = Rectangle().fill(Theme.border).frame(width: 1)
+        switch row.bracket {
+        case .none:
+            Color.clear
+        case .first:
+            VStack(spacing: 0) {
+                Color.clear
+                line
+            }
+        case .middle:
+            line.frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .last:
+            VStack(spacing: 0) {
+                line
+                Color.clear
+            }
+        }
+    }
+}
+
+/// The part's level graph (10a): one bar a column (`LevelGraph`), `levelBarWidth` wide at
+/// `levelBarPitch`, centred on the row's middle, its height the column's level over the graph's
+/// height with `levelBarMinHeight` for the floor so silence still shows the part's length;
+/// `inkTertiary`, the playing part's `accent`. Empty while the file is read or when it cannot be.
+/// Columns that would cross the space given are left out.
+struct LevelBars: View {
+    let levels: [Float]
+    let playing: Bool
+
+    var body: some View {
+        Canvas { ctx, size in
+            let pitch = Theme.Layout.levelBarPitch
+            let width = Theme.Layout.levelBarWidth
+            let colour = playing ? Theme.accent : Theme.inkTertiary
+            for (i, v) in levels.enumerated() {
+                let x = CGFloat(i) * pitch
+                guard x + width <= size.width else { break }
+                let level = v.isFinite ? CGFloat(min(max(v, 0), 1)) : 0
+                let h = max(Theme.Layout.levelBarMinHeight, level * size.height)
+                ctx.fill(
+                    Path(CGRect(x: x, y: (size.height - h) / 2, width: width, height: h)),
+                    with: .color(colour))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

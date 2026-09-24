@@ -590,8 +590,8 @@ struct SquelchTrack: View {
 /// the frequency) while the live sink is attached, `muted · GMRS CH3` while it is detached, and
 /// `playing a part · GMRS CH3 held` while a kept part plays and the live channel is held silent.
 /// In the Library's player (`library`) the live channel heard between parts reads `GMRS CH3 ·
-/// live` ("Decided 2026-09-25: the Library", "The player"). The output device's name is the
-/// caption's tooltip.
+/// live` ("Decided 2026-09-25: the Library", "The player"), and a part playing or paused there
+/// `live radio held while this plays` (10a). The output device's name is the caption's tooltip.
 struct VolumeControl: View {
     @Environment(AppSession.self) private var session
     var library = false
@@ -613,6 +613,7 @@ struct VolumeControl: View {
     }
 
     private func caption(_ sink: Leyline_V1_Sink?) -> String {
+        if library, session.playingURI != nil { return "live radio held while this plays" }
         guard let name = session.listeningName else { return "not playing" }
         if session.playingURI != nil { return "playing a part · \(name) held" }
         if library, sink != nil { return "\(name) · live" }

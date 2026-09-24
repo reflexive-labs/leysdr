@@ -3,12 +3,12 @@
 // The Library, the window's second place (docs/design/app-design-handoff-m3.md, "Decided
 // 2026-09-25: the Library"): what has been kept, in place of the whole body under the toolbar.
 // A 236 pt sidebar with the search field, the channels and the store footer; the channel page in
-// the centre (`RecordingsPage.swift`, 8c); in the inspector the part (`PartInspector.swift`) or,
+// the centre (`RecordingsPage.swift`, 10a); in the inspector the part (`PartInspector.swift`) or,
 // with none selected, the channel's lines; and the player in the transport bar's place
 // (`PlayerBar.swift`). The live radio keeps running underneath: its capture, channel and feeds
 // are the session's, and a part that plays holds the live channel silent until it ends
 // (`AppSession.play(partURI:)`). Nothing here is state of its own beyond the delete alert's:
-// the selection, the query and the opened cards are the session's.
+// the selection, the query and the opened days are the session's.
 
 import LeylineClient
 import LeylineProto
@@ -37,10 +37,11 @@ struct LibraryBody: View {
     }
 }
 
-/// The search field at the top, a `CHANNELS` section with one row per channel
-/// (`Recordings.channels`, running ones first and then by most recent activity, 8c), and the store
-/// footer at the foot. A click selects a row and shows its page; a click on the selected row keeps
-/// it, so the centre is never blank. With nothing kept the body is one sentence.
+/// The search field at the top, one row per frequency under it with no section header
+/// (`Recordings.channels`, running ones first and then by most recent activity; 10a: a mode or
+/// width change does not split a channel), and the store footer at the foot. A click selects a
+/// row and shows its page; a click on the selected row keeps it, so the centre is never blank.
+/// With nothing kept the body is one sentence.
 struct LibrarySidebar: View {
     @Environment(AppSession.self) private var session
 
@@ -58,9 +59,7 @@ struct LibrarySidebar: View {
                 .padding(.horizontal, 14).padding(.top, 14)
                 Spacer(minLength: 0)
             } else {
-                search
-                SectionHeader(text: "Channels")
-                    .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 6)
+                search.padding(.bottom, 10)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if rows.isEmpty {
@@ -159,7 +158,7 @@ struct ChannelSummary: View {
     }
 }
 
-/// `GMRS CH3` over `4 recordings · latest now`: the title in `label`, a bookmark's name or the
+/// `GMRS CH3` over `19 recordings · today`: the title in `label`, a bookmark's name or the
 /// frequency in mono; the subtitle in `footnote` `inkFaint`; a 6 pt `accentRec` dot at the right
 /// while one of its recordings runs; `raised` ground when selected (M3 handoff, 8c, kept by the
 /// Library). The tooltip gives the frequency and mode a name hides.

@@ -123,8 +123,10 @@ enum Theme {
         static let aside = SwiftUI.Font.system(size: 11.5)
         /// The play and stop glyphs in a kept row's ring, and the player's ⏮ and ⏭.
         static let glyph = SwiftUI.Font.system(size: 8, weight: .semibold)
-        /// The glyph in the transport bar's 44 pt circle: the player's ▶ and ■.
+        /// The glyph in the transport bar's 44 pt circle: the player's ▶ and ⏸.
         static let transportGlyph = SwiftUI.Font.system(size: 16, weight: .bold)
+        /// ⏸ or ▶ in the Library's playing row's 28 pt circle (10a).
+        static let playingGlyph = SwiftUI.Font.system(size: 10, weight: .bold)
     }
 
     /// `0.14em` at 9.5 pt; was `0.16em`, brought down a step on 2026-09-19.
@@ -142,10 +144,10 @@ enum Theme {
         static let transportHeight: CGFloat = 88
         /// The transport bar's circle, the speaker in the Radio and ▶/■ in the Library's player.
         static let transportButton: CGFloat = 44
-        /// The player's words beside its buttons: wide enough for `GMRS CH3 · Tuesday 14:02 ·
-        /// part 5 of 11` in `Font.label` (about 250 pt, a guess until the Mac); a longer title
-        /// truncates.
-        static let playerWordsWidth: CGFloat = 260
+        /// The player's words beside its buttons: wide enough for `GMRS CH3 · Yesterday` in
+        /// `Font.label` and `14:03:20 · part 11 of 11` in `Font.value` (a guess until the Mac); a
+        /// longer title truncates.
+        static let playerWordsWidth: CGFloat = 220
         /// The inspector, fixed on the right (M2 handoff, "The panel"); the window works
         /// without it.
         static let inspectorWidth: CGFloat = 312
@@ -191,24 +193,54 @@ enum Theme {
         /// The store footer's bar at the sidebar's foot (M3 handoff, "In every screen").
         static let storeBarHeight: CGFloat = 3
         /// The Library's channel page (M3 handoff, 8c): its header is 56 pt, as the
-        /// handoff specifies; the rest are read off the 8c screen (`tmp/recordings3.png`, 1.31
-        /// device pixels a point there): the page's side and bottom inset, the gap above a day's
-        /// header, the gap between cards, a card's inset and corner, and a chip's gap, inset and
-        /// 4 pt corner.
+        /// handoff specifies; the page's side and bottom inset and the gap above a day's head were
+        /// read off the 8c screen (`tmp/recordings3.png`, 1.31 device pixels a point there).
         static let pageHeaderHeight: CGFloat = 56
         static let pageInset: CGFloat = 24
         static let pageDayGap: CGFloat = 20
-        static let cardGap: CGFloat = 10
-        static let cardInset: CGFloat = 14
-        static let cardRadius: CGFloat = 6
-        static let chipGap: CGFloat = 8
-        static let chipInsetH: CGFloat = 8
-        static let chipInsetV: CGFloat = 5
-        static let chipRadius: CGFloat = 4
-        /// The inspector on a part: the 3 pt position bar, and the table's label column at the
-        /// reading rows' 62 pt so the two panels line up.
+        /// The page's rows (M3 handoff, 10a). The handoff gives the ring (18 pt), the playing
+        /// circle (28 pt), the bracket's 12 pt column, the 10 pt gap between recordings, the
+        /// level graph's 14 pt, the strip's 6 pt track and its 2 pt marks; the row's height and
+        /// inset, the column widths, the bars' width and pitch and the strip's mark height are
+        /// read off `tmp/library.png` and are guesses until the Mac. The ring column is the
+        /// playing circle's width, so the times do not move when a row starts playing.
+        static let partRowHeight: CGFloat = 30
+        static let partRowInset: CGFloat = 8
+        static let partRowRadius: CGFloat = 6
+        static let playingRingSize: CGFloat = 28
+        static let ringColumnWidth: CGFloat = playingRingSize
+        static let bracketColumnWidth: CGFloat = 12
+        static let recordingGap: CGFloat = 10
+        /// Wide enough for `14:03:03` and `part 11` in `Font.value`, and for `25 s`.
+        static let startsWidth: CGFloat = 72
+        static let lengthWidth: CGFloat = 52
+        /// Wide enough for `−60.0 dBFS` and `372 KB`, right-aligned.
+        static let peakWidth: CGFloat = 84
+        static let sizeWidth: CGFloat = 64
+        /// A level graph's bar and the distance from one to the next: 40 columns are 160 pt.
+        static let levelGraphHeight: CGFloat = 14
+        static let levelBarWidth: CGFloat = 2
+        static let levelBarPitch: CGFloat = 4
+        /// A column at the floor is still drawn, so a silent stretch shows the part's length.
+        static let levelBarMinHeight: CGFloat = 2
+        /// The day's 24-hour strip: the track, a part's mark (the track is centred on it), the
+        /// gap to the hour labels under it, and the whole strip with the labels.
+        static let stripTrackHeight: CGFloat = 6
+        static let stripMarkWidth: CGFloat = 2
+        static let stripMarkHeight: CGFloat = 10
+        static let stripLabelGap: CGFloat = 3
+        static let stripHeight: CGFloat = 24
+        /// An EARLIER line's day name column, wide enough for `Wednesday` and `12 Sep`.
+        static let earlierDayWidth: CGFloat = 120
+        /// The player's progress track, and the inspector's tables' label column at the reading
+        /// rows' 62 pt so the two panels line up.
         static let partProgressHeight: CGFloat = 3
         static let partTableLabelWidth: CGFloat = readingLabelWidth
+        /// The place switch (10a): the control's 6 pt corners, and how far inside its stroke the
+        /// selected segment's ground sits, its corners smaller by the same amount so the two
+        /// curves stay parallel and the segment reads as raised.
+        static let placeSwitchRadius: CGFloat = 6
+        static let placeSwitchInset: CGFloat = 2
         /// The inspector's audio ladder (M2 handoff, "Region 3b: audio"): a 64 pt plot beside a
         /// 22 pt dB gutter, eleven 14 pt bars in 22 pt slots with a gap before rms and peak,
         /// 272 pt in all inside the panel's 280. The rows under the plot are the labels and the

@@ -226,44 +226,60 @@ it runs on a Mac (`../plans/app.md`, APP-5); the façade's rules are tested in `
 **Two places: the Radio and the Library** (`MainWindow.swift`, `LibraryView.swift`,
 `PlayerBar.swift`; `../design/app-design-handoff-m3.md`, "Decided 2026-09-25: the Library").
 The toolbar's leading edge has a `Radio | Library` switch (`PlaceSwitch`, two plain buttons on
-the toolbar's `chrome` inside a 1 pt `border` stroke, the place showing on a `border` ground in
-`ink` and the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which sets `AppSession.place`, remembered
+the toolbar's `chrome` inside a 1 pt `border` stroke, styled as 10a's segmented control beside
+the traffic lights: the place showing raised on a `border` ground 2 pt inside the stroke in
+`ink`, the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which sets `AppSession.place`, remembered
 in the defaults. `MainWindow` switches its whole body under the toolbar on it: `RadioBody` is the
 window above, with the sidebar holding only bands and bookmarks, and `LibraryBody` is what has
 been kept. The radio runs the same in both, because the capture, the channel, the sink and the
 feeds are the session's; the Radio's Metal view is made again on the way back and draws the
 feed's rows, and the audio ladder unsubscribes while the Library shows. The Library's sidebar
-(`LibrarySidebar`, 236 pt) is a search field, a `CHANNELS` section of one row per frequency and
-mode (`Recordings.channels` over `AppSession.recordings`, the `ListResources(RECORDING)` listing
-re-read on every record job change and on adoption), titled by the matching bookmark or the
-frequency, running rows first and then by most recent activity, and the store footer, which
-draws the used fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`) and `3.3 GB of 20
-GB · oldest go first` (`Recordings.storeWords`). With nothing kept its body is one sentence. The
-first row is selected on arrival and whenever the listing arrives with none selected, and a
-click on a row always selects it, so the centre is never blank. The centre is that channel's page
-(`RecordingsPage`, 8c): a header with a Record transmissions switch on the page's frequency and
-mode (one job state with the log's switch, the click in flight keyed by frequency and mode) and
-Tune, which goes to the Radio by the bookmark path; then the recordings as cards grouped `today`,
-`yesterday`, the day before by name and a folded `earlier` (`Recordings.days`), each card's parts
-as chips that wrap (`FlowLayout` over `FlowRows.lines`). The cards come from the listing and each
-recording's manifest, read through `ResolveLocalPath` into the session's `manifests` and read
-again on each of its job's events. A chip's click selects the part and plays it by the log's playback path;
-Play all queues the parts and starts each on the tombstone of the one before (`PlayQueue`), with
-the live sink held detached until the last ends. The inspector (`LibraryInspector`) is the part
-selected or playing (`PartInspector`: its words from `Recordings.partWords` and `partTable`, Show
-in Finder, and Delete recording…, `Resources.DeleteResource` on the whole recording, disabled
-with the daemon's refusal while its job runs), else the channel's lines (`ChannelSummary`: name,
+(`LibrarySidebar`, 236 pt) is a search field, one row per frequency with no section header
+(`Recordings.channels` over `AppSession.recordings`, the `ListResources(RECORDING)` listing
+re-read on every record job change and on adoption; since 10a a mode or width change does not
+split a channel, and the row takes the newest recording's mode), titled by the matching bookmark
+or the frequency, running rows first and then by most recent activity, and the store footer,
+which draws the used fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`) and `3.3
+GB of 20 GB · oldest go first` (`Recordings.storeWords`). With nothing kept its body is one
+sentence. The first row is selected on arrival and whenever the listing arrives with none
+selected, and a click on a row always selects it, so the centre is never blank. The centre is
+that channel's page (`RecordingsPage`, 10a): a header with a Record transmissions switch on the
+page's frequency and mode (one job state with the log's switch, the click in flight keyed by
+frequency and mode) and Tune, which goes to the Radio by the bookmark path; then the parts as
+rows by the day each started (`Recordings.dayRows`): `today`, `yesterday` and the day before by
+name, each with its head, `Play day` (the day oldest first, through `PlayQueue.start(parts:)`) and
+a 24-hour strip (`DayStrip`, a `Canvas`), then `EARLIER` with one line a day that opens in place
+(`AppSession.openedDays`). A row (`PartRowView`) is the ring, the gutter's bracket for a
+recording of several parts, the start, the length, a level graph (`LevelBars` over
+`LevelGraph.columns`, the part's WAV read once off the main actor through `ResolveLocalPath`
+and cached in `AppSession.levelGraphs`), the peak (`accentRec` when `clipped_ms` > 0) and the
+size (`PartRow.words`). The rows come from each recording's manifest, read through
+`ResolveLocalPath` into the session's `manifests` and read again on each of its job's events; a
+recording with no parts, or no manifest read yet, has no row. A row's click selects the part and
+plays it by the log's playback path, and on the playing row pauses or resumes it
+(`AppSession.clickRow`, `pausePlayback`, `Control.SetPlaybackPaused`; `isPaused` is the mirror's
+`Playback.paused`); Play all and Play day queue parts and start each on the tombstone of the one
+before (`PlayQueue`), with the live sink held detached until the last ends. The page has no
+notice line of its own: a refusal made there is the session's notice, which the Radio shows. The
+inspector (`LibraryInspector`) is the part selected or playing (`PartInspector`, its words from
+`Recordings.partInspectorWords`: the part's place, time, Peak, Mean, Overs and the clipped
+sentence; the recording's Span, Ended, Radio, Gain, Squelch and Files with `Play all 4`; Show in
+Finder, and Delete recording…, `Resources.DeleteResource` on the whole recording, disabled with
+the daemon's refusal while its job runs), else the channel's lines (`ChannelSummary`: name,
 frequency and mode, recordings and size, Show in Finder for the newest recording). The player
-(`PlayerBar`) takes the transport bar's place: ▶/■ plays `AppSession.player` (the part playing,
-else the selected one, else the first part of the top card) or stops it, ⏮ and ⏭ move within
-that recording (`Recordings.neighbourPart`, disabled at the ends; while a part plays the
-neighbour starts, and a Play all walks on from it through `PlayQueue.start(_:at:)`), the two
-lines and the track's ends are `Recordings.playerWords`, and the volume caption reads `GMRS CH3 ·
-live` between parts. The Library menu puts Play/Stop on space and Previous/Next Part on ← and →;
-the Tune menu's bare arrows and space are disabled in the Library, both menus act through
-`pressSpace`/`pressArrow` for the place showing, and a text field being typed into gets the key
-back (`TextFieldKeys`). Unverified until the Mac (`../plans/app.md`, APP-5b); the façade's rules
-are tested in `RecordingPagesTests` and against the daemon's manifest in the daemon-backed suite.
+(`PlayerBar`) takes the transport bar's place: ⏮, the circle and ⏭. The circle pauses and
+resumes the window's playback while one exists and otherwise plays `AppSession.player` (the part
+playing, else the selected one, else the page's first row); ⏮ and ⏭ move within that recording
+(`Recordings.neighbourPart`, disabled at the ends; while a part plays the neighbour starts, and a
+Play all walks on from it through `PlayQueue.start(_:at:)`); the two lines (`GMRS CH3 · Today`,
+`14:03:20 · part 4 of 4`) and the track's ends are `Recordings.playerWords`, and the volume
+caption reads `GMRS CH3 · live` between parts and `live radio held while this plays` while one
+plays or is paused. The Library menu puts Play, Pause or Resume on space, Previous/Next Part on ←
+and →, and Stop with no key; the Tune menu's bare arrows and space are disabled in the Library,
+both menus act through `pressSpace`/`pressArrow` for the place showing, and a text field being
+typed into gets the key back (`TextFieldKeys`). Unverified until the Mac (`../plans/app.md`,
+APP-5b and APP-5c); the façade's rules are tested in `RecordingPagesTests` and against the
+daemon's manifest in the daemon-backed suite.
 
 **The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`; the handoff's "Region 3b:
 audio"). Between the reading and the log, the panel draws the meter `ley levels --watch` draws:

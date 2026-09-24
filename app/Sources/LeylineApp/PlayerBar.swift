@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The Library's player, in the transport bar's place and at its 88 pt, with the bar's layout
-// rule (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the Library", "The player"):
-// the 44 pt `accent` circle with ▶ or ■, ⏮ and ⏭ for the previous and next part of the same
-// recording, the part's two lines, a progress track, and the volume with its caption. The track
-// is display only: the engine's playback `position` is not writable, so there is no seeking in
-// v1. The part is `AppSession.player` (the one playing, else the selected part, else the first
-// part of the selected channel's top card); the words are the façade's (`Recordings.playerWords`),
-// so the Linux tests hold them; the position is the mirror's, which the daemon publishes four
-// times a second while a part plays. Space, ← and → are the Library menu's (`LeylineApp.swift`).
+// rule (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the Library", "The player",
+// revised by "10a · The Library, revised"): ⏮, the 44 pt `accent` circle with ⏸ while a part
+// plays and ▶ otherwise, ⏭, the part's two lines (`GMRS CH3 · Today`, `14:03:20 · part 4 of 4`),
+// a progress track, and the volume with its caption. ⏸ is a pause (`Control.SetPlaybackPaused`,
+// the position held), not 8c's stop. The track is display only: there is no seeking in v1. The
+// part is `AppSession.player` (the one playing, else the selected part, else the page's first
+// row); the words are the façade's (`Recordings.playerWords`), so the Linux tests hold them; the
+// position and the pause are the mirror's playback, which the daemon publishes four times a
+// second while a part plays and once on each pause and resume. Space, ← and → are the Library
+// menu's (`LeylineApp.swift`).
 
 import LeylineClient
 import LeylineProto
@@ -19,7 +21,8 @@ struct PlayerBar: View {
 
     var body: some View {
         let player = session.player
-        let playing = session.playingURI != nil
+        // A part is sounding: a playback exists and is not paused. The circle shows ⏸ then.
+        let sounding = session.playback != nil && !session.isPaused
         let words = player.map { p in
             let isPlaying = session.playingURI == p.uri
             let playback = isPlaying ? session.playback : nil
@@ -29,13 +32,14 @@ struct PlayerBar: View {
                 positionRate: playback?.sampleRate ?? 0, now: Date())
         }
         HStack(alignment: .top, spacing: 20) {
-            PlayerButton(playing: playing, enabled: playing || player != nil)
-                .frame(maxHeight: .infinity)
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 PartStepButton(symbol: "backward.end.fill", enabled: session.canStepPart(-1)) {
                     Task { await session.stepPart(-1) }
                 }
                 .help("Previous part")
+                PlayerButton(
+                    sounding: sounding,
+                    enabled: session.playback != nil || session.playingURI != nil || player != nil)
                 PartStepButton(symbol: "forward.end.fill", enabled: session.canStepPart(1)) {
                     Task { await session.stepPart(1) }
                 }
@@ -75,10 +79,12 @@ struct PlayerBar: View {
     }
 }
 
-/// The player's ▶ and ■ in the transport bar's 44 pt `accent` circle: ▶ plays the player's part,
-/// ■ stops the part playing and a Play all with it (`AppSession.togglePlayer`).
+/// The player's ⏸ and ▶ in the transport bar's 44 pt `accent` circle (10a): ⏸ while a part
+/// sounds pauses it, ▶ resumes a paused one or, with no playback, plays the player's part
+/// (`AppSession.togglePlayer`).
 struct PlayerButton: View {
-    let playing: Bool
+    /// A playback exists and is not paused.
+    let sounding: Bool
     let enabled: Bool
     @Environment(AppSession.self) private var session
 
@@ -90,18 +96,19 @@ struct PlayerButton: View {
                 let size = Theme.Layout.transportButton
                 Circle().fill(enabled ? Theme.accent : Theme.border)
                     .frame(width: size, height: size)
-                Image(systemName: playing ? "stop.fill" : "play.fill")
+                Image(systemName: sounding ? "pause.fill" : "play.fill")
                     .font(Theme.Font.transportGlyph)
                     .foregroundStyle(enabled ? Theme.ground : Theme.inkDisabled)
             }
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .help(playing ? "Stop" : "Play")
+        .help(sounding ? "Pause" : "Play")
     }
 }
 
-/// ⏮ or ⏭: a bordered mini button, disabled at the recording's ends.
+/// ⏮ or ⏭ beside the circle, as 10a draws them: a bare glyph in `inkTertiary`, `inkDisabled` at
+/// the recording's ends, where it is disabled.
 struct PartStepButton: View {
     let symbol: String
     let enabled: Bool
@@ -110,9 +117,28 @@ struct PartStepButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol).font(Theme.Font.glyph)
+                .foregroundStyle(enabled ? Theme.inkTertiary : Theme.inkDisabled)
+                .frame(width: Theme.Layout.logRingSize, height: Theme.Layout.logRingSize)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
-        .controlSize(.mini)
+        .buttonStyle(.plain)
         .disabled(!enabled)
+    }
+}
+
+/// The 3 pt `accent` bar on a `border` track, full width, as far as the part has played; empty
+/// while it is not playing.
+struct PartProgressBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Theme.border)
+                Rectangle().fill(Theme.accent)
+                    .frame(width: geo.size.width * min(max(fraction.isFinite ? fraction : 0, 0), 1))
+            }
+        }
+        .frame(height: Theme.Layout.partProgressHeight)
     }
 }

@@ -14,9 +14,9 @@ import XCTest
 @testable import LeylineClient
 
 final class RecordingsTests: XCTestCase {
-    /// Two closed parts of a gated audio recording on `cap_a`, dated by one anchor; the second
-    /// part's levels were never measured, so its peak and mean are absent. No squelch key: the
-    /// recording's squelch is off.
+    /// Two closed parts of a gated audio recording on `cap_a`, dated by one anchor; the first
+    /// clipped for 0.4 s, the second's levels were never measured, so its peak, mean and clipped
+    /// time are absent. No squelch key: the recording's squelch is off.
     private let manifestJSON = """
         {
           "job_id": "job_a",
@@ -40,7 +40,7 @@ final class RecordingsTests: XCTestCase {
           "parts": [
             { "part": 1, "file": "p1.wav", "start_sample": 2400000, "end_sample": 7200000,
               "samples": 96000, "bytes": 192044, "peak_dbfs": -6.2, "mean_dbfs": -18.4,
-              "squelch_opens": 2 },
+              "squelch_opens": 2, "clipped_ms": 400 },
             { "part": 2, "file": "p2.wav", "start_sample": 12000000, "end_sample": 14400000,
               "samples": 48000, "bytes": 96044, "squelch_opens": 1 }
           ],
@@ -83,6 +83,8 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(m.parts.map(\.part), [1, 2])
         XCTAssertEqual(m.parts[0].peakDBFS, -6.2)
         XCTAssertNil(m.parts[1].peakDBFS, "a level nobody measured stays absent")
+        XCTAssertEqual(m.parts[0].clippedMs, 400)
+        XCTAssertNil(m.parts[1].clippedMs, "the daemon leaves the key out when nothing clipped")
         XCTAssertEqual(m.parts.map(\.captureID), ["cap_a", "cap_a"], "the anchors' one capture")
         XCTAssertEqual(m.coverageGaps.first?.reason, "squelch closed")
         XCTAssertEqual(m.bytes, 288_088)
@@ -491,7 +493,7 @@ final class RecordingsTests: XCTestCase {
             })
     }
 
-    func testChannelsGroupByFrequencyAndModeNewestActivityFirst() {
+    func testChannelsGroupByFrequencyNewestActivityFirst() {
         let recordings = [
             listed("job_a", hz: 462_612_500, startedHoursAgo: 1, endedHoursAgo: 0.5),
             listed("job_b", hz: 462_612_500, startedHoursAgo: 30, endedHoursAgo: 29),
@@ -506,14 +508,29 @@ final class RecordingsTests: XCTestCase {
         let jobs = [job("job_e", .running, hz: 462_562_500), job("job_a", .completed, hz: 1)]
         let rows = Recordings.channels(recordings, bookmarks: bookmarks, jobs: jobs)
         XCTAssertEqual(
-            rows.map(\.title), ["462.5625", "GMRS CH3", "2 m calling", "146.5200"],
-            "running first, then newest end; AM on 146.52 is not the NFM bookmark")
-        XCTAssertEqual(rows.map(\.running), [true, false, false, false])
+            rows.map(\.title), ["462.5625", "GMRS CH3", "2 m calling"],
+            "running first, then newest end; AM and NFM on 146.52 are one channel (10a)")
+        XCTAssertEqual(rows.map(\.running), [true, false, false])
         XCTAssertEqual(rows[1].recordings.map(\.jobID), ["job_a", "job_b"], "newest first")
-        XCTAssertEqual(rows[0].subtitle(now: now, calendar: utc), "1 recording · latest now")
-        XCTAssertEqual(rows[1].subtitle(now: now, calendar: utc), "2 recordings · latest today")
+        XCTAssertEqual(rows[2].recordings.map(\.jobID), ["job_c", "job_d"])
+        XCTAssertEqual(rows[2].mode, .nfm, "the newest recording's mode")
+        XCTAssertEqual(rows[2].id, "146520000", "a row is its frequency")
+        XCTAssertEqual(rows[0].subtitle(now: now, calendar: utc), "1 recording · now")
+        XCTAssertEqual(rows[1].subtitle(now: now, calendar: utc), "2 recordings · today")
+        XCTAssertEqual(rows[2].subtitle(now: now, calendar: utc), "2 recordings · today")
+        // With the AM recording the newer, the row takes AM and loses the NFM bookmark's name.
+        let amNewer = Recordings.channels(
+            [
+                listed("job_c", hz: 146_520_000, startedHoursAgo: 72, endedHoursAgo: 71),
+                listed("job_d", hz: 146_520_000, mode: "AM", startedHoursAgo: 3, endedHoursAgo: 2),
+            ], bookmarks: bookmarks, jobs: [])
+        XCTAssertEqual(amNewer.map(\.title), ["146.5200"])
+        XCTAssertEqual(amNewer[0].mode, .am)
+        let monday = Recordings.channels(
+            [listed("job_d", hz: 146_520_000, startedHoursAgo: 72, endedHoursAgo: 71)],
+            bookmarks: [], jobs: [])
         XCTAssertEqual(
-            rows[3].subtitle(now: now, calendar: utc), "1 recording · latest Mon",
+            monday[0].subtitle(now: now, calendar: utc), "1 recording · Mon",
             "71 hours before Thursday noon is Monday")
         XCTAssertEqual(Recordings.channels([], bookmarks: bookmarks, jobs: jobs), [])
     }

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The inspector on a part (docs/design/app-design-handoff-m3.md, 8c, "The inspector, on a part",
-// and its screen): the Library's inspector while a part is selected or playing
-// (`AppSession.inspectedPart`; "Decided 2026-09-25: the Library"). The part's place in its recording,
-// its time and length, the playback's position (the mirror's `Playback.position`; there is no
-// seeking in v1, so the bar is display only), the levels and settings the manifest recorded, and
-// the two things that can be done to a recording from here: its file shown in Finder, and the
-// whole recording deleted. Every word is the façade's (`Recordings.partWords`, `partTable`,
-// `deleteWords`), so the Linux tests hold them.
+// The inspector on a part (docs/design/app-design-handoff-m3.md, "10a · The Library, revised",
+// "The inspector stops repeating the transport"): the Library's inspector while a part is
+// selected or playing (`AppSession.inspectedPart`). The part's place in its recording, its time
+// and length, its levels and overs, and when the capture clipped during it one sentence on what
+// to do next; then the recording it belongs to, with Play all, its span, how it ended and what it
+// was recorded with; then the two things that can be done to a recording from here: its file
+// shown in Finder, and the whole recording deleted. No progress bar: the player has it. Every word
+// is the façade's (`Recordings.partInspectorWords`), so the Linux tests hold them.
 
 import LeylineClient
 import LeylineProto
@@ -23,36 +23,42 @@ struct PartInspector: View {
 
     var body: some View {
         let uri = manifest.uri(of: part)
-        let playback = session.playingURI == uri ? session.playback : nil
-        let playing = session.playingURI == uri
-        let words = Recordings.partWords(
-            part: part, of: manifest, positionFrames: playing ? (playback?.position ?? 0) : nil,
-            positionRate: playback?.sampleRate ?? 0, now: Date())
-        let deleteLine = Recordings.deleteWords(parts: group.parts)
+        let words = Recordings.partInspectorWords(
+            part: part, of: manifest, running: group.running)
         let title = session.selectedChannel?.title ?? Frequency.format(manifest.frequencyHz)
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(words.title).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 8) {
+                ColumnHeadText(text: words.heading)
                 Text(words.time).font(Theme.Font.name).monospacedDigit()
                     .foregroundStyle(Theme.ink).lineLimit(1)
-                PartProgressBar(fraction: words.fraction).padding(.top, 4)
-                Text(words.progress).font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
-                    .lineLimit(1)
+                    .padding(.bottom, 4)
+                PartTable(
+                    rows: words.levels,
+                    ink: { row in
+                        row.label == "Peak" && words.clipped ? Theme.accentRec : Theme.inkSecondary
+                    })
+                if let sentence = words.clippedSentence {
+                    Text(sentence).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                }
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(Recordings.partTable(part: part, of: manifest, running: group.running)) {
-                    row in
-                    HStack(spacing: 0) {
-                        Text(row.label).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
-                            .frame(width: Theme.Layout.partTableLabelWidth, alignment: .leading)
-                        Text(row.value).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline) {
+                    ColumnHeadText(text: "Recording")
+                    Spacer(minLength: 8)
+                    Button {
+                        Task { await session.playAll(group) }
+                    } label: {
+                        Text(words.playAll).font(Theme.Font.label).foregroundStyle(Theme.accent)
                     }
+                    .buttonStyle(.plain)
+                    .help("Play all")
                 }
+                .padding(.bottom, 4)
+                PartTable(rows: words.recording, ink: { _ in Theme.inkSecondary })
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -79,7 +85,7 @@ struct PartInspector: View {
                             : "Delete every part of this recording")
                 }
                 .buttonStyle(.bordered)
-                Text(deleteLine).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                Text(words.deleteLine).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
@@ -96,24 +102,39 @@ struct PartInspector: View {
                 Task { await session.deleteRecording(uri: group.uri) }
             }
         } message: {
-            Text(deleteLine)
+            Text(words.deleteLine)
         }
     }
 }
 
-/// The 3 pt `accent` bar on a `border` track, full width, as far as the part has played; empty
-/// while it is not playing.
-struct PartProgressBar: View {
-    let fraction: Double
+/// `PART 4 OF 4`, `RECORDING`: an inspector section's head in `columnHead`, tracked as the
+/// section headers are, `inkFaint`.
+struct ColumnHeadText: View {
+    let text: String
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Rectangle().fill(Theme.border)
-                Rectangle().fill(Theme.accent)
-                    .frame(width: geo.size.width * min(max(fraction.isFinite ? fraction : 0, 0), 1))
+        Text(text.uppercased()).font(Theme.Font.columnHead).tracking(Theme.sectionTracking)
+            .foregroundStyle(Theme.inkFaint).lineLimit(1)
+    }
+}
+
+/// A label and value table: the label in `label` `inkMuted` in the reading rows' 62 pt column,
+/// the value in `value`, its ink chosen per row (the clipped peak's `accentRec`).
+struct PartTable: View {
+    let rows: [PartTableRow]
+    let ink: (PartTableRow) -> Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(rows) { row in
+                HStack(spacing: 0) {
+                    Text(row.label).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
+                        .frame(width: Theme.Layout.partTableLabelWidth, alignment: .leading)
+                    Text(row.value).font(Theme.Font.value).foregroundStyle(ink(row))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
             }
         }
-        .frame(height: Theme.Layout.partProgressHeight)
     }
 }

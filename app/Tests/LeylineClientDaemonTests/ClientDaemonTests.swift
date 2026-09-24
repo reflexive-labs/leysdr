@@ -449,26 +449,51 @@ final class ClientDaemonTests: XCTestCase {
         await assertEventually("the second job never ended") {
             mirror.state.jobs.first { $0.jobID == again.jobID }?.isActive == false
         }
-        // The channel page's card and the inspector on that part, from the daemon's own files.
+        // The Library's rows and the inspector on that part, from the daemon's own files (10a).
+        // The fixture never reaches the rails, so no part carries `clipped_ms`.
+        XCTAssertTrue(
+            manifest.parts.allSatisfy { $0.clippedMs == nil },
+            "clipped_ms is absent on a clean part: \(manifest.parts.map(\.clippedMs))")
         let card = RecordingGroup(summary: summary, manifest: manifest, running: false)
         XCTAssertEqual(card.chips.map(\.uri), manifest.parts.map { manifest.uri(of: $0) })
         XCTAssertNotNil(card.startedAt, "the anchor dates the first part")
         XCTAssertEqual(Recordings.endedWords(manifest.endedBy, running: false), "Switched off")
         var queue = PlayQueue()
         XCTAssertEqual(queue.start(card), card.chips.first?.uri, "Play all starts at part 1")
-        let words = Recordings.partWords(
-            part: part, of: manifest, positionFrames: nil, positionRate: 0, now: Date())
-        XCTAssertTrue(words.title.hasPrefix("Part \(part.part) of "), words.title)
-        XCTAssertTrue(words.progress.hasPrefix("0:00.0 of "), words.progress)
+        let days = Recordings.dayRows([card], now: Date())
+        XCTAssertEqual(
+            days.flatMap(\.rows).map(\.uri).sorted(),
+            manifest.parts.map { manifest.uri(of: $0) }.sorted(), "every part is a row")
+        XCTAssertEqual(days.first?.title, "today")
+        XCTAssertEqual(
+            days.first?.marks.count, days.first?.rows.count, "each part dated on the strip")
+        XCTAssertEqual(
+            days.first?.rows.first?.bracket,
+            manifest.parts.count > 1 ? .first : PartRow.Bracket.none)
+        XCTAssertFalse(days.flatMap(\.rows).contains { $0.clipped })
+        let inspector = Recordings.partInspectorWords(part: part, of: manifest, running: false)
+        XCTAssertTrue(inspector.heading.hasPrefix("PART "), inspector.heading)
+        XCTAssertFalse(inspector.clipped)
+        XCTAssertNil(inspector.clippedSentence)
+        XCTAssertEqual(inspector.recording.first { $0.label == "Ended" }?.value, "Switched off")
+        XCTAssertEqual(inspector.deleteLine, Recordings.deleteWords(parts: manifest.parts.count))
+        // The level graph, read from the part's WAV through the path the daemon resolves.
+        var partRef = Leyline_V1_ResourceRef()
+        partRef.uri = manifest.uri(of: part)
+        let partPath = try await app.resources.resolveLocalPath(partRef).path
+        let graph = try LevelGraph.columns(
+            wav: URL(fileURLWithPath: partPath),
+            columns: LevelGraph.columnCount(seconds: manifest.seconds(of: part)))
+        XCTAssertFalse(graph.isEmpty)
+        XCTAssertTrue(graph.allSatisfy { $0 >= 0 && $0 <= 1 }, "\(graph)")
+        XCTAssertTrue(graph.contains { $0 > 0 }, "a kept transmission has a level: \(graph)")
         // The Library's player on the same part: its words, and ⏮ and ⏭ within the recording.
         let player = Recordings.playerWords(
             channelTitle: "GMRS CH3", part: part, of: manifest, positionFrames: nil,
             positionRate: 0, now: Date())
+        XCTAssertEqual(player.title, "GMRS CH3 · Today")
         XCTAssertTrue(
-            player.title.hasPrefix("GMRS CH3 · ")
-                && player.title.hasSuffix(" · part \(part.part) of \(manifest.parts.count)"),
-            player.title)
-        XCTAssertEqual(player.time, words.time)
+            player.time.hasSuffix("part \(part.part) of \(manifest.parts.count)"), player.time)
         XCTAssertEqual(player.played, "0:00.0")
         let uri = manifest.uri(of: part)
         let ordered = manifest.parts.sorted { $0.part < $1.part }
@@ -496,11 +521,56 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertGreaterThan(
             mirror.state.daemon.recordingsCapBytes, 0, "the daemon reports its recordings cap")
 
+        try await Self.pauseHoldsThePosition(
+            of: manifest.uri(of: manifest.parts.max { $0.samples < $1.samples } ?? part),
+            app: app, mirror: mirror)
+
         let gone = try await app.resources.deleteResource(resource)
         XCTAssertEqual(gone.uri, summary.uri)
         XCTAssertGreaterThan(gone.freedBytes, 0)
         let after = try await app.resources.listResources(list)
         XCTAssertFalse(after.resources.contains { $0.uri == summary.uri }, "deleted, still listed")
+    }
+
+    /// The player's ⏸ (10a, engine ask 3): `SetPlaybackPaused` holds the position and the
+    /// mirror's playback carries `paused`, which the row, the player and the space key read; a
+    /// resume moves on. A daemon on a host with no audio output (the Linux container) refuses
+    /// `StartPlayback` with `PLATFORM_UNSUPPORTED`, and the check is then left to the Mac.
+    @MainActor
+    private static func pauseHoldsThePosition(
+        of uri: String, app: DaemonConnection, mirror: DaemonMirror
+    ) async throws {
+        var start = Leyline_V1_StartPlaybackRequest()
+        start.resourceUri = uri
+        let pb: Leyline_V1_Playback
+        do {
+            pb = try await app.control.startPlayback(start)
+        } catch {
+            let e = LeylineError(error)
+            guard e.code == "PLATFORM_UNSUPPORTED" else { throw error }
+            print("pause not checked on this host: \(e.message)")
+            return
+        }
+        var pause = Leyline_V1_SetPlaybackPausedRequest()
+        pause.playbackID = pb.playbackID
+        pause.paused = true
+        let paused = try await app.control.setPlaybackPaused(pause)
+        XCTAssertTrue(paused.paused)
+        await assertEventually("the mirror never showed the playback paused") {
+            mirror.state.playbacks.first { $0.playbackID == pb.playbackID }?.paused == true
+        }
+        let held = mirror.state.playbacks.first { $0.playbackID == pb.playbackID }?.position
+        try await Task.sleep(for: .milliseconds(500))
+        let state = try await app.state()
+        let after = state.playbacks.first { $0.playbackID == pb.playbackID }
+        XCTAssertEqual(after?.paused, true)
+        XCTAssertEqual(after?.position, held, "a paused playback holds its position")
+        pause.paused = false
+        let resumed = try await app.control.setPlaybackPaused(pause)
+        XCTAssertFalse(resumed.paused)
+        var stop = Leyline_V1_StopPlaybackRequest()
+        stop.playbackID = pb.playbackID
+        _ = try? await app.control.stopPlayback(stop)
     }
 
     /// The channel page's Record transmissions switch, by the page's own path: the channel is a

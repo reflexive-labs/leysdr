@@ -694,7 +694,7 @@ not re-evaluated; a space and the arrows typed into the search field staying in 
 `insertText(_:replacementRange:)` with the selection is what typing a space does); the bookmark
 rename field in the Radio, which the Tune menu's bare keys may reach first as they could before.
 
-### APP-5c `[ ]` The Library, revised (10a)
+### APP-5c `[x]` The Library, revised (10a)
 
 The owner's screen 10a (`../design/app-design-handoff-m3.md`, "10a · The Library, revised"):
 rows are parts with a recording as a bracket in the gutter, a level graph a row, a 24-hour
@@ -718,6 +718,59 @@ sidecar", "Nothing heard", "Playing a recording back"). For the window: `0.0 dBF
 `Clipped for 0.4 s.` read `clipped_ms`, never the peak; the player's ⏸ is `SetPlaybackPaused` and
 renders `Playback.paused` from the mirror; a recording that heard nothing never reaches
 `ListResources`, so the Library needs no filter of its own for it.
+
+**Landed 2026-09-25 (window).** With both lanes in, the item is `[x]`. What the build decided
+that 10a left open is the handoff's "10a", "Decided in the build (APP-5c, 2026-09-25)". Façade:
+`RecordingPart.clippedMs` (`clipped_ms`, absent when nothing clipped); `Recordings.channels` by
+frequency alone, the mode the newest recording's and the subtitle `19 recordings · today`;
+`LibraryRows.swift` with `Recordings.dayRows` (`DayRows`: title, EARLIER, head and EARLIER words,
+rows with their bracket and gap, the strip's `DayMark`s, `playOrder`), `PartRow.words`
+(`PartRowWords`) and `Recordings.partInspectorWords` (`PartInspectorWords`); `LevelGraph.swift`,
+the WAV reader and its columns; `PlayQueue.start(parts:)` and `holds(recordingURI:)` for Play
+day; `Recordings.playerWords` as `GMRS CH3 · Today` over `14:03:20 · part 4 of 4`; 8c's delete
+line cut to `Deletes all 4 parts.`. 8c's card and chip model went with the cards
+(`RecordingDay`, `Recordings.days`, `rangeWords`, `countWords`, a chip's words, `PartWords`,
+`partWords`, `partTable`, `FlowRows`). Window: `RecordingsPage.swift` rewritten as day sections
+(`DaySection`, `DayStrip`, `PartColumnHead`, `PartRowView`, `LevelBars`, `EarlierDay`, `PlayDayButton`)
+under the header as built, with the notice strip and `FlowLayout` gone; `PartInspector.swift` as
+10a's two sections with no progress bar; the sidebar without its `CHANNELS` header; the place
+switch's raised segment; the player's ⏮ ⏸/▶ ⏭, words and caption; `AppSession`'s `clickRow`,
+`playDay`, `pausePlayback`, `isPaused`, `pageDays`, `openedDays`, `levelGraphs` and
+`loadLevelGraph`, and `togglePlayer` pausing while a playback exists; the Library menu's Play,
+Pause or Resume on space and a Stop with no key; `Theme`'s row, strip, level-graph and switch
+tokens and `Font.playingGlyph`.
+
+Verified in the container: `RecordingPagesTests` (a store of six recordings written to disk and
+read back, two days and two EARLIER recordings, one clipped part, one with no parts: the rows,
+brackets, gaps, marks, head and EARLIER words and Play day's order; a recording past midnight and
+an undated one; a row's words; the inspector's words on the clipped part and a clean one, running
+and not; the player's words; the level graph from written WAVs, with a LIST chunk, and its
+refusals of stereo, 8-bit and a non-WAV), `RecordingsTests` (`clipped_ms` parsed and absent, the
+channels by frequency), and in the daemon-backed suite
+`testTheWindowsRecordingHoldsTheTransmissionsHeardLive`, which now checks that the clean fixture's
+parts carry no `clipped_ms`, builds the day rows and the inspector's words from the daemon's own
+manifest and a level graph from its WAV, and pauses a playback and checks the position holds for
+0.5 s. The pause check needs the daemon's audio output, so on Linux `StartPlayback` answers
+`PLATFORM_UNSUPPORTED` and the check prints that it was not run; it runs on a Mac. `make
+app-lint` passes.
+
+Unverified until the first `make app-run` on a Mac, because nothing in `LeylineApp` compiles in
+the container: every change in `RecordingsPage.swift`, `PartInspector.swift`, `PlayerBar.swift`,
+`LibraryView.swift`, `MainWindow.swift`, `AppSession.swift`, `LeylineApp.swift`,
+`TransportBarView.swift` and `Theme.swift`. Named behaviours to check there: the rows' columns
+lining up with the column head at the window's default width, and `−60.0 dBFS` fitting the peak
+column; the bracket's three pieces joining into one line across a recording's rows and stopping
+at the first and last ring's middle; the 10 pt gap between recordings and none inside one; the
+playing row's 28 pt circle inside the 30 pt row without moving the times; the strip's labels
+under the track, 00 and 24 at its ends, and the playing mark over the others; the level graph
+loading as rows scroll into view and staying empty for a path the daemon cannot resolve here;
+the EARLIER line's chevron turning and the day opening in place; a row's click playing, pausing
+and resuming, and the circle, the row and the menu item all showing the pause from the mirror;
+space pausing while the search field is not being typed into; Library ▸ Stop ending a paused
+part and the live channel coming back; Play day walking a day's parts oldest first across
+recordings; the place switch's raised segment beside the traffic lights; the inspector's
+clipped Peak in `accentRec` and the sentence wrapping in 312 pt; the player's bare ⏮ and ⏭; and
+the volume caption while a part plays and while it is paused.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 

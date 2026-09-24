@@ -133,21 +133,27 @@ struct TuneCommands: Commands {
 }
 
 /// The Library menu (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the Library",
-/// "The player"): the player's three controls on space, ← and →, the keys the Tune menu takes in
-/// the Radio. They are enabled only in the Library, and the Tune menu's are disabled there; each
-/// action goes through `pressSpace`/`pressArrow`, which act for the place showing, so a stale
-/// enabled state (a Commands body is not guaranteed to re-evaluate) still does the right thing.
-/// Previous and Next are not disabled at a recording's ends for the same reason: a stale disabled
-/// item would swallow the key after the selection moved; at an end they do nothing, and the
-/// player's buttons show the ends. A text field being typed into keeps the keys
-/// (`TextFieldKeys`).
+/// "The player", and 10a): the player's three controls on space, ← and →, the keys the Tune menu
+/// takes in the Radio, and Stop with no key. Space pauses and resumes while a part plays (10a's
+/// ⏸) and plays otherwise. Stop ends the part and a Play all or Play day, which the player's
+/// circle no longer does, so a paused part is not left holding the live channel silent. They are
+/// enabled only in the Library, and the Tune menu's are disabled there; each action goes through
+/// `pressSpace`/`pressArrow`, which act for the place showing, so a stale enabled state (a
+/// Commands body is not guaranteed to re-evaluate) still does the right thing. Previous and Next
+/// are not disabled at a recording's ends for the same reason: a stale disabled item would
+/// swallow the key after the selection moved; at an end they do nothing, and the player's buttons
+/// show the ends. A text field being typed into keeps the keys (`TextFieldKeys`).
 struct LibraryCommands: Commands {
     let session: AppSession
 
     var body: some Commands {
         CommandMenu("Library") {
-            Button(session.playingURI != nil ? "Stop" : "Play") { session.pressSpace() }
-                .keyboardShortcut(.space, modifiers: [])
+            Button(session.playback == nil ? "Play" : session.isPaused ? "Resume" : "Pause") {
+                session.pressSpace()
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            .disabled(session.place != .library)
+            Button("Stop") { Task { await session.stopPlayback() } }
                 .disabled(session.place != .library)
             Button("Previous Part") { session.pressArrow(-1) }
                 .keyboardShortcut(.leftArrow, modifiers: [])

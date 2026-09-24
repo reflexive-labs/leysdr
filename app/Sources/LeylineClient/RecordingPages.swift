@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Recordings source's channel page and the inspector on a part, as data
-// (docs/design/app-design-handoff-m3.md, 8c, and "The screens, read against the prose", 8c): one
-// card per recording (`RecordingGroup`), the cards grouped by day with the rule that folds the
-// older ones, a chip per part, the inspector's words for one part, the delete line and the order
-// Play all plays the parts in. Everything is computed from a listing's `RecordingSummary` and the
-// recording's `recording.json`, read through `ResolveLocalPath` as `Recordings.swift` reads it; a
-// wall-clock time comes only from the manifest's anchors or its `started_at_ns`/`ended_at_ns`
-// (invariant 5). No Observation here, so the Linux tests cover every rule the page draws.
+// The Library's recordings as data (docs/design/app-design-handoff-m3.md, 8c, revised by "10a ·
+// The Library, revised"): one `RecordingGroup` per recording with its parts in order, the page's
+// header words, the player's words, the recording's table words, the delete line and the order
+// Play all plays the parts in; the page's rows and the inspector's words are `LibraryRows.swift`.
+// Everything is computed from a listing's `RecordingSummary` and the recording's
+// `recording.json`, read through `ResolveLocalPath` as `Recordings.swift` reads it; a wall-clock
+// time comes only from the manifest's anchors or its `started_at_ns`/`ended_at_ns` (invariant 5).
+// No Observation here, so the Linux tests cover every rule the Library draws.
 
 import Foundation
 import LeylineProto
 
-/// One part as a chip on its recording's card: `▶ 09:12:40 · 8 s`.
+/// One part of a recording, in part order: what Play all queues and the player steps through.
 public struct RecordingChip: Sendable, Equatable, Identifiable {
     /// `ley://recordings/<id>/<part>`, what `StartPlayback` and `ResolveLocalPath` take.
     public var uri: String
@@ -22,26 +22,19 @@ public struct RecordingChip: Sendable, Equatable, Identifiable {
     public var seconds: Double
 
     public var id: String { uri }
-
-    /// `09:12:40 · 8 s`, the seconds whole; `part 3 · 8 s` when no anchor dates the part. The
-    /// view puts ▶ or ■ in front.
-    public func words(timeZone: TimeZone = .current) -> String {
-        let when = startedAt.map { Recordings.clock($0, "HH:mm:ss", timeZone) } ?? "part \(part)"
-        return "\(when) · \(Recordings.wholeSeconds(seconds))"
-    }
 }
 
-/// One recording as the channel page's card and the part inspector's table read it: the listing's
-/// summary, and once its manifest has been read, the manifest's parts, device, gains and squelch.
-/// Before the manifest arrives the card shows the listing's counts and no chips.
+/// One recording as the page and the part inspector read it: the listing's summary, and once
+/// its manifest has been read, the manifest's parts, device, gains and squelch. Before the
+/// manifest arrives it has the listing's counts and no parts, and the page shows no row for it.
 public struct RecordingGroup: Sendable, Equatable, Identifiable {
     public var jobID: String
     public var uri: String
     /// The first part's start through its anchor, else the job's `started_at_ns`.
     public var startedAt: Date?
-    /// The last part's end through its anchor, else the job's `ended_at_ns`; nil while it runs,
-    /// when the card reads `now`. A recording switched off after its last part ends at that part,
-    /// because the card's range is what it holds.
+    /// The last part's end through its anchor, else the job's `ended_at_ns`; nil while it runs.
+    /// A recording switched off after its last part ends at that part, because its range is
+    /// what it holds.
     public var endedAt: Date?
     public var parts: Int
     /// The parts' lengths summed: what the recording holds, not the wall clock it ran.
@@ -87,40 +80,6 @@ public struct RecordingGroup: Sendable, Equatable, Identifiable {
         bytes = m.bytes
         endedBy = m.endedBy
     }
-
-    /// `09:12 — now`, `14:02 — 17:10`; `Mon 20:39 — 20:49` on a folded card, whose group header
-    /// says only `earlier`. `—` for a time no anchor dates.
-    public func rangeWords(
-        collapsed: Bool, now: Date, calendar: Calendar = .current
-    ) -> String {
-        let tz = calendar.timeZone
-        let from = startedAt.map { Recordings.clock($0, "HH:mm", tz) } ?? "—"
-        let to = running ? "now" : endedAt.map { Recordings.clock($0, "HH:mm", tz) } ?? "—"
-        let day =
-            collapsed
-            ? startedAt.map { Recordings.shortDayWords($0, now: now, calendar: calendar) }
-            : nil
-        return [day, "\(from) — \(to)"].compactMap { $0 }.joined(separator: " ")
-    }
-
-    /// `3 parts · 24 s · 1.1 MB`; a folded card leaves the size out, as the screens draw it.
-    public func countWords(collapsed: Bool) -> String {
-        var words = [RecordingSummary.partsWords(parts), Recordings.lengthWords(seconds)]
-        if !collapsed { words.append(Recordings.sizeWords(bytes)) }
-        return words.joined(separator: " · ")
-    }
-}
-
-/// One of the page's day groups: `TODAY`, `YESTERDAY`, the day before by name, `EARLIER`.
-public struct RecordingDay: Sendable, Equatable, Identifiable {
-    /// `today`, `yesterday`, `Tuesday`, `earlier`; the header uppercases it.
-    public var title: String
-    /// The earlier group's cards fold to their header line until clicked open.
-    public var collapsed: Bool
-    /// Newest first, a running recording on top.
-    public var recordings: [RecordingGroup]
-
-    public var id: String { title }
 }
 
 /// A part URI taken apart: `ley://recordings/<id>/<part>`.
@@ -141,26 +100,13 @@ public struct RecordingPartRef: Sendable, Equatable {
     public var recordingURI: String { "ley://recordings/\(jobID)" }
 }
 
-/// The inspector's three lines for one part (8c, "The inspector, on a part").
-public struct PartWords: Sendable, Equatable {
-    /// `Part 5 of Tuesday 14:02`.
-    public var title: String
-    /// `16:11:04 · 10.0 s`.
-    public var time: String
-    /// `0:03.8 of 0:10.0 · 2 overs`.
-    public var progress: String
-    /// The bar's fill, 0 to 1; 0 while the part is not playing.
-    public var fraction: Double
-}
-
-/// The Library's player's words for one part (docs/design/app-design-handoff-m3.md, "Decided
-/// 2026-09-25: the Library", "The player"): two lines beside the play button and the two ends of
-/// its progress track.
+/// The Library's player's words for one part (docs/design/app-design-handoff-m3.md, "10a · The
+/// Library, revised", "The player"): two lines beside the play button and the two ends of its
+/// progress track.
 public struct PlayerWords: Sendable, Equatable {
-    /// `GMRS CH3 · Tuesday 14:02 · part 5 of 11`: the channel, the recording's start, and the
-    /// part's place among the recording's parts.
+    /// `GMRS CH3 · Today`: the channel and the day the part started.
     public var title: String
-    /// `16:11:04 · 10.0 s`, the inspector's time line.
+    /// `14:03:20 · part 4 of 4`: the part's start and its place among the recording's parts.
     public var time: String
     /// `0:03.8`: how far the part has played, at the track's left; `0:00.0` while it is not
     /// playing.
@@ -171,20 +117,15 @@ public struct PlayerWords: Sendable, Equatable {
     public var fraction: Double
 }
 
-/// One row of the inspector's table: `Peak` and `−6.2 dBFS`.
-public struct PartTableRow: Sendable, Equatable, Identifiable {
-    public var label: String
-    public var value: String
-
-    public var id: String { label }
-}
-
-/// Play all's queue (8c, "Playing"): the parts of one recording in order, started one at a time,
+/// Play all's and Play day's queue (8c, "Playing"; 10a): parts in order, started one at a time,
 /// the next when the previous playback's tombstone arrives. Client side, because the daemon plays
-/// one part per `StartPlayback`; a stop, a chip click or a failed start clears it.
+/// one part per `StartPlayback`; a stop, a row's click or a failed start clears it.
 public struct PlayQueue: Sendable, Equatable {
+    /// The recording a Play all walks; nil for Play day, which walks a day's parts across
+    /// recordings, and for an empty queue.
     public private(set) var recordingURI: String?
     public private(set) var pending: [String] = []
+    private var active = false
 
     public init() {}
 
@@ -207,7 +148,28 @@ public struct PlayQueue: Sendable, Equatable {
         }
         recordingURI = group.uri
         pending = Array(uris.dropFirst())
+        active = true
         return first
+    }
+
+    /// Play day: `uris` in the order given (`DayRows.playOrder`, oldest first), the first
+    /// returned for the caller to play now; nil for an empty day.
+    public mutating func start(parts uris: [String]) -> String? {
+        guard let first = uris.first else {
+            clear()
+            return nil
+        }
+        recordingURI = nil
+        pending = Array(uris.dropFirst())
+        active = true
+        return first
+    }
+
+    /// Whether any part still to play belongs to the recording at `uri`, or the queue walks it:
+    /// a delete of that recording clears the queue.
+    public func holds(recordingURI uri: String) -> Bool {
+        recordingURI == uri
+            || pending.contains { RecordingPartRef(uri: $0)?.recordingURI == uri }
     }
 
     /// The part to play after the one that just ended, removed from the queue; nil when the
@@ -223,31 +185,10 @@ public struct PlayQueue: Sendable, Equatable {
     public mutating func clear() {
         recordingURI = nil
         pending = []
+        active = false
     }
 
-    public var isEmpty: Bool { recordingURI == nil }
-}
-
-/// Where each chip goes in a card that wraps them: lines of indices, left to right, a chip moved
-/// to the next line when it would cross `width`. A chip wider than the line sits alone on it.
-/// The app's `FlowLayout` places its subviews by this rule.
-public enum FlowRows {
-    public static func lines(widths: [Double], spacing: Double, width: Double) -> [[Int]] {
-        var lines: [[Int]] = []
-        var line: [Int] = []
-        var x = 0.0
-        for (i, w) in widths.enumerated() {
-            if !line.isEmpty, x + spacing + w > width {
-                lines.append(line)
-                line = []
-                x = 0
-            }
-            x += (line.isEmpty ? 0 : spacing) + w
-            line.append(i)
-        }
-        if !line.isEmpty { lines.append(line) }
-        return lines
-    }
+    public var isEmpty: Bool { !active }
 }
 
 extension RecordingManifest {
@@ -271,7 +212,7 @@ extension RecordingManifest {
 }
 
 extension Recordings {
-    /// The page's cards: the listing's recordings of one channel, each with its manifest when it
+    /// The page's recordings: the listing's recordings of one channel, each with its manifest when it
     /// has been read and running when its job is active in `jobs`.
     public static func groups(
         _ recordings: [RecordingSummary], manifests: [String: RecordingManifest],
@@ -284,52 +225,9 @@ extension Recordings {
         }
     }
 
-    /// Recordings older than this many calendar days fold to their header line: the handoff's
-    /// guess, "Two days before cards collapse" in its "Open" list.
+    /// Days older than this many calendar days are EARLIER, one line each until opened: the
+    /// handoff's guess, "Two days before cards collapse" in its "Open" list, kept by 10a.
     public static let collapseAfterDays = 2
-
-    /// The page's day groups, newest first (8c): `today`, `yesterday`, the day before that by
-    /// name, then `earlier`, which holds everything older than `collapseAfterDays` and is the one
-    /// group that folds, so the page lists the last three days in full and the rest as one line
-    /// each. The screens draw exactly that: TODAY, TUESDAY on a Thursday, then EARLIER with Monday
-    /// and Sunday folded. A running recording's day is today whenever it started, so it is always
-    /// the top card and never folded; an undated recording is earlier. Within a group the newest
-    /// start comes first.
-    public static func days(
-        _ groups: [RecordingGroup], now: Date, calendar: Calendar = .current
-    ) -> [RecordingDay] {
-        func age(_ g: RecordingGroup) -> Int {
-            if g.running { return 0 }
-            guard let d = g.startedAt else { return Int.max }
-            return daysBefore(d, now: now, calendar: calendar)
-        }
-        let sorted = groups.sorted { a, b in
-            if a.running != b.running { return a.running }
-            let sa = a.startedAt ?? .distantPast
-            let sb = b.startedAt ?? .distantPast
-            if sa != sb { return sa > sb }
-            return a.uri > b.uri
-        }
-        var days: [RecordingDay] = []
-        for g in sorted {
-            let n = age(g)
-            let title: String
-            switch n {
-            case 0: title = "today"
-            case 1: title = "yesterday"
-            case 2...collapseAfterDays:
-                title = g.startedAt.map { format($0, "EEEE", calendar) } ?? "earlier"
-            default: title = "earlier"
-            }
-            if let i = days.firstIndex(where: { $0.title == title }) {
-                days[i].recordings.append(g)
-            } else {
-                days.append(
-                    RecordingDay(title: title, collapsed: n > collapseAfterDays, recordings: [g]))
-            }
-        }
-        return days
-    }
 
     /// `4 recordings · 13.1 MB`: the page header's clause after the frequency, mode and width.
     public static func pageWords(_ groups: [RecordingGroup]) -> String {
@@ -348,70 +246,35 @@ extension Recordings {
         return fromManifest ?? fromListing
     }
 
-    /// The inspector's lines for `part` of `manifest`. The title's day and time are the
-    /// recording's start (`Part 5 of Tuesday 14:02`, `Today`, `Yesterday`, a weekday for the six
-    /// days before, `12 Sep`). The time line is the part's start and length to a tenth. The
-    /// progress line is the playback's `position` over its rate against the part's length, and
-    /// `2 overs` from the part's `squelch_opens` (one over per time the squelch opened), left out
-    /// when there were none; `positionFrames` nil means the part is not playing.
-    public static func partWords(
-        part: RecordingPart, of manifest: RecordingManifest, positionFrames: UInt64?,
-        positionRate: UInt32, now: Date, calendar: Calendar = .current
-    ) -> PartWords {
-        let tz = calendar.timeZone
-        let title =
-            recordingStartWords(manifest, now: now, calendar: calendar)
-            .map { "Part \(part.part) of \($0)" } ?? "Part \(part.part)"
-        let length = manifest.seconds(of: part)
-        let start = manifest.startTime(of: part).map { clock($0, "HH:mm:ss", tz) }
-        let time =
-            (start ?? "part \(part.part)") + " · " + String(format: "%.1f s", length)
-        let rate = positionRate > 0 ? Double(positionRate) : Double(manifest.sampleRate)
-        let played = positionFrames.map { rate > 0 ? Double($0) / rate : 0 } ?? 0
-        var progress = "\(elapsedWords(played)) of \(elapsedWords(length))"
-        if part.squelchOpens > 0 {
-            progress += part.squelchOpens == 1 ? " · 1 over" : " · \(part.squelchOpens) overs"
-        }
-        let fraction =
-            positionFrames != nil && length > 0 ? min(1, max(0, played / length)) : 0
-        return PartWords(title: title, time: time, progress: progress, fraction: fraction)
-    }
-
-    /// `Tuesday 14:02`: the recording's start, its first part's through the anchor, else the
-    /// job's `started_at_ns`, with the day as `dayWords` gives it and a capital; nil when nothing
-    /// dates it.
-    static func recordingStartWords(
-        _ manifest: RecordingManifest, now: Date, calendar: Calendar
-    ) -> String? {
-        let start =
-            manifest.parts.min { $0.part < $1.part }.flatMap { manifest.startTime(of: $0) }
-            ?? manifest.startedAt
-        guard let d = start else { return nil }
-        let day = dayWords(d, now: now, calendar: calendar)
-        return day.prefix(1).uppercased() + day.dropFirst() + " "
-            + clock(d, "HH:mm", calendar.timeZone)
-    }
-
     /// The player's words for `part` of `manifest` on the channel titled `channelTitle`
-    /// (`PlayerWords`). `part 5 of 11` counts the manifest's parts; the time line, the position
-    /// and the fraction are `partWords`'.
+    /// (`PlayerWords`): `GMRS CH3 · Today` from the part's start, else the recording's, through
+    /// `dayWords` with a capital, and no day clause when nothing dates it; `14:03:20 · part 4 of
+    /// 4` counting the manifest's parts in part order. The position is the playback's `position`
+    /// over its rate (`positionFrames` nil while the part is not playing) and never reads past
+    /// the part's length.
     public static func playerWords(
         channelTitle: String, part: RecordingPart, of manifest: RecordingManifest,
         positionFrames: UInt64?, positionRate: UInt32, now: Date, calendar: Calendar = .current
     ) -> PlayerWords {
-        let words = partWords(
-            part: part, of: manifest, positionFrames: positionFrames, positionRate: positionRate,
-            now: now, calendar: calendar)
-        let title = [
-            channelTitle, recordingStartWords(manifest, now: now, calendar: calendar),
-            "part \(part.part) of \(manifest.parts.count)",
+        let start = manifest.startTime(of: part)
+        let day = (start ?? manifest.startedAt).map { d -> String in
+            let w = dayWords(d, now: now, calendar: calendar)
+            return w.prefix(1).uppercased() + w.dropFirst()
+        }
+        let title = [channelTitle, day].compactMap { $0 }.joined(separator: " · ")
+        let ordered = manifest.parts.sorted { $0.part < $1.part }
+        let place = (ordered.firstIndex { $0.part == part.part } ?? 0) + 1
+        let time = [
+            start.map { clock($0, "HH:mm:ss", calendar.timeZone) },
+            "part \(place) of \(ordered.count)",
         ].compactMap { $0 }.joined(separator: " · ")
         let length = manifest.seconds(of: part)
         let rate = positionRate > 0 ? Double(positionRate) : Double(manifest.sampleRate)
         let played = positionFrames.map { rate > 0 ? Double($0) / rate : 0 } ?? 0
+        let fraction = positionFrames != nil && length > 0 ? min(1, max(0, played / length)) : 0
         return PlayerWords(
-            title: title, time: words.time, played: elapsedWords(min(played, length)),
-            length: elapsedWords(length), fraction: words.fraction)
+            title: title, time: time, played: elapsedWords(min(played, length)),
+            length: elapsedWords(length), fraction: fraction)
     }
 
     /// The part `step` places from the part `uri` names, in `manifest`'s part order, as the URI
@@ -426,23 +289,6 @@ extension Recordings {
         let j = i + step
         guard ordered.indices.contains(j) else { return nil }
         return manifest.uri(of: ordered[j])
-    }
-
-    /// The inspector's table for a part: label and value, `—` for what nobody measured.
-    public static func partTable(
-        part: RecordingPart, of manifest: RecordingManifest, running: Bool
-    ) -> [PartTableRow] {
-        [
-            PartTableRow(label: "Peak", value: dbfsWords(part.peakDBFS, places: 1)),
-            PartTableRow(label: "Mean", value: dbfsWords(part.meanDBFS, places: 1)),
-            PartTableRow(label: "Radio", value: radioWords(manifest.device)),
-            PartTableRow(label: "Gain", value: gainWords(manifest.gains)),
-            PartTableRow(
-                label: "Squelch",
-                value: manifest.squelchDBFS.isFinite ? dbfsWords(manifest.squelchDBFS) : "off"),
-            PartTableRow(label: "Ended", value: endedWords(manifest.endedBy, running: running)),
-            PartTableRow(label: "Files", value: filesWords(manifest)),
-        ]
     }
 
     /// `ended_by` as a person says it (docs/design/recording.md, "The manifest", lists the
@@ -478,11 +324,10 @@ extension Recordings {
         return "\(m.parts.count) \(kind) · \(sizeWords(m.bytes))"
     }
 
-    /// The line under Delete recording…: `Deletes all 11 parts. A recording is kept or deleted
-    /// whole.`, because `DeleteResource` refuses one part (docs/design/recording.md, "The wire").
+    /// The line under Delete recording…: `Deletes all 4 parts.` (10a), because
+    /// `DeleteResource` refuses one part (docs/design/recording.md, "The wire").
     public static func deleteWords(parts: Int) -> String {
-        let what = parts == 1 ? "Deletes its one part." : "Deletes all \(parts) parts."
-        return what + " A recording is kept or deleted whole."
+        parts == 1 ? "Deletes its one part." : "Deletes all \(parts) parts."
     }
 
     /// The confirmation's question, naming the recording by its channel and start:
@@ -513,7 +358,7 @@ extension Recordings {
         return "\(s / 3600) h " + String(format: "%02d m", (s % 3600) / 60)
     }
 
-    /// `8 s`: a chip's length, whole seconds, never below 1 for a part that holds anything.
+    /// `8 s`: a row's length, whole seconds, never below 1 for a part that holds anything.
     static func wholeSeconds(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "0 s" }
         return "\(max(1, Int(seconds.rounded()))) s"
@@ -526,12 +371,12 @@ extension Recordings {
         return String(format: "%d:%04.1f", tenths / 600, Double(tenths % 600) / 10)
     }
 
-    private static func dbfsWords(_ v: Double?, places: Int = 0) -> String {
+    static func dbfsWords(_ v: Double?, places: Int = 0) -> String {
         guard let v, v.isFinite else { return "—" }
         return minus(String(format: "%.\(places)f", v)) + " dBFS"
     }
 
-    private static func radioWords(_ d: RecordingManifest.Device?) -> String {
+    static func radioWords(_ d: RecordingManifest.Device?) -> String {
         guard let d else { return "—" }
         if !d.model.isEmpty { return d.model }
         return d.driver.isEmpty ? "—" : d.driver

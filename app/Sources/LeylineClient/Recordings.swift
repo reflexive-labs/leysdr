@@ -318,6 +318,11 @@ public struct RecordingPart: Sendable, Equatable, Codable {
     public var peakDBFS: Double?
     public var meanDBFS: Double?
     public var squelchOpens: Int
+    /// How long inside the part the capture's `CaptureLevel` reported clipping, in ms
+    /// (docs/design/recording.md, "The manifest"); nil when nothing clipped, since the daemon
+    /// leaves the key out at zero, and on a part a restart repaired. The Library prints
+    /// `0.0 dBFS · clipped` from this, never from `peakDBFS`, which measures the audio.
+    public var clippedMs: Int64?
     /// The capture the samples are on. Not in the file: `RecordingManifest.read(at:)` sets it
     /// from the anchors, and nil means it could not be told.
     public var captureID: String?
@@ -329,12 +334,13 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         case peakDBFS = "peak_dbfs"
         case meanDBFS = "mean_dbfs"
         case squelchOpens = "squelch_opens"
+        case clippedMs = "clipped_ms"
     }
 
     public init(
         part: Int, file: String, startSample: UInt64, endSample: UInt64, samples: UInt64,
         bytes: UInt64, peakDBFS: Double? = nil, meanDBFS: Double? = nil, squelchOpens: Int = 0,
-        captureID: String? = nil
+        clippedMs: Int64? = nil, captureID: String? = nil
     ) {
         self.part = part
         self.file = file
@@ -345,6 +351,7 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         self.peakDBFS = peakDBFS
         self.meanDBFS = meanDBFS
         self.squelchOpens = squelchOpens
+        self.clippedMs = clippedMs
         self.captureID = captureID
     }
 
@@ -359,6 +366,7 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         peakDBFS = try c.decodeIfPresent(Double.self, forKey: .peakDBFS)
         meanDBFS = try c.decodeIfPresent(Double.self, forKey: .meanDBFS)
         squelchOpens = try c.decodeIfPresent(Int.self, forKey: .squelchOpens) ?? 0
+        clippedMs = try c.decodeIfPresent(Int64.self, forKey: .clippedMs)
         captureID = nil
     }
 
@@ -373,6 +381,7 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         try c.encodeIfPresent(peakDBFS, forKey: .peakDBFS)
         try c.encodeIfPresent(meanDBFS, forKey: .meanDBFS)
         try c.encode(squelchOpens, forKey: .squelchOpens)
+        try c.encodeIfPresent(clippedMs, forKey: .clippedMs)
     }
 }
 
@@ -469,11 +478,13 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var lastActivity: Date? { endedAt ?? startedAt }
 }
 
-/// One row of the sidebar's Recordings source: every recording on one frequency and mode, never
-/// one row per recording (docs/design/app-design-handoff-m3.md, 8c). Titled by the bookmark on
-/// that frequency and mode when there is one, else by the frequency.
+/// One row of the Library's sidebar: every recording on one frequency, never one row per
+/// recording (docs/design/app-design-handoff-m3.md, 8c), and since 10a never one row per mode, so
+/// a width or mode change does not split a channel. Titled by the bookmark on that frequency and
+/// the channel's mode when there is one, else by the frequency.
 public struct RecordingChannel: Sendable, Equatable, Identifiable {
     public var frequencyHz: UInt64
+    /// The newest recording's mode: what Tune and the page's switch use.
     public var mode: Leyline_V1_DemodMode
     /// The name of the bookmark whose frequency and mode are the channel's, or nil.
     public var bookmarkName: String?
@@ -484,19 +495,19 @@ public struct RecordingChannel: Sendable, Equatable, Identifiable {
     /// The newest recording's end or start; nil when none is dated.
     public var latest: Date?
 
-    public var id: String { "\(frequencyHz)/\(mode.rawValue)" }
+    public var id: String { "\(frequencyHz)" }
 
     /// `462.5625`: the frequency as the bookmark rows print it, which the title falls back to.
     public var frequencyText: String { FrequencyEntry.fieldParts(frequencyHz).major }
 
     public var title: String { bookmarkName ?? frequencyText }
 
-    /// `4 recordings · latest now`, `· latest today`, `· latest Wed`: now while one runs, else the
-    /// newest one's day (`Recordings.shortDayWords`).
+    /// `19 recordings · today`, `· now` while one runs, else the newest one's day
+    /// (`Recordings.shortDayWords`), as 10a draws it; 8c's `latest` is gone.
     public func subtitle(now: Date, calendar: Calendar = .current) -> String {
         let count = recordings.count == 1 ? "1 recording" : "\(recordings.count) recordings"
         guard let when = latestWords(now: now, calendar: calendar) else { return count }
-        return "\(count) · latest \(when)"
+        return "\(count) · \(when)"
     }
 
     private func latestWords(now: Date, calendar: Calendar) -> String? {
@@ -776,27 +787,24 @@ public enum Recordings {
         return min(1, Double(usedBytes) / Double(capBytes))
     }
 
-    /// The sidebar's Recordings rows: `recordings` grouped by frequency and mode, each titled by
-    /// the first bookmark on that frequency whose mode is the recording's (a bookmark or a
-    /// recording without a mode matches any), running when one of its recordings' jobs is active
-    /// in `jobs`, sorted by most recent activity: running rows first, then the newest end or
-    /// start, then frequency.
+    /// The Library sidebar's rows: `recordings` grouped by frequency (10a: one `GMRS CH3` row
+    /// whatever the mode and width), the mode the newest recording's, each titled by the first
+    /// bookmark on that frequency whose mode is the channel's (a bookmark or a recording without
+    /// a mode matches any), running when one of its recordings' jobs is active in `jobs`, sorted
+    /// by most recent activity: running rows first, then the newest end or start, then
+    /// frequency.
     public static func channels(
         _ recordings: [RecordingSummary], bookmarks: [Bookmark], jobs: [Leyline_V1_Job]
     ) -> [RecordingChannel] {
         let active = Set(jobs.filter { $0.isActive && $0.recordConfig != nil }.map(\.jobID))
-        var order: [String] = []
-        var groups: [String: RecordingChannel] = [:]
+        var order: [UInt64] = []
+        var groups: [UInt64: RecordingChannel] = [:]
         for r in recordings {
-            let key = "\(r.frequencyHz)/\(r.mode.rawValue)"
+            let key = r.frequencyHz
             if groups[key] == nil {
                 order.append(key)
-                let name = bookmarks.first {
-                    $0.hz == r.frequencyHz
-                        && ($0.mode == r.mode || $0.mode == .unspecified || r.mode == .unspecified)
-                }?.name
                 groups[key] = RecordingChannel(
-                    frequencyHz: r.frequencyHz, mode: r.mode, bookmarkName: name, recordings: [],
+                    frequencyHz: r.frequencyHz, mode: r.mode, bookmarkName: nil, recordings: [],
                     running: false, latest: nil)
             }
             groups[key]?.recordings.append(r)
@@ -810,6 +818,13 @@ public enum Recordings {
             c.recordings.sort {
                 ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
             }
+            c.mode = c.recordings.first?.mode ?? .unspecified
+            let mode = c.mode
+            c.bookmarkName =
+                bookmarks.first {
+                    $0.hz == c.frequencyHz
+                        && ($0.mode == mode || $0.mode == .unspecified || mode == .unspecified)
+                }?.name
             return c
         }
         .sorted { a, b in
@@ -831,8 +846,8 @@ public enum Recordings {
         return format(date, days < 7 ? "EEEE" : "d MMM", calendar)
     }
 
-    /// `today`, `Wed` for the six days before, `12 Sep` before that: the sidebar's
-    /// `latest …` word, short because it shares a row with a count.
+    /// `today`, `Wed` for the six days before, `12 Sep` before that: the sidebar's day word
+    /// (`19 recordings · today`), short because it shares a row with a count.
     public static func shortDayWords(_ date: Date, now: Date, calendar: Calendar = .current)
         -> String
     {

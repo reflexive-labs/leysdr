@@ -4,6 +4,16 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app's Library lists parts, not recordings. Each part is a row with its start, length,
+  a small level graph read from its file, its peak and its size; a recording of several parts is
+  bracketed at the left, and each day opens with a 24-hour strip marking when parts began and a
+  `Play day` that plays the day in order. Days older than two fold to one line each. A part the
+  radio clipped during reads `0.0 dBFS` in red, and the inspector says for how long and what to do
+  about it. The player's button pauses and resumes now (space too), where it used to stop; Library
+  ▸ Stop ends the part. Recordings on one frequency are one channel in the sidebar whatever their
+  mode or width, and a recording with no parts is not listed. The notice line at the bottom of the
+  Library is gone.
+
 - A recording's parts say how long the radio clipped during them: `clipped_ms` in the manifest
   and each part's sidecar, from the capture's own clipping count, and a `CLIP` column in
   `ley recordings show` when any part clipped. A part's peak is measured on the audio, so a peak

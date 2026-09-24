@@ -126,20 +126,22 @@ struct RadioBody: View {
     }
 }
 
-/// The toolbar's `Radio | Library` switch, at its leading edge (M3 handoff, "Decided 2026-09-25:
-/// the Library"): two segments in `label` on the toolbar's own dark ground (`chrome`) inside a
-/// 1 pt `border` stroke with 6 pt corners. The place showing has a `border` ground and `ink`
-/// text; the other has no ground and `inkTertiary` text. Until the owner's second run
-/// (2026-09-25) the whole control sat on `border`, so the unselected segment was as light as the
-/// selected one and only the ink told them apart. ⌘1 and ⌘2 are the View menu's. Two plain
-/// buttons rather than a segmented `Picker`, because the system draws a segmented control's
-/// selected segment and its text in its own colours, which `Theme`'s inks cannot set.
+/// The toolbar's `Radio | Library` switch, a segmented control beside the traffic lights at the
+/// toolbar's `navigation` placement (M3 handoff, "Decided 2026-09-25: the Library", restyled by
+/// "10a · The Library, revised", which follows 9a): two segments in `label` on the toolbar's own
+/// dark ground (`chrome`) inside a 1 pt `border` stroke with 6 pt corners. The place showing is
+/// raised on a `border` ground `placeSwitchInset` inside the stroke, in `ink`; the other has no
+/// ground and `inkTertiary` text. Until the owner's second run (2026-09-25) the whole control
+/// sat on `border`, so the unselected segment was as light as the selected one and only the ink
+/// told them apart. ⌘1 and ⌘2 are the View menu's. Two plain buttons rather than a segmented
+/// `Picker`, because the system draws a segmented control's selected segment and its text in
+/// its own colours, which `Theme`'s inks cannot set.
 struct PlaceSwitch: View {
     @Environment(AppSession.self) private var session
 
-    static let cornerRadius: CGFloat = 6
-
     var body: some View {
+        let outer = Theme.Layout.placeSwitchRadius
+        let inset = Theme.Layout.placeSwitchInset
         HStack(spacing: 0) {
             ForEach(WindowPlace.allCases) { p in
                 let shown = session.place == p
@@ -148,10 +150,10 @@ struct PlaceSwitch: View {
                 } label: {
                     Text(p.title).font(Theme.Font.label)
                         .foregroundStyle(shown ? Theme.ink : Theme.inkTertiary)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .padding(.horizontal, 12).padding(.vertical, 4)
                         .background(
                             shown ? Theme.border : Color.clear,
-                            in: RoundedRectangle(cornerRadius: Self.cornerRadius)
+                            in: RoundedRectangle(cornerRadius: outer - inset)
                         )
                         .contentShape(Rectangle())
                 }
@@ -160,10 +162,10 @@ struct PlaceSwitch: View {
                 .accessibilityAddTraits(shown ? .isSelected : [])
             }
         }
-        .background(Theme.chrome, in: RoundedRectangle(cornerRadius: Self.cornerRadius))
+        .padding(inset)
+        .background(Theme.chrome, in: RoundedRectangle(cornerRadius: outer))
         .overlay(
-            RoundedRectangle(cornerRadius: Self.cornerRadius).strokeBorder(
-                Theme.border, lineWidth: 1)
+            RoundedRectangle(cornerRadius: outer).strokeBorder(Theme.border, lineWidth: 1)
         )
     }
 }

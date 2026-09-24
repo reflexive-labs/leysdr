@@ -212,15 +212,21 @@ final class AppSession {
     /// Job ids whose read failed, not tried again until their job changes or the listing is read
     /// again: a mirror change arrives four times a second while a part plays.
     @ObservationIgnored private var failedManifests: Set<String> = []
-    /// The part the Library's inspector and player show: the last chip clicked, and
-    /// the part Play all moved on to. Cleared when its recording is deleted.
+    /// The part the Library's inspector and player show: the last row clicked, and
+    /// the part Play all or Play day moved on to. Cleared when its recording is deleted.
     var selectedPartURI: String?
-    /// The folded cards (older than `Recordings.collapseAfterDays`) opened by a click, by
-    /// recording URI. Presentation only.
-    var openedRecordings: Set<String> = []
-    /// Play all's parts still to play (`PlayQueue`); the next starts on the tombstone of the one
-    /// playing.
+    /// The EARLIER days (older than `Recordings.collapseAfterDays`) opened in place by a click,
+    /// by `DayRows.id`. Presentation only.
+    var openedDays: Set<String> = []
+    /// Play all's or Play day's parts still to play (`PlayQueue`); the next starts on the
+    /// tombstone of the one playing.
     private(set) var playQueue = PlayQueue()
+    /// Each Library row's level graph (`LevelGraph.columns`), by part URI, once read: the part's
+    /// WAV through `ResolveLocalPath`, one pass, off the main actor (docs/design/
+    /// app-design-handoff-m3.md, "10a · The Library, revised"). An empty array is a part whose
+    /// file could not be read here (a remote daemon, a file gone), not tried again.
+    private(set) var levelGraphs: [String: [Float]] = [:]
+    @ObservationIgnored private var levelGraphLoads: Set<String> = []
     /// The playback this window started, by the id `StartPlayback` returned, and the part it
     /// plays, until its tombstone. One at a time. Its position is the mirror's: the daemon
     /// publishes a playing playback four times a second.
@@ -2276,33 +2282,83 @@ final class AppSession {
         {
             selectedPartURI = nil
         }
-        let uris = Set(recordings.map(\.uri))
-        if !openedRecordings.isSubset(of: uris) { openedRecordings.formIntersection(uris) }
+        let gone = levelGraphs.keys.filter { uri in
+            RecordingPartRef(uri: uri).map { !listed.contains($0.jobID) } ?? true
+        }
+        for uri in gone { levelGraphs[uri] = nil }
     }
 
-    /// A folded card's click: open it, or fold it again.
-    func toggleOpened(_ uri: String) {
-        if openedRecordings.contains(uri) {
-            openedRecordings.remove(uri)
+    /// An EARLIER day's line: open it in place, or fold it again.
+    func toggleOpened(day id: String) {
+        if openedDays.contains(id) {
+            openedDays.remove(id)
         } else {
-            openedRecordings.insert(uri)
+            openedDays.insert(id)
         }
     }
 
-    /// A chip's click (8c, "Playing"): the part is selected, so the inspector shows it, and
-    /// plays; a click on the part already playing stops it and keeps it selected. Either ends a
-    /// Play all.
-    func clickChip(_ uri: String) async {
+    /// The page's days for `c` (10a): every part of its recordings whose manifests have been
+    /// read, as rows by the day each started (`Recordings.dayRows`).
+    func pageDays(for c: RecordingChannel) -> [DayRows] {
+        Recordings.dayRows(pageGroups(for: c), now: Date())
+    }
+
+    /// A row's click (10a): the part is selected, so the inspector and the player show it, and
+    /// plays; a click on the row playing pauses it, and on the row paused resumes it. Starting
+    /// another part ends a Play all or a Play day.
+    func clickRow(_ uri: String) async {
         selectedPartURI = uri
-        if playingURI == uri {
-            await stopPlayback()
-        } else {
+        if playingURI == uri, playback != nil {
+            await pausePlayback(!isPaused)
+        } else if playingURI != uri {
             await play(partURI: uri)
         }
     }
 
+    /// Play day: the day's parts oldest first (`DayRows.playOrder`), queued as Play all queues a
+    /// recording's, each selected as it starts.
+    func playDay(_ day: DayRows) async {
+        var queue = PlayQueue()
+        guard let first = queue.start(parts: day.playOrder) else { return }
+        log("playback", "play day \(day.id): \(day.rows.count) parts")
+        selectedPartURI = first
+        playQueue = queue
+        await startPlayback(first)
+    }
+
+    /// The row's level graph: `ResolveLocalPath` of the part's URI, then one pass over the WAV
+    /// off the main actor into `LevelGraph.columnCount(seconds:)` columns, cached by URI. Called
+    /// as a row appears; a row already read or being read costs nothing. A path that does not
+    /// resolve, or a file that is not here, caches an empty graph and says nothing: the column is
+    /// empty, as 10a draws it for a remote daemon.
+    func loadLevelGraph(_ row: PartRow) {
+        let uri = row.uri
+        guard levelGraphs[uri] == nil, !levelGraphLoads.contains(uri), let daemon else { return }
+        levelGraphLoads.insert(uri)
+        let columns = LevelGraph.columnCount(seconds: row.seconds)
+        Task { [weak self] in
+            var ref = Leyline_V1_ResourceRef()
+            ref.uri = uri
+            let path = try? await daemon.resources.resolveLocalPath(ref).path
+            let graph: [Float]
+            if let path {
+                graph = await Task.detached(priority: .utility) {
+                    (try? LevelGraph.columns(wav: URL(fileURLWithPath: path), columns: columns))
+                        ?? []
+                }.value
+            } else {
+                graph = []
+            }
+            guard let self else { return }
+            self.levelGraphLoads.remove(uri)
+            if graph.isEmpty { log("record", "no level graph for \(uri)") }
+            self.levelGraphs[uri] = graph
+        }
+    }
+
     /// Play all: the recording's parts in part order, the next started on the tombstone of the
-    /// one before (`endPlayback`), each selected as it starts so the inspector follows.
+    /// one before (`endPlayback`), each selected as it starts so the inspector follows. The
+    /// inspector's `Play all 4` (10a).
     func playAll(_ group: RecordingGroup) async {
         var queue = PlayQueue()
         guard let first = queue.start(group) else { return }
@@ -2437,7 +2493,7 @@ final class AppSession {
     /// forgets the recording's manifest and clears the selection (`prunePage`).
     func deleteRecording(uri: String) async {
         guard let daemon else { return }
-        if let q = playQueue.recordingURI, q == uri { playQueue.clear() }
+        if playQueue.holds(recordingURI: uri) { playQueue.clear() }
         var ref = Leyline_V1_ResourceRef()
         ref.uri = uri
         do {
@@ -2446,7 +2502,6 @@ final class AppSession {
             if let sel = selectedPartURI, RecordingPartRef(uri: sel)?.recordingURI == uri {
                 selectedPartURI = nil
             }
-            openedRecordings.remove(uri)
             reloadRecordings()
         } catch {
             let e = LeylineError(error)
@@ -2474,16 +2529,13 @@ final class AppSession {
 
     /// The part the player shows and ▶ plays (docs/design/app-design-handoff-m3.md, "Decided
     /// 2026-09-25: the Library", "The player"): the one playing, else the selected part, else
-    /// the first part of the selected channel's top card, once the manifest that holds it has
-    /// been read. nil leaves the player with nothing to play.
+    /// the page's first row, once the manifest that holds it has been read. nil leaves the
+    /// player with nothing to play.
     var player: (uri: String, manifest: RecordingManifest, part: RecordingPart)? {
         let uri: String
         if let u = playingURI ?? selectedPartURI {
             uri = u
-        } else if let c = selectedChannel,
-            let first = Recordings.days(pageGroups(for: c), now: Date())
-                .flatMap(\.recordings).first(where: { !$0.chips.isEmpty })?.chips.first
-        {
+        } else if let c = selectedChannel, let first = pageDays(for: c).first?.rows.first {
             uri = first.uri
         } else {
             return nil
@@ -2538,19 +2590,44 @@ final class AppSession {
         await play(partURI: n)
     }
 
-    /// The player's ▶ and ■, and space in the Library: ■ stops the part playing (and a Play
-    /// all), ▶ plays the player's part and selects it.
+    /// The player's circle, and space in the Library (10a): while a playback exists, ⏸ pauses it
+    /// and ▶ resumes it (`SetPlaybackPaused`, the position held); with none, ▶ plays the
+    /// player's part and selects it. Between a part's `StartPlayback` and its answer there is a
+    /// part but no playback yet, and the click does nothing rather than start it twice.
     func togglePlayer() async {
-        if playingURI != nil {
-            await stopPlayback()
+        if playback != nil {
+            await pausePlayback(!isPaused)
             return
         }
-        guard let p = player else { return }
+        guard playingURI == nil, let p = player else { return }
         selectedPartURI = p.uri
         await play(partURI: p.uri)
     }
 
-    /// Space from the menu bar: the player's ▶/■ in the Library, Mute/Unmute in the Radio. The
+    /// Whether the window's playback is paused, from the mirror's `Playback.paused`: the row, the
+    /// player and the menu read it, so a pause from `ley play` on the same playback shows here.
+    var isPaused: Bool { playback?.paused ?? false }
+
+    /// `Control.SetPlaybackPaused` on the window's playback: the daemon holds the position and
+    /// publishes the playback with `paused`, which is what the window renders; the live channel
+    /// stays held silent, since the part has not ended. A refusal is a notice.
+    func pausePlayback(_ paused: Bool) async {
+        guard let daemon, let id = playbackID else { return }
+        var req = Leyline_V1_SetPlaybackPausedRequest()
+        req.playbackID = id
+        req.paused = paused
+        do {
+            _ = try await daemon.control.setPlaybackPaused(req)
+            log("playback", "\(id) \(paused ? "paused" : "resumed")")
+        } catch {
+            let e = LeylineError(error)
+            log("playback", "\(id) not \(paused ? "paused" : "resumed"): \(e.code) \(e.message)")
+            notice =
+                "Could not \(paused ? "pause" : "resume") the part: \(e.message.isEmpty ? e.code : e.message)"
+        }
+    }
+
+    /// Space from the menu bar: the player's ▶/⏸ in the Library, Mute/Unmute in the Radio. The
     /// Tune menu's space and the Library menu's are one key; each item is disabled in the other
     /// place, and because a Commands body is not guaranteed to re-evaluate when `place`
     /// changes, whichever item fires does what the place showing means (`LeylineApp.swift`).
