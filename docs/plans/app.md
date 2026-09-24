@@ -694,6 +694,15 @@ not re-evaluated; a space and the arrows typed into the search field staying in 
 `insertText(_:replacementRange:)` with the selection is what typing a space does); the bookmark
 rename field in the Radio, which the Tune menu's bare keys may reach first as they could before.
 
+### APP-5c `[ ]` The Library, revised (10a)
+
+The owner's screen 10a (`../design/app-design-handoff-m3.md`, "10a · The Library, revised"):
+rows are parts with a recording as a bracket in the gutter, a level graph a row, a 24-hour
+strip a day, `Play day`, the inspector as the part's numbers and its recording's, the sidebar
+grouped by frequency, the switch as a segmented control by the traffic lights, and a player
+that pauses. Engine lane first: `clipped_ms` a part, `Playback.paused` with
+`SetPlaybackPaused` and `ley play`'s space, and empty recordings discarded at job end.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,
