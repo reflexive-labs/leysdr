@@ -54,13 +54,18 @@ struct MainWindow: View {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
             // is hidden and each item draws the pop-ups' ground instead. The items are hidden
             // while the splash covers the window and fade in as it leaves.
+            // Left to right, as the owner set it 2026-09-25: the switch beside the traffic
+            // lights, then the mark and `Leyline`, then the gap, then the radio and the
+            // inspector toggle at the right. Without the title, nothing separates the two
+            // groups on its own, so a flexible spacer holds the gap.
+            ToolbarItem(placement: .navigation) { PlaceSwitch().shown(chromeShown) }
+                .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .navigation) {
                 BrandTitle(
                     markShown: toolbarMarkShown, wordShown: chromeShown, markAnchor: toolbarMark)
             }
             .sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .navigation) { PlaceSwitch().shown(chromeShown) }
-                .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.flexible, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) { DeviceChip().shown(chromeShown) }
                 .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.fixed, placement: .primaryAction)
