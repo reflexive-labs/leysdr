@@ -161,7 +161,10 @@ struct SplashView: View {
 /// The ground's reveal: a gradient mask whose soft edge moves from above the top (all of the
 /// ground showing) to below the bottom (none of it), so the window appears from the top down
 /// the way a waterfall row lands. `progress` animates because the modifier is `Animatable`.
-private struct SweepMask: ViewModifier, Animatable {
+// The conformance is isolated to the main actor: a `ViewModifier` is main-actor-isolated by
+// default in this module, so `animatableData` cannot satisfy `Animatable`'s nonisolated
+// requirement without it (the Mac's first build, 2026-09-25).
+private struct SweepMask: ViewModifier, @MainActor Animatable {
     var progress: CGFloat
 
     var animatableData: CGFloat {

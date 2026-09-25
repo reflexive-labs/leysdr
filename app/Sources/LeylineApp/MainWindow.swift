@@ -261,7 +261,7 @@ struct PlaceSwitch: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("\(p.title) (⌘\(p.shortcut))")
+                .help(Text(verbatim: "\(p.title) (⌘\(p.shortcut))"))
                 .accessibilityAddTraits(shown ? .isSelected : [])
             }
         }
