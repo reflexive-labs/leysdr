@@ -772,6 +772,32 @@ recordings; the place switch's raised segment beside the traffic lights; the ins
 clipped Peak in `accentRec` and the sentence wrapping in 312 pt; the player's bare ⏮ and ⏭; and
 the volume caption while a part plays and while it is paused.
 
+### APP-8 `[ ]` The mark, the splash and the icon
+
+The owner's brand files, 2026-09-25 (`../design/brand/leyline-mark.svg`, a 13 pt ring with a
+dot; `leyline-splash.svg`, the mark, `leyline` in Space Grotesk 62 at −0.04 em, and `SOFTWARE
+DEFINED RADIO` in mono between two rules). Both are drawn in code, not loaded: two circles and
+two lines, in `accent` (`#E8814A`), `ink` and `inkMuted`; Space Grotesk is not bundled (M1), so
+the wordmark is SF at 62 medium with the same tracking.
+
+- **The mark in the title bar**, 13 pt in `accent`, then `Leyline` in `label` `ink`, as the
+  first leading toolbar item before the place switch; the window's own title is hidden so the
+  word is drawn once.
+- **The splash**, "cool, but quick": on the first window's first appearance an overlay on
+  `ground` fades the mark and wordmark in over 0.4 s, holds until the daemon is live or 1.2 s
+  have passed, whichever is later (2 s at most), then, over 0.7 s with an ease-in-out: the
+  wordmark and the rule line fade; the ring grows to the window's diagonal and thins to nothing,
+  a ripple leaving the centre; the mark itself shrinks and travels to its place in the title
+  bar (one `matchedGeometryEffect` between the splash's mark and the toolbar's), and the body is
+  revealed under it by a mask that sweeps from the top down, the way a waterfall row lands. No
+  splash on later windows or when the app was launched by a URL. `Reduce Motion` on: a plain
+  0.3 s cross-fade.
+- **The icon**: the mark in `accent` on `ground` inside the macOS icon shape, rendered at
+  bundle time by `scripts/render-icon.swift` (CoreGraphics, macOS only) into every size
+  `iconutil` needs, `AppIcon.icns` placed by `scripts/bundle-app.sh` and named in `Info.plist`;
+  the same drawing at 1024 px is checked in as `../design/brand/leyline-icon.png` when first
+  rendered on a Mac, so the docs have it. This closes the M1 handoff's open "An icon" item.
+
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
 The daemon not running and the radio unplugged already have empty-state messages in the window,
