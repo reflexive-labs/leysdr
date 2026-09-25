@@ -12,6 +12,8 @@
 //     and the capture's anchor gives one a wall clock;
 //   - the window's record job writes a manifest the façade reads, whose parts hold the
 //     transmissions heard live, and a finished recording deletes;
+//   - a recording switched on and off over a continuous carrier cuts the log there, and the
+//     piece between the cuts lies in the recording's part;
 //   - the daemon's error code survives the trip.
 
 import Foundation
@@ -578,6 +580,104 @@ final class ClientDaemonTests: XCTestCase {
     /// so the request carries the listing's frequency, mode and width and no squelch. The job it
     /// starts must run and be the one the page's switch finds (plans/app.md, APP-5, "Fixed
     /// 2026-09-25").
+    /// The owner, 2026-09-25: "make sure that toggling a recording on and off creates a
+    /// transmission. treat it as a manual marker." The tone fixture is a continuous carrier, so
+    /// its squelch is open from the channel's creation and sends no edge at all; the meters say
+    /// it is open, the recording's gate is seeded open and its part starts at once. The log is cut the way `AppSession` cuts it: at the newest telemetry time
+    /// when the mirror first shows the job running, and again when it shows it ended.
+    @MainActor
+    func testARecordingOverACarrierCutsTheLogAtItsToggles() async throws {
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
+        try await Harness.setSquelch(-40, channel: channel.channelID, via: app, mirror: mirror)
+        let hz = UInt64(Int64(capture.centerHz) + channel.offsetHz)
+        let rate = capture.sampleRate
+
+        // `ChannelTelemetryFeed`'s subscription and fold, on the main actor.
+        final class Folded {
+            var log: TransmissionLog
+            var newest: Leyline_V1_SampleTime?
+            var meterOpen = false
+            init(_ id: String) { log = TransmissionLog(channelID: id) }
+        }
+        let folded = Folded(channel.channelID)
+        var sub = Leyline_V1_TelemetrySubscription()
+        sub.channelID = channel.channelID
+        sub.types = [.meter, .squelchTransition, .subAudible]
+        let stream = app.telemetry(sub)
+        let folder = Task { @MainActor in
+            for try await msg in stream {
+                folded.newest = msg.time
+                if case .meter(let m)? = msg.body { folded.meterOpen = m.squelchOpen }
+                folded.log.fold(msg, captureRate: rate)
+            }
+        }
+        defer { folder.cancel() }
+        await assertEventually("the meters never said the carrier held the squelch open") {
+            folded.meterOpen
+        }
+
+        var start = Leyline_V1_StartJobRequest()
+        start.record = Recordings.config(
+            frequencyHz: hz, mode: .nfm, bandwidthHz: channel.bandwidthHz, squelchDBFS: -40)
+        let job = try await app.jobs.startJob(start)
+        var onAt: Leyline_V1_SampleTime?
+        await assertEventually("the record job never ran on the tuned frequency") {
+            guard
+                Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz, mode: .nfm)?.jobID
+                    == job.jobID
+            else { return false }
+            onAt = folded.newest
+            return true
+        }
+        let on = try XCTUnwrap(onAt, "no telemetry time when the job ran")
+        XCTAssertTrue(folded.log.mark(.recordingOn, at: on, captureRate: rate), "nothing on air")
+
+        try await Task.sleep(for: .seconds(2))
+        var ref = Leyline_V1_JobRef()
+        ref.jobID = job.jobID
+        _ = try await app.jobs.cancelJob(ref)
+        var offAt: Leyline_V1_SampleTime?
+        await assertEventually("the job never ended") {
+            guard
+                Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz, mode: .nfm) == nil
+            else { return false }
+            offAt = folded.newest
+            return true
+        }
+        let off = try XCTUnwrap(offAt)
+        XCTAssertTrue(folded.log.mark(.recordingOff, at: off, captureRate: rate), "nothing on air")
+        XCTAssertEqual(folded.log.onAir?.startMarker, .recordingOff, "the carrier is still on air")
+
+        let piece = try XCTUnwrap(
+            folded.log.closed.first { $0.startMarker == .recordingOn },
+            "no row starts at the cut: \(folded.log.closed.map { ($0.start.sampleIndex, $0.end.sampleIndex) })"
+        )
+        XCTAssertEqual(piece.start, on)
+        XCTAssertEqual(piece.end, off)
+        XCTAssertEqual(piece.endMarker, .recordingOff)
+        XCTAssertEqual(piece.seconds, 2, accuracy: 0.5)
+        XCTAssertGreaterThan(piece.peakSNRDB, 20, "the piece's own meters measured the carrier")
+
+        await assertEventually("the job never reached a terminal state") {
+            mirror.state.jobs.first { $0.jobID == job.jobID }?.state == .cancelled
+        }
+        var resource = Leyline_V1_ResourceRef()
+        resource.uri = "ley://recordings/\(job.jobID)"
+        let local = try await app.resources.resolveLocalPath(resource)
+        let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
+        XCTAssertNotNil(
+            RecordingParts.match(transmission: piece, in: manifest.parts),
+            "the piece \(piece.start.sampleIndex)–\(piece.end.sampleIndex) lies in no part of \(manifest.parts.map { ($0.startSample, $0.endSample) })"
+        )
+    }
+
     @MainActor
     func testTheChannelPagesSwitchStartsARecordingThatRuns() async throws {
         let app = try DaemonConnection(

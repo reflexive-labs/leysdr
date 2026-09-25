@@ -1230,6 +1230,24 @@ reproduced), `AppSession.swift` (the hold's release paths, `logRecordSwitch` and
 `InspectorGroups.swift` and `RecordingsPage.swift` (the tint, the off track under it, the
 tooltips), and `PlayerBar.swift` (the tooltips).
 
+Fixed 2026-09-25 (markers), the owner's ask: "make sure that toggling a recording on and off
+creates a transmission. treat it as a manual marker." **A recording of a carrier kept nothing in
+the log.** The gate is seeded from the squelch, so over an FM station the part opened at the
+switch, but the log's one transmission had begun long before and never closed, and no row lay in
+the part. A record job on the tuned log's frequency and mode starting or ending now cuts the open
+transmission at the feed's newest telemetry time (`TransmissionLog.mark`,
+`AppSession.markRecordToggles`), whoever started the job; a squelch the meters report open with no
+open edge seen is cut with nothing to close. A cut row has a 2 pt `accentRec` bar at its left.
+The e2e run found the cut 20 ms before the part began, so `RecordingParts.match` lets a piece cut
+by a recording's on start before that recording's first part, and one cut by its off end after
+its last, when the part begins or ends inside the piece. Verified by `TransmissionsTests` (the
+five `mark` tests and `testTheLogsCutTheCurrentLogOnly`), `RecordingsTests`
+(`testAPieceCutByTheSwitchMatchesTheFirstAndLastPartsItOverhangs`) and `ClientDaemonTests`
+(`testARecordingOverACarrierCutsTheLogAtItsToggles`, on `nfm_tone.cf32`). Unverified until a Mac:
+`AppSession.swift` (`markRecordToggles` firing once per toggle, and not on a retune or a capture
+move), `SpectrumFeed.swift` (`ChannelTelemetryFeed.mark`), and `InspectorGroups.swift` and
+`Theme.swift` (the bar's place in the row's padding and its tooltip).
+
 ### APP-6 `[ ]` Lifecycle and the inspector (E.6)
 
 The daemon not running (reported, with `ley daemon start` offered and, once APP-7 installs the

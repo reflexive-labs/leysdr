@@ -178,6 +178,10 @@ enum Theme {
         static let logRingSize: CGFloat = 18
         /// The line along a playing row's bottom, as far as the clip has played.
         static let logProgressHeight: CGFloat = 2
+        /// The `accentRec` bar at the left edge of a row a recording's switch cut, in the row's
+        /// leading padding, and how far in from the row's edge it sits.
+        static let logMarkerWidth: CGFloat = 2
+        static let logMarkerInset: CGFloat = 2
         /// The `accentRec` dot: the live row's while a part is written, a recording bookmark's.
         static let recordingDot: CGFloat = 6
         /// A sidebar row's dot, the size the bookmark rows draw theirs.

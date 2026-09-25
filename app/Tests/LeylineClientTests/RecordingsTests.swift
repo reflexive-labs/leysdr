@@ -148,6 +148,41 @@ final class RecordingsTests: XCTestCase {
         XCTAssertNil(RecordingParts.match(transmission: heard(3_600_000, 6_000_000), in: unknown))
     }
 
+    /// A piece the switch cut is timed by the job's event, a little off the gate's own samples,
+    /// so it may begin before the recording's first part or end after its last, when that part
+    /// begins or ends inside it; any other part keeps the rule.
+    func testAPieceCutByTheSwitchMatchesTheFirstAndLastPartsItOverhangs() throws {
+        let parts = try manifest().parts
+        var on = heard(2_350_000, 6_000_000)
+        XCTAssertNil(RecordingParts.match(transmission: on, in: parts), "not cut: the rule")
+        on.startMarker = .recordingOn
+        XCTAssertEqual(RecordingParts.match(transmission: on, in: parts)?.part, 1)
+        on.end = at(7_300_000)
+        XCTAssertNil(
+            RecordingParts.match(transmission: on, in: parts), "it runs past part 1's end too")
+        on.endMarker = .recordingOff
+        XCTAssertNil(
+            RecordingParts.match(transmission: on, in: parts),
+            "part 1 is not the recording's last")
+        XCTAssertEqual(
+            RecordingParts.match(transmission: on, in: [parts[0]])?.part, 1,
+            "a recording of one part, cut on and off")
+
+        // Part 2 is not the recording's first: a recording-on piece that starts before it is
+        // not held there.
+        var later = heard(11_900_000, 13_000_000)
+        later.startMarker = .recordingOn
+        XCTAssertNil(RecordingParts.match(transmission: later, in: parts))
+        // It is the last: a recording-off piece that ends after it is.
+        var off = heard(13_000_000, 14_500_000)
+        off.endMarker = .recordingOff
+        XCTAssertEqual(RecordingParts.match(transmission: off, in: parts)?.part, 2)
+        // A part that begins after the piece ends is not inside it.
+        var before = heard(1_000_000, 2_000_000)
+        before.startMarker = .recordingOn
+        XCTAssertNil(RecordingParts.match(transmission: before, in: parts))
+    }
+
     /// The switch turned off and on: the first recording kept two transmissions, the second
     /// one started empty and then kept a third. Every row keeps its ▶, whichever recording
     /// holds it.

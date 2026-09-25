@@ -4,6 +4,11 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- Switching a recording on or off in the Mac app cuts the transmissions log there, as a marker:
+  the transmission on air ends at that moment and a new one begins, and the cut rows have a red
+  bar at their left. A recording of a station that never stops transmitting now has a row that
+  plays its part. A recording started or stopped with `ley record` cuts the log too.
+
 - The Mac app's Library lists parts, not recordings. Each part is a row with its start, length,
   a small level graph read from its file, its peak and its size; a recording of several parts is
   bracketed at the left, and each day opens with a 24-hour strip marking when parts began and a

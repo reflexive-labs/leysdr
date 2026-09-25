@@ -367,6 +367,13 @@ final class ChannelTelemetryFeed {
         }
     }
 
+    /// A record job on the tuned frequency started or ended at `time`: the tuned log's open
+    /// transmission is cut there (`TransmissionLogs.mark`). Returns whether it cut.
+    @discardableResult
+    func mark(_ marker: Transmission.Marker, at time: Leyline_V1_SampleTime) -> Bool {
+        logs.mark(marker, at: time, captureRate: captureRate)
+    }
+
     func stop() {
         task?.cancel()
         task = nil

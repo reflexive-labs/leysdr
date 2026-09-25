@@ -76,7 +76,8 @@ struct RecentLog: View {
                     length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
                     lengthInk: Theme.inkSecondary,
                     signal: session.channelReading?.signalWord?.word ?? Reading.absent,
-                    tone: open.tone, open: true, trailing: writing ? .writing : .empty)
+                    tone: open.tone, open: true, trailing: writing ? .writing : .empty,
+                    startMarker: open.startMarker)
             }
             // Keyed by capture and start sample, so a new transmission adds a row instead of
             // changing what every row's position means.
@@ -88,7 +89,8 @@ struct RecentLog: View {
                     length: Reading.seconds(t.seconds), lengthInk: ink,
                     signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
                     tone: t.tone, open: false,
-                    trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) } ?? .empty
+                    trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) } ?? .empty,
+                    startMarker: t.startMarker, endMarker: t.endMarker
                 )
                 .contextMenu {
                     if let uri {
@@ -198,7 +200,9 @@ struct RecordSwitch: View {
 /// trailing 20 pt column that holds a kept row's ▶ (`play.fill`, `inkSecondary`) in an 18 pt ring
 /// with a `border` stroke, ■ (`stop.fill`) while that part plays with a 2 pt `accent` line along
 /// the row's bottom as far as it has played, on the open row a 6 pt `accentRec` dot while a part
-/// is being written, and on a heard row nothing.
+/// is being written, and on a heard row nothing. A row a recording's switch began or ended
+/// (`TransmissionLog.mark`) has a 2 pt `accentRec` bar the row's height in its leading padding,
+/// before the time.
 struct LogRow: View {
     /// A recorded part's control on the row.
     struct Part {
@@ -223,6 +227,9 @@ struct LogRow: View {
     let tone: SubAudibleTone?
     let open: Bool
     var trailing: Trailing = .empty
+    /// The markers that began and ended the transmission, when a recording's switch cut it.
+    var startMarker: Transmission.Marker? = nil
+    var endMarker: Transmission.Marker? = nil
 
     var body: some View {
         HStack(spacing: 0) {
@@ -240,7 +247,29 @@ struct LogRow: View {
         .padding(.horizontal, 6)
         .frame(height: Theme.Layout.logRowHeight)
         .background(open ? Theme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(alignment: .leading) { markerBar }
         .overlay(alignment: .bottomLeading) { progressLine }
+    }
+
+    /// The bar in the leading padding of a row a recording's switch cut, with the cut in its
+    /// tooltip.
+    @ViewBuilder private var markerBar: some View {
+        if let words = markerWords {
+            Rectangle().fill(Theme.accentRec)
+                .frame(width: Theme.Layout.logMarkerWidth)
+                .frame(maxHeight: .infinity)
+                .padding(.leading, Theme.Layout.logMarkerInset)
+                .help(words)
+        }
+    }
+
+    /// `Cut by recording on`, `off`, or both, in the order they cut the row.
+    private var markerWords: String? {
+        let cuts = [startMarker, endMarker].compactMap { $0 }.map { m in
+            m == .recordingOn ? "on" : "off"
+        }
+        guard !cuts.isEmpty else { return nil }
+        return "Cut by recording " + cuts.joined(separator: " and ")
     }
 
     @ViewBuilder private var trailingColumn: some View {

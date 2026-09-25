@@ -10,7 +10,9 @@
 // heartbeat repeats a tone and is not a new one, and a tone's
 // loss is not logged), and the start of a transmission whose open edge was never seen is read back
 // from the close edge the way `listenSummary.apply` does (`go/internal/cli/mcp_tools.go`), so a
-// client that subscribes mid-transmission still logs it. Every time here is a `SampleTime` on
+// client that subscribes mid-transmission still logs it. A recording's switch going on or off
+// cuts the open transmission in two at that moment, a manual marker (`TransmissionLog.mark`), so
+// a continuous carrier's rows start and end where its recording's parts do. Every time here is a `SampleTime` on
 // the capture's timeline (invariant 5); `SampleClock` turns one into a wall clock, when an
 // anchor covers it. The window keeps one log per frequency and mode for the session
 // (`TransmissionLogs`), so a retune switches logs rather than emptying one.
@@ -54,8 +56,14 @@ public enum SubAudibleTone: Sendable, Equatable {
 }
 
 /// One closed transmission: when it began on the capture's timeline, how long it ran, how loud
-/// it got, and the tone under it.
+/// it got, the tone under it, and whether a recording's switch cut it.
 public struct Transmission: Sendable, Equatable {
+    /// A manual marker: a record job on the log's frequency started or ended while a
+    /// transmission was on air, and cut it in two there (`TransmissionLog.mark`).
+    public enum Marker: Sendable, Equatable {
+        case recordingOn, recordingOff
+    }
+
     /// The open edge's time; for a close edge with no open edge seen, the close time less the
     /// duration.
     public var start: Leyline_V1_SampleTime
@@ -67,12 +75,31 @@ public struct Transmission: Sendable, Equatable {
     public var peakSNRDB: Double
     public var peakAudioDBFS: Double
     public var tone: SubAudibleTone?
+    /// The marker that began it, when a recording's switch cut the one before it; nil when the
+    /// squelch opened it.
+    public var startMarker: Marker? = nil
+    /// The marker that ended it, when a recording's switch cut it; nil when the squelch closed it.
+    public var endMarker: Marker? = nil
 }
 
-/// A transmission in progress: the open edge's time, and the tone reported so far.
+/// A transmission in progress: the open edge's time (or the cut's, after a marker), the tone
+/// reported so far, and the loudest meter readings since it began, which is what a cut piece's
+/// peaks are: the daemon's peaks come on the close edge only, and cover the whole opening.
 public struct OnAir: Sendable, Equatable {
     public var since: Leyline_V1_SampleTime
     public var tone: SubAudibleTone?
+    /// The marker that began it; nil when an open edge did.
+    public var startMarker: Transmission.Marker? = nil
+    /// The highest `snr_db` and `audio_dbfs` of this channel's meters while on air; nil before a
+    /// meter that measured one.
+    public var peakSNRDB: Double? = nil
+    public var peakAudioDBFS: Double? = nil
+
+    /// Folds one meter's readings into the peaks; NaN is a reading nobody measured and is skipped.
+    mutating func meter(_ m: Leyline_V1_Meter) {
+        if !m.snrDb.isNaN { peakSNRDB = max(peakSNRDB ?? m.snrDb, m.snrDb) }
+        if !m.audioDbfs.isNaN { peakAudioDBFS = max(peakAudioDBFS ?? m.audioDbfs, m.audioDbfs) }
+    }
 }
 
 /// The last `capacity` closed transmissions on one channel, newest first, and the open one.
@@ -96,6 +123,11 @@ public struct TransmissionLog: Sendable, Equatable {
     public private(set) var captureRate: UInt64 = 0
     /// The tone reported since the last edge, waiting for the close edge to attach it to.
     private var tone: SubAudibleTone?
+    /// Whether the squelch is open as far as this log can tell: the last edge's, or a newer
+    /// meter's `squelch_open`. A carrier that held the squelch open before the log was listening
+    /// sends no open edge, and a channel whose squelch is off is open from the start with none
+    /// either, so only a meter tells a cut there is something on air to cut.
+    private var squelchOpen = false
 
     public init(channelID: String) {
         self.channelID = channelID
@@ -107,28 +139,40 @@ public struct TransmissionLog: Sendable, Equatable {
         switch msg.body {
         case .squelch(let sq) where sq.channelID == channelID:
             self.captureRate = captureRate
+            squelchOpen = sq.open
             if sq.open {
                 onAir = OnAir(since: msg.time, tone: nil)
                 tone = nil
                 return
             }
-            let start = onAir?.since ?? reconstructedStart(closing: msg.time, after: sq)
-            let toneSeen = onAir?.tone ?? tone
+            let was = onAir
+            let start = was?.since ?? reconstructedStart(closing: msg.time, after: sq)
+            let toneSeen = was?.tone ?? tone
             onAir = nil
             tone = nil
             // No duration means nothing was measured: a channel whose squelch was off starts open
             // and closes on its first block under a threshold, and that is not a transmission.
             guard sq.durationSamples > 0 else { return }
-            let seconds =
-                captureRate > 0 ? Double(sq.durationSamples) / Double(captureRate) : Double.nan
-            // An unknown rate keeps it: a length nobody can read is not a short one.
-            guard seconds.isNaN || seconds >= Self.shortestSeconds else { return }
-            closed.insert(
+            guard let marker = was?.startMarker else {
+                let length =
+                    captureRate > 0 ? Double(sq.durationSamples) / Double(captureRate) : Double.nan
+                insert(
+                    Transmission(
+                        start: start, end: msg.time, seconds: length, peakSNRDB: sq.peakSnrDb,
+                        peakAudioDBFS: sq.peakAudioDbfs, tone: toneSeen))
+                return
+            }
+            // The piece after a cut: the daemon's duration and peaks cover the whole opening,
+            // the part before the cut too, so the piece's own are measured from the cut.
+            insert(
                 Transmission(
-                    start: start, end: msg.time, seconds: seconds, peakSNRDB: sq.peakSnrDb,
-                    peakAudioDBFS: sq.peakAudioDbfs, tone: toneSeen),
-                at: 0)
-            if closed.count > Self.capacity { closed.removeLast(closed.count - Self.capacity) }
+                    start: start, end: msg.time, seconds: seconds(from: start, to: msg.time),
+                    peakSNRDB: was?.peakSNRDB ?? sq.peakSnrDb,
+                    peakAudioDBFS: was?.peakAudioDBFS ?? sq.peakAudioDbfs, tone: toneSeen,
+                    startMarker: marker))
+        case .meter(let m) where m.channelID == channelID:
+            squelchOpen = m.squelchOpen
+            onAir?.meter(m)
         case .subAudible(let sa) where sa.channelID == channelID:
             // A heartbeat repeats the tone and a loss changes nothing: the tone a transmission had
             // stays with it. Only a classified CTCSS tone or a DCS code is a tone at all, and a
@@ -144,11 +188,63 @@ public struct TransmissionLog: Sendable, Equatable {
         }
     }
 
+    /// A recording's switch on this frequency went on or off at `time` (docs/dev/app.md,
+    /// "Transmissions and the clock"): the open transmission closes there, as long as it ran,
+    /// with the peaks its meters reached and its tone, and a new one opens at the cut with no
+    /// tone yet, since the squelch is still open and the tone was reported for the stream before.
+    /// A continuous carrier holds the squelch open for as long as it is on the air, so without
+    /// the cut its one transmission began before the recording and never ended, and no part
+    /// could hold it. A squelch the meters say is open with no open edge seen (a carrier on air
+    /// before the log was listening, a channel with its squelch off) has nothing to close, and
+    /// the cut only opens the new one. With the squelch closed there is nothing to cut, and a
+    /// cut on another timeline or before the transmission began is not one either. A piece
+    /// shorter than `shortestSeconds` is dropped like any other opening. Returns whether it cut.
+    @discardableResult
+    public mutating func mark(
+        _ marker: Transmission.Marker, at time: Leyline_V1_SampleTime, captureRate: UInt64
+    ) -> Bool {
+        if let was = onAir {
+            guard time.captureID == was.since.captureID,
+                time.sampleIndex >= was.since.sampleIndex
+            else { return false }
+            if captureRate > 0 { self.captureRate = captureRate }
+            insert(
+                Transmission(
+                    start: was.since, end: time, seconds: seconds(from: was.since, to: time),
+                    peakSNRDB: was.peakSNRDB ?? .nan, peakAudioDBFS: was.peakAudioDBFS ?? .nan,
+                    tone: was.tone, startMarker: was.startMarker, endMarker: marker))
+        } else {
+            guard squelchOpen else { return false }
+            if captureRate > 0 { self.captureRate = captureRate }
+        }
+        onAir = OnAir(since: time, tone: nil, startMarker: marker)
+        tone = nil
+        return true
+    }
+
+    /// Logs `t` newest first, unless it is shorter than `shortestSeconds`, keeping `capacity`.
+    private mutating func insert(_ t: Transmission) {
+        // An unknown rate keeps it: a length nobody can read is not a short one.
+        guard t.seconds.isNaN || t.seconds >= Self.shortestSeconds else { return }
+        closed.insert(t, at: 0)
+        if closed.count > Self.capacity { closed.removeLast(closed.count - Self.capacity) }
+    }
+
+    /// Seconds between two times on one timeline at the last rate folded; NaN when it is unknown.
+    private func seconds(from start: Leyline_V1_SampleTime, to end: Leyline_V1_SampleTime)
+        -> Double
+    {
+        guard captureRate > 0 else { return .nan }
+        return Double(end.sampleIndex - min(end.sampleIndex, start.sampleIndex))
+            / Double(captureRate)
+    }
+
     /// Drops the open transmission without logging it: its close edge will never reach this log,
     /// because the log's subscription ended or it now folds another channel.
     mutating func endUnheard() {
         onAir = nil
         tone = nil
+        squelchOpen = false
     }
 
     /// Folds `channelID`'s edges from now on. The open transmission belonged to the old channel,
@@ -308,6 +404,16 @@ public struct TransmissionLogs: Sendable, Equatable {
         }
         guard let c = current else { return }
         logs[c]?.fold(msg, captureRate: captureRate)
+    }
+
+    /// A recording's switch on the current log's frequency went on or off at `time`: the current
+    /// log's open transmission is cut there (`TransmissionLog.mark`). Returns whether it cut.
+    @discardableResult
+    public mutating func mark(
+        _ marker: Transmission.Marker, at time: Leyline_V1_SampleTime, captureRate: UInt64
+    ) -> Bool {
+        guard let c = current else { return false }
+        return logs[c]?.mark(marker, at: time, captureRate: captureRate) ?? false
     }
 
     /// Every waiting transmission dropped, except the current log's own: it is still on air here.

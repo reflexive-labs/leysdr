@@ -390,14 +390,34 @@ public enum RecordingParts {
     /// before the transmission's start, and the transmission's end at or before the part's end.
     /// A part whose capture is unknown matches nothing. A transmission with a part is a kept row
     /// of the log, one without is a heard row (docs/design/app-design-handoff-m3.md, "The rule").
+    /// `parts` are one recording's, in order.
+    ///
+    /// A piece a recording's switch cut (`TransmissionLog.mark`) is timed by the newest
+    /// telemetry when the job's event arrives, which is not the sample the recording's gate
+    /// opened at: over a carrier, the e2e run saw the cut 20 ms before the first part began. So
+    /// a piece that began at a recording-on cut may start before the recording's first part, as
+    /// long as that part begins inside it, and one that ended at a recording-off cut may end
+    /// after the recording's last part, as long as that part ends inside it. Any other part is
+    /// held to the rule above.
     public static func match(transmission t: Transmission, in parts: [RecordingPart])
         -> RecordingPart?
     {
-        parts.first { p in
+        let first = parts.indices.first
+        let last = parts.indices.last
+        return parts.indices.first { i in
+            let p = parts[i]
             guard let capture = p.captureID, !capture.isEmpty else { return false }
-            return capture == t.start.captureID && capture == t.end.captureID
-                && p.startSample <= t.start.sampleIndex && t.end.sampleIndex <= p.endSample
-        }
+            guard capture == t.start.captureID, capture == t.end.captureID else { return false }
+            let from = t.start.sampleIndex
+            let to = t.end.sampleIndex
+            let startsInside =
+                p.startSample <= from
+                || (t.startMarker == .recordingOn && i == first && p.startSample <= to)
+            let endsInside =
+                to <= p.endSample
+                || (t.endMarker == .recordingOff && i == last && from <= p.endSample)
+            return startsInside && endsInside
+        }.map { parts[$0] }
     }
 
     /// The URI of the part that holds `t` in any of `manifests`, searched in order (newest

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The transmissions log, without a daemon: edges to transmissions, the reconstructed start,
-// the tone or DCS code under a transmission and its heartbeat, the ring, and another channel's
-// edges. The edge rules are the ones `go/internal/cli/transmission_test.go` holds `ley tune` to.
+// the tone or DCS code under a transmission and its heartbeat, the ring, another channel's
+// edges, and a recording's switch cutting the open transmission. The edge rules are the ones `go/internal/cli/transmission_test.go` holds `ley tune` to.
 
 import LeylineProto
 import XCTest
@@ -262,6 +262,154 @@ final class TransmissionsTests: XCTestCase {
     }
 
     // MARK: One log per frequency
+
+    private func meter(at index: UInt64, snr: Double, audio: Double) -> Leyline_V1_TelemetryMsg {
+        .with {
+            $0.time = at(index)
+            $0.meter = .with {
+                $0.channelID = channel
+                $0.snrDb = snr
+                $0.audioDbfs = audio
+                $0.squelchOpen = true
+            }
+        }
+    }
+
+    /// The owner, 2026-09-25: "make sure that toggling a recording on and off creates a
+    /// transmission. treat it as a manual marker." A carrier on air since sample 0, cut by the
+    /// switch at 2 s: a closed row ending at the cut with the peaks and tone it had, and an open
+    /// one starting there with no tone yet.
+    func testRecordingOnCutsTheOpenTransmissionAtTheToggle() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        log.fold(meter(at: 240_000, snr: 30, audio: -9), captureRate: rate)
+        log.fold(meter(at: 480_000, snr: 28, audio: -6), captureRate: rate)
+        log.fold(
+            tone(.subAudibleCtcss, standard: 100, measured: 100.1, at: 720_000), captureRate: rate)
+
+        XCTAssertTrue(log.mark(.recordingOn, at: at(4_800_000), captureRate: rate))
+        XCTAssertEqual(log.closed.count, 1)
+        let before = log.closed[0]
+        XCTAssertEqual(before.start, at(0))
+        XCTAssertEqual(before.end, at(4_800_000), "the row ends at the cut")
+        XCTAssertEqual(before.seconds, 2)
+        XCTAssertEqual(before.peakSNRDB, 30, "the loudest meter so far")
+        XCTAssertEqual(before.peakAudioDBFS, -6)
+        XCTAssertEqual(before.tone, .ctcss(standardHz: 100, measuredHz: 100.1), "the tone stays")
+        XCTAssertNil(before.startMarker, "the squelch opened it")
+        XCTAssertEqual(before.endMarker, .recordingOn)
+        XCTAssertEqual(log.onAir?.since, at(4_800_000), "a new one opens at the cut")
+        XCTAssertEqual(log.onAir?.startMarker, .recordingOn)
+        XCTAssertNil(log.onAir?.tone, "the next report names the tone again")
+        XCTAssertNil(log.onAir?.peakSNRDB)
+        XCTAssertEqual(log.timeOnAir(at: at(7_200_000)), 1)
+
+        // The squelch closes later: the daemon's duration covers the whole opening, the piece's
+        // is from the cut, and its peaks are its own meters'.
+        log.fold(meter(at: 6_000_000, snr: 20, audio: -12), captureRate: rate)
+        log.fold(
+            edge(open: false, at: 9_600_000, duration: 9_600_000, snr: 30, audio: -6),
+            captureRate: rate)
+        XCTAssertEqual(log.closed.count, 2)
+        let after = log.closed[0]
+        XCTAssertEqual(after.start, at(4_800_000))
+        XCTAssertEqual(after.end, at(9_600_000))
+        XCTAssertEqual(after.seconds, 2, "from the cut, not the open edge")
+        XCTAssertEqual(after.peakSNRDB, 20)
+        XCTAssertEqual(after.peakAudioDBFS, -12)
+        XCTAssertEqual(after.startMarker, .recordingOn)
+        XCTAssertNil(after.endMarker, "the squelch closed it")
+        XCTAssertNil(log.onAir)
+    }
+
+    func testRecordingOffCutsTheOpenTransmissionToo() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        XCTAssertTrue(log.mark(.recordingOn, at: at(2_400_000), captureRate: rate))
+        XCTAssertTrue(log.mark(.recordingOff, at: at(9_600_000), captureRate: rate))
+        XCTAssertEqual(log.closed.count, 2)
+        let recorded = log.closed[0]
+        XCTAssertEqual(recorded.start, at(2_400_000))
+        XCTAssertEqual(recorded.end, at(9_600_000))
+        XCTAssertEqual(recorded.seconds, 3)
+        XCTAssertEqual(recorded.startMarker, .recordingOn)
+        XCTAssertEqual(recorded.endMarker, .recordingOff)
+        XCTAssertTrue(recorded.peakSNRDB.isNaN, "no meter, no peak")
+        XCTAssertEqual(log.onAir?.since, at(9_600_000))
+        XCTAssertEqual(log.onAir?.startMarker, .recordingOff)
+    }
+
+    func testACutWithNothingOnAirChangesNothing() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        log.fold(edge(open: false, at: 2_400_000, duration: 2_400_000), captureRate: rate)
+        let before = log
+        XCTAssertFalse(log.mark(.recordingOn, at: at(4_800_000), captureRate: rate))
+        XCTAssertFalse(log.mark(.recordingOff, at: at(7_200_000), captureRate: rate))
+        XCTAssertEqual(log, before)
+
+        // A cut on another timeline, or before the transmission began, is not one either.
+        log.fold(edge(open: true, at: 9_600_000), captureRate: rate)
+        let open = log
+        var elsewhere = at(12_000_000)
+        elsewhere.captureID = "cap_b"
+        XCTAssertFalse(log.mark(.recordingOn, at: elsewhere, captureRate: rate))
+        XCTAssertFalse(log.mark(.recordingOn, at: at(1_000), captureRate: rate))
+        XCTAssertEqual(log, open)
+    }
+
+    /// A carrier that held the squelch open before the log was listening sent no open edge;
+    /// the meters say it is open, so the cut opens a piece there with nothing to close.
+    func testACutWithTheMetersSayingOpenAndNoEdgeSeenOpensAPiece() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(meter(at: 240_000, snr: 30, audio: -9), captureRate: rate)
+        XCTAssertNil(log.onAir, "a meter is not an open edge")
+        XCTAssertTrue(log.mark(.recordingOn, at: at(2_400_000), captureRate: rate))
+        XCTAssertTrue(log.closed.isEmpty, "nothing to close")
+        XCTAssertEqual(log.onAir?.since, at(2_400_000))
+        XCTAssertEqual(log.onAir?.startMarker, .recordingOn)
+        XCTAssertTrue(log.mark(.recordingOff, at: at(7_200_000), captureRate: rate))
+        XCTAssertEqual(log.closed.map(\.seconds), [2])
+        XCTAssertEqual(log.closed.first?.startMarker, .recordingOn)
+
+        // A meter saying closed: nothing to cut.
+        log.fold(edge(open: false, at: 8_000_000, duration: 8_000_000), captureRate: rate)
+        var closedMeter = meter(at: 9_000_000, snr: 3, audio: -60)
+        closedMeter.meter.squelchOpen = false
+        log.fold(closedMeter, captureRate: rate)
+        XCTAssertFalse(log.mark(.recordingOn, at: at(9_600_000), captureRate: rate))
+    }
+
+    func testACutPieceUnderAQuarterSecondIsDropped() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        XCTAssertTrue(log.mark(.recordingOn, at: at(4_800_000), captureRate: rate))
+        // A quick on and off: 0.1 s between the cuts.
+        XCTAssertTrue(log.mark(.recordingOff, at: at(5_040_000), captureRate: rate))
+        XCTAssertEqual(log.closed.map(\.end), [at(4_800_000)], "the 0.1 s piece is not logged")
+        XCTAssertEqual(log.onAir?.since, at(5_040_000), "but the squelch is still open")
+        // And a close 0.1 s after a cut is no row either.
+        log.fold(edge(open: false, at: 5_280_000, duration: 5_280_000), captureRate: rate)
+        XCTAssertEqual(log.closed.count, 1)
+        XCTAssertNil(log.onAir)
+    }
+
+    func testTheLogsCutTheCurrentLogOnly() {
+        var logs = TransmissionLogs()
+        XCTAssertFalse(logs.mark(.recordingOn, at: at(0), captureRate: rate), "no log, no cut")
+        logs.tune(gmrs3, channelID: channel)
+        logs.fold(edge(open: true, at: 0), captureRate: rate)
+        logs.tune(gmrs1, channelID: channel)
+        XCTAssertFalse(
+            logs.mark(.recordingOn, at: at(2_400_000), captureRate: rate),
+            "the log left on air is not the current one")
+        logs.fold(edge(open: false, at: 4_800_000, duration: 4_800_000), captureRate: rate)
+        XCTAssertEqual(logs.log(for: gmrs3)?.closed.map(\.endMarker), [nil])
+        logs.fold(edge(open: true, at: 7_200_000), captureRate: rate)
+        XCTAssertTrue(logs.mark(.recordingOn, at: at(9_600_000), captureRate: rate))
+        XCTAssertEqual(logs.log?.closed.map(\.endMarker), [.recordingOn])
+        XCTAssertEqual(logs.log?.onAir?.startMarker, .recordingOn)
+    }
 
     private let gmrs3 = TransmissionLogs.Key(frequencyHz: 462_612_500, mode: .nfm)
     private let gmrs1 = TransmissionLogs.Key(frequencyHz: 462_562_500, mode: .nfm)

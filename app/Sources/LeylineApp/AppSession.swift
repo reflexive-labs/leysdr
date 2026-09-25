@@ -195,6 +195,9 @@ final class AppSession {
     /// The log's switch as last written to the log (`logRecordSwitch`), so a change is logged
     /// once: the owner's third run saw the switch go grey and left nothing in the log to say why.
     @ObservationIgnored private var recordSwitchLogged: String?
+    /// The tuned log's frequency and mode and the record job running there, as the last mirror
+    /// change left them, so `markRecordToggles` cuts the log when the job starts or ends.
+    @ObservationIgnored private var recordMarkSeen: (key: TransmissionLogs.Key, jobID: String?)?
     /// The record jobs either switch started, until each ends: `StartJob` answers before the
     /// radio is allocated, so a decline arrives as the job's FAILED event and is shown from
     /// there (`Recordings.failureNotice`).
@@ -2119,7 +2122,43 @@ final class AppSession {
         followPage()
         noticeFailedRecordJobs()
         settleRecordSwitch()
+        markRecordToggles()
         logRecordSwitch()
+    }
+
+    /// A record job on the tuned log's frequency and mode started or ended: the log's open
+    /// transmission is cut there, a manual marker (`TransmissionLog.mark`; docs/dev/app.md,
+    /// "Transmissions and the clock"). From the job's state, not the click, so `ley record` from
+    /// a terminal cuts the log too. The job is looked up on the log's own key rather than
+    /// `tunedHz`, which passes through a wrong frequency for one event when the capture moves
+    /// (`ChannelFrequencyWatch`); a retune or a new log is not a toggle. The cut is at the newest
+    /// telemetry time, the capture's clock.
+    private func markRecordToggles() {
+        guard let key = telemetry.logs.current else {
+            recordMarkSeen = nil
+            return
+        }
+        let job = Recordings.activeJob(
+            in: state.jobs, frequencyHz: key.frequencyHz, mode: key.mode)?.jobID
+        let seen = recordMarkSeen
+        recordMarkSeen = (key, job)
+        guard let seen, seen.key == key, seen.jobID != job else { return }
+        // One job giving way to another in one event is an off and an on.
+        if seen.jobID != nil { markRecordToggle(.recordingOff, job: seen.jobID) }
+        if job != nil { markRecordToggle(.recordingOn, job: job) }
+    }
+
+    private func markRecordToggle(_ marker: Transmission.Marker, job: String?) {
+        let word = marker == .recordingOn ? "on" : "off"
+        guard let now = telemetry.newestTime else {
+            log("record", "marker \(word) (\(job ?? "")) not cut: no telemetry time yet")
+            return
+        }
+        let cut = telemetry.mark(marker, at: now)
+        log(
+            "record",
+            "marker \(word) at sample \(now.sampleIndex) (\(job ?? "")): \(cut ? "the log cut there" : "nothing on air to cut")"
+        )
     }
 
     /// The tuned channel's manifests: every recording on its frequency and mode, not only the

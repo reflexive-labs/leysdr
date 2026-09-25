@@ -111,13 +111,29 @@ tuned dropped, so a retune switches to the new frequency's log and coming back f
 heard there; edges fold into the current log only, and a log left while its transmission was
 open takes the next close edge, which is the daemon's close on retune arriving after the
 retune's event (an open edge first drops the old transmission instead). Until the owner's second
-run on 2026-09-25 a retune emptied the one log. `SampleClock` is the Swift
+run on 2026-09-25 a retune emptied the one log. A record job on the tuned log's frequency and mode
+starting or ending is a manual marker (`mark`, `Transmission.startMarker` and `endMarker`): the
+open transmission closes there, with its tone and the peaks its meters reached, and a new one
+opens at the same sample with no tone yet, because the squelch is still open. A continuous carrier
+(an FM station) holds the squelch open for as long as it is on the air, so without the cut its
+one transmission began before the recording and never ended, no part held it, and nothing got ▶.
+A squelch the meters report open with no open edge seen (a carrier on air before the log was
+listening, a channel with its squelch off) is cut too, with nothing to close; a closed squelch has
+nothing to cut, and a piece under a quarter second is dropped like any opening. The session cuts
+from the job's state, not the click, so `ley record` from a terminal cuts the log as well
+(`AppSession.markRecordToggles`), at the feed's newest telemetry time. That time is when the job's
+event arrived, not the sample the gate opened at: over `nfm_tone.cf32` the cut came 20 ms before
+the recording's first part began, so `RecordingParts.match` lets a piece that began at a
+recording-on cut start before the recording's first part when that part begins inside it, and one
+that ended at a recording-off cut end after the last part when that part ends inside it. A cut row
+has a 2 pt `accentRec` bar at its left edge. `SampleClock` is the Swift
 mirror of `leyline.AnchorWallTime` and `RecordWallTime`: a `SampleTime` becomes a `Date` through
 a dated `CaptureAnchor` on the same capture that applies from a sample not past it, drift
 applied as the anchor states it, and nil otherwise (a capture's anchor has host time 0 until its
 first block), because without an anchor the daemon has no wall-clock time to give (invariant 5). The
-mirror keeps each capture's newest anchor on the capture, and the daemon-backed test folds
-`nfm_keyed.cf32` into transmissions as long as the fixture keyed them.
+mirror keeps each capture's newest anchor on the capture, and the daemon-backed tests fold
+`nfm_keyed.cf32` into transmissions as long as the fixture keyed them and cut `nfm_tone.cf32`'s
+carrier at a recording's on and off into a row its part holds.
 
 **Failure states** (`FailureState.swift`). Problems the radio's numbers show, stated in words
 rather than left as a dark waterfall (`../plans/user-stories.md`, V1a): the radio clipping, read from
@@ -197,7 +213,8 @@ shares. For the tuned channel every recording on its frequency and mode is read
 and again on each of its job's events. The log's rows are the live transmissions only and never
 back-fill from a recording. A closed row whose transmission lies inside a part of any of those
 recordings (same capture, the part's start at or before the transmission's start, its end at or
-before the part's end; `RecordingParts.match` and `keptPartURI`) is kept, so a row an earlier
+before the part's end, with the allowance for a piece a recording's switch cut described under
+"Transmissions and the clock"; `RecordingParts.match` and `keptPartURI`) is kept, so a row an earlier
 recording kept keeps its ▶ after the switch goes off and on: its time and length in `ink`, ▶ in
 a ring that plays the part through `Control.StartPlayback` while the live sink is detached, the
 progress line from the mirror's `playbacks` (the daemon publishes a playing playback four times a
