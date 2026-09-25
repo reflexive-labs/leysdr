@@ -359,27 +359,23 @@ struct PartRowView: View {
         }
     }
 
-    /// The recording's bracket down the gutter: a 1 pt `border` line at the column's centre,
-    /// from this row's middle down on its first row, through the middle rows, and to the middle
-    /// on its last, so the line spans the recording's rows from the first part's ring line to the
-    /// last's. The rows of one recording have no gap between them, so the pieces join.
+    /// The recording's bracket down the gutter: a 2 pt `border` line at the column's centre,
+    /// from the top of this row's text down on its first row, through the middle rows, and to
+    /// the bottom of the text on its last, so the line spans the recording's rows from the first
+    /// part's words to the last's (the owner, 2026-09-25: a line that started at the row's
+    /// middle stopped half way up the text). The rows of one recording have no gap between
+    /// them, so the pieces join.
     @ViewBuilder private var bracket: some View {
-        let line = Rectangle().fill(Theme.border).frame(width: 1)
+        let line = Rectangle().fill(Theme.border).frame(width: Theme.Layout.bracketWidth)
         switch row.bracket {
         case .none:
             Color.clear
         case .first:
-            VStack(spacing: 0) {
-                Color.clear
-                line
-            }
+            line.frame(maxHeight: .infinity).padding(.top, Theme.Layout.bracketTextInset)
         case .middle:
             line.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .last:
-            VStack(spacing: 0) {
-                line
-                Color.clear
-            }
+            line.frame(maxHeight: .infinity).padding(.bottom, Theme.Layout.bracketTextInset)
         }
     }
 }

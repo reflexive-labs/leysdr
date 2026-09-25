@@ -210,6 +210,11 @@ enum Theme {
         static let playingRingSize: CGFloat = 28
         static let ringColumnWidth: CGFloat = playingRingSize
         static let bracketColumnWidth: CGFloat = 12
+        /// The bracket's line, and how far below the row's top (and above its bottom) it starts
+        /// on a recording's first and last rows: the top of the words in `Font.value` in a 30 pt
+        /// row.
+        static let bracketWidth: CGFloat = 2
+        static let bracketTextInset: CGFloat = 8
         static let recordingGap: CGFloat = 10
         /// Wide enough for `14:03:03` and `part 11` in `Font.value`, and for `25 s`.
         static let startsWidth: CGFloat = 72
