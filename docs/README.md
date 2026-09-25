@@ -64,7 +64,8 @@ changes the doc first.
 | [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented (C.12) |
 | [App design handoff](design/app-design-handoff.md) | the M1 window read against the code: regions, palette and type tokens, the bands and bookmarks files, tuning gestures, what M1 deliberately leaves out | reconciled 2026-09-18; M1 built |
 | [App design handoff, M2](design/app-design-handoff-m2.md) | the inspector panel: identity, the reading, the audio ladder, the log, Measurements, and every decision taken against the code since | landed 2026-09-20; revised through 2026-09-24 |
-| [App design handoff, M3-1](design/app-design-handoff-m3.md) | recording from the window: the transport button as the audio control, the header's record control, the log's rows as the chunks, recordings in the sidebar | landed 2026-09-24; unverified on a Mac |
+| [App design handoff, M3](design/app-design-handoff-m3.md) | recording in the window: the owner's 8a–8e and 10a screens read against the prose, then the Library decided with the owner (two places, one switch; rows are parts; a player that pauses) and every decision taken in the build | landed 2026-09-25; unverified on a Mac |
+| [Brand](design/brand/README.md) | the mark and the splash as the owner drew them, drawn in code (APP-8); how the icon is made | 2026-09-25 |
 
 ### Decisions (`decisions/`)
 
