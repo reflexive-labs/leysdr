@@ -307,6 +307,28 @@ while the panel is shown, summed into nine octave bands by the façade's `BandLe
 demod tap carries the discriminator's noise between transmissions. The view was written in the
 container and is unverified until it runs on a Mac (`../plans/app.md`, M2-7).
 
+## Brand
+
+The mark and the splash are the owner's SVGs in `../design/brand/`, drawn in code rather than
+loaded, so they take `Theme`'s colours at any size (`../plans/app.md`, APP-8). `BrandMark` is the
+ring and dot at a `size` in `accent`, its ring's outer edge on the box; the toolbar's first leading
+item is the 13 pt mark and `Leyline` in `label`, and the window's title is removed from the toolbar
+with `.toolbar(removing: .title)` so the word is drawn once while the Window menu still lists the
+window as Leyline. The first window of a launch opens under `SplashView`, whose clock is
+`MainWindow.playSplash`: the 26 pt mark, `leyline` and `SOFTWARE DEFINED RADIO` fade in over
+`Motion.splashFadeIn` (0.4 s); the splash holds until the daemon is live, at least `splashMinHold`
+(1.2 s) from its first frame and at most `splashMaxHold` (2 s); then, over `splashExit` (0.7 s,
+ease-in-out), the words fade, a ring grows from the mark to the window's diagonal while its line
+thins to nothing, the mark flies to the toolbar's and shrinks to its size, the toolbar's items fade
+in, and the splash's ground is swept away from the top down. The flight is an offset and a scale
+measured in the window's coordinates (`WindowFrameProbe`), not a `matchedGeometryEffect`, because a
+toolbar item is hosted outside the content's view tree; the toolbar's ground is hidden while the
+splash shows so the mark can reach it. With Reduce Motion on, the exit is a `splashReducedFade` (0.3
+s) cross-fade. Every size is a `Layout.splash*` or `brand*` token read off the SVGs. The icon is
+drawn by `scripts/render-icon.swift` at bundle time (the mark on `ground` in the macOS icon tile, 16
+to 1024 px, then `iconutil`), and `bundle-app.sh` puts `AppIcon.icns` in `Contents/Resources`, which
+`Info.plist` names as `CFBundleIconFile`; `make app-run` runs no bundle and shows the generic icon.
+
 ## Building and running
 
 On the Mac (Xcode 26, the same as the engine):

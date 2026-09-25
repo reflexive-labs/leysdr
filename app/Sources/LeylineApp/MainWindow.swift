@@ -7,13 +7,33 @@
 // without it. Two places share the toolbar (docs/design/app-design-handoff-m3.md, "Decided
 // 2026-09-25: the Library"): the Radio is that window, and the Library replaces the whole body
 // under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps running,
-// because the capture, the channel and the feeds are the session's, not the body's.
+// because the capture, the channel and the feeds are the session's, not the body's. The first
+// window opens under a splash (APP-8, `SplashView.swift`) that clears into it, its mark landing
+// on the toolbar's.
 
 import LeylineClient
 import SwiftUI
 
 struct MainWindow: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Whether no window has played the splash yet this launch. The first window's `playSplash`
+    /// clears it; a window opened later starts with the splash `done`. A launch by URL would skip
+    /// it too (the spec's clause), but the app opens no URLs yet.
+    private static var splashPending = true
+    @State private var splash: SplashPhase = MainWindow.splashPending ? .before : .done
+    @State private var flight: SplashFlight?
+    @State private var splashMark = WindowFrameAnchor()
+    @State private var toolbarMark = WindowFrameAnchor()
+
+    /// The toolbar's items appear as the splash leaves.
+    private var chromeShown: Bool { splash == .leaving || splash == .done }
+    /// The toolbar's mark appears when the splash's has landed on it and been removed, or with
+    /// the rest when the splash's mark does not fly.
+    private var toolbarMarkShown: Bool {
+        splash == .done || (splash == .leaving && (reduceMotion || flight == nil))
+    }
 
     var body: some View {
         // One container for both places, so the toolbar and the alert stay put across a switch.
@@ -24,18 +44,40 @@ struct MainWindow: View {
             }
         }
         .background(Theme.ground)
+        .overlay {
+            if splash != .done {
+                SplashView(phase: splash, flight: flight, markAnchor: splashMark)
+            }
+        }
+        .task { await playSplash() }
         .toolbar {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
-            // is hidden and each item draws the pop-ups' ground instead.
-            ToolbarItem(placement: .navigation) { PlaceSwitch() }
+            // is hidden and each item draws the pop-ups' ground instead. The items are hidden
+            // while the splash covers the window and fade in as it leaves.
+            ToolbarItem(placement: .navigation) {
+                BrandTitle(
+                    markShown: toolbarMarkShown, wordShown: chromeShown, markAnchor: toolbarMark)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .navigation) { PlaceSwitch().shown(chromeShown) }
                 .sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .primaryAction) { DeviceChip() }
+            ToolbarItem(placement: .primaryAction) { DeviceChip().shown(chromeShown) }
                 .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.fixed, placement: .primaryAction)
-            ToolbarItem(placement: .primaryAction) { InspectorToggle() }
+            ToolbarItem(placement: .primaryAction) { InspectorToggle().shown(chromeShown) }
                 .sharedBackgroundVisibility(.hidden)
         }
+        // `Leyline` is drawn by `BrandTitle`, so the window's own title is removed from the
+        // toolbar. The window keeps its title (`WindowGroup("Leyline")`), which the Window menu
+        // and the Dock's menu list; an empty `navigationTitle` would have left them blank.
+        .toolbar(removing: .title)
         .toolbarBackground(Theme.chrome, for: .windowToolbar)
+        // Hidden under the splash, so its ground and its flying mark reach the top of the window;
+        // the splash draws `chrome` there as it leaves. Reduce Motion's cross-fade has no flight
+        // and leaves the ground alone.
+        .toolbarBackgroundVisibility(
+            splash == .done || reduceMotion ? .visible : .hidden, for: .windowToolbar
+        )
         .preferredColorScheme(.dark)
         // Before a band switch, a rail drag's release or a narrower width moves the radio off a
         // running recording (docs/design/app-design-handoff-m3.md, 8b). The buttons answer it;
@@ -51,6 +93,67 @@ struct MainWindow: View {
         } message: { q in
             Text(q.words)
         }
+    }
+
+    /// The splash's clock (APP-8): fade in, hold until the daemon is live or `splashMinHold` has
+    /// passed, whichever is later and `splashMaxHold` at most, then the exit and removal. Every
+    /// step's length is `Theme.Motion`'s.
+    private func playSplash() async {
+        guard splash == .before else { return }
+        // Two windows restored together are both made before either appears.
+        guard MainWindow.splashPending else {
+            splash = .done
+            return
+        }
+        MainWindow.splashPending = false
+        let clock = ContinuousClock()
+        let start = clock.now
+        let fadeIn = Animation.easeOut(duration: Theme.Motion.splashFadeIn)
+        withAnimation(reduceMotion ? nil : fadeIn) {
+            splash = .shown
+        }
+        try? await Task.sleep(for: .seconds(Theme.Motion.splashMinHold))
+        while !session.isLive, !Task.isCancelled,
+            clock.now - start < .seconds(Theme.Motion.splashMaxHold)
+        {
+            try? await Task.sleep(for: .seconds(Theme.Motion.splashLivePoll))
+        }
+        let exitSeconds = reduceMotion ? Theme.Motion.splashReducedFade : Theme.Motion.splashExit
+        withAnimation(.easeInOut(duration: exitSeconds)) {
+            flight =
+                reduceMotion
+                ? nil
+                : SplashFlight(from: splashMark.frameInWindow, to: toolbarMark.frameInWindow)
+            splash = .leaving
+        }
+        try? await Task.sleep(for: .seconds(exitSeconds))
+        splash = .done
+    }
+}
+
+/// The toolbar's first item: the mark and `Leyline` (APP-8), in place of the window's title.
+/// The mark is measured for the splash's flight and stays hidden until that mark has landed.
+struct BrandTitle: View {
+    let markShown: Bool
+    let wordShown: Bool
+    let markAnchor: WindowFrameAnchor
+
+    var body: some View {
+        HStack(spacing: Theme.Layout.brandTitleGap) {
+            BrandMark()
+                .background(WindowFrameProbe(anchor: markAnchor))
+                .opacity(markShown ? 1 : 0)
+            Text("Leyline").font(Theme.Font.label).foregroundStyle(Theme.ink)
+                .opacity(wordShown ? 1 : 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension View {
+    /// A toolbar item under the splash: invisible and not clickable until it leaves.
+    fileprivate func shown(_ shown: Bool) -> some View {
+        opacity(shown ? 1 : 0).allowsHitTesting(shown)
     }
 }
 

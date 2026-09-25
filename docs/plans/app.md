@@ -772,7 +772,7 @@ recordings; the place switch's raised segment beside the traffic lights; the ins
 clipped Peak in `accentRec` and the sentence wrapping in 312 pt; the player's bare ⏮ and ⏭; and
 the volume caption while a part plays and while it is paused.
 
-### APP-8 `[ ]` The mark, the splash and the icon
+### APP-8 `[x]` The mark, the splash and the icon
 
 The owner's brand files, 2026-09-25 (`../design/brand/leyline-mark.svg`, a 13 pt ring with a
 dot; `leyline-splash.svg`, the mark, `leyline` in Space Grotesk 62 at −0.04 em, and `SOFTWARE
@@ -797,6 +797,62 @@ the wordmark is SF at 62 medium with the same tracking.
   `iconutil` needs, `AppIcon.icns` placed by `scripts/bundle-app.sh` and named in `Info.plist`;
   the same drawing at 1024 px is checked in as `../design/brand/leyline-icon.png` when first
   rendered on a Mac, so the docs have it. This closes the M1 handoff's open "An icon" item.
+
+Landed 2026-09-25. `BrandMark.swift` draws the mark at any size (`Ring`, a circle's outline with
+its radius and line animatable, and the dot at 1.5 in 13); `MainWindow`'s first `navigation`
+item is `BrandTitle`, the 13 pt mark and `Leyline` 7 pt apart, and `.toolbar(removing: .title)`
+takes the window's title out of the toolbar while `WindowGroup("Leyline")` keeps it for the
+Window menu and the Dock's (an empty `navigationTitle` would have blanked both, so that option
+and an untitled `WindowGroup` were not used). `SplashView.swift` draws the splash SVG's rows on
+two baselines 43 pt apart, the mark's centre 10 pt above the first and the rules 4 pt above the
+second, in `ink`, `inkMuted` and the SVG's `borderStrong` (#2A3034; the SVG's tagline grey,
+#868C91, has no token, so it is `inkMuted`). `MainWindow.playSplash` is the clock: a
+`static` flag lets only the first window of a launch play it; the fade-in is 0.4 s ease-out;
+the hold polls `session.isLive` every 50 ms from 1.2 s until 2 s after the first frame; the
+exit is one 0.7 s ease-in-out in which the words and the rules fade, a second ring grows from
+26 pt to the window's diagonal as its line goes from 1.5 to 0 and its opacity to 0, the mark
+flies onto the toolbar's (offset and scaled by 13/26, its line thickened to 2.4 so it lands at
+1.2), the toolbar's other items fade in, a `chrome` strip under the toolbar fades in, and the
+splash's ground fades while a gradient sweeps it away from the top down (a 20 % soft edge);
+then the splash is removed and the toolbar's mark shown in the same frame. With Reduce Motion
+on, the splash appears without a fade and leaves in a 0.3 s cross-fade with the toolbar's items
+and mark. Every duration is `Theme.Motion`'s and every size a `Theme.Layout` `brand*` or
+`splash*` token. Three departures from the text above. The flight is not a
+`matchedGeometryEffect`: a toolbar item is drawn in a hosting view of the window's toolbar,
+outside the content's view tree and clipped to the item, so the effect has no common hierarchy
+to move the mark through; both marks are measured in window coordinates by an AppKit probe
+(`WindowFrameProbe`) when the exit starts, and a mark that cannot be measured fades while the
+toolbar's fades in. The reveal sweeps the splash's own ground rather than masking the window's
+body, because the body holds the waterfall's Metal view and a SwiftUI mask over a hosted view is
+untried here. And the toolbar's ground is hidden while the splash shows, so the splash covers
+the whole window and its mark can fly into the title bar. The URL clause is moot: the app opens
+no URLs. `scripts/render-icon.swift` draws the mark in `accent` (#E8814A) on `ground`
+(#0B0D0F), both from `Theme.swift`, in Apple's 1024 px icon grid: an 824 px tile (a 100 px
+transparent margin, 9.8 %) with circular corners of 22.37 % of the tile (184 px) where Apple's
+are a continuous curve, and the mark at half the tile (412 px, the ring's line 38 px); it writes
+16, 32, 64, 128, 256, 512 and 1024 px into `AppIcon.iconset` under iconutil's ten names and runs
+`iconutil -c icns`. `bundle-app.sh` runs it into `app/.build/icon` and copies `AppIcon.icns`
+into `Contents/Resources`, or says the icon was skipped when `iconutil` is missing; `Info.plist`
+has `CFBundleIconFile` `AppIcon`. `../design/brand/README.md` lists the files. The M1 handoff's
+open "An icon" item is closed below.
+
+Verified in the container: `make app-lint`, and `swift test --filter LeylineClientTests`, which
+the change does not touch. Unverified until the first `make app-run` and `make app-bundle` on a
+Mac, because nothing in `LeylineApp` compiles in the container and the script needs CoreGraphics
+and `iconutil`: every change in `BrandMark.swift`, `SplashView.swift`, `MainWindow.swift` and
+`Theme.swift`, `scripts/render-icon.swift` (never run) and the `bundle-app.sh` step. Named
+behaviours to check there: `BrandTitle` before the place switch beside the traffic lights, no
+title drawn, and Window ▸ listing `Leyline`; the splash's two rows against the SVG (the wordmark's
+width in SF, the rules' 167 pt offsets clearing the tagline in SF Mono, the mark on the
+wordmark's line); `proxy.safeAreaInsets.top` giving the toolbar's height under the overlay, so
+the `chrome` strip matches the toolbar's ground and the swap at the end does not flash; the
+hidden toolbar ground letting the splash reach the top; the probe's frames in the toolbar and in
+the content being in one window space, and the mark landing on the toolbar's without a jump; the
+ring's radius and line and the sweep's `Animatable` progress interpolating; the ripple drawn
+over the mark's ring during the hold (two strokes in one place); the hold ending at live and at
+2 s with no daemon; a second window (File ▸ New Window, if offered) opening with no splash;
+Reduce Motion's cross-fade; the icon's look in the Dock and Finder at every size, the ring at
+16 px, and a rendered `leyline-icon.png` checked in.
 
 ### M2-4 `[ ]` The lifecycle half of APP-6
 
@@ -1280,3 +1336,4 @@ notarized (`../dev/release-checklist.md`). D3, the trademark check, gates the fi
   Claude Design project; pulling the designs is the handoff document, as before.
 - `[d]` **An icon.** An asset catalog as a package resource carries one; none exists. Wanted
   before APP-7, not before APP-2.
+  Done 2026-09-25: APP-8, drawn at bundle time by `scripts/render-icon.swift`.

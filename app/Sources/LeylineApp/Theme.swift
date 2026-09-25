@@ -284,3 +284,66 @@ struct SectionHeader: View {
             .foregroundStyle(Theme.inkFaint)
     }
 }
+
+// The brand (docs/plans/app.md, APP-8): the owner's two files in docs/design/brand, drawn in code
+// by `BrandMark` and `SplashView`. Every size below is read off those SVGs.
+extension Theme.Font {
+    /// `leyline` on the splash: Space Grotesk 62 medium in `leyline-splash.svg`, SF here because
+    /// no font is bundled (M1 handoff, "Type"), tracked by `Theme.wordmarkTracking`.
+    static let wordmark = SwiftUI.Font.system(size: 62, weight: .medium)
+    /// `SOFTWARE DEFINED RADIO` under it: Space Mono 11 in the SVG, SF Mono here, tracked by
+    /// `Theme.taglineTracking`.
+    static let tagline = SwiftUI.Font.system(size: 11, design: .monospaced)
+}
+
+extension Theme {
+    /// The SVG's `letter-spacing="-2.48"`: `-0.04em` at 62 pt.
+    static let wordmarkTracking: CGFloat = 62 * -0.04
+    /// The SVG's `letter-spacing="4.62"`: `0.42em` at 11 pt.
+    static let taglineTracking: CGFloat = 11 * 0.42
+
+    /// How long each step of the first window's splash takes, in seconds (APP-8).
+    enum Motion {
+        /// The mark, the wordmark and the line fading in.
+        static let splashFadeIn: Double = 0.4
+        /// The splash stays at least this long from its first frame, then until the daemon is
+        /// live, and never longer than `splashMaxHold`.
+        static let splashMinHold: Double = 1.2
+        static let splashMaxHold: Double = 2.0
+        /// How often the hold looks at whether the daemon is live.
+        static let splashLivePoll: Double = 0.05
+        /// The exit, ease-in-out: the words fade, the ripple, the mark's flight to the title bar
+        /// and the sweep that reveals the window.
+        static let splashExit: Double = 0.7
+        /// The whole exit with Reduce Motion on: a cross-fade.
+        static let splashReducedFade: Double = 0.3
+    }
+}
+
+extension Theme.Layout {
+    /// The mark in the toolbar (`leyline-mark.svg`, a 13-unit box: ring r 5.9 with a 1.2 stroke,
+    /// dot r 1.5), and the gap from it to `Leyline`.
+    static let brandMarkSize: CGFloat = 13
+    static let brandMarkLine: CGFloat = 1.2
+    static let brandMarkDot: CGFloat = 1.5
+    static let brandTitleGap: CGFloat = 7
+    /// The splash's mark (`leyline-splash.svg`, a 26-unit box: ring r 12.25 with a 1.5 stroke,
+    /// dot r 3, the dot at the toolbar mark's proportion).
+    static let splashMarkSize: CGFloat = 26
+    static let splashMarkLine: CGFloat = 1.5
+    /// The mark to the wordmark (x 171 to 189 in the SVG), and the mark's centre above the
+    /// wordmark's baseline (y 87 against 97).
+    static let splashMarkGap: CGFloat = 18
+    static let splashMarkRaise: CGFloat = 10
+    /// The tagline's baseline below the wordmark's (y 140 against 97).
+    static let splashLineDrop: CGFloat = 43
+    /// The two rules beside the tagline: 56 long, their centres 167 either side of the
+    /// composition's centre (x 61 to 117 and 395 to 451 about 256), 4 above the tagline's
+    /// baseline (y 136 against 140).
+    static let splashRuleLength: CGFloat = 56
+    static let splashRuleOffset: CGFloat = 167
+    static let splashRuleRaise: CGFloat = 4
+    /// The soft edge of the sweep that reveals the window, as a fraction of its height. A guess
+    /// until the Mac.
+    static let splashSweepEdge: CGFloat = 0.2
+}

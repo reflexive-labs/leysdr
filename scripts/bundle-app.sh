@@ -38,6 +38,17 @@ cp "$bin/LeylineApp" "$out/Contents/MacOS/LeylineApp"
 # SwiftPM resource bundles (assets, Metal libraries) sit beside the executable; Bundle.module
 # looks for them in the app's Resources when it is not beside the binary.
 for b in "$bin"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$out/Contents/Resources/"; done
+# The icon is drawn at bundle time rather than checked in (docs/design/brand/README.md);
+# Info.plist names it as CFBundleIconFile. Without iconutil the bundle gets the generic icon.
+if command -v iconutil >/dev/null 2>&1; then
+  echo "==> icon (scripts/render-icon.swift)"
+  icondir=app/.build/icon
+  mkdir -p "$icondir"
+  swift scripts/render-icon.swift "$icondir" >/dev/null
+  cp "$icondir/AppIcon.icns" "$out/Contents/Resources/AppIcon.icns"
+else
+  echo "==> icon skipped: iconutil is not on this machine; the bundle has the generic icon"
+fi
 
 if [ $with_daemon -eq 1 ]; then
   echo "==> helpers: leylined, ley, decoders"

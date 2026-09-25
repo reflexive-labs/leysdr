@@ -4,6 +4,13 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app has its mark, a splash and an icon. The toolbar starts with the mark and
+  `Leyline` in place of the window's title. The first window of a launch opens on the mark,
+  `leyline` and `SOFTWARE DEFINED RADIO`, holds until the daemon is live (1.2 s to 2 s), then
+  clears in 0.7 s as a ring spreads from the mark, the mark moves to the toolbar and the window
+  appears from the top down; with Reduce Motion on it cross-fades in 0.3 s. `bundle-app.sh` now
+  draws the icon, the mark on the window's dark ground, with `scripts/render-icon.swift`.
+
 - Switching a recording on or off in the Mac app cuts the transmissions log there, as a marker:
   the transmission on air ends at that moment and a new one begins, and the cut rows have a red
   bar at their left. A recording of a station that never stops transmitting now has a row that
