@@ -625,17 +625,26 @@ func TestScanResolvesABandName(t *testing.T) {
 
 // The scan labels every GMRS detection with its channel number (ch1..ch22), the numbering every
 // GMRS radio shares, so a row is unambiguous. The eight repeater outputs are ch15..ch22 (rpt1..8
-// still tune them). presetAt takes the nearest, since the channels are only 12.5 kHz apart.
+// still tune them). presetAt takes the nearest within 6 kHz, since the channels are only 12.5 kHz
+// apart, and a tie goes to the earlier plan entry (the plan's KTD2).
 func TestScanLabelsGMRSChannels(t *testing.T) {
 	cases := []struct {
 		hz    uint64
 		label string
 	}{
-		{462_625_000, "ch18"}, // the repeater output the owner found
-		{462_562_500, "ch1"},  // a 462 interstitial
-		{462_600_000, "ch17"}, // RPT3's frequency, labelled by channel number
-		{467_562_500, "ch8"},  // a 467 interstitial (the inputs band)
-		{462_628_000, "ch18"}, // 3 kHz off ch18: nearest wins
+		{462_625_000, "ch18"},      // the repeater output the owner found
+		{462_562_500, "ch1"},       // a 462 interstitial
+		{462_600_000, "ch17"},      // RPT3's frequency, labelled by channel number
+		{467_562_500, "ch8"},       // a 467 interstitial (the inputs band)
+		{462_628_000, "ch18"},      // 3 kHz off ch18: nearest wins
+		{462_664_000, "ch5"},       // 1.5 kHz above ch5
+		{462_660_000, "ch5"},       // 2.5 kHz below ch5
+		{162_475_000, "wx3"},       // the plan-prefixed alias is what the column prints
+		{157_100_000, "marine22a"}, // a tie: the US variant is entered before ITU 22
+		{161_975_000, "marine87b"}, // AIS 1
+		{27_185_000, "cb19"},
+		{151_820_000, "murs1"},
+		{156_807_000, ""}, // 7 kHz above marine 16 and 18 below 17: on nothing
 	}
 	for _, c := range cases {
 		if got := presetAt(c.hz); got != c.label {

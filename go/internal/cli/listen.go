@@ -139,7 +139,7 @@ func tapTarget(cmd *cobra.Command, f *tuneFlags, verb, arg string, tuneFlagNames
 		}
 		return arg, nil, nil
 	}
-	hz, def, err := resolveTuneTarget(arg)
+	hz, def, err := resolveTuneTarget(arg, "")
 	if err != nil {
 		return "", nil, err
 	}

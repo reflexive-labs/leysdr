@@ -285,7 +285,9 @@ func TestTuneModePrecedence(t *testing.T) {
 		{[]string{"tune", "500"}, "nfm", "using NFM: no band recognised, using NFM"},
 		{[]string{"tune", "121.5"}, "am", "using AM: airband band default"},
 		{[]string{"tune", "146.52", "--mode", "am"}, "am", ""},
-		{[]string{"tune", "guard"}, "am", "using AM: preset guard: aviation emergency guard frequency (121.500 MHz)"},
+		{[]string{"tune", "guard"}, "am", "using AM: preset guard: airband guard, aviation emergency frequency (121.500 MHz)"},
+		{[]string{"tune", "16", "--band", "marine"}, "nfm", "using NFM: preset marine16: marine VHF 16, distress, safety and calling (156.800 MHz)"},
+		{[]string{"tune", "1", "--band", "murs"}, "nfm", "using NFM: preset murs1: MURS 1 (151.820 MHz)"},
 	}
 	for _, tc := range cases {
 		out := mustSay(t, sock, append(tc.args, "--no-audio", "--persistent", "--retune")...)
@@ -306,6 +308,18 @@ func TestTuneModePrecedence(t *testing.T) {
 	// with ParseBandwidth (bare numbers are kHz).
 	if st.Channels[2].BandwidthHz != 200_000 {
 		t.Errorf("wfm bandwidth: %d", st.Channels[2].BandwidthHz)
+	}
+	// A channel's own width overrides the band's: MURS 1 is 11.25 kHz where the
+	// band's NFM default is 12.5 (docs/design/channels.md, "The plan is data in
+	// the band table").
+	if bw := st.Channels[len(st.Channels)-1].BandwidthHz; bw != 11_250 {
+		t.Errorf("MURS 1 should be 11.25 kHz wide, got %d", bw)
+	}
+	if _, _, err := run(t, context.Background(), sock, "tune", "99", "--band", "marine"); err == nil || !strings.Contains(err.Error(), "marine VHF") || !strings.Contains(err.Error(), "ley bands marine") {
+		t.Errorf("a channel the plan lacks names the band and the plan: %v", err)
+	}
+	if _, _, err := run(t, context.Background(), sock, "tune", "16", "--band", "nonsuch"); err == nil || !strings.Contains(err.Error(), "--band") {
+		t.Errorf("an unknown band names the flag: %v", err)
 	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--retune", "--bw", "25", "--volume", "50%")
 	st, _ = c.State(context.Background())

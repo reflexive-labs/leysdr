@@ -58,10 +58,13 @@ func addRadioFlags(cmd *cobra.Command, f *tuneFlags, withRate bool) {
 
 // modeDefault is what a caller knows about the mode before the flags are
 // read: play passes the sidecar's mode, tune passes a preset's mode (or
-// UNSPECIFIED to fall back to the band table). reason explains it.
+// UNSPECIFIED to fall back to the band table). reason explains it. bw is the
+// width that goes with the mode, when the source has one: a plan channel's own
+// width (MURS 1 is 11.25 kHz) overrides the band's, as its mode does.
 type modeDefault struct {
 	mode   leylinev1.DemodMode
 	reason string
+	bw     uint32
 }
 
 // parse converts raw flags into tuneOptions. Mode precedence: explicit
@@ -94,13 +97,18 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 			o.modeReason = "no band recognised, using NFM"
 		}
 	}
-	if f.bw != "" {
+	switch {
+	case f.bw != "":
 		bw, err := leyline.ParseBandwidth(f.bw)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
 		o.bw = bw
-	} else {
+	case def.bw > 0 && o.mode == def.mode:
+		// The channel's width goes with the channel's mode; under an explicit
+		// --mode the mode's own default applies, as it does for a band.
+		o.bw = def.bw
+	default:
 		o.bw = leyline.BandwidthFor(freq, o.mode)
 	}
 	if f.squelch != "" {
@@ -124,28 +132,37 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 }
 
 // resolveTuneTarget reads tune's positional: a frequency (bare numbers are MHz)
-// first, then a preset name; anything else lists the nearest presets.
-func resolveTuneTarget(arg string) (hz uint64, def modeDefault, err error) {
-	t, err := resolveDialTarget(arg, "tune", "ley tune 146.52, ley tune noaa", "146.52 (MHz)")
+// first, then a preset name; anything else lists the nearest presets. Under
+// --band the positional is a channel of that band's plan (the plan's KTD8).
+func resolveTuneTarget(arg, bandName string) (hz uint64, def modeDefault, err error) {
+	band, err := bandFlag(bandName)
+	if err != nil {
+		return 0, def, err
+	}
+	t, err := resolveDialTarget(arg, "tune", "ley tune 146.52, ley tune noaa, ley tune 16 --band marine", "146.52 (MHz)", band)
 	if err != nil {
 		return 0, def, err
 	}
 	if t.Preset != nil {
-		def = modeDefault{mode: t.Preset.Mode, reason: "preset " + t.Preset.Name + ": " + t.Preset.Description}
+		def = modeDefault{mode: t.Preset.Mode, reason: "preset " + t.Preset.Name + ": " + t.Preset.Description, bw: t.Preset.BandwidthHz}
 	}
 	return t.Hz, def, nil
 }
 
 func newTuneCommand(app *App) *cobra.Command {
 	var f tuneFlags
+	var band string
 	cmd := &cobra.Command{
-		Use:   "tune <frequency|preset>",
+		Use:   "tune <frequency|preset|channel --band BAND>",
 		Short: "Listen to a frequency through the speakers",
 		Long: `tune picks a radio, tunes it to the frequency (or a preset such as noaa or
 calling; see ley help presets), decodes it and plays the audio until Ctrl-C.
 
 A bare number is MHz (146.52, 7.040, 121.5); add a unit to be exact (1010k,
-146520000). The mode (how the signal is decoded: nfm, am, wfm, ...) is
+146520000). A channel of a band's plan is named by its own word (wx3,
+marine16, cb19, ch5) or, with --band, the way the radio prints it: 'ley tune
+16 --band marine' is marine channel 16, where bare '16' is 16 MHz ('ley bands
+marine' lists the plan). The mode (how the signal is decoded: nfm, am, wfm, ...) is
 chosen from the band when --mode is not given, and the squelch (mute the
 audio while the signal is weaker than a level) is measured from the band's
 noise floor unless you set one. tune prints every decision it made so a
@@ -157,7 +174,8 @@ When the radio is already tuned for someone else and the new frequency falls
 outside the band it covers, tune refuses rather than silence them; --retune
 moves it anyway.`,
 		Example: `  ley tune 146.52            2 m calling frequency, NFM, squelch auto
-  ley tune noaa              NOAA weather channel 1 (162.550 MHz); try noaa2..7
+  ley tune noaa              NOAA weather channel 1 (162.550 MHz); try wx2..7
+  ley tune 16 --band marine  marine channel 16 by its own number (156.800 MHz)
   ley tune 101.1 --mode fm   FM broadcast (fm means WFM here)
   ley tune 7.040 --mode lsb  40 m amateur band, lower sideband
   ley tune 162.55 --squelch -50 --volume 50%
@@ -169,7 +187,7 @@ moves it anyway.`,
 			if len(args) == 1 {
 				arg = args[0]
 			}
-			freq, def, err := resolveTuneTarget(arg)
+			freq, def, err := resolveTuneTarget(arg, band)
 			if err != nil {
 				return err
 			}
@@ -195,6 +213,7 @@ moves it anyway.`,
 		},
 	}
 	addTuneFlags(cmd, &f, true)
+	cmd.Flags().StringVar(&band, "band", "", "read the argument as a channel of this band's plan, as its radios print it: --band marine 16, --band gmrs 5 (ley bands)")
 	return cmd
 }
 

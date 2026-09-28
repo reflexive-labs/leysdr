@@ -19,11 +19,26 @@ import (
 // resolves them into the same RPCs a number uses), so they are emitted
 // through encoding/json as one array; docs/reference/cli.md names the exception.
 type presetJSON struct {
+	Name    string   `json:"name"`
+	Aliases []string `json:"aliases"`
+	Hz      uint64   `json:"hz"`
+	Mode    string   `json:"mode"`
+	// BandwidthHz is the channel's own width where its plan gives one, else the band's.
+	BandwidthHz uint32 `json:"bandwidth_hz"`
+	Description string `json:"description"`
+}
+
+// channelJSON is one entry of a band's plan in `ley bands --json`: the shape docs/design/channels.md
+// gives under "The plan is data in the band table". mode, bandwidth_hz and decoder are present only
+// where the channel has its own; note is always present so a row is read the same way everywhere.
+type channelJSON struct {
 	Name        string   `json:"name"`
 	Aliases     []string `json:"aliases"`
 	Hz          uint64   `json:"hz"`
-	Mode        string   `json:"mode"`
-	Description string   `json:"description"`
+	Mode        string   `json:"mode,omitempty"`
+	BandwidthHz uint32   `json:"bandwidth_hz,omitempty"`
+	Note        string   `json:"note"`
+	Decoder     string   `json:"decoder,omitempty"`
 }
 
 type bandJSON struct {
@@ -40,6 +55,25 @@ type bandJSON struct {
 	Note   string `json:"note"`
 	// Parts names the bands a group is made of; absent on a plain band.
 	Parts []string `json:"parts,omitempty"`
+	// Channels is the band's plan, in the service's own order; absent on a band with none.
+	Channels []channelJSON `json:"channels,omitempty"`
+}
+
+// bandRow is the --json shape of one band, plan included.
+func bandRow(b leyline.Band) bandJSON {
+	row := bandJSON{
+		Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz,
+		Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, StepHz: b.StepHz,
+		Note: b.Note, Parts: b.Parts,
+	}
+	for _, c := range b.Channels {
+		ch := channelJSON{Name: c.Name, Aliases: c.Aliases, Hz: c.Hz, BandwidthHz: c.BandwidthHz, Note: c.Note, Decoder: c.Decoder}
+		if c.Mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
+			ch.Mode = leyline.ModeName(c.Mode)
+		}
+		row.Channels = append(row.Channels, ch)
+	}
+	return row
 }
 
 // bandModeName renders a band's mode: "usb/lsb" where the sideband follows
@@ -74,8 +108,13 @@ daemon: a preset is translated into the same tune the number would do, and
 nothing is probed or scanned. 'ley help presets' explains them in prose and
 lists the bands as well.
 
---json prints an array of {name, aliases, hz, mode, description}: client-local
-data with no proto message, so it is not the proto3 JSON mapping.`,
+Every preset is a channel of a band's plan (ley bands noaa lists one), named
+by the word that resolves without a band: wx3, marine16, cb19, murs1, ch5.
+The ALIASES column carries what the band's radios print (WX3, 16), which
+'ley tune 16 --band marine' takes, and the older names that still work.
+
+--json prints an array of {name, aliases, hz, mode, bandwidth_hz, description}:
+client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 		Example: `  ley presets                    # the table
   ley presets --json | jq -r .[].name
   ley tune noaa                  # what a preset is for`,
@@ -90,7 +129,7 @@ data with no proto message, so it is not the proto3 JSON mapping.`,
 					if aliases == nil {
 						aliases = []string{}
 					}
-					out = append(out, presetJSON{Name: p.Name, Aliases: aliases, Hz: p.Hz, Mode: leyline.ModeName(p.Mode), Description: p.Description})
+					out = append(out, presetJSON{Name: p.Name, Aliases: aliases, Hz: p.Hz, Mode: leyline.ModeName(p.Mode), BandwidthHz: p.BandwidthHz, Description: p.Description})
 				}
 				return app.printArray(out)
 			}
@@ -118,14 +157,22 @@ position would quietly redefine them.
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
---json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, step_hz,
-note}: client-local data with no proto message, so it is not the proto3 JSON
-mapping. step_hz is the band's channel spacing -- what one arrow key moves the
-dial by, which is not the bandwidth: airband is 10 kHz wide and spaced 25 kHz.
-The Mac app reads the same array from a checked-in bands.json (make bands-json).`,
+CHANNELS counts the band's plan, the numbered channels its radios print;
+'ley bands noaa' lists them, and 'ley tune 16 --band marine' tunes one by
+its number ('ley presets' is every plan as one table).
+
+--json prints an array of {name, aliases, min_hz, max_hz, mode, bandwidth_hz,
+step_hz, note, parts, channels}: client-local data with no proto message, so
+it is not the proto3 JSON mapping. step_hz is the band's channel spacing --
+what one arrow key moves the dial by, which is not the bandwidth: airband is
+10 kHz wide and spaced 25 kHz. channels, on a band with a plan, is an array
+of {name, aliases, hz, mode, bandwidth_hz, note, decoder}, mode and
+bandwidth_hz only where they differ from the band's. The Mac app reads the
+same array from a checked-in bands.json (make bands-json).`,
 		Example: `  ley bands                      # the table
   ley bands 146.52               # what is this, and what will tune do here?
   ley bands 2m                   # the same answer, asked by name
+  ley bands noaa                 # a band and its plan, WX1 to WX7
   ley bands --json | jq -r '.[] | .aliases[0]'
   ley spectrum --band noaa       # the whole NOAA weather band`,
 		GroupID: GroupLooking,
@@ -140,11 +187,7 @@ The Mac app reads the same array from a checked-in bands.json (make bands-json).
 			if app.JSON {
 				out := make([]bandJSON, 0, len(bs))
 				for _, b := range bs {
-					out = append(out, bandJSON{
-						Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz,
-						Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, StepHz: b.StepHz,
-						Note: b.Note, Parts: b.Parts,
-					})
+					out = append(out, bandRow(b))
 				}
 				return app.printArray(out)
 			}
@@ -154,11 +197,11 @@ The Mac app reads the same array from a checked-in bands.json (make bands-json).
 }
 
 // printPresetTable renders `ley presets`. Presets are grouped under the band
-// they live in, so the seven near-identical noaa rows read as one group that
-// is easy to skip; the frequency the description used to restate is dropped
-// (the FREQUENCY column already shows it), and the aliases
-// are Muted because they are the fallback spelling, not the one to type.
-// --json keeps every field, description and all.
+// whose plan they are in, so the seven near-identical NOAA rows read as one
+// group that is easy to skip; the DESCRIPTION column is the channel's note
+// alone, since the band and the frequency are already on the screen, and the
+// aliases are Muted because they are the fallback spelling, not the one to
+// type. --json keeps every field, description and all.
 func printPresetTable(app *App, ps []leyline.Preset) error {
 	s := tableStyle(app)
 	keys := make([]string, len(ps))
@@ -179,8 +222,7 @@ func printPresetTable(app *App, ps []leyline.Preset) error {
 		if len(p.Aliases) > 0 {
 			aliases = s.Muted(strings.Join(p.Aliases, ", "))
 		}
-		desc := strings.TrimPrefix(withoutFrequency(p.Description, p.Hz), keys[i]+" ")
-		add(cols, p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), aliases, desc)
+		add(cols, p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), aliases, p.Note)
 	}
 	_, err := printColumns(app.Stdout, s, cols, heads)
 	return err
@@ -194,7 +236,7 @@ func printPresetTable(app *App, ps []leyline.Preset) error {
 //
 // The step is not a column. The six here already want 86 columns before NOTE
 // is given its minimum, so an eighty-column terminal is truncating the note to
-// print them; a seventh column would spend the rest of that note on a number
+// print them; another column would spend the rest of that note on a number
 // no `ley` verb tunes by yet (the app reads it from bands.json).
 func printBandTable(app *App, bs []leyline.Band) error {
 	s := tableStyle(app)
@@ -204,14 +246,19 @@ func printBandTable(app *App, bs []leyline.Band) error {
 	}
 	order, heads := groupRows(keys)
 	// ALIAS is never dropped: it is the only column you can type, and without
-	// it --band is undiscoverable. BANDWIDTH goes first when width runs out.
+	// it --band is undiscoverable. When width runs out BANDWIDTH goes first,
+	// then CHANNELS (a count, and `ley bands noaa` has the plan itself), and
+	// NOTE, which says what a band is, stays to its minimum.
 	cols := []column{
 		{head: "NAME"},
 		{head: "ALIAS"},
 		{head: "RANGE"},
 		{head: "MODE"},
-		{head: "BANDWIDTH", drop: 1},
-		{head: "NOTE", min: 14, drop: 2},
+		{head: "BANDWIDTH", drop: 3},
+		{head: "CHANNELS", drop: 2, right: true},
+		// 13, not the usual 14: at 90 columns that one character is what keeps
+		// CHANNELS on the screen once BANDWIDTH has gone.
+		{head: "NOTE", min: 13, drop: 1},
 	}
 	for _, i := range order {
 		b := bs[i]
@@ -220,7 +267,11 @@ func printBandTable(app *App, bs []leyline.Band) error {
 		if len(b.Aliases) > 0 {
 			alias = b.Aliases[0]
 		}
-		add(cols, b.Name, alias, rng, bandModeName(b.Mode), formatBandwidth(b.BandwidthHz),
+		channels := s.Glyphs().Absent
+		if n := len(b.Channels); n > 0 {
+			channels = fmt.Sprint(n)
+		}
+		add(cols, b.Name, alias, rng, bandModeName(b.Mode), formatBandwidth(b.BandwidthHz), channels,
 			strings.TrimPrefix(b.Note, bandFamily(b)+", "))
 	}
 	_, err := printColumns(app.Stdout, s, cols, heads)
@@ -234,36 +285,26 @@ func add(cols []column, cells ...string) {
 	}
 }
 
-// presetGroup is the sub-heading a preset sits under: the band containing it,
-// which is the same name `ley bands` prints, or "other" for a preset outside
-// every band ley knows.
+// presetGroup is the sub-heading a preset sits under: the band or group whose
+// plan it is in, which is the same name `ley bands` prints.
 func presetGroup(p leyline.Preset) string {
-	if b := leyline.BandFor(p.Hz); b != nil {
-		return b.Name
-	}
-	return "other"
+	return p.Band
 }
 
 // bandFamily is the sub-heading a band sits under. The amateur allocations
 // are the family worth collapsing; broadcast is the other one a newcomer
-// already has a word for, and everything else is a service.
+// already has a word for; GMRS and MURS are each two halves and a group, so
+// the six rows read as one block; everything else is a service.
 func bandFamily(b leyline.Band) string {
 	switch {
 	case strings.HasPrefix(b.Note, "amateur radio"):
 		return "amateur radio"
 	case strings.Contains(b.Name, "broadcast"):
 		return "broadcast"
-	case strings.HasPrefix(b.Name, "GMRS"):
-		return "GMRS"
+	case strings.HasPrefix(b.Name, "GMRS"), strings.HasPrefix(b.Name, "MURS"):
+		return "GMRS and MURS"
 	}
 	return "other services"
-}
-
-// withoutFrequency drops the frequency a description restates, so the
-// DESCRIPTION column carries only what the FREQUENCY column does not. The
-// --json description keeps it: that string is data, not layout.
-func withoutFrequency(desc string, hz uint64) string {
-	return strings.TrimSuffix(desc, " ("+leyline.FormatFrequency(hz)+")")
 }
 
 // groupRows returns the row order that puts each group together and the
@@ -316,7 +357,7 @@ func runBandLookup(app *App, arg string) error {
 		}
 		return printBandAnswer(app, b.CenterHz(), &b, "", true)
 	}
-	t, err := resolveDialTarget(arg, "bands", "ley bands, ley bands 146.52, ley bands 2m", "146.52 (MHz)")
+	t, err := resolveDialTarget(arg, "bands", "ley bands, ley bands 146.52, ley bands 2m", "146.52 (MHz)", nil)
 	if err != nil {
 		return err
 	}
@@ -355,11 +396,8 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 	if app.JSON {
 		out := bandAnswerJSON{Hz: hz, Mode: leyline.ModeName(mode), BandwidthHz: bw, Reason: reason}
 		if b != nil {
-			out.Band = &bandJSON{
-				Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz,
-				Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, StepHz: b.StepHz,
-				Note: b.Note,
-			}
+			row := bandRow(*b)
+			out.Band = &row
 		}
 		return app.printArray(out)
 	}
@@ -386,6 +424,7 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 	}
 	row("mode", leyline.ModeName(mode), reason)
 	row("bandwidth", formatBandwidth(bw), "")
+	var plan []leyline.Channel
 	if b != nil {
 		if note := strings.TrimPrefix(b.Note, bandFamily(*b)+", "); note != "" {
 			row("note", note, "")
@@ -393,12 +432,50 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 		if len(b.Aliases) > 0 {
 			row("alias", b.Aliases[0], "")
 		}
+		// A whole-band lookup is the place to see the plan; a point lookup
+		// answers the point, and the CHANNEL word for it is in the reason.
+		if plan = b.Plan(); wholeBand && len(plan) > 0 {
+			row("channels", fmt.Sprint(len(plan)), "ley tune <channel> --band "+b.Aliases[0])
+		}
+	}
+	if _, err := fmt.Fprint(app.Stdout, w.String()); err != nil {
+		return err
+	}
+	if wholeBand && len(plan) > 0 {
+		if err := printPlanTable(app, plan); err != nil {
+			return err
+		}
 	}
 	next := "ley bands"
 	if b != nil && len(b.Aliases) > 0 {
 		next = "ley spectrum --band " + b.Aliases[0]
 	}
-	w.WriteString("  " + st.Cmd(next) + "\n")
-	_, err := fmt.Fprint(app.Stdout, w.String())
+	_, err := fmt.Fprintf(app.Stdout, "  %s\n", st.Cmd(next))
+	return err
+}
+
+// printPlanTable renders a band's plan under a band lookup: a row per channel
+// in the service's own order, with the name the radio prints, the frequency,
+// the word that tunes it without a band (PRESET), the other names it answers
+// to (Muted: fallback spellings), and the note.
+func printPlanTable(app *App, plan []leyline.Channel) error {
+	s := tableStyle(app)
+	cols := []column{
+		{head: "CHANNEL"},
+		{head: "FREQUENCY"},
+		{head: "PRESET"},
+		{head: "ALSO", drop: 1, hideEmpty: true},
+		{head: "NOTE", min: 14, drop: 2},
+	}
+	for _, c := range plan {
+		also := s.Glyphs().Absent
+		if len(c.Aliases) > 1 {
+			also = s.Muted(strings.Join(c.Aliases[1:], ", "))
+		}
+		add(cols, c.Name, leyline.FormatFrequency(c.Hz), c.Aliases[0], also, c.Note)
+	}
+	// The plan is indented under the answer's rows, the way a grouped table's
+	// rows sit under their heading.
+	_, err := printColumns(app.Stdout, s, cols, make([]string, len(plan)))
 	return err
 }

@@ -4,8 +4,13 @@ daemon: a preset is translated into the same tune the number would do, and
 nothing is probed or scanned. 'ley help presets' explains them in prose and
 lists the bands as well.
 
---json prints an array of {name, aliases, hz, mode, description}: client-local
-data with no proto message, so it is not the proto3 JSON mapping.
+Every preset is a channel of a band's plan (ley bands noaa lists one), named
+by the word that resolves without a band: wx3, marine16, cb19, murs1, ch5.
+The ALIASES column carries what the band's radios print (WX3, 16), which
+'ley tune 16 --band marine' takes, and the older names that still work.
+
+--json prints an array of {name, aliases, hz, mode, bandwidth_hz, description}:
+client-local data with no proto message, so it is not the proto3 JSON mapping.
 
 Usage:
   ley presets [flags]

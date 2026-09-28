@@ -97,7 +97,9 @@ backlog ends before it follows.
 ## 2. Hear a station
 
 Give `tune` a frequency. A bare number is MHz; add a unit to be exact (`1010k`, `146520000`);
-or give a preset name (`noaa`, `calling`, `marine16`, `guard` — `ley help presets`). Everything
+or give a preset name (`noaa`, `calling`, `marine16`, `guard` — `ley help presets`). A preset
+such as `ch5`, `wx3` or `marine16` is a channel of a band's plan, and `ley bands noaa` lists one;
+with `--band` the channel's own number does: `ley tune 16 --band marine`. Everything
 else is chosen for you and printed, so you can see a wrong choice.
 
 ```console
@@ -151,7 +153,7 @@ gain" means every stage you can set is at the bottom; the HackRF's AMP, an on/of
 not count.
 
 ```console
-$ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try noaa2..7
+$ ley tune noaa                     # NOAA weather channel 1 (162.550 MHz); try wx2..7
 $ ley tune 101.1 --mode fm          # FM broadcast; fm means WFM here
 $ ley tune 7.040 --mode lsb         # 40 m amateur band, lower sideband
 $ ley tune 162.55 --squelch -50 --volume 50%
@@ -934,8 +936,9 @@ for a program that speaks the contract directly.
   system-audio sink and leaves the squelch off unless `--squelch` asks for one.
 - **`ley presets` and `ley bands`** print the client-local tables grouped under their band (for
   presets) or their family (for bands), so a family of near-identical rows reads as one block;
-  `--json` gives the flat arrays with every field, including the description a table trims. No
-  RPC is made. `ley help presets` is the same data in prose.
+  `ley bands` counts each band's plan in CHANNELS and `ley bands marine` lists it; `--json` gives
+  the flat arrays with every field, including the description a table trims and a band's
+  `channels`. No RPC is made. `ley help presets` is the same data in prose.
 - **`ley mcp`** is the same radio for an agent: an MCP client (Claude Code, Claude Desktop, Cursor)
   starts `ley mcp` as a subprocess and gets a tool per verb -- `list_devices`, `tune`, `scan`,
   `snapshot` (a spectrum PNG), `listen_summary`, `query_records`, `list_entities`, the jobs -- each

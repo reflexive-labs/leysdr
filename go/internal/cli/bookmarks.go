@@ -79,13 +79,15 @@ the same order, the fields the file holds: mode is the contract's spelling
 }
 
 func newBookmarksAddCommand(app *App) *cobra.Command {
-	var name, mode, bw string
+	var name, mode, bw, band string
 	cmd := &cobra.Command{
-		Use:   "add <frequency|preset> --name NAME",
+		Use:   "add <frequency|preset|channel --band BAND> --name NAME",
 		Short: "Keep a frequency under a name",
 		Long: `add keeps a frequency so you can find it again by name. The frequency is
 read the way 'ley tune' reads one: a bare number is MHz (146.94), a unit is
 exact (162550k), and a preset name (noaa, marine16) stands for its frequency.
+With --band the argument is a channel of that band's plan as its radios print
+it: 'ley bookmarks add 5 --band gmrs' is GMRS channel 5.
 
 The mode comes from the band table when --mode is not given, the same lookup
 tune does, and the bandwidth is left as the mode's usual width unless --bw
@@ -96,6 +98,7 @@ Adding the same name at the same frequency updates that bookmark instead of
 making a second one.`,
 		Example: `  ley bookmarks add 146.94 --name "Local repeater"
   ley bookmarks add noaa --name "Weather"
+  ley bookmarks add 5 --band gmrs --name "Channel 5"
   ley bookmarks add 121.5 --name Guard --mode am --bw 10
   ley bookmarks add 145.8 --name "ISS" --json | jq -r .id`,
 		Args: cobra.MaximumNArgs(1),
@@ -104,10 +107,11 @@ making a second one.`,
 			if len(args) == 1 {
 				arg = args[0]
 			}
-			return runBookmarkAdd(app, arg, name, mode, bw)
+			return runBookmarkAdd(app, arg, name, mode, bw, band)
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "what to call it in the list, e.g. --name \"Local repeater\" (required)")
+	cmd.Flags().StringVar(&band, "band", "", "read the argument as a channel of this band's plan, as its radios print it: --band marine 16, --band gmrs 5 (ley bands)")
 	cmd.Flags().StringVar(&mode, "mode", "", "how to decode it: nfm, wfm, am, usb, lsb, cw (default: by band, as tune does)")
 	cmd.Flags().StringVar(&bw, "bw", "", "how wide a slice to listen to: a bare number is kHz (12.5), or 200k (default: the mode's usual width)")
 	return cmd
@@ -166,11 +170,15 @@ func openBookmarks(app *App) (*bookmarks.Store, error) {
 
 // runBookmarkAdd resolves the frequency and mode the way `ley tune` does, so a bookmark tunes to
 // what tuning the same argument would have done.
-func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag string) error {
+func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue string) error {
 	if nameFlag == "" {
 		return usageErrorf("a bookmark needs a name: ley bookmarks add %s --name \"Local repeater\"", orDefault(arg, "146.94"))
 	}
-	t, err := resolveDialTarget(arg, "bookmarks add", "ley bookmarks add 146.94 --name \"Local repeater\"", "146.94 (MHz)")
+	band, err := bandFlag(bandFlagValue)
+	if err != nil {
+		return err
+	}
+	t, err := resolveDialTarget(arg, "bookmarks add", "ley bookmarks add 146.94 --name \"Local repeater\"", "146.94 (MHz)", band)
 	if err != nil {
 		return err
 	}
@@ -179,10 +187,19 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag string) error {
 		return err
 	}
 	var bw uint32
-	if bwFlag != "" {
+	switch {
+	case bwFlag != "":
 		bw, err = leyline.ParseBandwidth(bwFlag)
 		if err != nil {
 			return usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
+		}
+	case t.Preset != nil && mode == t.Preset.Mode:
+		// A channel's own width is part of what the channel is (MURS 1 is
+		// 11.25 kHz) and is kept; a band's default is left at 0 so the bookmark
+		// keeps following the table (docs/design/channels.md, "The plan is data
+		// in the band table").
+		if _, c, ok := leyline.ChannelAt(t.Hz); ok && c.BandwidthHz != 0 {
+			bw = c.BandwidthHz
 		}
 	}
 	store, err := openBookmarks(app)
@@ -203,8 +220,13 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag string) error {
 		fmt.Fprintf(app.Stdout, "  %s\n", s.Muted(reason))
 	}
 	// The next command echoes what was typed rather than the formatted frequency: "146.940 MHz"
-	// is two arguments at a prompt, and a preset name is shorter than either.
-	fmt.Fprintf(app.Stdout, "  %s\n", s.Cmd("ley tune "+arg))
+	// is two arguments at a prompt, and a preset name is shorter than either. A channel named
+	// under --band needs the band again.
+	next := "ley tune " + arg
+	if band != nil {
+		next += " --band " + bandFlagValue
+	}
+	fmt.Fprintf(app.Stdout, "  %s\n", s.Cmd(next))
 	return nil
 }
 
@@ -247,7 +269,7 @@ func runBookmarkRemove(app *App, arg string) error {
 // runBookmarkMove resolves the frequency the way add does, so the bookmark lands where tuning the
 // same argument would; the store resolves the bookmark the way remove does.
 func runBookmarkMove(app *App, arg, freq string) error {
-	t, err := resolveDialTarget(freq, "bookmarks move", `ley bookmarks move "Local repeater" 147.0`, "147.0 (MHz)")
+	t, err := resolveDialTarget(freq, "bookmarks move", `ley bookmarks move "Local repeater" 147.0`, "147.0 (MHz)", nil)
 	if err != nil {
 		return err
 	}

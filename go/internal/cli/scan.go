@@ -534,23 +534,14 @@ func bandCell(d *leylinev1.Detection) string {
 	return strings.Join(parts, " ")
 }
 
-// presetAt names the nearest preset within half a channel of the frequency. Nearest, not first,
-// because the GMRS channels are only 12.5 kHz apart, so a detection can sit inside the tolerance of
-// two of them and must take the closer.
+// presetAt names the plan channel on a frequency, by the word every table prints (wx3, ch18,
+// marine16): the nearest within 6 kHz, a tie to the earlier plan entry, which is ChannelAt's rule
+// and the app's (the plan's KTD2). Empty when nothing sits there.
 func presetAt(hz uint64) string {
-	best := ""
-	bestDiff := int64(6_000)
-	for _, p := range leyline.Presets() {
-		diff := int64(p.Hz) - int64(hz)
-		if diff < 0 {
-			diff = -diff
-		}
-		if diff <= bestDiff {
-			bestDiff = diff
-			best = p.Name
-		}
+	if _, c, ok := leyline.ChannelAt(hz); ok {
+		return c.Aliases[0]
 	}
-	return best
+	return ""
 }
 
 func strongest(rows []*leylinev1.Detection) *leylinev1.Detection {

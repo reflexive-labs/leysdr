@@ -96,7 +96,7 @@ for the run (destroyed on exit).
 			}
 			var hz uint64
 			if freq != "" {
-				t, terr := resolveDial(freq, "101.1 (MHz)")
+				t, terr := resolveDial(freq, "101.1 (MHz)", nil)
 				if terr != nil {
 					return usageErrorf("--freq %v", terr)
 				}

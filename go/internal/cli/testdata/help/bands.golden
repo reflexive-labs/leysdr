@@ -13,11 +13,18 @@ position would quietly redefine them.
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
---json prints an array of {name, min_hz, max_hz, mode, bandwidth_hz, step_hz,
-note}: client-local data with no proto message, so it is not the proto3 JSON
-mapping. step_hz is the band's channel spacing -- what one arrow key moves the
-dial by, which is not the bandwidth: airband is 10 kHz wide and spaced 25 kHz.
-The Mac app reads the same array from a checked-in bands.json (make bands-json).
+CHANNELS counts the band's plan, the numbered channels its radios print;
+'ley bands noaa' lists them, and 'ley tune 16 --band marine' tunes one by
+its number ('ley presets' is every plan as one table).
+
+--json prints an array of {name, aliases, min_hz, max_hz, mode, bandwidth_hz,
+step_hz, note, parts, channels}: client-local data with no proto message, so
+it is not the proto3 JSON mapping. step_hz is the band's channel spacing --
+what one arrow key moves the dial by, which is not the bandwidth: airband is
+10 kHz wide and spaced 25 kHz. channels, on a band with a plan, is an array
+of {name, aliases, hz, mode, bandwidth_hz, note, decoder}, mode and
+bandwidth_hz only where they differ from the band's. The Mac app reads the
+same array from a checked-in bands.json (make bands-json).
 
 Usage:
   ley bands [frequency|preset|band] [flags]
@@ -26,6 +33,7 @@ Examples:
   ley bands                      # the table
   ley bands 146.52               # what is this, and what will tune do here?
   ley bands 2m                   # the same answer, asked by name
+  ley bands noaa                 # a band and its plan, WX1 to WX7
   ley bands --json | jq -r '.[] | .aliases[0]'
   ley spectrum --band noaa       # the whole NOAA weather band
 

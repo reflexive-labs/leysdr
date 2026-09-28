@@ -74,7 +74,7 @@ func TestBandsLookupAcceptsAPreset(t *testing.T) {
 	}
 	// The reason names the preset, not the band default, so `bands` and `tune`
 	// cannot disagree about why a mode was chosen.
-	if !strings.Contains(out, "preset noaa2") {
+	if !strings.Contains(out, "preset wx2") {
 		t.Errorf("want the preset rationale:\n%s", out)
 	}
 }
@@ -145,5 +145,64 @@ func TestBandsLookupRejectsNonsense(t *testing.T) {
 	}
 	if exitCode(err) != ExitUsage {
 		t.Errorf("want exit %d, got %d: %v", ExitUsage, exitCode(err), err)
+	}
+}
+
+// A whole-band lookup prints the band's plan, a row per channel, and --json carries it as
+// `channels` (docs/design/channels.md, "The CLI").
+func TestBandsLookupListsThePlan(t *testing.T) {
+	out, _ := bandsOut(t, "noaa")
+	for _, want := range []string{"CHANNEL", "PRESET", "WX1", "162.550 MHz", "wx1", "WX7", "162.525 MHz", "channels  7"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+	// A part of a group lists the group's plan; a band with none says nothing about channels.
+	if out, _ := bandsOut(t, "gmrs-462"); !strings.Contains(out, "ch1") || !strings.Contains(out, "462.5625 MHz") {
+		t.Errorf("a GMRS half answers with the group's plan:\n%s", out)
+	}
+	if out, _ := bandsOut(t, "fm"); strings.Contains(out, "CHANNEL") || strings.Contains(out, "channels") {
+		t.Errorf("FM broadcast has no plan to print:\n%s", out)
+	}
+	// A point lookup does not print the whole plan.
+	if out, _ := bandsOut(t, "162.475"); strings.Contains(out, "CHANNEL") || strings.Contains(out, "162.525 MHz") {
+		t.Errorf("a frequency lookup answers the point, not the plan:\n%s", out)
+	}
+
+	js, _ := bandsOut(t, "marine", "--json")
+	var hit struct {
+		Band *struct {
+			Channels []struct {
+				Name    string   `json:"name"`
+				Aliases []string `json:"aliases"`
+				Hz      uint64   `json:"hz"`
+				Mode    string   `json:"mode"`
+				Bw      uint32   `json:"bandwidth_hz"`
+				Note    string   `json:"note"`
+				Decoder string   `json:"decoder"`
+			} `json:"channels"`
+		} `json:"band"`
+	}
+	if err := json.Unmarshal([]byte(js), &hit); err != nil {
+		t.Fatalf("%v: %s", err, js)
+	}
+	if hit.Band == nil || len(hit.Band.Channels) != 110 {
+		t.Fatalf("marine --json should carry the 110-entry plan: %s", js)
+	}
+	var ais, sixteen bool
+	for _, c := range hit.Band.Channels {
+		if c.Name == "87B" && c.Hz == 161_975_000 && c.Decoder == "ais" && c.Aliases[0] == "marine87b" {
+			ais = true
+		}
+		if c.Name == "16" && c.Hz == 156_800_000 && c.Mode == "" && c.Bw == 0 {
+			sixteen = true
+		}
+	}
+	if !ais || !sixteen {
+		t.Errorf("channels carry name, aliases, hz, decoder, and omit the band's own mode and width: %s", js)
+	}
+	murs, _ := bandsOut(t, "murs", "--json")
+	if !strings.Contains(murs, `"bandwidth_hz":11250`) || !strings.Contains(murs, `"bandwidth_hz":20000`) {
+		t.Errorf("MURS channels carry their own widths: %s", murs)
 	}
 }

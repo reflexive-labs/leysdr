@@ -1,63 +1,234 @@
 Presets are names 'ley tune' accepts in place of a frequency. Each one is a
-fixed frequency and mode; ley does not probe or scan for the best channel
-(that is 'ley scan', see ley help roadmap). Names are case-insensitive.
+channel of a band's plan, at a fixed frequency and mode; ley does not probe
+or scan for the best channel (that is 'ley scan'). Names are case-insensitive.
+The first column is the word that resolves anywhere; a channel is also known
+by the name its radios print ('also:'), which 'ley tune 16 --band marine'
+takes, and by the older names that still work.
 
-  noaa1     162.550 MHz   nfm  NOAA weather WX1                                also: noaa, wx1, weather
-  noaa2     162.400 MHz   nfm  NOAA weather WX2                                also: wx2
-  noaa3     162.475 MHz   nfm  NOAA weather WX3                                also: wx3
-  noaa4     162.425 MHz   nfm  NOAA weather WX4                                also: wx4
-  noaa5     162.450 MHz   nfm  NOAA weather WX5                                also: wx5
-  noaa6     162.500 MHz   nfm  NOAA weather WX6                                also: wx6
-  noaa7     162.525 MHz   nfm  NOAA weather WX7                                also: wx7
-  calling   146.520 MHz   nfm  2 m amateur national simplex calling frequency  also: 2m-calling, simplex
-  marine16  156.800 MHz   nfm  marine VHF channel 16, distress and calling     also: marine
-  guard     121.500 MHz   am   aviation emergency guard frequency              also: aircraft-guard, 121.5
-  ch1       462.5625 MHz  nfm  GMRS/FRS channel 1, 462.5625 MHz                
-  ch2       462.5875 MHz  nfm  GMRS/FRS channel 2, 462.5875 MHz                
-  ch3       462.6125 MHz  nfm  GMRS/FRS channel 3, 462.6125 MHz                
-  ch4       462.6375 MHz  nfm  GMRS/FRS channel 4, 462.6375 MHz                
-  ch5       462.6625 MHz  nfm  GMRS/FRS channel 5, 462.6625 MHz                
-  ch6       462.6875 MHz  nfm  GMRS/FRS channel 6, 462.6875 MHz                
-  ch7       462.7125 MHz  nfm  GMRS/FRS channel 7, 462.7125 MHz                
-  ch8       467.5625 MHz  nfm  GMRS/FRS channel 8, 467.5625 MHz                
-  ch9       467.5875 MHz  nfm  GMRS/FRS channel 9, 467.5875 MHz                
-  ch10      467.6125 MHz  nfm  GMRS/FRS channel 10, 467.6125 MHz               
-  ch11      467.6375 MHz  nfm  GMRS/FRS channel 11, 467.6375 MHz               
-  ch12      467.6625 MHz  nfm  GMRS/FRS channel 12, 467.6625 MHz               
-  ch13      467.6875 MHz  nfm  GMRS/FRS channel 13, 467.6875 MHz               
-  ch14      467.7125 MHz  nfm  GMRS/FRS channel 14, 467.7125 MHz               
-  ch15      462.550 MHz   nfm  GMRS channel 15, 462.550 MHz                    also: rpt1, 15rp, ch23
-  ch16      462.575 MHz   nfm  GMRS channel 16, 462.575 MHz                    also: rpt2, 16rp, ch24
-  ch17      462.600 MHz   nfm  GMRS channel 17, 462.600 MHz                    also: rpt3, 17rp, ch25
-  ch18      462.625 MHz   nfm  GMRS channel 18, 462.625 MHz                    also: rpt4, 18rp, ch26
-  ch19      462.650 MHz   nfm  GMRS channel 19, 462.650 MHz                    also: rpt5, 19rp, ch27
-  ch20      462.675 MHz   nfm  GMRS channel 20, 462.675 MHz                    also: rpt6, 20rp, ch28
-  ch21      462.700 MHz   nfm  GMRS channel 21, 462.700 MHz                    also: rpt7, 21rp, ch29
-  ch22      462.725 MHz   nfm  GMRS channel 22, 462.725 MHz                    also: rpt8, 22rp, ch30
+CB (ley bands cb)
+  cb1   26.965 MHz  am                                        also: 1
+  cb2   26.975 MHz  am                                        also: 2
+  cb3   26.985 MHz  am                                        also: 3
+  cb4   27.005 MHz  am                                        also: 4
+  cb5   27.015 MHz  am                                        also: 5
+  cb6   27.025 MHz  am                                        also: 6
+  cb7   27.035 MHz  am                                        also: 7
+  cb8   27.055 MHz  am                                        also: 8
+  cb9   27.065 MHz  am  emergencies and traveller assistance  also: 9
+  cb10  27.075 MHz  am                                        also: 10
+  cb11  27.085 MHz  am                                        also: 11
+  cb12  27.105 MHz  am                                        also: 12
+  cb13  27.115 MHz  am                                        also: 13
+  cb14  27.125 MHz  am                                        also: 14
+  cb15  27.135 MHz  am                                        also: 15
+  cb16  27.155 MHz  am                                        also: 16
+  cb17  27.165 MHz  am                                        also: 17
+  cb18  27.175 MHz  am                                        also: 18
+  cb19  27.185 MHz  am  the highway channel, by custom        also: 19
+  cb20  27.205 MHz  am                                        also: 20
+  cb21  27.215 MHz  am                                        also: 21
+  cb22  27.225 MHz  am                                        also: 22
+  cb23  27.255 MHz  am                                        also: 23
+  cb24  27.235 MHz  am                                        also: 24
+  cb25  27.245 MHz  am                                        also: 25
+  cb26  27.265 MHz  am                                        also: 26
+  cb27  27.275 MHz  am                                        also: 27
+  cb28  27.285 MHz  am                                        also: 28
+  cb29  27.295 MHz  am                                        also: 29
+  cb30  27.305 MHz  am                                        also: 30
+  cb31  27.315 MHz  am                                        also: 31
+  cb32  27.325 MHz  am                                        also: 32
+  cb33  27.335 MHz  am                                        also: 33
+  cb34  27.345 MHz  am                                        also: 34
+  cb35  27.355 MHz  am                                        also: 35
+  cb36  27.365 MHz  am                                        also: 36
+  cb37  27.375 MHz  am                                        also: 37
+  cb38  27.385 MHz  am                                        also: 38
+  cb39  27.395 MHz  am                                        also: 39
+  cb40  27.405 MHz  am                                        also: 40
+airband (ley bands air)
+  guard  121.500 MHz  am  aviation emergency frequency  also: aircraft-guard, 121.5
+2 m amateur (ley bands 2m)
+  aprs     144.390 MHz  nfm  APRS packet, North America          
+  calling  146.520 MHz  nfm  national simplex calling frequency  also: 2m-calling, simplex
+marine VHF (ley bands marine)
+  marine1a        156.050 MHz  nfm  port operations and VTS, New Orleans and the lower Mississippi  also: 1A
+  marine1         156.050 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 1
+  marine1-coast   160.650 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 1 coast
+  marine2         156.100 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 2
+  marine2-coast   160.700 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 2 coast
+  marine3         156.150 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 3
+  marine3-coast   160.750 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 3 coast
+  marine4         156.200 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 4
+  marine4-coast   160.800 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 4 coast
+  marine5a        156.250 MHz  nfm  port operations and VTS, Houston, New Orleans and Seattle       also: 5A
+  marine5         156.250 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 5
+  marine5-coast   160.850 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 5 coast
+  marine6         156.300 MHz  nfm  intership safety                                                also: 6
+  marine7a        156.350 MHz  nfm  commercial                                                      also: 7A
+  marine7         156.350 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 7
+  marine7-coast   160.950 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 7 coast
+  marine8         156.400 MHz  nfm  commercial, intership only                                      also: 8
+  marine9         156.450 MHz  nfm  boater calling, commercial and non-commercial                   also: 9
+  marine10        156.500 MHz  nfm  commercial                                                      also: 10
+  marine11        156.550 MHz  nfm  commercial; VTS in some areas                                   also: 11
+  marine12        156.600 MHz  nfm  port operations; VTS in some areas                              also: 12
+  marine13        156.650 MHz  nfm  bridge-to-bridge navigation safety                              also: 13
+  marine14        156.700 MHz  nfm  port operations; VTS in some areas                              also: 14
+  marine15        156.750 MHz  nfm  environmental, receive only                                     also: 15
+  marine16        156.800 MHz  nfm  distress, safety and calling                                    also: 16, marine
+  marine17        156.850 MHz  nfm  state and local government maritime control                     also: 17
+  marine18a       156.900 MHz  nfm  commercial                                                      also: 18A
+  marine18        156.900 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 18
+  marine18-coast  161.500 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 18 coast
+  marine19a       156.950 MHz  nfm  commercial                                                      also: 19A
+  marine19        156.950 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 19
+  marine19-coast  161.550 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 19 coast
+  marine20a       157.000 MHz  nfm  port operations                                                 also: 20A
+  marine20        157.000 MHz  nfm  port operations, ship side                                      also: 20
+  marine20-coast  161.600 MHz  nfm  port operations, coast side                                     also: 20 coast
+  marine21a       157.050 MHz  nfm  US Coast Guard only                                             also: 21A
+  marine21        157.050 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 21
+  marine21-coast  161.650 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 21 coast
+  marine22a       157.100 MHz  nfm  Coast Guard liaison and maritime safety broadcasts              also: 22A
+  marine22        157.100 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 22
+  marine22-coast  161.700 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 22 coast
+  marine23a       157.150 MHz  nfm  US Coast Guard only                                             also: 23A
+  marine23        157.150 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 23
+  marine23-coast  161.750 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 23 coast
+  marine24        157.200 MHz  nfm  public correspondence (marine operator), ship side              also: 24
+  marine24-coast  161.800 MHz  nfm  public correspondence (marine operator), coast side             also: 24 coast
+  marine25        157.250 MHz  nfm  public correspondence (marine operator), ship side              also: 25
+  marine25-coast  161.850 MHz  nfm  public correspondence (marine operator), coast side             also: 25 coast
+  marine26        157.300 MHz  nfm  public correspondence (marine operator), ship side              also: 26
+  marine26-coast  161.900 MHz  nfm  public correspondence (marine operator), coast side             also: 26 coast
+  marine27        157.350 MHz  nfm  public correspondence (marine operator), ship side              also: 27
+  marine27-coast  161.950 MHz  nfm  public correspondence (marine operator), coast side             also: 27 coast
+  marine28        157.400 MHz  nfm  public correspondence (marine operator), ship side              also: 28
+  marine28-coast  162.000 MHz  nfm  public correspondence (marine operator), coast side             also: 28 coast
+  marine60        156.025 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 60
+  marine60-coast  160.625 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 60 coast
+  marine61        156.075 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 61
+  marine61-coast  160.675 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 61 coast
+  marine62        156.125 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 62
+  marine62-coast  160.725 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 62 coast
+  marine63a       156.175 MHz  nfm  port operations and VTS, New Orleans and the lower Mississippi  also: 63A
+  marine63        156.175 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 63
+  marine63-coast  160.775 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 63 coast
+  marine64        156.225 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 64
+  marine64-coast  160.825 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 64 coast
+  marine65a       156.275 MHz  nfm  port operations                                                 also: 65A
+  marine65        156.275 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 65
+  marine65-coast  160.875 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 65 coast
+  marine66a       156.325 MHz  nfm  port operations                                                 also: 66A
+  marine66        156.325 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 66
+  marine66-coast  160.925 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 66 coast
+  marine67        156.375 MHz  nfm  commercial; bridge-to-bridge on the lower Mississippi           also: 67
+  marine68        156.425 MHz  nfm  non-commercial                                                  also: 68
+  marine69        156.475 MHz  nfm  non-commercial                                                  also: 69
+  marine70        156.525 MHz  nfm  digital selective calling, no voice                             also: 70
+  marine71        156.575 MHz  nfm  non-commercial                                                  also: 71
+  marine72        156.625 MHz  nfm  non-commercial, intership only                                  also: 72
+  marine73        156.675 MHz  nfm  port operations                                                 also: 73
+  marine74        156.725 MHz  nfm  port operations                                                 also: 74
+  marine75        156.775 MHz  nfm  port operations, low power, beside channel 16, ITU              also: 75
+  marine76        156.825 MHz  nfm  port operations, low power, beside channel 16, ITU              also: 76
+  marine77        156.875 MHz  nfm  port operations, intership only                                 also: 77
+  marine78a       156.925 MHz  nfm  non-commercial                                                  also: 78A
+  marine78        156.925 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 78
+  marine78-coast  161.525 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 78 coast
+  marine79a       156.975 MHz  nfm  commercial; non-commercial on the Great Lakes                   also: 79A
+  marine79        156.975 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 79
+  marine79-coast  161.575 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 79 coast
+  marine80a       157.025 MHz  nfm  commercial; non-commercial on the Great Lakes                   also: 80A
+  marine80        157.025 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 80
+  marine80-coast  161.625 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 80 coast
+  marine81a       157.075 MHz  nfm  US government only, environmental protection                    also: 81A
+  marine81        157.075 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 81
+  marine81-coast  161.675 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 81 coast
+  marine82a       157.125 MHz  nfm  US government only                                              also: 82A
+  marine82        157.125 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 82
+  marine82-coast  161.725 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 82 coast
+  marine83a       157.175 MHz  nfm  US Coast Guard only                                             also: 83A
+  marine83        157.175 MHz  nfm  port operations and public correspondence, ITU, ship side       also: 83
+  marine83-coast  161.775 MHz  nfm  port operations and public correspondence, ITU, coast side      also: 83 coast
+  marine84        157.225 MHz  nfm  public correspondence (marine operator), ship side              also: 84
+  marine84-coast  161.825 MHz  nfm  public correspondence (marine operator), coast side             also: 84 coast
+  marine85        157.275 MHz  nfm  public correspondence (marine operator), ship side              also: 85
+  marine85-coast  161.875 MHz  nfm  public correspondence (marine operator), coast side             also: 85 coast
+  marine86        157.325 MHz  nfm  public correspondence (marine operator), ship side              also: 86
+  marine86-coast  161.925 MHz  nfm  public correspondence (marine operator), coast side             also: 86 coast
+  marine87        157.375 MHz  nfm  public correspondence (marine operator)                         also: 87
+  marine88        157.425 MHz  nfm  commercial, intership only                                      also: 88
+  marine87b       161.975 MHz  nfm  AIS 1                                                           also: 87B, ais1
+  marine88b       162.025 MHz  nfm  AIS 2                                                           also: 88B, ais2
+NOAA weather (ley bands noaa)
+  wx1  162.550 MHz  nfm    also: noaa1, noaa, weather
+  wx2  162.400 MHz  nfm    also: noaa2
+  wx3  162.475 MHz  nfm    also: noaa3
+  wx4  162.425 MHz  nfm    also: noaa4
+  wx5  162.450 MHz  nfm    also: noaa5
+  wx6  162.500 MHz  nfm    also: noaa6
+  wx7  162.525 MHz  nfm    also: noaa7
+GMRS (ley bands gmrs)
+  ch1   462.5625 MHz  nfm  simplex, shared with FRS                          also: gmrs1, 1
+  ch2   462.5875 MHz  nfm  simplex, shared with FRS                          also: gmrs2, 2
+  ch3   462.6125 MHz  nfm  simplex, shared with FRS                          also: gmrs3, 3
+  ch4   462.6375 MHz  nfm  simplex, shared with FRS                          also: gmrs4, 4
+  ch5   462.6625 MHz  nfm  simplex, shared with FRS                          also: gmrs5, 5
+  ch6   462.6875 MHz  nfm  simplex, shared with FRS                          also: gmrs6, 6
+  ch7   462.7125 MHz  nfm  simplex, shared with FRS                          also: gmrs7, 7
+  ch8   467.5625 MHz  nfm  simplex, low power                                also: gmrs8, 8
+  ch9   467.5875 MHz  nfm  simplex, low power                                also: gmrs9, 9
+  ch10  467.6125 MHz  nfm  simplex, low power                                also: gmrs10, 10
+  ch11  467.6375 MHz  nfm  simplex, low power                                also: gmrs11, 11
+  ch12  467.6625 MHz  nfm  simplex, low power                                also: gmrs12, 12
+  ch13  467.6875 MHz  nfm  simplex, low power                                also: gmrs13, 13
+  ch14  467.7125 MHz  nfm  simplex, low power                                also: gmrs14, 14
+  ch15  462.550 MHz   nfm  repeater slot 1 output (input +5 MHz) or simplex  also: gmrs15, 15, rpt1, 15rp, ch23
+  ch16  462.575 MHz   nfm  repeater slot 2 output (input +5 MHz) or simplex  also: gmrs16, 16, rpt2, 16rp, ch24
+  ch17  462.600 MHz   nfm  repeater slot 3 output (input +5 MHz) or simplex  also: gmrs17, 17, rpt3, 17rp, ch25
+  ch18  462.625 MHz   nfm  repeater slot 4 output (input +5 MHz) or simplex  also: gmrs18, 18, rpt4, 18rp, ch26
+  ch19  462.650 MHz   nfm  repeater slot 5 output (input +5 MHz) or simplex  also: gmrs19, 19, rpt5, 19rp, ch27
+  ch20  462.675 MHz   nfm  repeater slot 6 output (input +5 MHz) or simplex  also: gmrs20, 20, rpt6, 20rp, ch28
+  ch21  462.700 MHz   nfm  repeater slot 7 output (input +5 MHz) or simplex  also: gmrs21, 21, rpt7, 21rp, ch29
+  ch22  462.725 MHz   nfm  repeater slot 8 output (input +5 MHz) or simplex  also: gmrs22, 22, rpt8, 22rp, ch30
+MURS (ley bands murs)
+  murs1  151.820 MHz  nfm    also: 1
+  murs2  151.880 MHz  nfm    also: 2
+  murs3  151.940 MHz  nfm    also: 3
+  murs4  154.570 MHz  nfm    also: 4
+  murs5  154.600 MHz  nfm    also: 5
 
 Bands ley recognises. Without --mode, tune uses the band's mode and
 bandwidth; outside every band it uses NFM and says "no band recognised".
 usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
-  AM broadcast   530.000 kHz to 1.700 MHz      am       10 kHz    medium-wave broadcast stations
-  160 m amateur  1.800 MHz to 2.000 MHz        usb/lsb  2.8 kHz   amateur radio, LSB voice
-  80 m amateur   3.500 MHz to 4.000 MHz        usb/lsb  2.8 kHz   amateur radio, LSB voice
-  40 m amateur   7.000 MHz to 7.300 MHz        usb/lsb  2.8 kHz   amateur radio, LSB voice
-  20 m amateur   14.000 MHz to 14.350 MHz      usb/lsb  2.8 kHz   amateur radio, USB voice
-  15 m amateur   21.000 MHz to 21.450 MHz      usb/lsb  2.8 kHz   amateur radio, USB voice
-  CB             26.965 MHz to 27.405 MHz      am       10 kHz    citizens band, channel 1 to 40
-  10 m amateur   28.000 MHz to 29.700 MHz      usb/lsb  2.8 kHz   amateur radio, USB voice
-  FM broadcast   87.500 MHz to 108.000 MHz     wfm      200 kHz   wideband FM radio stations
-  airband        118.000 MHz to 137.000 MHz    am       10 kHz    aircraft and towers, AM voice
-  2 m amateur    144.000 MHz to 148.000 MHz    nfm      12.5 kHz  amateur radio, FM voice and repeaters
-  marine VHF     156.000 MHz to 162.025 MHz    nfm      12.5 kHz  ship and coast stations; channel 16 is 156.800
-  NOAA weather   162.400 MHz to 162.550 MHz    nfm      12.5 kHz  continuous weather broadcasts, WX1 to WX7
-  70 cm amateur  420.000 MHz to 450.000 MHz    nfm      12.5 kHz  amateur radio, FM voice and repeaters
-  GMRS 462 MHz   462.5375 MHz to 462.7375 MHz  nfm      20 kHz    GMRS/FRS channels 1 to 7 and 15 to 22: simplex and the repeater outputs -- scan here to find a repeater's transmit
-  GMRS 467 MHz   467.5375 MHz to 467.7375 MHz  nfm      20 kHz    GMRS/FRS channels 8 to 14 (low power) and the repeater inputs, the uplink a radio transmits to a repeater
-  GMRS           462.5375 MHz to 467.7375 MHz  nfm      20 kHz    GMRS/FRS, the whole service: both halves 5 MHz apart; scan sweeps it, a picture or a watch takes gmrs-462 or gmrs-467
+  AM broadcast    530.000 kHz to 1.700 MHz      am       10 kHz     medium-wave broadcast stations
+  160 m amateur   1.800 MHz to 2.000 MHz        usb/lsb  2.8 kHz    amateur radio, LSB voice
+  80 m amateur    3.500 MHz to 4.000 MHz        usb/lsb  2.8 kHz    amateur radio, LSB voice
+  40 m amateur    7.000 MHz to 7.300 MHz        usb/lsb  2.8 kHz    amateur radio, LSB voice
+  20 m amateur    14.000 MHz to 14.350 MHz      usb/lsb  2.8 kHz    amateur radio, USB voice
+  15 m amateur    21.000 MHz to 21.450 MHz      usb/lsb  2.8 kHz    amateur radio, USB voice
+  CB              26.965 MHz to 27.405 MHz      am       10 kHz     citizens band, channel 1 to 40
+  10 m amateur    28.000 MHz to 29.700 MHz      usb/lsb  2.8 kHz    amateur radio, USB voice
+  6 m amateur     50.000 MHz to 54.000 MHz      nfm      12.5 kHz   amateur radio, FM voice and repeaters; USB below 50.3
+  FM broadcast    87.500 MHz to 108.000 MHz     wfm      200 kHz    wideband FM radio stations
+  airband         118.000 MHz to 137.000 MHz    am       10 kHz     aircraft and towers, AM voice
+  2 m amateur     144.000 MHz to 148.000 MHz    nfm      12.5 kHz   amateur radio, FM voice and repeaters
+  MURS 151 MHz    151.810 MHz to 151.950 MHz    nfm      11.25 kHz  MURS channels 1 to 3, licence-free, 11.25 kHz wide
+  MURS 154 MHz    154.560 MHz to 154.610 MHz    nfm      20 kHz     MURS channels 4 and 5, licence-free, 20 kHz wide
+  marine VHF      156.000 MHz to 162.025 MHz    nfm      12.5 kHz   ship and coast stations; channel 16 is 156.800
+  NOAA weather    162.400 MHz to 162.550 MHz    nfm      12.5 kHz   continuous weather broadcasts, WX1 to WX7
+  1.25 m amateur  222.000 MHz to 225.000 MHz    nfm      12.5 kHz   amateur radio, FM voice and repeaters
+  70 cm amateur   420.000 MHz to 450.000 MHz    nfm      12.5 kHz   amateur radio, FM voice and repeaters
+  GMRS 462 MHz    462.5375 MHz to 462.7375 MHz  nfm      20 kHz     GMRS/FRS channels 1 to 7 and 15 to 22: simplex and the repeater outputs -- scan here to find a repeater's transmit
+  GMRS 467 MHz    467.5375 MHz to 467.7375 MHz  nfm      20 kHz     GMRS/FRS channels 8 to 14 (low power) and the repeater inputs, the uplink a radio transmits to a repeater
+  GMRS            462.5375 MHz to 467.7375 MHz  nfm      20 kHz     GMRS/FRS, the whole service: both halves 5 MHz apart; scan sweeps it, a picture or a watch takes gmrs-462 or gmrs-467
+  MURS            151.810 MHz to 154.610 MHz    nfm      11.25 kHz  MURS, the whole service: three channels near 151.9 MHz and two near 154.6 MHz; scan sweeps it, a picture or a watch takes murs-151 or murs-154
 
-  ley tune noaa                noaa is an alias of noaa1, 162.550 MHz
+  ley tune noaa                noaa is an alias of wx1, 162.550 MHz
   ley tune calling             146.520 MHz, 2 m simplex calling
   ley tune guard               121.500 MHz, AM
+  ley tune 16 --band marine    marine channel 16 by the number its radios print

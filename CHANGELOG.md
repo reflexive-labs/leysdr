@@ -4,6 +4,17 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- `ley` knows the channel plans. Every band that has one carries it: NOAA WX1 to WX7, GMRS 1 to
+  22, MURS 1 to 5 (two new bands and a `murs` group, like GMRS), the ITU marine plan with the US
+  `A` channels, a ship and a coast entry per duplex channel and AIS 1 and 2, CB 1 to 40, 2 m
+  calling and APRS, and airband guard; 6 m and 1.25 m are new bands with no plan. A preset is now
+  a channel of one of these plans, named by one word that works anywhere (`wx3`, `marine16`,
+  `cb19`, `murs1`, `ch5`), and every older name still resolves. `ley tune 16 --band marine` and
+  `ley bookmarks add 5 --band gmrs` take a channel the way its radios number it, where a bare
+  number stays a frequency. `ley bands` counts each plan, `ley bands noaa` lists one, `ley bands
+  --json` and the app's seed carry `channels`, and `ley scan` and `ley monitor` name a carrier
+  on any plan channel, marine and CB included.
+
 - The bookmarks file keeps fields it does not know. Both `ley bookmarks` and the Mac app now
   write back, unchanged, every key of an entry they do not recognise, so a bookmark saved by a
   newer build of one client survives an edit by an older build of the other. Entries are written

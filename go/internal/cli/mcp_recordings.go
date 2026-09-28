@@ -163,7 +163,7 @@ func (srv *mcpServer) findRecordings(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, nil, fmt.Errorf("kind %q is not a kind of recording; audio and iq are the ones there are", in.Kind)
 	}
 	if in.Frequency != "" {
-		t, err := resolveDial(in.Frequency, "146.52 (MHz)")
+		t, err := resolveDial(in.Frequency, "146.52 (MHz)", nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("frequency %v", err)
 		}

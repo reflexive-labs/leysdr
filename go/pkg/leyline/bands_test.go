@@ -60,7 +60,7 @@ func TestBandFor(t *testing.T) {
 	// to expect otherwise.
 	// The gap between the two GMRS halves belongs to no band: the group spans it for a sweep,
 	// but a detection at 465 MHz is not GMRS.
-	for _, hz := range []uint64{0, 100_000, 50_000_000, 115_000_000, 162_030_000, 300_000_000, 465_000_000, 1_000_000_000} {
+	for _, hz := range []uint64{0, 100_000, 60_000_000, 115_000_000, 153_200_000, 162_030_000, 300_000_000, 465_000_000, 1_000_000_000} {
 		if b := BandFor(hz); b != nil {
 			t.Errorf("BandFor(%d) = %q, want no band", hz, b.Name)
 		}
@@ -141,5 +141,209 @@ func TestEveryBandHasAStep(t *testing.T) {
 	hf, err := ResolveBand("40m")
 	if err != nil || hf.StepHz != 1_000 || hf.FineStepHz() != 100 {
 		t.Errorf("40 m: step %d, fine %d (%v)", hf.StepHz, hf.FineStepHz(), err)
+	}
+}
+
+// MURS is two padded halves and a group, as GMRS is, and the two amateur bands an RTL-SDR
+// reaches that the table lacked are in place; the table stays ordered and disjoint around them
+// (docs/design/channels.md, "The plan is data in the band table").
+func TestResolveBandMURSAndNewAmateurBands(t *testing.T) {
+	g, err := ResolveBand("murs")
+	if err != nil || !g.IsGroup() || strings.Join(g.Parts, " ") != "murs-151 murs-154" {
+		t.Fatalf("ResolveBand(murs) = %+v, %v; want the group of both halves", g, err)
+	}
+	if len(g.Channels) != 5 {
+		t.Errorf("the murs group carries the five-channel plan, got %d", len(g.Channels))
+	}
+	lo, err := ResolveBand("murs-151")
+	if err != nil || lo.IsGroup() || lo.MinHz > 151_820_000 || lo.MaxHz < 151_940_000 || lo.MaxHz >= 154_000_000 {
+		t.Errorf("murs-151 should span the three 151 MHz channels and no more: %+v %v", lo, err)
+	}
+	hi, err := ResolveBand("murs-154")
+	if err != nil || hi.MinHz > 154_570_000 || hi.MaxHz < 154_600_000 || hi.MinHz <= 152_000_000 {
+		t.Errorf("murs-154 should span the two 154 MHz channels and no more: %+v %v", hi, err)
+	}
+	if b := BandFor(153_200_000); b != nil {
+		t.Errorf("the spectrum between the MURS halves belongs to no band, got %q", b.Name)
+	}
+	for _, tc := range []struct {
+		alias    string
+		min, max uint64
+		mode     leylinev1.DemodMode
+	}{
+		{"6m", 50_000_000, 54_000_000, leylinev1.DemodMode_NFM},
+		{"1.25m", 222_000_000, 225_000_000, leylinev1.DemodMode_NFM},
+	} {
+		b, err := ResolveBand(tc.alias)
+		if err != nil || b.MinHz != tc.min || b.MaxHz != tc.max || b.Mode != tc.mode || len(b.Channels) != 0 {
+			t.Errorf("ResolveBand(%q) = %+v, %v", tc.alias, b, err)
+		}
+	}
+}
+
+// Each plan has the count the design's table gives it, and the spot frequencies checked against
+// the listings named in the commit hold (docs/design/channels.md, "The plan is data in the band
+// table").
+func TestPlansMatchTheirListings(t *testing.T) {
+	plan := func(alias string) []Channel {
+		t.Helper()
+		b, err := ResolveBand(alias)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b.Channels
+	}
+	for _, tc := range []struct {
+		band  string
+		count int
+	}{
+		{"noaa", 7},
+		{"gmrs", 22},
+		{"murs", 5},
+		{"cb", 40},
+		{"2m", 2},
+		{"air", 1},
+		{"marine", 110},
+		{"70cm", 0},
+		{"6m", 0},
+		{"1.25m", 0},
+		{"fm", 0},
+		{"am", 0},
+		{"20m", 0},
+	} {
+		if got := len(plan(tc.band)); got != tc.count {
+			t.Errorf("%s: %d channels, want %d", tc.band, got, tc.count)
+		}
+	}
+	find := func(alias, name string) Channel {
+		t.Helper()
+		for _, c := range plan(alias) {
+			if c.Name == name {
+				return c
+			}
+		}
+		t.Fatalf("%s has no channel named %q", alias, name)
+		return Channel{}
+	}
+	for _, tc := range []struct {
+		band, name string
+		hz         uint64
+		bw         uint32
+		decoder    string
+	}{
+		{"noaa", "WX3", 162_475_000, 0, "same"},
+		{"gmrs", "ch5", 462_662_500, 0, ""},
+		{"murs", "1", 151_820_000, 11_250, ""},
+		{"murs", "5", 154_600_000, 20_000, ""},
+		{"cb", "19", 27_185_000, 0, ""},
+		{"cb", "23", 27_255_000, 0, ""},
+		{"cb", "24", 27_235_000, 0, ""},
+		{"marine", "16", 156_800_000, 0, ""},
+		{"marine", "24", 157_200_000, 0, ""},
+		{"marine", "24 coast", 161_800_000, 0, ""},
+		{"marine", "22A", 157_100_000, 0, ""},
+		{"marine", "87B", 161_975_000, 0, "ais"},
+		{"marine", "88B", 162_025_000, 0, "ais"},
+		{"2m", "aprs", 144_390_000, 0, "aprs"},
+		{"2m", "calling", 146_520_000, 0, ""},
+		{"air", "guard", 121_500_000, 0, ""},
+	} {
+		c := find(tc.band, tc.name)
+		if c.Hz != tc.hz || c.BandwidthHz != tc.bw || c.Decoder != tc.decoder {
+			t.Errorf("%s %s = %+v, want %d Hz, %d wide, decoder %q", tc.band, tc.name, c, tc.hz, tc.bw, tc.decoder)
+		}
+	}
+	// CB 23 to 25 are out of frequency order in the plan, as the FCC numbers them.
+	if find("cb", "23").Hz <= find("cb", "24").Hz || find("cb", "24").Hz >= find("cb", "25").Hz {
+		t.Error("CB 23 sits above 24 and 25 in frequency")
+	}
+	// Every channel lies inside its band, and every plan entry carries its plan-prefixed alias
+	// first, the form that resolves without a band.
+	for _, b := range append(Bands(), BandGroups()...) {
+		for _, c := range b.Channels {
+			if c.Hz < b.MinHz || c.Hz > b.MaxHz {
+				t.Errorf("%s: channel %s at %d is outside %d..%d", b.Name, c.Name, c.Hz, b.MinHz, b.MaxHz)
+			}
+			if len(c.Aliases) == 0 {
+				t.Errorf("%s: channel %s has no global alias", b.Name, c.Name)
+			}
+		}
+	}
+}
+
+// One tolerance for "on a channel", the nearest within 6 kHz, and a tie goes to the earlier
+// entry in plan order: the US variant entered before the ITU entry that shares its frequency
+// (the plan's KTD2).
+func TestChannelAt(t *testing.T) {
+	for _, tc := range []struct {
+		hz   uint64
+		name string
+		ok   bool
+	}{
+		{162_475_000, "WX3", true},
+		{462_662_500, "ch5", true},
+		{462_664_000, "ch5", true}, // 1.5 kHz above ch5
+		{462_660_000, "ch5", true}, // 2.5 kHz below ch5
+		{462_668_500, "ch5", true}, // 6 kHz above: the edge of the tolerance
+		{157_100_000, "22A", true}, // the US variant, entered before ITU 22
+		{161_975_000, "87B", true}, // AIS 1
+		{27_185_000, "19", true},
+		{151_820_000, "1", true},
+		{146_520_000, "calling", true},
+		{121_500_000, "guard", true},
+		{156_807_000, "", false}, // 7 kHz above marine 16, 18 kHz below 17
+		{101_100_000, "", false}, // FM broadcast has no plan
+		{153_200_000, "", false}, // between the MURS halves
+	} {
+		_, c, ok := ChannelAt(tc.hz)
+		if ok != tc.ok || (ok && c.Name != tc.name) {
+			t.Errorf("ChannelAt(%d) = %q, %v; want %q, %v", tc.hz, c.Name, ok, tc.name, tc.ok)
+		}
+	}
+	if b, _, ok := ChannelAt(462_662_500); !ok || b.Name != "GMRS" {
+		t.Errorf("a GMRS channel answers the group the plan hangs on, got %q", b.Name)
+	}
+}
+
+// A name resolves in a band's context: the radio-printed name, with or without a leading zero,
+// or any alias in that band's plan, and nothing outside it. A group's part answers through the
+// group's plan, since the plan hangs on the group (docs/design/channels.md, "The CLI").
+func TestResolvePlanChannel(t *testing.T) {
+	for _, tc := range []struct {
+		band, in string
+		hz       uint64
+		name     string
+		ok       bool
+	}{
+		{"marine", "16", 156_800_000, "marine16", true},
+		{"marine", "06", 156_300_000, "marine6", true},
+		{"marine", "6", 156_300_000, "marine6", true},
+		{"marine", "22a", 157_100_000, "marine22a", true},
+		{"marine", "24 coast", 161_800_000, "marine24-coast", true},
+		{"marine", "marine16", 156_800_000, "marine16", true},
+		{"gmrs", "5", 462_662_500, "ch5", true},
+		{"gmrs", "ch5", 462_662_500, "ch5", true},
+		{"gmrs", "rpt3", 462_600_000, "ch17", true},
+		{"gmrs-462", "5", 462_662_500, "ch5", true},
+		{"murs", "1", 151_820_000, "murs1", true},
+		{"noaa", "wx3", 162_475_000, "wx3", true},
+		{"noaa", "WX3", 162_475_000, "wx3", true},
+		{"cb", "19", 27_185_000, "cb19", true},
+		{"marine", "99", 0, "", false},
+		{"marine", "wx3", 0, "", false},
+		{"fm", "16", 0, "", false},
+	} {
+		b, err := ResolveBand(tc.band)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, ok := ResolvePlanChannel(b, tc.in)
+		if ok != tc.ok || (ok && (p.Hz != tc.hz || p.Name != tc.name)) {
+			t.Errorf("ResolvePlanChannel(%s, %q) = %+v, %v; want %s at %d, %v", tc.band, tc.in, p, ok, tc.name, tc.hz, tc.ok)
+		}
+	}
+	murs, _ := ResolveBand("murs")
+	if p, ok := ResolvePlanChannel(murs, "1"); !ok || p.BandwidthHz != 11_250 || p.Mode != leylinev1.DemodMode_NFM {
+		t.Errorf("MURS 1 carries its own width: %+v", p)
 	}
 }

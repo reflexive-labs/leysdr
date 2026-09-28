@@ -64,6 +64,20 @@ func TestBookmarksRoundTrip(t *testing.T) {
 	if out := mustBookmarks(t, path, "bookmarks", "add", "121.5", "--name", "Guard"); !strings.Contains(out, " am ") {
 		t.Fatalf("the airband default is AM:\n%s", out)
 	}
+	// Under --band the positional is a channel of that band's plan (the plan's KTD8).
+	if out := mustBookmarks(t, path, "bookmarks", "add", "5", "--band", "gmrs", "--name", "x"); !strings.Contains(out, "462.6625 MHz") || !strings.Contains(out, "preset ch5") {
+		t.Fatalf("5 under --band gmrs is GMRS channel 5:\n%s", out)
+	}
+	if _, _, err := runBookmarks(t, path, "bookmarks", "add", "99", "--band", "gmrs", "--name", "y"); err == nil || !strings.Contains(err.Error(), "GMRS") {
+		t.Fatalf("a channel the plan lacks is refused with the band named: %v", err)
+	}
+	// A channel's own width is kept (MURS 1 is 11.25 kHz, not the band's 12.5), where a band's
+	// default is left at 0 so the bookmark keeps following the table.
+	if out := mustBookmarks(t, path, "bookmarks", "add", "1", "--band", "murs", "--name", "m"); !strings.Contains(out, "11.25 kHz") || !strings.Contains(out, "ley tune 1 --band murs\n") {
+		t.Fatalf("MURS 1 keeps its own width:\n%s", out)
+	}
+	mustBookmarks(t, path, "bookmarks", "remove", "x")
+	mustBookmarks(t, path, "bookmarks", "remove", "m")
 
 	list := mustBookmarks(t, path, "bookmarks")
 	rows := strings.Split(strings.TrimSpace(list), "\n")

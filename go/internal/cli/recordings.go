@@ -59,7 +59,7 @@ to be told; the daemon drops the oldest when the store passes its cap
 				return usageErrorf("--kind %q is not a kind of recording; audio and iq are the ones there are", o.kind)
 			}
 			if freq != "" {
-				t, err := resolveDial(freq, "146.52 (MHz)")
+				t, err := resolveDial(freq, "146.52 (MHz)", nil)
 				if err != nil {
 					return usageErrorf("--freq %v", err)
 				}

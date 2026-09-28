@@ -338,7 +338,7 @@ func buildWrites(ctx context.Context, s *session, param, value string, ch *leyli
 	}
 	switch param {
 	case "freq":
-		t, terr := resolveDial(value, "146.52 (MHz)")
+		t, terr := resolveDial(value, "146.52 (MHz)", nil)
 		if terr != nil {
 			return nil, nil, 0, paramErr(param, terr)
 		}

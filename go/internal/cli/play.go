@@ -143,7 +143,7 @@ through its own speakers, and on a terminal space pauses and resumes it.`,
 			// --freq is a usage error before anything reaches the daemon.
 			var freqHz uint64
 			if freq != "" {
-				t, terr := resolveDial(freq, "146.52 (MHz)")
+				t, terr := resolveDial(freq, "146.52 (MHz)", nil)
 				if terr != nil {
 					return usageErrorf("--freq %v", terr)
 				}

@@ -12,7 +12,7 @@ the [MCP adapter reference](mcp.md).
 
 ```
 ley                                  # bare: orientation screen on a TTY (see below); the verb list when piped
-├── tune <freq|preset> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto|STAGE=dB,...] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
+├── tune <freq|preset|channel --band B> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto|STAGE=dB,...] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
 │                                    # capture+channel+system-audio sink in one verb; prints every decision it made;
 │                                    # refuses to retune a capture other active channels ride on unless --retune
 ├── set [param value] [--channel SEL] [--capture SEL]
@@ -74,7 +74,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # name a transmitter (or read/clear its name); labels are user
 │                                    # data in a client-side JSON store ($LEYLINE_LABELS), not daemon state
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
-├── bookmarks [add <freq|preset> --name NAME [--mode M] [--bw N] | move <id|name> <freq|preset> | remove <id|name>]
+├── bookmarks [add <freq|preset|channel --band B> --name NAME [--mode M] [--bw N] | move <id|name> <freq|preset> | remove <id|name>]
 │                                    # the third client-local table and the only one you write: the
 │                                    # frequencies you kept, in a JSON file ($LEYLINE_BOOKMARKS) the
 │                                    # Mac app reads too, so one kept from a terminal is in its sidebar
@@ -112,17 +112,25 @@ Squelch levels are dBFS (`-40`, `-40dB`, `off`, `auto`); a positive number is an
 explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Modes by alias
 (`fm` → WFM on 87.5–108 MHz else NFM; `ssb` → USB at and above 10 MHz else LSB). **Selectors**:
 `--channel`, `--capture`, `--device` and `devices detach` accept a full id, an id prefix, the
-1-based row number from the printed list, or a frequency. **Presets** (`noaa`, `noaa1..7`,
-`calling`, `marine16`, `guard`, and the 22 GMRS channels by number `ch1..ch22` -- the repeater
-outputs `ch15..ch22` also answer to their repeater-slot names `rpt1..rpt8`, the
-channel-numbered `15rp..22rp`, and Baofeng's `ch23..ch30` -- every label a radio might print for
-the same channel) and **bands**
-(name, default mode, default bandwidth; GMRS is two bands 5 MHz apart, `gmrs-462` for channels 1 to
-7 and 15 to 22 with the repeater outputs and `gmrs-467` for channels 8 to 14 with the repeater
-inputs, plus the group `gmrs` spanning both, which `scan` sweeps whole and a picture or a watch
-refuses with the halves named unless the radio captures 5.2 MHz at once) are pure client-side tables, rendered as tables by `ley presets` and `ley bands` and in
-prose by `ley help presets`; resolution is number/unit form first, then preset name, never probing. These are presentation over the same RPCs: the CLI
-adds no capability the protocol lacks.
+1-based row number from the printed list, or a frequency. **Presets** are the channels of the
+band table's plans, each named by one plan-prefixed word that resolves without a band (`wx1..wx7`,
+`marine16`, `cb19`, `murs1`, `calling`, `aprs`, `guard`, and GMRS by number `ch1..ch22`; `noaa`,
+`noaa1..7`, `weather` and `marine` keep resolving as older aliases; the repeater outputs
+`ch15..ch22` also answer to their repeater-slot names `rpt1..rpt8`, the channel-numbered
+`15rp..22rp`, and Baofeng's `ch23..ch30`). The plans are NOAA WX1 to WX7, GMRS 1 to 22, MURS 1 to
+5, the ITU marine plan with the US `A` variants and a ship and a coast entry per duplex channel
+(`24`, `24 coast`; `87B` and `88B` are AIS 1 and 2), CB 1 to 40, 2 m calling and APRS, and airband
+guard (`docs/design/channels.md`). A channel's own name, as its radios print it (`16`, `WX3`, `5`),
+resolves only under `--band` on `tune` and `bookmarks add`: `ley tune 16 --band marine` is marine
+channel 16, bare `16` stays 16 MHz, and a name the plan lacks is an error naming the band and its
+plan. **Bands** (name, default mode, default bandwidth, and the plan; GMRS is two bands 5 MHz
+apart, `gmrs-462` for channels 1 to 7 and 15 to 22 with the repeater outputs and `gmrs-467` for
+channels 8 to 14 with the repeater inputs, plus the group `gmrs` spanning both, which `scan` sweeps
+whole and a picture or a watch refuses with the halves named unless the radio captures 5.2 MHz at
+once; MURS is the same shape, `murs-151`, `murs-154` and the group `murs`) are pure client-side
+tables, rendered as tables by `ley presets` and `ley bands` (`ley bands noaa` lists a plan) and in
+prose by `ley help presets`; resolution is number/unit form first, then preset name, never probing.
+These are presentation over the same RPCs: the CLI adds no capability the protocol lacks.
 
 **`--json`** is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`,
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
@@ -173,12 +181,17 @@ IQ stay LATEST_WINS), so a drop shows up as a `{"gap":{"from_sample":A,"to_sampl
 the next row — never silently; gap lines do not count toward `--count`. The second is `ley version --json`: a client-local value
 with no proto message, emitted through encoding/json as exactly `{"version","go","os","arch"}` in
 that order (pinned by a golden test). The third is the client-local tables: `ley presets --json`
-prints one array of `{name, aliases, hz, mode, description}` and `ley bands --json` one array of
-`{name, aliases, min_hz, max_hz, mode, bandwidth_hz, step_hz, note}` (`mode` is `usb/lsb` where the
-sideband follows the frequency; `aliases` are what `--band` accepts; `step_hz` is the band's channel
-spacing, what one arrow key moves the dial by in the Mac app, which is not the bandwidth: airband is
-10 kHz wide and spaced 25 kHz; a group such as `gmrs` comes after the
-bands with `parts`, the aliases of the bands it spans). `ley bands <frequency|preset|band>
+prints one array of `{name, aliases, hz, mode, bandwidth_hz, description}` (`bandwidth_hz` is the
+channel's own width where its plan gives one, else the band's) and `ley bands --json` one array of
+`{name, aliases, min_hz, max_hz, mode, bandwidth_hz, step_hz, note, parts, channels}` (`mode` is
+`usb/lsb` where the sideband follows the frequency; `aliases` are what `--band` accepts; `step_hz`
+is the band's channel spacing, what one arrow key moves the dial by in the Mac app, which is not the
+bandwidth: airband is 10 kHz wide and spaced 25 kHz; a group such as `gmrs` comes after the bands
+with `parts`, the aliases of the bands it spans; `channels`, present only on a band with a plan, is
+an array of `{name, aliases, hz, mode, bandwidth_hz, note, decoder}` in the service's own order,
+`name` as the radios print it, `aliases[0]` the word that resolves without a band, `mode` and
+`bandwidth_hz` only where they differ from the band's, `note` always, and `decoder` the daemon
+decoder for a data channel: `aprs`, `ais`, `same`). `ley bands <frequency|preset|band>
 --json` is the one place a client-local table answers with a **single object** instead:
 `{hz, band, mode, bandwidth_hz, reason}`, where `band` is one of those entries or `null` and `mode`
 is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`

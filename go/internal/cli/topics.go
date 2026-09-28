@@ -284,30 +284,37 @@ it.
   ley record 462.5625 --gain LNA=0,VGA=0,AMP=0   a HackRF at its quietest`
 }
 
-// topicPresets is generated from the preset and band tables so the help
-// can never disagree with what tune does.
+// topicPresets is generated from the band table and its plans so the help
+// can never disagree with what tune does: the presets by band, then the bands.
 func topicPresets() string {
 	var b strings.Builder
 	b.WriteString(`Presets are names 'ley tune' accepts in place of a frequency. Each one is a
-fixed frequency and mode; ley does not probe or scan for the best channel
-(that is 'ley scan', see ley help roadmap). Names are case-insensitive.
+channel of a band's plan, at a fixed frequency and mode; ley does not probe
+or scan for the best channel (that is 'ley scan'). Names are case-insensitive.
+The first column is the word that resolves anywhere; a channel is also known
+by the name its radios print ('also:'), which 'ley tune 16 --band marine'
+takes, and by the older names that still work.
 
 `)
-	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	for _, p := range leyline.Presets() {
-		aliases := ""
-		if len(p.Aliases) > 0 {
-			aliases = "also: " + strings.Join(p.Aliases, ", ")
+	// Each plan is aligned on its own: one writer across all of them would pad
+	// CB's short rows out to the width of marine's notes.
+	for _, band := range append(leyline.Bands(), leyline.BandGroups()...) {
+		if len(band.Channels) == 0 {
+			continue
 		}
-		// The description repeats the frequency in parentheses; the column
-		// already shows it.
-		desc := p.Description
-		if i := strings.LastIndex(desc, " ("); i > 0 && strings.HasSuffix(desc, ")") {
-			desc = desc[:i]
+		fmt.Fprintf(&b, "%s (ley bands %s)\n", band.Name, band.Aliases[0])
+		tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+		for _, c := range band.Channels {
+			p := presetFor(band, c)
+			aliases := ""
+			if len(p.Aliases) > 0 {
+				aliases = "also: " + strings.Join(p.Aliases, ", ")
+			}
+			// The note alone: the heading, the columns and 'also:' carry the rest.
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), p.Note, aliases)
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), desc, aliases)
+		_ = tw.Flush()
 	}
-	_ = tw.Flush()
 	b.WriteString(`
 Bands ley recognises. Without --mode, tune uses the band's mode and
 bandwidth; outside every band it uses NFM and says "no band recognised".
@@ -315,7 +322,7 @@ usb/lsb means the sideband follows the amateur convention: USB at and above
 10 MHz, LSB below (ley help modes).
 
 `)
-	tw = tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	// The bands, then the groups, as `ley bands` lists them: a group is a name a sweep takes whole.
 	for _, band := range append(leyline.Bands(), leyline.BandGroups()...) {
 		mode := leyline.ModeName(band.Mode)
@@ -326,16 +333,25 @@ usb/lsb means the sideband follows the amateur convention: USB at and above
 	}
 	_ = tw.Flush()
 	b.WriteString(`
-  ley tune noaa                noaa is an alias of noaa1, 162.550 MHz
+  ley tune noaa                noaa is an alias of wx1, 162.550 MHz
   ley tune calling             146.520 MHz, 2 m simplex calling
-  ley tune guard               121.500 MHz, AM`)
+  ley tune guard               121.500 MHz, AM
+  ley tune 16 --band marine    marine channel 16 by the number its radios print`)
 	return b.String()
 }
 
-// formatBandwidth renders a channel bandwidth as kHz or Hz.
+// presetFor is the preset view of one plan entry, for a table that walks the
+// bands itself so it can head each plan with its band.
+func presetFor(band leyline.Band, c leyline.Channel) leyline.Preset {
+	p, _ := leyline.ResolvePlanChannel(band, c.Aliases[0])
+	return p
+}
+
+// formatBandwidth renders a channel bandwidth as kHz or Hz, to two decimals
+// with the zeros trimmed: 12.5 kHz, 11.25 kHz (a MURS channel), 200 kHz.
 func formatBandwidth(hz uint32) string {
 	if hz >= 1000 {
-		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.1f", float64(hz)/1000), "0"), ".") + " kHz"
+		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", float64(hz)/1000), "0"), ".") + " kHz"
 	}
 	return fmt.Sprintf("%d Hz", hz)
 }

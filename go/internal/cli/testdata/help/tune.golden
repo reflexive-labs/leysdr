@@ -2,7 +2,10 @@ tune picks a radio, tunes it to the frequency (or a preset such as noaa or
 calling; see ley help presets), decodes it and plays the audio until Ctrl-C.
 
 A bare number is MHz (146.52, 7.040, 121.5); add a unit to be exact (1010k,
-146520000). The mode (how the signal is decoded: nfm, am, wfm, ...) is
+146520000). A channel of a band's plan is named by its own word (wx3,
+marine16, cb19, ch5) or, with --band, the way the radio prints it: 'ley tune
+16 --band marine' is marine channel 16, where bare '16' is 16 MHz ('ley bands
+marine' lists the plan). The mode (how the signal is decoded: nfm, am, wfm, ...) is
 chosen from the band when --mode is not given, and the squelch (mute the
 audio while the signal is weaker than a level) is measured from the band's
 noise floor unless you set one. tune prints every decision it made so a
@@ -15,17 +18,19 @@ outside the band it covers, tune refuses rather than silence them; --retune
 moves it anyway.
 
 Usage:
-  ley tune <frequency|preset> [flags]
+  ley tune <frequency|preset|channel --band BAND> [flags]
 
 Examples:
   ley tune 146.52            2 m calling frequency, NFM, squelch auto
-  ley tune noaa              NOAA weather channel 1 (162.550 MHz); try noaa2..7
+  ley tune noaa              NOAA weather channel 1 (162.550 MHz); try wx2..7
+  ley tune 16 --band marine  marine channel 16 by its own number (156.800 MHz)
   ley tune 101.1 --mode fm   FM broadcast (fm means WFM here)
   ley tune 7.040 --mode lsb  40 m amateur band, lower sideband
   ley tune 162.55 --squelch -50 --volume 50%
   ley tune 101.1 --gain 30 --retune   set the gain; move a radio others are using
 
 Flags:
+      --band string      read the argument as a channel of this band's plan, as its radios print it: --band marine 16, --band gmrs 5 (ley bands)
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
       --device string    which radio: an id (dev_...), id prefix or row number from 'ley devices', e.g. --device 2 (default: the first)
       --gain string      receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); default: leave the radio's setting

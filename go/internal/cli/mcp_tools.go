@@ -52,7 +52,7 @@ func (srv *mcpServer) registerTools() {
 	}, srv.daemonLogs)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "tune",
-		Description: "Tune a radio to a frequency or preset and open a channel there, the way 'ley tune' does: the mode is chosen from the band unless given, and the squelch is measured from the noise floor for voice modes. " +
+		Description: "Tune a radio to a frequency, a preset or a plan channel such as wx3, marine16 or cb19, and open a channel there, the way 'ley tune' does: the mode is chosen from the band unless given, and the squelch is measured from the noise floor for voice modes. " +
 			"Refuses to move a radio other channels are listening on and says who, unless take_over is true. The channel ends when this server exits unless keep is true. " +
 			"Returns {capture: Capture, channel: Channel, sink: Sink|null}; the text lists the decisions made.",
 		Annotations: mutates,
@@ -60,14 +60,14 @@ func (srv *mcpServer) registerTools() {
 	}, srv.tune)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "scan",
-		Description: "Sweep a frequency range and report the carriers that stood above the measured noise floor: centre, width, SNR and how many looks saw each (Jobs.StartJob(ScanConfig{once}) then Jobs.GetScan; ley scan). " +
+		Description: "Sweep a frequency range and report the carriers that stood above the measured noise floor: centre, width, SNR and how many looks saw each (Jobs.StartJob(ScanConfig{once}) then Jobs.GetScan; ley scan). A detection on a plan channel is named by it (wx3, marine16, cb19, ch18), the same words tune takes. " +
 			"A detection is a carrier, not a protocol or a station. Takes seconds and owns the radio meanwhile; refuses a radio somebody is using unless take_over is true. gain pins the tuner for the sweep (a sweep of a quiet band at low gain reads as a deaf receiver; ask for auto or a level and read Scan.gains). Returns a Scan.",
 		Annotations: mutates,
 		InputSchema: gainSchema[scanArgs]("; the sweep holds it still and Scan.gains says where; default: the gain the radio is on, which is whatever the last client left"),
 	}, srv.scan)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "listen_summary",
-		Description: "Listen on a frequency, preset or existing channel for duration_s seconds and summarise what the daemon's squelch and meter saw: the transmissions (squelch-open intervals with their length and peak), the signal level range, and any CTCSS tone or DCS code (Telemetry.Subscribe, bounded; ley tune / ley listen). " +
+		Description: "Listen on a frequency, a preset, a plan channel such as wx3, marine16 or cb19, or an existing channel for duration_s seconds and summarise what the daemon's squelch and meter saw: the transmissions (squelch-open intervals with their length and peak), the signal level range, and any CTCSS tone or DCS code (Telemetry.Subscribe, bounded; ley tune / ley listen). " +
 			"No audio is returned or played. Returns {channel: Channel, transcript: Transcript, meter: {...}, tone: SubAudible|null}.",
 		Annotations: mutates,
 		InputSchema: gainSchema[listenSummaryArgs]("; default: leave it; not with a channel id"),
@@ -321,7 +321,7 @@ func daemonOrNil(d *leylinev1.DaemonInfo) any {
 // ---------- control ----------
 
 type tuneArgs struct {
-	Frequency string `json:"frequency" jsonschema:"where to listen: a frequency (a bare number is MHz: 146.52; units are exact: 1010k, 146520000) or a preset name such as noaa, calling or ch1"`
+	Frequency string `json:"frequency" jsonschema:"where to listen: a frequency (a bare number is MHz: 146.52; units are exact: 1010k, 146520000) or a preset name such as noaa, calling or ch1, or a plan channel such as wx3, marine16 or cb19"`
 	Mode      string `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw, raw; fm or ssb pick by frequency (default: chosen from the band)"`
 	Bandwidth string `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)"`
 	Squelch   string `json:"squelch,omitempty" jsonschema:"mute below this level: auto (measured from the noise floor; the default for nfm and am), off, or dBFS such as -40"`
@@ -333,7 +333,7 @@ type tuneArgs struct {
 }
 
 func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneArgs) (*mcp.CallToolResult, any, error) {
-	hz, def, err := resolveTuneTarget(in.Frequency)
+	hz, def, err := resolveTuneTarget(in.Frequency, "")
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
@@ -547,7 +547,7 @@ func gainlessRadio(state *leylinev1.GetStateResponse, deviceID, gain string) err
 }
 
 type listenSummaryArgs struct {
-	Target    string  `json:"target" jsonschema:"what to listen to: a frequency (a bare number is MHz), a preset name, or the id of a channel already running (chan_...)"`
+	Target    string  `json:"target" jsonschema:"what to listen to: a frequency (a bare number is MHz), a preset name or plan channel (noaa, calling, ch1, wx3, marine16, cb19), or the id of a channel already running (chan_...)"`
 	DurationS float64 `json:"duration_s,omitempty" jsonschema:"how long to listen, in seconds (default 10, at most 300)"`
 	Mode      string  `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw (default: chosen from the band); not with a channel id"`
 	Bandwidth string  `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz, or 200k, 12500 (default: the mode's usual width); not with a channel id"`
@@ -619,7 +619,7 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 		}
 		channelID = in.Target
 	} else {
-		hz, def, err := resolveTuneTarget(in.Target)
+		hz, def, err := resolveTuneTarget(in.Target, "")
 		if err != nil {
 			return nil, nil, toolError(err)
 		}
@@ -896,7 +896,7 @@ func (sum *listenSummary) text(s *session, dur time.Duration) string {
 }
 
 type snapshotArgs struct {
-	Frequency string `json:"frequency,omitempty" jsonschema:"the frequency to centre on (a bare number is MHz) or a preset name; default: whatever the radio is already tuned to"`
+	Frequency string `json:"frequency,omitempty" jsonschema:"the frequency to centre on (a bare number is MHz), a preset name or a plan channel such as wx3, marine16 or cb19; default: whatever the radio is already tuned to"`
 	Band      string `json:"band,omitempty" jsonschema:"show a whole named band instead of a frequency: 2m, fm, airband, noaa (not with frequency)"`
 	Span      string `json:"span,omitempty" jsonschema:"width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate, snapped to one the radio supports (default: the radio's default, or the width it is already capturing)"`
 	Bins      uint32 `json:"bins,omitempty" jsonschema:"number of bins across the band (default 1024; the daemon may round it)"`
@@ -915,7 +915,7 @@ const snapshotFirstRow = 5 * time.Second
 func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in snapshotArgs) (*mcp.CallToolResult, any, error) {
 	bo := bandOptions{freqInput: in.Frequency, retune: in.TakeOver, device: in.Device, verb: "snapshot"}
 	if in.Frequency != "" {
-		t, err := resolveDialTarget(in.Frequency, "snapshot", "frequency: 101.1, frequency: noaa", "101.1 (MHz) or 1010k")
+		t, err := resolveDialTarget(in.Frequency, "snapshot", "frequency: 101.1, frequency: noaa", "101.1 (MHz) or 1010k", nil)
 		if err != nil {
 			return nil, nil, toolError(err)
 		}

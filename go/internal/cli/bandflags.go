@@ -56,7 +56,7 @@ func (f *bandFlags) parse(app *App, args []string, span string, u bandUsage) err
 		f.freqInput = args[0]
 	}
 	if f.freqInput != "" {
-		t, err := resolveDialTarget(f.freqInput, u.verb, u.examples, u.freqHint)
+		t, err := resolveDialTarget(f.freqInput, u.verb, u.examples, u.freqHint, nil)
 		if err != nil {
 			return err
 		}
