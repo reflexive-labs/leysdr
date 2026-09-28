@@ -1349,8 +1349,10 @@ here are the record; each is ticked when its unit's commit lands:
 - `[ ]` **APP-9f** CHIRP import: `ley bookmarks import` with `--dry-run`, `File > Import CHIRP…`,
   the tone mapping per CHIRP mode and `offset_hz` and `duplex` written as fields, one fixture
   CSV with a repeater, a simplex row, a DCS row, a Cross row and a duplicate.
-- `[d]` **The open questions** in the doc: marine's plan size, the collapsed line versus a
-  default.
+- `[x]` **The open questions** in the doc, decided 2026-09-28 with the plan: marine ships its
+  full plan; out-of-range bands are one line and the `Bands…` sheet is deferred. The flow
+  analysis's defaults (the filter's rule, the naming rule, a sweep against a recording or a
+  tune, the CHIRP update rules) are in the design doc, landed as the plan's U1.
 
 ## Backlog
 

@@ -125,8 +125,8 @@ expands to what is inside it; the rest is collapsed.
 - **A band row** shows its name and mode as today, and a click on it tunes the band as today: a
   newcomer who clicks FM broadcast hears it, and FM broadcast has no plan and no bookmarks, so
   a click that only expanded the row would leave a sweep as the only way in. Expanded, the row
-  shows its range line, then its bookmarks, then one line, `Channels…`, that opens the plan
-  picker. The band the tuned frequency is in is the expanded one, following the rule that
+  shows its range line, then the Find active line with a sweep's progress or hits beneath it,
+  then its bookmarks, then one line, `Channels…`, that opens the plan picker. The band the tuned frequency is in is the expanded one, following the rule that
   selection reflects state rather than causing it (`app-design-handoff.md`, "Decided
   2026-09-21: the sidebar"), so the click expands the row by tuning it; a disclosure chevron at
   the row's edge expands or collapses without tuning, for a ham looking through 70 cm while
@@ -149,7 +149,10 @@ expands to what is inside it; the rest is collapsed.
   its frequency, and its note in `inkTertiary` where there is one; the order is the plan's own,
   channel number first, so marine's ship and coast entries sit together. A filter field at the
   popover's top narrows the rows for the plans that need it (marine, CB), and the arrow keys and
-  Return move and pick, so a channel is reached without the mouse. A pick tunes and closes.
+  Return move and pick, so a channel is reached without the mouse: it opens with the tuned
+  channel highlighted when the plan has it, else the first row; Up and Down move the highlight
+  without wrapping; the filter puts it back on the first row; Return picks and Escape closes.
+  A pick tunes and closes.
 - **A bookmark row** sits under the band its frequency is in and keeps every affordance it has
   today: the dot, `changed`, the recording dot, the editor, the context menu. A bookmark on a
   plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`), which is what
@@ -159,15 +162,28 @@ expands to what is inside it; the rest is collapsed.
   visible.
 - **Out-of-range bands collapse to one line.** An RTL-SDR user sees seven HF rows they can
   never click. They become `7 bands below what this radio tunes`, one dim line at the top, which
-  expands to the rows on click. The rule and its words already exist (`Bands.outOfRangeWords`).
+  expands to the rows on click; `outside` when they lie on both sides of what the radio tunes.
+  The line counts bands, not their bookmarks, which the filter still lists as disabled rows.
+  The rule and its words already exist (`Bands.outOfRangeWords`).
 - **A filter field at the top** flattens everything. Typing narrows the list to bands,
   bookmarks and plan channels whose name or alias matches, as one flat list with the band named
-  on each row. This is the "all my bookmarks" view and the "where is ch16" view, and Return on
-  the first match tunes it: a bookmark or plan channel to its frequency, a band as a click on its
-  row would. When nothing matches, the list is replaced by one line, `No matches for "…"`, on
-  the Library's pattern (`LibraryView.swift`, the search's empty line). The frequency field is a
-  digit editor and stays one; a name goes in the filter, and `Go to…` (⌘G) in the Tune menu
-  focuses it.
+  on each row. A match is a case-insensitive prefix of a name or an alias, so `5` finds channel
+  5 and not `ch15`. The order is the tuned band's matches first, then the sidebar's frequency
+  order, a bookmark before a plan channel on one frequency; a band the radio cannot tune is
+  listed disabled, with its bookmarks, and is never the Return target. This is the "all my
+  bookmarks" view and the "where is ch16" view, and Return on the first row tunes it: a
+  bookmark or plan channel to its frequency, a band as a click on its row would. When nothing
+  matches, the list is replaced by one line, `No matches for "…"`, on the Library's pattern
+  (`LibraryView.swift`, the search's empty line). Escape clears the field and drops its focus.
+  The frequency field is a digit editor and stays one; a name goes in the filter, and `Go to…`
+  (⌘G) in the Tune menu focuses it.
+- **A new bookmark is named after the channel it sits on.** ⌘D, the inspector's pencil on an
+  unnamed frequency, Find active's ＋ and a CHIRP row with no name all use one rule: the plan
+  channel's name when the frequency is within 6 kHz of one, else the frequency. Both clients
+  answer "which channel" the same way: the nearest within 6 kHz, the tolerance `presetAt` uses
+  today, and two entries at equal distance resolve to the earlier in plan order, which marine's
+  US variants make common (`22A` and `22` share 157.100 MHz), so a US variant is entered before
+  the ITU entry that shares its frequency.
 - **A name resolves inside the tuned band first, then globally.** `16` on marine is channel 16;
   `16` on GMRS is channel 16; `ch16` anywhere else is whichever plan has it, GMRS, and the row
   says so. A name two plans share and neither is tuned shows both matches.
@@ -199,7 +215,20 @@ the bookmark, named after the channel when there is one. A NOAA newcomer therefo
 band, clicks Find active, and clicks the loudest row. A sweep that finds nothing replaces the
 progress text with one line, `Nothing on the air right now; repeaters and towers key up
 briefly`, and leaves the rail without hits; a previous sweep's hits stay until the next sweep
-or the next tune elsewhere.
+or the next tune elsewhere. A job that fails shows its status detail in `caution` where the
+progress text was, and the channel is recreated regardless; a `covered` range narrower than the
+band appends `ley scan`'s coverage note under the hits. Hits in the gap between a group's halves
+are dropped, for the reason MURS is two halves, and the rail shows the tuned half's hits.
+
+While a sweep runs, the rest of the window keeps its rules. A recording riding the window's
+capture would hear every hop, so Find active asks first, on the alert a band move over a
+recording already shows, with Sweep anyway and Cancel. Any tune while the row reads `Sweeping…`
+(a band, a bookmark, the rail, the waterfall, the filter, a pick) cancels the job and proceeds
+once its terminal event has restored the centre; the row's item reads Stop meanwhile and does the
+same; Find active on another band cancels the first sweep and starts its own after the terminal
+event. With no capture at all (after Stop listening) the job runs on the radio the window would
+pick, the daemon opens and destroys its own capture, and the band is selected afterwards, as a
+bookmark click after Stop listening selects one.
 
 A sweep takes the radio. The allocator's policy (`scan.md`, "Don't-disturb") declines a capture
 with a live sink or an interactive write in the last 60 s, and the window always has both, so the
@@ -250,9 +279,16 @@ width 25 kHz or 12.5 kHz, AM to AM, else the band's default; `tone` by the `Tone
 of `DtcsPolarity`, `Cross` takes the transmit side of `CrossMode`, and anything else leaves the
 field unset; `Comment` to `note`; `Duplex` and `Offset` to the `duplex` and `offset_hz` fields;
 the file's basename to a tag. A row whose frequency is already bookmarked under the same
-name updates that bookmark; otherwise a new one. The verb prints what it added, updated and
-skipped, and `--dry-run` prints the same without writing. Nothing is exported in alpha:
-`ley bookmarks --json` is the export.
+name updates that bookmark; otherwise a new one. An update sets only the fields the row
+carries: a blank column never clears a value typed in the inspector, and `tags` is a set the
+basename joins once. A blank `Name` takes the naming rule above; a frequency rounds to whole
+hertz; USB, LSB, CW and WFM map directly and any other mode falls to the band's default; a row
+whose frequency does not parse is skipped and counted. The verb prints what it added, updated
+and skipped, `--dry-run` prints the same without writing, and a file with no `Frequency`
+header is refused with nothing written. The app shows the same counts as one notice and opens
+no row. Both parsers, Go's and Swift's, are held to one fixture CSV and one expected bookmarks
+file under `fixtures/chirp/`, the way the seed file is held to the band table. Nothing is
+exported in alpha: `ley bookmarks --json` is the export.
 
 Imported rows land under their bands, so 120 memories are 2 m and 70 cm rows collapsed until
 opened, which is the reason the spine is bands.
@@ -262,11 +298,8 @@ opened, which is the reason the spine is bands.
 - **The band table and its plans**: the Go table, `bands.json` in the app, drift-tested. Users
   never edit it; a pack replaces it later.
 - **Bookmarks**: `bookmarks.json`, both clients, `ley bookmarks` the mirror.
-- **Which bands the sidebar shows**: the app's defaults, because it is layout. A `Bands…` sheet
-  under the header has a checkbox per band and a switch for showing the out-of-range group
-  expanded. `ley bands` lists every band regardless. If a second client ever needs the same
-  choice, it moves into a `preferences.json` beside the bookmarks; nothing is designed for that
-  now.
+- **Which bands the sidebar shows**: every band the table has, the out-of-range ones folded to
+  their line. Nothing is remembered; a per-band choice is deferred below.
 
 ## The second pass: engine and CLI
 
@@ -352,6 +385,10 @@ asked for next.
   The inspector showing the input
   frequency, and a bookmark that tunes the input when a key is held, wait for TX to be a concept
   at all (invariant 11).
+- **A `Bands…` sheet** with a checkbox per band and a switch for the out-of-range group. With
+  every band collapsed to one row and the out-of-range bands to one line, an RTL-SDR user sees
+  about thirteen rows, so a second length control is not needed until a user with a wide radio
+  asks to hide bands.
 - **Usage ordering and a Recent section.** Frequency order is the sidebar's; the Tune menu and
   the filter field are where a recent frequency is reached. Reconsider when a user asks.
 - **Regional plans.** US only; packs later (R-22).
@@ -364,10 +401,7 @@ asked for next.
 
 ## Open questions
 
-- **Marine's plan size.** All the ITU channels with A and B variants, or the dozen a US boater
-  uses (6, 9, 13, 16, 22A, 68 to 72)? The picker copes with a hundred; the question is whether a
-  hundred rows help. Proposed: the full plan in the data, the picker showing the full plan, and
-  `ley bands marine` printing it.
-- **Whether the collapsed out-of-range line is a line or a `Bands…` default.** A line keeps the
-  bands discoverable; a default hides them until the sheet is opened. Proposed: the line.
+- **Marine's plan size**, decided 2026-09-28: the full ITU plan with the US A and B variants
+  and ship and coast entries, in the data, the picker and `ley bands marine`, because the
+  picker's filter copes with a hundred rows and a boater's dozen is a subset of it.
 - **The Find active measurement** in "The daemon": how long the audio is gone.
