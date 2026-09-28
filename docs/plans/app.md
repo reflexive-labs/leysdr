@@ -1327,24 +1327,28 @@ order, each verified as it says:
 - `[ ]` **APP-9a** Unknown keys preserved by both bookmark stores (`go/pkg/bookmarks`,
   `Bookmarks.swift`), with a round-trip test each: a file with a field neither knows comes back
   with it.
-- `[ ]` **APP-9b** Plans in the band table and `bands.json` (`channels` per band, MURS, 6 m and
-  1.25 m added), `ley presets` and `presetAt` as views over them, the goldens re-recorded,
+- `[ ]` **APP-9b** Plans in the band table and `bands.json` (`channels` per band with the
+  naming scheme the doc gives, MURS as two halves and a group, 6 m and 1.25 m added), `ley
+  presets` and `presetAt` as views over them and over the groups, the goldens re-recorded,
   `TestPresetsTable` pinning every current name and alias, `TestBandsJSONResource` covering the
   plans.
-- `[ ]` **APP-9c** The sidebar on the spine: bookmarks nested under bands, the collapsed
-  out-of-range line, the filter field with `Go to…` (⌘G), the plan picker, rail ticks for plans
-  of 24 channels or fewer, channel names on rows. Selection rules unchanged. e2e: a bookmark on
-  462.6625 MHz reads `ch5` and a filter for `wx3` tunes 162.475 MHz.
+- `[ ]` **APP-9c** The sidebar on the spine: bookmarks nested under bands, a group as one row
+  with its parts folded in, the collapsed out-of-range line, the filter field with `Go to…` (⌘G)
+  and its no-match line, the plan picker popover, rail ticks for plans of 24 channels or fewer,
+  channel names on rows. A band click still tunes; the chevron expands without tuning. e2e: a
+  bookmark on 462.6625 MHz reads `ch5` and a filter for `wx3` tunes 162.475 MHz.
 - `[ ]` **APP-9d** Find active over the scan job with `take_over`, the row's progress from the
-  job's events, hits on the rail, `＋` on a hit. Records the two measurements the doc asks for:
-  how long audio is gone for a 2 m sweep on the owner's dongle, and whether the capture id
-  survives the lease.
+  job's events, hits on the rail, `＋` on a hit; the window detaches its sink and channel before
+  the job and recreates them on its terminal event, as the doc's "Find active" says. Records the
+  measurement the doc asks for: how long audio is gone for a 2 m sweep on the owner's dongle.
 - `[ ]` **APP-9e** `tone`, `note` and `tags` in the file, the inspector and `ley bookmarks`
-  (`add --tone --note --tag`, `--tag` on the list, the columns when present).
+  (`add --tone --note --tag`, `--tag` on the list, the columns when present); the inspector
+  shows the heard tone beside the bookmark's and never calls a difference a mismatch.
 - `[ ]` **APP-9f** CHIRP import: `ley bookmarks import` with `--dry-run`, `File > Import CHIRP…`,
-  one fixture CSV with a repeater, a simplex row, a DCS row and a duplicate.
+  the tone mapping per CHIRP mode and `offset_hz` and `duplex` written as fields, one fixture
+  CSV with a repeater, a simplex row, a DCS row, a Cross row and a duplicate.
 - `[d]` **The open questions** in the doc: marine's plan size, the collapsed line versus a
-  default, the group picker's tune path.
+  default.
 
 ## Backlog
 
