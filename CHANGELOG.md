@@ -4,6 +4,11 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The bookmarks file keeps fields it does not know. Both `ley bookmarks` and the Mac app now
+  write back, unchanged, every key of an entry they do not recognise, so a bookmark saved by a
+  newer build of one client survives an edit by an older build of the other. Entries are written
+  with their keys sorted.
+
 - The Mac app has its mark, a splash and an icon. The toolbar starts with the mark and
   `Leyline` in place of the window's title. The first window of a launch opens on the mark,
   `leyline` and `SOFTWARE DEFINED RADIO`, holds until the daemon is live (1.2 s to 2 s), then

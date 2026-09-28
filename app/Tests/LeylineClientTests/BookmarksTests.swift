@@ -185,6 +185,121 @@ final class BookmarksTests: XCTestCase {
         XCTAssertEqual(left, [], "no temp file was left behind")
     }
 
+    // The entry every unknown-key test starts from, byte for byte the literal
+    // go/pkg/bookmarks/bookmarks_test.go loads, so the two stores are held to one file: three
+    // keys neither store knows (`tone` is not known until U6), beside the five it does.
+    private static let foreignKeyFixture = """
+        {"bookmarks": {"bm_01J8ZZZZZZZZZZZZZZZZZZZZZ1": {"name": "Local repeater", "hz": 146940000, "mode": "NFM", "bandwidth_hz": 12500, "updated_ns": 1700000000000000000, "tone": "100.0", "lists": ["x"], "zzz": {"a": 1}}}}
+        """
+    private static let foreignKeyID = "bm_01J8ZZZZZZZZZZZZZZZZZZZZZ1"
+
+    private func storeOverFixture() throws -> BookmarkStore {
+        let path = tempPath()
+        try FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try Data(Self.foreignKeyFixture.utf8).write(to: URL(fileURLWithPath: path))
+        var store = BookmarkStore(path: path)
+        store.now = { Date(timeIntervalSince1970: 1_700_000_001) }
+        try store.load()
+        return store
+    }
+
+    private func rawEntries(at path: String) throws -> [String: [String: Any]] {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(obj["bookmarks"] as? [String: [String: Any]])
+    }
+
+    private func assertForeignKeysSurvive(
+        _ entry: [String: Any], file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertEqual(entry["tone"] as? String, "100.0", file: file, line: line)
+        XCTAssertEqual(entry["lists"] as? [String], ["x"], file: file, line: line)
+        XCTAssertEqual(entry["zzz"] as? [String: Int], ["a": 1], file: file, line: line)
+    }
+
+    func testUnknownKeysSurviveLoadAddAndSave() throws {
+        var store = try storeOverFixture()
+        let first = try XCTUnwrap(store.bookmarks[Self.foreignKeyID])
+        XCTAssertEqual(first.name, "Local repeater")
+        XCTAssertEqual(first.extra.keys.sorted(), ["lists", "tone", "zzz"])
+        XCTAssertEqual(first.extra["tone"], .string("100.0"))
+        XCTAssertEqual(first.extra["lists"], .array([.string("x")]))
+        XCTAssertEqual(first.extra["zzz"], .object(["a": .number(1)]))
+
+        let second = try store.add(name: "WX1", hz: 162_550_000, mode: .nfm, bandwidthHz: 12_500)
+        XCTAssertTrue(second.extra.isEmpty, "a new bookmark starts with nothing foreign")
+        try store.save()
+
+        let entries = try rawEntries(at: store.path)
+        assertForeignKeysSurvive(try XCTUnwrap(entries[Self.foreignKeyID]))
+        let fresh = try XCTUnwrap(entries[second.id])
+        XCTAssertEqual(
+            fresh.keys.sorted(), ["bandwidth_hz", "hz", "mode", "name", "updated_ns"],
+            "exactly the five known keys, nothing invented")
+    }
+
+    func testUnknownKeysSurviveAddInPlace() throws {
+        var store = try storeOverFixture()
+        let updated = try store.add(
+            name: "Local repeater", hz: 146_940_000, mode: .am, bandwidthHz: 8_000)
+        XCTAssertEqual(updated.id, Self.foreignKeyID, "the same name on the same frequency")
+        XCTAssertEqual(updated.mode, .am)
+        try store.save()
+
+        let entry = try XCTUnwrap(try rawEntries(at: store.path)[Self.foreignKeyID])
+        XCTAssertEqual(entry["mode"] as? String, "AM")
+        XCTAssertEqual(entry["bandwidth_hz"] as? Int, 8_000)
+        assertForeignKeysSurvive(entry)
+    }
+
+    func testUnknownKeysSurviveUpdateAndRename() throws {
+        var store = try storeOverFixture()
+        try store.updateBookmark(
+            Self.foreignKeyID, hz: 146_520_000, mode: .nfm, bandwidthHz: 25_000)
+        try store.renameBookmark(Self.foreignKeyID, to: "Simplex")
+        try store.save()
+
+        let entry = try XCTUnwrap(try rawEntries(at: store.path)[Self.foreignKeyID])
+        XCTAssertEqual(entry["name"] as? String, "Simplex")
+        XCTAssertEqual(entry["hz"] as? Int, 146_520_000)
+        XCTAssertEqual(entry["bandwidth_hz"] as? Int, 25_000)
+        assertForeignKeysSurvive(entry)
+    }
+
+    // `tone` is foreign today and a known key after U6: the raw text is written back as the
+    // string it arrived as, so the day it becomes known nothing needs migrating. The integer
+    // under `zzz` comes back as `1`, not `1.0`, for the same reason.
+    func testUnknownValuesAreWrittenBackAsTheyArrived() throws {
+        var store = try storeOverFixture()
+        try store.add(name: "WX1", hz: 162_550_000, mode: .nfm)
+        try store.save()
+        let text = try String(contentsOfFile: store.path, encoding: .utf8)
+        XCTAssertTrue(text.contains("\"100.0\""), "the tone stays a string: \(text)")
+        XCTAssertNotNil(
+            text.range(of: #""a"\s*:\s*1\s*\}"#, options: .regularExpression),
+            "a whole number stays whole: \(text)")
+    }
+
+    func testJSONValueRoundTripsEveryShape() throws {
+        let text = #"{"n":1,"f":1.5,"s":"x","b":true,"z":null,"l":[1,"two"],"o":{"k":false}}"#
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+        XCTAssertEqual(
+            value,
+            .object([
+                "n": .number(1), "f": .number(1.5), "s": .string("x"), "b": .bool(true),
+                "z": .null, "l": .array([.number(1), .string("two")]),
+                "o": .object(["k": .bool(false)]),
+            ]))
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        let again = try enc.encode(value)
+        XCTAssertEqual(
+            String(decoding: again, as: UTF8.self),
+            #"{"b":true,"f":1.5,"l":[1,"two"],"n":1,"o":{"k":false},"s":"x","z":null}"#)
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: again), value)
+    }
+
     func testNearestAndDefaultPath() throws {
         var store = BookmarkStore(path: tempPath())
         try store.load()

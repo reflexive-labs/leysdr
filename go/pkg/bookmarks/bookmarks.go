@@ -39,13 +39,81 @@ type Bookmark struct {
 	Mode        string `json:"mode"`
 	BandwidthHz uint32 `json:"bandwidth_hz"`
 	UpdatedNs   int64  `json:"updated_ns"`
+	// Extra holds the entry's keys this version does not know, as the file spelled them, and
+	// save writes them back beside the known fields: the app and ley share one file, and an
+	// older ley must never strip a newer app's fields (docs/design/channels.md, "Bookmarks gain
+	// three fields"). Nil when the entry has none. Kept out of the JSON mapping so the known
+	// fields cannot be shadowed by a stray copy under the same key.
+	Extra map[string]json.RawMessage `json:"-"`
 }
 
 // storeFile is the on-disk shape: a map keyed by bookmark id, so a read-modify-write of one
 // bookmark leaves the rest untouched and encoding/json writes the keys sorted, giving a stable
-// file two clients can diff.
+// file two clients can diff. Each entry is kept raw here and decoded twice by Open, once into a
+// Bookmark and once into a map, because that is the only way encoding/json will say which keys
+// it did not use.
 type storeFile struct {
-	Bookmarks map[string]Bookmark `json:"bookmarks"`
+	Bookmarks map[string]json.RawMessage `json:"bookmarks"`
+}
+
+// knownKeys are the JSON keys Bookmark's own fields take, read off the struct so the list
+// cannot drift from its tags when a field is added.
+var knownKeys = func() map[string]bool {
+	b, err := json.Marshal(Bookmark{})
+	if err != nil {
+		panic(err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		panic(err)
+	}
+	keys := make(map[string]bool, len(m))
+	for k := range m {
+		keys[k] = true
+	}
+	return keys
+}()
+
+// decodeEntry reads one on-disk entry into a Bookmark, filing whatever keys the struct did not
+// take under Extra.
+func decodeEntry(id string, raw json.RawMessage) (Bookmark, error) {
+	var bm Bookmark
+	if err := json.Unmarshal(raw, &bm); err != nil {
+		return Bookmark{}, err
+	}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &all); err != nil {
+		return Bookmark{}, err
+	}
+	for k := range all {
+		if knownKeys[k] {
+			delete(all, k)
+		}
+	}
+	bm.ID = id
+	if len(all) > 0 {
+		bm.Extra = all
+	}
+	return bm, nil
+}
+
+// encodeEntry is decodeEntry's inverse: the known fields, then the extras under any key the
+// known fields did not take, so a field this version owns is always written from the struct.
+func encodeEntry(bm Bookmark) (map[string]json.RawMessage, error) {
+	b, err := json.Marshal(bm)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range bm.Extra {
+		if _, known := m[k]; !known {
+			m[k] = v
+		}
+	}
+	return m, nil
 }
 
 // Store is the bookmarks file loaded into memory. Each ley invocation opens it, mutates it and
@@ -94,8 +162,11 @@ func Open(path string) (*Store, error) {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, err
 	}
-	for id, bm := range f.Bookmarks {
-		bm.ID = id
+	for id, raw := range f.Bookmarks {
+		bm, err := decodeEntry(id, raw)
+		if err != nil {
+			return nil, fmt.Errorf("bookmark %s: %w", id, err)
+		}
 		s.bookmarks[id] = bm
 	}
 	return s, nil
@@ -147,9 +218,12 @@ func (s *Store) Add(name string, hz uint64, mode leylinev1.DemodMode, bandwidthH
 		BandwidthHz: bandwidthHz,
 		UpdatedNs:   s.now().UnixNano(),
 	}
+	// An update in place replaces the record, so it carries the old entry's extras with its id:
+	// re-running the add that named a bookmark is not a request to drop the app's fields on it.
 	for _, old := range s.bookmarks {
 		if old.Hz == hz && old.Name == name {
 			bm.ID = old.ID
+			bm.Extra = old.Extra
 			break
 		}
 	}
@@ -256,7 +330,17 @@ func (s *Store) save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(storeFile{Bookmarks: s.bookmarks}, "", "  ")
+	entries := make(map[string]map[string]json.RawMessage, len(s.bookmarks))
+	for id, bm := range s.bookmarks {
+		m, err := encodeEntry(bm)
+		if err != nil {
+			return err
+		}
+		entries[id] = m
+	}
+	b, err := json.MarshalIndent(struct {
+		Bookmarks map[string]map[string]json.RawMessage `json:"bookmarks"`
+	}{entries}, "", "  ")
 	if err != nil {
 		return err
 	}

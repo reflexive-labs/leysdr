@@ -20,6 +20,11 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
     public var bandwidthHz: UInt32
     /// When it was last set, wall clock, nanoseconds since the epoch.
     public var updatedNs: Int64
+    /// Every key of the entry this client does not know, written back as it arrived, so a
+    /// field a newer client added survives this one's load, edit and save
+    /// (docs/design/channels.md, "Bookmarks gain three fields"). The mutators change the
+    /// fetched value in place, which is what keeps it; a new bookmark starts with none.
+    public var extra: [String: JSONValue] = [:]
 
     enum CodingKeys: String, CodingKey {
         case name, hz
@@ -30,7 +35,7 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
 
     public init(
         id: String, name: String, hz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32 = 0,
-        updatedNs: Int64 = 0
+        updatedNs: Int64 = 0, extra: [String: JSONValue] = [:]
     ) {
         self.id = id
         self.name = name
@@ -38,6 +43,7 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         self.modeName = mode.wireName
         self.bandwidthHz = bandwidthHz
         self.updatedNs = updatedNs
+        self.extra = extra
     }
 
     // The id is the map key on disk, not a field of the entry, so it is set by the store.
@@ -49,6 +55,14 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         modeName = try c.decodeIfPresent(String.self, forKey: .modeName) ?? ""
         bandwidthHz = try c.decodeIfPresent(UInt32.self, forKey: .bandwidthHz) ?? 0
         updatedNs = try c.decodeIfPresent(Int64.self, forKey: .updatedNs) ?? 0
+        // A second view of the same object, keyed by whatever is there: the keys `CodingKeys`
+        // does not name are the foreign ones.
+        let any = try decoder.container(keyedBy: AnyCodingKey.self)
+        var extra: [String: JSONValue] = [:]
+        for key in any.allKeys where CodingKeys(stringValue: key.stringValue) == nil {
+            extra[key.stringValue] = try any.decode(JSONValue.self, forKey: key)
+        }
+        self.extra = extra
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -58,9 +72,27 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         try c.encode(modeName, forKey: .modeName)
         try c.encode(bandwidthHz, forKey: .bandwidthHz)
         try c.encode(updatedNs, forKey: .updatedNs)
+        // The known keys were written first and win: a foreign key that later becomes known
+        // is read into its field on the next load, and `extra` never carries one of these
+        // names, because the decoder filters them out.
+        var any = encoder.container(keyedBy: AnyCodingKey.self)
+        for (key, value) in extra where CodingKeys(stringValue: key) == nil {
+            try any.encode(value, forKey: AnyCodingKey(key))
+        }
     }
 
     public var mode: Leyline_V1_DemodMode { Leyline_V1_DemodMode.named(modeName) ?? .unspecified }
+}
+
+/// A coding key for any name, so an entry's foreign keys can be read and written without
+/// naming them. JSON has no integer keys, so `intValue` is never set.
+private struct AnyCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+
+    init(_ name: String) { stringValue = name }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
 }
 
 public enum BookmarkError: Error, Equatable, Sendable {
