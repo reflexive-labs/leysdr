@@ -1,0 +1,312 @@
+# Design: Bands, channels and bookmarks
+
+Status: draft, 2026-09-28; the app-facing decisions are proposed, the engine and CLI pass follows
+them. Companion to `app-design-handoff.md` ("Bands and bookmarks are files", which owns the seed
+file and `bookmarks.json`), `scan.md` (which owns the sweep and the detector "Find active" uses),
+`decoders.md` (which owns the labels store this copies and the decoders a plan channel can name)
+and `semantic-tier.md`. Work items are APP-9 in `../plans/app.md`; E.4 in
+`../plans/build-order.md` is the milestone.
+
+## The stories
+
+> As a newcomer, I can pick a listening preset (FM Broadcast, NOAA Weather, Airband, 2m
+> Repeaters, Marine VHF) and hear something real within seconds of first launch. (V1a)
+
+> As a ham, I can import my CHIRP file and my radio's channel memories become named bookmarks and
+> scan lists. (V1a)
+
+> As an operator, I can bookmark a frequency with a name, and bookmarks appear in a sidebar I can
+> click to jump. (V1a)
+
+The third is built. The first two are what this document is for, and the question under both is
+how the window organises everything a person can tune to without the sidebar becoming a list of a
+hundred rows. A newcomer wants NOAA weather without knowing which of seven frequencies carries the
+local transmitter, and GMRS channel 5 without knowing it is 462.6625 MHz. A ham arrives with a
+CHIRP export of 120 memories and wants them where they belong, not in one column.
+
+## Three kinds of frequency
+
+The current window conflates three things that behave differently.
+
+**A band is a range with defaults.** 2 m amateur is 144.000 MHz to 148.000 MHz, NFM, 12.5 kHz
+wide, 5 kHz steps. The table lives in `go/pkg/leyline/bands.go`, reaches the app as `bands.json`,
+and is drift-tested from Go (`TestBandsJSONResource`). Seventeen entries in frequency order.
+
+**A plan channel is a public number inside a band.** WX3, GMRS 17, marine 16, CB 19. It is a fact
+about the service, the same on every radio sold, and it is what a person means when they say
+"channel 5". It is not user data. Today the plan channels Leyline knows are `ley`'s preset table
+(`go/pkg/leyline/presets.go`): NOAA WX1 to WX7, GMRS 1 to 22 with the repeater aliases, marine 16,
+the 2 m calling frequency and the aviation guard. `ley tune ch5` works and the app has no copy of
+the table, so the window cannot do what the prompt can. Marine has one channel of its plan, CB has
+none, and MURS is not in the band table at all.
+
+**A bookmark is the user's own.** This repeater with its tone, that tower, the NOAA transmitter
+that is actually audible from the house. `bookmarks.json` holds name, frequency, mode and width,
+keyed by id, flat. No tone, no note, no grouping.
+
+Keeping the second kind separate from the third is what keeps the sidebar short. A plan channel
+never needs a row of its own: it is a tick on the band rail, an entry in the band's picker, a name
+the window accepts where a frequency goes, and a label that appears beside any bookmark or tuned
+frequency that lands on it. A bookmark is a row, and it sits under its band.
+
+## Decisions for the app
+
+### The plan is data in the band table
+
+Each band gains a `channels` list: name, aliases, frequency, and a note. The `ley` preset table
+becomes a view over the band table rather than a second table, so `ley tune ch5`, `ley monitor`'s
+CHANNEL column, `ley scan`'s BAND cell and the app all read one source, and the drift test the seed
+file already has covers the plans too. The shape, in `bands.json`:
+
+```json
+{
+  "name": "NOAA weather",
+  "aliases": ["noaa", "weather", "wx"],
+  "min_hz": 162400000, "max_hz": 162550000,
+  "mode": "nfm", "bandwidth_hz": 12500, "step_hz": 25000,
+  "channels": [
+    {"name": "WX1", "aliases": ["noaa1"], "hz": 162550000},
+    {"name": "WX2", "aliases": ["noaa2"], "hz": 162400000, "note": ""}
+  ]
+}
+```
+
+A plan is a list, never `min_hz + n × step_hz`. CB's forty channels skip 20 kHz at five places
+and number 23 to 25 out of frequency order; marine's duplex channels have a ship and a coast
+frequency each; GMRS 8 to 14 sit in the 467 MHz half between the repeater inputs. A channel may
+carry `mode` and `bandwidth_hz` where they differ from the band's (MURS 1 to 3 are 11.25 kHz
+wide, 4 and 5 are 20 kHz), and `decoder` where the channel is a data channel the daemon has a
+decoder for (APRS on 144.390 MHz, AIS on marine 87B and 88B, SAME under every NOAA channel), so
+that tuning it can offer the decoder. A group's plan hangs off the group, because GMRS numbering
+spans both halves.
+
+The plans in the alpha table, all from the public allocations, each to be checked against the
+FCC or ITU listing when the table is written:
+
+| band | plan | count |
+|---|---|---|
+| NOAA weather | WX1 to WX7, as the preset table has them | 7 |
+| GMRS (the group) | 1 to 22, the repeater aliases RPT1 to RPT8, 15RP to 22RP and 23 to 30 kept; FRS is an alias of the group, the plan being the same | 22 |
+| MURS, new band 151.820 MHz to 154.600 MHz | 1 to 5 | 5 |
+| marine VHF | the ITU channels with the US A and B variants; a duplex channel is two entries, ship and coast | about 100 |
+| CB | 1 to 40 | 40 |
+| 2 m amateur | calling 146.520, APRS 144.390 with `decoder: aprs` | 2 |
+| airband | guard 121.500; the rest of the band is local, and unnumbered | 1 |
+| 70 cm, the HF bands, FM broadcast, AM broadcast | none | 0 |
+
+Repeater offsets (2 m ±600 kHz, 70 cm +5 MHz, GMRS +5 MHz) are notes on the entries for now; a
+paired input frequency on a bookmark is a later feature and its file field is reserved below.
+
+The table stays US and the page says so. PMR446, the European marine and airband channelisation
+(8.33 kHz) and every other region are the content layer's business (`../plans/v1-release.md`,
+R-22), which will ship them as packs into the same shape. Two amateur bands the table lacks and an
+RTL-SDR reaches, 6 m and 1.25 m, are added with no plan.
+
+### Bands are the spine of the sidebar
+
+The sidebar is one list, ordered by frequency as it is now, because that is the order the band
+rail's neighbours follow and the one a person who knows the spectrum expects. Each band row
+expands to what is inside it; the rest is collapsed.
+
+- **A band row** shows its name and mode as today. Expanded, it shows its range line, then its
+  bookmarks, then one line, `Channels…`, that opens the plan picker. The band the tuned
+  frequency is in is expanded, following the rule that selection reflects state rather than
+  causing it (`app-design-handoff.md`, "Decided 2026-09-21: the sidebar"); any other band expands
+  on click without tuning and collapses again on the next tune elsewhere. A band whose plan has
+  24 channels or fewer also draws them as faint ticks on the band rail; marine's hundred stay in
+  the picker, because at 25 kHz spacing across 6 MHz the ticks would read as texture.
+- **A bookmark row** sits under the band its frequency is in and keeps every affordance it has
+  today: the dot, `changed`, the recording dot, the editor, the context menu. A bookmark on a
+  plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`), which is what
+  `ley monitor` prints in its CHANNEL column, so the two clients agree on what a frequency is
+  called. A bookmark in no band goes under a final `Other` header. Moving a bookmark with
+  `Replace with …` moves the row to the new band, and the row is selected there, so the move is
+  visible.
+- **Out-of-range bands collapse to one line.** An RTL-SDR user sees seven HF rows they can
+  never click. They become `7 bands below what this radio tunes`, one dim line at the top, which
+  expands to the rows on click. The rule and its words already exist (`Bands.outOfRangeWords`).
+- **A filter field at the top** flattens everything. Typing narrows the list to bands,
+  bookmarks and plan channels whose name or alias matches, as one flat list with the band named
+  on each row. This is the "all my bookmarks" view and the "where is ch16" view, and Return on
+  the first match tunes it. The frequency field is a digit editor and stays one; a name goes in
+  the filter, and `Go to…` (⌘G) in the Tune menu focuses it.
+- **A name resolves inside the tuned band first, then globally.** `16` on marine is channel 16;
+  `16` on GMRS is channel 16; `ch16` anywhere else is whichever plan has it, GMRS, and the row
+  says so. A name two plans share and neither is tuned shows both matches.
+
+The alternative, two sections as today with bookmarks grouped under band headers past about ten,
+was considered and not taken: it keeps two places to look for what is at 462 MHz and a CHIRP
+import is still every row at once. Lists (user-named sets such as Home or Boat, a CHIRP import
+becoming one, scan lists falling out of them) are the ham story and are deferred, with the file
+shape chosen so they can be added without a migration.
+
+### Find active
+
+The newcomer story is a scan. NOAA is seven plan channels of which one or two are audible from
+any given house; FM broadcast has no plan at all and every station is local. The band row's
+context menu and the expanded row carry **Find active**, which runs the sweep `ley scan --band`
+runs (`ScanConfig{range: the band, once: true, take_over: true}`) and puts the detections on the
+rail as ticks with their SNR in the help text, strongest first in the expanded row for the
+sweep's duration and until the next tune. One click on a hit tunes it; the plan channel nearest
+within half a step names it, as `presetAt` names a detection in `ley scan`; `＋` on a hit makes
+the bookmark, named after the channel when there is one. A NOAA newcomer therefore clicks the
+band, clicks Find active, and clicks the loudest row.
+
+A sweep takes the radio. The allocator's policy (`scan.md`, "Don't-disturb") declines a capture
+with a live sink, and the window always has one, so the window passes `take_over`, which is its
+own radio it is taking over. The audio stops for the sweep and the capture comes back where it
+was: the lease restores centre and gain on release, and the window's channel is recreated by the
+same path a device replug uses (APP-6). The row says `Sweeping 2 m, 7 steps…` while it runs and
+the transport bar's meter reads nothing, which is what is happening. The sweep of 144 MHz to
+148 MHz at 2.4 MSPS is seven steps (`scan.md`, "Geometry") at 218 ms settling plus the dwell,
+so a band sweep is a few seconds; a 20.5 MHz FM broadcast band is about five times that. The
+row's progress is the job's, from the event stream, the way `ley scan` follows it.
+
+Find active is not a watch and does not repeat. A band being swept on a schedule is the
+band-watching plan's occupancy work (`../plans/band-watching.md`), not this.
+
+### Bookmarks gain three fields
+
+Additive, in `bookmarks.json`, all optional, unknown keys preserved by both readers so an older
+`ley` never strips a newer app's fields:
+
+| field | holds | why now |
+|---|---|---|
+| `tone` | the CTCSS tone in hertz or the DCS code as `D023N`, as CHIRP writes them | a repeater's tone is the first thing a ham writes beside its frequency; the inspector already reads the tone on the air and can show whether it matches |
+| `note` | free text | CHIRP's Comment column; where the offset and the club name go until offsets are fields |
+| `tags` | a list of strings | the hook lists hang off later: a CHIRP import tags its rows with the file's name, and a later `Lists` section is a saved filter over tags |
+
+`offset_hz` and `duplex` are reserved names, not written, for the repeater-pair feature. The
+inspector's identity region edits `tone` and `note` beside the name; `tags` are edited nowhere in
+alpha and shown as words under the name when present. Neither client gates audio on `tone`: tone
+squelch is the engine's separate decision (`control.proto`, `ChannelConfig`'s reserved field 13),
+and a
+bookmark's tone stays a record of what the repeater uses.
+
+### CHIRP import
+
+`File > Import CHIRP…` and `ley bookmarks import <file.csv>` read CHIRP's CSV export into the same
+file. The mapping: `Name` to name, `Frequency` (MHz) to hz, `Mode` FM and NFM to NFM with the
+width 25 kHz or 12.5 kHz, AM to AM, else the band's default; `Tone`, `rToneFreq`, `cToneFreq`,
+`DtcsCode` and `DtcsPolarity` to `tone` by CHIRP's own rule (the `Tone` column says which of the
+others applies); `Comment` to `note`; `Duplex` and `Offset` to a sentence in `note` until they are
+fields; the file's basename to a tag. A row whose frequency is already bookmarked under the same
+name updates that bookmark; otherwise a new one. The verb prints what it added, updated and
+skipped, and `--dry-run` prints the same without writing. Nothing is exported in alpha:
+`ley bookmarks --json` is the export.
+
+Imported rows land under their bands, so 120 memories are 2 m and 70 cm rows collapsed until
+opened, which is the reason the spine is bands.
+
+### What is remembered where
+
+- **The band table and its plans**: the Go table, `bands.json` in the app, drift-tested. Users
+  never edit it; a pack replaces it later.
+- **Bookmarks**: `bookmarks.json`, both clients, `ley bookmarks` the mirror.
+- **Which bands the sidebar shows**: the app's defaults, because it is layout. A `Bands…` sheet
+  under the header has a checkbox per band and a switch for showing the out-of-range group
+  expanded. `ley bands` lists every band regardless. If a second client ever needs the same
+  choice, it moves into a `preferences.json` beside the bookmarks; nothing is designed for that
+  now.
+
+## The second pass: engine and CLI
+
+Everything above is client-side by the build order's decision ("Bookmarks, presets, scan lists
+and CHIRP import" are interpretation state), so the daemon changes not at all for alpha. The pass
+is over what the CLI must mirror, what the contract already carries, and what the engine would be
+asked for next.
+
+### The daemon
+
+- **No proto change.** Bands, plans and bookmarks stay client tables; the daemon never learns
+  that 462.6625 MHz is channel 5, as it never learned a preset's name. D6 in the v1 plan asked
+  whether bookmarks should be daemon state under invariant 7; the build order took the other
+  answer, and this document does not reopen it. What would reopen it: a second machine wanting
+  the same bookmarks, or an agent over MCP needing to write one. The MCP adapter runs in `ley`
+  and reads the same file, so the agent case is covered without the daemon.
+- **Find active uses the scan job as it is.** `take_over` exists for exactly this. One thing to
+  measure before the item is ticked: how long the window's audio is gone for a 2 m sweep at
+  2.4 MSPS on the owner's dongle, and whether `ensureCapture` after the lease's release lands on
+  the same capture id or a new one, which decides whether the window's mirror sees a tombstone.
+  Both are observable from the event stream and the answer belongs in the plan item.
+- **Tone squelch stays undecided.** A bookmark carrying a tone is the first client feature that
+  would want the daemon to mute audio when the tone is absent. The proto comment on field 13
+  says why it is not done: a missed tone mutes audio with no sign of why. The design for that is
+  its own document, and the bookmark field costs nothing if it is never built.
+- **Decoder on a plan channel is a client convenience** over `ley decode`'s existing job: tuning
+  APRS offers `Start decoding` and starts the job on the window's channel. No engine work; the
+  app-side item waits for the decoders plan's app surface.
+- **The engine's own tables are untouched.** `DemodMode.defaultBandwidthHz` remains the one
+  engine default the client tables mirror; a plan channel's width is a channel write like any
+  other.
+
+### The CLI
+
+- **`ley presets` and `ley help presets` become views over the plans.** The order and wording of
+  the goldens change: the table gains a BAND column and lists by band, the descriptions come from
+  the plan entry's name and note. `ResolvePreset` walks the plans; `presetAt` walks them with
+  the same half-step tolerance it has. The `ch1` to `ch22` names, `rptN`, `NNrp`, the Baofeng
+  numbers, `noaa`, `wx1`, `calling`, `marine16` and `guard` keep resolving, because scripts
+  and the MCP tool descriptions name them; `TestPresetsTable` gains a case that pins every name
+  and alias the table has today.
+- **A name resolves in a band's context at the prompt too.** `ley tune 16 --band marine` is
+  marine 16; bare `16` stays 16 MHz, because a bare number is a frequency everywhere in `ley`
+  (`freq.go`, the rule aliases are never accepted where a frequency is). `ch16` without a band
+  is GMRS, as today.
+- **`ley bands --json` grows `channels`**, the shape above, and `make bands-json` regenerates
+  the resource. `ley bands` prints a CHANNELS count column; `ley bands <name>` prints the plan.
+- **`ley bookmarks`** gains `import`, the `tone`, `note` and `tags` columns when any bookmark
+  has them, `--tag` on the list, and `add --tone --note --tag`. The JSON shape grows the three
+  fields. The help golden and `bookmarks.golden` change.
+- **`ley monitor` and `ley scan` name channels from the plans** instead of the preset table,
+  which they do through `presetAt` already; the marine and CB plans mean those bands gain a
+  CHANNEL column they did not have. `monitor_layout_test.go`'s "a band with no named channels
+  has no column" case moves to FM broadcast, which still has none.
+- **MCP.** The `tune`, `listen_summary` and `scan` tools already say "a preset name such as
+  noaa, calling or ch1"; the description gains "or a plan channel such as wx3, marine 16 or
+  cb19" once those resolve. A `bookmarks` tool (list, add) is the one addition worth making, so
+  an agent asked to "save this as the club repeater" can, and the eval gains a scenario for it
+  (`../dev/evals.md`). No tool for CHIRP.
+- **The app and `ley` must read each other's files under either version.** A bookmarks file
+  with `tone` read by a `ley` built before this document must round-trip it: `go/pkg/bookmarks`
+  decodes into a struct today and would drop the field on save. The Go store and the Swift store
+  both keep unknown keys per entry (`json.RawMessage` on the Go side, a `[String: JSON]` extra
+  on the Swift side) before either writes a new field. This is the one change to land first.
+
+### Sequence
+
+1. Unknown-key preservation in both bookmark stores, so nothing later loses data.
+2. Plans in the band table, `ley bands --json` and the seed file, `ley presets` as a view,
+   MURS, 6 m and 1.25 m added, the goldens re-recorded.
+3. The sidebar on the spine: nesting, the collapsed out-of-range line, the filter field, the
+   picker and the rail ticks, channel names on rows.
+4. Find active over the scan job, with the two measurements above recorded.
+5. `tone`, `note` and `tags`, in the inspector and `ley bookmarks`.
+6. CHIRP import, both surfaces.
+
+## Deliberately not in alpha
+
+- **Lists and scan lists.** `tags` is the hook; a `Lists` section, a scan across a list and a
+  list-aware `ley scan` are the ham story's second half and come after the app is in hands.
+- **Repeater pairs.** `offset_hz` and `duplex` are reserved. The inspector showing the input
+  frequency, and a bookmark that tunes the input when a key is held, wait for TX to be a concept
+  at all (invariant 11).
+- **Usage ordering and a Recent section.** Frequency order is the sidebar's; the Tune menu and
+  the filter field are where a recent frequency is reached. Reconsider when a user asks.
+- **Regional plans.** US only; packs later (R-22).
+- **Editing the band table in the app.** A user who wants a band Leyline lacks bookmarks its
+  edges; a band editor is a pack editor, and that is the content layer's.
+- **Bookmarks in the daemon.** See D6 above.
+
+## Open questions
+
+- **Marine's plan size.** All the ITU channels with A and B variants, or the dozen a US boater
+  uses (6, 9, 13, 16, 22A, 68 to 72)? The picker copes with a hundred; the question is whether a
+  hundred rows help. Proposed: the full plan in the data, the picker showing the full plan, and
+  `ley bands marine` printing it.
+- **Whether the collapsed out-of-range line is a line or a `Bands…` default.** A line keeps the
+  bands discoverable; a default hides them until the sheet is opened. Proposed: the line.
+- **How a plan channel is tuned from the picker on a band whose width exceeds the capture.**
+  GMRS 8 is in the 467 half; the picker on the group tunes through `select(band:at:)` on the
+  half that contains it, which is what the neighbour crossing does already. Verify on the Mac.
+- **The two Find active measurements** in "The daemon".

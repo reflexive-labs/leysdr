@@ -1317,6 +1317,35 @@ bootstraps `com.leyline.daemon` on its own `leylined` the way `ley daemon instal
 `ley` and the decoders where a terminal finds them, and is signed with a Developer ID and
 notarized (`../dev/release-checklist.md`). D3, the trademark check, gates the first public build.
 
+### APP-9 `[ ]` Bands, channels and bookmarks for the alpha (E.4, continued)
+
+`../design/channels.md` is the design, written 2026-09-28 from the owner's ask: NOAA and GMRS
+channels reachable without programming, bands as the sidebar's order, defaults that need no
+setup, and a sidebar that does not fill. The items are in the doc's "Sequence" and land in that
+order, each verified as it says:
+
+- `[ ]` **APP-9a** Unknown keys preserved by both bookmark stores (`go/pkg/bookmarks`,
+  `Bookmarks.swift`), with a round-trip test each: a file with a field neither knows comes back
+  with it.
+- `[ ]` **APP-9b** Plans in the band table and `bands.json` (`channels` per band, MURS, 6 m and
+  1.25 m added), `ley presets` and `presetAt` as views over them, the goldens re-recorded,
+  `TestPresetsTable` pinning every current name and alias, `TestBandsJSONResource` covering the
+  plans.
+- `[ ]` **APP-9c** The sidebar on the spine: bookmarks nested under bands, the collapsed
+  out-of-range line, the filter field with `Go to…` (⌘G), the plan picker, rail ticks for plans
+  of 24 channels or fewer, channel names on rows. Selection rules unchanged. e2e: a bookmark on
+  462.6625 MHz reads `ch5` and a filter for `wx3` tunes 162.475 MHz.
+- `[ ]` **APP-9d** Find active over the scan job with `take_over`, the row's progress from the
+  job's events, hits on the rail, `＋` on a hit. Records the two measurements the doc asks for:
+  how long audio is gone for a 2 m sweep on the owner's dongle, and whether the capture id
+  survives the lease.
+- `[ ]` **APP-9e** `tone`, `note` and `tags` in the file, the inspector and `ley bookmarks`
+  (`add --tone --note --tag`, `--tag` on the list, the columns when present).
+- `[ ]` **APP-9f** CHIRP import: `ley bookmarks import` with `--dry-run`, `File > Import CHIRP…`,
+  one fixture CSV with a repeater, a simplex row, a DCS row and a duplicate.
+- `[d]` **The open questions** in the doc: marine's plan size, the collapsed line versus a
+  default, the group picker's tune path.
+
 ## Backlog
 
 - **The band rail's scrubber at a wide capture** (seen 2026-09-25). When the radio's sample rate
