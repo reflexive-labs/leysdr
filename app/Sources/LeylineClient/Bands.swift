@@ -4,10 +4,63 @@
 // app-design-handoff.md, "Bands and bookmarks are files"). The table is Go's; this is a copy
 // checked in as a resource and drift-tested from Go, so the app and `ley` name the same bands
 // with the same defaults and neither has a table of its own. A band holds its range, the
-// default mode and bandwidth for a newcomer, and the step the arrow keys tune by.
+// default mode and bandwidth for a newcomer, and the step the arrow keys tune by. A band may
+// also carry its channel plan (docs/design/channels.md, "The plan is data in the band table"):
+// a list, never `min_hz + n × step_hz`, because CB skips and reorders, marine pairs ship and
+// coast, and GMRS numbers across both halves, which is why a group's plan hangs off the group.
+// `Plans` holds the lookups both clients answer the same way, mirroring `go/pkg/leyline`.
 
 import Foundation
 import LeylineProto
+
+/// One entry of a band's plan: what the service's radios print (`WX3`, `16`, `ch5`) and the
+/// aliases that reach it, the plan-prefixed one first (`wx3`, `marine16`). `mode` and
+/// `bandwidthHz` are set only where the channel differs from its band (MURS 4 and 5 are 20 kHz
+/// wide); `decoder` names the daemon decoder the channel's data wants (`aprs`, `ais`, `same`).
+public struct PlanChannel: Sendable, Hashable, Codable, Identifiable {
+    public var name: String
+    public var aliases: [String]
+    public var hz: UInt64
+    /// The mode's lower-case name as `ley bands` prints it, or empty for the band's.
+    public var mode: String
+    /// Zero for the band's.
+    public var bandwidthHz: UInt32
+    public var note: String
+    public var decoder: String
+
+    enum CodingKeys: String, CodingKey {
+        case name, aliases, hz, mode, note, decoder
+        case bandwidthHz = "bandwidth_hz"
+    }
+
+    public init(
+        name: String, aliases: [String], hz: UInt64, mode: String = "", bandwidthHz: UInt32 = 0,
+        note: String = "", decoder: String = ""
+    ) {
+        self.name = name
+        self.aliases = aliases
+        self.hz = hz
+        self.mode = mode
+        self.bandwidthHz = bandwidthHz
+        self.note = note
+        self.decoder = decoder
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        aliases = try c.decodeIfPresent([String].self, forKey: .aliases) ?? []
+        hz = try c.decode(UInt64.self, forKey: .hz)
+        mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? ""
+        bandwidthHz = try c.decodeIfPresent(UInt32.self, forKey: .bandwidthHz) ?? 0
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        self.decoder = try c.decodeIfPresent(String.self, forKey: .decoder) ?? ""
+    }
+
+    /// The plan-prefixed alias, which is unique across every plan where a name (`1`, `16`) is
+    /// not.
+    public var id: String { aliases.first ?? name }
+}
 
 public struct Band: Sendable, Hashable, Codable, Identifiable {
     public var name: String
@@ -25,9 +78,12 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
     public var note: String
     /// The bands a group is made of; empty on a plain band.
     public var parts: [String]
+    /// The band's own plan in plan order; empty on a band with none and on a part of a group,
+    /// whose plan is the group's (`plan(in:)`).
+    public var channels: [PlanChannel]
 
     enum CodingKeys: String, CodingKey {
-        case name, aliases, mode, note, parts
+        case name, aliases, mode, note, parts, channels
         case minHz = "min_hz"
         case maxHz = "max_hz"
         case bandwidthHz = "bandwidth_hz"
@@ -36,7 +92,8 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
 
     public init(
         name: String, aliases: [String], minHz: UInt64, maxHz: UInt64, mode: String,
-        bandwidthHz: UInt32, stepHz: UInt32, note: String = "", parts: [String] = []
+        bandwidthHz: UInt32, stepHz: UInt32, note: String = "", parts: [String] = [],
+        channels: [PlanChannel] = []
     ) {
         self.name = name
         self.aliases = aliases
@@ -47,6 +104,7 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
         self.stepHz = stepHz
         self.note = note
         self.parts = parts
+        self.channels = channels
     }
 
     public init(from decoder: any Decoder) throws {
@@ -60,6 +118,7 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
         stepHz = try c.decodeIfPresent(UInt32.self, forKey: .stepHz) ?? 0
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
         parts = try c.decodeIfPresent([String].self, forKey: .parts) ?? []
+        channels = try c.decodeIfPresent([PlanChannel].self, forKey: .channels) ?? []
     }
 
     public var id: String { aliases.first ?? name }
@@ -84,6 +143,32 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
 
     public static func sideband(at hz: UInt64) -> Leyline_V1_DemodMode {
         hz >= 10_000_000 ? .usb : .lsb
+    }
+
+    /// The band whose plan answers for this one: itself, or the group it is a part of when it
+    /// has no plan of its own, because GMRS's numbering spans both halves and the plan hangs off
+    /// the group (docs/design/channels.md, "The plan is data in the band table"). Go's
+    /// `planOwner` in `go/pkg/leyline/bands.go`.
+    func planOwner(in bands: [Band]) -> Band {
+        guard channels.isEmpty, let alias = aliases.first else { return self }
+        return bands.first { $0.isGroup && $0.parts.contains(alias) } ?? self
+    }
+
+    /// The plan this band answers with: its own, else its group's when it is a part.
+    public func plan(in bands: [Band] = Bands.builtIn) -> [PlanChannel] {
+        planOwner(in: bands).channels
+    }
+
+    /// The channel's demodulator: its own where the plan sets one, else the band's at the
+    /// channel's frequency, so an HF channel would follow the sideband rule. Go's `presetOf`.
+    public func mode(of channel: PlanChannel) -> Leyline_V1_DemodMode {
+        Leyline_V1_DemodMode.named(channel.mode) ?? mode(at: channel.hz)
+    }
+
+    /// The channel's width: its own where the plan sets one (MURS 4 and 5 are 20 kHz where the
+    /// group is 11.25 kHz), else the band's.
+    public func bandwidth(of channel: PlanChannel) -> UInt32 {
+        channel.bandwidthHz != 0 ? channel.bandwidthHz : bandwidthHz
     }
 }
 
@@ -127,6 +212,112 @@ public enum Bands {
 
     static func fold(_ s: String) -> String {
         s.lowercased().replacingOccurrences(of: " ", with: "")
+    }
+}
+
+// MARK: Plans
+
+/// The channel lookups both clients answer the same way (docs/design/channels.md, "The plan is
+/// data in the band table" and "Bands are the spine of the sidebar"). Each mirrors a Go
+/// function in `go/pkg/leyline` by name, and the Go tests pin the same frequencies.
+public enum Plans {
+    /// How far a frequency may sit from a plan channel and still be "on" it: the one tolerance
+    /// the two lookups share, chosen so CB's 10 kHz spacing and GMRS's 12.5 kHz both resolve to
+    /// the nearer channel (`channelTolerance` in `go/pkg/leyline/bands.go`, the plan's KTD2).
+    public static let toleranceHz: UInt64 = 6_000
+
+    /// A plan drawn as ticks on the band rail has at most this many channels: NOAA, GMRS, MURS
+    /// and CB are read as marks, marine's hundred at 25 kHz across 6 MHz would read as texture
+    /// and stay in the picker (docs/design/channels.md, "Bands are the spine of the sidebar").
+    public static let tickLimit = 24
+
+    /// The plan channel nearest `hz` within `toleranceHz`, with the band or group whose plan
+    /// holds it. Nearest, not first, because GMRS channels are only 12.5 kHz apart and a
+    /// detection can sit inside the tolerance of two. Two entries at equal distance, which
+    /// marine's US variants make common (`22A` and ITU `22` share 157.100 MHz), go to the
+    /// earlier entry: the plain bands in table order, then the groups. Go's `ChannelAt`.
+    public static func channel(at hz: UInt64, in bands: [Band] = Bands.builtIn) -> (
+        band: Band, channel: PlanChannel
+    )? {
+        var best: (band: Band, channel: PlanChannel)?
+        var bestDiff = toleranceHz
+        for band in bands.filter({ !$0.isGroup }) + bands.filter({ $0.isGroup }) {
+            for channel in band.channels {
+                let diff = channel.hz > hz ? channel.hz - hz : hz - channel.hz
+                if diff < bestDiff || (diff == bestDiff && best == nil) {
+                    best = (band, channel)
+                    bestDiff = diff
+                }
+            }
+        }
+        return best
+    }
+
+    /// What a bookmark made on `hz` is named after: the radio-printed name of the channel it
+    /// sits on within `toleranceHz`, else nil and the caller names it after the frequency
+    /// (the plan's KTD7, one naming function for ⌘D, the pencil, Find active's ＋ and CHIRP).
+    public static func name(at hz: UInt64, in bands: [Band] = Bands.builtIn) -> String? {
+        channel(at: hz, in: bands)?.channel.name
+    }
+
+    /// A name typed with a band in hand: the radio-printed name (`16`, `WX3`, `24 coast`), with
+    /// or without a leading zero, or any alias, against that band's plan. This is the
+    /// band-context lookup, separate from `resolveGlobal`, which is why a channel may carry an
+    /// alias equal to one of its band's. Go's `ResolvePlanChannel`.
+    public static func resolve(_ name: String, in band: Band, bands: [Band] = Bands.builtIn)
+        -> PlanChannel?
+    {
+        let key = channelKey(name)
+        guard !key.isEmpty else { return nil }
+        return band.plan(in: bands).first {
+            channelKey($0.name) == key || $0.aliases.contains { channelKey($0) == key }
+        }
+    }
+
+    /// A name typed with no band: a channel's name or alias, case-insensitive, across every
+    /// plan, with the band or group that holds it. Bare digits never resolve here, so `16` is
+    /// never ambiguous and never a frequency (`ResolvePreset`'s rule in
+    /// `go/pkg/leyline/presets.go`); they resolve in band context through `resolve(_:in:)`.
+    public static func resolveGlobal(_ name: String, in bands: [Band] = Bands.builtIn) -> (
+        band: Band, channel: PlanChannel
+    )? {
+        let key = presetKey(name)
+        guard !key.isEmpty, !key.allSatisfy({ ("0"..."9").contains($0) }) else { return nil }
+        for band in bands {
+            for channel in band.channels
+            where presetKey(channel.name) == key
+                || channel.aliases.contains(where: { presetKey($0) == key })
+            {
+                return (band, channel)
+            }
+        }
+        return nil
+    }
+
+    /// The channels the rail draws as ticks for `band`: its plan when it has `tickLimit`
+    /// channels or fewer, and only the entries inside the band's own range, so a half of GMRS
+    /// shows the group's channels that lie in it (R15). Empty for a long plan or none.
+    public static func ticks(for band: Band, in bands: [Band] = Bands.builtIn) -> [PlanChannel] {
+        let plan = band.plan(in: bands)
+        guard plan.count <= tickLimit else { return [] }
+        return plan.filter { band.contains($0.hz) }
+    }
+
+    /// Go's `presetKey`: lower-cased and trimmed, spaces kept, so `24 coast` matches as typed.
+    static func presetKey(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    /// Go's `channelKey`: `presetKey` with a leading zero dropped, so `06` and `6` both reach
+    /// marine channel 6, which radios print either way.
+    static func channelKey(_ s: String) -> String {
+        var key = Substring(presetKey(s))
+        while key.count > 1, key.first == "0", let second = key.dropFirst().first,
+            second.isASCII, second.isNumber
+        {
+            key = key.dropFirst()
+        }
+        return String(key)
     }
 }
 

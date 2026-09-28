@@ -184,4 +184,126 @@ final class BandsTests: XCTestCase {
             "outside what this radio tunes (52 – 2200 MHz)")
         XCTAssertTrue(Bands.tunable(high, ranges: [e4kLow, e4kHigh]))
     }
+
+    // MARK: Plans
+
+    private func band(_ alias: String) throws -> Band {
+        try XCTUnwrap(Bands.resolve(alias), "\(alias) is not in bands.json")
+    }
+
+    func testSeedCarriesEveryAlphaPlanAndPartsAnswerThroughTheirGroup() throws {
+        // The counts are the design's table (docs/design/channels.md, "The plan is data in the
+        // band table"); marine is "about 100" there and entered in full in Go.
+        XCTAssertEqual(try band("noaa").channels.count, 7)
+        XCTAssertEqual(try band("gmrs").channels.count, 22)
+        XCTAssertEqual(try band("murs").channels.count, 5)
+        XCTAssertEqual(try band("cb").channels.count, 40)
+        XCTAssertGreaterThanOrEqual(try band("marine").channels.count, 100)
+        XCTAssertEqual(try band("2m").channels.count, 2)
+        XCTAssertEqual(try band("air").channels.count, 1)
+        let half = try band("gmrs-462")
+        XCTAssertTrue(half.channels.isEmpty, "a part carries no plan of its own")
+        XCTAssertEqual(half.plan(in: Bands.builtIn).count, 22, "its group's plan answers")
+        XCTAssertEqual(try band("70cm").plan(in: Bands.builtIn).count, 0)
+        let json = #"[{"name":"x","aliases":["x"],"min_hz":100,"max_hz":200,"mode":"nfm"}]"#
+        let bare = try Bands.decode(Data(json.utf8))
+        XCTAssertEqual(bare[0].channels, [], "a seed without the key still decodes")
+        let wx3 = try XCTUnwrap(try band("noaa").channels.first { $0.name == "WX3" })
+        XCTAssertEqual(wx3.id, "wx3", "the id is the plan-prefixed alias")
+        XCTAssertEqual(wx3.hz, 162_475_000)
+        XCTAssertEqual(wx3.decoder, "same")
+        XCTAssertEqual(wx3.mode, "", "the band's mode is left to the band")
+        XCTAssertEqual(wx3.bandwidthHz, 0)
+    }
+
+    func testChannelAtIsTheNearestWithinSixKilohertz() throws {
+        let hit = try XCTUnwrap(Plans.channel(at: 162_475_000))
+        XCTAssertEqual(hit.channel.name, "WX3")
+        XCTAssertEqual(hit.band.name, "NOAA weather")
+        let five = try XCTUnwrap(Plans.channel(at: 462_662_500))
+        XCTAssertEqual(five.channel.name, "ch5")
+        XCTAssertEqual(five.band.id, "gmrs", "a group's plan answers under the group")
+        XCTAssertEqual(Plans.channel(at: 462_664_000)?.channel.name, "ch5")
+        XCTAssertEqual(Plans.channel(at: 462_660_000)?.channel.name, "ch5")
+        XCTAssertEqual(
+            Plans.channel(at: 162_481_000)?.channel.name, "WX3", "6 kHz away is still on it")
+        XCTAssertNil(
+            Plans.channel(at: 162_482_000), "7 kHz from WX3 and 18 kHz from WX4 is on neither")
+        XCTAssertNil(Plans.channel(at: 100_000_000, in: []))
+    }
+
+    func testEqualDistancesResolveToTheEarlierEntry() throws {
+        // Marine's US variants share a frequency with the ITU entry entered after them
+        // (docs/design/channels.md, "Bands are the spine of the sidebar").
+        XCTAssertEqual(Plans.name(at: 157_100_000), "22A")
+        let ais = try XCTUnwrap(Plans.channel(at: 161_975_000))
+        XCTAssertEqual(ais.channel.name, "87B")
+        XCTAssertEqual(ais.channel.decoder, "ais")
+        XCTAssertEqual(Plans.name(at: 161_975_000), "87B")
+    }
+
+    func testNameAtIsTheRadioPrintedNameOrNothing() {
+        XCTAssertEqual(Plans.name(at: 146_520_000), "calling")
+        XCTAssertNil(Plans.name(at: 146_940_000), "a repeater output with no plan entry")
+        XCTAssertEqual(Plans.name(at: 462_662_500), "ch5")
+    }
+
+    func testANameResolvesInBandContextAndAnAliasGlobally() throws {
+        let marine = try band("marine")
+        XCTAssertEqual(Plans.resolve("16", in: marine)?.hz, 156_800_000)
+        XCTAssertEqual(Plans.resolve("06", in: marine)?.hz, 156_300_000)
+        XCTAssertEqual(
+            Plans.resolve("06", in: marine), Plans.resolve("6", in: marine),
+            "radios print the leading zero either way")
+        XCTAssertEqual(Plans.resolve("MARINE16", in: marine)?.name, "16")
+        XCTAssertEqual(Plans.resolve("24 coast", in: marine)?.hz, 161_800_000)
+        XCTAssertNil(Plans.resolve("99", in: marine))
+        XCTAssertNil(Plans.resolve("", in: marine))
+        XCTAssertEqual(
+            Plans.resolve("5", in: try band("gmrs-462"))?.hz, 462_662_500,
+            "a part resolves through its group's plan")
+        XCTAssertNil(Plans.resolve("5", in: try band("70cm")), "no plan, no channel")
+        let wx3 = try XCTUnwrap(Plans.resolveGlobal("wx3"))
+        XCTAssertEqual(wx3.channel.name, "WX3")
+        XCTAssertEqual(wx3.band.name, "NOAA weather")
+        XCTAssertEqual(Plans.resolveGlobal("marine16")?.channel.hz, 156_800_000)
+        XCTAssertEqual(
+            Plans.resolveGlobal("MARINE")?.channel.hz, 156_800_000,
+            "a channel may carry an alias equal to its band's; the two lookups are separate")
+        XCTAssertEqual(Plans.resolveGlobal("ch5")?.band.id, "gmrs")
+        XCTAssertNil(Plans.resolveGlobal("16"), "bare digits never resolve without a band")
+        XCTAssertNil(Plans.resolveGlobal("nothing-here"))
+    }
+
+    func testChannelModeAndWidthFallBackToTheBands() throws {
+        let murs = try band("murs")
+        let one = try XCTUnwrap(murs.channels.first { $0.name == "1" })
+        XCTAssertEqual(murs.bandwidth(of: one), 11_250)
+        XCTAssertEqual(murs.mode(of: one), .nfm)
+        let fiveMURS = try XCTUnwrap(murs.channels.first { $0.name == "5" })
+        XCTAssertEqual(fiveMURS.bandwidthHz, 20_000, "MURS 4 and 5 carry their own width")
+        XCTAssertEqual(murs.bandwidth(of: fiveMURS), 20_000)
+        let noaa = try band("noaa")
+        let wx1 = try XCTUnwrap(noaa.channels.first)
+        XCTAssertEqual(noaa.mode(of: wx1), .nfm, "the band's when the channel has none")
+        XCTAssertEqual(noaa.bandwidth(of: wx1), noaa.bandwidthHz)
+        let twenty = try band("20m")
+        if let ch = twenty.channels.first {
+            XCTAssertEqual(twenty.mode(of: ch), Band.sideband(at: ch.hz))
+        }
+        var own = wx1
+        own.mode = "am"
+        XCTAssertEqual(noaa.mode(of: own), .am, "the channel's own mode wins")
+    }
+
+    func testTicksAreShortPlansInsideTheBandsOwnRange() throws {
+        XCTAssertEqual(Plans.ticks(for: try band("noaa")).count, 7)
+        let half = Plans.ticks(for: try band("gmrs-462"))
+        XCTAssertEqual(half.count, 15, "the group's channels in the 462 MHz half only")
+        XCTAssertTrue(half.allSatisfy { $0.hz <= 462_737_500 })
+        XCTAssertEqual(Plans.ticks(for: try band("gmrs")).count, 22)
+        XCTAssertEqual(
+            Plans.ticks(for: try band("marine")), [], "a hundred ticks would read as texture")
+        XCTAssertEqual(Plans.ticks(for: try band("70cm")), [])
+    }
 }
