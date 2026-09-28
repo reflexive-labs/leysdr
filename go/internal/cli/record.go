@@ -40,12 +40,11 @@ type recordOptions struct {
 	device    string
 	deviceID  string
 	takeOver  bool
+	// audio backs the hidden `--audio`, which asks for what record already does; it is read
+	// only to refuse the pair with --iq. A field, not a package variable: every Execute builds
+	// its own command tree, and tests run several at once.
+	audio bool
 }
-
-// recordAudioDefault backs the hidden `--audio`, which asks for what record already does. It is a
-// package-level flag target rather than a field on the options because nothing downstream reads
-// it: --audio alone changes nothing, and the only misuse is combining it with --iq.
-var recordAudioDefault bool
 
 func newRecordCommand(app *App) *cobra.Command {
 	var (
@@ -127,7 +126,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	// Audio is what record writes unless --iq says otherwise, so this asks for the default. It is
 	// accepted because the V0 story spells the pair `--iq` and `--audio`
 	// (docs/plans/user-stories.md) and a user following it should not get "unknown flag".
-	cmd.Flags().BoolVar(&recordAudioDefault, "audio", false, "record demodulated audio (the default; --iq records raw samples instead)")
+	cmd.Flags().BoolVar(&o.audio, "audio", false, "record demodulated audio (the default; --iq records raw samples instead)")
 	_ = cmd.Flags().MarkHidden("audio")
 	cmd.Flags().BoolVar(&o.detach, "detach", false, "start the recording and exit, printing its job id and URI (for scripts; 'ley jobs cancel' stops it)")
 	cmd.Flags().StringVar(&mode, "mode", "", "how to decode: nfm, wfm, am, usb, lsb, cw (default: by band; ley help modes)")
@@ -233,7 +232,7 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 	}
 	// `--audio` names the default rather than contradicting `--iq`; both at once is a request for
 	// two different files and there is only one recording.
-	if recordAudioDefault && o.iq {
+	if o.audio && o.iq {
 		return usageErrorf("--audio and --iq ask for two different recordings: audio is what record writes unless --iq says otherwise, so give one or neither")
 	}
 	if o.iq {
@@ -253,7 +252,7 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 		o.channelID = arg
 		return nil
 	}
-	t, err := resolveDialTarget(arg, "record", "ley record 146.52, ley record noaa", "146.52 (MHz)")
+	t, err := resolveDialTarget(arg, "record", "ley record 146.52, ley record noaa", "146.52 (MHz)", nil)
 	if err != nil {
 		return err
 	}
