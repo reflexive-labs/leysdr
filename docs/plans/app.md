@@ -1326,14 +1326,19 @@ is the implementation plan: seven units in the doc's "Sequence" order, each with
 tests, gates and the Mac checklist it leaves under "Unverified on the Mac" below. The items
 here are the record; each is ticked when its unit's commit lands:
 
-- `[ ]` **APP-9a** Unknown keys preserved by both bookmark stores (`go/pkg/bookmarks`,
+- `[x]` **APP-9a** Unknown keys preserved by both bookmark stores (`go/pkg/bookmarks`,
   `Bookmarks.swift`), with a round-trip test each: a file with a field neither knows comes back
-  with it.
-- `[ ]` **APP-9b** Plans in the band table and `bands.json` (`channels` per band with the
+  with it. Landed 2026-09-28 (U2): `Extra` raw messages in Go, `JSONValue` and `extra` in
+  Swift, one fixture literal in both tests; the Go file now writes entry keys sorted.
+- `[x]` **APP-9b** Plans in the band table and `bands.json` (`channels` per band with the
   naming scheme the doc gives, MURS as two halves and a group, 6 m and 1.25 m added), `ley
   presets` and `presetAt` as views over them and over the groups, the goldens re-recorded,
   `TestPresetsTable` pinning every current name and alias, `TestBandsJSONResource` covering the
-  plans.
+  plans. Landed 2026-09-28 (U3): 110 marine entries from the Coast Guard tables, CB, MURS and
+  GMRS from 47 CFR 95, `ChannelAt` with the 6 kHz tie rule, `--band` on `tune` and
+  `bookmarks add`, `Plans` in the client library mirroring each Go lookup; the ITU 1027/1028
+  and ASM marine rows left out where the tables disagree. A pre-existing race in `record`'s
+  hidden `--audio` flag was fixed on the way, in its own commit.
 - `[ ]` **APP-9c** The sidebar on the spine: bookmarks nested under bands, a group as one row
   with its parts folded in, the collapsed out-of-range line, the filter field with `Go to…` (⌘G)
   and its no-match line, the plan picker popover, rail ticks for plans of 24 channels or fewer,
