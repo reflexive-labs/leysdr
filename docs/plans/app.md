@@ -1321,8 +1321,10 @@ notarized (`../dev/release-checklist.md`). D3, the trademark check, gates the fi
 
 `../design/channels.md` is the design, written 2026-09-28 from the owner's ask: NOAA and GMRS
 channels reachable without programming, bands as the sidebar's order, defaults that need no
-setup, and a sidebar that does not fill. The items are in the doc's "Sequence" and land in that
-order, each verified as it says:
+setup, and a sidebar that does not fill. `2026-09-28-2037-feat-bands-channels-bookmarks-plan.md`
+is the implementation plan: seven units in the doc's "Sequence" order, each with its files,
+tests, gates and the Mac checklist it leaves under "Unverified on the Mac" below. The items
+here are the record; each is ticked when its unit's commit lands:
 
 - `[ ]` **APP-9a** Unknown keys preserved by both bookmark stores (`go/pkg/bookmarks`,
   `Bookmarks.swift`), with a round-trip test each: a file with a field neither knows comes back
