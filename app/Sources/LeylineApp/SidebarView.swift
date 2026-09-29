@@ -455,8 +455,8 @@ struct MatchRow: View {
 /// the field editor directly, because the Tune menu holds them as key equivalents and a menu's
 /// equivalent is matched before a text field sees the key, so typing `24 coast` would mute the
 /// radio and tune it. With `pickerKeys` the Up and Down arrows move the picker's highlight
-/// through the session instead. Only scalars and the session, a main-actor class, cross into
-/// the main actor: an NSEvent is not Sendable.
+/// through the session instead. Only scalars and a state binding cross into the main actor: an
+/// NSEvent and the session are not Sendable.
 struct TuningKeyGuard: ViewModifier {
     let focused: Bool
     var pickerKeys = false
@@ -464,11 +464,15 @@ struct TuningKeyGuard: ViewModifier {
     @State private var monitor: Any?
     /// The window the field was focused in, compared by identity out on the monitor's side.
     @State private var ownWindow: ObjectIdentifier?
+    @State private var pickerMove = 0
 
     func body(content: Content) -> some View {
         content
             .onChange(of: focused) { _, isFocused in
                 if isFocused { watchKeys() } else { end() }
+            }
+            .onChange(of: pickerMove) { old, new in
+                session.movePickerHighlight(new - old)
             }
             // A popover or window that closes mid-edit never reports the focus lost; without
             // this the monitor would outlive the field and swallow keys for the process.
@@ -485,7 +489,7 @@ struct TuningKeyGuard: ViewModifier {
         if monitor != nil { return }
         ownWindow = NSApp.keyWindow.map { ObjectIdentifier($0) }
         let own = ownWindow
-        let session = session
+        let move = $pickerMove
         let picker = pickerKeys
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
             guard let own, let window = event.window, ObjectIdentifier(window) == own else {
@@ -499,7 +503,7 @@ struct TuningKeyGuard: ViewModifier {
             guard held.isEmpty || held == [.shift] else { return event }
             let shift = held == [.shift]
             let taken: Bool = MainActor.assumeIsolated {
-                Self.take(keyCode: code, shift: shift, picker: picker, session: session)
+                Self.take(keyCode: code, shift: shift, picker: picker, move: move)
             }
             return taken ? nil : event
         }
@@ -509,16 +513,18 @@ struct TuningKeyGuard: ViewModifier {
     /// for the picker. Anything else goes on to the menu and the field as usual. Returns true
     /// when the key was taken.
     @MainActor
-    private static func take(keyCode: UInt16, shift: Bool, picker: Bool, session: AppSession)
+    private static func take(
+        keyCode: UInt16, shift: Bool, picker: Bool, move: Binding<Int>
+    )
         -> Bool
     {
         if picker, !shift {
             switch keyCode {
             case 126:  // Up arrow: the highlight, one row up
-                session.movePickerHighlight(-1)
+                move.wrappedValue -= 1
                 return true
             case 125:  // Down arrow: one row down
-                session.movePickerHighlight(1)
+                move.wrappedValue += 1
                 return true
             default:
                 break

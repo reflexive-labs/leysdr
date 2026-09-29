@@ -156,7 +156,8 @@ public struct SidebarIndex: Sendable {
             let disabled = !Bands.tunable(row, ranges: ranges)
             for channel in row.channels {
                 let match = SidebarMatch(
-                    kind: .channel(channel, row: row), disabled: disabled, hz: channel.hz,
+                    kind: .channel(channel, row: row),
+                    disabled: !SidebarIndex.reaches(channel.hz, ranges: ranges), hz: channel.hz,
                     label: channel.name, rowName: row.name)
                 let keys = [Plans.presetKey(channel.name)] + channel.aliases.map(Plans.presetKey)
                 file(Entry(match: match, keys: keys), under: row)

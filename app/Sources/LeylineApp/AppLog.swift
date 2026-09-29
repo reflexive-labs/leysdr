@@ -41,7 +41,7 @@ final class AppLog: @unchecked Sendable {
         }
         if !fm.fileExists(atPath: path) { fm.createFile(atPath: path, contents: nil) }
         handle = try? FileHandle(forWritingTo: url)
-        try? handle?.seekToEnd()
+        _ = try? handle?.seekToEnd()
     }
 
     /// `area` is the part of the window that logs (`session`, `tune`, `feed`, `waterfall`);

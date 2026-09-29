@@ -177,6 +177,17 @@ final class SidebarTests: XCTestCase {
             other.matches("far").first!.disabled, "Other is disabled where the radio cannot reach")
     }
 
+    func testAChannelOutsideTheRadiosReachIsDisabledInsideAReachableGroup() throws {
+        let narrow = [range(462_660_000, 462_665_000)]
+        let index = SidebarIndex(bookmarks: [], tunedHz: nil, ranges: narrow)
+        let hits = index.matches("ch")
+        let channel5 = try XCTUnwrap(hits.first { $0.label == "ch5" })
+        let channel6 = try XCTUnwrap(hits.first { $0.label == "ch6" })
+        XCTAssertFalse(channel5.disabled, "the radio reaches ch5 inside the GMRS group")
+        XCTAssertTrue(channel6.disabled, "the group is reachable but the radio cannot tune ch6")
+        XCTAssertEqual(index.firstTarget("ch")?.label, "ch5")
+    }
+
     func testABandQueryListsItsEntriesBeforeTheBandRow() throws {
         // Return tunes the first row and a band as a click would (docs/design/channels.md,
         // "Bands are the spine of the sidebar"); entries sort before their band row, so the

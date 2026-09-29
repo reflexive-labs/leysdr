@@ -187,6 +187,16 @@ final class CHIRPTests: XCTestCase {
             try CHIRP.apply([row], to: &store, tag: "sample").updated.first?.tone, "100.0")
     }
 
+    func testABlankDuplexAndZeroOffsetKeepTheStoredValues() throws {
+        var store = try openStore()
+        let club = try store.add(name: "Club", hz: 146_940_000, mode: .nfm)
+        _ = try store.edit(club.id, duplex: "-", offsetHz: -600_000)
+
+        let kept = try store.edit(club.id, duplex: nil, offsetHz: nil)
+        XCTAssertEqual(kept.duplex, "-")
+        XCTAssertEqual(kept.offsetHz, -600_000)
+    }
+
     func testABadToneIsAWarningNotASkip() throws {
         let csv =
             "Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode\n"

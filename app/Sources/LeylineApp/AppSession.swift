@@ -1780,6 +1780,7 @@ final class AppSession {
                 log("sweep", "\(id) stopped: \(job.statusDetail)")
             } catch {
                 let e = LeylineError(error)
+                if sweep?.jobID == id { sweep?.stopAsked = false }
                 log("sweep", "\(id) not stopped: \(e.code) \(e.message)")
                 notice = "Could not stop the sweep: \(e.message.isEmpty ? e.code : e.message)"
             }
@@ -2139,7 +2140,7 @@ final class AppSession {
     private func watchBookmarks() {
         let dir = (bookmarks.path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let fd = open(dir, O_EVTONLY)
+        let fd = Darwin.open(dir, O_EVTONLY)
         guard fd >= 0 else { return }
         bookmarkWatchFD = fd
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -2194,17 +2195,25 @@ final class AppSession {
                 target: url.path)
             return
         }
+        let tag = url.deletingPathExtension().lastPathComponent
+        var result: CHIRP.Result
         do {
-            let tag = url.deletingPathExtension().lastPathComponent
-            var result = try CHIRP.apply(parsed.rows, to: &bookmarks, tag: tag)
-            try bookmarks.save()
-            result.skipped = (parsed.skipped + result.skipped).sorted { $0.line < $1.line }
-            for s in result.skipped { log("bookmark", "\(file) line \(s.line): \(s.reason)") }
-            for w in result.warnings { log("bookmark", "\(file) line \(w.line): \(w.reason)") }
-            notice = CHIRP.summary(result, file: file)
+            result = try CHIRP.apply(parsed.rows, to: &bookmarks, tag: tag)
         } catch {
             lastError = bookmarkWriteError(error)
+            return
         }
+        do {
+            try bookmarks.save()
+        } catch {
+            loadBookmarks()
+            lastError = bookmarkWriteError(error)
+            return
+        }
+        result.skipped = (parsed.skipped + result.skipped).sorted { $0.line < $1.line }
+        for s in result.skipped { log("bookmark", "\(file) line \(s.line): \(s.reason)") }
+        for w in result.warnings { log("bookmark", "\(file) line \(w.line): \(w.reason)") }
+        notice = CHIRP.summary(result, file: file)
     }
 
     /// The sidebar row's editor and the Rename item: the bookmark takes the name in place.

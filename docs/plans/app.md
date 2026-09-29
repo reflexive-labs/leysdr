@@ -1405,6 +1405,8 @@ once and files fixes as new items.
   - The inspector title on a plan channel reads the band's name until a bookmark is made, then
     the bookmark's; the volume caption reads `ch5` on 462.6625 MHz with no bookmark.
   - A pick of MURS 4 arrives at 20 kHz where the group is 11.25 kHz.
+  - The app builds without a `Sendable` diagnostic from the filter and picker key monitor;
+    holding Up or Down in the picker moves every repeated step and leaves the field focused.
 - **U5** (`AppSession.swift`, `SidebarView.swift`, `BandRailView.swift`, `MainWindow.swift`,
   `Theme.swift`; none compiled here):
   - Find active on the tuned 2 m row: the audio stops, the field keeps showing the tuned
@@ -1420,6 +1422,8 @@ once and files fixes as new items.
   - The item reads `Stop` while the row is swept, in the row and in its context menu; Stop
     ends the job and the audio comes back where it was; the row shows nothing under the item
     afterwards.
+  - If the cancel RPC fails, the notice reports it and Stop remains available for another try
+    on the same sweep.
   - A band click, a bookmark click, a rail click, a chart click and a picker pick during a
     sweep stop it and happen once the audio is back, without a `DEVICE_SWEEPING` error.
   - With a recording running on the window's capture, Find active asks on the move alert
@@ -1443,6 +1447,8 @@ once and files fixes as new items.
     lists nine.
   - A file with no Frequency column (any other CSV) shows the error `<name> has no Frequency
     column; is it a CHIRP CSV export?` and `bookmarks.json` is unchanged.
+  - If the bookmarks file cannot be saved, the import reports the write error and the sidebar
+    reloads the file from disk instead of showing the unsaved rows.
   - Find active on a second band while one sweeps stops the first and sweeps the second once
     the radio is back; the first row's words go, the second's hits arrive.
   - A bookmark tuned when Find active is clicked comes back with the bookmark's own mode and
@@ -1482,6 +1488,21 @@ once and files fixes as new items.
     is absent and nothing shifts.
   - The panel's width (312 pt) holds the label, the field and `heard DCS 023 inverted` on one
     line; if it does not, the heard words truncate and the field keeps its width.
+
+#### Residuals after APP-9 review
+
+- `JSONValue` decodes an unknown JSON integer through `Double`, so an unknown field above 2^53
+  can lose precision on an app edit. Preserving the raw number needs a separate JSON value case.
+- `followScanJob` measures its three-second missing-job deadline from before `StartJob` returns.
+  A slow start can therefore consume the deadline before the first mirror event; move the start
+  point only with a daemon-delay test that fixes the intended timeout.
+- `AppSession.swift` is about 3,400 lines. Splitting its bookmark and sweep concerns is a separate
+  structural change, with the Mac-only isolation and lifecycle checks from `../dev/swift-style.md`.
+- `ley bookmarks` has no edit verb, so the terminal cannot clear a tone or note the app wrote.
+  Add `ley bookmarks edit` rather than changing `add`'s update contract.
+- The row actions need another UI pass: “Find active” is not the right label, and it and
+  `Channels…` look like bookmarks when placed beside them. Rename the sweep action and give both
+  actions a treatment distinct from bookmark rows.
 
 ## Backlog
 
