@@ -3,7 +3,8 @@
 // Region 2: the band rail (docs/design/app-design-handoff.md). The rail shows one band at a
 // time: the band's name, its neighbours named at the end caps, a track from one edge
 // of the band to the other with the bounds numbered beneath the caps, a pill for the slice on
-// screen, the tuned frequency as an accent tick and every bookmark in the band as a `good` one.
+// screen, the tuned frequency as an accent tick, every bookmark in the band as a `good` one and
+// a short plan's channels as fainter ticks under them (docs/design/channels.md, R15).
 // A click tunes; a drag moves the region inside the band and leaves the station where it is
 // unless the edge pushes it; clicking a neighbour's name switches to that band. The only number
 // the rail reports is the width one spectrum column covers.
@@ -165,6 +166,22 @@ struct BandRail: View {
                     // The zoomed window inside it.
                     if session.zoom > 1, let vis = session.visibleRange {
                         pill(vis, width: w, fill: Theme.selected, stroke: Theme.borderFocus)
+                    }
+                }
+                // The plan's channels inside the part, for a plan of `Plans.tickLimit` or fewer
+                // (R15): fainter than the bookmarks and under them, 1 pt wide with a hit area
+                // either side. A click tunes the channel; the rail keeps showing the part.
+                if let band = session.band {
+                    ForEach(Plans.ticks(for: band).filter { range.contains($0.hz) }) { channel in
+                        Rectangle().fill(Theme.planTick).frame(width: 1, height: 6)
+                            .frame(width: Theme.Layout.planTickHit)
+                            .contentShape(Rectangle())
+                            .offset(
+                                x: x(of: channel.hz, width: w) - Theme.Layout.planTickHit / 2,
+                                y: Self.trackY - 3
+                            )
+                            .help(channel.name)
+                            .onTapGesture { session.tune(to: channel.hz) }
                     }
                 }
                 // Bookmarks in the band.

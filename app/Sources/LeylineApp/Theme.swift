@@ -32,6 +32,11 @@ enum Theme {
     static let inkFaint = Color(hex: 0x6B7276)
     static let inkFaintest = Color(hex: 0x5F656A)
     static let inkDisabled = Color(hex: 0x4A5054)
+    /// A plan channel's tick on the band rail: fainter than a bookmark's `good` and than the
+    /// tuned `accent`, so a plan reads as a grid under the marks and never as marks (R15). No
+    /// handoff token is dimmer than `inkFaint` without being the disabled ink, so it is
+    /// `inkFaint` at half strength; a guess until the Mac.
+    static let planTick = inkFaint.opacity(0.5)
 
     /// The tuned channel, and nothing else: the ramp's fifth stop is the same orange, so a second
     /// use of it would make the tuned channel unfindable.
@@ -188,6 +193,17 @@ enum Theme {
         static let sidebarDot: CGFloat = 6
         /// A recording bookmark's dot to the frequency beside it (M3 handoff, 8b).
         static let bookmarkDotGap: CGFloat = 6
+        /// How far a band row's contents (its bookmarks, `Channels…`) sit in from the band's
+        /// name (docs/design/channels.md, "Bands are the spine of the sidebar"); a guess until
+        /// the Mac.
+        static let sidebarIndent: CGFloat = 12
+        /// The plan picker (the same design section): its width, one row's height and how many
+        /// rows show before it scrolls (about twelve, the design's number).
+        static let pickerWidth: CGFloat = 300
+        static let pickerRowHeight: CGFloat = 24
+        static let pickerRows = 12
+        /// A plan tick on the rail is 1 pt wide; the pointer gets this much either side of it.
+        static let planTickHit: CGFloat = 7
         /// The waterfall's time gutter at its right, on `panel` (M3 handoff, "In every
         /// screen"), about 64 pt in the screens. The 1 pt hairline beside it is extra.
         static let waterfallGutterWidth: CGFloat = 64

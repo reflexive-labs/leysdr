@@ -4,6 +4,15 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Mac app's sidebar is one list of bands. Each band row opens to its range, its bookmarks
+  and `Channels…`, which lists the band's plan in a popover with a filter and the arrow keys;
+  GMRS and MURS are one row each. A band click still tunes it; the chevron opens a row without
+  tuning. Bands the radio cannot tune fold to one line at the top. A filter field (`Go to…`, ⌘G)
+  narrows everything to bands, bookmarks and channels by name, and Return tunes the first. A
+  bookmark on a plan channel reads the channel's name where its frequency was, a new bookmark
+  is named after the channel it sits on, and a short plan's channels are faint ticks on the
+  band rail.
+
 - `ley` knows the channel plans. Every band that has one carries it: NOAA WX1 to WX7, GMRS 1 to
   22, MURS 1 to 5 (two new bands and a `murs` group, like GMRS), the ITU marine plan with the US
   `A` channels, a ship and a coast entry per duplex channel and AIS 1 and 2, CB 1 to 40, 2 m

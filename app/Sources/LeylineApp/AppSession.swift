@@ -67,8 +67,13 @@ final class AppSession {
     /// draws its pill there so the region tracks the drag instead of lagging one event behind.
     private(set) var panCentre: Int64?
 
-    // Files both clients own.
+    // Files both clients own. `bands` is the part table, which every lookup below keeps reading
+    // (`band(containing:)`, `defaultMode`, `tune(bookmark:)`, the last-band adoption): none of
+    // them ever answers a group (the plan's KTD4). `sidebarRows` is the fold the sidebar and
+    // the filter draw, a group in place of its parts (docs/design/channels.md, "Bands are the
+    // spine of the sidebar").
     let bands: [Band] = Bands.plain
+    let sidebarRows: [Band] = Bands.sidebar()
     private(set) var bookmarks = BookmarkStore(path: BookmarkStore.defaultPath())
     private var bookmarkWatch: DispatchSourceFileSystemObject?
     private var bookmarkWatchFD: Int32 = -1
@@ -138,6 +143,38 @@ final class AppSession {
     }
     /// The Library sidebar's search field.
     var recordingsQuery = ""
+    /// The Radio sidebar's filter field, and whether it holds focus (`Go to…`, ⌘G, gives it;
+    /// Escape takes it). While the query is non-empty the sidebar is the flat list of matches.
+    var filterQuery = ""
+    var filterFocused = false
+    /// The sidebar row opened by its chevron without tuning, or nil; the tuned row is always
+    /// open (`isExpanded`), and a tune into any other row closes this one
+    /// (docs/design/channels.md, "Bands are the spine of the sidebar").
+    private(set) var expandedBandID: String?
+    /// Whether the one line standing for the bands this radio cannot tune has been opened to
+    /// its rows; the next tune folds it again.
+    var outOfRangeExpanded = false
+    /// The sidebar row whose `Channels…` popover is open, or nil. Opening it empties the query
+    /// and puts the highlight on the tuned channel when the plan has it, else the first row.
+    var pickerBand: Band? {
+        didSet {
+            guard pickerBand?.id != oldValue?.id else { return }
+            pickerQuery = ""
+            pickerHighlight = 0
+            guard let band = pickerBand, let hz = tunedHz,
+                let found = Plans.channel(at: hz), let i = band.plan().firstIndex(of: found.channel)
+            else { return }
+            pickerHighlight = i
+        }
+    }
+    /// The picker's filter field: a case-insensitive prefix of a channel's name or alias, the
+    /// rule the sidebar's filter uses (the plan's KTD6). Typing puts the highlight back on the
+    /// first row.
+    var pickerQuery = "" {
+        didSet { if pickerQuery != oldValue { pickerHighlight = 0 } }
+    }
+    /// The picker row Return picks: an index into `pickerRows`.
+    private(set) var pickerHighlight = 0
     /// One sentence about the last thing that happened, or nil.
     /// Every message the window shows is also logged (`AppLog.swift`): the notice and the error
     /// when set, the empty-state and out-of-capture messages when they change, and the failure
@@ -433,6 +470,50 @@ final class AppSession {
         Bands.outOfRangeWords(band, ranges: radioRanges)
     }
 
+    /// The sidebar rows this radio cannot tune, folded to one line; nil when it tunes them all.
+    var outOfRange: OutOfRangeFold? { OutOfRangeFold(rows: sidebarRows, ranges: radioRanges) }
+
+    /// The filter's match and order over the whole table, the bookmarks and the radio's reach
+    /// (`SidebarIndex`); built on each read, which is one pass over a few hundred entries.
+    var sidebarIndex: SidebarIndex {
+        SidebarIndex(bookmarks: bookmarks.list, tunedHz: tunedHz, ranges: radioRanges)
+    }
+
+    /// The sidebar row the highlighted band files under: its group when it is a part, so the
+    /// `GMRS` row is the tuned one while the capture sits on either half.
+    var tunedRow: Band? { band.map { Bands.group(of: $0) ?? $0 } }
+
+    /// Whether a sidebar row shows its contents: the tuned row always, and the one opened by
+    /// its chevron.
+    func isExpanded(_ row: Band) -> Bool {
+        row.id == tunedRow?.id || row.id == expandedBandID
+    }
+
+    /// The chevron: opens or closes a row without tuning. The tuned row stays open.
+    func toggleExpanded(_ row: Band) {
+        guard row.id != tunedRow?.id else { return }
+        expandedBandID = expandedBandID == row.id ? nil : row.id
+    }
+
+    /// What a tune into `row` closes: a row opened by its chevron elsewhere, and the
+    /// out-of-range line's rows.
+    private func closeOpenedRows(tuning row: Band?) {
+        if let id = expandedBandID, id != row?.id { expandedBandID = nil }
+        outOfRangeExpanded = false
+    }
+
+    /// The picker's rows: the open row's plan, narrowed by `pickerQuery`.
+    var pickerRows: [PlanChannel] {
+        guard let band = pickerBand else { return [] }
+        let plan = band.plan()
+        let key = pickerQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !key.isEmpty else { return plan }
+        return plan.filter { channel in
+            channel.name.lowercased().hasPrefix(key)
+                || channel.aliases.contains { $0.lowercased().hasPrefix(key) }
+        }
+    }
+
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
     /// Selection reflects state rather than causing it (the M1 handoff, "Decided 2026-09-21"):
     /// the band is the one the tuned frequency is in, and the clicked one only breaks a tie
@@ -714,6 +795,87 @@ final class AppSession {
         await moveToBand(band, at: hz)
     }
 
+    /// A click on a sidebar row: the band tunes as it always has. A group row tunes through the
+    /// part that holds the tuned frequency, else its first part, because `select(band:at:)`
+    /// takes a part and never a group (R11, the plan's KTD4).
+    func tune(row: Band) {
+        let part = part(of: row, near: tunedHz)
+        Task { await select(band: part) }
+    }
+
+    /// The part of a group row that holds `hz`, else its first part in the group's order; a
+    /// plain band is its own part.
+    private func part(of row: Band, near hz: UInt64?) -> Band {
+        guard row.isGroup else { return row }
+        let parts = row.parts.compactMap { id in bands.first { $0.id == id } }
+        if let hz, let part = parts.first(where: { $0.contains(hz) }) { return part }
+        return parts.first ?? row
+    }
+
+    /// The plan picker's pick, and a channel row in the filter: the part that holds the channel
+    /// arrives tuned there, and the channel's own mode and width follow where the plan sets them
+    /// (MURS 4 and 5 are 20 kHz where the group is 11.25 kHz), the way a bookmark's do.
+    func pick(channel: PlanChannel, in row: Band) {
+        pickerBand = nil
+        let part = part(of: row, near: channel.hz)
+        log("tune", "channel \(channel.name) of \(row.name) at \(channel.hz) Hz")
+        Task {
+            await select(band: part, at: channel.hz)
+            let mode = part.mode(of: channel)
+            let bw = part.bandwidth(of: channel)
+            guard let ch = self.channel, tunedHz == channel.hz || requestedHz == channel.hz,
+                ch.mode != mode || ch.bandwidthHz != bw
+            else { return }
+            await apply(mode: mode, bandwidthHz: bw, to: ch)
+        }
+    }
+
+    /// Up and Down in the picker: the highlight moves one row and stops at the ends.
+    func movePickerHighlight(_ delta: Int) {
+        let count = pickerRows.count
+        guard count > 0 else { return }
+        pickerHighlight = min(max(pickerHighlight + delta, 0), count - 1)
+    }
+
+    /// Return in the picker: the highlighted row is picked.
+    func pickHighlighted() {
+        let rows = pickerRows
+        guard let band = pickerBand, rows.indices.contains(pickerHighlight) else { return }
+        pick(channel: rows[pickerHighlight], in: band)
+    }
+
+    /// A filter row: a band as a click on its row would, a bookmark as its row would, a plan
+    /// channel as the picker would. A disabled row does nothing.
+    func tune(match: SidebarMatch) {
+        guard !match.disabled else { return }
+        switch match.kind {
+        case .band(let row): tune(row: row)
+        case .bookmark(let bookmark, _): tune(bookmark: bookmark)
+        case .channel(let channel, let row): pick(channel: channel, in: row)
+        }
+    }
+
+    /// Return in the filter field: the first row the radio can tune (`SidebarIndex.firstTarget`),
+    /// and the field is cleared and let go so the sidebar shows the tuned row open.
+    func tuneFirstMatch() {
+        guard let match = sidebarIndex.firstTarget(filterQuery) else { return }
+        tune(match: match)
+        clearFilter()
+    }
+
+    /// Escape in the filter field: the query goes and the field drops its focus.
+    func clearFilter() {
+        filterQuery = ""
+        filterFocused = false
+    }
+
+    /// `Go to…` (⌘G): the Radio's filter field takes focus. A name goes here; the frequency
+    /// field is a digit editor and stays one.
+    func goTo() {
+        place = .radio
+        filterFocused = true
+    }
+
     /// The question before `select(band:at:)` moves the capture: nil when the band change makes
     /// a new capture (no radio open, another radio) or leaves every recording inside the span.
     /// The centre is the one `moveToBand` computes.
@@ -737,6 +899,7 @@ final class AppSession {
         defer { busy = false }
         listeningStopped = false
         selectedBandID = band.id
+        closeOpenedRows(tuning: Bands.group(of: band) ?? band)
         UserDefaults.standard.set(band.id, forKey: Self.lastBandKey)
         lastError = nil
         log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
@@ -1188,6 +1351,7 @@ final class AppSession {
         let was = oldHz.flatMap { Bands.band(containing: $0, in: bands) }
         let now = Bands.band(containing: hz, in: bands)
         if let b = band, !b.contains(hz) { selectedBandID = nil }
+        closeOpenedRows(tuning: Bands.sidebarRow(for: hz))
         if tuningBookmark {
             // The bookmark's saved settings win over the band's defaults, and stand down the
             // band's write for this tune.
@@ -1614,11 +1778,12 @@ final class AppSession {
         bookmarkWatch = source
     }
 
-    /// `＋`: the tuned frequency becomes a bookmark named after itself, and its row opens as an
-    /// editor at once so the name is typed where the bookmark appears.
+    /// `＋`: the tuned frequency becomes a bookmark named after the plan channel it sits on, else
+    /// after itself (`BookmarkNaming`, the plan's KTD7), and its row opens as an editor at once
+    /// so the name is typed where the bookmark appears.
     func bookmarkCurrent() {
         guard let ch = channel, let hz = tunedHz else { return }
-        let name = Frequency.format(hz)
+        let name = BookmarkNaming.name(for: hz)
         do {
             let b = try bookmarks.add(
                 name: name, hz: hz, mode: ch.mode, bandwidthHz: ch.bandwidthHz)
@@ -1682,12 +1847,17 @@ final class AppSession {
     }
 
     /// The inspector's pencil: the bookmark on the tuned frequency takes the name, or one is
-    /// made the way `bookmarkCurrent` makes it and named at once. Either way the file is
-    /// written and the watcher reloads it, so the sidebar and `ley bookmarks` see the name too.
+    /// made the way `bookmarkCurrent` makes it and named at once; committed empty, the new one
+    /// takes the plan channel's name, else the frequency's (`BookmarkNaming`), and an existing
+    /// one keeps its name. Either way the file is written and the watcher reloads it, so the
+    /// sidebar and `ley bookmarks` see the name too.
     func renameTuned(to name: String) {
         guard let ch = channel, let hz = tunedHz else { return }
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        var name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty {
+            guard tunedBookmark == nil else { return }
+            name = BookmarkNaming.name(for: hz)
+        }
         do {
             if let b = tunedBookmark {
                 guard b.name != name else { return }
@@ -2218,11 +2388,12 @@ final class AppSession {
     var storeUsedBytes: UInt64 { Recordings.storeUsedBytes(recordings) }
     var storeCapBytes: UInt64 { state.daemon.recordingsCapBytes }
 
-    /// What the tuned channel is called where it is heard: the bookmark's name, else the
-    /// frequency (`Frequency.format`); nil with no channel. The volume caption's name.
+    /// What the tuned channel is called where it is heard: the bookmark's name, else the plan
+    /// channel's (`ch5`, `WX3`; R16), else the frequency (`Frequency.format`); nil with no
+    /// channel. The volume caption's name.
     var listeningName: String? {
         guard let hz = tunedHz else { return nil }
-        return tunedBookmark?.name ?? Frequency.format(hz)
+        return tunedBookmark?.name ?? Plans.name(at: hz) ?? Frequency.format(hz)
     }
 
     /// Whether the Library's centre column shows a channel page: the Library is showing and a

@@ -1359,6 +1359,44 @@ here are the record; each is ticked when its unit's commit lands:
   analysis's defaults (the filter's rule, the naming rule, a sweep against a recording or a
   tune, the CHIRP update rules) are in the design doc, landed as the plan's U1.
 
+#### Unverified on the Mac
+
+Each unit that touches `app/Sources/LeylineApp` leaves its list here; the container compiles
+none of those files (`../dev/swift-style.md`, section 12). The owner runs the accumulated list
+once and files fixes as new items.
+
+- **U4** (`SidebarView.swift`, new `PlanPickerView.swift`, `BandRailView.swift`,
+  `AppSession.swift`, `LeylineApp.swift`, `Theme.swift`; none compiled here):
+  - A band row's tap tunes it as before; its chevron opens and closes the row without tuning,
+    and a tune into another row closes a row the chevron opened.
+  - The tuned row is open, with the range line, its bookmarks indented under it and
+    `Channels…` last; `GMRS` is one row and is the tuned one on either half; a bookmark at
+    462.6625 MHz sits under it and reads `ch5` where its frequency was; a bookmark at 500 MHz
+    is under `Other`.
+  - The filter field takes focus on ⌘G (`Go to…` in the Tune menu, from the Library too);
+    while it has focus Space types a space and ← → move the caret, neither mutes nor tunes.
+  - Typing `wx3` lists the NOAA row and Return tunes 162.475 MHz, clears the field and drops
+    its focus; Escape clears and blurs; `zz` shows `No matches for “zz”.`; a row of a band the
+    radio cannot tune is dimmed and does nothing.
+  - `Channels…` opens the picker to the right of the line; it opens with the field focused and
+    the highlight on the tuned channel when the plan has it, else the first row; Up and Down
+    move the highlight and stop at the ends, and the list scrolls to keep it in view; typing
+    narrows the rows and puts the highlight back on the first; Return picks it and closes;
+    Escape closes; a click picks. On marine's list (110 rows) the popover is about twelve rows
+    tall and scrolls; typing `24` leaves `24`, `24 coast`, `24A`.
+  - The plan ticks on the rail are visibly fainter than the bookmark ticks and sit under them;
+    hovering one names the channel; a click on one tunes it; the rail on `gmrs-462` shows only
+    the channels in that half; marine shows none.
+  - With an RTL-SDR the list opens on `7 bands below what this radio tunes`, one dim line;
+    clicking it shows the seven rows disabled with the existing tooltip; the next tune folds
+    it again.
+  - ⌘D on 462.6625 MHz makes a bookmark named `ch5` with its row open as an editor; on
+    146.52 MHz it is named `146.520 MHz`. The inspector's pencil committed empty on a plan
+    channel makes one named after the channel.
+  - The inspector title on a plan channel reads the band's name until a bookmark is made, then
+    the bookmark's; the volume caption reads `ch5` on 462.6625 MHz with no bookmark.
+  - A pick of MURS 4 arrives at 20 kHz where the group is 11.25 kHz.
+
 ## Backlog
 
 - **The band rail's scrubber at a wide capture** (seen 2026-09-25). When the radio's sample rate

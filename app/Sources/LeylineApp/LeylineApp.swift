@@ -73,6 +73,9 @@ struct TuneCommands: Commands {
             Divider()
             Button("Enter Frequency…") { session.frequencyEntryShown = true }
                 .keyboardShortcut("l", modifiers: [.command])
+            // The sidebar's filter takes a name where the field above takes digits.
+            Button("Go to…") { session.goTo() }
+                .keyboardShortcut("g", modifiers: [.command])
             Button("Snap to Nearest Bookmark") { session.snapToNearestBookmark() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             Button("Centre on Strongest Signal") { session.centreOnStrongest() }
