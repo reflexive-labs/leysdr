@@ -3,8 +3,9 @@
 // Region 2: the band rail (docs/design/app-design-handoff.md). The rail shows one band at a
 // time: the band's name, its neighbours named at the end caps, a track from one edge
 // of the band to the other with the bounds numbered beneath the caps, a pill for the slice on
-// screen, the tuned frequency as an accent tick, every bookmark in the band as a `good` one and
-// a short plan's channels as fainter ticks under them (docs/design/channels.md, R15).
+// screen, the tuned frequency as an accent tick, every bookmark in the band as a `good` one, the
+// last sweep's hits in the band as `sweepTick` ones beside them (the design's "Find active")
+// and a short plan's channels as fainter ticks under them (docs/design/channels.md, R15).
 // A click tunes; a drag moves the region inside the band and leaves the station where it is
 // unless the edge pushes it; clicking a neighbour's name switches to that band. The only number
 // the rail reports is the width one spectrum column covers.
@@ -183,6 +184,20 @@ struct BandRail: View {
                             .help(channel.name)
                             .onTapGesture { session.tune(to: channel.hz) }
                     }
+                }
+                // The last sweep's hits inside the rail (R17): a group's hits show on the half
+                // the rail is on (the plan's KTD11). Under the bookmarks, so a bookmarked hit
+                // keeps its `good` tick, with the plan ticks' hit area; a click tunes the hit.
+                ForEach(session.sweepHits.filter { range.contains($0.hz) }) { hit in
+                    Rectangle().fill(Theme.sweepTick).frame(width: 1.5, height: 8)
+                        .frame(width: Theme.Layout.planTickHit)
+                        .contentShape(Rectangle())
+                        .offset(
+                            x: x(of: hit.hz, width: w) - Theme.Layout.planTickHit / 2,
+                            y: Self.trackY - 4
+                        )
+                        .help("\(hit.label) · \(String(format: "%.0f", hit.snrDb)) dB")
+                        .onTapGesture { session.tune(hit: hit) }
                 }
                 // Bookmarks in the band.
                 ForEach(session.bookmarks.list.filter { range.contains($0.hz) }) { b in

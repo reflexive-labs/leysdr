@@ -5,7 +5,8 @@
 // app-design-handoff.md). A click on a band tunes it as it always has, and the tuned row is
 // the open one because selection reflects state rather than causing it; the chevron opens a
 // row without tuning. A group (`GMRS`, `MURS`) is one row standing for its parts. Open, a row
-// shows its range line, its bookmarks and `Channels…`, which opens the plan picker
+// shows its range line, Find active with the sweep's words or hits under it (the design's
+// "Find active"), its bookmarks and `Channels…`, which opens the plan picker
 // (`PlanPickerView.swift`). The bands the radio cannot tune fold to one dim line at the top, a
 // bookmark in no band goes under `Other`, and the filter field flattens everything into one
 // list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the session's; the views
@@ -121,11 +122,107 @@ struct SidebarView: View {
         .contentShape(Rectangle())
         .onTapGesture { if why == nil { session.tune(row: row) } }
         .help(why.map { "\(row.name) is \($0)" } ?? "")
+        .contextMenu {
+            Button(findActiveTitle(row)) { session.findActive(row: row) }.disabled(why != nil)
+        }
         if expanded {
-            // Find active's line goes here, between the range line and the bookmarks (U5).
+            findActiveLine(row, disabled: why != nil)
+            if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
+                sweepOutcome(outcome, row: row)
+            }
             ForEach(bookmarks) { bookmarkRow($0) }
             if !row.plan().isEmpty { channelsLine(row) }
         }
+    }
+
+    /// `Stop` while this row is being swept, else `Find active` (R20).
+    private func findActiveTitle(_ row: Band) -> String {
+        session.sweeping && session.sweepRow?.id == row.id ? "Stop" : "Find active"
+    }
+
+    /// The item in the expanded row, indented as `Channels…` is: starts the sweep, or stops
+    /// the one running on this row.
+    private func findActiveLine(_ row: Band, disabled: Bool) -> some View {
+        let stopping = session.sweeping && session.sweepRow?.id == row.id
+        return Button {
+            session.findActive(row: row)
+        } label: {
+            Text(findActiveTitle(row)).font(Theme.Font.valueSmall)
+                .foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
+        .padding(.vertical, 4)
+        .help(
+            stopping
+                ? "Stop the sweep; listening comes back where it was"
+                : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile."
+        )
+    }
+
+    /// Under the item, for the row the sweep is of: the progress words while it runs; then the
+    /// hits strongest first, or the one line for nothing found, or a failed job's reason in
+    /// `caution`; and the coverage note when the sweep looked at less than the band.
+    @ViewBuilder private func sweepOutcome(_ outcome: SweepOutcome, row: Band) -> some View {
+        switch outcome {
+        case .running(let progress):
+            sweepLine(progress.words(band: row), ink: Theme.inkFaint)
+        case .found(let result):
+            ForEach(result.hits) { hitRow($0) }
+            if let words = result.coverageWords(band: row) {
+                sweepLine(words, ink: Theme.inkFaintest)
+            }
+        case .empty(let result):
+            sweepLine(SweepResult.emptyWords, ink: Theme.inkFaintest)
+            if let words = result.coverageWords(band: row) {
+                sweepLine(words, ink: Theme.inkFaintest)
+            }
+        case .failed(let detail):
+            sweepLine(detail, ink: Theme.caution)
+        case .cancelled:
+            EmptyView()
+        }
+    }
+
+    /// One line of the sweep's words, wrapping, indented with the row's contents.
+    private func sweepLine(_ words: String, ink: Color) -> some View {
+        Text(words).font(Theme.Font.footnote).foregroundStyle(ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A hit: its name or frequency, its SNR, and `＋` at the trailing edge to bookmark it. A
+    /// tap on the row tunes it.
+    private func hitRow(_ hit: SweepHit) -> some View {
+        let snr = String(format: "%.0f", hit.snrDb)
+        return HStack(spacing: 8) {
+            Text(hit.label).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
+                .lineLimit(1)
+            Spacer()
+            Text("\(snr) dB").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+            Button {
+                session.bookmark(hit: hit)
+            } label: {
+                Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                    .frame(width: 12, height: 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.inkTertiary)
+            .help("Bookmark \(hit.label)")
+        }
+        .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { session.tune(hit: hit) }
+        .help(
+            "\(Frequency.format(hit.hz)) · \(snr) dB over the floor · heard in \(hit.looks) of \(hit.looksPossible) looks"
+        )
     }
 
     /// `Channels…`: opens the plan picker beside the line. The open row is the session's, so

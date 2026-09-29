@@ -92,9 +92,9 @@ struct MainWindow: View {
             "Move the radio?",
             isPresented: Binding(get: { session.retuneQuestion != nil }, set: { _ in }),
             presenting: session.retuneQuestion
-        ) { _ in
+        ) { q in
             Button("Cancel", role: .cancel) { session.answerRetune(moveAnyway: false) }
-            Button("Move anyway", role: .destructive) { session.answerRetune(moveAnyway: true) }
+            Button(q.proceedLabel, role: .destructive) { session.answerRetune(moveAnyway: true) }
         } message: { q in
             Text(q.words)
         }

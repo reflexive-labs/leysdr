@@ -1396,6 +1396,37 @@ once and files fixes as new items.
   - The inspector title on a plan channel reads the band's name until a bookmark is made, then
     the bookmark's; the volume caption reads `ch5` on 462.6625 MHz with no bookmark.
   - A pick of MURS 4 arrives at 20 kHz where the group is 11.25 kHz.
+- **U5** (`AppSession.swift`, `SidebarView.swift`, `BandRailView.swift`, `MainWindow.swift`,
+  `Theme.swift`; none compiled here):
+  - Find active on the tuned 2 m row: the audio stops, the field keeps showing the tuned
+    frequency, the row reads `Sweeping 2 m amateur, 7 steps…` from the job's events, and the
+    audio is back on the same frequency with the band's mode and width when the row shows its
+    hits. Record how long the audio was gone, in the design's open question
+    (`../design/channels.md`, "Open questions").
+  - The hits are listed strongest first, `WX3` or `146.520 MHz` with `23 dB` beside it; the
+    rail shows a tick per hit, brighter than the plan ticks and distinct from a bookmark's,
+    hovering one reads `WX3 · 23 dB`, and a click on a hit's row or its tick tunes it.
+  - `＋` on a hit makes a bookmark named after the channel (`WX3`), else the frequency, under
+    the band with its row open as an editor, as ⌘D does.
+  - The item reads `Stop` while the row is swept, in the row and in its context menu; Stop
+    ends the job and the audio comes back where it was; the row shows nothing under the item
+    afterwards.
+  - A band click, a bookmark click, a rail click, a chart click and a picker pick during a
+    sweep stop it and happen once the audio is back, without a `DEVICE_SWEEPING` error.
+  - With a recording running on the window's capture, Find active asks on the move alert
+    with `Sweep anyway` and `Cancel`; Sweep anyway sweeps, Cancel leaves the radio alone; a
+    band switch over the recording still reads `Move anyway`.
+  - After Stop listening, Find active on NOAA runs without a pause, the row shows its hits and
+    the band is selected afterwards, so the audio plays.
+  - Find active on a second band while one sweeps stops the first and sweeps the second once
+    the radio is back; the first row's words go, the second's hits arrive.
+  - A bookmark tuned when Find active is clicked comes back with the bookmark's own mode and
+    width (a bookmark saved at AM on airband, say), and `changed` is not shown.
+  - A NOAA sweep with the antenna off reads `Nothing on the air right now; repeaters and
+    towers key up briefly` and the rail has no hit ticks; the previous sweep's hits stay until
+    the next sweep or a tune into another row, and a tune within the row keeps them.
+  - A sweep on a row opened by its chevron while listening elsewhere keeps that row open with
+    its hits once the audio is back.
 
 ## Backlog
 

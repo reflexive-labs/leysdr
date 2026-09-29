@@ -340,7 +340,9 @@ final class AppSession {
     }
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
-    var displayHz: UInt64? { requestedHz ?? tunedHz }
+    /// While a sweep borrows the radio there is no channel, and the field keeps showing the
+    /// frequency the window paused on rather than going blank (R18).
+    var displayHz: UInt64? { requestedHz ?? tunedHz ?? (sweeping ? sweep?.paused?.hz : nil) }
     /// The transport bar's speaker: muted is no sink on the channel (the daemon has no mute), and
     /// the channel, its squelch and the meter carry on.
     var isMuted: Bool { sink == nil }
@@ -495,11 +497,19 @@ final class AppSession {
         expandedBandID = expandedBandID == row.id ? nil : row.id
     }
 
-    /// What a tune into `row` closes: a row opened by its chevron elsewhere, and the
-    /// out-of-range line's rows.
+    /// What a tune into `row` closes: a row opened by its chevron elsewhere, the out-of-range
+    /// line's rows, and the last sweep's hits when they belong to another row (R19). The only
+    /// tune while `sweeping` holds is the resume after the sweep, which is nobody's tune
+    /// elsewhere: it closes nothing, so a row opened by its chevron and swept keeps showing its
+    /// hits when the radio goes back to the band it was on.
     private func closeOpenedRows(tuning row: Band?) {
+        guard !sweeping else { return }
         if let id = expandedBandID, id != row?.id { expandedBandID = nil }
         outOfRangeExpanded = false
+        if let s = sweep, s.row.id != row?.id {
+            log("sweep", "hits of \(s.row.name) dropped: tuned elsewhere")
+            sweep = nil
+        }
     }
 
     /// The picker's rows: the open row's plan, narrowed by `pickerQuery`.
@@ -539,6 +549,57 @@ final class AppSession {
     /// Set by `tune(bookmark:)` for the tune it starts, so the band-follow rule does not write
     /// the band's mode over the bookmark's: one write, the bookmark's.
     private var tuningBookmark = false
+
+    // Find active (docs/design/channels.md, "Find active"; the plan's KTD5). The job is the
+    // mirror's; what is here is which job the row started, what the window was listening to
+    // when it paused for it, and the outcome the row shows once the job has ended.
+    /// The sweep the band row started, or nil. Kept after the job ends, with its outcome, until
+    /// the next sweep or the next tune into another row (R19), because the row shows the hits,
+    /// the empty line or the failure from it; a cancelled sweep is dropped at once.
+    private(set) var sweep: SweepState?
+    /// The action asked for while a sweep ran (a tune, or another row's Find active), run once
+    /// the job's terminal event has put the radio back. The latest one wins.
+    @ObservationIgnored private var afterSweep: (@MainActor () -> Void)?
+
+    /// Between Find active and the channel and sink being back: no capture write leaves the
+    /// window meanwhile, because the daemon refuses every one with `DEVICE_SWEEPING`.
+    var sweeping: Bool { sweep.map { !$0.restored } ?? false }
+    /// The row the last sweep was of, whose expanded row shows the outcome.
+    var sweepRow: Band? { sweep?.row }
+    /// The last sweep's detections, strongest first: the rail's hit ticks.
+    var sweepHits: [SweepHit] {
+        if case .found(let result)? = sweep?.outcome { return result.hits }
+        return []
+    }
+
+    /// One sweep from the row's click to the radio being back.
+    struct SweepState {
+        /// What the window played before it paused, to put back on the terminal event.
+        struct Paused {
+            let hz: UInt64
+            /// The bookmark tuned, whose saved settings come back with it.
+            let bookmark: Bookmark?
+            /// The part the frequency lies in, else the band the sidebar highlighted.
+            let band: Band?
+        }
+
+        /// Empty until `StartJob` answers, which is milliseconds; a stop asked in that gap is
+        /// sent as soon as the id is known (`stopAsked`).
+        var jobID = ""
+        let row: Band
+        let startedAt = Date()
+        var outcome: SweepOutcome?
+        /// Nil when the window had no capture (after Stop listening): the daemon opened its own
+        /// radio and the swept row is selected afterwards.
+        let paused: Paused?
+        var stopAsked = false
+        /// The terminal event was seen and the scan is being read; the mirror's next change
+        /// must not start a second read.
+        var ending = false
+        /// The channel and sink are back, or the sweep was cancelled: the window is listening
+        /// again and the row shows the outcome.
+        var restored = false
+    }
 
     var stepHz: UInt32 { band?.stepHz ?? 12_500 }
     var fineStepHz: UInt32 { band?.fineStepHz ?? 1_000 }
@@ -678,7 +739,9 @@ final class AppSession {
             }
         }
         if case .live = connection {
-            if !adopted, !listeningStopped { adopt() }
+            // A sweep with no capture opens the daemon's own; adopting it would put a channel
+            // on a radio being swept.
+            if !adopted, !listeningStopped, !sweeping { adopt() }
         } else {
             adopted = false
             captureSeen = false
@@ -693,6 +756,7 @@ final class AppSession {
         nameFailure()
         holdOutOfCapture()
         followRecordJobs()
+        followScanJob()
         followPlayback()
         logShownWords()
         // The mirror keeps this client's rejections; a new one is the last thing that went wrong.
@@ -786,6 +850,10 @@ final class AppSession {
     /// inside it: a drag past the rail's end cap lands on the neighbour's near edge. A switch
     /// that would move the capture off a running recording asks first (`retuneQuestion`).
     func select(band: Band, at hz: UInt64? = nil) async {
+        let waited = waitForSweep("select band \(band.name)") {
+            Task { await self.select(band: band, at: hz) }
+        }
+        if waited { return }
         if let words = bandMoveWords(band, at: hz) {
             ask(words, before: "band \(band.name)") {
                 Task { await self.moveToBand(band, at: hz) }
@@ -799,6 +867,7 @@ final class AppSession {
     /// part that holds the tuned frequency, else its first part, because `select(band:at:)`
     /// takes a part and never a group (R11, the plan's KTD4).
     func tune(row: Band) {
+        if waitForSweep("tune row \(row.name)", { self.tune(row: row) }) { return }
         let part = part(of: row, near: tunedHz)
         Task { await select(band: part) }
     }
@@ -817,6 +886,9 @@ final class AppSession {
     /// (MURS 4 and 5 are 20 kHz where the group is 11.25 kHz), the way a bookmark's do.
     func pick(channel: PlanChannel, in row: Band) {
         pickerBand = nil
+        if waitForSweep("pick \(channel.name)", { self.pick(channel: channel, in: row) }) {
+            return
+        }
         let part = part(of: row, near: channel.hz)
         log("tune", "channel \(channel.name) of \(row.name) at \(channel.hz) Hz")
         Task {
@@ -880,7 +952,7 @@ final class AppSession {
     /// a new capture (no radio open, another radio) or leaves every recording inside the span.
     /// The centre is the one `moveToBand` computes.
     private func bandMoveWords(_ band: Band, at hz: UInt64?) -> String? {
-        guard !busy, outOfRangeWords(band) == nil, let cap = capture,
+        guard !busy, !sweeping, outOfRangeWords(band) == nil, let cap = capture,
             let dev = try? pickDevice(), dev.deviceID == cap.deviceID
         else { return nil }
         let centre =
@@ -1105,6 +1177,8 @@ final class AppSession {
     /// faster than every 300 ms, so the display pans at a followable rate rather than a span
     /// per event.
     func tune(to hz: UInt64, dragging: Bool = false) {
+        // A drag's frames all wait as one click: the last frame is where the drag was going.
+        if waitForSweep("tune to \(hz) Hz", { self.tune(to: hz) }) { return }
         place(hz, panning: dragging, quiet: dragging)
     }
 
@@ -1535,6 +1609,294 @@ final class AppSession {
         }
     }
 
+    // MARK: Find active
+
+    /// The band row's item (R17, R20): `ley scan --band`'s sweep on the window's own radio,
+    /// with the window paused for it. On the row being swept it is Stop; on another row it
+    /// stops that sweep and starts this one after its terminal event. A record job riding the
+    /// window's capture would hear every hop, so the move alert asks first, Sweep anyway going
+    /// ahead.
+    func findActive(row: Band) {
+        if let s = sweep, sweeping {
+            if s.row.id == row.id {
+                log("sweep", "stop asked on \(row.name)")
+                afterSweep = nil
+                cancelSweep()
+            } else {
+                _ = waitForSweep("find active on \(row.name)") { self.findActive(row: row) }
+            }
+            return
+        }
+        if let cap = capture,
+            let words = Recordings.retuneWords(
+                jobs: Recordings.jobs(riding: cap.captureID, in: state))
+        {
+            ask(words, before: "find active on \(row.name)", proceedLabel: "Sweep anyway") {
+                Task { await self.startSweep(row: row) }
+            }
+            return
+        }
+        Task { await startSweep(row: row) }
+    }
+
+    /// A hit's row and its rail tick: the frequency tunes as a click on the chart would. With
+    /// no capture (Stop listening after the sweep) the band opens the radio there, as a bookmark
+    /// click does.
+    func tune(hit: SweepHit) {
+        log("tune", "hit \(hit.label) at \(hit.hz) Hz")
+        if capture == nil, let b = Bands.band(containing: hit.hz, in: bands),
+            outOfRangeWords(b) == nil
+        {
+            Task { await select(band: b, at: hit.hz) }
+            return
+        }
+        tune(to: hit.hz)
+    }
+
+    /// `＋` on a hit: a bookmark named as the row names the hit, the plan channel's name else
+    /// the frequency (R16, the plan's KTD7), with the band's mode and width there, and its row
+    /// opened as an editor as ⌘D opens one. The same name on the same frequency twice updates
+    /// the bookmark in place (`BookmarkStore.add`).
+    func bookmark(hit: SweepHit) {
+        let band = Bands.band(containing: hit.hz, in: bands)
+        let mode = band?.mode(at: hit.hz) ?? Bands.defaultMode(at: hit.hz, in: bands)
+        let bandwidthHz = band?.bandwidthHz ?? mode.defaultBandwidthHz
+        do {
+            let b = try bookmarks.add(
+                name: hit.label, hz: hit.hz, mode: mode, bandwidthHz: bandwidthHz)
+            try bookmarks.save()
+            log("bookmark", "added \(hit.label) at \(hit.hz) Hz from a sweep hit")
+            editingBookmarkID = b.id
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
+    /// The pause, then the job. With a capture on the radio the job will take, the window
+    /// pauses first and the job borrows that capture; with none (after Stop listening) the job
+    /// runs on the radio the window would pick and the daemon opens its own. A refusal is a
+    /// notice with the daemon's words and the pause is undone at once.
+    private func startSweep(row: Band) async {
+        guard let daemon, !sweeping else { return }
+        let dev: Leyline_V1_DeviceDescriptor
+        do {
+            dev = try pickDevice()
+        } catch {
+            lastError = LeylineError(error)
+            return
+        }
+        var paused: SweepState.Paused?
+        if let cap = capture, cap.deviceID == dev.deviceID, let ch = channel, let hz = tunedHz {
+            paused = SweepState.Paused(
+                hz: hz, bookmark: tunedBookmark,
+                band: Bands.band(containing: hz, in: bands) ?? band)
+            guard await pauseForSweep(channel: ch) else { return }
+        }
+        sweep = SweepState(row: row, paused: paused)
+        var req = Leyline_V1_StartJobRequest()
+        req.scan = Sweep.config(for: row, in: Bands.builtIn, deviceID: dev.deviceID)
+        do {
+            let job = try await daemon.jobs.startJob(req)
+            sweep?.jobID = job.jobID
+            sweep?.outcome = .running(SweepProgress(statusDetail: job.statusDetail))
+            log(
+                "sweep",
+                "\(job.jobID) started: \(row.name), \(req.scan.range.minHz) to \(req.scan.range.maxHz) Hz on \(dev.model)\(paused.map { ", paused at \($0.hz) Hz" } ?? ", no capture to pause")"
+            )
+            // A stop asked while `StartJob` was answering goes now that the id is known.
+            if sweep?.stopAsked == true {
+                sweep?.stopAsked = false
+                cancelSweep()
+            }
+            followScanJob()
+        } catch {
+            let e = LeylineError(error)
+            log("sweep", "refused on \(row.name): \(e.code) \(e.message)")
+            notice = "Could not sweep \(row.name): \(e.message.isEmpty ? e.code : e.message)"
+            await resumeAfterSweep(paused, row: row)
+            sweep = nil
+            runAfterSweep()
+        }
+    }
+
+    /// The window lets go of the radio without releasing it (the plan's KTD5): the sink
+    /// detached as Mute detaches it and the channel destroyed as Stop listening destroys it,
+    /// the capture kept so the allocator borrows it rather than a second radio. False, with
+    /// the error shown, when the channel could not be removed; nothing starts then. A sink
+    /// that would not detach is logged and left to go with its channel.
+    private func pauseForSweep(channel ch: Leyline_V1_Channel) async -> Bool {
+        guard let daemon else { return false }
+        if let s = sink {
+            var detach = Leyline_V1_DetachSinkRequest()
+            detach.sinkID = s.sinkID
+            do {
+                _ = try await daemon.control.detachSink(detach)
+            } catch {
+                log("sweep", "sink \(s.sinkID) not detached: \(LeylineError(error))")
+            }
+        }
+        var destroy = Leyline_V1_DestroyChannelRequest()
+        destroy.channelID = ch.channelID
+        do {
+            _ = try await daemon.control.destroyChannel(destroy)
+        } catch {
+            lastError = LeylineError(error)
+            log("sweep", "not started: channel \(ch.channelID) not removed: \(LeylineError(error))")
+            return false
+        }
+        dropChannel()
+        log("sweep", "paused: channel \(ch.channelID) removed, capture \(ch.captureID) kept")
+        return true
+    }
+
+    /// `CancelJob` on the sweep: the job ends CANCELLED and its terminal event puts the radio
+    /// back. Asked before `StartJob` has answered, the stop waits for the id (`startSweep`).
+    private func cancelSweep() {
+        guard let s = sweep, !s.ending, !s.restored else { return }
+        if s.jobID.isEmpty {
+            sweep?.stopAsked = true
+            return
+        }
+        guard !s.stopAsked, let daemon else { return }
+        sweep?.stopAsked = true
+        let id = s.jobID
+        Task {
+            var ref = Leyline_V1_JobRef()
+            ref.jobID = id
+            do {
+                let job = try await daemon.jobs.cancelJob(ref)
+                log("sweep", "\(id) stopped: \(job.statusDetail)")
+            } catch {
+                let e = LeylineError(error)
+                log("sweep", "\(id) not stopped: \(e.code) \(e.message)")
+                notice = "Could not stop the sweep: \(e.message.isEmpty ? e.code : e.message)"
+            }
+        }
+    }
+
+    /// While a sweep runs, a tune stops it and runs once the terminal event has put the radio
+    /// back, so no write reaches the swept capture (R20). True when the caller must return.
+    /// One action waits; the latest wins.
+    private func waitForSweep(_ what: String, _ action: @escaping @MainActor () -> Void) -> Bool {
+        guard sweeping else { return false }
+        log(
+            "sweep",
+            "\(what) waits for the sweep to stop\(afterSweep == nil ? "" : ", in place of what waited before")"
+        )
+        afterSweep = action
+        cancelSweep()
+        return true
+    }
+
+    private func runAfterSweep() {
+        guard let next = afterSweep else { return }
+        afterSweep = nil
+        next()
+    }
+
+    /// In the mirror-follow list: the row's words from the job's `status_detail` while it runs,
+    /// and on its terminal event the scan read once and the radio put back (`endSweep`). A job
+    /// the mirror does not list `neverSeenDropSeconds` after the start, or listed and then
+    /// lost, ends the sweep as failed, so the window never waits on an event that is not
+    /// coming.
+    private func followScanJob() {
+        guard let s = sweep, !s.restored, !s.ending, !s.jobID.isEmpty else { return }
+        guard let job = state.jobs.first(where: { $0.jobID == s.jobID }) else {
+            guard Date().timeIntervalSince(s.startedAt) > Self.neverSeenDropSeconds else {
+                return
+            }
+            log(
+                "sweep",
+                "the mirror has no job \(s.jobID) \(Int(Self.neverSeenDropSeconds)) s after it started"
+            )
+            sweep?.ending = true
+            Task { await endSweep(nil) }
+            return
+        }
+        if job.isActive {
+            let running = SweepOutcome.running(SweepProgress(statusDetail: job.statusDetail))
+            if s.outcome != running {
+                sweep?.outcome = running
+                log("sweep", "\(job.jobID): \(job.statusDetail)")
+            }
+            return
+        }
+        sweep?.ending = true
+        Task { await endSweep(job) }
+    }
+
+    /// The terminal event: a completed job's scan read through `GetScan`, the outcome set from
+    /// the job and the scan (`SweepOutcome.from`), the radio put back whatever the outcome, then
+    /// whatever waited on the sweep. Nil is a job the mirror lost.
+    private func endSweep(_ job: Leyline_V1_Job?) async {
+        guard let s = sweep else { return }
+        let outcome: SweepOutcome
+        if let job {
+            var scan: Leyline_V1_Scan?
+            if job.state == .completed, let daemon, let id = Sweep.scanID(of: job) {
+                var ref = Leyline_V1_ScanRef()
+                ref.scanID = id
+                do {
+                    scan = try await daemon.jobs.getScan(ref)
+                } catch {
+                    let e = LeylineError(error)
+                    log(
+                        "sweep",
+                        "\(job.jobID): scan \(id) could not be read: \(e.code) \(e.message)")
+                }
+            }
+            outcome =
+                SweepOutcome.from(job: job, scan: scan, band: s.row, in: Bands.builtIn)
+                ?? .failed(detail: "The sweep ended but its scan could not be read")
+        } else {
+            outcome = .failed(detail: "The daemon no longer lists the sweep")
+        }
+        log("sweep", "\(s.jobID) ended: \(Self.words(of: outcome))")
+        sweep?.outcome = outcome
+        await resumeAfterSweep(s.paused, row: s.row)
+        if case .cancelled = outcome {
+            sweep = nil
+        } else {
+            sweep?.restored = true
+        }
+        runAfterSweep()
+    }
+
+    /// The radio back as it was (R18): the bookmark re-tuned with its saved settings, else the
+    /// band select at the paused frequency, so the channel and sink come back the way a click
+    /// makes them; with nothing paused, the swept row's part, as a bookmark click after Stop
+    /// listening selects one. Through `moveToBand` and `open(bookmark:in:)` directly, because
+    /// `select(band:at:)` would wait on the sweep this ends, and a recording on the radio was
+    /// asked about before the sweep, not after it.
+    private func resumeAfterSweep(_ paused: SweepState.Paused?, row: Band) async {
+        if let p = paused {
+            if let b = p.bookmark, let band = p.band ?? Bands.band(containing: b.hz, in: bands) {
+                log("sweep", "resuming bookmark \(b.name) at \(b.hz) Hz")
+                await open(bookmark: b, in: band)
+                return
+            }
+            if let band = p.band {
+                log("sweep", "resuming \(band.name) at \(p.hz) Hz")
+                await moveToBand(band, at: p.hz)
+                return
+            }
+        }
+        let part = part(of: row, near: paused?.hz)
+        log("sweep", "selecting \(part.name) after the sweep")
+        await moveToBand(part, at: nil)
+    }
+
+    /// The log's word for an outcome.
+    private static func words(of outcome: SweepOutcome) -> String {
+        switch outcome {
+        case .running(let p): return "running, \(p.detail)"
+        case .found(let r): return r.hits.count == 1 ? "1 hit" : "\(r.hits.count) hits"
+        case .empty: return "nothing on the air"
+        case .failed(let detail): return "failed: \(detail)"
+        case .cancelled: return "cancelled"
+        }
+    }
+
     // MARK: Device and gain
 
     func setGain(element: String, db: Double) {
@@ -1884,6 +2246,9 @@ final class AppSession {
     }
 
     func tune(bookmark: Bookmark) {
+        if waitForSweep("tune bookmark \(bookmark.name)", { self.tune(bookmark: bookmark) }) {
+            return
+        }
         selectedBandID = nil
         log("tune", "bookmark \(bookmark.name) at \(bookmark.hz) Hz")
         // No capture (after Stop listening): the band opens the radio there first, then the
@@ -1891,15 +2256,7 @@ final class AppSession {
         if capture == nil, let b = Bands.band(containing: bookmark.hz, in: bands),
             outOfRangeWords(b) == nil
         {
-            Task {
-                await select(band: b, at: bookmark.hz)
-                if let ch = channel, bookmark.mode != .unspecified {
-                    let bw =
-                        bookmark.bandwidthHz == 0
-                        ? bookmark.mode.defaultBandwidthHz : bookmark.bandwidthHz
-                    await apply(mode: bookmark.mode, bandwidthHz: bw, to: ch)
-                }
-            }
+            Task { await open(bookmark: bookmark, in: b) }
             return
         }
         tuningBookmark = bookmark.mode != .unspecified
@@ -1908,6 +2265,18 @@ final class AppSession {
             let bw =
                 bookmark.bandwidthHz == 0 ? bookmark.mode.defaultBandwidthHz : bookmark.bandwidthHz
             Task { await apply(mode: bookmark.mode, bandwidthHz: bw, to: ch) }
+        }
+    }
+
+    /// The band opens the radio at the bookmark's frequency through the band-select path, then
+    /// the bookmark's saved settings are applied: a bookmark tuned with no capture, and the
+    /// resume after a sweep, which must not ask and must not wait on the sweep it ends.
+    private func open(bookmark: Bookmark, in band: Band) async {
+        await moveToBand(band, at: bookmark.hz)
+        if let ch = channel, bookmark.mode != .unspecified {
+            let bw =
+                bookmark.bandwidthHz == 0 ? bookmark.mode.defaultBandwidthHz : bookmark.bandwidthHz
+            await apply(mode: bookmark.mode, bandwidthHz: bw, to: ch)
         }
     }
 
@@ -2946,6 +3315,9 @@ final class AppSession {
         let id = UUID()
         /// `Recordings.retuneWords`: the job named and the gap the move would leave.
         let words: String
+        /// The button that goes ahead: `Move anyway` before a move, `Sweep anyway` before Find
+        /// active, which hops the radio across the band (R20).
+        let proceedLabel: String
         let proceed: @MainActor () -> Void
         let cancel: @MainActor () -> Void
     }
@@ -2963,11 +3335,12 @@ final class AppSession {
     }
 
     private func ask(
-        _ words: String, before what: String, proceed: @escaping @MainActor () -> Void,
-        cancel: @escaping @MainActor () -> Void = {}
+        _ words: String, before what: String, proceedLabel: String = "Move anyway",
+        proceed: @escaping @MainActor () -> Void, cancel: @escaping @MainActor () -> Void = {}
     ) {
         log("record", "asked before \(what): \(words)")
-        retuneQuestion = RetuneQuestion(words: words, proceed: proceed, cancel: cancel)
+        retuneQuestion = RetuneQuestion(
+            words: words, proceedLabel: proceedLabel, proceed: proceed, cancel: cancel)
     }
 
     /// The alert's buttons: Move anyway performs the move, Cancel leaves the radio where it is.

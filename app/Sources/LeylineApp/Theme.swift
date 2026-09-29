@@ -37,6 +37,11 @@ enum Theme {
     /// handoff token is dimmer than `inkFaint` without being the disabled ink, so it is
     /// `inkFaint` at half strength; a guess until the Mac.
     static let planTick = inkFaint.opacity(0.5)
+    /// A sweep hit's tick on the band rail (docs/design/channels.md, "Find active"): a mark,
+    /// so brighter than the plan grid, and neither `good`, which is a bookmark, nor `accent`,
+    /// which is the tuned channel and nothing else. `inkSecondary` is the brightest ink that is
+    /// not a colour; a guess until the Mac.
+    static let sweepTick = inkSecondary
 
     /// The tuned channel, and nothing else: the ramp's fifth stop is the same orange, so a second
     /// use of it would make the tuned channel unfindable.
