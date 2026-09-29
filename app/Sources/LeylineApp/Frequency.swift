@@ -11,16 +11,9 @@ enum Frequency {
     /// `146.520 MHz`, `88.5 MHz`, `462.6125 MHz`, `1.766 GHz`: the guide's spelling, a space
     /// before the unit.
     static func format(_ hz: UInt64) -> String {
-        if hz >= 1_000_000_000 { return String(format: "%.3f GHz", Double(hz) / 1e9) }
-        // A fourth decimal for a frequency on an exact half-kilohertz: every 12.5 kHz channel
-        // plan has them (GMRS channel 3 is 462.6125 MHz, and three decimals would round it to a
-        // channel it is not), and no measurement lands on one by chance, so a measured centre
-        // keeps the three decimals its bin width can resolve. `ley`'s rule.
-        if hz >= 1_000_000 {
-            return String(format: hz % 1_000 == 500 ? "%.4f MHz" : "%.3f MHz", Double(hz) / 1e6)
-        }
-        if hz >= 1_000 { return String(format: "%.1f kHz", Double(hz) / 1e3) }
-        return "\(hz) Hz"
+        // The rule lives in the client library, where it names bookmarks and is tested on
+        // Linux; the transport bar shows the same hertz the same way by calling it.
+        BookmarkNaming.frequencyWords(hz)
     }
 
     /// `146.5200` and `000`: the MHz digits the field shows in ink and the sub-hundred-hertz ones

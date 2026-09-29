@@ -521,11 +521,12 @@ final class AppSession {
     var pickerRows: [PlanChannel] {
         guard let band = pickerBand else { return [] }
         let plan = band.plan()
-        let key = pickerQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        // The sidebar filter's rule, from the library so the two agree (KTD6).
+        let key = Plans.presetKey(pickerQuery)
         guard !key.isEmpty else { return plan }
         return plan.filter { channel in
-            channel.name.lowercased().hasPrefix(key)
-                || channel.aliases.contains { $0.lowercased().hasPrefix(key) }
+            Plans.presetKey(channel.name).hasPrefix(key)
+                || channel.aliases.contains { Plans.presetKey($0).hasPrefix(key) }
         }
     }
 
@@ -2859,7 +2860,7 @@ final class AppSession {
     /// channel. The volume caption's name.
     var listeningName: String? {
         guard let hz = tunedHz else { return nil }
-        return tunedBookmark?.name ?? Plans.name(at: hz) ?? Frequency.format(hz)
+        return tunedBookmark?.name ?? BookmarkNaming.name(for: hz)
     }
 
     /// Whether the Library's centre column shows a channel page: the Library is showing and a

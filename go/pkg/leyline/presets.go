@@ -49,19 +49,18 @@ var (
 // frequency order and then the groups, each plan in its own order.
 func presets() []Preset {
 	presetsOnce.Do(func() {
-		for _, table := range [][]Band{bands, bandGroups} {
-			for _, b := range table {
-				for _, c := range b.Channels {
-					presetTable = append(presetTable, presetOf(b, c))
-				}
-			}
-		}
+		eachChannel(func(b Band, c Channel) {
+			presetTable = append(presetTable, PresetOf(b, c))
+		})
 	})
 	return presetTable
 }
 
-// presetOf is the dial's view of one plan entry.
-func presetOf(b Band, c Channel) Preset {
+// PresetOf is the dial's view of one plan entry: what `ley presets` prints
+// for it and what a resolved name answers with. `ley help presets` walks the
+// bands itself so it can head each plan with its band, and builds each row
+// through this rather than resolving a name it already holds.
+func PresetOf(b Band, c Channel) Preset {
 	p := Preset{Name: c.Aliases[0], Hz: c.Hz, Mode: c.Mode, BandwidthHz: c.BandwidthHz, Note: c.Note, Band: b.Name}
 	if p.Mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
 		p.Mode = b.Mode
@@ -160,11 +159,11 @@ func ResolvePlanChannel(band Band, name string) (Preset, bool) {
 	owner := band.planOwner()
 	for _, c := range owner.Channels {
 		if key == channelKey(c.Name) {
-			return presetOf(owner, c), true
+			return PresetOf(owner, c), true
 		}
 		for _, a := range c.Aliases {
 			if key == channelKey(a) {
-				return presetOf(owner, c), true
+				return PresetOf(owner, c), true
 			}
 		}
 	}

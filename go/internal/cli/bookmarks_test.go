@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dpup/leysdr/go/pkg/bookmarks"
+	"github.com/dpup/leysdr/go/pkg/chirp"
 )
 
 // runBookmarks runs ley against a temp bookmarks file, the store's own override, and never dials:
@@ -318,10 +319,10 @@ func TestBookmarksImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got struct {
-		Added    []bookmarkJSON `json:"added"`
-		Updated  []bookmarkJSON `json:"updated"`
-		Skipped  []importLine   `json:"skipped"`
-		Warnings []importLine   `json:"warnings"`
+		Added    []bookmarkJSON  `json:"added"`
+		Updated  []bookmarkJSON  `json:"updated"`
+		Skipped  []chirp.Skipped `json:"skipped"`
+		Warnings []chirp.Skipped `json:"warnings"`
 	}
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("--json: %v\n%s", err, out)

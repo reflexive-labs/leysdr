@@ -278,17 +278,14 @@ public enum CHIRP {
             let existed = store.bookmarks.values.contains { $0.hz == row.hz && $0.name == name }
             let kept: Bookmark
             do {
-                var b = try store.add(
+                let b = try store.add(
                     name: name, hz: row.hz, mode: row.mode, bandwidthHz: row.bandwidthHz)
-                if !row.tone.isEmpty { b = try store.setTone(b.id, to: row.tone) }
-                if !row.note.isEmpty { b = try store.setNote(b.id, to: row.note) }
-                if !tag.isEmpty { b = try store.addTags(b.id, [tag]) }
-                if !row.duplex.isEmpty || row.offsetHz != 0 {
-                    b = try store.setDuplex(
-                        b.id, row.duplex.isEmpty ? nil : row.duplex,
-                        offsetHz: row.offsetHz == 0 ? nil : row.offsetHz)
-                }
-                kept = b
+                // One edit for the row's fields: a blank column is nil and leaves what is there.
+                kept = try store.edit(
+                    b.id, tone: row.tone.isEmpty ? nil : row.tone,
+                    note: row.note.isEmpty ? nil : row.note, addTags: tag.isEmpty ? [] : [tag],
+                    duplex: row.duplex.isEmpty ? nil : row.duplex,
+                    offsetHz: row.offsetHz == 0 ? nil : row.offsetHz)
             } catch BookmarkError.emptyName {
                 result.skipped.append(Skipped(line: row.line, reason: "a bookmark needs a name"))
                 continue

@@ -218,12 +218,12 @@ public enum BookmarkNaming {
         Plans.name(at: hz, in: bands) ?? frequencyWords(hz)
     }
 
-    /// `146.520 MHz`, `462.6625 MHz`, `1.766 GHz`: the app's `Frequency.format`
-    /// (`app/Sources/LeylineApp/Frequency.swift`) rule for rule, so a bookmark named here reads
-    /// as the transport bar shows the same hertz. The app keeps its own for display, because
-    /// this library serves the Linux tests and names files; the two must not drift. The fourth
-    /// decimal appears only on an exact half-kilohertz, which every 12.5 kHz plan has (GMRS
-    /// channel 3 is 462.6125 MHz) and no measurement lands on by chance.
+    /// `146.520 MHz`, `462.6625 MHz`, `1.766 GHz`: the guide's spelling, a space before the
+    /// unit, and the one rule the app's `Frequency.format` delegates to, so a bookmark named
+    /// here reads as the transport bar shows the same hertz. The fourth decimal appears only on
+    /// an exact half-kilohertz, which every 12.5 kHz plan has (GMRS channel 3 is 462.6125 MHz)
+    /// and no measurement lands on by chance, so a measured centre keeps the three decimals
+    /// its bin width can resolve: `ley`'s rule.
     public static func frequencyWords(_ hz: UInt64) -> String {
         if hz >= 1_000_000_000 { return String(format: "%.3f GHz", Double(hz) / 1e9) }
         if hz >= 1_000_000 {

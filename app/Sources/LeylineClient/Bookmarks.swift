@@ -303,14 +303,21 @@ public struct BookmarkStore: Sendable {
         return b
     }
 
-    /// The bookmark with this id takes the tone, in the file's spelling; empty clears it. A
-    /// non-empty tone is read by `Tone.parse` first and refused with `invalidTone` when it is
-    /// not one, so the file never holds a spelling `ley bookmarks` cannot read; a refused tone
-    /// changes nothing. `go/pkg/bookmarks.SetFields` is the mirror. Does not save.
+    /// The fields a person or an import edits on the bookmark with this id, in one write and
+    /// one stamp: a tone or a note given is set, empty clearing it; a non-empty tone is read by
+    /// `Tone.parse` first and refused with `invalidTone`, changing nothing, so the file never
+    /// holds a spelling `ley bookmarks` cannot read; the tags join the set the bookmark has
+    /// (`tagSet`); a duplex and an offset are set when given, so a re-import of a row that
+    /// carries neither keeps what an earlier one wrote (`go/pkg/bookmarks.Keep` keeps a zero
+    /// offset and a blank duplex the same way). `go/pkg/bookmarks.SetFields` is the mirror
+    /// (docs/design/channels.md, "Bookmarks gain three fields"). Does not save.
     @discardableResult
-    public mutating func setTone(_ id: String, to tone: String) throws -> Bookmark {
+    public mutating func edit(
+        _ id: String, tone: String? = nil, note: String? = nil, addTags: [String] = [],
+        duplex: String? = nil, offsetHz: Int64? = nil
+    ) throws -> Bookmark {
         guard loaded else { throw BookmarkError.notLoaded(path) }
-        if !tone.isEmpty {
+        if let tone, !tone.isEmpty {
             do {
                 _ = try Tone.parse(tone)
             } catch {
@@ -320,58 +327,42 @@ public struct BookmarkStore: Sendable {
         guard var b = bookmarks[id] else {
             throw BookmarkError.noSuchBookmark(id, candidates: [])
         }
-        b.tone = tone
-        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
-        bookmarks[id] = b
-        return b
-    }
-
-    /// The bookmark with this id takes the note as given; empty clears it. Does not save.
-    @discardableResult
-    public mutating func setNote(_ id: String, to note: String) throws -> Bookmark {
-        guard loaded else { throw BookmarkError.notLoaded(path) }
-        guard var b = bookmarks[id] else {
-            throw BookmarkError.noSuchBookmark(id, candidates: [])
-        }
-        b.note = note
-        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
-        bookmarks[id] = b
-        return b
-    }
-
-    /// The tags join the set the bookmark has (`tagSet`). Nothing edits tags in the app yet
-    /// (docs/design/channels.md, "Bookmarks gain three fields"); the CHIRP import adds the
-    /// file's name. Does not save.
-    @discardableResult
-    public mutating func addTags(_ id: String, _ tags: [String]) throws -> Bookmark {
-        guard loaded else { throw BookmarkError.notLoaded(path) }
-        guard var b = bookmarks[id] else {
-            throw BookmarkError.noSuchBookmark(id, candidates: [])
-        }
-        b.tags = Self.tagSet(b.tags + tags)
-        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
-        bookmarks[id] = b
-        return b
-    }
-
-    /// The bookmark with this id takes the duplex and the offset the CHIRP import read, each
-    /// only when given: nil leaves the field as it is, which is how a re-import of a row that
-    /// carries neither keeps what an earlier one wrote (`go/pkg/bookmarks.Keep` keeps a zero
-    /// offset and a blank duplex the same way). Nothing else writes these two fields yet
-    /// (docs/design/channels.md, "Bookmarks gain three fields"). Does not save.
-    @discardableResult
-    public mutating func setDuplex(_ id: String, _ duplex: String?, offsetHz: Int64?) throws
-        -> Bookmark
-    {
-        guard loaded else { throw BookmarkError.notLoaded(path) }
-        guard var b = bookmarks[id] else {
-            throw BookmarkError.noSuchBookmark(id, candidates: [])
-        }
+        if let tone { b.tone = tone }
+        if let note { b.note = note }
+        if !addTags.isEmpty { b.tags = Self.tagSet(b.tags + addTags) }
         if let duplex { b.duplex = duplex }
         if let offsetHz { b.offsetHz = offsetHz }
         b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
         bookmarks[id] = b
         return b
+    }
+
+    /// The bookmark with this id takes the tone, in the file's spelling; empty clears it
+    /// (`edit`'s rule). Does not save.
+    @discardableResult
+    public mutating func setTone(_ id: String, to tone: String) throws -> Bookmark {
+        try edit(id, tone: tone)
+    }
+
+    /// The bookmark with this id takes the note as given; empty clears it. Does not save.
+    @discardableResult
+    public mutating func setNote(_ id: String, to note: String) throws -> Bookmark {
+        try edit(id, note: note)
+    }
+
+    /// The tags join the set the bookmark has. Nothing edits tags in the app yet; the CHIRP
+    /// import adds the file's name. Does not save.
+    @discardableResult
+    public mutating func addTags(_ id: String, _ tags: [String]) throws -> Bookmark {
+        try edit(id, addTags: tags)
+    }
+
+    /// The duplex and the offset the CHIRP import read, each only when given. Does not save.
+    @discardableResult
+    public mutating func setDuplex(_ id: String, _ duplex: String?, offsetHz: Int64?) throws
+        -> Bookmark
+    {
+        try edit(id, duplex: duplex, offsetHz: offsetHz)
     }
 
     /// Tags as the store keeps them: trimmed, without empties or repeats, sorted, the rule

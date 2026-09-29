@@ -44,15 +44,11 @@ func bookmarkRow(b bookmarks.Bookmark) bookmarkJSON {
 	}
 }
 
-// bookmarkFields are the optional fields `add` sets after the bookmark is kept: a tone and a
-// note when the flag was given, and the tags to join the bookmark's set.
+// bookmarkFields are the optional fields `add` files with the bookmark: a tone and a note
+// when the flag was given, and the tags to join the bookmark's set.
 type bookmarkFields struct {
 	tone, note string
 	tags       []string
-}
-
-func (f bookmarkFields) empty() bool {
-	return f.tone == "" && f.note == "" && len(f.tags) == 0
 }
 
 // newBookmarksCommand builds `ley bookmarks`, the third client-local table and the only one the
@@ -159,20 +155,13 @@ in 'ley bookmarks --json' shape, and {line, reason} for the rest.`,
 	return cmd
 }
 
-// importLine is one row the import did not take as written, in --json: a skipped row, or a
-// warning on a row it still imported.
-type importLine struct {
-	Line   int    `json:"line"`
-	Reason string `json:"reason"`
-}
-
 // importJSON is `--json` for import: the rows in bookmarks' own shape, and the lines that need
 // a person. The arrays are never null, so a script can index them without a check.
 type importJSON struct {
-	Added    []bookmarkJSON `json:"added"`
-	Updated  []bookmarkJSON `json:"updated"`
-	Skipped  []importLine   `json:"skipped"`
-	Warnings []importLine   `json:"warnings"`
+	Added    []bookmarkJSON  `json:"added"`
+	Updated  []bookmarkJSON  `json:"updated"`
+	Skipped  []chirp.Skipped `json:"skipped"`
+	Warnings []chirp.Skipped `json:"warnings"`
 }
 
 // runBookmarkImport parses the file before the store is opened, so a file that is not a CHIRP
@@ -204,15 +193,14 @@ func runBookmarkImport(app *App, file string, dryRun bool) error {
 			return fmt.Errorf("cannot write the bookmarks file: %w", err)
 		}
 	}
-	lines := make([]importLine, 0, len(skipped)+len(res.Skipped))
-	for _, s := range append(skipped, res.Skipped...) {
-		lines = append(lines, importLine{Line: s.Line, Reason: s.Reason})
-	}
-	slices.SortFunc(lines, func(a, b importLine) int { return a.Line - b.Line })
-	warnings := []importLine{}
+	// The lines a person reads: the parser's skips and the store's, by line, then the warnings
+	// on rows that were still imported, in the parser's own shape.
+	lines := append(slices.Clone(skipped), res.Skipped...)
+	slices.SortFunc(lines, func(a, b chirp.Skipped) int { return a.Line - b.Line })
+	warnings := []chirp.Skipped{}
 	for _, r := range rows {
 		for _, w := range r.Warnings {
-			warnings = append(warnings, importLine{Line: r.Line, Reason: w})
+			warnings = append(warnings, chirp.Skipped{Line: r.Line, Reason: w})
 		}
 	}
 
@@ -399,21 +387,18 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 	if err != nil {
 		return err
 	}
-	b, err := store.Add(nameFlag, t.Hz, mode, bw)
+	// One filing and one write: Keep sets a tone, a note and the tags with the rules an
+	// update follows (a blank one keeps what is there, the tags join the set), so the fields
+	// go in with the bookmark rather than in a second save.
+	b, _, err := store.Keep(bookmarks.Bookmark{
+		Name: nameFlag, Hz: t.Hz, Mode: mode.String(), BandwidthHz: bw,
+		Tone: fields.tone, Note: fields.note, Tags: fields.tags,
+	})
 	if err != nil {
 		return usageError(err)
 	}
-	if !fields.empty() {
-		var tone, note *string
-		if fields.tone != "" {
-			tone = &fields.tone
-		}
-		if fields.note != "" {
-			note = &fields.note
-		}
-		if b, err = store.SetFields(b.ID, tone, note, fields.tags); err != nil {
-			return usageError(err)
-		}
+	if err := store.Save(); err != nil {
+		return err
 	}
 	if app.JSON {
 		return app.printArray(bookmarkRow(b))

@@ -674,20 +674,30 @@ func ChannelAt(hz uint64) (Band, Channel, bool) {
 		found    bool
 		bestDiff = int64(channelTolerance)
 	)
+	eachChannel(func(b Band, c Channel) {
+		diff := int64(c.Hz) - int64(hz)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff < bestDiff || (diff == bestDiff && !found) {
+			bestBand, best, found, bestDiff = b, c, true, diff
+		}
+	})
+	return bestBand, best, found
+}
+
+// eachChannel visits every plan entry in the one order the tables define:
+// the bands by frequency, then the groups, each plan in its own order. The
+// preset view and ChannelAt's tie rule both depend on that order, so it is
+// written here once.
+func eachChannel(fn func(Band, Channel)) {
 	for _, table := range [][]Band{bands, bandGroups} {
 		for _, b := range table {
 			for _, c := range b.Channels {
-				diff := int64(c.Hz) - int64(hz)
-				if diff < 0 {
-					diff = -diff
-				}
-				if diff < bestDiff || (diff == bestDiff && !found) {
-					bestBand, best, found, bestDiff = b, c, true, diff
-				}
+				fn(b, c)
 			}
 		}
 	}
-	return bestBand, best, found
 }
 
 // DefaultMode returns the mode a newcomer would want at hz: the band's mode,

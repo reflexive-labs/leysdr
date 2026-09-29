@@ -305,7 +305,7 @@ takes, and by the older names that still work.
 		fmt.Fprintf(&b, "%s (ley bands %s)\n", band.Name, band.Aliases[0])
 		tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 		for _, c := range band.Channels {
-			p := presetFor(band, c)
+			p := leyline.PresetOf(band, c)
 			aliases := ""
 			if len(p.Aliases) > 0 {
 				aliases = "also: " + strings.Join(p.Aliases, ", ")
@@ -338,13 +338,6 @@ usb/lsb means the sideband follows the amateur convention: USB at and above
   ley tune guard               121.500 MHz, AM
   ley tune 16 --band marine    marine channel 16 by the number its radios print`)
 	return b.String()
-}
-
-// presetFor is the preset view of one plan entry, for a table that walks the
-// bands itself so it can head each plan with its band.
-func presetFor(band leyline.Band, c leyline.Channel) leyline.Preset {
-	p, _ := leyline.ResolvePlanChannel(band, c.Aliases[0])
-	return p
 }
 
 // formatBandwidth renders a channel bandwidth as kHz or Hz, to two decimals

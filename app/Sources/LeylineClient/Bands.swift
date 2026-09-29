@@ -304,7 +304,7 @@ public enum Plans {
     }
 
     /// Go's `presetKey`: lower-cased and trimmed, spaces kept, so `24 coast` matches as typed.
-    static func presetKey(_ s: String) -> String {
+    public static func presetKey(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespaces).lowercased()
     }
 
