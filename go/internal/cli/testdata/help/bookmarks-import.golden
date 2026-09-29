@@ -1,0 +1,39 @@
+import reads the CSV that CHIRP exports (File > Export in CHIRP) and keeps
+each memory as a bookmark, so a radio's memories reach ley and the Mac app's
+sidebar without being typed again. Name, Frequency and Comment become the
+name, frequency and note; FM and NFM become NFM at 25 or 12.5 kHz, AM, USB,
+LSB, CW and WFM stay themselves, and a mode ley does not decode (DV, P25)
+takes the band's default; the tone is the one the radio transmits, read
+from rToneFreq, cToneFreq or DtcsCode by what the Tone column says (Tone,
+TSQL, DTCS or Cross), and Duplex and Offset are kept as duplex and
+offset_hz. The full mapping is docs/design/channels.md, "CHIRP import".
+
+A row already bookmarked at its frequency under its name is updated, and a
+blank column never clears a tone or note you typed; a blank Name takes the
+plan channel the frequency sits on (ch5), else the frequency. Every row is
+tagged with the file's name without its extension, so 'ley bookmarks --tag
+memories' lists what memories.csv filed. A row whose frequency is not a
+number is skipped and reported with its line; a file with no Frequency
+column is refused and nothing is written.
+
+The counts and the skipped lines go to stderr. --dry-run prints them and
+writes nothing. --json prints {added, updated, skipped, warnings}: the rows
+in 'ley bookmarks --json' shape, and {line, reason} for the rest.
+
+Usage:
+  ley bookmarks import <file.csv> [--dry-run] [flags]
+
+Examples:
+  ley bookmarks import ~/memories.csv
+  ley bookmarks import ~/memories.csv --dry-run      # the counts, nothing written
+  ley bookmarks import ~/memories.csv --json | jq '.skipped'
+
+Flags:
+      --dry-run   print what the import would add, update and skip, and write nothing
+  -h, --help      help for import
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

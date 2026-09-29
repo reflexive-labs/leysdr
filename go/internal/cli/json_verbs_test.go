@@ -56,6 +56,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "bookmarks add", args: []string{"bookmarks", "add", "146.94", "--name", "Local repeater"}, env: tempBookmarks},
 	{path: "bookmarks move", args: []string{"bookmarks", "move", "Local repeater", "147.0"}, env: seededBookmarks},
 	{path: "bookmarks remove", args: []string{"bookmarks", "remove", "Local repeater"}, env: seededBookmarks},
+	{path: "bookmarks import", args: []string{"bookmarks", "import", "../../../fixtures/chirp/sample.csv"}, env: tempBookmarks},
 	{path: "completion", args: []string{"completion"}, refuse: jsonNoOutput},
 	{path: "completion bash", args: []string{"completion", "bash"}, refuse: jsonNoOutput},
 	{path: "completion fish", args: []string{"completion", "fish"}, refuse: jsonNoOutput},

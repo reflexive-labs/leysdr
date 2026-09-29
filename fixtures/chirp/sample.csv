@@ -1,0 +1,11 @@
+Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE
+0,Club,146.940000,-,0.600000,Tone,100.0,88.5,023,NN,023,Tone->Tone,FM,5.00,,50W,club repeater,,,,
+1,Simplex,146.520000,,0.600000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,,,,,
+2,Tsql,147.000000,+,0.600000,TSQL,123.0,123.0,023,NN,023,Tone->Tone,FM,5.00,,50W,,,,,
+3,Dcs,442.100000,+,5.000000,DTCS,88.5,88.5,023,NN,023,Tone->Tone,FM,5.00,,50W,,,,,
+4,Cross,443.500000,+,5.000000,Cross,88.5,88.5,754,NN,023,DTCS->Tone,FM,5.00,,50W,,,,,
+5,,462.662500,,0.600000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,,,,,
+6,,445.925000,,0.600000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,,,,,
+7,Bad,abc,,0.600000,,88.5,88.5,023,NN,023,Tone->Tone,FM,5.00,,5.0W,,,,,
+8,Digital,145.670000,,0.600000,,88.5,88.5,023,NN,023,Tone->Tone,DV,5.00,,5.0W,,,,,
+9,Club,146.940000,-,0.600000,Tone,100.0,88.5,023,NN,023,Tone->Tone,FM,5.00,,50W,club repeater,,,,

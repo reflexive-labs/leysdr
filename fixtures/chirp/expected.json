@@ -1,0 +1,81 @@
+{
+  "bookmarks": {
+    "bm_1": {
+      "bandwidth_hz": 12500,
+      "hz": 145670000,
+      "mode": "NFM",
+      "name": "Digital",
+      "tags": ["sample"],
+      "updated_ns": 0
+    },
+    "bm_2": {
+      "bandwidth_hz": 12500,
+      "hz": 146520000,
+      "mode": "NFM",
+      "name": "Simplex",
+      "tags": ["sample"],
+      "updated_ns": 0
+    },
+    "bm_3": {
+      "bandwidth_hz": 25000,
+      "duplex": "-",
+      "hz": 146940000,
+      "mode": "NFM",
+      "name": "Club",
+      "note": "club repeater",
+      "offset_hz": -600000,
+      "tags": ["sample"],
+      "tone": "100.0",
+      "updated_ns": 0
+    },
+    "bm_4": {
+      "bandwidth_hz": 25000,
+      "duplex": "+",
+      "hz": 147000000,
+      "mode": "NFM",
+      "name": "Tsql",
+      "offset_hz": 600000,
+      "tags": ["sample"],
+      "tone": "123.0",
+      "updated_ns": 0
+    },
+    "bm_5": {
+      "bandwidth_hz": 25000,
+      "duplex": "+",
+      "hz": 442100000,
+      "mode": "NFM",
+      "name": "Dcs",
+      "offset_hz": 5000000,
+      "tags": ["sample"],
+      "tone": "D023N",
+      "updated_ns": 0
+    },
+    "bm_6": {
+      "bandwidth_hz": 25000,
+      "duplex": "+",
+      "hz": 443500000,
+      "mode": "NFM",
+      "name": "Cross",
+      "offset_hz": 5000000,
+      "tags": ["sample"],
+      "tone": "D754N",
+      "updated_ns": 0
+    },
+    "bm_7": {
+      "bandwidth_hz": 12500,
+      "hz": 445925000,
+      "mode": "NFM",
+      "name": "445.925 MHz",
+      "tags": ["sample"],
+      "updated_ns": 0
+    },
+    "bm_8": {
+      "bandwidth_hz": 12500,
+      "hz": 462662500,
+      "mode": "NFM",
+      "name": "ch5",
+      "tags": ["sample"],
+      "updated_ns": 0
+    }
+  }
+}

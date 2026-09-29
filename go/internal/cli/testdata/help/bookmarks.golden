@@ -5,12 +5,13 @@ path) that the Mac app reads too, so a frequency kept here is in its sidebar
 and one kept there is in this list.
 
 'ley bookmarks add' keeps one, 'ley bookmarks move' re-files it at another
-frequency and 'ley bookmarks remove' forgets it. A bookmark is a name, a
+frequency, 'ley bookmarks remove' forgets it and 'ley bookmarks import'
+reads a CHIRP CSV export in as bookmarks. A bookmark is a name, a
 frequency, a mode and a bandwidth, and can carry the tone a repeater
 requires, a note and tags (add --tone, --note and --tag). The TONE, NOTE and
 TAGS columns appear once a bookmark has one, and --tag lists only the
 bookmarks filed under that word. Nothing is tuned, started or measured by
-any of the four verbs, and a tone is a record of what the repeater uses:
+any of the five verbs, and a tone is a record of what the repeater uses:
 ley does not gate audio on it.
 
 --json prints an array of {id, name, hz, mode, bandwidth_hz, updated_ns} in
@@ -29,10 +30,12 @@ Examples:
   ley bookmarks add 146.94 --name "Local repeater"   # keep one
   ley bookmarks move "Local repeater" 147.0          # same bookmark, new frequency
   ley bookmarks remove "Local repeater"              # forget it
+  ley bookmarks import ~/memories.csv                # a CHIRP export, tagged memories
   ley bookmarks --json | jq -r '.[] | "\(.hz) \(.name)"'
 
 Available Commands:
   add         Keep a frequency under a name
+  import      Read a CHIRP CSV export in as bookmarks
   move        Re-file a bookmark at another frequency
   remove      Forget a bookmark
 

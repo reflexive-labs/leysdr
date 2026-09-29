@@ -230,35 +230,69 @@ func (s *Store) List() []Bookmark {
 // the sidebar with duplicates. Two names at one frequency are kept, because a
 // repeater and its net are two things a person may want listed separately.
 func (s *Store) Add(name string, hz uint64, mode leylinev1.DemodMode, bandwidthHz uint32) (Bookmark, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return Bookmark{}, errors.New("a bookmark needs a name: what you would look for in the list")
-	}
 	if mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
 		return Bookmark{}, fmt.Errorf("a bookmark needs a mode: one of %s", strings.Join(ModeNames(), ", "))
 	}
-	bm := Bookmark{
-		ID:          leyline.NewID("bm_"),
-		Name:        name,
-		Hz:          hz,
-		Mode:        mode.String(),
-		BandwidthHz: bandwidthHz,
-		UpdatedNs:   s.now().UnixNano(),
+	bm, _, err := s.Keep(Bookmark{Name: name, Hz: hz, Mode: mode.String(), BandwidthHz: bandwidthHz})
+	if err != nil {
+		return Bookmark{}, err
 	}
-	// An update in place replaces the record, so it carries the old entry's fields and extras
-	// with its id: re-running the add that named a bookmark is not a request to drop its tone,
-	// its tags or the app's fields on it.
-	for _, old := range s.bookmarks {
-		if old.Hz == hz && old.Name == name {
-			bm.ID = old.ID
-			bm.Tone, bm.Note, bm.Tags = old.Tone, old.Note, old.Tags
-			bm.OffsetHz, bm.Duplex = old.OffsetHz, old.Duplex
-			bm.Extra = old.Extra
-			break
+	return bm, s.Save()
+}
+
+// Keep is Add's add-or-update without the write: it files bm in memory and reports whether it
+// updated a bookmark already kept at that frequency under that name. The CHIRP import files a
+// row per call and saves once, and its --dry-run never saves (docs/design/channels.md, "CHIRP
+// import"), which is why the write is the caller's; the Mac app's parser applies the same
+// rules to its store, so they are all here rather than in the importer.
+//
+// The id and the stamp are the store's: bm.ID is ignored and a new bookmark gets a fresh one.
+// An update keeps the old entry's id and extras and sets only what the row carries: the mode
+// and width always (Add's rule), a tone or note only when non-empty, an offset and duplex only
+// when set, and the tags join the set the bookmark has. A blank column therefore never clears
+// a value typed in the app's inspector. A tone is validated as SetFields validates one.
+func (s *Store) Keep(bm Bookmark) (Bookmark, bool, error) {
+	bm.Name = strings.TrimSpace(bm.Name)
+	if bm.Name == "" {
+		return Bookmark{}, false, errors.New("a bookmark needs a name: what you would look for in the list")
+	}
+	if m, err := leyline.ParseMode(bm.Mode); err != nil || m == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
+		return Bookmark{}, false, fmt.Errorf("a bookmark needs a mode: one of %s", strings.Join(ModeNames(), ", "))
+	}
+	if bm.Tone != "" {
+		if _, err := leyline.ParseTone(bm.Tone); err != nil {
+			return Bookmark{}, false, err
 		}
 	}
+	bm.ID = leyline.NewID("bm_")
+	bm.UpdatedNs = s.now().UnixNano()
+	bm.Extra = nil
+	updated := false
+	for _, old := range s.bookmarks {
+		if old.Hz != bm.Hz || old.Name != bm.Name {
+			continue
+		}
+		updated = true
+		bm.ID = old.ID
+		if bm.Tone == "" {
+			bm.Tone = old.Tone
+		}
+		if bm.Note == "" {
+			bm.Note = old.Note
+		}
+		if bm.OffsetHz == 0 {
+			bm.OffsetHz = old.OffsetHz
+		}
+		if bm.Duplex == "" {
+			bm.Duplex = old.Duplex
+		}
+		bm.Tags = append(slices.Clone(old.Tags), bm.Tags...)
+		bm.Extra = old.Extra
+		break
+	}
+	bm.Tags = tagSet(bm.Tags)
 	s.bookmarks[bm.ID] = bm
-	return bm, s.save()
+	return bm, updated, nil
 }
 
 // SetFields writes the fields a person edits on the bookmark an argument names, and persists
@@ -286,7 +320,7 @@ func (s *Store) SetFields(idOrName string, tone, note *string, addTags []string)
 	bm.Tags = tagSet(append(slices.Clone(bm.Tags), addTags...))
 	bm.UpdatedNs = s.now().UnixNano()
 	s.bookmarks[bm.ID] = bm
-	return bm, s.save()
+	return bm, s.Save()
 }
 
 // Remove deletes the bookmark an argument names and persists the file. An id is exact; failing
@@ -299,7 +333,7 @@ func (s *Store) Remove(idOrName string) (Bookmark, error) {
 		return Bookmark{}, err
 	}
 	delete(s.bookmarks, bm.ID)
-	return bm, s.save()
+	return bm, s.Save()
 }
 
 // Move re-files the bookmark an argument names at another frequency and persists the file. The
@@ -323,7 +357,7 @@ func (s *Store) Move(idOrName string, hz uint64) (Bookmark, error) {
 	bm.Hz = hz
 	bm.UpdatedNs = s.now().UnixNano()
 	s.bookmarks[bm.ID] = bm
-	return bm, s.save()
+	return bm, s.Save()
 }
 
 // resolve finds the one bookmark an argument names: an id exactly, failing that a name exactly,
@@ -381,10 +415,11 @@ func (s *Store) now() time.Time {
 	return time.Now()
 }
 
-// save writes the whole file atomically: a temp file in the same directory then a rename, so a
+// Save writes the whole file atomically: a temp file in the same directory then a rename, so a
 // crash mid-write can never leave a half-written file that Open would then reject -- and the app,
-// which reloads when the file changes, never reads a truncated one.
-func (s *Store) save() error {
+// which reloads when the file changes, never reads a truncated one. Every verb of the store
+// saves for itself; it is exported for Keep's callers, which file many bookmarks and write once.
+func (s *Store) Save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}

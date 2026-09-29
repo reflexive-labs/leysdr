@@ -5,6 +5,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -267,5 +268,95 @@ func TestBookmarksToneNoteAndTags(t *testing.T) {
 	var one bookmarkJSON
 	if err := json.Unmarshal([]byte(again), &one); err != nil || one.Tone != "100.0" || one.Note != "club" || len(one.Tags) != 3 {
 		t.Fatalf("an update keeps the fields and adds the tag: %v\n%s", err, again)
+	}
+}
+
+// import reads a CHIRP export into the store: the counts go to stderr with one line per skipped
+// row, --json is {added, updated, skipped, warnings}, --dry-run prints the same and writes
+// nothing, and a file with no Frequency column is refused with the file untouched.
+func TestBookmarksImport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	const sample = "../../../fixtures/chirp/sample.csv"
+
+	out, errOut, err := runBookmarks(t, path, "bookmarks", "import", sample, "--dry-run")
+	if err != nil {
+		t.Fatalf("dry run: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "8 added, 1 updated, 1 skipped") || !strings.Contains(errOut, "sample.csv") || !strings.Contains(errOut, "nothing written") {
+		t.Fatalf("a dry run prints the counts and says it wrote nothing:\nstdout: %s\nstderr: %s", out, errOut)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("a dry run must not write the file: %v", err)
+	}
+
+	out, errOut, err = runBookmarks(t, path, "bookmarks", "import", sample)
+	if err != nil {
+		t.Fatalf("import: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "Imported 9 from sample.csv") || !strings.Contains(errOut, "8 added, 1 updated, 1 skipped") {
+		t.Fatalf("the counts go to stderr:\nstdout: %s\nstderr: %s", out, errOut)
+	}
+	if !strings.Contains(errOut, `line 9: frequency "abc" is not a number`) || !strings.Contains(errOut, `line 10: mode "DV"`) {
+		t.Fatalf("each skipped row and each warning is one line with its line number:\n%s", errOut)
+	}
+	if !strings.Contains(errOut, "ley bookmarks --tag sample") {
+		t.Fatalf("the import ends with the command that lists what it filed:\n%s", errOut)
+	}
+	if out != "" {
+		t.Errorf("stdout carries nothing without --json: %q", out)
+	}
+	list := mustBookmarks(t, path, "bookmarks", "--tag", "sample")
+	for _, want := range []string{"Club", "PL 100.0", "club repeater", "ch5", "445.925 MHz", "DCS 754"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("the list lacks %q:\n%s", want, list)
+		}
+	}
+
+	// A second import updates every row and adds nothing; --json carries the rows.
+	out, _, err = runBookmarks(t, path, "--json", "bookmarks", "import", sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Added    []bookmarkJSON `json:"added"`
+		Updated  []bookmarkJSON `json:"updated"`
+		Skipped  []importLine   `json:"skipped"`
+		Warnings []importLine   `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("--json: %v\n%s", err, out)
+	}
+	if len(got.Added) != 0 || len(got.Updated) != 9 || len(got.Skipped) != 1 || len(got.Warnings) != 1 {
+		t.Fatalf("--json counts: %+v", got)
+	}
+	if got.Skipped[0].Line != 9 || got.Skipped[0].Reason != `frequency "abc" is not a number` {
+		t.Errorf("skipped = %+v", got.Skipped)
+	}
+	if got.Updated[0].Name != "Club" || got.Updated[0].Tone != "100.0" || got.Updated[0].OffsetHz != -600_000 || got.Updated[0].Duplex != "-" {
+		t.Errorf("the rows are in bookmarks' --json shape: %+v", got.Updated[0])
+	}
+	if !strings.HasPrefix(out, `{"added":[],"updated":[{"id":"bm_`) {
+		t.Errorf("an empty list is [], and the keys are in the documented order:\n%s", out)
+	}
+
+	// Not a CHIRP export: refused as a usage error, with the store as it was.
+	before, _ := os.ReadFile(path)
+	notCSV := filepath.Join(t.TempDir(), "memories.csv")
+	if err := os.WriteFile(notCSV, []byte("Name,Mode\nA,FM\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runBookmarks(t, path, "bookmarks", "import", notCSV)
+	var ee *ExitError
+	if err == nil || !errors.As(err, &ee) || ee.Code != ExitUsage {
+		t.Fatalf("a file with no Frequency column is a usage error, got %#v", err)
+	}
+	if want := notCSV + " has no Frequency column; is it a CHIRP CSV export?"; err.Error() != want {
+		t.Errorf("refusal = %q, want %q", err.Error(), want)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Errorf("a refused import must leave the file as it was")
+	}
+	if _, _, err := runBookmarks(t, path, "bookmarks", "import", filepath.Join(t.TempDir(), "missing.csv")); err == nil || !errors.As(err, &ee) || ee.Code != ExitUsage {
+		t.Errorf("a missing file is a usage error, got %v", err)
 	}
 }

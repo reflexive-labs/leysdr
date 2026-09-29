@@ -449,7 +449,7 @@ func TestSetFieldsRoundTrip(t *testing.T) {
 	// offset_hz and duplex are the import's fields; the store carries them as it carries the rest.
 	got.OffsetHz, got.Duplex = -600_000, "-"
 	s.bookmarks[got.ID] = got
-	if err := s.save(); err != nil {
+	if err := s.Save(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -514,5 +514,48 @@ func TestAddUpdateKeepsTheFields(t *testing.T) {
 	wantForeign(t, rec)
 	if rec["note"] != "club" || rec["bandwidth_hz"] != float64(25_000) {
 		t.Errorf("the update lands beside the fields: %v", rec)
+	}
+}
+
+// Keep is Add without the write, for an import that files many rows and saves once: a blank
+// tone or note never clears the value kept, a tag joins the set, the offset and duplex are set
+// when given, and the file is untouched until Save (docs/design/channels.md, "CHIRP import").
+func TestKeepUpdatesInMemoryAndSaveWrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	s, _ := Open(path)
+	tone, note := "100.0", "typed"
+	if _, err := s.Add("Club", 146_940_000, leylinev1.DemodMode_NFM, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetFields("Club", &tone, &note, []string{"home"}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+
+	bm, updated, err := s.Keep(Bookmark{ID: "bm_ignored", Name: " Club ", Hz: 146_940_000, Mode: "NFM", BandwidthHz: 25_000, Tags: []string{"sample"}, OffsetHz: -600_000, Duplex: "-"})
+	if err != nil || !updated {
+		t.Fatalf("keep: updated=%v err=%v", updated, err)
+	}
+	if bm.ID == "bm_ignored" || bm.Tone != "100.0" || bm.Note != "typed" || bm.BandwidthHz != 25_000 || bm.OffsetHz != -600_000 || bm.Duplex != "-" || !reflect.DeepEqual(bm.Tags, []string{"home", "sample"}) {
+		t.Errorf("the update keeps the typed values and sets what the row carries: %+v", bm)
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(before, after) {
+		t.Errorf("Keep must not write the file")
+	}
+	if _, updated, err := s.Keep(Bookmark{Name: "Net", Hz: 146_940_000, Mode: "NFM"}); err != nil || updated {
+		t.Errorf("another name at the frequency is a new bookmark: updated=%v err=%v", updated, err)
+	}
+	if _, _, err := s.Keep(Bookmark{Name: "x", Hz: 1, Mode: "NFM", Tone: "100"}); err == nil {
+		t.Errorf("a tone the store cannot read is refused, as SetFields refuses it")
+	}
+	if _, _, err := s.Keep(Bookmark{Name: "x", Hz: 1, Mode: "FSK"}); err == nil {
+		t.Errorf("a mode the file cannot spell is refused")
+	}
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(path)
+	if err != nil || len(s2.List()) != 2 {
+		t.Fatalf("after Save the file holds both: %v %d", err, len(s2.List()))
 	}
 }

@@ -159,6 +159,28 @@ $ ley tune 7.040 --mode lsb         # 40 m amateur band, lower sideband
 $ ley tune 162.55 --squelch -50 --volume 50%
 ```
 
+**Keeping a frequency.** `ley bookmarks add 146.94 --name "Local repeater"` remembers one under a
+name, with `--tone`, `--note` and `--tag` for what a ham writes beside it; `ley bookmarks` lists
+them, and the Mac app's sidebar shows the same list, because both read one file.
+
+**Importing a CHIRP file.** If your memories are already in CHIRP, export them as CSV and give
+the file to `ley bookmarks import`. Each memory becomes a bookmark with its tone, offset and
+comment, tagged with the file's name, so `ley bookmarks --tag memories` lists what
+`memories.csv` filed; a memory already bookmarked under the same name at the same frequency is
+updated, and never loses a tone or note you typed. `--dry-run` prints the counts and writes
+nothing. This transcript is the repository's own fixture, `fixtures/chirp/sample.csv`; no daemon
+is involved.
+
+```console
+$ ley bookmarks import fixtures/chirp/sample.csv
+Imported 9 from sample.csv: 8 added, 1 updated, 1 skipped
+  line 9: frequency "abc" is not a number
+  line 10: mode "DV" is not one ley decodes; kept as nfm, the 2 m amateur band's default
+  ley bookmarks --tag sample
+```
+
+`ley bookmarks import --help` says how each CHIRP column is read.
+
 ## 3. Adjust it while it plays
 
 Leave `tune` running and use `set` from another terminal. With no arguments it shows the

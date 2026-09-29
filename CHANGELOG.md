@@ -32,6 +32,16 @@ Nothing has been released yet. This file starts with everything that exists on `
   the app's inspector, which edits the tone and note and shows the tone heard on the air beside
   them, follows.
 
+- `ley bookmarks import memories.csv` reads a CHIRP CSV export in as bookmarks: each memory's
+  name, frequency, mode and comment, the tone the radio transmits (from the Tone, TSQL, DTCS or
+  Cross columns), and its duplex and offset, tagged with the file's name so `ley bookmarks --tag
+  memories` lists them. A memory already bookmarked under its name is updated and never loses a
+  tone or note you typed; a blank name takes the plan channel it sits on (`ch5`); a row whose
+  frequency is not a number is skipped and reported by line. `--dry-run` prints the counts and
+  writes nothing, `--json` prints what was added, updated and skipped, and a file with no
+  Frequency column is refused. Both parsers, `ley`'s and the app's, are held to one fixture
+  under `fixtures/chirp/`. The app's `File > Import CHIRP…` follows.
+
 - The bookmarks file keeps fields it does not know. Both `ley bookmarks` and the Mac app now
   write back, unchanged, every key of an entry they do not recognise, so a bookmark saved by a
   newer build of one client survives an edit by an older build of the other. Entries are written

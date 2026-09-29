@@ -3,7 +3,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -12,6 +15,7 @@ import (
 	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
 	"github.com/dpup/leysdr/go/internal/ui"
 	"github.com/dpup/leysdr/go/pkg/bookmarks"
+	"github.com/dpup/leysdr/go/pkg/chirp"
 	"github.com/dpup/leysdr/go/pkg/leyline"
 )
 
@@ -67,12 +71,13 @@ path) that the Mac app reads too, so a frequency kept here is in its sidebar
 and one kept there is in this list.
 
 'ley bookmarks add' keeps one, 'ley bookmarks move' re-files it at another
-frequency and 'ley bookmarks remove' forgets it. A bookmark is a name, a
+frequency, 'ley bookmarks remove' forgets it and 'ley bookmarks import'
+reads a CHIRP CSV export in as bookmarks. A bookmark is a name, a
 frequency, a mode and a bandwidth, and can carry the tone a repeater
 requires, a note and tags (add --tone, --note and --tag). The TONE, NOTE and
 TAGS columns appear once a bookmark has one, and --tag lists only the
 bookmarks filed under that word. Nothing is tuned, started or measured by
-any of the four verbs, and a tone is a record of what the repeater uses:
+any of the five verbs, and a tone is a record of what the repeater uses:
 ley does not gate audio on it.
 
 --json prints an array of {id, name, hz, mode, bandwidth_hz, updated_ns} in
@@ -85,6 +90,7 @@ and duplex as well.`,
   ley bookmarks add 146.94 --name "Local repeater"   # keep one
   ley bookmarks move "Local repeater" 147.0          # same bookmark, new frequency
   ley bookmarks remove "Local repeater"              # forget it
+  ley bookmarks import ~/memories.csv                # a CHIRP export, tagged memories
   ley bookmarks --json | jq -r '.[] | "\(.hz) \(.name)"'`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
@@ -110,8 +116,139 @@ and duplex as well.`,
 		},
 	}
 	cmd.Flags().StringVar(&tag, "tag", "", "list only the bookmarks filed under this tag, spelled as add --tag gave it")
-	cmd.AddCommand(newBookmarksAddCommand(app), newBookmarksMoveCommand(app), newBookmarksRemoveCommand(app))
+	cmd.AddCommand(newBookmarksAddCommand(app), newBookmarksMoveCommand(app), newBookmarksRemoveCommand(app),
+		newBookmarksImportCommand(app))
 	return cmd
+}
+
+func newBookmarksImportCommand(app *App) *cobra.Command {
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "import <file.csv> [--dry-run]",
+		Short: "Read a CHIRP CSV export in as bookmarks",
+		Long: `import reads the CSV that CHIRP exports (File > Export in CHIRP) and keeps
+each memory as a bookmark, so a radio's memories reach ley and the Mac app's
+sidebar without being typed again. Name, Frequency and Comment become the
+name, frequency and note; FM and NFM become NFM at 25 or 12.5 kHz, AM, USB,
+LSB, CW and WFM stay themselves, and a mode ley does not decode (DV, P25)
+takes the band's default; the tone is the one the radio transmits, read
+from rToneFreq, cToneFreq or DtcsCode by what the Tone column says (Tone,
+TSQL, DTCS or Cross), and Duplex and Offset are kept as duplex and
+offset_hz. The full mapping is docs/design/channels.md, "CHIRP import".
+
+A row already bookmarked at its frequency under its name is updated, and a
+blank column never clears a tone or note you typed; a blank Name takes the
+plan channel the frequency sits on (ch5), else the frequency. Every row is
+tagged with the file's name without its extension, so 'ley bookmarks --tag
+memories' lists what memories.csv filed. A row whose frequency is not a
+number is skipped and reported with its line; a file with no Frequency
+column is refused and nothing is written.
+
+The counts and the skipped lines go to stderr. --dry-run prints them and
+writes nothing. --json prints {added, updated, skipped, warnings}: the rows
+in 'ley bookmarks --json' shape, and {line, reason} for the rest.`,
+		Example: `  ley bookmarks import ~/memories.csv
+  ley bookmarks import ~/memories.csv --dry-run      # the counts, nothing written
+  ley bookmarks import ~/memories.csv --json | jq '.skipped'`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runBookmarkImport(app, args[0], dryRun)
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what the import would add, update and skip, and write nothing")
+	return cmd
+}
+
+// importLine is one row the import did not take as written, in --json: a skipped row, or a
+// warning on a row it still imported.
+type importLine struct {
+	Line   int    `json:"line"`
+	Reason string `json:"reason"`
+}
+
+// importJSON is `--json` for import: the rows in bookmarks' own shape, and the lines that need
+// a person. The arrays are never null, so a script can index them without a check.
+type importJSON struct {
+	Added    []bookmarkJSON `json:"added"`
+	Updated  []bookmarkJSON `json:"updated"`
+	Skipped  []importLine   `json:"skipped"`
+	Warnings []importLine   `json:"warnings"`
+}
+
+// runBookmarkImport parses the file before the store is opened, so a file that is not a CHIRP
+// export leaves the bookmarks file untouched, and saves once after every row is filed.
+func runBookmarkImport(app *App, file string, dryRun bool) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return usageErrorf("cannot read %s: %v", file, err)
+	}
+	rows, skipped, err := chirp.Parse(f)
+	f.Close()
+	if errors.Is(err, chirp.ErrNoFrequency) {
+		return usageErrorf("%s has no Frequency column; is it a CHIRP CSV export?", file)
+	}
+	if err != nil {
+		return usageErrorf("cannot read %s as CSV: %v", file, err)
+	}
+	store, err := openBookmarks(app)
+	if err != nil {
+		return err
+	}
+	tag := chirp.Tag(file)
+	res, err := chirp.Apply(store, rows, tag)
+	if err != nil {
+		return err
+	}
+	if !dryRun {
+		if err := store.Save(); err != nil {
+			return fmt.Errorf("cannot write the bookmarks file: %w", err)
+		}
+	}
+	lines := make([]importLine, 0, len(skipped)+len(res.Skipped))
+	for _, s := range append(skipped, res.Skipped...) {
+		lines = append(lines, importLine{Line: s.Line, Reason: s.Reason})
+	}
+	slices.SortFunc(lines, func(a, b importLine) int { return a.Line - b.Line })
+	warnings := []importLine{}
+	for _, r := range rows {
+		for _, w := range r.Warnings {
+			warnings = append(warnings, importLine{Line: r.Line, Reason: w})
+		}
+	}
+
+	// The summary is prose for the person, so it goes to stderr in both modes; stdout carries
+	// the JSON or nothing (docs/dev/cli-style.md, "stdout belongs to the machine").
+	es := app.ErrStyle
+	base := filepath.Base(file)
+	verb := fmt.Sprintf("Imported %d from %s", len(res.Added)+len(res.Updated), base)
+	if dryRun {
+		verb = fmt.Sprintf("Would import %d from %s", len(res.Added)+len(res.Updated), base)
+	}
+	fmt.Fprintf(app.Stderr, "%s: %d added, %d updated, %d skipped", verb, len(res.Added), len(res.Updated), len(lines))
+	if dryRun {
+		fmt.Fprintf(app.Stderr, " %s", es.Muted("(dry run, nothing written)"))
+	}
+	fmt.Fprintln(app.Stderr)
+	for _, l := range lines {
+		fmt.Fprintf(app.Stderr, "  line %d: %s\n", l.Line, l.Reason)
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(app.Stderr, "  line %d: %s\n", w.Line, w.Reason)
+	}
+	if app.JSON {
+		out := importJSON{Added: []bookmarkJSON{}, Updated: []bookmarkJSON{}, Skipped: lines, Warnings: warnings}
+		for _, b := range res.Added {
+			out.Added = append(out.Added, bookmarkRow(b))
+		}
+		for _, b := range res.Updated {
+			out.Updated = append(out.Updated, bookmarkRow(b))
+		}
+		return app.printArray(out)
+	}
+	if !dryRun && len(res.Added)+len(res.Updated) > 0 {
+		fmt.Fprintf(app.Stderr, "  %s\n", es.Cmd("ley bookmarks --tag "+tag))
+	}
+	return nil
 }
 
 func newBookmarksAddCommand(app *App) *cobra.Command {

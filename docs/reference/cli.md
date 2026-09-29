@@ -74,12 +74,13 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # name a transmitter (or read/clear its name); labels are user
 │                                    # data in a client-side JSON store ($LEYLINE_LABELS), not daemon state
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
-├── bookmarks [--tag T] [add <freq|preset|channel --band B> --name NAME [--mode M] [--bw N] [--tone T] [--note N] [--tag T]... | move <id|name> <freq|preset> | remove <id|name>]
+├── bookmarks [--tag T] [add <freq|preset|channel --band B> --name NAME [--mode M] [--bw N] [--tone T] [--note N] [--tag T]... | move <id|name> <freq|preset> | remove <id|name> | import <file.csv> [--dry-run]]
 │                                    # the third client-local table and the only one you write: the
 │                                    # frequencies you kept, in a JSON file ($LEYLINE_BOOKMARKS) the
 │                                    # Mac app reads too, so one kept from a terminal is in its sidebar;
 │                                    # --tone is the repeater's tone as CHIRP spells it (100.0, D023N),
-│                                    # --tag files a bookmark under a word and lists by one
+│                                    # --tag files a bookmark under a word and lists by one; import
+│                                    # reads a CHIRP CSV export in, tagged with the file's name
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
 ├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
@@ -213,7 +214,16 @@ tone with one decimal (`"100.0"`) or a DCS code as `D`, three octal digits and `
 of words without repeats, and `--tag` on the list keeps the records carrying that word.
 `offset_hz` (signed) and `duplex` (`+`, `-`, `split`, `off`) are written by the CHIRP import and
 read by nothing yet. `ley bookmarks add`, `ley bookmarks move` and `ley bookmarks remove` print
-the single record they touched. The Mac app reads that file, and reads the
+the single record they touched. `ley bookmarks import <file.csv>` reads a CHIRP CSV export into
+the same file with the mapping in `docs/design/channels.md`, "CHIRP import", tags every row with
+the file's basename without its extension, and prints `Imported 9 from memories.csv: 8 added, 1
+updated, 1 skipped` on stderr with one `line N: reason` per skipped row and per field it could not
+take as written; `--dry-run` prints the same and writes nothing. Its `--json` is one object,
+`{added, updated, skipped, warnings}`: `added` and `updated` are the records in the array's shape
+above, in the file's row order, and `skipped` and `warnings` are `{line, reason}` (the file line,
+counting the header as 1). All four arrays are present, empty as `[]`. A file with no `Frequency`
+column is refused with `<file> has no Frequency column; is it a CHIRP CSV export?`, exit 2,
+nothing written. The Mac app reads that file, and reads the
 band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in bytes of `ley bands
 --json` that `make bands-json` regenerates and a Go test holds to the table. The fourth is
 `ley track --json`, the entity table: a client-side fold with no proto message, described under
