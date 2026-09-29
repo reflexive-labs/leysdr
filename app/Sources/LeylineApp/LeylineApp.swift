@@ -12,6 +12,7 @@ import AppKit
 import LeylineClient
 import LeylineProto
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct LeylineApp: App {
@@ -191,7 +192,8 @@ enum TextFieldKeys {
 }
 
 /// File ▸ the recording items (plans/app.md, APP-5, revised by docs/design/
-/// app-design-handoff-m3.md). `Record Transmissions` (⌘R) is the log's switch: checked while a
+/// app-design-handoff-m3.md) and `Import CHIRP…` (docs/design/channels.md, "CHIRP import").
+/// `Record Transmissions` (⌘R) is the log's switch: checked while a
 /// record job runs on the tuned channel, and choosing it flips the switch. Its precondition is
 /// checked in the session, which says what is missing in a notice, rather than the item being
 /// disabled: a Commands body is not guaranteed to re-evaluate when the session changes, so a
@@ -212,6 +214,20 @@ struct RecordCommands: Commands {
             .keyboardShortcut("r", modifiers: [.command])
             Divider()
             Button("Show Recordings in Finder") { Task { await session.showRecordingsInFinder() } }
+            Button("Import CHIRP…") { importCHIRP() }
         }
+    }
+
+    /// The open panel for a CHIRP CSV export; the session reads it and says what it did in a
+    /// notice. Modal rather than a completion handler, so nothing crosses an AppKit closure.
+    @MainActor
+    private func importCHIRP() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a CHIRP CSV export"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        session.importCHIRP(url: url)
     }
 }

@@ -2168,6 +2168,44 @@ final class AppSession {
         }
     }
 
+    /// File ▸ Import CHIRP…: the export's memories become bookmarks under their bands, by the
+    /// rules `CHIRP` and the store share with `ley bookmarks import` (docs/design/channels.md,
+    /// "CHIRP import"). One notice carries the counts the verb prints, the skipped and warned
+    /// lines go to the log, and no row opens: a hundred memories are 2 m and 70 cm rows folded
+    /// until opened. A file with no Frequency column is refused with nothing written.
+    func importCHIRP(url: URL) {
+        let file = url.lastPathComponent
+        let text: String
+        do {
+            text = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            lastError = LeylineError(
+                code: "CHIRP_UNREADABLE", message: "\(file) could not be read: \(error)",
+                target: url.path)
+            return
+        }
+        let parsed: (rows: [CHIRP.Row], skipped: [CHIRP.Skipped])
+        do {
+            parsed = try CHIRP.parse(text)
+        } catch {
+            lastError = LeylineError(
+                code: "CHIRP_NO_FREQUENCY", message: CHIRP.refusalWords(file: file),
+                target: url.path)
+            return
+        }
+        do {
+            let tag = url.deletingPathExtension().lastPathComponent
+            var result = try CHIRP.apply(parsed.rows, to: &bookmarks, tag: tag)
+            try bookmarks.save()
+            result.skipped = (parsed.skipped + result.skipped).sorted { $0.line < $1.line }
+            for s in result.skipped { log("bookmark", "\(file) line \(s.line): \(s.reason)") }
+            for w in result.warnings { log("bookmark", "\(file) line \(w.line): \(w.reason)") }
+            notice = CHIRP.summary(result, file: file)
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
     /// The sidebar row's editor and the Rename item: the bookmark takes the name in place.
     func rename(bookmark: Bookmark, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)

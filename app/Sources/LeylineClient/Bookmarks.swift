@@ -354,6 +354,26 @@ public struct BookmarkStore: Sendable {
         return b
     }
 
+    /// The bookmark with this id takes the duplex and the offset the CHIRP import read, each
+    /// only when given: nil leaves the field as it is, which is how a re-import of a row that
+    /// carries neither keeps what an earlier one wrote (`go/pkg/bookmarks.Keep` keeps a zero
+    /// offset and a blank duplex the same way). Nothing else writes these two fields yet
+    /// (docs/design/channels.md, "Bookmarks gain three fields"). Does not save.
+    @discardableResult
+    public mutating func setDuplex(_ id: String, _ duplex: String?, offsetHz: Int64?) throws
+        -> Bookmark
+    {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        guard var b = bookmarks[id] else {
+            throw BookmarkError.noSuchBookmark(id, candidates: [])
+        }
+        if let duplex { b.duplex = duplex }
+        if let offsetHz { b.offsetHz = offsetHz }
+        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
+        bookmarks[id] = b
+        return b
+    }
+
     /// Tags as the store keeps them: trimmed, without empties or repeats, sorted, the rule
     /// `go/pkg/bookmarks`' `tagSet` applies on load and on every write. The other client may
     /// write them in any order; sorting here means a re-save changes nothing but the field a

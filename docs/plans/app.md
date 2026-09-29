@@ -1418,6 +1418,22 @@ once and files fixes as new items.
     band switch over the recording still reads `Move anyway`.
   - After Stop listening, Find active on NOAA runs without a pause, the row shows its hits and
     the band is selected afterwards, so the audio plays.
+- **U7** (`LeylineApp.swift`, `AppSession.swift`; neither compiled here):
+  - `File > Import CHIRP…` sits after `Show Recordings in Finder` and opens a panel that
+    offers only `.csv` files; Cancel does nothing.
+  - Choosing `fixtures/chirp/sample.csv` shows the notice `Imported 9 from sample.csv: 8
+    added, 1 updated, 1 skipped`, opens no row and no editor, and the log carries `sample.csv
+    line 9: frequency "abc" is not a number` and the DV row's warning.
+  - The 2 m and 70 cm rows stay collapsed and hold the new bookmarks once opened: `Club`,
+    `Simplex`, `Tsql`, `Digital` under 2 m; `Dcs`, `Cross`, `445.925 MHz` under 70 cm; `ch5`
+    under GMRS, reading its channel name.
+  - The inspector on `Club` shows `PL 100.0` and the note `club repeater`; on `Dcs` it shows
+    `DCS 023`.
+  - Typing a note on `Simplex`, then importing the file again, keeps the note and shows
+    `Imported 9 from sample.csv: 0 added, 9 updated, 1 skipped`; `ley bookmarks --tag sample`
+    lists nine.
+  - A file with no Frequency column (any other CSV) shows the error `<name> has no Frequency
+    column; is it a CHIRP CSV export?` and `bookmarks.json` is unchanged.
   - Find active on a second band while one sweeps stops the first and sweeps the second once
     the radio is back; the first row's words go, the second's hits arrive.
   - A bookmark tuned when Find active is clicked comes back with the bookmark's own mode and
