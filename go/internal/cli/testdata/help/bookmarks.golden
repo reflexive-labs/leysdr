@@ -6,12 +6,18 @@ and one kept there is in this list.
 
 'ley bookmarks add' keeps one, 'ley bookmarks move' re-files it at another
 frequency and 'ley bookmarks remove' forgets it. A bookmark is a name, a
-frequency, a mode and a bandwidth; nothing is tuned, started or measured by
-any of the four.
+frequency, a mode and a bandwidth, and can carry the tone a repeater
+requires, a note and tags (add --tone, --note and --tag). The TONE, NOTE and
+TAGS columns appear once a bookmark has one, and --tag lists only the
+bookmarks filed under that word. Nothing is tuned, started or measured by
+any of the four verbs, and a tone is a record of what the repeater uses:
+ley does not gate audio on it.
 
 --json prints an array of {id, name, hz, mode, bandwidth_hz, updated_ns} in
 the same order, the fields the file holds: mode is the contract's spelling
-(NFM), and bandwidth_hz 0 means the mode's usual width.
+(NFM), and bandwidth_hz 0 means the mode's usual width. A record that has
+them carries tone (as CHIRP spells it: 100.0, D023N), note, tags, offset_hz
+and duplex as well.
 
 Usage:
   ley bookmarks [flags]
@@ -19,6 +25,7 @@ Usage:
 
 Examples:
   ley bookmarks                                      # the table
+  ley bookmarks --tag home                           # only those filed under home
   ley bookmarks add 146.94 --name "Local repeater"   # keep one
   ley bookmarks move "Local repeater" 147.0          # same bookmark, new frequency
   ley bookmarks remove "Local repeater"              # forget it
@@ -30,7 +37,8 @@ Available Commands:
   remove      Forget a bookmark
 
 Flags:
-  -h, --help   help for bookmarks
+  -h, --help         help for bookmarks
+      --tag string   list only the bookmarks filed under this tag, spelled as add --tag gave it
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

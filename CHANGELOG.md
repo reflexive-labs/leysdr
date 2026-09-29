@@ -15,6 +15,14 @@ Nothing has been released yet. This file starts with everything that exists on `
   --json` and the app's seed carry `channels`, and `ley scan` and `ley monitor` name a carrier
   on any plan channel, marine and CB included.
 
+- A bookmark can carry a repeater's tone, a note and tags. `ley bookmarks add --tone 100.0
+  --note "600 kHz down" --tag home` keeps them beside the frequency; the tone is spelled the way
+  CHIRP spells one (`100.0`, `D023N`) and anything else is refused. `ley bookmarks` shows TONE,
+  NOTE and TAGS columns once a bookmark has them, `--tag home` lists only those filed under the
+  word, and `--json` carries the fields. Nothing gates audio on the tone. This is `ley`'s half;
+  the app's inspector, which edits the tone and note and shows the tone heard on the air beside
+  them, follows.
+
 - The bookmarks file keeps fields it does not know. Both `ley bookmarks` and the Mac app now
   write back, unchanged, every key of an entry they do not recognise, so a bookmark saved by a
   newer build of one client survives an edit by an older build of the other. Entries are written

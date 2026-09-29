@@ -420,7 +420,11 @@ fixture stands in for the radio. Nothing in the app's suites may need hardware.
   `LeylineClient/Resources` is `ley bands --json` checked in, `make bands-json` regenerates it
   and a Go test fails when the two drift. Never edit it by hand, and never add a band in Swift.
 - **Bookmarks are a file both clients own.** `bookmarks.json` beside `labels.json`, the shape in
-  the handoff ("Bands and bookmarks are files"); the app and `ley bookmarks` read and write the
-  same file, and a bookmark that only one of them can see is a bug.
+  the handoff ("Bands and bookmarks are files"): `{name, hz, mode, bandwidth_hz, updated_ns}` per
+  entry, plus `tone`, `note`, `tags`, `offset_hz` and `duplex` on the entries that have them,
+  and any key a client does not know kept as it was read. The app and `ley bookmarks` read and
+  write the same file, a bookmark that only one of them can see is a bug, and a tone is
+  validated by the same rule in both (`leyline.ParseTone`, `Tone.parse`), refused with the same
+  sentence.
 - **Prose in the window follows `../writing-guide.md`**: the daemon, a radio, a capture, a
   channel; "the daemon is not running" and what to type, never a spinner with no words.

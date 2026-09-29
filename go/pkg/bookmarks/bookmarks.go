@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +41,16 @@ type Bookmark struct {
 	Mode        string `json:"mode"`
 	BandwidthHz uint32 `json:"bandwidth_hz"`
 	UpdatedNs   int64  `json:"updated_ns"`
+	// Tone, Note and Tags are the fields a person fills in; OffsetHz and Duplex are written by
+	// the CHIRP import and read by nothing yet (docs/design/channels.md, "Bookmarks gain three
+	// fields"). All are optional and left out of the file when empty, so a bookmark that has
+	// none keeps the shape an older build wrote. Tone is CHIRP's spelling as leyline.ParseTone
+	// reads it ("100.0", "D023N"); Tags is kept sorted and without repeats, a set.
+	Tone     string   `json:"tone,omitempty"`
+	Note     string   `json:"note,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	OffsetHz int64    `json:"offset_hz,omitempty"`
+	Duplex   string   `json:"duplex,omitempty"`
 	// Extra holds the entry's keys this version does not know, as the file spelled them, and
 	// save writes them back beside the known fields: the app and ley share one file, and an
 	// older ley must never strip a newer app's fields (docs/design/channels.md, "Bookmarks gain
@@ -56,20 +68,18 @@ type storeFile struct {
 	Bookmarks map[string]json.RawMessage `json:"bookmarks"`
 }
 
-// knownKeys are the JSON keys Bookmark's own fields take, read off the struct so the list
-// cannot drift from its tags when a field is added.
+// knownKeys are the JSON keys Bookmark's own fields take, read off the struct's tags so the
+// list cannot drift from them when a field is added. The tags are read rather than a zero
+// value marshalled, because an omitempty field is absent from that and would stay a foreign
+// key, filed under Extra as well as read into its field.
 var knownKeys = func() map[string]bool {
-	b, err := json.Marshal(Bookmark{})
-	if err != nil {
-		panic(err)
-	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(b, &m); err != nil {
-		panic(err)
-	}
-	keys := make(map[string]bool, len(m))
-	for k := range m {
-		keys[k] = true
+	t := reflect.TypeFor[Bookmark]()
+	keys := make(map[string]bool, t.NumField())
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name != "" && name != "-" {
+			keys[name] = true
+		}
 	}
 	return keys
 }()
@@ -91,10 +101,27 @@ func decodeEntry(id string, raw json.RawMessage) (Bookmark, error) {
 		}
 	}
 	bm.ID = id
+	bm.Tags = tagSet(bm.Tags)
 	if len(all) > 0 {
 		bm.Extra = all
 	}
 	return bm, nil
+}
+
+// tagSet is tags as the store keeps them: trimmed, without empties or repeats, sorted. The
+// other client may write them in any order; sorting here means a re-save changes nothing but
+// the field a person edited.
+func tagSet(tags []string) []string {
+	var out []string
+	for _, t := range tags {
+		t = strings.TrimSpace(t)
+		if t == "" || slices.Contains(out, t) {
+			continue
+		}
+		out = append(out, t)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // encodeEntry is decodeEntry's inverse: the known fields, then the extras under any key the
@@ -218,15 +245,46 @@ func (s *Store) Add(name string, hz uint64, mode leylinev1.DemodMode, bandwidthH
 		BandwidthHz: bandwidthHz,
 		UpdatedNs:   s.now().UnixNano(),
 	}
-	// An update in place replaces the record, so it carries the old entry's extras with its id:
-	// re-running the add that named a bookmark is not a request to drop the app's fields on it.
+	// An update in place replaces the record, so it carries the old entry's fields and extras
+	// with its id: re-running the add that named a bookmark is not a request to drop its tone,
+	// its tags or the app's fields on it.
 	for _, old := range s.bookmarks {
 		if old.Hz == hz && old.Name == name {
 			bm.ID = old.ID
+			bm.Tone, bm.Note, bm.Tags = old.Tone, old.Note, old.Tags
+			bm.OffsetHz, bm.Duplex = old.OffsetHz, old.Duplex
 			bm.Extra = old.Extra
 			break
 		}
 	}
+	s.bookmarks[bm.ID] = bm
+	return bm, s.save()
+}
+
+// SetFields writes the fields a person edits on the bookmark an argument names, and persists
+// the file: a tone or a note that is non-nil is set, an empty string clears it, and addTags
+// join the set the bookmark has. The tone is validated the way both clients validate one
+// (leyline.ParseTone), so the file never holds a spelling the other cannot read; a refused
+// tone changes nothing. The argument is resolved the way Remove resolves one, and the stamp
+// moves.
+func (s *Store) SetFields(idOrName string, tone, note *string, addTags []string) (Bookmark, error) {
+	bm, err := s.resolve(idOrName, "edit")
+	if err != nil {
+		return Bookmark{}, err
+	}
+	if tone != nil && *tone != "" {
+		if _, err := leyline.ParseTone(*tone); err != nil {
+			return Bookmark{}, err
+		}
+	}
+	if tone != nil {
+		bm.Tone = *tone
+	}
+	if note != nil {
+		bm.Note = *note
+	}
+	bm.Tags = tagSet(append(slices.Clone(bm.Tags), addTags...))
+	bm.UpdatedNs = s.now().UnixNano()
 	s.bookmarks[bm.ID] = bm
 	return bm, s.save()
 }

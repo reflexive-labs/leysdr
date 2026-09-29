@@ -4,6 +4,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,5 +194,78 @@ func TestBookmarksMove(t *testing.T) {
 	_, _, err = runBookmarks(t, path, "bookmarks", "move", "Weather", "1,2")
 	if err == nil || !strings.Contains(err.Error(), "147.0") {
 		t.Errorf("a frequency that does not parse shows what one looks like, got %v", err)
+	}
+}
+
+// add --tone, --note and --tag write the fields; the list grows the TONE, NOTE and TAGS columns
+// only once some bookmark has them, --tag filters, --json carries the fields, and an invalid tone
+// is refused with the sentence the app's validator shares, before the file is touched.
+func TestBookmarksToneNoteAndTags(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	mustBookmarks(t, path, "bookmarks", "add", "noaa", "--name", "Weather")
+	plain := mustBookmarks(t, path, "bookmarks")
+	for _, head := range []string{"TONE", "NOTE", "TAGS"} {
+		if strings.Contains(plain, head) {
+			t.Errorf("a list with no %s shows no %s column:\n%s", strings.ToLower(head), head, plain)
+		}
+	}
+
+	_, _, err := runBookmarks(t, path, "bookmarks", "add", "146.94", "--name", "r", "--tone", "100")
+	if err == nil || err.Error() != "tone must be a CTCSS tone such as 100.0 or a DCS code such as D023N" {
+		t.Fatalf("--tone 100 is refused with the shared sentence, got %v", err)
+	}
+	var ee *ExitError
+	if !errors.As(err, &ee) || ee.Code != ExitUsage {
+		t.Errorf("an invalid tone is a usage error, got %#v", err)
+	}
+	if out := mustBookmarks(t, path, "--json", "bookmarks"); strings.Contains(out, `"r"`) {
+		t.Fatalf("a refused add writes nothing:\n%s", out)
+	}
+
+	added := mustBookmarks(t, path, "bookmarks", "add", "146.94", "--name", "r", "--tone", "100.0", "--note", "club", "--tag", "home", "--tag", "vhf")
+	if !strings.Contains(added, "PL 100.0") || !strings.Contains(added, "146.940 MHz") {
+		t.Fatalf("the confirmation names the tone:\n%s", added)
+	}
+
+	list := mustBookmarks(t, path, "bookmarks")
+	rows := strings.Split(strings.TrimSpace(list), "\n")
+	if len(rows) != 3 || !strings.Contains(rows[0], "TONE") || !strings.Contains(rows[0], "NOTE") || !strings.Contains(rows[0], "TAGS") {
+		t.Fatalf("the list shows the three columns once a bookmark has them:\n%s", list)
+	}
+	if !strings.Contains(rows[1], "PL 100.0") || !strings.Contains(rows[1], "club") || !strings.Contains(rows[1], "home, vhf") {
+		t.Fatalf("the row carries the tone in words, the note and the tags:\n%s", list)
+	}
+
+	filtered := mustBookmarks(t, path, "bookmarks", "--tag", "home")
+	if strings.Contains(filtered, "Weather") || !strings.Contains(filtered, "146.940 MHz") {
+		t.Fatalf("--tag home lists only the bookmarks tagged home:\n%s", filtered)
+	}
+	if out := mustBookmarks(t, path, "--json", "bookmarks", "--tag", "nobody"); strings.TrimSpace(out) != "[]" {
+		t.Errorf("a tag nothing carries lists nothing, got %q", out)
+	}
+
+	var got []bookmarkJSON
+	if err := json.Unmarshal([]byte(mustBookmarks(t, path, "--json", "bookmarks")), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Tone != "100.0" || got[0].Note != "club" || len(got[0].Tags) != 2 || got[0].Tags[0] != "home" {
+		t.Fatalf("--json carries the fields: %+v", got)
+	}
+	// A bookmark without the fields carries no keys for them, so the shape stays the older one.
+	raw := mustBookmarks(t, path, "--json", "bookmarks", "--tag", "home")
+	for _, k := range []string{`"tone":"100.0"`, `"note":"club"`, `"tags":["home","vhf"]`} {
+		if !strings.Contains(raw, k) {
+			t.Errorf("--json lacks %s:\n%s", k, raw)
+		}
+	}
+	if strings.Contains(raw, "offset_hz") || strings.Contains(raw, "duplex") {
+		t.Errorf("fields nothing set are left out of --json:\n%s", raw)
+	}
+
+	// Re-running the add keeps what was set; a second --tag joins the set.
+	again := mustBookmarks(t, path, "--json", "bookmarks", "add", "146.94", "--name", "r", "--tag", "uhf")
+	var one bookmarkJSON
+	if err := json.Unmarshal([]byte(again), &one); err != nil || one.Tone != "100.0" || one.Note != "club" || len(one.Tags) != 3 {
+		t.Fatalf("an update keeps the fields and adds the tag: %v\n%s", err, again)
 	}
 }

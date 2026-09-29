@@ -395,3 +395,124 @@ func TestPathResolution(t *testing.T) {
 		t.Errorf("override = %q", got)
 	}
 }
+
+// A key an older build filed under Extra is read into its field once the struct knows it: the
+// fixture's "tone" is the case the design names (docs/design/channels.md, "Bookmarks gain three
+// fields"), and the other two keys stay foreign. knownKeys is read off the struct's tags, so
+// this is the test that an omitempty field is known even when its zero value is not written.
+func TestForeignToneBecomesKnownOnLoad(t *testing.T) {
+	s, _ := openForeign(t)
+	bm, ok := s.Get(foreignID)
+	if !ok {
+		t.Fatal("the fixture's entry is missing")
+	}
+	if bm.Tone != "100.0" {
+		t.Errorf("tone = %q, want the fixture's 100.0 read into the field", bm.Tone)
+	}
+	if _, still := bm.Extra["tone"]; still {
+		t.Errorf("a known key must not also be filed under Extra: %v", bm.Extra)
+	}
+	for _, k := range []string{"lists", "zzz"} {
+		if _, ok := bm.Extra[k]; !ok {
+			t.Errorf("the foreign key %q must still be under Extra: %v", k, bm.Extra)
+		}
+	}
+	for _, k := range []string{"tone", "note", "tags", "offset_hz", "duplex"} {
+		if !knownKeys[k] {
+			t.Errorf("%q must be a known key", k)
+		}
+	}
+}
+
+// SetFields writes the fields a person edits and the file carries them back: the tone is
+// validated as the CLI and the app validate it, an empty string clears, nil leaves alone, and
+// tags are a set, sorted and without repeats, whatever order they were given in.
+func TestSetFieldsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	s, _ := Open(path)
+	fixed(s)
+	added, err := s.Add("Local repeater", 146_940_000, leylinev1.DemodMode_NFM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tone, note := "D023N", "club repeater"
+	got, err := s.SetFields("local REPEATER", &tone, &note, []string{"vhf", "home", "vhf", " home "})
+	if err != nil {
+		t.Fatalf("set fields: %v", err)
+	}
+	if got.ID != added.ID || got.Tone != "D023N" || got.Note != "club repeater" {
+		t.Errorf("set fields = %+v", got)
+	}
+	if !reflect.DeepEqual(got.Tags, []string{"home", "vhf"}) {
+		t.Errorf("tags = %v, want the sorted set [home vhf]", got.Tags)
+	}
+	// offset_hz and duplex are the import's fields; the store carries them as it carries the rest.
+	got.OffsetHz, got.Duplex = -600_000, "-"
+	s.bookmarks[got.ID] = got
+	if err := s.save(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, _ := s2.Get(added.ID)
+	if back.Tone != "D023N" || back.Note != "club repeater" || !reflect.DeepEqual(back.Tags, []string{"home", "vhf"}) ||
+		back.OffsetHz != -600_000 || back.Duplex != "-" || back.Extra != nil {
+		t.Errorf("reloaded = %+v", back)
+	}
+	rec := rawEntries(t, path)[added.ID]
+	for k, v := range map[string]any{"tone": "D023N", "note": "club repeater", "tags": []any{"home", "vhf"}, "offset_hz": float64(-600_000), "duplex": "-"} {
+		if !reflect.DeepEqual(rec[k], v) {
+			t.Errorf("file %q = %v, want %v", k, rec[k], v)
+		}
+	}
+
+	// nil leaves a field alone, an empty string clears it, and more tags join the set.
+	empty := ""
+	got, err = s2.SetFields(added.ID, &empty, nil, []string{"uhf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Tone != "" || got.Note != "club repeater" || !reflect.DeepEqual(got.Tags, []string{"home", "uhf", "vhf"}) {
+		t.Errorf("after clearing the tone = %+v", got)
+	}
+	if rec := rawEntries(t, path)[added.ID]; rec["tone"] != nil {
+		t.Errorf("a cleared tone is written as no key, got %v", rec)
+	}
+
+	bad := "100"
+	if _, err := s2.SetFields(added.ID, &bad, nil, nil); err == nil ||
+		err.Error() != "tone must be a CTCSS tone such as 100.0 or a DCS code such as D023N" {
+		t.Errorf("an invalid tone is refused with the shared sentence, got %v", err)
+	}
+	if bm, _ := s2.Get(added.ID); bm.Note != "club repeater" || bm.Tone != "" {
+		t.Errorf("a refused edit changes nothing: %+v", bm)
+	}
+	if _, err := s2.SetFields("nobody", nil, nil, nil); err == nil {
+		t.Errorf("an unknown bookmark is refused")
+	}
+}
+
+// Add's update in place keeps the fields a person set, as it keeps the extras: re-running the
+// add that named a bookmark is not a request to drop its tone or its tags.
+func TestAddUpdateKeepsTheFields(t *testing.T) {
+	s, path := openForeign(t)
+	note := "club"
+	if _, err := s.SetFields(foreignID, nil, &note, []string{"home"}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.Add("Local repeater", 146_940_000, leylinev1.DemodMode_NFM, 25_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != foreignID || again.Tone != "100.0" || again.Note != "club" || !reflect.DeepEqual(again.Tags, []string{"home"}) {
+		t.Errorf("the update must keep tone, note and tags: %+v", again)
+	}
+	rec := rawEntries(t, path)[foreignID]
+	wantForeign(t, rec)
+	if rec["note"] != "club" || rec["bandwidth_hz"] != float64(25_000) {
+		t.Errorf("the update lands beside the fields: %v", rec)
+	}
+}

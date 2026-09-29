@@ -74,10 +74,12 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # name a transmitter (or read/clear its name); labels are user
 │                                    # data in a client-side JSON store ($LEYLINE_LABELS), not daemon state
 ├── presets | bands                  # the client-local tables (no RPC); `ley help presets` is the same data in prose
-├── bookmarks [add <freq|preset|channel --band B> --name NAME [--mode M] [--bw N] | move <id|name> <freq|preset> | remove <id|name>]
+├── bookmarks [--tag T] [add <freq|preset|channel --band B> --name NAME [--mode M] [--bw N] [--tone T] [--note N] [--tag T]... | move <id|name> <freq|preset> | remove <id|name>]
 │                                    # the third client-local table and the only one you write: the
 │                                    # frequencies you kept, in a JSON file ($LEYLINE_BOOKMARKS) the
-│                                    # Mac app reads too, so one kept from a terminal is in its sidebar
+│                                    # Mac app reads too, so one kept from a terminal is in its sidebar;
+│                                    # --tone is the repeater's tone as CHIRP spells it (100.0, D023N),
+│                                    # --tag files a bookmark under a word and lists by one
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
 ├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
@@ -202,8 +204,16 @@ bookmarks --json` is the third such table and the only one a client writes: an a
 `{id, name, hz, mode, bandwidth_hz, updated_ns}` ordered by frequency and then name, which are the
 fields of `bookmarks.json` itself (`$LEYLINE_BOOKMARKS`, else beside `labels.json` in
 `~/Library/Application Support/Leyline`), so `mode` is the contract's own spelling (`NFM`) rather
-than the CLI's and `bandwidth_hz` 0 means the mode's usual width; `ley bookmarks add`, `ley
-bookmarks move` and `ley bookmarks remove` print the single record they touched. The Mac app reads that file, and reads the
+than the CLI's and `bandwidth_hz` 0 means the mode's usual width. A record carries `tone`, `note`,
+`tags`, `offset_hz` and `duplex` as well when the file has them, each left out when empty
+(`docs/design/channels.md`, "Bookmarks gain three fields"). `tone` is CHIRP's spelling: a CTCSS
+tone with one decimal (`"100.0"`) or a DCS code as `D`, three octal digits and `N` or `I`
+(`"D023N"`). `--tone` accepts nothing else and refuses with `tone must be a CTCSS tone such as
+100.0 or a DCS code such as D023N`, the sentence the app's editor prints. `tags` is a sorted array
+of words without repeats, and `--tag` on the list keeps the records carrying that word.
+`offset_hz` (signed) and `duplex` (`+`, `-`, `split`, `off`) are written by the CHIRP import and
+read by nothing yet. `ley bookmarks add`, `ley bookmarks move` and `ley bookmarks remove` print
+the single record they touched. The Mac app reads that file, and reads the
 band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in bytes of `ley bands
 --json` that `make bands-json` regenerates and a Go test holds to the table. The fourth is
 `ley track --json`, the entity table: a client-side fold with no proto message, described under
