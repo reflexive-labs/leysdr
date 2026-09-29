@@ -14,6 +14,8 @@
 //     transmissions heard live, and a finished recording deletes;
 //   - a recording switched on and off over a continuous carrier cuts the log there, and the
 //     piece between the cuts lies in the recording's part;
+//   - Find active's sweep borrows the window's capture, hands it back at its centre, and its
+//     Scan holds the fixture's carriers; the same sweep without take-over is declined;
 //   - the daemon's error code survives the trip.
 
 import Foundation
@@ -741,6 +743,88 @@ final class ClientDaemonTests: XCTestCase {
         let summary = try XCTUnwrap(
             after.first { $0.jobID == job.jobID }, "the page's recording is not listed")
         XCTAssertGreaterThan(summary.parts, 0, "the carrier holds the squelch open: one part")
+    }
+
+    /// The scan job Find active starts (docs/design/channels.md, "Find active"): 2 m with
+    /// take-over on the window's own device. The file device tunes only at its one centre, so
+    /// the sweep is clipped to that one step and `covered` is narrower than the band by design;
+    /// the test asserts the carriers, the borrowed capture's id and its restored centre, not
+    /// full coverage. Then the same request without take-over, while the window's channel is
+    /// on the capture, is declined by the allocator's don't-disturb rule with `DEVICE_BUSY`.
+    @MainActor
+    func testFindActiveSweepsTheFixtureAndGivesTheCaptureBack() async throws {
+        Harness.stop(daemon)
+        daemon = try await Harness.start(fixture: "scan_band.cf32")
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
+        let centreHz = capture.centerHz
+        XCTAssertEqual(centreHz, 146_000_000, "scan_band.cf32 was recorded at 146.0 MHz")
+        await assertEventually("the capture never reached the mirror") {
+            mirror.state.capture(capture.captureID) != nil
+        }
+        let twoM = try XCTUnwrap(Bands.resolve("2m"))
+
+        // `AppSession.findActive(band:)` after its pause: the request on the capture's device.
+        let job = try await app.jobs.startJob(
+            Sweep.request(for: twoM, in: Bands.builtIn, deviceID: capture.deviceID))
+        XCTAssertEqual(job.state, .running, job.statusDetail)
+        let scanID = try XCTUnwrap(Sweep.scanID(of: job), "the job names no scan")
+        await assertEventually("the sweep never ended", timeout: .seconds(60)) {
+            mirror.state.jobs.first { $0.jobID == job.jobID }?.isActive == false
+        }
+        let ended = try XCTUnwrap(mirror.state.jobs.first { $0.jobID == job.jobID })
+        XCTAssertEqual(ended.state, .completed, "\(ended.statusDetail) [\(ended.error.code)]")
+
+        var ref = Leyline_V1_ScanRef()
+        ref.scanID = scanID
+        let scan = try await app.jobs.getScan(ref)
+        let result = SweepResult(scan: scan, band: twoM, in: Bands.builtIn)
+        let outcome = SweepOutcome.from(job: ended, scan: scan, band: twoM, in: Bands.builtIn)
+        XCTAssertEqual(outcome, .found(result))
+        let carriers: [UInt64] = [145_200_000, 145_600_000, 146_400_000, 146_800_000]
+        let heard = carriers.filter { c in
+            result.hits.contains { h in
+                (h.hz > c ? h.hz - c : c - h.hz) <= 15_000
+            }
+        }
+        XCTAssertGreaterThanOrEqual(
+            heard.count, 3, "hits at \(result.hits.map(\.hz)), carriers heard \(heard)")
+        for (a, b) in zip(result.hits, result.hits.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(a.snrDb, b.snrDb, "strongest first")
+        }
+        XCTAssertNotNil(
+            result.coverageWords(band: twoM),
+            "one centre cannot cover 2 m: covered \(String(describing: result.covered))")
+
+        // The borrowed capture keeps its id and is back at its centre once the job has ended.
+        XCTAssertNotNil(mirror.state.capture(capture.captureID), "the capture was replaced")
+        await assertEventually("the centre never came back to \(centreHz)") {
+            mirror.state.capture(capture.captureID)?.centerHz == centreHz
+        }
+        XCTAssertEqual(mirror.state.captures.count, 1, "the sweep opened a capture of its own")
+        XCTAssertNotNil(mirror.state.channel(channel.channelID), "the channel is still there")
+
+        // Without take-over the window's own channel is what makes the radio busy, and the
+        // allocator says so on the job's event: `StartJob` answers before it allocates.
+        var polite = Sweep.request(for: twoM, in: Bands.builtIn, deviceID: capture.deviceID)
+        polite.scan.takeOver = false
+        let refused = try await app.jobs.startJob(polite)
+        await assertEventually("the polite sweep never ended", timeout: .seconds(20)) {
+            mirror.state.jobs.first { $0.jobID == refused.jobID }?.isActive == false
+        }
+        let declined = try XCTUnwrap(mirror.state.jobs.first { $0.jobID == refused.jobID })
+        XCTAssertEqual(declined.state, .failed, declined.statusDetail)
+        XCTAssertEqual(declined.error.code, "DEVICE_BUSY", declined.statusDetail)
+        XCTAssertEqual(
+            SweepOutcome.from(job: declined, scan: nil, band: twoM, in: Bands.builtIn),
+            .failed(detail: declined.statusDetail))
+        XCTAssertFalse(declined.statusDetail.isEmpty, "the reason names what is using the radio")
     }
 
     func testErrorCodesSurviveTheTrip() async throws {
