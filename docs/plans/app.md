@@ -1339,21 +1339,30 @@ here are the record; each is ticked when its unit's commit lands:
   `bookmarks add`, `Plans` in the client library mirroring each Go lookup; the ITU 1027/1028
   and ASM marine rows left out where the tables disagree. A pre-existing race in `record`'s
   hidden `--audio` flag was fixed on the way, in its own commit.
-- `[ ]` **APP-9c** The sidebar on the spine: bookmarks nested under bands, a group as one row
+- `[x]` **APP-9c** The sidebar on the spine: bookmarks nested under bands, a group as one row
   with its parts folded in, the collapsed out-of-range line, the filter field with `Go to…` (⌘G)
   and its no-match line, the plan picker popover, rail ticks for plans of 24 channels or fewer,
-  channel names on rows. A band click still tunes; the chevron expands without tuning. e2e: a
-  bookmark on 462.6625 MHz reads `ch5` and a filter for `wx3` tunes 162.475 MHz.
-- `[ ]` **APP-9d** Find active over the scan job with `take_over`, the row's progress from the
+  channel names on rows. A band click still tunes; the chevron expands without tuning. Landed
+  2026-09-29 (U4): the fold, the index and the naming rule in `Sidebar.swift` with their tests
+  (the e2e line became façade tests: a bookmark on 462.6625 MHz files under `GMRS` and names
+  `ch5`, `wx3` resolves to 162.475 MHz), the views by eye; unverified on the Mac, below.
+- `[x]` **APP-9d** Find active over the scan job with `take_over`, the row's progress from the
   job's events, hits on the rail, `＋` on a hit; the window detaches its sink and channel before
-  the job and recreates them on its terminal event, as the doc's "Find active" says. Records the
-  measurement the doc asks for: how long audio is gone for a 2 m sweep on the owner's dongle.
-- `[ ]` **APP-9e** `tone`, `note` and `tags` in the file, the inspector and `ley bookmarks`
+  the job and recreates them on its terminal event, as the doc's "Find active" says. Landed
+  2026-09-29 (U5): `Sweep.swift` with its tests and a daemon e2e that sweeps the scan fixture
+  from a window's capture, finds all four carriers, keeps the capture id and its centre and is
+  refused without take-over; the session and views by eye. The audio-gone measurement waits
+  for the owner's Mac, below.
+- `[x]` **APP-9e** `tone`, `note` and `tags` in the file, the inspector and `ley bookmarks`
   (`add --tone --note --tag`, `--tag` on the list, the columns when present); the inspector
-  shows the heard tone beside the bookmark's and never calls a difference a mismatch.
-- `[ ]` **APP-9f** CHIRP import: `ley bookmarks import` with `--dry-run`, `File > Import CHIRP…`,
+  shows the heard tone beside the bookmark's and never calls a difference a mismatch. Landed
+  2026-09-29 (U6): `ParseTone` and `Tone.parse` agree on the 50 CTCSS tones and 104 DCS codes
+  and one refusal sentence; the inspector's fields by eye, unverified below.
+- `[x]` **APP-9f** CHIRP import: `ley bookmarks import` with `--dry-run`, `File > Import CHIRP…`,
   the tone mapping per CHIRP mode and `offset_hz` and `duplex` written as fields, one fixture
-  CSV with a repeater, a simplex row, a DCS row, a Cross row and a duplicate.
+  CSV with a repeater, a simplex row, a DCS row, a Cross row and a duplicate. Landed 2026-09-29
+  (U7): `go/pkg/chirp` and `CHIRP.swift`, both held to `fixtures/chirp/expected.json`; the
+  File menu item by eye, unverified below.
 - `[x]` **The open questions** in the doc, decided 2026-09-28 with the plan: marine ships its
   full plan; out-of-range bands are one line and the `Bands…` sheet is deferred. The flow
   analysis's defaults (the filter's rule, the naming rule, a sweep against a recording or a

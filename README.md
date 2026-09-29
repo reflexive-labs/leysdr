@@ -18,7 +18,7 @@ serves the same verbs as MCP tools. The Mac app is in progress: built from sourc
 `make app-run`, it shows a spectrum and waterfall, plays and tunes a channel, and has an
 inspector for signal, tuning error, deviation and recent transmissions.
 
-**Not yet:** recording from the app, CHIRP import, a signed app bundle, durable watch jobs and
+**Not yet:** a signed app bundle, the app's lifecycle handling, durable watch jobs and
 transcripts, and the terminal dashboard. `docs/plans/build-order.md` is the order they arrive in
 and `docs/plans/v1-release.md` is the gap analysis for the first shared release.
 
@@ -149,8 +149,10 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
 - Milestone E (the Mac app, `docs/plans/app.md`): E.1 to E.3 done -- the `app/` package, a Swift
   client façade tested against the real daemon (`docs/dev/app.md`), and a window with the spectrum,
   the waterfall, click to hear and the layer 1 controls, confirmed on the owner's Mac (the M1 cut).
-  The file half of E.4 (bookmarks) is in, the M2 inspector has landed, and recording from the
-  window (E.5) with it; CHIRP import (E.4), lifecycle (E.6) and the bundle (E.7) are open.
+  E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`: the channel plans, the
+  sidebar on the spine, Find active, tone and note, CHIRP import; the window's views await the
+  owner's Mac), the M2 inspector has landed, and recording from the window (E.5) with it;
+  lifecycle (E.6) and the bundle (E.7) are open.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
   audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
   with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered

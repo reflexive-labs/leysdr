@@ -66,7 +66,7 @@ changes the doc first.
 | [App design handoff, M2](design/app-design-handoff-m2.md) | the inspector panel: identity, the reading, the audio ladder, the log, Measurements, and every decision taken against the code since | landed 2026-09-20; revised through 2026-09-24 |
 | [App design handoff, M3](design/app-design-handoff-m3.md) | recording in the window: the owner's 8a–8e and 10a screens read against the prose, then the Library decided with the owner (two places, one switch; rows are parts; a player that pauses) and every decision taken in the build | landed 2026-09-25; unverified on a Mac |
 | [Brand](design/brand/README.md) | the mark and the splash as the owner drew them, drawn in code (APP-8); how the icon is made | 2026-09-25 |
-| [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Find active over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | draft 2026-09-28; nothing built (APP-9) |
+| [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Find active over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | implemented 2026-09-29 (APP-9); views unverified on the Mac |
 
 ### Decisions (`decisions/`)
 

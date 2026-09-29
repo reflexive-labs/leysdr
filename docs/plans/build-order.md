@@ -105,7 +105,8 @@ with what each landed). E.1 to E.3 are done: the `app/` package, the client faç
 against the real daemon, `make app*`, CI, the bundle script (`docs/dev/app.md`), the spectrum,
 waterfall and click-to-hear window, and the layer 1 controls. The file half of E.4 landed with
 them as the M1 cut, the M2 inspector after it, and E.5 (recording from the window) on 2026-09-24;
-E.4's CHIRP import, E.6 and E.7 are open.
+E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`), its views unverified on the
+Mac; E.6 and E.7 are open.
 
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine

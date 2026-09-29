@@ -1,7 +1,9 @@
 # Design: Bands, channels and bookmarks
 
-Status: draft, 2026-09-28; the app-facing decisions are proposed, the engine and CLI pass follows
-them. Companion to `app-design-handoff.md` ("Bands and bookmarks are files", which owns the seed
+Status: implemented 2026-09-29 as APP-9, from the plan
+`../plans/2026-09-28-2037-feat-bands-channels-bookmarks-plan.md`; the `ley` side and the client
+library are tested on Linux, the window's views are unverified on the Mac (`../plans/app.md`,
+APP-9, "Unverified on the Mac"), and the audio-gone measurement below is still open. Companion to `app-design-handoff.md` ("Bands and bookmarks are files", which owns the seed
 file and `bookmarks.json`), `scan.md` (which owns the sweep and the detector "Find active" uses),
 `decoders.md` (which owns the labels store this copies and the decoders a plan channel can name)
 and `semantic-tier.md`. Work items are APP-9 in `../plans/app.md`; E.4 in
