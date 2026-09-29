@@ -539,6 +539,13 @@ func TestKeepUpdatesInMemoryAndSaveWrites(t *testing.T) {
 	if bm.ID == "bm_ignored" || bm.Tone != "100.0" || bm.Note != "typed" || bm.BandwidthHz != 25_000 || bm.OffsetHz != -600_000 || bm.Duplex != "-" || !reflect.DeepEqual(bm.Tags, []string{"home", "sample"}) {
 		t.Errorf("the update keeps the typed values and sets what the row carries: %+v", bm)
 	}
+	preserved, updated, err := s.Keep(Bookmark{Name: "Club", Hz: 146_940_000, Mode: "NFM", BandwidthHz: 12_500})
+	if err != nil || !updated {
+		t.Fatalf("keep blank offset and duplex: updated=%v err=%v", updated, err)
+	}
+	if preserved.OffsetHz != -600_000 || preserved.Duplex != "-" {
+		t.Errorf("a zero offset and blank duplex keep the stored values: %+v", preserved)
+	}
 	if after, _ := os.ReadFile(path); !bytes.Equal(before, after) {
 		t.Errorf("Keep must not write the file")
 	}

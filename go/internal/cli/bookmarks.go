@@ -195,7 +195,9 @@ func runBookmarkImport(app *App, file string, dryRun bool) error {
 	}
 	// The lines a person reads: the parser's skips and the store's, by line, then the warnings
 	// on rows that were still imported, in the parser's own shape.
-	lines := append(slices.Clone(skipped), res.Skipped...)
+	lines := make([]chirp.Skipped, 0, len(skipped)+len(res.Skipped))
+	lines = append(lines, skipped...)
+	lines = append(lines, res.Skipped...)
 	slices.SortFunc(lines, func(a, b chirp.Skipped) int { return a.Line - b.Line })
 	warnings := []chirp.Skipped{}
 	for _, r := range rows {

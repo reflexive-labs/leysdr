@@ -49,7 +49,8 @@ Nothing has been released yet. This file starts with everything that exists on `
   writes nothing, `--json` prints what was added, updated and skipped, and a file with no
   Frequency column is refused. Both parsers, `ley`'s and the app's, are held to one fixture
   under `fixtures/chirp/`. The app's `File > Import CHIRP…` does the same from an open panel
-  and says what it added, updated and skipped in one notice, opening no row.
+  and says what it added, updated and skipped in one notice, opening no row. The JSON result's
+  four lists are always arrays, including `"skipped": []` when every row imports.
 
 - The bookmarks file keeps fields it does not know. Both `ley bookmarks` and the Mac app now
   write back, unchanged, every key of an entry they do not recognise, so a bookmark saved by a

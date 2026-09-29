@@ -131,4 +131,14 @@ func TestResolveDialTargetInABand(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "marine VHF") {
 		t.Errorf("an empty argument under --band names the band: %v", err)
 	}
+	// A band without a plan points back to a frequency and the command that confirms it.
+	seventyCM, err := leyline.ResolveBand("70cm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveDialTarget("calling", "tune", "ley tune calling --band 70cm", "146.52 (MHz)", &seventyCM)
+	want := "it has no channel plan, so give a frequency instead; check with: ley bands 70cm"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("a band without a plan explains what to give instead: %v", err)
+	}
 }

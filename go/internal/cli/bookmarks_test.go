@@ -340,6 +340,20 @@ func TestBookmarksImport(t *testing.T) {
 		t.Errorf("an empty list is [], and the keys are in the documented order:\n%s", out)
 	}
 
+	// A clean import still carries an array for skipped, so a script can iterate it directly.
+	clean := filepath.Join(t.TempDir(), "clean.csv")
+	if err := os.WriteFile(clean, []byte("Name,Frequency,Mode\nCalling,146.520000,NFM\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cleanStore := filepath.Join(t.TempDir(), "bookmarks.json")
+	out, _, err = runBookmarks(t, cleanStore, "--json", "bookmarks", "import", clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"skipped":[]`) {
+		t.Errorf("a clean import's skipped list is [], not null:\n%s", out)
+	}
+
 	// Not a CHIRP export: refused as a usage error, with the store as it was.
 	before, _ := os.ReadFile(path)
 	notCSV := filepath.Join(t.TempDir(), "memories.csv")
