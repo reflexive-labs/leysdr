@@ -10,10 +10,10 @@ execution: code
 
 # Plan: Bands, channels and bookmarks
 
-Status: ready, 2026-09-28. Implements `../design/channels.md` (the design; its decisions are
-settled and reviewed) as APP-9 in `app.md`, E.4 in `build-order.md`. Written so that coding agents
-can carry every unit through without the owner: each unit names its files, the pattern it mirrors,
-its tests, and what Linux proves versus what the Mac must still confirm.
+Status: implemented 2026-09-29. All seven units and the review follow-up are on `main`, the whole
+gate is green, and `app.md` holds the remaining Mac acceptance checklist. Implements
+`../design/channels.md` as APP-9 in `app.md`, E.4 in `build-order.md`; the unit detail below is the
+execution record.
 
 ---
 

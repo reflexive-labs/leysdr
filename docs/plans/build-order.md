@@ -105,8 +105,11 @@ with what each landed). E.1 to E.3 are done: the `app/` package, the client faç
 against the real daemon, `make app*`, CI, the bundle script (`docs/dev/app.md`), the spectrum,
 waterfall and click-to-hear window, and the layer 1 controls. The file half of E.4 landed with
 them as the M1 cut, the M2 inspector after it, and E.5 (recording from the window) on 2026-09-24;
-E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`), its views unverified on the
-Mac; E.6 and E.7 are open.
+E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`), with its Mac acceptance pass
+still open. E.6 is partial: unavailable and detached states exist, while automatic daemon startup
+and the layer 2 parameter inspector remain. E.7 is next: the helper-carrying, ad-hoc-signed bundle
+layout exists; installation and update plumbing remain, and the owner is acquiring the Developer
+ID certificate needed for final signing and notarization.
 
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine
@@ -126,9 +129,12 @@ its `ley` mirror.
    the built-in preset table becomes the seed layer of the same list and gains the newcomer
    presets the V1a story lists.
 5. Recording from the UI and reveal in Finder, over C.12.
-6. Lifecycle: daemon not running, unplug and replug, and the layer 2 inspector last.
-7. Distribution (D4): a notarized bundle carrying `leylined`, `ley` and the decoders, installing
-   the launchd job as `ley daemon install` does; the trademark check (D3) gates the first public
-   build.
+6. Lifecycle: daemon not running, unplug and replug, and the layer 2 inspector last. The mirror
+   and daemon already hold the unavailable/detached/rebind states; app-driven daemon startup waits
+   for E.7's installed launchd job.
+7. Distribution (D4): the bundle already carries `leylined`, `ley` and the decoders and can be
+   ad-hoc signed. Next, install the launchd job as `ley daemon install` does and install the terminal
+   helpers; Developer ID signing and notarization follow when the owner's certificate is available.
+   The trademark check (D3) gates the first public build.
 
 Each task lands with: tests (fixture-based where DSP), os_signpost instrumentation on any new sample-path code, and no invariant violations (AGENTS.md is the review checklist).

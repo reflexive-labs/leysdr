@@ -6,6 +6,10 @@ the manual pass is not optional.
 
 ## Mechanical
 
+- [ ] Apple Developer Program access is active, a Developer ID Application certificate is installed,
+      and notarization credentials are configured without storing them in the repository. The owner
+      is acquiring these (2026-09-29); their absence blocks the signed release, not APP-7's install
+      plumbing.
 - [ ] `VERSION` bumped, `make version`, committed; the tag will be `v<VERSION>`.
 - [ ] `make check` green on the Mac (Accelerate kernels, parity tests, audio sink compile, e2e).
 - [ ] `make check` green on Linux (the Go half, the portable engine core, e2e).

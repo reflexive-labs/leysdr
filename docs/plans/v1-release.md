@@ -5,7 +5,8 @@ Status: gap analysis of `main` at `36adcb8`, 2026-09-10. Measured against the do
 by reading the code and running the suites, not by trusting the status sections of README.md or the
 plan files (which disagree with each other). Every claim below has a `path:line` or a
 test name behind it; the raw per-item evidence is long and lives in the review run, this file keeps
-the conclusions.
+the conclusions. Historical findings remain as the release baseline; dated notes record later work.
+Use `build-order.md` and `app.md` for current milestone status.
 
 The second half of this document is the work list. Items that need no decision are being done now;
 items marked **decision** wait for the owner, because different answers lead to materially different
@@ -86,11 +87,12 @@ release." Not recorded as done. The name is now in the proto package, the launch
 (`com.leyline.daemon`), the socket path and the URI scheme, so a rename after release is a breaking
 change. Owner action, before the repo goes public.
 
-**D4 — Distribution mechanics.** The plan of record is "direct + notarized, no App Store". Nothing
-exists: no release workflow, no Homebrew tap, no signing. The minimum that works for strangers is a
-tagged release with `go install github.com/dpup/leysdr/go/cmd/ley@<tag>` documented and a
-`bootstrap-mac.sh` that builds the daemon; a tap formula is the next step; notarization needs an Apple
-developer account. Owner decides how far v1.0 goes.
+**D4 — Distribution mechanics.** The plan of record is "direct + notarized, no App Store".
+Current as of 2026-09-29: `bootstrap-mac.sh` builds from source, and `bundle-app.sh --with-daemon`
+lays out an ad-hoc-signed app carrying `leylined`, `ley`, the decoders and licence texts. It does
+not install those helpers or the launchd job, and there is no release workflow or Homebrew tap.
+APP-7 in `app.md` owns that installation work. The owner is acquiring the Developer ID certificate
+and notarization access; those gate the signed release pass, not the installation implementation.
 
 **D5 — Spikes.** S2 (20 MSPS, zero allocations, ≥50 % headroom on a base M-series) gates the all-Swift
 decision and has never been run on a Mac. The harness exists (`swift run s2-throughput`) but its
