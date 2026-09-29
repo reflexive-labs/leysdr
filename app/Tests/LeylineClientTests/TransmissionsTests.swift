@@ -554,4 +554,50 @@ final class TransmissionsTests: XCTestCase {
         XCTAssertNil(logs.log(for: second), "the least recently tuned was dropped")
         XCTAssertEqual(logs.log(for: first)?.closed.count, 1, "tuned again, so it was kept")
     }
+
+    // The inspector's `heard` beside a bookmark's tone: the open transmission's tone once it
+    // has one, else the newest tone among the transmissions closed since the tune. A log is
+    // kept per frequency across tunes, so what was heard there an hour ago is not "heard".
+    func testHeardTonePrefersTheOpenTransmissionThenTheNewestClosedSinceTheTune() {
+        var log = TransmissionLog(channelID: channel)
+        log.fold(edge(open: true, at: 0), captureRate: rate)
+        log.fold(
+            tone(.subAudibleCtcss, standard: 100, measured: 100.1, at: 240_000), captureRate: rate)
+        log.fold(edge(open: false, at: 2_400_000, duration: 2_400_000), captureRate: rate)
+        XCTAssertNil(log.heardTone(since: nil), "no message since the tune, and nothing on air")
+        XCTAssertEqual(log.heardTone(since: at(0)), .ctcss(standardHz: 100, measuredHz: 100.1))
+        XCTAssertEqual(
+            log.heardTone(since: at(2_400_000)), .ctcss(standardHz: 100, measuredHz: 100.1),
+            "closed on the tune's own message still counts")
+        XCTAssertNil(log.heardTone(since: at(3_000_000)), "it ended before the tune")
+
+        log.fold(edge(open: true, at: 4_000_000), captureRate: rate)
+        log.fold(tone(.subAudibleDcs, dcs: 23, at: 4_240_000), captureRate: rate)
+        log.fold(edge(open: false, at: 6_400_000, duration: 2_400_000), captureRate: rate)
+        XCTAssertEqual(log.heardTone(since: at(3_000_000)), .dcs(code: 23, inverted: false))
+        XCTAssertEqual(log.heardTone(since: at(0)), .dcs(code: 23, inverted: false), "the newest")
+
+        // A transmission with no tone closes: the last tone heard since the tune stays.
+        log.fold(edge(open: true, at: 7_000_000), captureRate: rate)
+        log.fold(edge(open: false, at: 9_400_000, duration: 2_400_000), captureRate: rate)
+        XCTAssertEqual(log.heardTone(since: at(3_000_000)), .dcs(code: 23, inverted: false))
+
+        // On air with no tone reported yet: still the last heard; then the open one's own.
+        log.fold(edge(open: true, at: 10_000_000), captureRate: rate)
+        XCTAssertEqual(log.heardTone(since: at(3_000_000)), .dcs(code: 23, inverted: false))
+        log.fold(
+            tone(.subAudibleCtcss, standard: 67, measured: 67.0, at: 10_240_000), captureRate: rate)
+        XCTAssertEqual(log.heardTone(since: at(3_000_000)), .ctcss(standardHz: 67, measuredHz: 67))
+        XCTAssertEqual(
+            log.heardTone(since: at(20_000_000)), .ctcss(standardHz: 67, measuredHz: 67),
+            "the open transmission's tone needs no closed one")
+
+        // A tune on another capture's clock: nothing in this log closed since it.
+        let elsewhere = Leyline_V1_SampleTime.with {
+            $0.captureID = "cap_b"
+            $0.sampleIndex = 0
+        }
+        log.fold(edge(open: false, at: 12_400_000, duration: 2_400_000), captureRate: rate)
+        XCTAssertNil(log.heardTone(since: elsewhere))
+    }
 }

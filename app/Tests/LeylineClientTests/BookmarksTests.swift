@@ -186,8 +186,9 @@ final class BookmarksTests: XCTestCase {
     }
 
     // The entry every unknown-key test starts from, byte for byte the literal
-    // go/pkg/bookmarks/bookmarks_test.go loads, so the two stores are held to one file: three
-    // keys neither store knows (`tone` is not known until U6), beside the five it does.
+    // go/pkg/bookmarks/bookmarks_test.go loads, so the two stores are held to one file: two
+    // keys neither store knows and `tone`, which was foreign until U6 and is a field since,
+    // beside the five keys every bookmark has.
     private static let foreignKeyFixture = """
         {"bookmarks": {"bm_01J8ZZZZZZZZZZZZZZZZZZZZZ1": {"name": "Local repeater", "hz": 146940000, "mode": "NFM", "bandwidth_hz": 12500, "updated_ns": 1700000000000000000, "tone": "100.0", "lists": ["x"], "zzz": {"a": 1}}}}
         """
@@ -222,8 +223,8 @@ final class BookmarksTests: XCTestCase {
         var store = try storeOverFixture()
         let first = try XCTUnwrap(store.bookmarks[Self.foreignKeyID])
         XCTAssertEqual(first.name, "Local repeater")
-        XCTAssertEqual(first.extra.keys.sorted(), ["lists", "tone", "zzz"])
-        XCTAssertEqual(first.extra["tone"], .string("100.0"))
+        XCTAssertEqual(first.tone, "100.0", "a key that became known is read into its field")
+        XCTAssertEqual(first.extra.keys.sorted(), ["lists", "zzz"], "and is no longer foreign")
         XCTAssertEqual(first.extra["lists"], .array([.string("x")]))
         XCTAssertEqual(first.extra["zzz"], .object(["a": .number(1)]))
 
@@ -267,9 +268,9 @@ final class BookmarksTests: XCTestCase {
         assertForeignKeysSurvive(entry)
     }
 
-    // `tone` is foreign today and a known key after U6: the raw text is written back as the
-    // string it arrived as, so the day it becomes known nothing needs migrating. The integer
-    // under `zzz` comes back as `1`, not `1.0`, for the same reason.
+    // A foreign value is written back as the text it arrived as, so the day its key becomes
+    // known nothing needs migrating (`tone` was foreign until U6). The integer under `zzz`
+    // comes back as `1`, not `1.0`, for the same reason.
     func testUnknownValuesAreWrittenBackAsTheyArrived() throws {
         var store = try storeOverFixture()
         try store.add(name: "WX1", hz: 162_550_000, mode: .nfm)
@@ -279,6 +280,119 @@ final class BookmarksTests: XCTestCase {
         XCTAssertNotNil(
             text.range(of: #""a"\s*:\s*1\s*\}"#, options: .regularExpression),
             "a whole number stays whole: \(text)")
+    }
+
+    // The fixture's `tone` is a field now: a save writes it once, under its own key, and never
+    // a second time under a foreign one.
+    func testAKnownKeyIsWrittenFromItsFieldAndNeverAsForeign() throws {
+        var store = try storeOverFixture()
+        try store.renameBookmark(Self.foreignKeyID, to: "Renamed")
+        try store.save()
+        let entry = try XCTUnwrap(try rawEntries(at: store.path)[Self.foreignKeyID])
+        XCTAssertEqual(entry["tone"] as? String, "100.0")
+        XCTAssertEqual(
+            entry.keys.sorted(),
+            ["bandwidth_hz", "hz", "lists", "mode", "name", "tone", "updated_ns", "zzz"])
+        let text = try String(contentsOfFile: store.path, encoding: .utf8)
+        XCTAssertEqual(text.components(separatedBy: "\"tone\"").count, 2, "one tone key: \(text)")
+    }
+
+    func testSetToneKeepsItAcrossSaveAndReloadAndEmptyClearsIt() throws {
+        var store = try storeOverFixture()
+        store.now = { Date(timeIntervalSince1970: 1_700_000_002) }
+        let set = try store.setTone(Self.foreignKeyID, to: "D023N")
+        XCTAssertEqual(set.tone, "D023N")
+        XCTAssertEqual(set.updatedNs, 1_700_000_002_000_000_000, "the stamp moves")
+        XCTAssertEqual(set.extra.keys.sorted(), ["lists", "zzz"], "the foreign keys stay")
+        try store.save()
+
+        var again = BookmarkStore(path: store.path)
+        try again.load()
+        XCTAssertEqual(again.bookmarks[Self.foreignKeyID]?.tone, "D023N")
+        let saved = try XCTUnwrap(try rawEntries(at: store.path)[Self.foreignKeyID])
+        XCTAssertEqual(saved["tone"] as? String, "D023N")
+        XCTAssertEqual(saved["lists"] as? [String], ["x"])
+        XCTAssertEqual(saved["zzz"] as? [String: Int], ["a": 1])
+
+        try again.setTone(Self.foreignKeyID, to: "")
+        XCTAssertEqual(again.bookmarks[Self.foreignKeyID]?.tone, "")
+        try again.save()
+        let entry = try XCTUnwrap(try rawEntries(at: store.path)[Self.foreignKeyID])
+        XCTAssertNil(entry["tone"], "cleared, the key is gone: \(entry)")
+        XCTAssertEqual(entry["lists"] as? [String], ["x"])
+    }
+
+    func testARefusedToneChangesNothing() throws {
+        var store = try storeOverFixture()
+        let before = store.bookmarks[Self.foreignKeyID]
+        XCTAssertThrowsError(try store.setTone(Self.foreignKeyID, to: "D024N")) {
+            XCTAssertEqual(
+                $0 as? BookmarkError,
+                .invalidTone("tone must be a CTCSS tone such as 100.0 or a DCS code such as D023N"))
+        }
+        XCTAssertThrowsError(try store.setTone(Self.foreignKeyID, to: "100"))
+        XCTAssertEqual(store.bookmarks[Self.foreignKeyID], before, "the bookmark is as it was")
+        XCTAssertThrowsError(try store.setTone("bm_nothing", to: "100.0")) {
+            XCTAssertEqual($0 as? BookmarkError, .noSuchBookmark("bm_nothing", candidates: []))
+        }
+    }
+
+    func testSetNoteAndAddTagsKeepTheRestAndSortTheSet() throws {
+        var store = try storeOverFixture()
+        store.now = { Date(timeIntervalSince1970: 1_700_000_003) }
+        let noted = try store.setNote(Self.foreignKeyID, to: "club repeater")
+        XCTAssertEqual(noted.note, "club repeater")
+        XCTAssertEqual(noted.tone, "100.0")
+        XCTAssertEqual(noted.updatedNs, 1_700_000_003_000_000_000)
+        let tagged = try store.addTags(Self.foreignKeyID, ["vhf", " home ", "vhf", "", "home"])
+        XCTAssertEqual(tagged.tags, ["home", "vhf"], "trimmed, without repeats, sorted")
+        XCTAssertEqual(try store.addTags(Self.foreignKeyID, ["2m"]).tags, ["2m", "home", "vhf"])
+        XCTAssertEqual(
+            try store.setNote(Self.foreignKeyID, to: "").note, "", "an empty note clears it")
+        try store.save()
+
+        let entry = try XCTUnwrap(try rawEntries(at: store.path)[Self.foreignKeyID])
+        XCTAssertEqual(entry["tags"] as? [String], ["2m", "home", "vhf"])
+        XCTAssertNil(entry["note"], "cleared, the key is gone")
+        assertForeignKeysSurvive(entry)
+    }
+
+    // The fields ley bookmarks and the CHIRP import write all come back, and an update in
+    // place (the same name on the same frequency) keeps every one of them.
+    func testAllFiveFieldsSurviveLoadAndAddInPlace() throws {
+        let path = tempPath()
+        try FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        let text = """
+            {"bookmarks": {"bm_1": {"name": "Club", "hz": 146940000, "mode": "NFM", "bandwidth_hz": 0, "updated_ns": 1, "tone": "D023I", "note": "typed", "tags": ["vhf", "home", "vhf"], "offset_hz": -600000, "duplex": "-"}}}
+            """
+        try Data(text.utf8).write(to: URL(fileURLWithPath: path))
+        var store = BookmarkStore(path: path)
+        try store.load()
+        let loaded = try XCTUnwrap(store.bookmarks["bm_1"])
+        XCTAssertEqual(loaded.tone, "D023I")
+        XCTAssertEqual(loaded.note, "typed")
+        XCTAssertEqual(loaded.tags, ["home", "vhf"], "the file's tags are read as a sorted set")
+        XCTAssertEqual(loaded.offsetHz, -600_000)
+        XCTAssertEqual(loaded.duplex, "-")
+        XCTAssertTrue(loaded.extra.isEmpty, "nothing is foreign")
+
+        let updated = try store.add(name: "Club", hz: 146_940_000, mode: .am, bandwidthHz: 8_000)
+        XCTAssertEqual(updated.id, "bm_1")
+        XCTAssertEqual(updated.tone, "D023I")
+        XCTAssertEqual(updated.note, "typed")
+        XCTAssertEqual(updated.tags, ["home", "vhf"])
+        XCTAssertEqual(updated.offsetHz, -600_000)
+        XCTAssertEqual(updated.duplex, "-")
+        try store.save()
+
+        let entry = try XCTUnwrap(try rawEntries(at: store.path)["bm_1"])
+        XCTAssertEqual(entry["tone"] as? String, "D023I")
+        XCTAssertEqual(entry["note"] as? String, "typed")
+        XCTAssertEqual(entry["tags"] as? [String], ["home", "vhf"])
+        XCTAssertEqual(entry["offset_hz"] as? Int, -600_000)
+        XCTAssertEqual(entry["duplex"] as? String, "-")
+        XCTAssertEqual(entry["mode"] as? String, "AM")
     }
 
     func testJSONValueRoundTripsEveryShape() throws {

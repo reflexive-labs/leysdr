@@ -20,6 +20,21 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
     public var bandwidthHz: UInt32
     /// When it was last set, wall clock, nanoseconds since the epoch.
     public var updatedNs: Int64
+    /// The tone the repeater requires, in the file's spelling (`Tone.parse` reads it: `100.0`,
+    /// `D023N`); empty when none. `tone`, `note` and `tags` are the fields a person fills in,
+    /// `offsetHz` and `duplex` are written by the CHIRP import and read by nothing yet
+    /// (docs/design/channels.md, "Bookmarks gain three fields"). All five are left out of the
+    /// file when empty, so a bookmark that has none keeps the shape an older build wrote, and
+    /// `go/pkg/bookmarks` omits them the same way.
+    public var tone: String = ""
+    public var note: String = ""
+    /// A set: sorted, trimmed, without repeats (`BookmarkStore.tagSet`), as the other client
+    /// keeps it, so a re-save changes nothing but the field a person edited.
+    public var tags: [String] = []
+    /// Signed, hertz; 0 when none.
+    public var offsetHz: Int64 = 0
+    /// `+`, `-`, `split` or `off`, as CHIRP spells them; empty when none.
+    public var duplex: String = ""
     /// Every key of the entry this client does not know, written back as it arrived, so a
     /// field a newer client added survives this one's load, edit and save
     /// (docs/design/channels.md, "Bookmarks gain three fields"). The mutators change the
@@ -31,6 +46,9 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         case modeName = "mode"
         case bandwidthHz = "bandwidth_hz"
         case updatedNs = "updated_ns"
+        case tone, note, tags
+        case offsetHz = "offset_hz"
+        case duplex
     }
 
     public init(
@@ -55,6 +73,11 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         modeName = try c.decodeIfPresent(String.self, forKey: .modeName) ?? ""
         bandwidthHz = try c.decodeIfPresent(UInt32.self, forKey: .bandwidthHz) ?? 0
         updatedNs = try c.decodeIfPresent(Int64.self, forKey: .updatedNs) ?? 0
+        tone = try c.decodeIfPresent(String.self, forKey: .tone) ?? ""
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        tags = BookmarkStore.tagSet(try c.decodeIfPresent([String].self, forKey: .tags) ?? [])
+        offsetHz = try c.decodeIfPresent(Int64.self, forKey: .offsetHz) ?? 0
+        duplex = try c.decodeIfPresent(String.self, forKey: .duplex) ?? ""
         // A second view of the same object, keyed by whatever is there: the keys `CodingKeys`
         // does not name are the foreign ones.
         let any = try decoder.container(keyedBy: AnyCodingKey.self)
@@ -72,6 +95,13 @@ public struct Bookmark: Sendable, Hashable, Codable, Identifiable {
         try c.encode(modeName, forKey: .modeName)
         try c.encode(bandwidthHz, forKey: .bandwidthHz)
         try c.encode(updatedNs, forKey: .updatedNs)
+        // Only when set, Go's `omitempty`: the file then matches what `ley bookmarks` writes,
+        // and a bookmark with none has exactly the five keys above.
+        if !tone.isEmpty { try c.encode(tone, forKey: .tone) }
+        if !note.isEmpty { try c.encode(note, forKey: .note) }
+        if !tags.isEmpty { try c.encode(tags, forKey: .tags) }
+        if offsetHz != 0 { try c.encode(offsetHz, forKey: .offsetHz) }
+        if !duplex.isEmpty { try c.encode(duplex, forKey: .duplex) }
         // The known keys were written first and win: a foreign key that later becomes known
         // is read into its field on the next load, and `extra` never carries one of these
         // names, because the decoder filters them out.
@@ -105,6 +135,9 @@ public enum BookmarkError: Error, Equatable, Sendable {
     case notLoaded(String)
     /// Nothing matched, or more than one did; the candidates are the names that came close.
     case noSuchBookmark(String, candidates: [String])
+    /// A tone `Tone.parse` refused; the string is `ToneError.sentence`, the words both clients
+    /// print, so the inspector shows what `ley bookmarks add --tone` would have.
+    case invalidTone(String)
 }
 
 /// The bookmarks file loaded into memory. `load()` reads the whole file, the mutators write
@@ -268,6 +301,71 @@ public struct BookmarkStore: Sendable {
         b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
         bookmarks[id] = b
         return b
+    }
+
+    /// The bookmark with this id takes the tone, in the file's spelling; empty clears it. A
+    /// non-empty tone is read by `Tone.parse` first and refused with `invalidTone` when it is
+    /// not one, so the file never holds a spelling `ley bookmarks` cannot read; a refused tone
+    /// changes nothing. `go/pkg/bookmarks.SetFields` is the mirror. Does not save.
+    @discardableResult
+    public mutating func setTone(_ id: String, to tone: String) throws -> Bookmark {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        if !tone.isEmpty {
+            do {
+                _ = try Tone.parse(tone)
+            } catch {
+                throw BookmarkError.invalidTone(error.message)
+            }
+        }
+        guard var b = bookmarks[id] else {
+            throw BookmarkError.noSuchBookmark(id, candidates: [])
+        }
+        b.tone = tone
+        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
+        bookmarks[id] = b
+        return b
+    }
+
+    /// The bookmark with this id takes the note as given; empty clears it. Does not save.
+    @discardableResult
+    public mutating func setNote(_ id: String, to note: String) throws -> Bookmark {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        guard var b = bookmarks[id] else {
+            throw BookmarkError.noSuchBookmark(id, candidates: [])
+        }
+        b.note = note
+        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
+        bookmarks[id] = b
+        return b
+    }
+
+    /// The tags join the set the bookmark has (`tagSet`). Nothing edits tags in the app yet
+    /// (docs/design/channels.md, "Bookmarks gain three fields"); the CHIRP import adds the
+    /// file's name. Does not save.
+    @discardableResult
+    public mutating func addTags(_ id: String, _ tags: [String]) throws -> Bookmark {
+        guard loaded else { throw BookmarkError.notLoaded(path) }
+        guard var b = bookmarks[id] else {
+            throw BookmarkError.noSuchBookmark(id, candidates: [])
+        }
+        b.tags = Self.tagSet(b.tags + tags)
+        b.updatedNs = Int64(now().timeIntervalSince1970 * 1e9)
+        bookmarks[id] = b
+        return b
+    }
+
+    /// Tags as the store keeps them: trimmed, without empties or repeats, sorted, the rule
+    /// `go/pkg/bookmarks`' `tagSet` applies on load and on every write. The other client may
+    /// write them in any order; sorting here means a re-save changes nothing but the field a
+    /// person edited.
+    static func tagSet(_ tags: [String]) -> [String] {
+        var out: [String] = []
+        for tag in tags {
+            let t = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty || out.contains(t) { continue }
+            out.append(t)
+        }
+        return out.sorted()
     }
 
     /// Removes by exact id, else exact name, else a case-insensitive name that matches exactly

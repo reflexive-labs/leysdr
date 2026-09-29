@@ -358,6 +358,11 @@ final class AppSession {
     }
     /// The tuned channel's recent transmissions and the open one, or nil without a channel.
     var transmissions: TransmissionLog? { telemetry.transmissions }
+    /// The tone heard on the tuned frequency since the tune, shown beside the bookmark's own
+    /// tone as `heard PL 100.0` and never called a mismatch, because a repeater's output tone
+    /// is not its input tone (docs/design/channels.md, "Bookmarks gain three fields"); nil
+    /// when none was reported.
+    var heardTone: SubAudibleTone? { transmissions?.heardTone(since: telemetry.tunedAt) }
     /// How long the open transmission has run, at the newest telemetry time; nil when idle.
     var timeOnAirSeconds: Double? {
         guard let now = telemetry.newestTime else { return nil }
@@ -546,6 +551,11 @@ final class AppSession {
 
     /// The bookmark whose row is an editor right now, after `＋` or Rename.
     var editingBookmarkID: String?
+    /// The sentence under the inspector's tone field after a tone the store refused
+    /// (`ToneError.sentence`), until a tone is accepted, the field puts the saved tone back, or
+    /// the tuned frequency changes; `toneErrorHz` is the frequency it was typed on.
+    private(set) var toneError: String?
+    private var toneErrorHz: UInt64?
     /// Set by `tune(bookmark:)` for the tune it starts, so the band-follow rule does not write
     /// the band's mode over the bookmark's: one write, the bookmark's.
     private var tuningBookmark = false
@@ -751,6 +761,7 @@ final class AppSession {
         telemetry.follow(
             channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
             mode: channel?.mode, captureRate: capture?.sampleRate ?? 0, connection: daemon)
+        if toneError != nil, tunedHz != toneErrorHz { clearToneError() }
         captureLevel.follow(capture?.captureID, connection: daemon)
         followAudioLevels()
         nameFailure()
@@ -2233,6 +2244,54 @@ final class AppSession {
         } catch {
             lastError = bookmarkWriteError(error)
         }
+    }
+
+    /// The inspector's tone field: the tuned bookmark takes the tone, trimmed, in the file's
+    /// spelling; empty clears it. A tone the store refuses (`Tone.parse`) leaves the bookmark
+    /// as it was and puts the shared sentence in `toneError`, under the field, rather than in
+    /// `lastError`: it is the field's mistake, not the file's. Not `setX`: that verb is one
+    /// coalesced parameter write to the daemon (`../dev/swift-style.md`, "Naming"), and this
+    /// writes a file.
+    func editTunedBookmark(tone text: String) {
+        guard let b = tunedBookmark else { return }
+        let tone = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tone != b.tone else {
+            clearToneError()
+            return
+        }
+        do {
+            try bookmarks.setTone(b.id, to: tone)
+            try bookmarks.save()
+            clearToneError()
+            log("bookmark", tone.isEmpty ? "\(b.name) tone cleared" : "\(b.name) tone \(tone)")
+        } catch BookmarkError.invalidTone(let sentence) {
+            toneError = sentence
+            toneErrorHz = b.hz
+            log("bookmark", "tone \"\(tone)\" refused for \(b.name): \(sentence)")
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
+    /// The inspector's note field: the tuned bookmark takes the note, trimmed; empty clears it.
+    func editTunedBookmark(note text: String) {
+        guard let b = tunedBookmark else { return }
+        let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard note != b.note else { return }
+        do {
+            try bookmarks.setNote(b.id, to: note)
+            try bookmarks.save()
+            log("bookmark", note.isEmpty ? "\(b.name) note cleared" : "\(b.name) note set")
+        } catch {
+            lastError = bookmarkWriteError(error)
+        }
+    }
+
+    /// The tone field put the saved tone back (Escape, or the focus going elsewhere), so the
+    /// sentence about the typed one goes with it.
+    func clearToneError() {
+        toneError = nil
+        toneErrorHz = nil
     }
 
     func remove(bookmark: Bookmark) {

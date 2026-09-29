@@ -264,6 +264,22 @@ public struct TransmissionLog: Sendable, Equatable {
         return Double(now.sampleIndex - onAir.since.sampleIndex) / Double(captureRate)
     }
 
+    /// The tone the inspector shows as heard beside a bookmark's own (docs/design/channels.md,
+    /// "Bookmarks gain three fields"): the open transmission's once it has reported one, else
+    /// the newest tone among the transmissions closed at or after `since`, the time of the
+    /// tune's first message on this capture's clock. A log is kept per frequency across tunes,
+    /// so a tone heard there an hour ago is not "heard" now; nil `since` is a tune no message
+    /// has followed yet, and only the open transmission can answer. A transmission closed on
+    /// another capture's clock was heard before this capture existed.
+    public func heardTone(since: Leyline_V1_SampleTime?) -> SubAudibleTone? {
+        if let tone = onAir?.tone { return tone }
+        guard let since else { return nil }
+        return closed.first {
+            $0.tone != nil && $0.end.captureID == since.captureID
+                && $0.end.sampleIndex >= since.sampleIndex
+        }?.tone
+    }
+
     /// The start of a transmission whose open edge arrived before this log was listening: the
     /// close time less the duration, floored at the timeline's start.
     private func reconstructedStart(

@@ -1427,6 +1427,36 @@ once and files fixes as new items.
     the next sweep or a tune into another row, and a tune within the row keeps them.
   - A sweep on a row opened by its chevron while listening elsewhere keeps that row open with
     its hits once the audio is back.
+- **U6** (`InspectorView.swift`: `BookmarkFieldsView`, `BookmarkField`, the tags line;
+  `AppSession.swift`: `heardTone`, `toneError`, `editTunedBookmark(tone:)`,
+  `editTunedBookmark(note:)`, `clearToneError`; `SpectrumFeed.swift`: `tunedAt`; none compiled
+  here):
+  - On a bookmarked frequency the identity region shows `Tone` and `Note` fields under the
+    frequency line, labelled in the reading's label column, each showing the saved value or
+    its placeholder (`100.0 or D023N`, `A note`); on a frequency with no bookmark neither
+    field is there, and naming the frequency with the pencil brings both.
+  - A click in the tone field takes focus; while it has focus Space types a space and ← →
+    move the caret, neither mutes nor tunes; the same in the note field.
+  - Typing `100.0` and Return keeps the field focused, the sidebar row and `ley bookmarks`
+    read `100.0` for that bookmark; `ley bookmarks --json` carries `"tone": "100.0"`; clearing
+    the field and Return removes the tone from both.
+  - Typing `D024N` and Return leaves the text in the field and puts `tone must be a CTCSS tone
+    such as 100.0 or a DCS code such as D023N` under it in `caution`, wrapped, and the bookmark
+    is unchanged; a good tone then, or Escape, or a click elsewhere, removes the sentence;
+    a tune to another frequency removes it too.
+  - Escape and a click elsewhere put the saved value back in either field without writing;
+    `ley bookmarks add … --note x` on the tuned bookmark's frequency and name replaces an
+    idle field's text within a second (the file watcher), and does not replace one being
+    edited.
+  - With a keyed transmission carrying a PL, `heard PL 100.0` appears beside the tone field in
+    `inkTertiary` and stays after the transmission ends; a DCS transmission reads `heard DCS
+    023`; a tune away and back to the frequency clears it until the next transmission there;
+    a bookmark tone that differs from the heard one shows both and no word like mismatch.
+  - A bookmark with tags (`ley bookmarks add 146.94 --name r --tag home --tag vhf`) shows
+    `home · vhf` in `inkFaint` between the name and the frequency line; without tags the line
+    is absent and nothing shifts.
+  - The panel's width (312 pt) holds the label, the field and `heard DCS 023 inverted` on one
+    line; if it does not, the heard words truncate and the field keeps its width.
 
 ## Backlog
 

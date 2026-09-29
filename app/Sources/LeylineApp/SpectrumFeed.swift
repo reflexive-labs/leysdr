@@ -233,6 +233,11 @@ final class ChannelTelemetryFeed {
     /// The newest `SampleTime` any message carried, for `timeOnAir(at:)` and the log's relative
     /// times: the view asks with the newest time it has rather than a clock of its own.
     private(set) var newestTime: Leyline_V1_SampleTime?
+    /// When the log shown last changed, on the capture's clock: the newest time then, or the
+    /// first message's after it when none had arrived (a fresh subscription). What the log
+    /// closed before this was heard on an earlier tune of the same frequency, which the
+    /// inspector's `heard` tone leaves out (`TransmissionLog.heardTone(since:)`).
+    private(set) var tunedAt: Leyline_V1_SampleTime?
     private(set) var error: LeylineError?
     /// Fires after every meter, on the main actor, with the message's time in seconds on the
     /// capture's clock (NaN while the rate is unknown); the session folds the inspector's
@@ -296,6 +301,7 @@ final class ChannelTelemetryFeed {
         let key = TransmissionLogs.Key(frequencyHz: hz, mode: mode)
         let retune = logs.current != nil && logs.current != key
         guard logs.tune(key, channelID: channelID) else { return }
+        tunedAt = newestTime
         if retune {
             lastTone = nil
             log(
@@ -307,6 +313,7 @@ final class ChannelTelemetryFeed {
 
     private func fold(_ msg: Leyline_V1_TelemetryMsg) {
         newestTime = msg.time
+        if tunedAt == nil { tunedAt = msg.time }
         switch msg.body {
         case .meter(let m)?:
             meter = m
@@ -381,6 +388,7 @@ final class ChannelTelemetryFeed {
         meter = nil
         logs.leave()
         newestTime = nil
+        tunedAt = nil
     }
 }
 

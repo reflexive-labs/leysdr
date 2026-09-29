@@ -8,8 +8,8 @@
 // derived from a number the daemon measured, and the number is printed beside it, which is how
 // the app meets invariant 12. The panel keeps no radio state of its own: it renders the
 // session's copy of the mirror, the feeds and the session's steadied reading, and writes one
-// thing, a bookmark's name, through the store both clients own
-// (`AppSession.renameTuned`).
+// kind of thing, a bookmark's name, tone and note, through the store both clients own
+// (`AppSession.renameTuned`, `editTunedBookmark`).
 
 import AppKit
 import LeylineClient
@@ -97,8 +97,10 @@ struct RecordingDot: View {
 /// Region 1: the channel's name first and the frequency demoted to a mono line, because the
 /// frequency is edited in the transport bar and this panel identifies the channel. The name is
 /// the bookmark's; without one it is the band's, and naming it with the pencil creates the
-/// bookmark. A channel's condition is a line under the frequency with its fix beside it: the
-/// channel changed from its bookmark, and the channel outside the capture (plans/app.md, M2-6).
+/// bookmark. A bookmark's tags are words under the name, and its tone and note are edited in
+/// fields under the frequency (`BookmarkFieldsView`). A channel's condition is a line under
+/// the frequency with its fix beside it: the channel changed from its bookmark, and the
+/// channel outside the capture (plans/app.md, M2-6).
 struct IdentityView: View {
     @Environment(AppSession.self) private var session
     @State private var editing = false
@@ -133,9 +135,18 @@ struct IdentityView: View {
                     }
                 }
             }
+            if let b = bookmark, !b.tags.isEmpty {
+                // Tags are shown, not edited, in alpha (docs/design/channels.md, "Bookmarks
+                // gain three fields").
+                Text(b.tags.joined(separator: " · ")).font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint).lineLimit(1).truncationMode(.tail)
+            }
             Text(detail(bookmark: bookmark, hz: hz))
                 .font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1)
+            if let b = bookmark {
+                BookmarkFieldsView(bookmark: b)
+            }
             if session.bookmarkModified, !editing {
                 // The channel's settings differ from the bookmark's: say so on a line of its
                 // own, with Revert (restore the channel) and Save (update the bookmark) as real
@@ -282,6 +293,92 @@ struct NameField: View {
         default:
             return false
         }
+    }
+}
+
+/// The tuned bookmark's tone and note, two labelled fields under the identity's frequency
+/// line (R21). The tone the daemon hears on the air sits beside the tone field as
+/// `heard PL 100.0`, in `inkTertiary`, and nothing calls a difference a mismatch: a repeater's
+/// output tone is not its input tone (docs/design/channels.md, "Bookmarks gain three fields").
+/// A tone the store refuses leaves the sentence under the field in `caution`. Its own struct
+/// because the heard tone changes with every transmission and the name line need not redraw
+/// with it.
+struct BookmarkFieldsView: View {
+    let bookmark: Bookmark
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                label("Tone")
+                BookmarkField(
+                    saved: bookmark.tone, placeholder: "100.0 or D023N",
+                    onCommit: { session.editTunedBookmark(tone: $0) },
+                    onRevert: { session.clearToneError() })
+                if let heard = session.heardTone {
+                    Text("heard \(heard.words)").font(Theme.Font.valueSmall)
+                        .foregroundStyle(Theme.inkTertiary).lineLimit(1)
+                }
+            }
+            if let sentence = session.toneError {
+                Text(sentence).font(Theme.Font.aside).foregroundStyle(Theme.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                label("Note")
+                BookmarkField(
+                    saved: bookmark.note, placeholder: "A note",
+                    onCommit: { session.editTunedBookmark(note: $0) })
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    /// The reading's label column width, so the two labels line up with the rows below.
+    private func label(_ word: String) -> some View {
+        Text(word).font(Theme.Font.aside).foregroundStyle(Theme.inkFaint)
+            .frame(width: Theme.Layout.readingLabelWidth, alignment: .leading)
+    }
+}
+
+/// A bookmark's tone or note, edited in place. Unlike `NameField`, which appears for one edit
+/// and goes, this field is there for as long as the frequency is bookmarked and shows the
+/// saved value until it has focus. Return commits through `onCommit` and keeps the focus, so a
+/// refused tone stays in the field with its sentence under it; Escape, or the focus going
+/// elsewhere, puts the saved value back and says so through `onRevert`. A value `ley
+/// bookmarks` writes while the field is idle replaces the draft. While it has focus
+/// `TuningKeyGuard` hands Space and the arrows to the field editor, or typing `club net`
+/// would mute the radio and tune it.
+struct BookmarkField: View {
+    let saved: String
+    let placeholder: String
+    let onCommit: (String) -> Void
+    var onRevert: () -> Void = {}
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField(placeholder, text: $draft)
+            .textFieldStyle(.plain)
+            .font(Theme.Font.value)
+            .foregroundStyle(Theme.ink)
+            .focused($focused)
+            .onSubmit { onCommit(draft) }
+            .onExitCommand { focused = false }
+            .onAppear { draft = saved }
+            .onChange(of: saved) { _, now in
+                if !focused { draft = now }
+            }
+            .onChange(of: focused) { _, isFocused in
+                if !isFocused { revert() }
+            }
+            .modifier(TuningKeyGuard(focused: focused))
+    }
+
+    private func revert() {
+        guard draft != saved else { return }
+        draft = saved
+        onRevert()
     }
 }
 
