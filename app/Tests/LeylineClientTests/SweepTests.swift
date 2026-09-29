@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Find active without a daemon (docs/design/channels.md, "Find active"): the scan the band row
+// Scan band without a daemon (docs/design/channels.md, "Scan the band"): the scan the band row
 // asks for, the row's words from a job's status detail, the hits kept from a Scan and their
 // names, the coverage note when the sweep looked at less than the band, and the outcome each
 // job state maps to.

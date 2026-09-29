@@ -37,7 +37,7 @@ enum Theme {
     /// handoff token is dimmer than `inkFaint` without being the disabled ink, so it is
     /// `inkFaint` at half strength; a guess until the Mac.
     static let planTick = inkFaint.opacity(0.5)
-    /// A sweep hit's tick on the band rail (docs/design/channels.md, "Find active"): a mark,
+    /// A sweep hit's tick on the band rail (docs/design/channels.md, "Scan the band"): a mark,
     /// so brighter than the plan grid, and neither `good`, which is a bookmark, nor `accent`,
     /// which is the tuned channel and nothing else. `inkSecondary` is the brightest ink that is
     /// not a colour; a guess until the Mac.
@@ -202,6 +202,11 @@ enum Theme {
         /// name (docs/design/channels.md, "Bands are the spine of the sidebar"); a guess until
         /// the Mac.
         static let sidebarIndent: CGFloat = 12
+        /// The expanded band's action strip: compact controls distinct from bookmark rows.
+        static let sidebarActionGap: CGFloat = 6
+        static let sidebarActionRadius: CGFloat = 4
+        static let sidebarActionPaddingX: CGFloat = 7
+        static let sidebarActionPaddingY: CGFloat = 5
         /// The plan picker (the same design section): its width, one row's height and how many
         /// rows show before it scrolls (about twelve, the design's number).
         static let pickerWidth: CGFloat = 300

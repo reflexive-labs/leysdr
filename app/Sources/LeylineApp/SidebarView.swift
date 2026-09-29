@@ -5,8 +5,8 @@
 // app-design-handoff.md). A click on a band tunes it as it always has, and the tuned row is
 // the open one because selection reflects state rather than causing it; the chevron opens a
 // row without tuning. A group (`GMRS`, `MURS`) is one row standing for its parts. Open, a row
-// shows its range line, Find active with the sweep's words or hits under it (the design's
-// "Find active"), its bookmarks and `Channels…`, which opens the plan picker
+// shows its range line, a compact strip for Scan band and `Channels…`, then the sweep's words
+// or hits and its bookmarks (the design's "Scan the band"); `Channels…` opens the plan picker
 // (`PlanPickerView.swift`). The bands the radio cannot tune fold to one dim line at the top, a
 // bookmark in no band goes under `Other`, and the filter field flattens everything into one
 // list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the session's; the views
@@ -106,7 +106,7 @@ struct SidebarView: View {
     }
 
     /// One band row and, when it is open, its contents in the design's order: the range line
-    /// (in the row), Find active, the bookmarks, `Channels…`.
+    /// (in the row), the action strip, the sweep outcome and the bookmarks.
     @ViewBuilder private func bandRow(_ row: Band, bookmarks: [Bookmark]) -> some View {
         // A band the radio cannot reach stays listed, disabled, and the tooltip explains why: a
         // click that could only fail is not offered.
@@ -123,44 +123,89 @@ struct SidebarView: View {
         .onTapGesture { if why == nil { session.tune(row: row) } }
         .help(why.map { "\(row.name) is \($0)" } ?? "")
         .contextMenu {
-            Button(findActiveTitle(row)) { session.findActive(row: row) }.disabled(why != nil)
+            Button(scanBandTitle(row)) { session.scanBand(row: row) }.disabled(why != nil)
         }
         if expanded {
-            findActiveLine(row, disabled: why != nil)
+            bandActions(row, scanDisabled: why != nil)
             if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
                 sweepOutcome(outcome, row: row)
             }
             ForEach(bookmarks) { bookmarkRow($0) }
-            if !row.plan().isEmpty { channelsLine(row) }
         }
     }
 
-    /// `Stop` while this row is being swept, else `Find active` (R20).
-    private func findActiveTitle(_ row: Band) -> String {
-        session.sweeping && session.sweepRow?.id == row.id ? "Stop" : "Find active"
+    /// `Stop` while this row is being swept, else `Scan band` (R20).
+    private func scanBandTitle(_ row: Band) -> String {
+        session.sweeping && session.sweepRow?.id == row.id ? "Stop" : "Scan band"
     }
 
-    /// The item in the expanded row, indented as `Channels…` is: starts the sweep, or stops
-    /// the one running on this row.
-    private func findActiveLine(_ row: Band, disabled: Bool) -> some View {
+    /// The expanded row's controls. Their raised, bordered treatment separates operations from
+    /// the bookmark rows that follow; the plan action is absent when the band has no plan.
+    private func bandActions(_ row: Band, scanDisabled: Bool) -> some View {
         let stopping = session.sweeping && session.sweepRow?.id == row.id
-        return Button {
-            session.findActive(row: row)
-        } label: {
-            Text(findActiveTitle(row)).font(Theme.Font.valueSmall)
-                .foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+        let pickerOpen = session.pickerBand?.id == row.id
+        return HStack(spacing: Theme.Layout.sidebarActionGap) {
+            Button {
+                session.scanBand(row: row)
+            } label: {
+                actionLabel(
+                    scanBandTitle(row), systemImage: stopping ? "stop.fill" : "waveform",
+                    active: stopping, disabled: scanDisabled)
+            }
+            .buttonStyle(.plain)
+            .disabled(scanDisabled)
+            .help(
+                stopping
+                    ? "Stop the sweep; listening comes back where it was"
+                    : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile."
+            )
+
+            if !row.plan().isEmpty {
+                Button {
+                    session.pickerBand = row
+                } label: {
+                    actionLabel(
+                        "Channels…", systemImage: "list.bullet", active: pickerOpen,
+                        disabled: false)
+                }
+                .buttonStyle(.plain)
+                .help("The \(row.name) plan: pick a channel by name")
+                .popover(
+                    isPresented: Binding(
+                        get: { session.pickerBand?.id == row.id },
+                        set: {
+                            if !$0, session.pickerBand?.id == row.id {
+                                session.pickerBand = nil
+                            }
+                        }
+                    ), arrowEdge: .trailing
+                ) {
+                    PlanPickerView(band: row)
+                }
+            }
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
         .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
         .padding(.vertical, 4)
-        .help(
-            stopping
-                ? "Stop the sweep; listening comes back where it was"
-                : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile."
-        )
+    }
+
+    private func actionLabel(
+        _ title: String, systemImage: String, active: Bool, disabled: Bool
+    ) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(Theme.Font.footnote)
+            .foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkTertiary)
+            .padding(.horizontal, Theme.Layout.sidebarActionPaddingX)
+            .padding(.vertical, Theme.Layout.sidebarActionPaddingY)
+            .background(
+                active ? Theme.selected : Theme.raised,
+                in: RoundedRectangle(cornerRadius: Theme.Layout.sidebarActionRadius)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Layout.sidebarActionRadius)
+                    .stroke(active ? Theme.borderFocus : Theme.border)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Layout.sidebarActionRadius))
     }
 
     /// Under the item, for the row the sweep is of: the progress words while it runs; then the
@@ -223,26 +268,6 @@ struct SidebarView: View {
         .help(
             "\(Frequency.format(hit.hz)) · \(snr) dB over the floor · heard in \(hit.looks) of \(hit.looksPossible) looks"
         )
-    }
-
-    /// `Channels…`: opens the plan picker beside the line. The open row is the session's, so
-    /// one picker is up at a time and a pick closes it.
-    private func channelsLine(_ row: Band) -> some View {
-        Text("Channels…").font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
-            .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { session.pickerBand = row }
-            .help("The \(row.name) plan: pick a channel by name")
-            .popover(
-                isPresented: Binding(
-                    get: { session.pickerBand?.id == row.id },
-                    set: { if !$0, session.pickerBand?.id == row.id { session.pickerBand = nil } }
-                ), arrowEdge: .trailing
-            ) {
-                PlanPickerView(band: row)
-            }
     }
 
     private func bookmarkRow(_ b: Bookmark) -> some View {

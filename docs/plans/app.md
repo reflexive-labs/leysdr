@@ -1346,9 +1346,9 @@ here are the record; each is ticked when its unit's commit lands:
   2026-09-29 (U4): the fold, the index and the naming rule in `Sidebar.swift` with their tests
   (the e2e line became façade tests: a bookmark on 462.6625 MHz files under `GMRS` and names
   `ch5`, `wx3` resolves to 162.475 MHz), the views by eye; unverified on the Mac, below.
-- `[x]` **APP-9d** Find active over the scan job with `take_over`, the row's progress from the
+- `[x]` **APP-9d** Scan band over the scan job with `take_over`, the row's progress from the
   job's events, hits on the rail, `＋` on a hit; the window detaches its sink and channel before
-  the job and recreates them on its terminal event, as the doc's "Find active" says. Landed
+  the job and recreates them on its terminal event, as the doc's "Scan band" says. Landed
   2026-09-29 (U5): `Sweep.swift` with its tests and a daemon e2e that sweeps the scan fixture
   from a window's capture, finds all four carriers, keeps the capture id and its centre and is
   refused without take-over; the session and views by eye. The audio-gone measurement waits
@@ -1363,6 +1363,10 @@ here are the record; each is ticked when its unit's commit lands:
   CSV with a repeater, a simplex row, a DCS row, a Cross row and a duplicate. Landed 2026-09-29
   (U7): `go/pkg/chirp` and `CHIRP.swift`, both held to `fixtures/chirp/expected.json`; the
   File menu item by eye, unverified below.
+- `[x]` **APP-9 review follow-up.** The expanded band's operations are a compact raised action
+  strip directly below the range: `Scan band` replaces `Find active`, and `Channels…` sits beside
+  it when the band has a plan. Bookmarks remain plain rows beneath the strip. Landed 2026-09-29;
+  the treatment is unverified on the Mac, below.
 - `[x]` **The open questions** in the doc, decided 2026-09-28 with the plan: marine ships its
   full plan; out-of-range bands are one line and the `Bands…` sheet is deferred. The flow
   analysis's defaults (the filter's rule, the naming rule, a sweep against a recording or a
@@ -1378,8 +1382,10 @@ once and files fixes as new items.
   `AppSession.swift`, `LeylineApp.swift`, `Theme.swift`; none compiled here):
   - A band row's tap tunes it as before; its chevron opens and closes the row without tuning,
     and a tune into another row closes a row the chevron opened.
-  - The tuned row is open, with the range line, its bookmarks indented under it and
-    `Channels…` last; `GMRS` is one row and is the tuned one on either half; a bookmark at
+  - The tuned row is open, with the range line, a compact raised, bordered action strip, then
+    its bookmarks indented under it. `Scan band` and `Channels…` sit together in the strip and
+    do not read as bookmark rows; a band without a plan shows only `Scan band`. `GMRS` is one
+    row and is the tuned one on either half; a bookmark at
     462.6625 MHz sits under it and reads `ch5` where its frequency was; a bookmark at 500 MHz
     is under `Other`.
   - The filter field takes focus on ⌘G (`Go to…` in the Tune menu, from the Library too);
@@ -1387,7 +1393,7 @@ once and files fixes as new items.
   - Typing `wx3` lists the NOAA row and Return tunes 162.475 MHz, clears the field and drops
     its focus; Escape clears and blurs; `zz` shows `No matches for “zz”.`; a row of a band the
     radio cannot tune is dimmed and does nothing.
-  - `Channels…` opens the picker to the right of the line; it opens with the field focused and
+  - `Channels…` opens the picker to the right of its action; it opens with the field focused and
     the highlight on the tuned channel when the plan has it, else the first row; Up and Down
     move the highlight and stop at the ends, and the list scrolls to keep it in view; typing
     narrows the rows and puts the highlight back on the first; Return picks it and closes;
@@ -1409,7 +1415,7 @@ once and files fixes as new items.
     holding Up or Down in the picker moves every repeated step and leaves the field focused.
 - **U5** (`AppSession.swift`, `SidebarView.swift`, `BandRailView.swift`, `MainWindow.swift`,
   `Theme.swift`; none compiled here):
-  - Find active on the tuned 2 m row: the audio stops, the field keeps showing the tuned
+  - Scan band on the tuned 2 m row: the audio stops, the field keeps showing the tuned
     frequency, the row reads `Sweeping 2 m amateur, 7 steps…` from the job's events, and the
     audio is back on the same frequency with the band's mode and width when the row shows its
     hits. Record how long the audio was gone, in the design's open question
@@ -1426,10 +1432,10 @@ once and files fixes as new items.
     on the same sweep.
   - A band click, a bookmark click, a rail click, a chart click and a picker pick during a
     sweep stop it and happen once the audio is back, without a `DEVICE_SWEEPING` error.
-  - With a recording running on the window's capture, Find active asks on the move alert
+  - With a recording running on the window's capture, Scan band asks on the move alert
     with `Sweep anyway` and `Cancel`; Sweep anyway sweeps, Cancel leaves the radio alone; a
     band switch over the recording still reads `Move anyway`.
-  - After Stop listening, Find active on NOAA runs without a pause, the row shows its hits and
+  - After Stop listening, Scan band on NOAA runs without a pause, the row shows its hits and
     the band is selected afterwards, so the audio plays.
 - **U7** (`LeylineApp.swift`, `AppSession.swift`; neither compiled here):
   - `File > Import CHIRP…` sits after `Show Recordings in Finder` and opens a panel that
@@ -1449,9 +1455,9 @@ once and files fixes as new items.
     column; is it a CHIRP CSV export?` and `bookmarks.json` is unchanged.
   - If the bookmarks file cannot be saved, the import reports the write error and the sidebar
     reloads the file from disk instead of showing the unsaved rows.
-  - Find active on a second band while one sweeps stops the first and sweeps the second once
+  - Scan band on a second band while one sweeps stops the first and sweeps the second once
     the radio is back; the first row's words go, the second's hits arrive.
-  - A bookmark tuned when Find active is clicked comes back with the bookmark's own mode and
+  - A bookmark tuned when Scan band is clicked comes back with the bookmark's own mode and
     width (a bookmark saved at AM on airband, say), and `changed` is not shown.
   - A NOAA sweep with the antenna off reads `Nothing on the air right now; repeaters and
     towers key up briefly` and the rail has no hit ticks; the previous sweep's hits stay until
@@ -1500,10 +1506,6 @@ once and files fixes as new items.
   structural change, with the Mac-only isolation and lifecycle checks from `../dev/swift-style.md`.
 - `ley bookmarks` has no edit verb, so the terminal cannot clear a tone or note the app wrote.
   Add `ley bookmarks edit` rather than changing `add`'s update contract.
-- The row actions need another UI pass: “Find active” is not the right label, and it and
-  `Channels…` look like bookmarks when placed beside them. Rename the sweep action and give both
-  actions a treatment distinct from bookmark rows.
-
 ## Backlog
 
 - **The band rail's scrubber at a wide capture** (seen 2026-09-25). When the radio's sample rate

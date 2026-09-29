@@ -255,7 +255,7 @@ public enum Plans {
 
     /// What a bookmark made on `hz` is named after: the radio-printed name of the channel it
     /// sits on within `toleranceHz`, else nil and the caller names it after the frequency
-    /// (the plan's KTD7, one naming function for ⌘D, the pencil, Find active's ＋ and CHIRP).
+    /// (the plan's KTD7, one naming function for ⌘D, the pencil, a scan hit's ＋ and CHIRP).
     public static func name(at hz: UInt64, in bands: [Band] = Bands.builtIn) -> String? {
         channel(at: hz, in: bands)?.channel.name
     }

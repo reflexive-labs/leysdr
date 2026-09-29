@@ -14,7 +14,7 @@
 //     transmissions heard live, and a finished recording deletes;
 //   - a recording switched on and off over a continuous carrier cuts the log there, and the
 //     piece between the cuts lies in the recording's part;
-//   - Find active's sweep borrows the window's capture, hands it back at its centre, and its
+//   - The band scan borrows the window's capture, hands it back at its centre, and its
 //     Scan holds the fixture's carriers; the same sweep without take-over is declined;
 //   - the daemon's error code survives the trip.
 
@@ -745,14 +745,14 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertGreaterThan(summary.parts, 0, "the carrier holds the squelch open: one part")
     }
 
-    /// The scan job Find active starts (docs/design/channels.md, "Find active"): 2 m with
+    /// The scan job Scan band starts (docs/design/channels.md, "Scan the band"): 2 m with
     /// take-over on the window's own device. The file device tunes only at its one centre, so
     /// the sweep is clipped to that one step and `covered` is narrower than the band by design;
     /// the test asserts the carriers, the borrowed capture's id and its restored centre, not
     /// full coverage. Then the same request without take-over, while the window's channel is
     /// on the capture, is declined by the allocator's don't-disturb rule with `DEVICE_BUSY`.
     @MainActor
-    func testFindActiveSweepsTheFixtureAndGivesTheCaptureBack() async throws {
+    func testScanBandSweepsTheFixtureAndGivesTheCaptureBack() async throws {
         Harness.stop(daemon)
         daemon = try await Harness.start(fixture: "scan_band.cf32")
         let app = try DaemonConnection(
@@ -770,7 +770,7 @@ final class ClientDaemonTests: XCTestCase {
         }
         let twoM = try XCTUnwrap(Bands.resolve("2m"))
 
-        // `AppSession.findActive(band:)` after its pause: the request on the capture's device.
+        // `AppSession.scanBand(row:)` after its pause: the request on the capture's device.
         let job = try await app.jobs.startJob(
             Sweep.request(for: twoM, in: Bands.builtIn, deviceID: capture.deviceID))
         XCTAssertEqual(job.state, .running, job.statusDetail)

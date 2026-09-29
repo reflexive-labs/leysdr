@@ -150,7 +150,7 @@ Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
   client façade tested against the real daemon (`docs/dev/app.md`), and a window with the spectrum,
   the waterfall, click to hear and the layer 1 controls, confirmed on the owner's Mac (the M1 cut).
   E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`: the channel plans, the
-  sidebar on the spine, Find active, tone and note, CHIRP import; the window's views await the
+  sidebar on the spine, Scan band, tone and note, CHIRP import; the window's views await the
   owner's Mac), the M2 inspector has landed, and recording from the window (E.5) with it;
   lifecycle (E.6) and the bundle (E.7) are open.
 - Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with

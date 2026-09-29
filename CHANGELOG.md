@@ -4,7 +4,8 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
-- The Mac app's band rows carry Find active. It sweeps the band on the window's own radio, the
+- The Mac app's expanded band rows group `Scan band` and `Channels…` in a compact action strip
+  distinct from bookmark rows. Scan band sweeps the band on the window's own radio, the
   way `ley scan --band` does, while the row counts the steps, then lists what it found strongest
   first, named after the plan channel each hit sits on; a click tunes a hit, ＋ bookmarks it, and
   the rail ticks them. The audio stops for the sweep and comes back where it was, with the
@@ -12,8 +13,8 @@ Nothing has been released yet. This file starts with everything that exists on `
   sweep stops it and happens once the radio is back; a sweep that heard nothing says so, since
   repeaters and towers key up briefly.
 
-- The Mac app's sidebar is one list of bands. Each band row opens to its range, its bookmarks
-  and `Channels…`, which lists the band's plan in a popover with a filter and the arrow keys;
+- The Mac app's sidebar is one list of bands. Each band row opens to its range, its actions and
+  its bookmarks; `Channels…` lists the band's plan in a popover with a filter and the arrow keys;
   GMRS and MURS are one row each. A band click still tunes it; the chevron opens a row without
   tuning. Bands the radio cannot tune fold to one line at the top. A filter field (`Go to…`, ⌘G)
   narrows everything to bands, bookmarks and channels by name, and Return tunes the first. A

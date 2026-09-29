@@ -4,7 +4,7 @@ Status: implemented 2026-09-29 as APP-9, from the plan
 `../plans/2026-09-28-2037-feat-bands-channels-bookmarks-plan.md`; the `ley` side and the client
 library are tested on Linux, the window's views are unverified on the Mac (`../plans/app.md`,
 APP-9, "Unverified on the Mac"), and the audio-gone measurement below is still open. Companion to `app-design-handoff.md` ("Bands and bookmarks are files", which owns the seed
-file and `bookmarks.json`), `scan.md` (which owns the sweep and the detector "Find active" uses),
+file and `bookmarks.json`), `scan.md` (which owns the sweep behind Scan band),
 `decoders.md` (which owns the labels store this copies and the decoders a plan channel can name)
 and `semantic-tier.md`. Work items are APP-9 in `../plans/app.md`; E.4 in
 `../plans/build-order.md` is the milestone.
@@ -94,7 +94,7 @@ MURS is defined as GMRS is: `MURS 151 MHz` (151.820 MHz to 151.940 MHz, padded h
 and `MURS 154 MHz` (154.570 MHz to 154.600 MHz), with a `murs` group carrying the five-channel
 plan. One band from 151.820 MHz to 154.600 MHz would label the 2.6 MHz of business, itinerant
 and public-safety spectrum between the two clusters as MURS, centre the band view at 153.2 MHz
-where no channel is, and have Find active report hits under MURS that no channel names.
+where no channel is, and have Scan band report hits under MURS that no channel names.
 
 The plans in the alpha table, all from the public allocations, each to be checked against the
 FCC or ITU listing when the table is written:
@@ -127,8 +127,10 @@ expands to what is inside it; the rest is collapsed.
 - **A band row** shows its name and mode as today, and a click on it tunes the band as today: a
   newcomer who clicks FM broadcast hears it, and FM broadcast has no plan and no bookmarks, so
   a click that only expanded the row would leave a sweep as the only way in. Expanded, the row
-  shows its range line, then the Find active line with a sweep's progress or hits beneath it,
-  then its bookmarks, then one line, `Channels…`, that opens the plan picker. The band the tuned frequency is in is the expanded one, following the rule that
+  shows its range line, then a compact action strip with `Scan band` and, where the band has a
+  plan, `Channels…`. The raised, bordered controls distinguish actions from the bookmark rows
+  below them. A sweep's progress or hits sit beneath the strip, followed by the bookmarks. The
+  band the tuned frequency is in is the expanded one, following the rule that
   selection reflects state rather than causing it (`app-design-handoff.md`, "Decided
   2026-09-21: the sidebar"), so the click expands the row by tuning it; a disclosure chevron at
   the row's edge expands or collapses without tuning, for a ham looking through 70 cm while
@@ -139,14 +141,14 @@ expands to what is inside it; the rest is collapsed.
 - **A group is one row.** The sidebar lists plain bands today (`Bands.plain`) and the band
   lookup never answers a group, so a plan that hangs off GMRS would have no row. A group
   replaces its parts in the sidebar: the `GMRS` row spans both halves, its picker lists 1 to 22,
-  its bookmarks are those whose frequency lies in either half, Find active sweeps the group, and
+  its bookmarks are those whose frequency lies in either half, Scan band sweeps the group, and
   picking a channel tunes through `select(band:at:)` on the half that contains it, which is what
   a neighbour crossing does already. The halves stay in the table for `ley`, for the rail, which
   keeps showing the half the capture is on and draws only the group's channels inside it, and
   for the band lookup; `Bands.plain` gains a sidebar-facing sibling that folds parts into their
   group. On the Go side `presetAt` and `ResolvePreset` walk the groups' plans as well as the
   bands'. That a pick in the other half moves the capture is to be seen on the Mac.
-- **The plan picker** is a popover from the `Channels…` line, the shape the mode and width
+- **The plan picker** is a popover from the `Channels…` action, the shape the mode and width
   pop-ups use, sized to about twelve rows and scrolling past that. A row is the channel's name,
   its frequency, and its note in `inkTertiary` where there is one; the order is the plan's own,
   channel number first, so marine's ship and coast entries sit together. A filter field at the
@@ -180,7 +182,7 @@ expands to what is inside it; the rest is collapsed.
   The frequency field is a digit editor and stays one; a name goes in the filter, and `Go to…`
   (⌘G) in the Tune menu focuses it.
 - **A new bookmark is named after the channel it sits on.** ⌘D, the inspector's pencil on an
-  unnamed frequency, Find active's ＋ and a CHIRP row with no name all use one rule: the plan
+  unnamed frequency, a scan hit's ＋ and a CHIRP row with no name all use one rule: the plan
   channel's name when the frequency is within 6 kHz of one, else the frequency. Both clients
   answer "which channel" the same way: the nearest within 6 kHz, the tolerance `presetAt` uses
   today, and two entries at equal distance resolve to the earlier in plan order, which marine's
@@ -196,7 +198,7 @@ import is still every row at once. Lists (user-named sets such as Home or Boat, 
 becoming one, scan lists falling out of them) are the ham story and are deferred, with the file
 shape chosen so they can be added without a migration.
 
-### Find active
+### Scan the band
 
 The newcomer story is a scan for the services that are always on the air. NOAA is seven plan
 channels of which one or two are audible from any given house; FM broadcast has no plan at all
@@ -206,7 +208,7 @@ band, not what keyed up during the sweep), so it does not serve the two intermit
 the story, 2 m repeaters and airband, which key up for seconds an hour. In alpha those come from
 bookmarks and CHIRP import; a band watched over time is the band-watching plan's occupancy
 work. The band row's
-context menu and the expanded row carry **Find active**, which runs the sweep `ley scan --band`
+context menu and the expanded row carry **Scan band**, which runs the sweep `ley scan --band`
 runs (`ScanConfig{range: the band, once: true, take_over: true, device_id: the window's
 capture's device}`; the device id is what makes the take-over take over the window's own radio
 and not a second one a watch or another window is using) and puts the detections on the
@@ -214,7 +216,7 @@ rail as ticks with their SNR in the help text, strongest first in the expanded r
 sweep's duration and until the next tune. One click on a hit tunes it; the plan channel nearest
 within half a step names it, as `presetAt` names a detection in `ley scan`; `＋` on a hit makes
 the bookmark, named after the channel when there is one. A NOAA newcomer therefore clicks the
-band, clicks Find active, and clicks the loudest row. A sweep that finds nothing replaces the
+band, clicks Scan band, and clicks the loudest row. A sweep that finds nothing replaces the
 progress text with one line, `Nothing on the air right now; repeaters and towers key up
 briefly`, and leaves the rail without hits; a previous sweep's hits stay until the next sweep
 or the next tune elsewhere. A job that fails shows its status detail in `caution` where the
@@ -223,11 +225,11 @@ band appends `ley scan`'s coverage note under the hits. Hits in the gap between 
 are dropped, for the reason MURS is two halves, and the rail shows the tuned half's hits.
 
 While a sweep runs, the rest of the window keeps its rules. A recording riding the window's
-capture would hear every hop, so Find active asks first, on the alert a band move over a
+capture would hear every hop, so Scan band asks first, on the alert a band move over a
 recording already shows, with Sweep anyway and Cancel. Any tune while the row reads `Sweeping…`
 (a band, a bookmark, the rail, the waterfall, the filter, a pick) cancels the job and proceeds
 once its terminal event has restored the centre; the row's item reads Stop meanwhile and does the
-same; Find active on another band cancels the first sweep and starts its own after the terminal
+same; Scan band on another band cancels the first sweep and starts its own after the terminal
 event. With no capture at all (after Stop listening) the job runs on the radio the window would
 pick, the daemon opens and destroys its own capture, and the band is selected afterwards, as a
 bookmark click after Stop listening selects one.
@@ -249,7 +251,7 @@ and the transport bar's meter reads nothing, which is what is happening. The swe
 so a band sweep is a few seconds; a 20.5 MHz FM broadcast band is about five times that. The
 row's progress is the job's, from the event stream, the way `ley scan` follows it.
 
-Find active is not a watch and does not repeat. A band being swept on a schedule is the
+Scan band is not a watch and does not repeat. A band being swept on a schedule is the
 band-watching plan's occupancy work (`../plans/band-watching.md`), not this.
 
 ### Bookmarks gain three fields
@@ -318,7 +320,7 @@ asked for next.
   answer, and this document does not reopen it. What would reopen it: a second machine wanting
   the same bookmarks, or an agent over MCP needing to write one. The MCP adapter runs in `ley`
   and reads the same file, so the agent case is covered without the daemon.
-- **Find active uses the scan job as it is.** `take_over` exists for exactly this, and the
+- **Scan band uses the scan job as it is.** `take_over` exists for exactly this, and the
   capture id survives the sweep: the allocator never destroys a capture it did not create, so the
   window's mirror sees the same capture retuned and restored, never a tombstone. One thing to
   measure before the item is ticked: how long the window's audio is gone for a 2 m sweep at
@@ -375,7 +377,7 @@ asked for next.
    MURS, 6 m and 1.25 m added, the goldens re-recorded.
 3. The sidebar on the spine: nesting, the collapsed out-of-range line, the filter field, the
    picker and the rail ticks, channel names on rows.
-4. Find active over the scan job, with the audio-gone measurement above recorded.
+4. Scan band over the scan job, with the audio-gone measurement above recorded.
 5. `tone`, `note` and `tags`, in the inspector and `ley bookmarks`.
 6. CHIRP import, both surfaces.
 
@@ -406,4 +408,4 @@ asked for next.
 - **Marine's plan size**, decided 2026-09-28: the full ITU plan with the US A and B variants
   and ship and coast entries, in the data, the picker and `ley bands marine`, because the
   picker's filter copes with a hundred rows and a boater's dozen is a subset of it.
-- **The Find active measurement** in "The daemon": how long the audio is gone.
+- **The Scan band measurement** in "The daemon": how long the audio is gone.

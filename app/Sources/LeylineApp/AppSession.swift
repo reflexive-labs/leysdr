@@ -561,18 +561,18 @@ final class AppSession {
     /// the band's mode over the bookmark's: one write, the bookmark's.
     private var tuningBookmark = false
 
-    // Find active (docs/design/channels.md, "Find active"; the plan's KTD5). The job is the
+    // Scan band (docs/design/channels.md, "Scan the band"; the plan's KTD5). The job is the
     // mirror's; what is here is which job the row started, what the window was listening to
     // when it paused for it, and the outcome the row shows once the job has ended.
     /// The sweep the band row started, or nil. Kept after the job ends, with its outcome, until
     /// the next sweep or the next tune into another row (R19), because the row shows the hits,
     /// the empty line or the failure from it; a cancelled sweep is dropped at once.
     private(set) var sweep: SweepState?
-    /// The action asked for while a sweep ran (a tune, or another row's Find active), run once
+    /// The action asked for while a sweep ran (a tune, or another row's Scan band), run once
     /// the job's terminal event has put the radio back. The latest one wins.
     @ObservationIgnored private var afterSweep: (@MainActor () -> Void)?
 
-    /// Between Find active and the channel and sink being back: no capture write leaves the
+    /// Between Scan band and the channel and sink being back: no capture write leaves the
     /// window meanwhile, because the daemon refuses every one with `DEVICE_SWEEPING`.
     var sweeping: Bool { sweep.map { !$0.restored } ?? false }
     /// The row the last sweep was of, whose expanded row shows the outcome.
@@ -1621,21 +1621,21 @@ final class AppSession {
         }
     }
 
-    // MARK: Find active
+    // MARK: Scan band
 
     /// The band row's item (R17, R20): `ley scan --band`'s sweep on the window's own radio,
     /// with the window paused for it. On the row being swept it is Stop; on another row it
     /// stops that sweep and starts this one after its terminal event. A record job riding the
     /// window's capture would hear every hop, so the move alert asks first, Sweep anyway going
     /// ahead.
-    func findActive(row: Band) {
+    func scanBand(row: Band) {
         if let s = sweep, sweeping {
             if s.row.id == row.id {
                 log("sweep", "stop asked on \(row.name)")
                 afterSweep = nil
                 cancelSweep()
             } else {
-                _ = waitForSweep("find active on \(row.name)") { self.findActive(row: row) }
+                _ = waitForSweep("scan \(row.name)") { self.scanBand(row: row) }
             }
             return
         }
@@ -1643,7 +1643,7 @@ final class AppSession {
             let words = Recordings.retuneWords(
                 jobs: Recordings.jobs(riding: cap.captureID, in: state))
         {
-            ask(words, before: "find active on \(row.name)", proceedLabel: "Sweep anyway") {
+            ask(words, before: "scan \(row.name)", proceedLabel: "Sweep anyway") {
                 Task { await self.startSweep(row: row) }
             }
             return

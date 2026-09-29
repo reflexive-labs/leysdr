@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Find active as the window reads it (docs/design/channels.md, "Find active"): the scan job the
+// Scan band as the window reads it (docs/design/channels.md, "Scan the band"): the scan job the
 // band row starts, the row's words while it runs, the hits kept from the finished `Scan` and the
 // coverage note under them. The sweep is `ley scan --band`'s, one shot with take-over on the
 // window's own radio, so the allocator borrows the window's capture rather than a second radio
@@ -162,7 +162,7 @@ public struct SweepResult: Sendable, Hashable {
     /// radio could not tune all of it or the sweep was stopped early.
     public var covered: ClosedRange<UInt64>?
 
-    /// The one line for a sweep that found nothing (docs/design/channels.md, "Find active").
+    /// The one line for a sweep that found nothing (docs/design/channels.md, "Scan the band").
     public static let emptyWords =
         "Nothing on the air right now; repeaters and towers key up briefly"
 

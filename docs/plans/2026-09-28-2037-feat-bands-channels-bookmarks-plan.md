@@ -19,7 +19,7 @@ its tests, and what Linux proves versus what the Mac must still confirm.
 
 ## Goal Capsule
 
-- **Objective.** A newcomer with an RTL-SDR opens the app, clicks a band, clicks Find active and
+- **Objective.** A newcomer with an RTL-SDR opens the app, clicks a band, clicks Scan band and
   hears the local NOAA transmitter without typing a frequency; types `ch5` and is on GMRS channel
   5; a ham imports a CHIRP export and finds the memories filed under 2 m and 70 cm with their
   tones, in the app and in `ley bookmarks`, without the sidebar becoming a hundred rows.
@@ -46,7 +46,7 @@ its tests, and what Linux proves versus what the Mac must still confirm.
 Plan channels become a `channels` list on each band in the Go table and the app's seed file, and
 `ley presets` becomes a view over them. The sidebar is rebuilt with bands as the spine: bookmarks
 nest under their band, a group is one row, out-of-range bands fold to one line, a filter field
-flattens everything, and a picker lists a band's plan. Find active runs the daemon's scan job
+flattens everything, and a picker lists a band's plan. Scan band runs the daemon's scan job
 against the window's own radio and puts the hits on the rail. Bookmarks gain tone, note and tags
 in the file, the inspector and `ley bookmarks`. CHIRP CSV imports into that file from both
 clients. Both bookmark stores first learn to keep keys they do not know, so neither client can
@@ -100,9 +100,9 @@ cannot deliver it. The design doc has the full context and the decisions.
 
 - R10. The sidebar is one list of bands in frequency order; a band click tunes as today and the
   tuned band is the expanded one; a chevron expands or collapses without tuning; an expanded band
-  shows its range line, its bookmarks, then `Channels…`.
+  shows its range line, a compact raised action strip, the sweep outcome and its bookmarks.
 - R11. A group replaces its parts as one row: its picker is the group's plan, its bookmarks are
-  those in either part, Find active sweeps the group, a pick tunes through the part that
+  those in either part, Scan band sweeps the group, a pick tunes through the part that
   contains the channel, and the rail keeps showing the part the capture is on with only that
   part's channels ticked.
 - R12. Bands the radio cannot tune fold to one dim line, `7 bands below what this radio tunes`
@@ -113,17 +113,18 @@ cannot deliver it. The design doc has the full context and the decisions.
   bookmark before a plan channel on the same frequency; Return tunes the first row, a band row
   as a click would; disabled rows are listed and skipped; `No matches for "…"` replaces an empty
   list; Escape clears and blurs; `Go to…` (⌘G) in the Tune menu focuses it.
-- R14. `Channels…` opens a popover of the plan, about twelve rows tall and scrolling, each row
-  the channel's name, frequency and note, in plan order, with a filter field for the long plans
+- R14. `Channels…` in the action strip opens a popover of the plan, about twelve rows tall and
+  scrolling, each row the channel's name, frequency and note, in plan order, with a filter field
+  for the long plans
   and arrow keys and Return to pick; a pick tunes and closes.
 - R15. A plan of 24 channels or fewer is drawn as faint ticks on the band rail.
 - R16. A bookmark or tuned frequency on a plan channel shows the channel's name in the
-  frequency's place; a bookmark made by ⌘D, by the inspector's pencil, by Find active's ＋ or by
+  frequency's place; a bookmark made by ⌘D, by the inspector's pencil, by a scan hit's ＋ or by
   a blank-named CHIRP row is named after the channel it sits on, else after the frequency.
 
-**Find active**
+**Scan band**
 
-- R17. The band row's context menu and expanded row carry Find active, which starts
+- R17. The band row's context menu and expanded row carry Scan band, which starts
   `ScanConfig{range: the band or group, once, take_over, device_id: the window's capture's
   device}`; the row reads `Sweeping <band>, <n> steps…` from the job's status detail; hits land
   on the rail as ticks with the name or frequency and SNR in the help text and in the expanded
@@ -136,9 +137,9 @@ cannot deliver it. The design doc has the full context and the decisions.
   up briefly`; a failed job shows its status detail in `caution`; a `covered` range narrower
   than the band appends `ley scan`'s coverage note; hits in the gap between a group's halves are
   dropped; a previous sweep's hits stay until the next sweep or the next tune elsewhere.
-- R20. A recording running on the window's capture makes Find active ask first, on the existing
+- R20. A recording running on the window's capture makes Scan band ask first, on the existing
   move alert, with Sweep anyway and Cancel; any tune while the row reads `Sweeping…` cancels the
-  job and proceeds after its terminal event; Find active reads Stop while it runs; with no
+  job and proceeds after its terminal event; Scan band reads Stop while it runs; with no
   capture at all the job runs on the picked device and the band is selected afterwards.
 
 **The inspector**
@@ -182,7 +183,7 @@ cannot deliver it. The design doc has the full context and the decisions.
 - **Out-of-range bands are one line and the `Bands…` sheet is deferred** (session-settled:
   user-approved; chosen over building the sheet). Governs R12; see Scope Boundaries.
 - **A running recording asks; a tune cancels a sweep** (session-settled: user-approved; chosen
-  over refusing Find active or leaving the tune to fail). Governs R20.
+  over refusing Scan band or leaving the tune to fail). Governs R20.
 - **New bookmarks are named after the plan channel they sit on** (session-settled:
   user-approved; chosen over the frequency). Governs R16.
 - **A re-import never clears a typed value** (session-settled: user-approved; chosen over
@@ -193,7 +194,7 @@ cannot deliver it. The design doc has the full context and the decisions.
 ### Acceptance Examples
 
 - AE1. **NOAA without a frequency.** Given a radio and no bookmarks, when the newcomer clicks
-  `NOAA weather`, clicks Find active and clicks the loudest row, then the window is tuned to that
+  `NOAA weather`, clicks Scan band and clicks the loudest row, then the window is tuned to that
   WX channel, the row shows its name, and audio is back. Covers R10, R17, R18.
 - AE2. **Channel 5 by name.** Given the filter focused, when the user types `ch5` and presses
   Return, then the window is on 462.6625 MHz, the GMRS row is expanded and the inspector's title
@@ -205,7 +206,7 @@ cannot deliver it. The design doc has the full context and the decisions.
   a `ley` built after U2 but before U6 runs `ley bookmarks move`, then `tone` is still in the
   file. Covers R7.
 - AE5. **A sweep over a recording.** Given a recording running on the tuned channel, when the
-  user clicks Find active, then an alert offers Sweep anyway and Cancel and nothing has started.
+  user clicks Scan band, then an alert offers Sweep anyway and Cancel and nothing has started.
   Covers R20.
 
 ### Scope Boundaries
@@ -263,7 +264,7 @@ cannot deliver it. The design doc has the full context and the decisions.
   `defaultMode(at:)`, `tune(bookmark:)` after Stop listening and the last-band adoption, since
   those lookups never answer a group; `select(band:at:)` still takes a part, and a part maps to
   its group only where a row is expanded. Governs R11.
-- KTD5. **Find active pauses the window without releasing the capture.** A `pauseForSweep()` on
+- KTD5. **Scan band pauses the window without releasing the capture.** A `pauseForSweep()` on
   `AppSession` detaches the sink and destroys the channel, sets a `sweeping` flag that the
   mirror-follow, `bandMoveWords` and the failure words respect, and keeps the capture; a
   `followScanJob()` in the mirror-follow list watches the job to its terminal state, fetches the
@@ -275,7 +276,7 @@ cannot deliver it. The design doc has the full context and the decisions.
   tested on Linux. Governs R13.
 - KTD7. **One naming function.** `Plans.name(at:in:)` in `LeylineClient` answers the channel's
   radio-printed name within KTD2's tolerance, else nil; `bookmarkCurrent`, `renameTuned`'s add
-  path, Find active's ＋ and the CHIRP blank-name rule all go through it (session-settled:
+  path, a scan hit's ＋ and the CHIRP blank-name rule all go through it (session-settled:
   user-approved, see Key Decisions). Governs R16.
 - KTD8. **`--band` on `tune` and `bookmarks add` only.** `resolveDial` gains an optional band
   context; a bare name resolves in that band's plan first; the other dial verbs wait. Governs R6.
@@ -315,15 +316,15 @@ flowchart TB
   A --> V[LeylineApp: SidebarView,\nBandRailView, picker]
 ```
 
-Find active's lifecycle in the window after U5:
+The band scan's lifecycle in the window after U5:
 
 ```mermaid
 stateDiagram-v2
   [*] --> Listening
-  Listening --> Asking: Find active while a record job\nrides the capture
+  Listening --> Asking: Scan band while a record job\nrides the capture
   Asking --> Listening: Cancel
   Asking --> Sweeping: Sweep anyway
-  Listening --> Sweeping: Find active\n(pauseForSweep, StartJob)
+  Listening --> Sweeping: Scan band\n(pauseForSweep, StartJob)
   Sweeping --> Restoring: job terminal event\n(COMPLETED, FAILED, CANCELLED)
   Sweeping --> Restoring: any tune\n(CancelJob first)
   Restoring --> Listening: resumeAfterSweep\n(channel + sink back, hits shown)
@@ -348,7 +349,7 @@ flag keeps the window from making one.
 
 U1 first, so the design carries the defaults every later unit cites. U2 before anything writes a
 new field. U3 before U4, because the sidebar's picker, ticks and names read the seed. U4 before
-U5, because Find active lives on the band row and the group row. U6 before U7, because the
+U5, because Scan band lives on the band row and the group row. U6 before U7, because the
 import writes the fields U6 defines. No unit is parallel with another; each is one commit.
 
 ### System-Wide Impact
@@ -387,8 +388,8 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   1. "Bands are the spine of the sidebar" gains the filter's match, order, Return, Escape and
      disabled-row sentences (R13), the mixed out-of-range wording (R12), the naming rule for
      new bookmarks (R16), the picker's highlight and keys (U4 step 4), and the expanded row's
-     order with Find active in it (U5 step 4).
-  2. "Find active" gains a "While a sweep runs" paragraph (R20, and a second band's Find active
+     order with Scan band in it (U5 step 4).
+  2. "Scan the band" gains a "While a sweep runs" paragraph (R20, and a second band's Scan band
      cancelling the first), the failed-job and partial coverage wording and the dropped gap
      hits (R19); "The plan is data in the band table" gains KTD2's tie rule.
   3. "CHIRP import" gains the update, blank-name, rounding and mode rules (R23) and the shared
@@ -531,7 +532,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
      the group; `Other` holds the rest; the out-of-range line folds per R12.
   3. The filter field copies the Library's search field and `NameField`'s key monitor; Return
      acts on the index's first row.
-  4. `PlanPickerView` is a popover from the `Channels…` line in the shape of the device popover;
+  4. `PlanPickerView` is a popover from the `Channels…` action in the shape of the device popover;
      it opens with the tuned channel highlighted when the plan has it, else the first row; Up and
      Down move the highlight without wrapping, the filter narrows the rows and puts the
      highlight back on the first, Return picks the highlighted row and Escape closes; a pick
@@ -562,7 +563,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   marine's list, the ticks' colour against bookmarks, the out-of-range line, the row label
   `ch5`, the inspector title on a plan channel.
 
-### U5. Find active
+### U5. Scan band
 
 - **Goal:** the band row sweeps the band on the window's own radio and shows what it found
   (R17 to R20).
@@ -572,18 +573,18 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   `SweepHits` from a `Scan` filtered to the band or the group's halves, the row words for
   running, empty, failed and partial), `app/Tests/LeylineClientTests/SweepTests.swift`,
   `app/Tests/LeylineClientDaemonTests/ClientDaemonTests.swift` (one e2e);
-  `app/Sources/LeylineApp/AppSession.swift` (`findActive(band:)`, `pauseForSweep`,
+  `app/Sources/LeylineApp/AppSession.swift` (`scanBand(row:)`, `pauseForSweep`,
   `resumeAfterSweep`, `followScanJob` in the mirror-follow list, `sweeping`, cancel-on-tune in
   `tune(to:)`, `select(band:at:)` and `tune(bookmark:)`, the ask when a record job rides the
   capture), `SidebarView.swift` (the item, Stop, the hit rows, ＋), `BandRailView.swift` (hit
   ticks with help text); `app.md`; `CHANGELOG.md`.
 - **Approach:**
-  1. `findActive(band:)`: if `Recordings.jobs(riding: cap.captureID, in: state)` is non-empty,
+  1. `scanBand(row:)`: if `Recordings.jobs(riding: cap.captureID, in: state)` is non-empty,
      `ask` with `Recordings.retuneWords` for those jobs, Sweep anyway proceeding (the question
      gains a button-label field, since the alert's buttons read Move anyway and Cancel today);
      else `pauseForSweep()`, then `startJob` with `SweepRequest.config` (range the band's or
      group's, once, take-over, the capture's device; with no capture, `pickDevice()`'s device
-     and no pause); remember the job id. Find active on another band while one sweep runs
+     and no pause); remember the job id. Scan band on another band while one sweep runs
      cancels the first job and starts the second after its terminal event; the items stay
      enabled.
   2. `followScanJob()`: when the remembered job leaves active, `getScan` on its result URI,
@@ -591,11 +592,11 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
      or `tune(bookmark:)` for what was tuned; with no prior capture, select the band).
   3. While `sweeping`, `tune(to:)`, `select(band:at:)` and `tune(bookmark:)` first `cancelJob`,
      wait for the terminal event, and continue; the item reads Stop and cancels.
-  4. In the expanded row the Find active line (Stop while running, the progress or the hits
-     beneath it) sits after the range line and before the bookmarks, so R10's order becomes
-     range, Find active, bookmarks, `Channels…`; hits list strongest first, name via
-     `Plans.name(at:)` else the frequency, SNR in `inkTertiary`; ＋ on a hit bookmarks with that
-     name; the rail ticks hits in the tuned half.
+  4. In the expanded row a compact, raised strip groups Scan band (Stop while running) and
+     `Channels…` after the range line. The treatment distinguishes operations from bookmark
+     rows; progress or hits sit below the strip, then the bookmarks. Hits list strongest first,
+     name via `Plans.name(at:)` else the frequency, SNR in `inkTertiary`; ＋ on a hit bookmarks
+     with that name; the rail ticks hits in the tuned half.
   5. Hits outside a group's halves are dropped; a `covered` narrower than the band appends the
      coverage words.
 - **Patterns to follow:** `startRecording`, `stopRecording`, `followRecordJobs` and
@@ -608,7 +609,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   - Row words: `sweeping 7 steps` and `step 3/7, 1 found` both print `Sweeping 2 m, 7 steps…`,
     an unknown detail prints verbatim, empty per R19, failed from a status detail, partial from
     a `covered` narrower than the band.
-  - A record job on another frequency inside the capture's span makes Find active ask.
+  - A record job on another frequency inside the capture's span makes Scan band ask.
   - e2e (`ClientDaemonTests`): attach `scan_band.cf32`, open a capture and channel as `setUp`
     does, start a scan job with take-over and the device id over 144 MHz to 148 MHz, follow the
     mirror's job to its end, `getScan`: the four carriers near 145.2, 145.6, 146.4 and 146.8 MHz
@@ -621,7 +622,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
 - **Verification:** `make app-test`, `make app-e2e`, `make app-lint`, `make lint`. Mac checklist:
   audio gone for how long on a 2 m sweep (record the number in the design's open question), the
   row's progress text, the hits and their ticks, ＋ naming, Stop, a tune during a sweep, the
-  alert over a recording, Find active after Stop listening.
+  alert over a recording, Scan band after Stop listening.
 
 ### U6. Tone, note and tags
 
