@@ -26,25 +26,14 @@ final class AppSession {
     private var running: Task<Void, Never>?
 
     // The window's own selection: which capture it shows and which channel it plays. Ids only;
-    // the objects are always read back from `state`.
-    private(set) var captureID: String?
-    private(set) var channelID: String?
+    // the objects are always read back from `state`, or from the RPC's copy until the mirror
+    // carries them (`HeldObject`).
+    private var heldCapture = HeldObject<Leyline_V1_Capture>()
+    private var heldChannel = HeldObject<Leyline_V1_Channel>()
+    var captureID: String? { heldCapture.id }
+    var channelID: String? { heldChannel.id }
     private(set) var selectedBandID: String?
     private var adopted = false
-    /// The objects this app made, as their RPCs returned them, until the mirror carries them: a
-    /// response arrives before the event does, and in that gap the window still has a channel.
-    private var pendingCapture: Leyline_V1_Capture?
-    private var pendingChannel: Leyline_V1_Channel?
-    /// Whether the mirror has carried the object at all. An id is dropped only once the mirror
-    /// had the object and lost it (a tombstone, or a resync without it), never for the gap
-    /// between an RPC's response and its event, which once made ten channels from ten tunes.
-    private var captureSeen = false
-    private var channelSeen = false
-    /// When the id was set, so a gap that never closes is not waited on forever: an object the
-    /// daemon made and lost before its first event would otherwise leave the window pointing at
-    /// an id no event will ever carry.
-    private var captureSetAt = Date.distantPast
-    private var channelSetAt = Date.distantPast
     /// The frequency this app last asked for, until the daemon confirms it or two seconds pass:
     /// what the field shows and what a step is taken from, so two quick presses do not both
     /// start from the frequency before the first (`../dev/app.md`: a view previews its own
@@ -325,8 +314,8 @@ final class AppSession {
 
     // MARK: Derived
 
-    var capture: Leyline_V1_Capture? { captureID.flatMap { state.capture($0) } ?? pendingCapture }
-    var channel: Leyline_V1_Channel? { channelID.flatMap { state.channel($0) } ?? pendingChannel }
+    var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
+    var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
     var sink: Leyline_V1_Sink? {
         guard let channelID else { return nil }
@@ -719,30 +708,36 @@ final class AppSession {
         // RPC's response and its event closes in milliseconds and an object evicted inside it
         // has no event coming.
         if let id = captureID {
-            if state.capture(id) != nil {
-                captureSeen = true
-                pendingCapture = nil
-            } else if captureSeen {
+            let verdict = heldCapture.observe(
+                inMirror: state.capture(id) != nil, now: Date(),
+                dropAfter: Self.neverSeenDropSeconds)
+            switch verdict {
+            case .lost:
                 log("session", "capture \(id) is gone; a new one will be made")
                 dropCapture()
-            } else if Date().timeIntervalSince(captureSetAt) > Self.neverSeenDropSeconds {
+            case .neverArrived:
                 log(
                     "session",
                     "the mirror has no capture \(id) 3 s after the window took it; a new one will be made"
                 )
                 dropCapture()
+            case .waiting, .present:
+                break
             }
         }
         if let id = channelID {
-            if state.channel(id) != nil {
-                channelSeen = true
-                pendingChannel = nil
-            } else if channelSeen {
+            let verdict = heldChannel.observe(
+                inMirror: state.channel(id) != nil, now: Date(),
+                dropAfter: Self.neverSeenDropSeconds)
+            switch verdict {
+            case .lost:
                 log("session", "channel \(id) is gone")
                 dropChannel()
-            } else if Date().timeIntervalSince(channelSetAt) > Self.neverSeenDropSeconds {
+            case .neverArrived:
                 log("session", "the mirror has no channel \(id) 3 s after the window took it")
                 dropChannel()
+            case .waiting, .present:
+                break
             }
         }
         if case .live = connection {
@@ -751,8 +746,8 @@ final class AppSession {
             if !adopted, !listeningStopped, !sweeping { adopt() }
         } else {
             adopted = false
-            captureSeen = false
-            channelSeen = false
+            heldCapture.disconnected()
+            heldChannel.disconnected()
         }
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(
@@ -781,17 +776,13 @@ final class AppSession {
     /// Forgets the capture, and the channel with it: a channel cannot exist without its capture.
     /// The window then makes new ones, because `adopt` runs again.
     private func dropCapture() {
-        captureID = nil
-        captureSeen = false
-        pendingCapture = nil
+        heldCapture.drop()
         adopted = false
         dropChannel()
     }
 
     private func dropChannel() {
-        channelID = nil
-        channelSeen = false
-        pendingChannel = nil
+        heldChannel.drop()
     }
 
     /// The frequency the field shows until the daemon confirms it, with the clock that clears it
@@ -825,11 +816,9 @@ final class AppSession {
             let cap = state.captures.first(where: { $0.state == .captureActive })
                 ?? state.captures.first
         {
-            captureID = cap.captureID
-            captureSetAt = Date()
+            heldCapture.adopted(id: cap.captureID, at: Date())
             if channelID == nil, let ch = state.channels(in: cap.captureID).first {
-                channelID = ch.channelID
-                channelSetAt = Date()
+                heldChannel.adopted(id: ch.channelID, at: Date())
             }
             log(
                 "session",
@@ -1066,10 +1055,7 @@ final class AppSession {
             )
             writes.gain(g, capture: cap.captureID)
         }
-        captureID = cap.captureID
-        captureSeen = false
-        captureSetAt = Date()
-        pendingCapture = cap
+        heldCapture.made(cap, id: cap.captureID, at: Date())
         dropChannel()
         return cap
     }
@@ -1096,10 +1082,7 @@ final class AppSession {
         log(
             "session",
             "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
-        channelID = ch.channelID
-        channelSeen = false
-        channelSetAt = Date()
-        pendingChannel = ch
+        heldChannel.made(ch, id: ch.channelID, at: Date())
         return ch
     }
 
