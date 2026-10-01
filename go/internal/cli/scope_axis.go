@@ -5,7 +5,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // scopeStepsMs are the tick spacings the time axis may use: the round numbers

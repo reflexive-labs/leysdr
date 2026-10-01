@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // The pieces every live chart is built from. A spectrum, a meter, a trace, a

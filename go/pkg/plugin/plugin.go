@@ -27,7 +27,7 @@ import (
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Decoder is the interface a plugin implements. Feed is called once per frame,

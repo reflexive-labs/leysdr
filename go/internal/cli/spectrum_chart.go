@@ -7,7 +7,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // header states what band this is, how wide, and what the floor is, then the

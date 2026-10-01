@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // logFixture is one line of each shape ley daemon logs has to survive: the

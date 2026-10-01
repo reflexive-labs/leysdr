@@ -1,5 +1,5 @@
 install writes a LaunchAgent (a macOS launchd job file in
-~/Library/LaunchAgents/com.leyline.daemon.plist) and loads it, so the daemon
+~/Library/LaunchAgents/com.leysdr.daemon.plist) and loads it, so the daemon
 starts now and at every login and is restarted if it crashes. It returns once
 the daemon answers on its socket, or points at the log when it does not.
 

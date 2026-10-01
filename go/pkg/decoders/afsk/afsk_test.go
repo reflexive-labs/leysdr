@@ -9,8 +9,8 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // randomFrame builds a UI frame with random callsigns and a random info field,

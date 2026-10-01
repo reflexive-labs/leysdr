@@ -67,7 +67,7 @@ public enum Signpost {
     }
 
     #if canImport(os)
-    @usableFromInline static let log = OSLog(subsystem: "com.leyline.engine", category: "SamplePath")
+    @usableFromInline static let log = OSLog(subsystem: "com.leysdr.engine", category: "SamplePath")
     #endif
 
     /// Whether signposts are being recorded. On non-Darwin this is always false.

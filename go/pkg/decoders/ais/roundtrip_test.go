@@ -7,7 +7,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
 )
 
 // bitWriter packs fields MSB first into an AIS payload, the mirror of bits.go's

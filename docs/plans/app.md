@@ -40,9 +40,10 @@ mirror so nothing works only from Swift.
   touch the mirror.
 - **gRPC first, ring later.** The waterfall draws from the gRPC FFT stream, S1 is measured, and
   the shm ring is built if the numbers say so (`build-order.md`, "Decided not to gate on").
-- **The bundle identifier is `com.leyline.app`**, beside the daemon's `com.leyline.daemon`
-  launchd label. Changing it now needs no migration (the app stores nothing yet); it becomes
-  fixed once APP-4's shared file uses it.
+- **The bundle identifier is `com.leysdr.app`**, beside the daemon's `com.leysdr.daemon`
+  launchd label (both were `com.leyline.*` until 2026-10-01; the domain is one the project owns,
+  `v1-release.md` D3). It becomes fixed at the first signed release: UserDefaults, Keychain items
+  and privacy grants are keyed to it.
 - **Not sandboxed.** Direct, notarized distribution (`D2-licensing.md`, "Distribution
   obligations"); the daemon holds the USB access, and the app reads the socket under
   `~/Library/Application Support/Leyline`.
@@ -93,7 +94,7 @@ and keeps the ring the waterfall's texture is filled from; `SpectrumView` draws 
 the tuned band on a `Canvas`; `WaterfallView` is an `MTKView` with `Resources/Waterfall.metal`
 (one byte a bin in a ring texture, the loudest bin per pixel column, the six-stop ramp between
 the floor and floor + 60 dB) and owns the mouse; `AppSession.adopt` creates the first capture
-on the last band used or FM broadcast; signposts `row` and `draw` on `com.leyline.app` are the
+on the last band used or FM broadcast; signposts `row` and `draw` on `com.leysdr.app` are the
 client half of S1.
 
 Ticked 2026-09-20. The window has been built and run on the owner's Mac since 2026-09-18 (APP-3
@@ -1324,7 +1325,7 @@ Distribution is the next build item. Certificate acquisition does not block its 
 - `[x]` `scripts/bundle-app.sh --with-daemon` builds the release layout with `leylined`, `ley`,
   decoder manifests and executables, and the required licence texts under `Contents/Helpers`;
   without an identity it ad-hoc signs the result for local testing.
-- `[ ]` Make that layout install and update itself: bootstrap `com.leyline.daemon` on the bundled
+- `[ ]` Make that layout install and update itself: bootstrap `com.leysdr.daemon` on the bundled
   daemon as `ley daemon install` does, install `ley` and the decoders where a terminal and launchd
   can find them, and define the corresponding uninstall path. This unlocks APP-6 automatic startup.
 - `[d]` Sign with a Developer ID Application certificate and submit for notarization. The owner is

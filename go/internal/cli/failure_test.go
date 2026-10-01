@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // The rows and gains here are the app's (app/Tests/LeylineClientTests/FailureStateTests.swift),

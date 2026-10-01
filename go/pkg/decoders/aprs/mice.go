@@ -5,7 +5,7 @@ package aprs
 import (
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // micEMessages are the standard message texts the three message bits select.

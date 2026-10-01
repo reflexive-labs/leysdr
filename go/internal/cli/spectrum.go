@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // spectrumPeaks is the most peaks the chart's peak block and the JSON peaks

@@ -7,9 +7,9 @@ import (
 	"math"
 	"math/rand/v2"
 
-	"github.com/dpup/leysdr/go/pkg/dcs"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
-	"github.com/dpup/leysdr/go/pkg/iqfile"
+	"github.com/reflexive-labs/leysdr/go/pkg/dcs"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/iqfile"
 )
 
 const (

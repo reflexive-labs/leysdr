@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
-	"github.com/dpup/leysdr/go/pkg/decoders/aprs"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/aprs"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // TestRealCaptureDecodes runs the chain over the owner's off-air recordings of

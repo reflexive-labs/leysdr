@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
 // TestDevicesAttachRTLTCP: the id is machine output on stdout, the sentence about it is prose on

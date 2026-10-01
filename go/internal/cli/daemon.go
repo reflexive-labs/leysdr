@@ -20,9 +20,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // daemonBinEnv names the environment variable that overrides daemon discovery.
@@ -44,7 +44,7 @@ all the radio work; every ley command talks to it. 'start' launches it,
 'status' says whether it is answering, 'logs' shows what it has been doing.
 
 On macOS 'install' writes a LaunchAgent (~/Library/LaunchAgents/
-com.leyline.daemon.plist) so the daemon starts at login; start and stop then
+com.leysdr.daemon.plist) so the daemon starts at login; start and stop then
 drive launchctl. Without a LaunchAgent, start spawns leylined detached
 (stdout/stderr to the log file, pid in the pidfile beside the socket) and stop
 sends SIGTERM via the pidfile.
@@ -75,7 +75,7 @@ to the ley executable, then PATH.`,
 	logs.Flags().BoolVarP(&f.follow, "follow", "f", false, "keep printing as the log grows")
 	cmd.AddCommand(
 		sub("install", "Start the daemon at login (macOS LaunchAgent)",
-			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leyline.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes. It returns once\nthe daemon answers on its socket, or points at the log when it does not.",
+			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leysdr.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes. It returns once\nthe daemon answers on its socket, or points at the log when it does not.",
 			"  ley daemon install       # start at login from now on\n  ley daemon install --bin /opt/leyline/bin/leylined", false, app.daemonInstall),
 		sub("uninstall", "Stop starting the daemon at login (macOS)",
 			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.",

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // bandOptions is what a band view needs to find its capture. `ley spectrum`

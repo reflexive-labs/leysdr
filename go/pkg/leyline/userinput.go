@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // These parsers accept what people type at a radio and turn it into the

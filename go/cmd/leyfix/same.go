@@ -5,7 +5,7 @@ package main
 import (
 	"math"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/same"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/same"
 )
 
 // samePacket FM-modulates one SAME alert burst onto a carrier, the same chain a

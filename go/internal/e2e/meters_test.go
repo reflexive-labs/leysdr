@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/cli"
+	"github.com/reflexive-labs/leysdr/go/internal/cli"
 )
 
 // TestMetersAgainstRealDaemon reads the audio meters off the daemon's own spectrum tap. The band

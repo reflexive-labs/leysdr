@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
 // A band is a range and a positional is a point, so the two conflict about

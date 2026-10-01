@@ -5,7 +5,7 @@
 syntax = "proto3";
 package leyline.v1;
 
-option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
 
 // Sample-indexed timebase. Wall clock is derived via CaptureAnchor, never carried per-frame.
 // capture_id scopes the timeline; future non-capture timelines (e.g. tx_ transmissions)

@@ -7,8 +7,8 @@ import (
 	"math"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // The trace's geometry. The height is fixed rather than taken from the

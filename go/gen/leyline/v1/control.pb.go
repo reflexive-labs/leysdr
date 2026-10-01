@@ -3565,7 +3565,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\fAttachDevice\x12\x1f.leyline.v1.AttachDeviceRequest\x1a\x1c.leyline.v1.DeviceDescriptor\x12B\n" +
 	"\fDetachDevice\x12\x1f.leyline.v1.DetachDeviceRequest\x1a\x11.leyline.v1.Empty\x12U\n" +
 	"\x10AttachFileDevice\x12#.leyline.v1.AttachFileDeviceRequest\x1a\x1c.leyline.v1.DeviceDescriptor\x12J\n" +
-	"\x10DetachFileDevice\x12#.leyline.v1.DetachFileDeviceRequest\x1a\x11.leyline.v1.EmptyB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\x10DetachFileDevice\x12#.leyline.v1.DetachFileDeviceRequest\x1a\x11.leyline.v1.EmptyB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_control_proto_rawDescOnce sync.Once

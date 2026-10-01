@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Metadata keys every RPC carries so the daemon can attribute events.

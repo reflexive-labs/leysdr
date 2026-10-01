@@ -1320,7 +1320,7 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\x04Bulk\x12G\n" +
 	"\tSubscribe\x12\x1c.leyline.v1.SubscribeRequest\x1a\x1c.leyline.v1.StreamDescriptor\x124\n" +
 	"\x06Stream\x12\x15.leyline.v1.StreamRef\x1a\x11.leyline.v1.Frame0\x01\x127\n" +
-	"\vUnsubscribe\x12\x15.leyline.v1.StreamRef\x1a\x11.leyline.v1.EmptyB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\vUnsubscribe\x12\x15.leyline.v1.StreamRef\x1a\x11.leyline.v1.EmptyB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_bulk_proto_rawDescOnce sync.Once

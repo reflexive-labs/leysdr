@@ -3,7 +3,7 @@
 package cli
 
 import (
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Clipping comes in bursts of half a second to two seconds (a keyed handheld,

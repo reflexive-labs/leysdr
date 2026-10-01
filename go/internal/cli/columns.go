@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // column is one column of an aligned table. Cells arrive already inked: the

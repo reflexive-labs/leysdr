@@ -5,7 +5,7 @@
 syntax = "proto3";
 package leyline.v1;
 
-option go_package = "github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1";
+option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
 import "leyline/v1/jobs.proto";
 

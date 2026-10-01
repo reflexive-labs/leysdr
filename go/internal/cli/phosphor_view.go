@@ -7,8 +7,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // The chart's geometry matches ley spectrum's: frequency across, level up. It

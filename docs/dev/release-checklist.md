@@ -26,7 +26,7 @@ the manual pass is not optional.
 - [ ] The release archive contains `LICENSE`, `engine/LICENSE`, `NOTICE` and `third_party/licenses/`
       (librtlsdr's GPL-2.0 text is among them, beside the daemon that links it).
 - [ ] The release notes carry the daemon's source offer: a link to this tag's source tree
-      (`https://github.com/dpup/leysdr/tree/v<VERSION>`). GPLv3 lets a network-distributed binary
+      (`https://github.com/reflexive-labs/leysdr/tree/v<VERSION>`). GPLv3 lets a network-distributed binary
       point at the source served the same way, so the tag must stay for as long as the binary is
       offered.
 - [ ] Distribution is direct and notarized, never the App Store.

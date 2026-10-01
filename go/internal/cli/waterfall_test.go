@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // waterfallBins is one row: a noise floor with an optional carrier.

@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // encodeU8 is the daemon's DB_U8 quantisation (StreamSources.swift), written out

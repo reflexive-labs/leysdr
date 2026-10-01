@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dpup/leysdr/go/pkg/labels"
+	"github.com/reflexive-labs/leysdr/go/pkg/labels"
 )
 
 // newLabelCommand builds `ley label`. A label is a human name for a transmitter id, kept in a

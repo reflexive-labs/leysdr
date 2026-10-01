@@ -3,7 +3,7 @@ all the radio work; every ley command talks to it. 'start' launches it,
 'status' says whether it is answering, 'logs' shows what it has been doing.
 
 On macOS 'install' writes a LaunchAgent (~/Library/LaunchAgents/
-com.leyline.daemon.plist) so the daemon starts at login; start and stop then
+com.leysdr.daemon.plist) so the daemon starts at login; start and stop then
 drive launchctl. Without a LaunchAgent, start spawns leylined detached
 (stdout/stderr to the log file, pid in the pidfile beside the socket) and stop
 sends SIGTERM via the pidfile.

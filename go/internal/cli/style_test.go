@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // styleApp is an app whose terminal answers are dictated, not detected.

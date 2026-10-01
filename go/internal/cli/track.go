@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
-	"github.com/dpup/leysdr/go/pkg/records"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
 
 // EntityRow is one row of `ley track --json`, and EntitySnapshot the object printed per redraw.

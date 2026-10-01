@@ -7,11 +7,11 @@
 package main
 
 import (
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
-	"github.com/dpup/leysdr/go/pkg/decoders/aprs"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
-	"github.com/dpup/leysdr/go/pkg/plugin"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/aprs"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/plugin"
 )
 
 func main() {

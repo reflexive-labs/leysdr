@@ -6,7 +6,7 @@ import (
 	"math"
 	"sort"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Where a sweep points the radio, and which part of each span it analyses -- the engine's

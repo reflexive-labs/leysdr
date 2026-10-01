@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Summary renders one record as the line `ley decode` and `ley track` print, using the

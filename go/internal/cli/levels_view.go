@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // The meter's geometry. The gutter holds the widest mark (-60) and the axis

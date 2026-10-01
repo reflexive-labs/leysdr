@@ -35,7 +35,7 @@ FIXTURE_DURATION ?= 1
 VERSION := $(shell tr -d '[:space:]' < $(CURDIR)/VERSION)
 GIT_DESCRIBE := $(shell git -C $(CURDIR) describe --tags --always --dirty --match 'v*' --abbrev=7 2>/dev/null | sed 's/^v$(VERSION)-//')
 BUILD_VERSION := $(if $(filter v$(VERSION),$(shell git -C $(CURDIR) describe --tags --exact-match --match 'v*' 2>/dev/null)),$(VERSION),$(VERSION)$(if $(GIT_DESCRIBE),+$(GIT_DESCRIBE)))
-GO_LDFLAGS := -X github.com/dpup/leysdr/go/internal/cli.Version=$(BUILD_VERSION)
+GO_LDFLAGS := -X github.com/reflexive-labs/leysdr/go/internal/cli.Version=$(BUILD_VERSION)
 # Repo-pinned developer tools, per host (a checkout shared between a Mac and a Linux container must
 # not hand one host the other's binaries). scripts/gen-proto.sh keeps the protoc plugins here too.
 HOST := $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)

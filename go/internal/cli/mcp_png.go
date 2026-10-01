@@ -10,8 +10,8 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // The snapshot PNG is the one picture the adapter draws (docs/plans/mcp.md,

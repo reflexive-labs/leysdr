@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"math"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Bulk frames are the one part of leyline.v1 with no proto message: a frame

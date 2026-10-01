@@ -841,7 +841,7 @@ resolved values in `PersistenceParams` on the stream descriptor.
   replacement daemon takes itself for the live one and races this one for the radios. Teardown runs
   in the process's own task, never in a child that the serve loop's return could cancel.
 - Logs to stderr via swift-log; launchd redirects to `~/Library/Logs/Leyline/leylined.log`.
-- `ley daemon install` writes `~/Library/LaunchAgents/com.leyline.daemon.plist` (KeepAlive, RunAtLoad)
+- `ley daemon install` writes `~/Library/LaunchAgents/com.leysdr.daemon.plist` (KeepAlive, RunAtLoad)
   pointing at the `leylined` binary and bootstraps it; `start/stop/status/logs` drive launchctl when
   installed and fall back to spawning/killing the binary directly (pidfile) when not.
 

@@ -3,8 +3,8 @@
 package main
 
 import (
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/decoders/same"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/same"
 )
 
 // KindAlert is the one kind of record SAME produces.

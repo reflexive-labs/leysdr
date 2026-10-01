@@ -23,7 +23,7 @@ mkdir -p "$TOOLS"
 
 PROTOC_VERSION=25.1   # what CI installs; informational
 PROTOS=(proto/leyline/v1/*.proto)
-GO_MODULE=github.com/dpup/leysdr/go/gen
+GO_MODULE=github.com/reflexive-labs/leysdr/go/gen
 
 command -v protoc >/dev/null || { echo "protoc not found (brew install protobuf / apt install protobuf-compiler)" >&2; exit 1; }
 have="$(protoc --version | awk '{print $2}')"

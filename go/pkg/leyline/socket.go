@@ -18,7 +18,7 @@ import (
 const SocketEnv = "LEYLINE_SOCKET"
 
 // LaunchAgentLabel is the launchd label of the daemon's LaunchAgent.
-const LaunchAgentLabel = "com.leyline.daemon"
+const LaunchAgentLabel = "com.leysdr.daemon"
 
 // DefaultSocketPath returns the daemon's UDS path for this user. LEYLINE_SOCKET
 // overrides; otherwise macOS uses ~/Library/Application Support/Leyline/leyline.sock,
@@ -77,7 +77,7 @@ func sibling(socket, ext string) string {
 }
 
 // DefaultLaunchAgentPath returns the path of the daemon's launchd plist
-// (~/Library/LaunchAgents/com.leyline.daemon.plist). It is a macOS concept but
+// (~/Library/LaunchAgents/com.leysdr.daemon.plist). It is a macOS concept but
 // the path is computed on every platform so tooling can print it.
 func DefaultLaunchAgentPath() string {
 	return filepath.Join(homeDir(), "Library", "LaunchAgents", LaunchAgentLabel+".plist")

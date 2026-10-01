@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // Device is one discovered transmitter in the registry: a stable id, when it was first and last

@@ -7,7 +7,7 @@ import (
 	"math/cmplx"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/dcs"
+	"github.com/reflexive-labs/leysdr/go/pkg/dcs"
 )
 
 // The DCS fixtures carry the word they say, at the deviation they say: discriminate the IQ,

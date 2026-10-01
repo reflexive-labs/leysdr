@@ -2,7 +2,7 @@
 
 package ais
 
-import "github.com/dpup/leysdr/go/pkg/decoders/ax25"
+import "github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 
 // AIS frames its bursts exactly as AX.25 does: an HDLC 0x7E flag, the payload
 // with a zero stuffed after every five ones, and a 16-bit X.25 FCS (CRC-16-CCITT,

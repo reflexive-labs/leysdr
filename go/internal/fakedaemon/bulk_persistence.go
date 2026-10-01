@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // persistence is the phosphor histogram behind a PERSISTENCE stream: for each frequency bin, how

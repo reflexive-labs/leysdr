@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // A dial target is a point on the dial the user named: a frequency, or a preset

@@ -10,8 +10,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // Stream implements Bulk: writes synthetic frames until the client cancels or

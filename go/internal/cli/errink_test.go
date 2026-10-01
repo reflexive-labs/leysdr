@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // TestErrorLinePlainAndStyled: the ink is redundant emphasis on the sentence

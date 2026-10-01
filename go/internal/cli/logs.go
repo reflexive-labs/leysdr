@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // The daemon writes swift-log's stream format:

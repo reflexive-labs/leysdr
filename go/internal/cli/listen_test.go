@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
 // TestListenRowsAndTeardown: `ley listen <freq>` makes its own capture and

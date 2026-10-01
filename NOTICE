@@ -1,5 +1,5 @@
 Leyline
-Copyright 2026 Daniel Pupius
+Copyright 2026 Reflexive Labs
 
 Leyline is licensed under the Apache License, Version 2.0 (LICENSE), with one exception: the
 engine under engine/ (the leylined daemon and its EngineCore library) is licensed under the GNU
@@ -8,7 +8,7 @@ it links librtlsdr. swift/LeylineProto is generated from the Apache-2.0 protocol
 proto/ and stays Apache-2.0. Every source file names its licence on an
 SPDX-License-Identifier line; docs/decisions/D2-licensing.md is the decision and its reasoning.
 
-Daniel Pupius claims "Leyline", "ley" and "leysdr" as trademarks. The licences above do not grant
+Reflexive Labs claims "Leyline", "ley" and "leysdr" as trademarks. The licences above do not grant
 trademark rights; TRADEMARK.md says what use of the names is fine without asking.
 
 Third-party software
@@ -38,7 +38,7 @@ and these Swift packages, all under the Apache License 2.0:
   The NOTICE files those packages distribute are reproduced as
   third_party/licenses/swift_<package>.NOTICE.txt, as their licence requires.
 
-The Go clients (ley and the github.com/dpup/leysdr/go/pkg/leyline library) import:
+The Go clients (ley and the github.com/reflexive-labs/leysdr/go/pkg/leyline library) import:
 
   Apache-2.0    github.com/oklog/ulid/v2, github.com/spf13/cobra,
                 google.golang.org/genproto/googleapis/rpc, google.golang.org/grpc

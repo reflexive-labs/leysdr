@@ -5,7 +5,7 @@ package main
 import (
 	"math"
 
-	"github.com/dpup/leysdr/go/pkg/dcs"
+	"github.com/reflexive-labs/leysdr/go/pkg/dcs"
 )
 
 // dcsLowPassHz is where the DCS bit stream is rolled off before it reaches the modulator, as a

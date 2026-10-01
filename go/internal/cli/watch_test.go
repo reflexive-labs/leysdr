@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
 // TestWatchFiltersByWhere: a --where filter is evaluated in the daemon, so an attached watch

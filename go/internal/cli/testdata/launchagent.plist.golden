@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Label</key><string>com.leyline.daemon</string>
+	<key>Label</key><string>com.leysdr.daemon</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/Users/a&amp;b/bin/leylined</string>

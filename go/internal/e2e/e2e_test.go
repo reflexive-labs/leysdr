@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 type env struct {

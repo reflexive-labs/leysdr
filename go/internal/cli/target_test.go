@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // A point on the dial is a frequency or a preset, and both work wherever one

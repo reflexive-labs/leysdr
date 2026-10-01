@@ -14,8 +14,8 @@ package aprs
 import (
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // Protocol is the manifest name this parser fills into DecodeRecord.protocol.

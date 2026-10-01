@@ -35,7 +35,7 @@ and `docs/plans/v1-release.md` is the gap analysis for the first shared release.
 brew install go
 brew install librtlsdr                 # for a local RTL-SDR
 brew install hackrf                    # for a local HackRF; install either or both drivers
-git clone https://github.com/dpup/leysdr.git && cd leysdr
+git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined

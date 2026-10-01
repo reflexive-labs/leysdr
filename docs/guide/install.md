@@ -17,7 +17,7 @@ so this is a build from source.
 brew install go
 brew install librtlsdr                 # local RTL-SDR support
 brew install hackrf                    # local HackRF support; either driver is optional
-git clone https://github.com/dpup/leysdr.git && cd leysdr
+git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
@@ -54,7 +54,7 @@ empty device list, a busy radio and no audio.
 it crashes:
 
 ```sh
-ley daemon install --bin $PWD/engine/.build/release/leylined   # writes ~/Library/LaunchAgents/com.leyline.daemon.plist
+ley daemon install --bin $PWD/engine/.build/release/leylined   # writes ~/Library/LaunchAgents/com.leysdr.daemon.plist
 ley daemon status
 ley daemon logs --follow
 ley daemon uninstall                                            # stops it and removes the plist
@@ -140,7 +140,7 @@ decoders installed answers `ley decode aprs` with `there is no decoder called "a
 | decoders | `~/Library/Application Support/Leyline/decoders/<name>/` (`make install-decoders`; `--decoders` and `LEYLINE_DECODERS` add more) |
 | recordings | `~/Library/Application Support/Leyline/recordings/` (`--recordings`, `--recordings-cap`, `--recordings-age`) |
 | decode records store | `~/Library/Application Support/Leyline/store/` (kept decode jobs; `--store`, `--store-cap`, `--store-age`) |
-| LaunchAgent | `~/Library/LaunchAgents/com.leyline.daemon.plist` (`ley daemon install` writes it, `uninstall` removes it) |
+| LaunchAgent | `~/Library/LaunchAgents/com.leysdr.daemon.plist` (`ley daemon install` writes it, `uninstall` removes it) |
 
 The daemon opens no network listener, and anything that can open the socket controls the radio.
 [SECURITY.md](../../SECURITY.md) has the full statement of what it trusts.

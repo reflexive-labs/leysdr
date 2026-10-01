@@ -12,7 +12,7 @@ import LeylineClient
 import LeylineProto
 import os
 
-let signposter = OSSignposter(subsystem: "com.leyline.app", category: "waterfall")
+let signposter = OSSignposter(subsystem: "com.leysdr.app", category: "waterfall")
 
 /// Rows as the waterfall's texture wants them: DB_U8 bytes, newest last, in a ring the renderer
 /// copies from by row count, and beside it each row's sample index and which rows were captured

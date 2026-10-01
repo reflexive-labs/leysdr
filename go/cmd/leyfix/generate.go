@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dpup/leysdr/go/pkg/iqfile"
+	"github.com/reflexive-labs/leysdr/go/pkg/iqfile"
 )
 
 const genBlock = 1 << 16

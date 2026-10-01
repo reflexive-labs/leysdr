@@ -18,7 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dpup/leysdr/go/internal/eval"
+	"github.com/reflexive-labs/leysdr/go/internal/eval"
 )
 
 func main() {

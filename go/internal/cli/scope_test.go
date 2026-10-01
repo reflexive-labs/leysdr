@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
-	"github.com/dpup/leysdr/go/internal/ui"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // scopeTone is one window of a sine, as a tap delivers it: amplitude and DC

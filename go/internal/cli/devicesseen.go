@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/labels"
-	"github.com/dpup/leysdr/go/pkg/records"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/labels"
+	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
 
 // DevicesSnapshot is `ley devices-seen --json`. The device registry is a client-side fold over

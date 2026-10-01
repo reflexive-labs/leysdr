@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The app's log: one line per thing the window did, to a file, to stderr and to the unified log
-// under `com.leyline.app`, so an oddity can be read back after the fact rather than described
+// under `com.leysdr.app`, so an oddity can be read back after the fact rather than described
 // from memory. `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`.
 // `make app-run` points it at `tmp/leyline-app.log` in the checkout, which the container's bind
 // mount sees (docs/dev/app.md, "Logs"). The file is rotated once at launch when it passes 5 MB.
@@ -17,7 +17,7 @@ final class AppLog: @unchecked Sendable {
     let path: String
     private let lock = NSLock()
     private let handle: FileHandle?
-    private let logger = Logger(subsystem: "com.leyline.app", category: "app")
+    private let logger = Logger(subsystem: "com.leysdr.app", category: "app")
     private let stamp: ISO8601DateFormatter
 
     private init() {

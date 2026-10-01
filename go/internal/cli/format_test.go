@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // An Anchor event is the capture's sample-timebase bookkeeping. It reaches

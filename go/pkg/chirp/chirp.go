@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/pkg/bookmarks"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/bookmarks"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // ErrNoFrequency is Parse's error for a file whose header has no Frequency column: it is not

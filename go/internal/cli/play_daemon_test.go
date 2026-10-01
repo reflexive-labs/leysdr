@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
-	"github.com/dpup/leysdr/go/internal/testutil"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/testutil"
 )
 
 // fakeDaemonEnv makes the test binary serve a fake daemon (used by the shell

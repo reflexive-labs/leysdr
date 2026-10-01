@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // spectrumFixture is a deterministic FFT row: a noise floor near -90 dBFS with

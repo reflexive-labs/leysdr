@@ -2038,7 +2038,7 @@ const file_leyline_v1_jobs_proto_rawDesc = "" +
 	"\rListResources\x12 .leyline.v1.ListResourcesRequest\x1a!.leyline.v1.ListResourcesResponse\x12<\n" +
 	"\vGetResource\x12\x17.leyline.v1.ResourceRef\x1a\x14.leyline.v1.Resource\x12B\n" +
 	"\x10ResolveLocalPath\x12\x17.leyline.v1.ResourceRef\x1a\x15.leyline.v1.LocalPath\x12F\n" +
-	"\x0eDeleteResource\x12\x17.leyline.v1.ResourceRef\x1a\x1b.leyline.v1.DeletedResourceB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\x0eDeleteResource\x12\x17.leyline.v1.ResourceRef\x1a\x1b.leyline.v1.DeletedResourceB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_jobs_proto_rawDescOnce sync.Once

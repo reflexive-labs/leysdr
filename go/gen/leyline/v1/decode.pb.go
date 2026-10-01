@@ -2343,7 +2343,7 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\bDecoders\x12Q\n" +
 	"\fListDecoders\x12\x1f.leyline.v1.ListDecodersRequest\x1a .leyline.v1.ListDecodersResponse\x12N\n" +
 	"\x10SubscribeRecords\x12\x1e.leyline.v1.RecordSubscription\x1a\x18.leyline.v1.DecodeRecord0\x01\x12?\n" +
-	"\fQueryRecords\x12\x17.leyline.v1.RecordQuery\x1a\x16.leyline.v1.RecordPageB4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\fQueryRecords\x12\x17.leyline.v1.RecordQuery\x1a\x16.leyline.v1.RecordPageB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_decode_proto_rawDescOnce sync.Once

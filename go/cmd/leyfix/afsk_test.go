@@ -6,9 +6,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
-	"github.com/dpup/leysdr/go/pkg/decoders/aprs"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/aprs"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // TestAPRSFixtureDecodes runs the fixture through the reference NFM chain and

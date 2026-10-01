@@ -25,9 +25,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // defaultVersion mirrors the root VERSION file, the single source of truth both
@@ -37,7 +37,7 @@ import (
 const defaultVersion = "0.1.0-dev"
 
 // Version is the ley build version; overridden at link time with
-// -ldflags "-X github.com/dpup/leysdr/go/internal/cli.Version=...".
+// -ldflags "-X github.com/reflexive-labs/leysdr/go/internal/cli.Version=...".
 var Version = defaultVersion
 
 // A binary built outside the Makefile — `go install ...@v0.2.0` — gets no

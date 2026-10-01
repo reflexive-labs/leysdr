@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // The watch writer redraws in place with cursor-up, which is only correct while

@@ -5,7 +5,7 @@ package ax25_test
 import (
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // TestFCSCheckValue pins the FCS against the published check value for

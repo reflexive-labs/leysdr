@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/ais"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ais"
 )
 
 // TestAISFixtureDecodes runs the ais_burst fixture through the reference NFM

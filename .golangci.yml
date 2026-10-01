@@ -15,9 +15,9 @@ linters:
         - (*bufio.Writer).WriteString
         - (*bufio.Writer).Flush
         - (*text/tabwriter.Writer).Flush
-        - (*github.com/dpup/leysdr/go/internal/cli.tableWriter).Flush
+        - (*github.com/reflexive-labs/leysdr/go/internal/cli.tableWriter).Flush
         - (*os.File).Close
         - os.RemoveAll
-        - (*github.com/dpup/leysdr/go/pkg/leyline.Client).Close
-        - (*github.com/dpup/leysdr/go/pkg/leyline.Subscription).Close
-        - (*github.com/dpup/leysdr/go/pkg/iqfile.Reader).Close
+        - (*github.com/reflexive-labs/leysdr/go/pkg/leyline.Client).Close
+        - (*github.com/reflexive-labs/leysdr/go/pkg/leyline.Subscription).Close
+        - (*github.com/reflexive-labs/leysdr/go/pkg/iqfile.Reader).Close

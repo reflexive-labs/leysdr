@@ -5,7 +5,7 @@ package cli
 import (
 	"strings"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // Help is hand-wrapped prose plus two-column blocks, and it is snapshotted

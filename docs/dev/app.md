@@ -341,7 +341,7 @@ open app/Package.swift   # or: Xcode, with previews; Product > Run runs LeylineA
 ```
 
 `make app-run` runs the bare executable, which SwiftUI accepts (a window, the menu bar, the
-process name in the Dock). The bundle adds `Info.plist` (identifier `com.leyline.app`, the
+process name in the Dock). The bundle adds `Info.plist` (identifier `com.leysdr.app`, the
 version from `VERSION`), resource bundles beside the binary, and a signature; with
 `--with-daemon` it carries `leylined`, `ley` and the decoders under `Contents/Helpers`, which is
 the shape a distributed build has (APP-7) and nothing installs yet. `CODESIGN_IDENTITY` signs
@@ -371,7 +371,7 @@ subscription, its end or failure and a row count every thirty seconds, whether t
 compiled, the inspector shown or hidden, every bookmark added, renamed or removed, every
 recording started, stopped or refused, each manifest read with its part count, the store's
 listing when its count changes, and every retune question asked and answered (`record`), every clip played, stopped or ended and the live sink detached and attached around it
-(`playback`), and Stop Listening with whether the radio was freed. The line goes to the file, to stderr and to the unified log under `com.leyline.app`.
+(`playback`), and Stop Listening with whether the radio was freed. The line goes to the file, to stderr and to the unified log under `com.leysdr.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
 which the Moat container's bind mount sees, so the log of a run on the Mac can be read from the

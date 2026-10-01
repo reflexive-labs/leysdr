@@ -13,9 +13,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/testutil"
-	"github.com/dpup/leysdr/go/internal/ui"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/testutil"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // A home directory with &, < or > in it must not break the LaunchAgent XML.

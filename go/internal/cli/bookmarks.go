@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/bookmarks"
-	"github.com/dpup/leysdr/go/pkg/chirp"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bookmarks"
+	"github.com/reflexive-labs/leysdr/go/pkg/chirp"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // bookmarkJSON is the `--json` shape of `ley bookmarks`: the fields the file holds, plus the id

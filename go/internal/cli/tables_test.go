@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // indentedRows counts the body rows of a grouped table: rows sit indented

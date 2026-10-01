@@ -8,7 +8,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/dpup/leysdr/go/pkg/iqfile"
+	"github.com/reflexive-labs/leysdr/go/pkg/iqfile"
 )
 
 func runInfo(args []string, w io.Writer) error {

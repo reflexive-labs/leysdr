@@ -2,7 +2,7 @@
 
 package main
 
-import leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+import leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 
 // manifest is what --manifest prints and what decoders/aprs/manifest.json in
 // the repository holds. The file is the source of truth -- discovery reads

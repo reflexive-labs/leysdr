@@ -12,8 +12,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dpup/leysdr/go/internal/cli"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/internal/cli"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 func main() {

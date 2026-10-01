@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/same"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/same"
 )
 
 // TestSAMEFixtureDecodes runs the same_alert fixture through the reference NFM

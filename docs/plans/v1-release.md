@@ -84,8 +84,12 @@ headers everywhere, `make license-check` in the gate and CI. REL-1 and REL-2 are
 
 **D3 — The name.** `docs/plans/archive/planning-phase.md:32`: "USPTO check on 'Leyline' before first public
 release." Not recorded as done. The name is now in the proto package, the launchd label
-(`com.leyline.daemon`), the socket path and the URI scheme, so a rename after release is a breaking
-change. Owner action, before the repo goes public.
+(`com.leysdr.daemon`), the socket path and the URI scheme, so a rename after release is a breaking
+change. Owner action, before the repo goes public. Settled 2026-10-01: the repository is
+`github.com/reflexive-labs/leysdr` (the Go module path follows it), Reflexive Labs holds the
+copyright and the marks, and reverse-DNS identifiers come from `leysdr.com` (`com.leysdr.app`,
+`com.leysdr.daemon`, `com.leysdr.engine`) so they stay with the product. "Leyline SDR" is the
+product's full name, `leyline` the contract and on-disk name, `ley` the command.
 
 **D4 — Distribution mechanics.** The plan of record is "direct + notarized, no App Store".
 Current as of 2026-09-29: `bootstrap-mac.sh` builds from source, and `bundle-app.sh --with-daemon`
@@ -266,7 +270,7 @@ CLI behaviour tested against the wrong response:
 | REL-16 | two plan files cite review reports under `/tmp` on one machine; their `#N` references resolve nowhere | |
 | REL-17 | trademark check outstanding (D3) | |
 | REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`aa88c59`) | — |
-| REL-19 | `engine/launchd/com.leyline.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
+| REL-19 | `engine/launchd/com.leysdr.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
 | REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails with a clear message; stubs say they are unimplemented | — |
 | REL-24 | the repo root is written for an agent (CLAUDE.md, moat.yaml), not a person | |
 | REL-26 | S1/S2 never measured on hardware (D5) | |
@@ -333,7 +337,7 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
   `-v`), which is why `make swift-test` and `make e2e` are the gate.
 - `docs/plans/archive/engine-review-fixes.md` and `docs/plans/archive/cli-review-fixes.md` headers: the review reports were
   ephemeral; the `#N` numbers are kept because the commit messages cite them.
-- Delete `engine/launchd/com.leyline.daemon.plist.template` (REL-19): `ley daemon install` writes
+- Delete `engine/launchd/com.leysdr.daemon.plist.template` (REL-19): `ley daemon install` writes
   the plist from `go/internal/cli/daemon.go`, and the template disagrees with it.
 - `docs/guide/using-ley.md`: a section for `ley waterfall` and `ley phosphor` (what question each answers,
   from `docs/design/signal-views.md` and `docs/design/band-watching.md`), and the two factual fixes.
@@ -429,7 +433,7 @@ install, a quickstart that works from a clean clone (`make go swift-release fixt
 transcripts that match what the renderers print (record them against the daemon or the fake rather
 than paraphrasing), the docs map, a status section that agrees with `docs/plans/build-order.md`, licence
 (placeholder until D2), and where to report problems (the module path already names
-`github.com/dpup/leysdr`). The GOAWAY/ping note for client authors is linked from the README.
+`github.com/reflexive-labs/leysdr`). The GOAWAY/ping note for client authors is linked from the README.
 
 ### R-9 `[x]` CONTRIBUTING, SECURITY, CHANGELOG (S)
 

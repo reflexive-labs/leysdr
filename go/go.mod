@@ -1,4 +1,4 @@
-module github.com/dpup/leysdr/go
+module github.com/reflexive-labs/leysdr/go
 
 go 1.25.0
 

@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/dpup/leysdr/go/internal/cli"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/internal/cli"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 func TestExitStatus(t *testing.T) {

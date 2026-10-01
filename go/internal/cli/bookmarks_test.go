@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/bookmarks"
-	"github.com/dpup/leysdr/go/pkg/chirp"
+	"github.com/reflexive-labs/leysdr/go/pkg/bookmarks"
+	"github.com/reflexive-labs/leysdr/go/pkg/chirp"
 )
 
 // runBookmarks runs ley against a temp bookmarks file, the store's own override, and never dials:

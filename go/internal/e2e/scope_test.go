@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/cli"
+	"github.com/reflexive-labs/leysdr/go/internal/cli"
 )
 
 // TestScopeAgainstRealDaemon taps the demodulator the daemon actually runs. The demod tap is the

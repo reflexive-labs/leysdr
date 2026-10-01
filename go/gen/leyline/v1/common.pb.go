@@ -872,7 +872,7 @@ const file_leyline_v1_common_proto_rawDesc = "" +
 	"\x06RAW_IQ\x10\a*(\n" +
 	"\bAudioTap\x12\r\n" +
 	"\tTAP_AUDIO\x10\x00\x12\r\n" +
-	"\tTAP_DEMOD\x10\x01B4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\tTAP_DEMOD\x10\x01B>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_common_proto_rawDescOnce sync.Once

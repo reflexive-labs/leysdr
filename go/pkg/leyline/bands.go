@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // Band is a named slice of spectrum with the mode and bandwidth a newcomer

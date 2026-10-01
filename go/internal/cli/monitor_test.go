@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
 // The fake monitor's synthetic GMRS carriers, from internal/fakedaemon/monitor.go.

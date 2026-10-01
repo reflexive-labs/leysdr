@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // ListDecoders returns the decoders the daemon has installed, with the directories it looked in

@@ -5,7 +5,7 @@ package cli
 import (
 	"math"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // sparkCells is the width of every inline sparkline: eight cells, one line,

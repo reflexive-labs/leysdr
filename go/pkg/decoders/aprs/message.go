@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // parseTelemetry reads T#seq,a1,a2,a3,a4,a5,bbbbbbbb. The sequence is not

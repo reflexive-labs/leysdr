@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dpup/leysdr/go/pkg/iqfile"
+	"github.com/reflexive-labs/leysdr/go/pkg/iqfile"
 )
 
 // checkResult is the outcome of verifying one expect entry.

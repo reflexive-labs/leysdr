@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // The chart's geometry. The gutter is the level axis: four columns of level,

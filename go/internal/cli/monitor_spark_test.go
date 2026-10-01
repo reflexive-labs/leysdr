@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dpup/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
 // activity is the carrier's on-air share of each eighth of the watch, from the

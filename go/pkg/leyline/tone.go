@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/dpup/leysdr/go/pkg/dcs"
+	"github.com/reflexive-labs/leysdr/go/pkg/dcs"
 )
 
 // ErrTone is the one refusal ParseTone makes. The app's validator prints the same sentence, so

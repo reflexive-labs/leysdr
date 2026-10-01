@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // run pushes a bit stream through a deframer and returns the frames it accepted.

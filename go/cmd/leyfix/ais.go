@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
-	"github.com/dpup/leysdr/go/pkg/decoders/ais"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ais"
 )
 
 // aisReport is one AIS Type 1 position report the ais_burst fixture transmits.

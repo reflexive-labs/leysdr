@@ -6,8 +6,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/dpup/leysdr/go/pkg/decoders/afsk"
-	"github.com/dpup/leysdr/go/pkg/decoders/ax25"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
+	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
 // packet is one AX.25 UI frame the aprs_afsk fixture transmits.

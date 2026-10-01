@@ -1207,7 +1207,7 @@ const file_leyline_v1_telemetry_proto_rawDesc = "" +
 	"\x11SUB_AUDIBLE_CTCSS\x10\x02\x12\x13\n" +
 	"\x0fSUB_AUDIBLE_DCS\x10\x032W\n" +
 	"\tTelemetry\x12J\n" +
-	"\tSubscribe\x12!.leyline.v1.TelemetrySubscription\x1a\x18.leyline.v1.TelemetryMsg0\x01B4Z2github.com/dpup/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\tSubscribe\x12!.leyline.v1.TelemetrySubscription\x1a\x18.leyline.v1.TelemetryMsg0\x01B>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_telemetry_proto_rawDescOnce sync.Once

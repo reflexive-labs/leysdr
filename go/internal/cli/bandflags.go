@@ -5,8 +5,8 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/dpup/leysdr/go/internal/ui"
-	"github.com/dpup/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // bandFlags holds the command-line flags of a band view. `ley spectrum`, `ley

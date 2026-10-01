@@ -7,7 +7,7 @@ import (
 	"math"
 	"strings"
 
-	leylinev1 "github.com/dpup/leysdr/go/gen/leyline/v1"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // fullScaleMarginDb is how close to full scale the loudest bin may come before
