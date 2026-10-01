@@ -15,10 +15,10 @@ type stub struct {
 	use, short, milestone, today string
 }
 
-// Stubs is the roadmap table: verbs that are planned but not implemented. Empty is the healthy
+// stubs is the roadmap table: verbs that are planned but not implemented. Empty is the healthy
 // state; a verb lands here when its milestone is named and a newcomer would otherwise type it and
 // get Cobra's "unknown command".
-var Stubs []stub
+var stubs []stub
 
 // stubMessage is the exit-2 line a stub prints.
 func stubMessage(s stub) string {
@@ -28,8 +28,7 @@ func stubMessage(s stub) string {
 // newStubCommands builds the hidden roadmap verbs.
 func newStubCommands(_ *App) []*cobra.Command {
 	var cmds []*cobra.Command
-	for _, s := range Stubs {
-		s := s
+	for _, s := range stubs {
 		cmds = append(cmds, &cobra.Command{
 			Use:     s.use,
 			Short:   s.short + " (not yet: " + s.milestone + ")",

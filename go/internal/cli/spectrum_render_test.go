@@ -272,7 +272,7 @@ func TestSpectrumAndFFTMachineOutput(t *testing.T) {
 		t.Fatalf("--format bin on a terminal: exit %d %v", exitCode(err), err)
 	}
 	// Piped, it still writes its records byte for byte.
-	if out := mustRun(t, sock, "fft", "--format", "bin", "--count", "1", "--bins", "256"); !strings.HasPrefix(out, FFTMagic) {
+	if out := mustRun(t, sock, "fft", "--format", "bin", "--count", "1", "--bins", "256"); !strings.HasPrefix(out, fftMagic) {
 		t.Fatalf("piped --format bin must be unchanged, got %q", out[:min(16, len(out))])
 	}
 }

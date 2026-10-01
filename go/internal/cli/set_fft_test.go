@@ -4,8 +4,10 @@ package cli
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -174,7 +176,7 @@ func TestFFTJSONAndBin(t *testing.T) {
 	out = mustRun(t, sock, "fft", "--count", "2", "--bins", "256", "--rate", "30", "--freq", "100M", "--format", "bin", "--u8")
 	b := []byte(out)
 	for i := 0; i < 2; i++ {
-		bins, seq, err := ParseFFTRecord(b)
+		bins, seq, err := parseFFTRecord(b)
 		if err != nil || bins != 256 {
 			t.Fatalf("record %d: bins %d seq %d err %v", i, bins, seq, err)
 		}
@@ -446,4 +448,13 @@ func TestFFTRowsCarryTheirOwnPosition(t *testing.T) {
 		}
 		prev = row
 	}
+}
+
+// parseFFTRecord decodes one binary record header; it returns bins, seq and
+// the payload length implied by the header for the given bin format.
+func parseFFTRecord(hdr []byte) (bins uint32, seq uint64, err error) {
+	if len(hdr) < 16 || string(hdr[:4]) != fftMagic {
+		return 0, 0, fmt.Errorf("bad FFT record header")
+	}
+	return binary.LittleEndian.Uint32(hdr[4:8]), binary.LittleEndian.Uint64(hdr[8:16]), nil
 }

@@ -515,7 +515,7 @@ func TestRenderOrientationStates(t *testing.T) {
 // added later must still be hidden, and a verb that has shipped must not still be a stub.
 func TestStubsHiddenAndListed(t *testing.T) {
 	root := NewRootCommand(&App{})
-	for _, st := range Stubs {
+	for _, st := range stubs {
 		cmd, _, err := root.Find([]string{st.use})
 		if err != nil || cmd.Name() != st.use || !cmd.Hidden {
 			t.Errorf("stub %s: %v hidden=%v", st.use, err, cmd != nil && cmd.Hidden)
@@ -527,7 +527,7 @@ func TestStubsHiddenAndListed(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("--help: %v", err)
 	}
-	for _, st := range Stubs {
+	for _, st := range stubs {
 		if regexp.MustCompile(`(?m)^\s+(` + st.use + `)\s`).MatchString(out.String()) {
 			t.Errorf("stub %s must be hidden from --help:\n%s", st.use, out.String())
 		}
