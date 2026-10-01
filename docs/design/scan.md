@@ -1,6 +1,6 @@
 # Design: Scan
 
-Status: decided, implemented in Milestone D.13. Companion to `semantic-tier.md`, which
+Status: implemented. Companion to `semantic-tier.md`, which
 introduced the detector and the scan resource in prose; this doc is the version with numbers in it.
 
 ## The story
@@ -8,8 +8,8 @@ introduced the detector and the scan resource in prose; this doc is the version 
 > As an operator, I can `ley scan 144M..148M` and get a list of detected carriers with frequency,
 > bandwidth, and SNR.
 
-Build order puts this at D.13 — "Detector (energy detection, noise floor, persistence tracking);
-telemetry plane; `ley scan`" — ahead of the job store at D.15. The wire contract for it has been
+The build order puts this — "Detector (energy detection, noise floor, persistence tracking);
+telemetry plane; `ley scan`" — ahead of the durable job store. The wire contract for it has been
 sitting in `jobs.proto` and `telemetry.proto` since the protos were written, unimplemented:
 `ScanConfig`, `Scan`, `NoiseFloorSegment`, `Detection`, `TelemetryType.DETECTION`, and a `Detector`
 protocol in `CoreProtocols.swift` with exactly the signature a spectrum sink needs. This work fills
@@ -312,7 +312,7 @@ by asking repeatedly. `Job` is already a full-object message, so invariant 6 hol
 reconnect stays `GetState` plus resume-from-seq. The alternative — a bespoke `Sweep` streaming RPC —
 was rejected because it creates a second authoritative state channel beside `WatchEvents`, orphans
 the `ScanConfig`/`Scan`/`GetScan` triple the protos already define, and would have to be replaced
-when the job store lands at D.15.
+when the durable job store lands.
 
 **Three additive fields on `Detection`** carry the evidence the design depends on:
 
@@ -327,8 +327,8 @@ wire, and a per-row floor cannot describe a local one.
 
 **One additive field on `Scan`**: `repeated GainState gains = 7`, the gain the sweep pinned.
 
-`ScanConfig` also gains `bool take_over = 6` for the don't-disturb override below, and, since
-2026-09-17, `GainWrite gain = 8`: where to pin. A sweep asked for a level pins its element there
+`ScanConfig` also gains `bool take_over = 6` for the don't-disturb override below, and
+`GainWrite gain = 8`: where to pin. A sweep asked for a level pins its element there
 (the first element when the write names none); one asked for `auto` sets the element to auto, lets
 the driver settle, and pins where it settled; one asked for nothing pins whatever the radio is on,
 which is what the last client left. An agent surveying a band through `ley mcp` found two sweeps of
@@ -355,10 +355,10 @@ The daemon keeps the last sixteen finished jobs and their scans in memory so a `
 re-read one, and loses them on restart. `result_uris` carries `ley://scans/<id>`, which names the
 scan and is resolved by `Jobs.GetScan`. It is deliberately **not** a Resource yet: nothing lists it
 and `ResolveLocalPath` has no file for it, because there is no file. Durable scans arrive with the
-resource store at D.15, and the URI is the same one.
+durable job store, and the URI is the same one.
 
 `ScanConfig.recurring` is rejected with `INVALID_ARGUMENT`. A schedule needs the job table that
-survives a restart, which is D.15; accepting the field and silently ignoring it would mislead
+survives a restart, which is not built; accepting the field and silently ignoring it would mislead
 the client.
 
 ## Don't-disturb
@@ -477,7 +477,7 @@ So the sweep is covered in three pieces:
 
 ## Deliberately not in v0
 
-- **Recurring schedules.** They need a job table that survives a restart, which is D.15.
+- **Recurring schedules.** They need a job table that survives a restart, which is not built.
 - **Persisted scans and the Resources service.** Invariant 8: an interactive scan is ephemeral.
 - **`modulation_guess`.** Empty, confidence 0. Invariant 12; a real classifier slots into the field
   later without a schema change.

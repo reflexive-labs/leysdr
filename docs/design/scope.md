@@ -1,6 +1,6 @@
 # Design: Scope — the audio waveform, and what sits under it
 
-Status: draft, 2026-09-11. Companion to `signal-views.md` (which owns the spectrum, waterfall
+Status: implemented (`ley scope`). Companion to `signal-views.md` (which owns the spectrum, waterfall
 and channel views) and `docs/dev/cli-style.md` (which owns how anything is drawn).
 
 ## Context

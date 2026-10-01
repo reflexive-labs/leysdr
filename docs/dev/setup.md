@@ -156,7 +156,7 @@ exist — it was assumed by analogy with `vvlog10f`, which does. So:
 
 ## Spikes (docs/plans/build-order.md)
 
-- **S1 latency chain** — not run; it is APP-2 in `docs/plans/app.md` (the Metal waterfall over the
+- **S1 latency chain** — not run; `docs/plans/app.md` tracks it (the Metal waterfall over the
   gRPC FFT stream, signposts on both ends, a dongle on the Mac).
 - **S2 throughput** — measured and passed (`docs/decisions/S2-throughput.md`): 20 MSPS sustained for
   ten minutes on 19% of one core, no overruns, Accelerate kernels. The harness is

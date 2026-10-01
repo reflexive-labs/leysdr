@@ -104,7 +104,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── daemon [install|uninstall|start|stop|status|logs]
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
-└── (planned) transcript             # arrives with the durable job store (Milestone D.15)
+└── (planned) transcript             # arrives with the durable job store
 ```
 
 Global flags: `--json` on every verb (answered, or refused with exit 2 where there is no machine form); `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/dev/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
@@ -355,16 +355,16 @@ cancels it when that connection goes, which is what makes Ctrl-C hand the radio 
 is not yet a Resource, because an ad-hoc scan is ephemeral and there is no file. The
 daemon keeps the last sixteen finished jobs in memory and loses them on restart. A decode job
 started with `--job` (kept) is the exception: it is written to `kept-jobs.json` beside the record
-store and comes back after a restart as the same job, its records appending to the same resource
-(`docs/plans/decoders.md`, DEC-11); a job cancelled by a client does not. A **record job** is the
+store and comes back after a restart as the same job, its records appending to the same resource;
+a job cancelled by a client does not. A **record job** is the
 other exception and needs no flag: a recording outlives the client that started it, because its
 output is a file (`Jobs.StartJob(RecordConfig)`, below). `Jobs.StartJob` with a watch config and
-`Jobs.GetTranscript` remain UNIMPLEMENTED until Milestone D.15.
+`Jobs.GetTranscript` remain UNIMPLEMENTED until the durable job store is built.
 A running decode job's `status_detail` carries its liveness: "decoding with aprs: 12 records, last
 3 s ago", the first record published at once and a moving count every two seconds after it, so
 `ley jobs` distinguishes a decoder that is receiving packets from one that is not. A decoder that
 is silent
-stays `RUNNING`, because silence is not failure (DEC-16 in `docs/plans/decoders.md`).
+stays `RUNNING`, because silence is not failure.
 `ley jobs --json` prints a `ListJobsResponse` with the jobs in id order, which for ULIDs is the
 order they were started, so the row numbers the table prints are the same from one call to the
 next. `ley jobs cancel <job> --json` prints the `Job` the daemon answers with: cancelling a job
@@ -521,11 +521,11 @@ running it carries only `socketPath` (no `pid`) and the status is 3. `daemon sto
 the socket has stopped answering and removes a stale socket file; under launchd the LaunchAgent
 uses `KeepAlive.SuccessfulExit=false`, so a clean stop stays stopped while a crash is relaunched.
 
-**Bare `ley` (decision, 2026-09-05).** On a TTY it prints an orientation screen — daemon status,
+**Bare `ley`.** On a TTY it prints an orientation screen — daemon status,
 devices, what is playing, and the next commands chosen from the state; exit 0 in every state,
 300 ms dial timeout. Piped it prints the same block unstyled (`ley --help` is the verb list);
 `--json` prints exactly what `ley state --json` prints, including its failure when no daemon
-answers. This screen is the placeholder the V0.5 TUI dashboard replaces on a TTY
+answers. This screen is the placeholder the planned terminal dashboard replaces on a TTY
 (`docs/plans/user-stories.md`); its renderer (`renderOrientation` in `go/internal/cli`) is the one
 function the dashboard reuses for its no-daemon and no-device states, so the words stay the same.
 
@@ -541,8 +541,7 @@ tracked by the daemon — after which `auto` becomes a one-field write. Not in v
 **Roadmap stubs.** There are none: every verb `ley` knows reaches the daemon. The mechanism stays
 (a hidden verb that exits 2 naming its milestone and what to use today, listed by `ley help
 roadmap`), because a newcomer who types a planned verb should learn what is coming rather than see
-Cobra's "unknown command". `scan` was one until Milestone D.13, `watch` until D.17 -- the name went
-to the record-watch verb (a decode job with a predicate and a notifier, DEC-9a), the newer spec,
-and D.15 will place the audio-transcript watch that had reserved it -- and `record` until C.12.
+Cobra's "unknown command". `watch` is the record-watch verb (a decode job with a predicate and a
+notifier); the planned audio-transcript watch will take another name.
 
 Deliberate omissions at v0: no remote flags (UDS-only) and no TX verbs.

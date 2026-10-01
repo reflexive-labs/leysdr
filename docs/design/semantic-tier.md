@@ -44,11 +44,11 @@ Results flow twice: live as telemetry/events while running, and durable as resou
 
 ## MCP surface
 
-This is the design for Milestone D.16. The build plan -- where the MCP server runs and the order the
-tools land -- is `docs/plans/mcp.md`, and the tools the daemon can back are implemented as `ley mcp`
-(2026-09-14; the reference is `docs/reference/mcp.md`). Of the table below, `start_job` exists as
-`start_decode_job`, since decode is the one job an agent can start today (watch and record configs
-are Milestone D.15); `get_transcript` waits on D.15 and `find_recordings` landed with C.12; the decoder
+The build plan -- where the MCP server runs and the order the tools land -- is
+`docs/plans/mcp.md`, and the tools the daemon can back are implemented as `ley mcp` (the reference
+is `docs/reference/mcp.md`). Of the table below, `start_job` exists as `start_decode_job`, since
+decode is the one job an agent can start today (watch configs wait on the durable job store);
+`get_transcript` waits on the same store, and `find_recordings` exists; the decoder
 tools the plan added (`list_decoders`, `query_records`, `list_entities`) are in the reference. Tools
 map one-to-one onto RPCs (names indicative):
 
@@ -58,7 +58,7 @@ map one-to-one onto RPCs (names indicative):
 | `get_state` | Control.GetState | orientation: captures, channels, activity |
 | `tune` | CreateCapture/CreateChannel/WriteParams | refuses to retune active captures (don't-disturb) unless `override: true`; returns refusal reason |
 | `listen_summary` | Telemetry.Subscribe (bounded) | subscribes for `duration_s`, returns activity segments observed |
-| `scan` | Jobs.StartJob(ScanConfig{once}) + Jobs.GetScan | inline results, ephemeral: the job dies with the client that started it. Recurring scans need the durable store (D.15) and are refused |
+| `scan` | Jobs.StartJob(ScanConfig{once}) + Jobs.GetScan | inline results, ephemeral: the job dies with the client that started it. Recurring scans need the durable store and are refused |
 | `snapshot` | Bulk.Subscribe(FFT, one row) | returns PNG (adapter-rendered) + binned data |
 | `start_job` / `list_jobs` / `get_job` / `cancel_job` | Jobs service | watch, scan, record configs as typed payloads |
 | `get_transcript` | Jobs.GetTranscript | segments + coverage gaps; adapter adds waterfall thumbnails |
