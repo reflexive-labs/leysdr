@@ -52,7 +52,13 @@ long as the job runs.
   `/bin/sh -c` for each matching record, with the record's JSON on stdin. Any client of the socket
   can ask for this, which is one more reason the socket must stay private to your account.
 
+## Supported versions
+
+Leyline SDR is pre-release. Only `main` is supported; a fix lands there and nowhere else.
+
 ## Reporting a vulnerability
 
-Use GitHub's private vulnerability reporting on the repository (Security → Report a vulnerability)
-rather than a public issue. Include the version from `ley version` and `ley daemon status`.
+Report it privately through GitHub's private vulnerability reporting on
+[reflexive-labs/leysdr](https://github.com/reflexive-labs/leysdr/security/advisories/new)
+(Security, then Report a vulnerability), not in a public issue. Include the output of `ley version`
+and `ley daemon status`, and the steps that show the problem. We aim to reply within a week.
