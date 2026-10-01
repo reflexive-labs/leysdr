@@ -357,8 +357,8 @@ daemon side of the boundary.
 
 **APRS is decoded in Go, in this repository.** `leydec-aprs` is an AFSK 1200 demodulator, HDLC
 deframer, AX.25 parser and APRS parser written for the plugin contract, rather than an adapter
-around Direwolf or multimon-ng. It costs a user no Homebrew formula, it runs in the Linux
-container where the contract's tests live, and a synthetic AFSK fixture round-trips through the
+around Direwolf or multimon-ng. It costs a user no Homebrew formula, it runs on Linux,
+where the contract's tests also run, and a synthetic AFSK fixture round-trips through the
 whole pipeline in the engine test suite. Direwolf decodes weak packets this one will miss; a
 Direwolf adapter is a second plugin, not a replacement, and the contract exists so both can sit
 side by side.

@@ -31,7 +31,7 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
   state of their own; its
   tests run against `leylined --no-hardware` with a fixture as the radio (`make app-e2e`). Colours
   and type live in `Theme.swift` only. Every contract addition the app needs ships with its `ley`
-  mirror. `LeylineApp` is declared under `#if os(macOS)` and is never compiled in the container, so
+  mirror. `LeylineApp` is declared under `#if os(macOS)` and is never compiled on Linux, so
   a passing Linux run does not test any view: read the diff by eye for isolation, scope, `Sendable`
   and layout, and name the files and behaviours left unverified when handing over
   (`docs/dev/swift-style.md`, "Working as an agent on this repository").
