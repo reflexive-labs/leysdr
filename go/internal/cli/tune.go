@@ -257,7 +257,7 @@ func (s *verbSession) bringUp(ctx context.Context, o *tuneOptions) error {
 	if o.captureCenter != 0 {
 		target = o.captureCenter
 	}
-	if cap := leyline.FindCapture(s.State, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture == nil || !covers(capture, o.freq, o.bw) {
 		if err := s.checkRange(o.input, target); err != nil {
 			return err
 		}
@@ -442,7 +442,7 @@ func leadWord(st ui.Style, sentence string) string {
 // Under --json stdout carries NDJSON only; the banner goes to stderr.
 func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 	meter := &meterSink{w: s.app.Stderr, style: s.app.ErrStyle, tty: s.app.IsErrTTY()}
-	clear := meter.clear
+	clearLine := meter.clear
 	tctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	msgs, terrs, err := s.Client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
@@ -464,7 +464,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 	// caller's; a clean end (the daemon closed the stream, as it does when
 	// shutting down) is reported once on stderr and the run stops with exit 0.
 	ended := func(what string, err error) error {
-		clear()
+		clearLine()
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -482,7 +482,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 	for {
 		select {
 		case <-ctx.Done():
-			clear()
+			clearLine()
 			return nil
 		case m, ok := <-msgs:
 			if !ok {
@@ -503,7 +503,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 				// A tone that has appeared or changed is worth a line; the
 				// heartbeat that repeats it is not, so only a change prints.
 				if line, ok := s.subAudible.line(b.SubAudible, s.app.ErrStyle); ok {
-					clear()
+					clearLine()
 					fmt.Fprintln(s.app.Stderr, line)
 				}
 			case *leylinev1.TelemetryMsg_Squelch:
@@ -517,7 +517,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 				}
 				if t, ok := closedTransmission(b.Squelch, leyline.ChannelCaptureRate(s.State, s.Channel)); ok {
 					t.start, _ = transmissionStart(b.Squelch, m.Time, captureAnchor(s.State, s.Channel.GetCaptureId()))
-					clear()
+					clearLine()
 					fmt.Fprintln(s.app.Stderr, t.render(s.app.ErrStyle))
 				}
 				opened = nil
@@ -542,7 +542,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 			// own line already carries its peak (plans/app.md, M2-10).
 			if s.clip.fold(b.CaptureLevel, m.Time, leyline.ChannelCaptureRate(s.State, s.Channel)) {
 				if note := clippingWords(b.CaptureLevel, s.Capture.GetGains(), s.device.GetGainElements()); note != "" {
-					clear()
+					clearLine()
 					fmt.Fprintln(s.app.Stderr, leadWord(s.app.ErrStyle, note))
 				}
 			}
@@ -567,7 +567,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 					return err
 				}
 			case line != "":
-				clear()
+				clearLine()
 				// Prose, and printed after meter.clear(), which only clears
 				// stderr: on stdout it would corrupt the redraw whenever the
 				// two streams point at different places.
@@ -576,7 +576,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 			if ended {
 				// The channel this session was listening to is gone. Carrying
 				// on would draw a meter for something that no longer exists.
-				clear()
+				clearLine()
 				s.channelGone = true
 				return nil
 			}

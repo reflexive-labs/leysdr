@@ -2,7 +2,44 @@
 version: "2"
 linters:
   default: standard
+  # On top of the standard set: shadowed builtins (predeclared), errors compared or type-asserted
+  # rather than matched with errors.Is/As (errorlint), revive's default rules (doc comments on
+  # exports, naming, unused parameters) and gocritic's default checks.
+  enable:
+    - predeclared
+    - errorlint
+    - revive
+    - gocritic
   settings:
+    revive:
+      rules:
+        # revive's defaults, listed because naming any rule replaces the default set.
+        - name: blank-imports
+        - name: context-as-argument
+          arguments:
+            # Test helpers take *testing.T first, by Go convention, and the context after it.
+            - allowTypesBefore: "*testing.T"
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
     errcheck:
       # Writes to CLI output and deferred/cleanup closes on read-only handles: the error is either
       # not actionable (stdout gone) or already reported by the read that preceded the close.

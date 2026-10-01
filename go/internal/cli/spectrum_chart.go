@@ -52,7 +52,7 @@ func (v *spectrumView) gutter(label string, unit bool) string {
 // axis, so height above it is read as signal margin. With --watch a Muted
 // max-hold trace marks the columns whose recent peak still stands clear of the
 // live one.
-func (v *spectrumView) chart(b *strings.Builder, colDb []float64, floor float64) {
+func (v *spectrumView) chart(b *strings.Builder, colDb []float64, _ float64) {
 	g := v.st.Glyphs()
 	step := (v.top - v.bottom) / spectrumHeight
 	if step <= 0 {

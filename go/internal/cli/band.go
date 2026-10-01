@@ -115,12 +115,12 @@ func (s *verbSession) openBand(ctx context.Context, app *App, o bandOptions) err
 	if err := s.resolveBandFlag(app, &o); err != nil {
 		return err
 	}
-	cap := leyline.FindCapture(s.State, s.device.DeviceId)
-	if cap == nil && o.freq == 0 {
+	capture := leyline.FindCapture(s.State, s.device.DeviceId)
+	if capture == nil && o.freq == 0 {
 		return usageErrorf("%s is not tuned to anything yet; say where to look, e.g.: ley %s 101.1",
 			deviceName(s.device), o.verb)
 	}
-	if o.freq != 0 && (cap == nil || !leyline.CaptureCovers(cap, o.freq)) {
+	if o.freq != 0 && (capture == nil || !leyline.CaptureCovers(capture, o.freq)) {
 		if !units.InRanges(o.freq, s.device.TuningRanges) && len(s.device.TuningRanges) > 0 {
 			msg := fmt.Sprintf("%s is outside %s's range (%s)", units.FormatFrequency(o.freq), deviceName(s.device), units.FormatRanges(s.device.TuningRanges))
 			if hint := frequencyHint(o.freqInput, o.freq, s.device.TuningRanges); hint != "" {
@@ -135,9 +135,9 @@ func (s *verbSession) openBand(ctx context.Context, app *App, o bandOptions) err
 	span := o.span
 	if span != 0 {
 		span = units.NearestRate(s.device.SampleRates, o.span)
-		if cap != nil && cap.SampleRate != span {
+		if capture != nil && capture.SampleRate != span {
 			return usageErrorf("the radio is already capturing %s wide, and %s shows the capture's width; drop --span, ask for --span %s, or free the radio with: ley stop all",
-				units.FormatFrequency(cap.SampleRate), o.verb, units.FormatFrequency(cap.SampleRate))
+				units.FormatFrequency(capture.SampleRate), o.verb, units.FormatFrequency(capture.SampleRate))
 		}
 		if span != o.span {
 			fmt.Fprintf(app.Stderr, "showing %s, the closest this radio can do to %s\n", units.FormatFrequency(span), units.FormatFrequency(o.span))
@@ -148,7 +148,7 @@ func (s *verbSession) openBand(ctx context.Context, app *App, o bandOptions) err
 	// otherwise; the capture created for this run is removed by the caller.
 	freq := o.freq
 	if freq == 0 {
-		freq = cap.CenterHz
+		freq = capture.CenterHz
 	}
 	if err := s.ensureCapture(ctx, &tuneOptions{freq: freq, input: o.freqInput, rate: span, retune: o.retune}); err != nil {
 		return err

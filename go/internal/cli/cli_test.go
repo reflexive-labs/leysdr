@@ -286,11 +286,11 @@ func listening(t *testing.T, c *leyline.Client) {
 	if err != nil || len(st.Devices) == 0 {
 		t.Fatalf("state: %v", err)
 	}
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_520_000})
+	capture, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatalf("create capture: %v", err)
 	}
-	if _, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, Mode: leylinev1.DemodMode_NFM, BandwidthHz: 12_500, Persistent: true}); err != nil {
+	if _, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: capture.CaptureId, Mode: leylinev1.DemodMode_NFM, BandwidthHz: 12_500, Persistent: true}); err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
 }
@@ -374,10 +374,10 @@ func TestWithCode(t *testing.T) {
 	if wrapped.Error() != "the radio is busy; ley state shows who [DEVICE_BUSY]" {
 		t.Errorf("withCode(friendly) = %q", wrapped)
 	}
-	if e := usageErrorf("bad flag"); withCode(e) != e {
+	if e := usageErrorf("bad flag"); withCode(e) != e { //nolint:errorlint // the same value must come back
 		t.Errorf("withCode changed a usage error")
 	}
-	if e := errors.New("plain"); withCode(e) != e || withCode(nil) != nil {
+	if e := errors.New("plain"); withCode(e) != e || withCode(nil) != nil { //nolint:errorlint // the same value must come back
 		t.Errorf("withCode changed a plain error")
 	}
 }
@@ -564,7 +564,7 @@ func TestPickDeviceSkipsExternallyHeld(t *testing.T) {
 func TestDetachRemoteRadio(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
 	ctx := context.Background()
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}

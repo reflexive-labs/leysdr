@@ -19,7 +19,7 @@ import (
 func TestAttachRTLTCPDevice(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,11 +57,11 @@ func TestAttachRTLTCPDevice(t *testing.T) {
 func TestAttachRTLTCPDuplicate(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	first, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	first, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	second, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestAttachRTLTCPDuplicate(t *testing.T) {
 func TestAttachRTLTCPUnreachable(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	_, err := c.AttachDevice(ctx, leyline.RtlTcpSource("nosuch.invalid", 1234))
+	_, err := c.AttachDevice(ctx, leyline.RtlTCPSource("nosuch.invalid", 1234))
 	if leyline.Code(err) != leyline.CodeDeviceIO {
 		t.Fatalf("unreachable host: want DEVICE_IO, got %v", err)
 	}
@@ -97,10 +97,10 @@ func TestAttachRTLTCPUnreachable(t *testing.T) {
 		}
 	}
 	// A port outside 1...65535 never reaches a socket.
-	if _, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 0)); leyline.Code(err) != leyline.CodeInvalidArgument {
+	if _, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 0)); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("port 0: want INVALID_ARGUMENT, got %v", err)
 	}
-	if _, err := c.AttachDevice(ctx, leyline.RtlTcpSource("", 1234)); leyline.Code(err) != leyline.CodeInvalidArgument {
+	if _, err := c.AttachDevice(ctx, leyline.RtlTCPSource("", 1234)); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("empty host: want INVALID_ARGUMENT, got %v", err)
 	}
 }
@@ -110,11 +110,11 @@ func TestAttachRTLTCPUnreachable(t *testing.T) {
 func TestDetachRTLTCPDevice(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
+	capt, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestDetachRTLTCPDevice(t *testing.T) {
 			if d := ev.GetDevice(); d != nil && d.DeviceId == dev.DeviceId && d.State == leylinev1.DeviceState_DISCONNECTED {
 				sawDev = true
 			}
-			if cp := ev.GetCapture(); cp != nil && cp.CaptureId == cap.CaptureId {
+			if cp := ev.GetCapture(); cp != nil && cp.CaptureId == capt.CaptureId {
 				sawCap = true
 			}
 		case <-timeout:

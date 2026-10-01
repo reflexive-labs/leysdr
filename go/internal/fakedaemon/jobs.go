@@ -133,24 +133,24 @@ func (d *Daemon) StartJob(ctx context.Context, req *leylinev1.StartJobRequest) (
 // busyReason names who has the radio, or "" when nobody does: the allocator's rule -- no
 // channels, no live audio sink, and nobody tuning it in the last minute. Caller holds the lock.
 func (d *Daemon) busyReason(deviceID string) string {
-	for _, cap := range d.captures {
-		if cap.DeviceId != deviceID {
+	for _, cp := range d.captures {
+		if cp.DeviceId != deviceID {
 			continue
 		}
 		for _, ch := range d.channels {
-			if ch.CaptureId == cap.CaptureId {
+			if ch.CaptureId == cp.CaptureId {
 				who := ch.GetOwner().GetLabel()
 				if who == "" {
 					who = ch.GetOwner().GetKind()
 				}
-				hz := uint64(int64(cap.CenterHz) + ch.OffsetHz)
+				hz := uint64(int64(cp.CenterHz) + ch.OffsetHz)
 				return fmt.Sprintf("%s is listening on %s", who, units.FormatFrequency(hz))
 			}
 		}
-		if cap.GetActivity().GetLiveAudioSinks() > 0 {
+		if cp.GetActivity().GetLiveAudioSinks() > 0 {
 			return "audio is playing from this radio"
 		}
-		if last := cap.GetActivity().GetLastInteractiveWriteNs(); last > 0 {
+		if last := cp.GetActivity().GetLastInteractiveWriteNs(); last > 0 {
 			if age := time.Since(time.Unix(0, last)); age < dontDisturb {
 				return fmt.Sprintf("somebody was tuning this radio %d s ago", int(age.Seconds()))
 			}

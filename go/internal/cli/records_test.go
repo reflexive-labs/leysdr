@@ -19,7 +19,7 @@ import (
 
 // keptJob starts a decode job that keeps its records and leaves it running for the caller,
 // which is what puts anything in the store for `ley records` to find.
-func keptJob(t *testing.T, sock string, c *leyline.Client, wait time.Duration) *leylinev1.Job {
+func keptJob(t *testing.T, _ string, c *leyline.Client, wait time.Duration) *leylinev1.Job {
 	t.Helper()
 	ctx := context.Background()
 	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs", Keep: true})

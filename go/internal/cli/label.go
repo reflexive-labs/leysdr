@@ -15,7 +15,7 @@ import (
 // decoders.md, "The state boundary" and section 5, "Registry devices"). `ley devices-seen` joins
 // these names onto the discovered transmitters.
 func newLabelCommand(app *App) *cobra.Command {
-	var clear bool
+	var clearName bool
 	cmd := &cobra.Command{
 		Use:   "label <device-id> [name]",
 		Short: "Give a transmitter a name you will recognise",
@@ -43,14 +43,14 @@ an empty name or --clear, label removes it. --json prints the label record.`,
 			if len(args) == 2 {
 				name = args[1]
 			}
-			setting := len(args) == 2 || clear
-			if clear {
+			setting := len(args) == 2 || clearName
+			if clearName {
 				name = ""
 			}
 			return runLabel(app, id, name, setting)
 		},
 	}
-	cmd.Flags().BoolVar(&clear, "clear", false, "remove the name from this transmitter")
+	cmd.Flags().BoolVar(&clearName, "clear", false, "remove the name from this transmitter")
 	return cmd
 }
 

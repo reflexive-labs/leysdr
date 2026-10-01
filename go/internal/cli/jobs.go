@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -154,7 +155,7 @@ func printJobTable(app *App, jobs []*leylinev1.Job, wide bool) {
 		return
 	}
 	if !wide && app.IsTTY() {
-		hidden := append(dropped, "ID")
+		hidden := slices.Concat(dropped, []string{"ID"})
 		fmt.Fprintf(app.Stdout, "%s  %s\n",
 			s.Cmd("ley jobs --wide"), s.Muted("adds "+strings.Join(hidden, ", ")))
 	}

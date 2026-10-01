@@ -95,11 +95,11 @@ func TestFileDeviceEOFDetaches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
+	capt, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := c.SubscribeFFT(ctx, cap.CaptureId, 256, 50, leylinev1.FftBinFormat_DB_U8)
+	sub, err := c.SubscribeFFT(ctx, capt.CaptureId, 256, 50, leylinev1.FftBinFormat_DB_U8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestFileDeviceEOFDetaches(t *testing.T) {
 			if d := ev.GetDevice(); d != nil && d.DeviceId == dev.DeviceId && d.State == leylinev1.DeviceState_DISCONNECTED {
 				sawDev = true
 			}
-			if cp := ev.GetCapture(); cp != nil && cp.CaptureId == cap.CaptureId && cp.State == leylinev1.CaptureState_CAPTURE_DETACHED {
+			if cp := ev.GetCapture(); cp != nil && cp.CaptureId == capt.CaptureId && cp.State == leylinev1.CaptureState_CAPTURE_DETACHED {
 				sawCap = true
 			}
 		case <-timeout:
@@ -153,7 +153,7 @@ func TestFileDeviceEOFDetaches(t *testing.T) {
 	}
 	// A detached capture still negotiates a stream: the daemon's registry asks whether the capture
 	// exists, not what state it is in, and a stream with no source behind it has no frames.
-	if _, err := c.SubscribeFFT(ctx, cap.CaptureId, 256, 50, leylinev1.FftBinFormat_DB_U8); err != nil {
+	if _, err := c.SubscribeFFT(ctx, capt.CaptureId, 256, 50, leylinev1.FftBinFormat_DB_U8); err != nil {
 		t.Errorf("subscribing to a detached capture: %v", err)
 	}
 	if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId}); err != nil {

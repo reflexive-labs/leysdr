@@ -67,16 +67,16 @@ func awaitLevel(ctx context.Context, msgs <-chan *leylinev1.TelemetryMsg, wait t
 // 10·log10(bw / bin width); the threshold sits 10 dB above that. It returns
 // an error when no row arrives within squelchProbeTimeout so callers can
 // leave squelch off and say so.
-func (s *verbSession) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw uint32) (threshold, floor float64, err error) {
+func (s *verbSession) measureSquelch(ctx context.Context, capture *leylinev1.Capture, bw uint32) (threshold, floor float64, err error) {
 	sctx, cancel := context.WithTimeout(ctx, squelchProbeTimeout+levelProbeTimeout)
 	defer cancel()
 	// The capture's level is asked for first, so its first reading, a quarter
 	// of a second away at most, is usually in hand by the time the row is: it
 	// shows whether the radio is clipping, which the row cannot.
-	levels := s.watchLevel(sctx, cap.CaptureId)
-	sub, err := s.Client.SubscribeFFT(sctx, cap.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
+	levels := s.watchLevel(sctx, capture.CaptureId)
+	sub, err := s.Client.SubscribeFFT(sctx, capture.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
-		return 0, 0, fmt.Errorf("no spectrum available (%v)", err)
+		return 0, 0, fmt.Errorf("no spectrum available (%w)", err)
 	}
 	defer sub.Close()
 	var fr *leylinev1.Frame
@@ -100,10 +100,10 @@ func (s *verbSession) measureSquelch(ctx context.Context, cap *leylinev1.Capture
 	// answers whether the radio is clipping, and a daemon that sends none
 	// leaves the row's own full-scale rule to say so.
 	level := awaitLevel(sctx, levels, levelProbeTimeout)
-	s.failureNote = failureWords(vals, level, cap.GetGains(), s.device.GetGainElements())
-	s.bandNote = bandWords(vals, level != nil, cap.GetGains(), s.device.GetGainElements())
+	s.failureNote = failureWords(vals, level, capture.GetGains(), s.device.GetGainElements())
+	s.bandNote = bandWords(vals, level != nil, capture.GetGains(), s.device.GetGainElements())
 	median := medianDb(vals)
-	binWidth := float64(cap.SampleRate) / float64(len(vals))
+	binWidth := float64(capture.SampleRate) / float64(len(vals))
 	floor = median + 10*math.Log10(float64(bw)/binWidth)
 	return math.Round(floor + 10), floor, nil
 }

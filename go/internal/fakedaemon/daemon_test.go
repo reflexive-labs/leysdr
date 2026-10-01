@@ -126,14 +126,14 @@ func TestLifecycleAndEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cap.SampleRate != 2_400_000 || cap.State != leylinev1.CaptureState_CAPTURE_ACTIVE || len(cap.Gains) != 1 {
-		t.Errorf("bad capture: %v", cap)
+	if cp.SampleRate != 2_400_000 || cp.State != leylinev1.CaptureState_CAPTURE_ACTIVE || len(cp.Gains) != 1 {
+		t.Errorf("bad capture: %v", cp)
 	}
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 25_000, Mode: leylinev1.DemodMode_NFM})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 25_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestLifecycleAndEvents(t *testing.T) {
 	}
 	var sawChannel bool
 	for _, ev := range seen {
-		if e := ev.GetChannel(); e != nil && e.ChannelId == ch.ChannelId && e.Mode == leylinev1.DemodMode_NFM && e.CaptureId == cap.CaptureId {
+		if e := ev.GetChannel(); e != nil && e.ChannelId == ch.ChannelId && e.Mode == leylinev1.DemodMode_NFM && e.CaptureId == cp.CaptureId {
 			sawChannel = true
 		}
 	}
@@ -192,7 +192,7 @@ func TestLifecycleAndEvents(t *testing.T) {
 	if _, err := c.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil {
+	if _, err := c.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cp.CaptureId}); err != nil {
 		t.Fatal(err)
 	}
 	st, _ = c.State(ctx)
@@ -232,8 +232,8 @@ func TestErrorMapping(t *testing.T) {
 	if leyline.Code(err) != leyline.CodeDeviceBusy {
 		t.Errorf("want DEVICE_BUSY, got %v", err)
 	}
-	cap := leyline.FindCapture(mustState(t, c), devID)
-	_, err = c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 1_500_000})
+	cp := leyline.FindCapture(mustState(t, c), devID)
+	_, err = c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 1_500_000})
 	if leyline.Code(err) != leyline.CodeOffsetOutOfCapture {
 		t.Errorf("want OFFSET_OUT_OF_CAPTURE, got %v", err)
 	}
@@ -276,11 +276,11 @@ func TestAttachSinkVolumePresence(t *testing.T) {
 	ctx := context.Background()
 	st, _ := c.State(ctx)
 	devID := st.Devices[0].DeviceId
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 25_000, Mode: leylinev1.DemodMode_NFM})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 25_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,11 +321,11 @@ func TestWriteAwaitsWatcher(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{WriteAwaitsWatcher: true})
 	ctx := context.Background()
 	st, _ := c.State(ctx)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bad := &leylinev1.ParamWrite{Tag: 7, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "nope", Value: &leylinev1.GainWrite_Db{Db: 20}}}}
+	bad := &leylinev1.ParamWrite{Tag: 7, TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "nope", Value: &leylinev1.GainWrite_Db{Db: 20}}}}
 	summary := make(chan *leylinev1.WriteSummary, 1)
 	go func() {
 		sum, err := c.WriteParams(ctx, bad)
@@ -381,11 +381,11 @@ func TestWatchEventsSinceSeq(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Two mutations after the snapshot, before any stream exists.
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_NFM, Persistent: true})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_NFM, Persistent: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestWatchEventsSinceSeq(t *testing.T) {
 			t.Fatalf("replayed out of order: seq %d after %d", ev.Seq, last)
 		}
 		last = ev.Seq
-		sawCapture = sawCapture || ev.GetCapture().GetCaptureId() == cap.CaptureId
+		sawCapture = sawCapture || ev.GetCapture().GetCaptureId() == cp.CaptureId
 		sawChannel = ev.GetChannel().GetChannelId() == ch.ChannelId
 	}
 	if !sawCapture || !sawChannel {
@@ -441,7 +441,7 @@ func TestWatchEventsSinceSeqScoped(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
 	st, _ := c.State(ctx)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,14 +468,14 @@ func TestWatchEventsSinceSeqScoped(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("since_seq 0 replayed nothing")
 	}
-	scoped, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), st.EventSeq))
+	scoped, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cp.CaptureId), st.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
 		select {
 		case ev := <-scoped:
-			if ev.GetCapture().GetCaptureId() == cap.CaptureId {
+			if ev.GetCapture().GetCaptureId() == cp.CaptureId {
 				return
 			}
 		case <-time.After(2 * time.Second):
@@ -503,11 +503,11 @@ func TestDestroyCaptureEmitsTheTombstone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
+	capt, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil {
+	if _, err := c.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: capt.CaptureId}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -516,7 +516,7 @@ func TestDestroyCaptureEmitsTheTombstone(t *testing.T) {
 		select {
 		case ev := <-events:
 			cp := ev.GetCapture()
-			if cp == nil || cp.CaptureId != cap.CaptureId {
+			if cp == nil || cp.CaptureId != capt.CaptureId {
 				continue
 			}
 			switch cp.State {
@@ -525,7 +525,7 @@ func TestDestroyCaptureEmitsTheTombstone(t *testing.T) {
 			case leylinev1.CaptureState_CAPTURE_DETACHED:
 				t.Fatal("a destroy must not look like device loss")
 			}
-			if cp.CenterHz != cap.CenterHz {
+			if cp.CenterHz != capt.CenterHz {
 				t.Errorf("the tombstone still carries the whole object: %v", cp)
 			}
 			return

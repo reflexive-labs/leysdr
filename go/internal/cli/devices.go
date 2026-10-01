@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -206,7 +207,7 @@ func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool
 		return
 	}
 	if !wide && app.IsTTY() {
-		hidden := append(dropped, "DRIVER", "SERIAL", "ID")
+		hidden := slices.Concat(dropped, []string{"DRIVER", "SERIAL", "ID"})
 		fmt.Fprintf(app.Stdout, "%s  %s\n",
 			s.Cmd("ley devices --wide"), s.Muted("adds "+strings.Join(hidden, ", ")))
 	}
@@ -310,7 +311,7 @@ func runDevicesAttach(cmd *cobra.Command, app *App, kind, endpoint string) error
 		}
 		before = resp.GetDevices()
 	}
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource(host, port))
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource(host, port))
 	if err != nil {
 		return err
 	}

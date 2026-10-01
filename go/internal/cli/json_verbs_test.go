@@ -271,8 +271,8 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 				t.Fatalf("ley %v printed nothing on stdout; stderr:\n%s", args, errOut)
 			}
 			for _, l := range lines {
-				var any any
-				if err := json.Unmarshal([]byte(l), &any); err != nil {
+				var found any
+				if err := json.Unmarshal([]byte(l), &found); err != nil {
 					t.Fatalf("ley %v: stdout is not NDJSON (%v): %q", args, err, l)
 				}
 			}

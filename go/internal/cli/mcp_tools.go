@@ -262,7 +262,7 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, nil, fileMissing(path, "the daemon writes it once started with 'ley daemon start'; a daemon started by hand with another --log writes elsewhere")
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("cannot read the log %s: %v", path, err)
+		return nil, nil, fmt.Errorf("cannot read the log %s: %w", path, err)
 	}
 	all := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	if len(all) == 1 && all[0] == "" {
@@ -414,23 +414,23 @@ func refuseRetune(s *verbSession, freq uint64, bw uint32, takeOver bool) error {
 	if takeOver || s.device == nil {
 		return nil
 	}
-	cap := leyline.FindCapture(s.State, s.device.DeviceId)
-	if cap == nil || covers(cap, freq, bw) {
+	capture := leyline.FindCapture(s.State, s.device.DeviceId)
+	if capture == nil || covers(capture, freq, bw) {
 		return nil
 	}
 	var who []string
 	for _, ch := range s.State.GetChannels() {
-		if ch.GetCaptureId() != cap.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
+		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
 			continue
 		}
-		hz := uint64(int64(cap.GetCenterHz()) + ch.GetOffsetHz())
+		hz := uint64(int64(capture.GetCenterHz()) + ch.GetOffsetHz())
 		who = append(who, fmt.Sprintf("%s (%s, %s)", ch.GetChannelId(), units.FormatFrequency(hz), clientLabel(ch.GetOwner())))
 	}
 	if len(who) == 0 {
 		return nil
 	}
 	return fmt.Errorf("the radio is on %s with %s listening: %s. Retuning to %s would silence %s. %s",
-		units.FormatFrequency(cap.GetCenterHz()), words.Count(len(who), "channel"), strings.Join(who, ", "),
+		units.FormatFrequency(capture.GetCenterHz()), words.Count(len(who), "channel"), strings.Join(who, ", "),
 		units.FormatFrequency(freq), words.Pick(len(who), "it", "them"), takeOverHint)
 }
 
@@ -449,7 +449,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	o := scanOptions{dwellMs: in.DwellMs, minSNR: in.MinSNR, takeOver: in.TakeOver, device: in.Device, gain: in.Gain}
 	if in.Gain != "" {
 		if _, err := units.ParseGains(in.Gain); err != nil {
-			return nil, nil, fmt.Errorf("gain %v", err)
+			return nil, nil, fmt.Errorf("gain %w", err)
 		}
 	}
 	if lo, hi, rerr := parseRange(in.Range); rerr == nil {
@@ -457,7 +457,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	} else if b, berr := bandplan.ResolveBand(in.Range); berr == nil {
 		o.minHz, o.maxHz, o.rangeInput, o.bandName = b.MinHz, b.MaxHz, b.Name, b.Name
 	} else {
-		return nil, nil, fmt.Errorf("%v, and no band called %q; list_devices says what the radio tunes and ley bands the band names", rerr, in.Range)
+		return nil, nil, fmt.Errorf("%w, and no band called %q; list_devices says what the radio tunes and ley bands the band names", rerr, in.Range)
 	}
 	app, out, errb := srv.toolApp()
 	s, err := openSession(ctx, app)
@@ -938,7 +938,7 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if in.Span != "" {
 		v, err := units.ParseFrequency(in.Span)
 		if err != nil {
-			return nil, nil, fmt.Errorf("span %v; for example 2.4M or 200k", err)
+			return nil, nil, fmt.Errorf("span %w; for example 2.4M or 200k", err)
 		}
 		bo.span = v
 	}
@@ -1134,14 +1134,14 @@ func (srv *mcpServer) queryRecords(ctx context.Context, _ *mcp.CallToolRequest, 
 	if in.Near != "" {
 		near, err := parseLatLon(in.Near)
 		if err != nil {
-			return nil, nil, fmt.Errorf("near %v", err)
+			return nil, nil, fmt.Errorf("near %w", err)
 		}
 		q.Near = near
 	}
 	if in.Radius != "" {
 		r, err := parseDistance(in.Radius)
 		if err != nil {
-			return nil, nil, fmt.Errorf("radius %v", err)
+			return nil, nil, fmt.Errorf("radius %w", err)
 		}
 		q.RadiusM = r
 	}
@@ -1337,7 +1337,7 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 	if in.Frequency != "" {
 		hz, err := units.ParseFrequency(in.Frequency)
 		if err != nil {
-			return nil, nil, fmt.Errorf("frequency %v", err)
+			return nil, nil, fmt.Errorf("frequency %w", err)
 		}
 		cfg.FrequencyHz = hz
 	}

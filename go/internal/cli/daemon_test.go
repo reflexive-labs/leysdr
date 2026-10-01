@@ -43,6 +43,7 @@ func TestPlistEscapesPaths(t *testing.T) {
 
 func TestIsDaemonComm(t *testing.T) {
 	for out, want := range map[string]bool{
+		//nolint:gocritic // the padded key is the case under test: ps output with whitespace around it
 		"leylined\n": true, "/opt/leyline/bin/leylined\n": true, " leylined \n": true,
 		"sleep\n": false, "": false, "leylined-old\n": false, "/usr/bin/ley\n": false,
 	} {

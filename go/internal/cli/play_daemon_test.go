@@ -33,17 +33,23 @@ func TestMain(m *testing.M) {
 				sock = os.Args[i+1]
 			}
 		}
-		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-		defer stop()
-		fmt.Println("fake leylined starting on", sock)
-		if err := fakedaemon.New(fakedaemon.Options{}).Serve(ctx, sock); err != nil {
-			fmt.Println("serve:", err)
-			os.Exit(1)
-		}
-		fmt.Println("fake leylined stopped")
-		os.Exit(0)
+		os.Exit(serveFakeDaemon(sock))
 	}
 	os.Exit(m.Run())
+}
+
+// serveFakeDaemon is the test binary acting as leylined: it serves a fake daemon on sock until
+// SIGTERM or an interrupt, and returns the process status.
+func serveFakeDaemon(sock string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	fmt.Println("fake leylined starting on", sock)
+	if err := fakedaemon.New(fakedaemon.Options{}).Serve(ctx, sock); err != nil {
+		fmt.Println("serve:", err)
+		return 1
+	}
+	fmt.Println("fake leylined stopped")
+	return 0
 }
 
 func TestPlayWithSidecar(t *testing.T) {

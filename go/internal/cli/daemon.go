@@ -541,7 +541,7 @@ const stopTimeout = 5 * time.Second
 // to exit, and removes the pidfile.
 func (a *App) stopPid(ctx context.Context, pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("cannot signal the daemon (pid %d): %v. Check what that process is with: ps -p %d", pid, err, pid)
+		return fmt.Errorf("cannot signal the daemon (pid %d): %w. Check what that process is with: ps -p %d", pid, err, pid)
 	}
 	deadline := time.Now().Add(stopTimeout)
 	for i := 0; !processGone(ctx, pid, i%10 == 0); i++ {
@@ -641,7 +641,7 @@ func (a *App) daemonLogs(ctx context.Context, f *daemonFlags) error {
 		return fileMissing(path, "the daemon writes it once started with: ley daemon start (or pass the file it logs to with --log)")
 	}
 	if err != nil {
-		return fmt.Errorf("cannot read the log %s: %v", path, err)
+		return fmt.Errorf("cannot read the log %s: %w", path, err)
 	}
 	defer file.Close()
 	// Piped, the log is this daemon's own format passed through byte-for-byte

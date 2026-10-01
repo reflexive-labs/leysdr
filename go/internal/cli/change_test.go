@@ -23,7 +23,7 @@ const (
 // liveSession is a session mid-listen: our own capture, channel and sink, with
 // the mirror holding all three.
 func liveSession() *verbSession {
-	cap := &leylinev1.Capture{
+	capture := &leylinev1.Capture{
 		CaptureId: otherCap, DeviceId: otherDev, CenterHz: 146_620_000, SampleRate: 2_400_000,
 		State: leylinev1.CaptureState_CAPTURE_ACTIVE,
 		Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}},
@@ -39,7 +39,7 @@ func liveSession() *verbSession {
 	dev := &leylinev1.DeviceDescriptor{DeviceId: otherDev, Model: "R820T", State: leylinev1.DeviceState_IN_USE}
 	st := ui.Style{}
 	return &verbSession{
-		Session: &session.Session{State: &leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{dev}, Captures: []*leylinev1.Capture{cap}, Channels: []*leylinev1.Channel{ch}, Sinks: []*leylinev1.Sink{sk}}, Capture: cap, Channel: ch, Sink: sk},
+		Session: &session.Session{State: &leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{dev}, Captures: []*leylinev1.Capture{capture}, Channels: []*leylinev1.Channel{ch}, Sinks: []*leylinev1.Sink{sk}}, Capture: capture, Channel: ch, Sink: sk},
 		app:     &App{Style: st, ErrStyle: st},
 		device:  dev,
 	}

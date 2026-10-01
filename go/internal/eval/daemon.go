@@ -203,14 +203,14 @@ func (d *daemon) setup(ctx context.Context, steps []SetupStep) error {
 			cmd := exec.CommandContext(ctx, d.env.Ley, append([]string{"--socket", d.socket}, st.Ley...)...)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				return fmt.Errorf("setup %d (ley %s): %v\n%s", i+1, strings.Join(st.Ley, " "), err, out)
+				return fmt.Errorf("setup %d (ley %s): %w\n%s", i+1, strings.Join(st.Ley, " "), err, out)
 			}
 		case st.Job != nil:
 			cfg := &leylinev1.DecodeConfig{Decoder: st.Job.Decoder, Keep: st.Job.Keep}
 			if st.Job.Frequency != "" {
 				hz, err := units.ParseFrequency(st.Job.Frequency)
 				if err != nil {
-					return fmt.Errorf("setup %d: frequency %v", i+1, err)
+					return fmt.Errorf("setup %d: frequency %w", i+1, err)
 				}
 				cfg.FrequencyHz = hz
 			}

@@ -22,27 +22,27 @@ func setupCaptureChannel(t *testing.T, c *leyline.Client) (*leylinev1.Capture, *
 	t.Helper()
 	ctx := context.Background()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 520_000, Mode: leylinev1.DemodMode_NFM})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 520_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cap, ch
+	return cp, ch
 }
 
 func TestWriteParams(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, ch := setupCaptureChannel(t, c)
+	cp, ch := setupCaptureChannel(t, c)
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	start := mustState(t, c)
 	// From the snapshot's seq, so a write applied before the watcher registers is replayed rather
 	// than missed.
-	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), start.EventSeq))
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cp.CaptureId), start.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,9 +50,9 @@ func TestWriteParams(t *testing.T) {
 	sum, err := c.WriteParams(ctx,
 		&leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: -60}},
 		&leylinev1.ParamWrite{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: -40}}, // coalesced: last wins
-		&leylinev1.ParamWrite{Tag: 3, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "TUNER", Value: &leylinev1.GainWrite_Db{Db: 28.3}}}},
-		&leylinev1.ParamWrite{Tag: 4, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: 5}},                                                                          // rejected
-		&leylinev1.ParamWrite{Tag: 5, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "LNA", Value: &leylinev1.GainWrite_Auto{Auto: true}}}}, // rejected
+		&leylinev1.ParamWrite{Tag: 3, TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "TUNER", Value: &leylinev1.GainWrite_Db{Db: 28.3}}}},
+		&leylinev1.ParamWrite{Tag: 4, TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: 5}},                                                                          // rejected
+		&leylinev1.ParamWrite{Tag: 5, TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Element: "LNA", Value: &leylinev1.GainWrite_Auto{Auto: true}}}}, // rejected
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -91,19 +91,19 @@ func TestWriteParams(t *testing.T) {
 func TestFFTStream(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, ch := setupCaptureChannel(t, c)
-	sub, err := c.SubscribeFFT(ctx, cap.CaptureId, 1000, 30, leylinev1.FftBinFormat_DB_U8)
+	cp, ch := setupCaptureChannel(t, c)
+	sub, err := c.SubscribeFFT(ctx, cp.CaptureId, 1000, 30, leylinev1.FftBinFormat_DB_U8)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer sub.Close()
 	d := sub.Descriptor
-	if d.GetFft().GetBins() != 1024 || d.GetFft().GetBinFormat() != leylinev1.FftBinFormat_DB_U8 || d.CenterHz != cap.CenterHz || d.SpanHz != cap.SampleRate || !d.GetGrpc() {
+	if d.GetFft().GetBins() != 1024 || d.GetFft().GetBinFormat() != leylinev1.FftBinFormat_DB_U8 || d.CenterHz != cp.CenterHz || d.SpanHz != cp.SampleRate || !d.GetGrpc() {
 		t.Fatalf("descriptor = %v", d)
 	}
 	// Ladder parity with the engine: requests round *up* (300 -> 512, 1500 -> 2048), capped at 16384.
 	for _, tc := range []struct{ req, want uint32 }{{300, 512}, {1024, 1024}, {1500, 2048}, {9000, 16384}, {16384, 16384}, {100000, 16384}} {
-		s2, err := c.SubscribeFFT(ctx, cap.CaptureId, tc.req, 30, leylinev1.FftBinFormat_DB_U8)
+		s2, err := c.SubscribeFFT(ctx, cp.CaptureId, tc.req, 30, leylinev1.FftBinFormat_DB_U8)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -126,16 +126,16 @@ func TestFFTStream(t *testing.T) {
 		}
 	}
 	f := frames[2]
-	if len(f.Payload) != 1024 || f.Seq != 3 || f.Time.GetCaptureId() != cap.CaptureId {
+	if len(f.Payload) != 1024 || f.Seq != 3 || f.Time.GetCaptureId() != cp.CaptureId {
 		t.Errorf("frame = seq %d len %d time %v", f.Seq, len(f.Payload), f.Time)
 	}
-	peak := int((float64(ch.OffsetHz)/float64(cap.SampleRate) + 0.5) * 1024)
+	peak := int((float64(ch.OffsetHz)/float64(cp.SampleRate) + 0.5) * 1024)
 	if f.Payload[peak] < 140 || f.Payload[10] > 60 {
 		t.Errorf("no peak at channel offset: bin[%d]=%d floor=%d", peak, f.Payload[peak], f.Payload[10])
 	}
 	// Non-live start is UNIMPLEMENTED.
 	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
-		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId}, Kind: leylinev1.StreamKind_FFT,
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId}, Kind: leylinev1.StreamKind_FFT,
 		Start: &leylinev1.StreamPosition{Position: &leylinev1.StreamPosition_AtHostTimeNs{AtHostTimeNs: 1}},
 	})
 	if leyline.Code(err) != leyline.CodeUnimplemented {
@@ -186,10 +186,10 @@ func TestAudioStream(t *testing.T) {
 func TestIQStreamContract(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, _ := setupCaptureChannel(t, c)
+	cp, _ := setupCaptureChannel(t, c)
 	subscribe := func(format leylinev1.SampleFormat, rate uint64) (*leyline.Subscription, error) {
 		return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
-			Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+			Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
 			Kind:   leylinev1.StreamKind_IQ,
 			Params: &leylinev1.SubscribeRequest_Iq{Iq: &leylinev1.IqParams{SampleRate: rate, Format: format}},
 		})
@@ -202,15 +202,15 @@ func TestIQStreamContract(t *testing.T) {
 	}{
 		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, 0},
 		{leylinev1.SampleFormat_CF32, 0},
-		{leylinev1.SampleFormat_CF32, cap.SampleRate},
-		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, cap.SampleRate},
+		{leylinev1.SampleFormat_CF32, cp.SampleRate},
+		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, cp.SampleRate},
 	} {
 		sub, err := subscribe(tc.format, tc.rate)
 		if err != nil {
 			t.Fatalf("format %v rate %d: %v", tc.format, tc.rate, err)
 		}
 		iq := sub.Descriptor.GetIq()
-		if iq.GetFormat() != leylinev1.SampleFormat_CF32 || iq.GetSampleRate() != cap.SampleRate {
+		if iq.GetFormat() != leylinev1.SampleFormat_CF32 || iq.GetSampleRate() != cp.SampleRate {
 			t.Errorf("format %v rate %d: descriptor %v", tc.format, tc.rate, iq)
 		}
 		if err := sub.Close(); err != nil {
@@ -224,7 +224,7 @@ func TestIQStreamContract(t *testing.T) {
 	}{
 		{leylinev1.SampleFormat_CS8, 0},
 		{leylinev1.SampleFormat_CS16, 0},
-		{leylinev1.SampleFormat_CF32, cap.SampleRate / 2},
+		{leylinev1.SampleFormat_CF32, cp.SampleRate / 2},
 		{leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED, 1_000_000},
 	} {
 		if _, err := subscribe(tc.format, tc.rate); leyline.Code(err) != leyline.CodeInvalidArgument {
@@ -233,12 +233,12 @@ func TestIQStreamContract(t *testing.T) {
 	}
 	// No params at all is the same as UNSPECIFIED/0.
 	sub, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
-		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId}, Kind: leylinev1.StreamKind_IQ,
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId}, Kind: leylinev1.StreamKind_IQ,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sub.GetIq().GetFormat() != leylinev1.SampleFormat_CF32 || sub.GetIq().GetSampleRate() != cap.SampleRate {
+	if sub.GetIq().GetFormat() != leylinev1.SampleFormat_CF32 || sub.GetIq().GetSampleRate() != cp.SampleRate {
 		t.Errorf("bare request: descriptor %v", sub.GetIq())
 	}
 }
@@ -253,8 +253,8 @@ func TestPresenceReaping(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer poller.Close()
-	cap, ch := setupCaptureChannel(t, c)
-	persistent, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: -100_000, Persistent: true})
+	cp, ch := setupCaptureChannel(t, c)
+	persistent, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: -100_000, Persistent: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,9 +294,9 @@ func TestFileDevice(t *testing.T) {
 	if dev.Driver != "file" || dev.SampleRates[0] != 250_000 || dev.TuningRanges[0].MinHz != 146_520_000 {
 		t.Errorf("descriptor = %v", dev)
 	}
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
-	if err != nil || cap.SampleRate != 250_000 {
-		t.Fatalf("capture = %v, %v", cap, err)
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
+	if err != nil || cp.SampleRate != 250_000 {
+		t.Fatalf("capture = %v, %v", cp, err)
 	}
 	if _, err := c.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId}); err != nil {
 		t.Fatal(err)
@@ -314,9 +314,9 @@ func TestFileDevice(t *testing.T) {
 func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, _ := setupCaptureChannel(t, c)
+	cp, _ := setupCaptureChannel(t, c)
 	req := &leylinev1.SubscribeRequest{
-		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
 		Kind:   leylinev1.StreamKind_FFT,
 		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 1024, RowsPerSecond: 30}},
 	}
@@ -345,7 +345,7 @@ func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
 	if first == nil {
 		t.Fatal("a cancelled stream must report why it ended")
 	}
-	if got := sub.Err(); got != first {
+	if got := sub.Err(); got != first { //nolint:errorlint // Err must return the very same value again
 		t.Errorf("Err() = %v then %v; it must be repeatable", first, got)
 	}
 }
@@ -356,9 +356,9 @@ func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
 func TestStreamHasOneReaderAtATime(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, _ := setupCaptureChannel(t, c)
+	cp, _ := setupCaptureChannel(t, c)
 	desc, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
-		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
 		Kind:   leylinev1.StreamKind_FFT,
 		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 256, RowsPerSecond: 50}},
 	})
@@ -403,16 +403,16 @@ func TestStreamHasOneReaderAtATime(t *testing.T) {
 func TestGainWriteMustBeFinite(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, _ := setupCaptureChannel(t, c)
+	cp, _ := setupCaptureChannel(t, c)
 	before := mustState(t, c).Captures[0].Gains[0].Db
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	start := mustState(t, c)
-	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), start.EventSeq))
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cp.CaptureId), start.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
-	nan := &leylinev1.ParamWrite{Tag: 9, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{
+	nan := &leylinev1.ParamWrite{Tag: 9, TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{
 		Gain: &leylinev1.GainWrite{Element: "TUNER", Value: &leylinev1.GainWrite_Db{Db: math.NaN()}},
 	}}
 	if _, err := c.WriteParams(ctx, nan); err != nil {
@@ -446,12 +446,12 @@ func TestGapMarksWhatWasLost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	desc, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
-		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
 		Kind:   leylinev1.StreamKind_IQ,
 		Policy: leylinev1.DeliveryPolicy_GAP_MARKED,
 	})
@@ -501,25 +501,25 @@ func TestPersistenceNegotiation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A scale nobody stated: refused, because a histogram on the wrong one is not obviously wrong
 	// to look at.
-	_, err = c.SubscribePersistence(ctx, cap.CaptureId, 256, 32, -90, 0, 20, 2)
+	_, err = c.SubscribePersistence(ctx, cp.CaptureId, 256, 32, -90, 0, 20, 2)
 	if leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("range_db 0: want INVALID_ARGUMENT, got %v", err)
 	}
-	if _, err := c.SubscribePersistence(ctx, cap.CaptureId, 256, 1, -90, 50, 20, 2); leyline.Code(err) != leyline.CodeInvalidArgument {
+	if _, err := c.SubscribePersistence(ctx, cp.CaptureId, 256, 1, -90, 50, 20, 2); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("1 level: want INVALID_ARGUMENT, got %v", err)
 	}
-	if _, err := c.SubscribePersistence(ctx, cap.CaptureId, 256, 512, -90, 50, 20, 2); leyline.Code(err) != leyline.CodeInvalidArgument {
+	if _, err := c.SubscribePersistence(ctx, cp.CaptureId, 256, 512, -90, 50, 20, 2); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("512 levels: want INVALID_ARGUMENT, got %v", err)
 	}
 	// Defaults and clamps: 0 bins is 256, 0 levels is 32, an absurd half-life is bounded, and the
 	// bin count comes off the same ladder the FFT uses.
-	sub, err := c.SubscribePersistence(ctx, cap.CaptureId, 300, 0, -90, 50, 1e9, 2)
+	sub, err := c.SubscribePersistence(ctx, cp.CaptureId, 300, 0, -90, 50, 1e9, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +528,7 @@ func TestPersistenceNegotiation(t *testing.T) {
 	if p.GetBins() != 512 || p.GetLevels() != 32 || p.GetHalfLifeSeconds() != 3600 || p.GetRowsPerSecond() != 2 {
 		t.Fatalf("descriptor = %v", p)
 	}
-	if sub.Descriptor.CenterHz != cap.CenterHz || sub.Descriptor.SpanHz != cap.SampleRate {
+	if sub.Descriptor.CenterHz != cp.CenterHz || sub.Descriptor.SpanHz != cp.SampleRate {
 		t.Errorf("persistence carries the band it covers: %v", sub.Descriptor)
 	}
 	// The frames are counts, one uint16 per (bin, level), and they grow: the noise floor is seen
@@ -561,7 +561,7 @@ func TestPersistenceNegotiation(t *testing.T) {
 		t.Errorf("counts must accumulate: %d then %d", sumCounts(first), sumCounts(second))
 	}
 	// A channel is not a band: persistence reads the radio, and a channel source is refused.
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 0})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,11 +590,11 @@ func TestFFTAccumulation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := c.SubscribeFFT(ctx, cap.CaptureId, 256, 10, leylinev1.FftBinFormat_DB_F32)
+	snapshot, err := c.SubscribeFFT(ctx, cp.CaptureId, 256, 10, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +602,7 @@ func TestFFTAccumulation(t *testing.T) {
 	if p := snapshot.Descriptor.GetFft(); p.GetLooksPerRow() != 1 || p.GetAccumulation() != leylinev1.FftAccumulation_ROW_SNAPSHOT {
 		t.Errorf("snapshot descriptor = %v", p)
 	}
-	maxSub, err := c.SubscribeFFTAccumulated(ctx, cap.CaptureId, 256, 10, leylinev1.FftBinFormat_DB_F32, leylinev1.FftAccumulation_ROW_MAX)
+	maxSub, err := c.SubscribeFFTAccumulated(ctx, cp.CaptureId, 256, 10, leylinev1.FftBinFormat_DB_F32, leylinev1.FftAccumulation_ROW_MAX)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +615,7 @@ func TestFFTAccumulation(t *testing.T) {
 	}
 	// looks_per_row is the daemon's answer, never a request.
 	_, err = c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
-		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cap.CaptureId},
+		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
 		Kind:   leylinev1.StreamKind_FFT,
 		Params: &leylinev1.SubscribeRequest_Fft{Fft: &leylinev1.FftParams{Bins: 256, LooksPerRow: 4}},
 	})
@@ -785,12 +785,12 @@ func TestAudioTaps(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// 146.940 MHz: a carrier the fake sends a 123.0 Hz CTCSS tone on.
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 940_000, Mode: leylinev1.DemodMode_NFM})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 940_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -844,10 +844,10 @@ func TestAudioTaps(t *testing.T) {
 func TestAudioTapRefusals(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, ch := setupCaptureChannel(t, c)
+	cp, ch := setupCaptureChannel(t, c)
 	// A raw-IQ channel has no detector to tap.
 	raw, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
-		CaptureId: cap.CaptureId, OffsetHz: 300_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_RAW_IQ,
+		CaptureId: cp.CaptureId, OffsetHz: 300_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_RAW_IQ,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -878,12 +878,12 @@ func TestAudioSpectrumStream(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// 146.940 MHz: a carrier the fake sends a 123.0 Hz CTCSS tone on.
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 940_000, Mode: leylinev1.DemodMode_NFM})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 940_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -957,11 +957,11 @@ func binLevel(t *testing.T, row []float64, hz, binHz float64) float64 {
 func TestAudioSpectrumRefusals(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
-	cap, ch := setupCaptureChannel(t, c)
+	cp, ch := setupCaptureChannel(t, c)
 	// A raw-IQ channel carries no audio, on either tap; the spectrum of silence would look
 	// like a quiet band.
 	raw, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
-		CaptureId: cap.CaptureId, OffsetHz: 300_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_RAW_IQ,
+		CaptureId: cp.CaptureId, OffsetHz: 300_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_RAW_IQ,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1036,7 +1036,7 @@ func TestAudioDescriptorFullScaleDeviation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := context.Background()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1054,7 +1054,7 @@ func TestAudioDescriptorFullScaleDeviation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
-			CaptureId: cap.CaptureId, OffsetHz: 940_000, Mode: tc.mode, BandwidthHz: tc.bw,
+			CaptureId: cp.CaptureId, OffsetHz: 940_000, Mode: tc.mode, BandwidthHz: tc.bw,
 		})
 		if err != nil {
 			t.Fatalf("%v %d Hz: %v", tc.mode, tc.bw, err)

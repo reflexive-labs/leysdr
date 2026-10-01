@@ -471,7 +471,7 @@ func (s *verbSession) attachRecordAudio(ctx context.Context, job *leylinev1.Job,
 // recordChannel is the channel the job is recording: the one it was told to borrow, or the one
 // the allocator made for it. A job's channel carries the frequency it was asked for in
 // required_hz, which is what tells it apart from anything else on the radio.
-func (s *verbSession) recordChannel(ctx context.Context, job *leylinev1.Job, o recordOptions) string {
+func (s *verbSession) recordChannel(ctx context.Context, _ *leylinev1.Job, o recordOptions) string {
 	if o.channelID != "" {
 		return o.channelID
 	}

@@ -17,11 +17,16 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+// run is main with its deferred calls, which os.Exit would skip.
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	exe, _ := os.Executable()
 	app := &cli.App{Stdout: os.Stdout, Stderr: os.Stderr, Executable: exe}
-	os.Exit(exitStatus(ctx, app, cli.Execute(ctx, app, os.Args[1:])))
+	return exitStatus(ctx, app, cli.Execute(ctx, app, os.Args[1:]))
 }
 
 // exitStatus maps Execute's error to a process status, per the taxonomy in

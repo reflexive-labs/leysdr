@@ -19,7 +19,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
 
-// EntityRow is one row of `ley track --json`, and EntitySnapshot the object printed per redraw.
+// EntitySnapshot is the object `ley track --json` prints per redraw, one EntityRow per entity.
 // The entity table is a client-side fold with no proto message of its own -- the daemon serves
 // records, not entities -- so this shape (snake_case) is part of the documented exception to the
 // proto3 rule; see docs/reference/cli.md.

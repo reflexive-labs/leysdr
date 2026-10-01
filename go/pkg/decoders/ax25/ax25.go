@@ -75,7 +75,7 @@ func (f *Frame) String() string {
 	return b.String()
 }
 
-// Path renders the digipeater list the way TNC2 does, for DecodeRecord.fields.
+// PathString renders the digipeater list the way TNC2 does, for DecodeRecord.fields.
 func (f *Frame) PathString() string {
 	parts := make([]string, 0, len(f.Path))
 	for _, d := range f.Path {

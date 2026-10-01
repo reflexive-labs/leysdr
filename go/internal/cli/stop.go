@@ -59,11 +59,11 @@ several radios in use, --device says which.`,
 			if all {
 				return stopAll(cmd.Context(), s, deviceSel)
 			}
-			ch, cap, err := resolveTarget(s, sel, "", stopTarget)
+			ch, capture, err := resolveTarget(s, sel, "", stopTarget)
 			if err != nil {
 				return err
 			}
-			return stopChannel(cmd.Context(), s, ch, cap)
+			return stopChannel(cmd.Context(), s, ch, capture)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "stop every channel on the radio and free it (same as 'ley stop all')")
@@ -74,7 +74,7 @@ several radios in use, --device says which.`,
 // stopChannel destroys one channel and says what happened. The capture stays
 // (another channel or a spectrum watcher may use it); the line says how to
 // free the radio when the channel was the last one on it.
-func stopChannel(ctx context.Context, s *verbSession, ch *leylinev1.Channel, cap *leylinev1.Capture) error {
+func stopChannel(ctx context.Context, s *verbSession, ch *leylinev1.Channel, capture *leylinev1.Capture) error {
 	if ch == nil {
 		return fmt.Errorf("nothing to stop; ley state lists what is running")
 	}
@@ -96,7 +96,7 @@ func stopChannel(ctx context.Context, s *verbSession, ch *leylinev1.Channel, cap
 		}
 	}
 	fmt.Fprintf(s.app.Stdout, "stopped %s\n", desc)
-	if others == 0 && cap != nil {
+	if others == 0 && capture != nil {
 		// The outcome reads alone; the caveat -- the channel is gone but the
 		// hardware is still held -- is a footnote on its own line rather
 		// than the middle clause of a 118-character sentence.
@@ -155,9 +155,9 @@ func stopAll(ctx context.Context, s *verbSession, deviceSel string) error {
 		return nil
 	}
 	stopped := 0
-	for _, cap := range caps {
+	for _, capture := range caps {
 		for _, ch := range st.Channels {
-			if ch.CaptureId != cap.CaptureId {
+			if ch.CaptureId != capture.CaptureId {
 				continue
 			}
 			// A channel another client removed a moment ago is not one this
@@ -170,7 +170,7 @@ func stopAll(ctx context.Context, s *verbSession, deviceSel string) error {
 				return err
 			}
 		}
-		if _, err := s.Client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
+		if _, err := s.Client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: capture.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
 			return err
 		}
 	}

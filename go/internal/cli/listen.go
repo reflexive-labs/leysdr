@@ -170,7 +170,7 @@ func (s *verbSession) openChannel(ctx context.Context, o *tuneOptions, channelID
 		s.Channel, s.Capture = ch, captureByID(s.State, ch.CaptureId)
 		return func() {}, nil
 	}
-	if cap := leyline.FindCapture(s.State, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture == nil || !covers(capture, o.freq, o.bw) {
 		if err := s.checkRange(o.input, o.freq); err != nil {
 			return nil, err
 		}

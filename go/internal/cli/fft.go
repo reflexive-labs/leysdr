@@ -134,17 +134,17 @@ type fftOptions struct {
 
 // runFFT ensures a capture, subscribes and writes rows until count/cancel.
 func runFFT(ctx context.Context, s *verbSession, o fftOptions) error {
-	if cap := leyline.FindCapture(s.State, s.device.DeviceId); cap != nil {
-		s.Capture = cap
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture != nil {
+		s.Capture = capture
 	} else {
 		if o.freq == 0 {
 			return usageErrorf("the radio is idle; give a frequency: ley fft --freq 101.1 --count 1")
 		}
-		cap, err := s.Client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: o.freq})
+		capture, err := s.Client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: o.freq})
 		if err != nil {
 			return err
 		}
-		s.Capture, s.createdCapture = cap, true
+		s.Capture, s.createdCapture = capture, true
 		defer s.teardown(ctx)
 	}
 	format := leylinev1.FftBinFormat_DB_F32

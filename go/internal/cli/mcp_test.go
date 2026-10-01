@@ -292,10 +292,10 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 		t.Errorf("a refusal changed the daemon: seq %d -> %d", before.EventSeq, after.EventSeq)
 	}
 	moved := h.must(t, "tune", map[string]any{"frequency": "150", "take_over": true})
-	var cap leylinev1.Capture
-	structuredField(t, moved, "capture", &cap)
-	if cap.GetCenterHz() != 150_000_000 {
-		t.Errorf("take_over did not move the radio: %v", &cap)
+	var capture leylinev1.Capture
+	structuredField(t, moved, "capture", &capture)
+	if capture.GetCenterHz() != 150_000_000 {
+		t.Errorf("take_over did not move the radio: %v", &capture)
 	}
 }
 
@@ -819,7 +819,7 @@ func TestScanToolFailureNamesTheTools(t *testing.T) {
 		t.Errorf("remedy: %v", err)
 	}
 	other := &ExitError{Message: "something else"}
-	if got := scanToolFailure(other); got != other {
+	if got := scanToolFailure(other); got != other { //nolint:errorlint // the same value must come back
 		t.Errorf("a message with no remedy to rewrite is returned as it is: %v", got)
 	}
 }

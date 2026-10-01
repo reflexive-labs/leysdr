@@ -22,9 +22,7 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := newRoot().ExecuteContext(ctx); err != nil {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "leyeval:", err)
 		os.Exit(1)
 	}
@@ -216,4 +214,11 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// run is main with its deferred calls, which os.Exit would skip.
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return newRoot().ExecuteContext(ctx)
 }

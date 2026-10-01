@@ -22,11 +22,11 @@ import (
 // initial squelch, the system-audio sink, and the teardown that removes what the run made.
 
 // covers reports whether freq±bw/2 lies inside the capture's span.
-func covers(cap *leylinev1.Capture, freq uint64, bw uint32) bool {
-	half := float64(cap.SampleRate) / 2
+func covers(capture *leylinev1.Capture, freq uint64, bw uint32) bool {
+	half := float64(capture.SampleRate) / 2
 	lo := float64(freq) - float64(bw)/2
 	hi := float64(freq) + float64(bw)/2
-	c := float64(cap.CenterHz)
+	c := float64(capture.CenterHz)
 	return lo >= c-half && hi <= c+half
 }
 
@@ -34,9 +34,9 @@ func covers(cap *leylinev1.Capture, freq uint64, bw uint32) bool {
 // it (WriteParams center_hz) when it exists but does not, and creates one
 // otherwise. It returns after the capture state is confirmed.
 func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
-	if cap := leyline.FindCapture(s.State, s.device.DeviceId); cap != nil {
-		s.Capture = cap
-		if covers(cap, o.freq, o.bw) {
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture != nil {
+		s.Capture = capture
+		if covers(capture, o.freq, o.bw) {
 			return nil
 		}
 		if err := s.checkRange(o.input, o.freq); err != nil {
@@ -44,19 +44,19 @@ func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		}
 		// A recording is named before the channels are counted: "1 channel listening" is true of
 		// a record job's own channel but tells the reader nothing they can act on.
-		if err := s.refuseRetuneOverRecording(cap.CaptureId, o.retune); err != nil {
+		if err := s.refuseRetuneOverRecording(capture.CaptureId, o.retune); err != nil {
 			return err
 		}
-		if n := s.activeChannels(cap.CaptureId); n > 0 && !o.retune {
+		if n := s.activeChannels(capture.CaptureId); n > 0 && !o.retune {
 			hint := s.takeOverHint
 			if hint == "" {
 				hint = fmt.Sprintf("Add --retune to move it anyway, or free %s with: ley stop --all", words.Pick(n, "it", "them"))
 			}
 			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. %s",
-				units.FormatFrequency(cap.CenterHz), words.Count(n, "channel"), units.FormatFrequency(o.freq), words.Pick(n, "it", "them"), hint)
+				units.FormatFrequency(capture.CenterHz), words.Count(n, "channel"), units.FormatFrequency(o.freq), words.Pick(n, "it", "them"), hint)
 		}
-		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, units.FormatFrequency(cap.CenterHz), units.FormatFrequency(o.freq))
-		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
+		s.say("retuning capture %s from %s to %s\n", capture.CaptureId, units.FormatFrequency(capture.CenterHz), units.FormatFrequency(o.freq))
+		w := &leylinev1.ParamWrite{Tag: 1, TargetId: capture.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
 		sum, err := s.Client.WriteParams(ctx, w)
 		if err != nil {
 			return s.friendly(err, o.input, o.freq)
@@ -65,7 +65,7 @@ func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		ev, err := s.AwaitEvent(ctx, func(ev *leylinev1.Event) bool {
 			switch b := ev.Body.(type) {
 			case *leylinev1.Event_Capture:
-				return !rejected && b.Capture.CaptureId == cap.CaptureId && b.Capture.CenterHz == o.freq
+				return !rejected && b.Capture.CaptureId == capture.CaptureId && b.Capture.CenterHz == o.freq
 			case *leylinev1.Event_WriteRejected:
 				return s.Mine(ev) && b.WriteRejected.Tag == 1
 			}
@@ -86,7 +86,7 @@ func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
 	if o.captureCenter != 0 {
 		center = o.captureCenter
 	}
-	cap, err := s.Client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: center, SampleRate: o.rate})
+	capture, err := s.Client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: center, SampleRate: o.rate})
 	if err != nil {
 		if leyline.Code(err) != leyline.CodeDeviceBusy {
 			return s.friendly(err, o.input, o.freq)
@@ -113,7 +113,7 @@ func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
 			}
 		}
 	}
-	s.TrackCapture(cap)
+	s.TrackCapture(capture)
 	s.createdCapture = true
 	return nil
 }
@@ -141,8 +141,8 @@ func (s *verbSession) checkRange(input string, hz uint64) error {
 // recording and records the gap. The client that takes the user's action does
 // the check, which for `ley` is here (docs/design/recording.md, "Don't-disturb").
 func (s *verbSession) recordingsOn(captureID string) []*leylinev1.Job {
-	cap := captureByID(s.State, captureID)
-	if cap == nil {
+	capture := captureByID(s.State, captureID)
+	if capture == nil {
 		return nil
 	}
 	var out []*leylinev1.Job
@@ -166,7 +166,7 @@ func (s *verbSession) recordingsOn(captureID string) []*leylinev1.Job {
 				onChannel = true
 			}
 		}
-		if onChannel || (cfg.GetMode() == leylinev1.DemodMode_RAW_IQ && covers(cap, hz, 0)) {
+		if onChannel || (cfg.GetMode() == leylinev1.DemodMode_RAW_IQ && covers(capture, hz, 0)) {
 			out = append(out, j)
 		}
 	}

@@ -60,7 +60,7 @@ func runAgent(ctx context.Context, env Env, dir, prompt, mode string, maxTurns i
 		return log, stdout.Bytes(), perr
 	}
 	if err != nil && len(log.Events) == 0 {
-		return log, stdout.Bytes(), fmt.Errorf("%s: %v\n%s", env.Claude, err, stderr.String())
+		return log, stdout.Bytes(), fmt.Errorf("%s: %w\n%s", env.Claude, err, stderr.String())
 	}
 	if stderr.Len() > 0 {
 		_ = os.WriteFile(filepath.Join(dir, "agent-stderr.txt"), stderr.Bytes(), 0o644)

@@ -167,7 +167,7 @@ func (srv *mcpServer) findRecordings(ctx context.Context, _ *mcp.CallToolRequest
 	if in.Frequency != "" {
 		t, err := resolveDial(in.Frequency, "146.52 (MHz)", nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("frequency %v", err)
+			return nil, nil, fmt.Errorf("frequency %w", err)
 		}
 		filter["frequency_hz"] = strconv.FormatUint(t.Hz, 10)
 	}
