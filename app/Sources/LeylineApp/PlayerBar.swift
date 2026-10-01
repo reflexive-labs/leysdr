@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The Library's player, in the transport bar's place and at its 88 pt, with the bar's layout
-// rule (decided 2026-09-25): ⏮, the 44 pt `accent` circle with ⏸ while a part plays and ▶
+// rule: ⏮, the 44 pt `accent` circle with ⏸ while a part plays and ▶
 // otherwise, ⏭, the part's two lines (`GMRS CH3 · Today`, `14:03:20 · part 4 of 4`), a progress
 // track, and the volume with its caption. ⏸ is a pause (`Control.SetPlaybackPaused`, the position
 // held), not the first build's stop. The track is display only: there is no seeking in v1. The part

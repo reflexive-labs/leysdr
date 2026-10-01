@@ -265,8 +265,9 @@ struct WaterfallUniforms {
     var markB: Float = 0
 }
 
-/// Fills a byte texture from the feed's ring and draws it through the ramp. S1's client half:
-/// a signpost interval around each draw, matched by seq with the row's arrival.
+/// Fills a byte texture from the feed's ring and draws it through the ramp. The client half of
+/// the antenna-to-pixel measurement: a signpost interval around each draw, matched by seq with
+/// the row's arrival.
 @MainActor
 final class WaterfallRenderer: NSObject, MTKViewDelegate {
     let device: MTLDevice?
@@ -376,7 +377,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         enc.setFragmentTexture(texture, index: 0)
         enc.setFragmentBytes(&u, length: MemoryLayout<WaterfallUniforms>.stride, index: 0)
         stops.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
-        // The clipping flags, one byte a ring slot (plans/app.md, M2-8), sent whole every frame
+        // The clipping flags, one byte a ring slot, sent whole every frame
         // rather than uploaded by the slots a reading touched: a reading flags rows already
         // drawn, and 2048 bytes is under the 4 KB `setFragmentBytes` takes without a buffer.
         buffer.clipped.flags.withUnsafeBytes {

@@ -3,14 +3,14 @@
 // The waterfall's shader, as source compiled at launch. `swift build` does not compile a
 // `.metal` resource into a library the way Xcode does, and a shader that silently fails to load
 // leaves a dark panel with no error; compiling from source works under both builds and fails with a
-// compiler message that the window can show (docs/plans/app.md, APP-2).
+// compiler message that the window can show.
 //
 // One byte a bin in a ring texture, newest row at the top, one row per pixel, coloured through
 // the six-stop ramp between the floor and floor + range; below the floor, when the floor is
 // the squelch, a short fade to the ground, so anything below the squelch goes dark. A pixel
 // column that covers several bins takes the loudest, so a carrier one bin wide is never lost
 // between two pixels. A row captured while the radio clipped has its first two pixels in
-// `recording`, from a byte a ring slot beside the uniforms (plans/app.md, M2-8). What a
+// `recording`, from a byte a ring slot beside the uniforms. What a
 // recording kept is not the shader's: the time gutter beside the waterfall draws it in SwiftUI. The
 // uniforms are scalars only and `WaterfallUniforms` in WaterfallView.swift lists the same fields in
 // the same order: change both together.

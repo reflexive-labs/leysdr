@@ -2,10 +2,9 @@
 
 // The transport bar, in its final layout from the first release. Every block is a header on one
 // line with its control under it: play, the only editable frequency in the window, mode, width, a
-// divider, the squelch track with its label, and volume with the output's name. The signal readout
-// stood between the divider and the squelch in M1 and moved to M2's inspector, which shows the same
-// thing in words (the one exception to the rule that no milestone moves a control an earlier one
-// introduced); the slot went back to the squelch track. Permanently absent: gain, elapsed time,
+// divider, the squelch track with its label, and volume with the output's name. The signal
+// readout is the inspector's, which shows the same thing in words, so it is not here.
+// Permanently absent: gain, elapsed time,
 // recording, sample rate.
 
 import LeylineClient
@@ -49,7 +48,7 @@ struct Block<Content: View>: View {
     }
 }
 
-/// The audio control, drawn as what it is (plans/app.md, APP-5): a speaker. Muting detaches the
+/// The audio control, drawn as what it is: a speaker. Muting detaches the
 /// channel's sink and unmuting attaches one; the radio, the channel and the waterfall carry on,
 /// because the radio is the daemon's and shared. Stopping the radio is Tune ▸ Stop Listening.
 struct PlayButton: View {

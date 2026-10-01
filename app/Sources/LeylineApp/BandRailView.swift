@@ -5,7 +5,7 @@
 // pill for the slice on screen, the tuned frequency as an accent tick, every bookmark in the band
 // as a `good` one, the last sweep's hits in the band as `sweepTick` ones beside them (the design's
 // "Scan the band") and a short plan's channels as fainter ticks under them
-// (docs/design/channels.md, R15). A click tunes; a drag moves the region inside the band and leaves
+// (docs/design/channels.md). A click tunes; a drag moves the region inside the band and leaves
 // the station where it is unless the edge pushes it; clicking a neighbour's name switches to that
 // band. The only number the rail reports is the width one spectrum column covers.
 
@@ -30,7 +30,7 @@ struct BandRailView: View {
                 }
                 // What a column covers rides on the zoom pair's help rather than the header:
                 // beside the inspector the rail had no room for it, and it is reference
-                // information, not something to monitor (the owner, 2026-09-21).
+                // information, not something to monitor.
                 let columns = perColumn(width: geo.size.width)
                 HStack(spacing: 2) {
                     zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
@@ -168,8 +168,8 @@ struct BandRail: View {
                         pill(vis, width: w, fill: Theme.selected, stroke: Theme.borderFocus)
                     }
                 }
-                // The plan's channels inside the part, for a plan of `Plans.tickLimit` or fewer
-                // (R15): fainter than the bookmarks and under them, 1 pt wide with a hit area
+                // The plan's channels inside the part, for a plan of `Plans.tickLimit` or fewer:
+                // fainter than the bookmarks and under them, 1 pt wide with a hit area
                 // either side. A click tunes the channel; the rail keeps showing the part.
                 if let band = session.band {
                     ForEach(Plans.ticks(for: band).filter { range.contains($0.hz) }) { channel in
@@ -184,8 +184,8 @@ struct BandRail: View {
                             .onTapGesture { session.tune(to: channel.hz) }
                     }
                 }
-                // The last sweep's hits inside the rail (R17): a group's hits show on the half
-                // the rail is on (the plan's KTD11). Under the bookmarks, so a bookmarked hit
+                // The last sweep's hits inside the rail: a group's hits show on the half the
+                // rail is on. Under the bookmarks, so a bookmarked hit
                 // keeps its `good` tick, with the plan ticks' hit area; a click tunes the hit.
                 ForEach(session.sweepHits.filter { range.contains($0.hz) }) { hit in
                     Rectangle().fill(Theme.sweepTick).frame(width: 1.5, height: 8)

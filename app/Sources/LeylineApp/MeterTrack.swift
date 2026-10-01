@@ -2,10 +2,9 @@
 
 // The inspector's one meter: a capsule track with an optional fill, ticks and a needle, all
 // placed on one scale by `Scale.x`. Signal, Tuning and Deviation are all drawn with it, so the
-// three rows share a height, a width and a tick, and differ only in what they fill. Each used to
-// be its own view (`SignalBar`, `CentreMeter`, `DeviationMeter`), with the Tuning track 4 pt
-// taller than the other two and Deviation borrowing Signal's level ramp, which painted ordinary
-// speech in the tuned channel's orange. The squelch track in the transport bar stays its own
+// three rows share a height, a width and a tick, and differ only in what they fill. Three views
+// let the rows drift apart: a Tuning track taller than the other two, and Deviation on Signal's
+// level ramp, which painted ordinary speech in the tuned channel's orange. The squelch track in the transport bar stays its own
 // view: it is a control with a drag, not a reading.
 
 import SwiftUI
@@ -18,8 +17,8 @@ struct MeterTrack: View {
         /// matches the strength word beside it (Signal).
         case ramp
         /// `inkTertiary` up to `cautionAbove` and `caution` past it (Deviation): only the part
-        /// over the limit is coloured. A fully caution-coloured fill was tried and read as a
-        /// yellow background (the owner, 2026-09-21).
+        /// over the limit is coloured, because a fully caution-coloured fill reads as a yellow
+        /// background.
         case neutral(cautionAbove: Double?)
     }
 

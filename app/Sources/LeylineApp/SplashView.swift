@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The first window's splash (docs/plans/app.md, APP-8): `docs/design/brand/leyline-splash.svg`
+// The first window's splash: `docs/design/brand/leyline-splash.svg`
 // drawn in code over the window, held until the daemon is live, then cleared in one 0.7 s
 // ease-in-out. `MainWindow` owns the phase and its clock (`playSplash`); this file draws a
 // phase. The steps and their durations are `Theme.Motion`, the sizes `Theme.Layout.splash*`.
@@ -163,7 +163,7 @@ struct SplashView: View {
 /// the way a waterfall row lands. `progress` animates because the modifier is `Animatable`.
 // The conformance is isolated to the main actor: a `ViewModifier` is main-actor-isolated by
 // default in this module, so `animatableData` cannot satisfy `Animatable`'s nonisolated
-// requirement without it (the Mac's first build, 2026-09-25).
+// requirement without it, and Xcode refuses the conformance.
 private struct SweepMask: ViewModifier, @MainActor Animatable {
     var progress: CGFloat
 

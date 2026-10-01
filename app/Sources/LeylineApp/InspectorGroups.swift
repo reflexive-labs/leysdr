@@ -114,7 +114,7 @@ struct RecentLog: View {
 
     /// The header's day: `today`, `yesterday`, a weekday, of the newest row's start as wall
     /// clock through the tuned capture's anchor (`Recordings.dayWords`); blank with no row or no
-    /// anchor, because a day nobody measured is not printed (M2-1's rule).
+    /// anchor, because a day nobody measured is not printed.
     private func dayWords(_ log: TransmissionLog?) -> String {
         guard let newest = log?.onAir?.since ?? log?.closed.first?.start,
             let date = session.wallTime(of: newest)
@@ -173,8 +173,8 @@ struct RecordSwitch: View {
                 )
                 .toggleStyle(.switch).labelsHidden().controlSize(.small)
                 // One tint, always: macOS paints it on the on track only, so off is the
-                // system's own dark track. Switching it to nil with the state greyed the switch
-                // on the owner's third run (plans/app.md, APP-5, "Fixed 2026-09-25 (third run)").
+                // system's own dark track. Switching it to nil with the state greys the whole
+                // switch.
                 .tint(Theme.accentRec)
                 .disabled(session.tunedHz == nil)
                 .help(
@@ -322,8 +322,8 @@ struct DisclosureSection: View {
     @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
 
     // One group, not the design's three: the demodulator's values are the transport bar's and
-    // the device and gain are the header's chip, and showing either twice meant two places to
-    // look (the owner, 2026-09-21).
+    // the device and gain are the header's chip, and showing either twice means two places to
+    // look.
     var body: some View {
         VStack(spacing: 0) {
             DisclosureRow(title: "Measurements", hint: "dBFS", open: $measurementsOpen) {
@@ -380,8 +380,8 @@ struct DisclosureLabel: View {
 
 /// The raw levels the reading rows do not print, two mono columns, `—` where nothing was
 /// measured: the channel's power and floor behind Signal's dB over noise, the audio, and the
-/// radio's own level. Signal, Tuning and Deviation print their numbers in their rows since
-/// 2026-09-23, so they are not repeated here. These numbers are unsmoothed, straight from the
+/// radio's own level. Signal, Tuning and Deviation print their numbers in their rows, so they are
+/// not repeated here. These numbers are unsmoothed, straight from the
 /// meter. The floor is the window's own (`AppSession.channelFloorDB`).
 struct MeasurementsGroup: View {
     @Environment(AppSession.self) private var session
