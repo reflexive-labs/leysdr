@@ -57,7 +57,7 @@ the generated clients throw `RPCError`, and `LeylineError(error)` converts eithe
 `since_seq` set to the snapshot's `event_seq` and folds every event; on any failure it reports
 `connection = .unavailable(error, retryIn:)` and retries after a backoff that stops at 5 s, so
 a daemon that is not running is polled, not hammered, and the view has a state to show. The
-fold is `ley`'s (`go/internal/cli/session.go`): replace by id, because every event carries the
+fold is `ley`'s (`go/internal/session/session.go`): replace by id, because every event carries the
 whole object (invariant 6); an object whose `state` is unset is the tombstone and leaves the
 mirror; `CAPTURE_DETACHED` stays, because the radio rebinds on replug; a device is never
 removed, only `DISCONNECTED`; a job is never removed, it finishes; an event at or below the

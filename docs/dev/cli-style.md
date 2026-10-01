@@ -171,7 +171,7 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   line up and a two-digit value does not sit at the far left of a `PEAK SNR (dB)` header with air
   after it. Text, frequencies and sparklines stay left-aligned.
 - **Numbers** are formatted by the existing helpers in `format.go` and
-  `pkg/leyline`, which stay pure and unstyled: they return the semantic string and the
+  `pkg/units`, which stay pure and unstyled: they return the semantic string and the
   caller decides the ink. Frequencies keep three decimals and an SI unit; levels are
   `-42.1 dBFS`; the unit appears once per column or line, not per value.
 - **A screen ends with what to do next** when the user is likely to be mid-task:

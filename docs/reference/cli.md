@@ -109,7 +109,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 
 Global flags: `--json` on every verb (answered, or refused with exit 2 where there is no machine form); `--socket PATH` (default the user daemon's UDS, `$LEYLINE_SOCKET`); `--color never|always|auto` and `--ascii`, which override the colour and glyph detection described in `docs/dev/cli-style.md`. Styling never reaches `--json`, the bulk row streams or `--format bin`.
 
-**Input conventions** (`go/pkg/leyline`, shared by every verb): a bare frequency number is MHz
+**Input conventions** (`go/pkg/units` and `go/pkg/bandplan`, shared by every verb): a bare frequency number is MHz
 (`146.52`, `1010`); units `k`, `M`, `G`, `Hz`, `e6` are exact; commas are refused with a hint.
 Squelch levels are dBFS (`-40`, `-40dB`, `off`, `auto`); a positive number is an error that
 explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Modes by alias
