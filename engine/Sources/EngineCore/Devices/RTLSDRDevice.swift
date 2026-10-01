@@ -482,10 +482,12 @@ package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
             runningIndex = 0
             return d
         }
+        // An OpaquePointer is not Sendable; the handle crosses to the USB thread as its address.
+        let address = UInt(bitPattern: d)
         let t = Thread { [self] in
             self.started.signal()
             // Blocks until rtlsdr_cancel_async; each USB transfer invokes the callback once.
-            let rc = rtlsdr_read_async(d, RTLSDRDevice.readCallback, Unmanaged.passUnretained(self).toOpaque(), RTLSDRDevice.usbBuffers, RTLSDRDevice.usbBufferBytes)
+            let rc = rtlsdr_read_async(OpaquePointer(bitPattern: address), RTLSDRDevice.readCallback, Unmanaged.passUnretained(self).toOpaque(), RTLSDRDevice.usbBuffers, RTLSDRDevice.usbBufferBytes)
             self.readAsyncReturned(rc)
             self.joined.signal()
         }

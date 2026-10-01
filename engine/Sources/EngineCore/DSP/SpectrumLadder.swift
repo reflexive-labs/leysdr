@@ -119,16 +119,12 @@ package final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         let sub = SpectrumSubscription(id: StreamID(), actualBins: size, actualRate: rate,
                                        accumulation: accumulation, looksPerRow: looks)
         let entry = Entry(subscription: sub, policy: policy, sizeIndex: DefaultSpectrumLadder.sizes.firstIndex(of: size)!, sink: sink)
-        lock.lock()
-        table = table + [entry]
-        lock.unlock()
+        lock.withLock { table = table + [entry] }
         return sub
     }
 
     package func cancel(_ subscription: SpectrumSubscription) async {
-        lock.lock()
-        table = table.filter { $0.subscription.id != subscription.id }
-        lock.unlock()
+        lock.withLock { table = table.filter { $0.subscription.id != subscription.id } }
     }
 
     /// One ladder pass over the most recent block. `spanHz` is the capture sample rate.
