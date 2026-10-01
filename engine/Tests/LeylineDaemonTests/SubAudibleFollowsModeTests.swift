@@ -6,7 +6,7 @@
 // the bug of a channel that never ran tone detection was found (2026-09-20).
 
 import Foundation
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 

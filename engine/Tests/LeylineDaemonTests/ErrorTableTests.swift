@@ -3,7 +3,7 @@
 @testable import EngineCore
 import Foundation
 import GRPCCore
-@testable import LeylineDaemon
+@testable import LeylineServer
 import XCTest
 
 /// The error table in `docs/dev/engine-internals.md` is the contract every client reads: the stable codes

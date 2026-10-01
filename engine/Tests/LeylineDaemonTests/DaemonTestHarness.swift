@@ -7,7 +7,7 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import GRPCProtobuf
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 
@@ -36,6 +36,9 @@ struct DaemonClients {
     let socketPath: String
 }
 
+/// The version every test daemon reports in `DaemonInfo`.
+let testDaemonVersion = "0.0.0-test"
+
 /// Boots a daemon on a temp socket, runs `body` with connected clients, then shuts down.
 /// `shutdownDeadlineNs` puts a watchdog on the teardown: tests about handlers ending on cancellation
 /// need shutdown to be prompt, and a hung handler shows up here rather than as a stalled suite.
@@ -59,7 +62,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                                       decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
                                       storePath: storePath ?? (dir + "/store"),
                                       recordingsPath: recordingsPath ?? (dir + "/recordings"),
-                                      recordingsCapBytes: recordingsCapBytes))
+                                      recordingsCapBytes: recordingsCapBytes, version: testDaemonVersion))
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
     XCTAssertTrue(listening, "daemon did not start listening")

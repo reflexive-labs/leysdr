@@ -7,9 +7,10 @@
 //   CHackRF         optional runtime loader for libhackrf
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
 //   TestSupport    fakes shared by both test suites (test-only; no product depends on it)
-//   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
-//                  to proto, and the session and job stores hold proto messages as their own
-//                  record type
+//   LeylineServer  the daemon as a library: gRPC over UDS, the session and job stores, the
+//                  services; ProtoMapping renders engine values to proto, and the session and job
+//                  stores hold proto messages as their own record type
+//   LeylineDaemon  the `leylined` executable: argument parsing and `main`, nothing else
 //
 // The generated leyline.v1 contract is not a target here: it is the `swift/LeylineProto` package
 // this one depends on, so the Apache-2.0 contract sits outside the GPL directory
@@ -62,14 +63,23 @@ let package = Package(
             ],
             path: "Sources/EngineCore"
         ),
-        .executableTarget(
-            name: "LeylineDaemon",
+        .target(
+            name: "LeylineServer",
             dependencies: [
                 "EngineCore",
                 .product(name: "LeylineProto", package: "LeylineProto"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Sources/LeylineServer"
+        ),
+        .executableTarget(
+            name: "LeylineDaemon",
+            dependencies: [
+                "EngineCore",
+                "LeylineServer",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),
             ],
@@ -105,7 +115,7 @@ let package = Package(
         .testTarget(
             name: "LeylineDaemonTests",
             dependencies: [
-                "LeylineDaemon",
+                "LeylineServer",
                 "EngineCore",
                 .product(name: "LeylineProto", package: "LeylineProto"),
                 "TestSupport",

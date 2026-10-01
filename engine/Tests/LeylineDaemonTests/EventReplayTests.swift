@@ -6,7 +6,7 @@ import GRPCNIOTransportHTTP2
 import LeylineProto
 import XCTest
 
-@testable import LeylineDaemon
+@testable import LeylineServer
 
 /// `WatchEvents(since_seq)`: the daemon replays the retained events newer than a `GetState`
 /// snapshot before going live, so "GetState then WatchEvents" cannot miss an event.

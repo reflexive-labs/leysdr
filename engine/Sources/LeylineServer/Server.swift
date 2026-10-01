@@ -13,45 +13,74 @@ import Synchronization
 
 /// Everything a running daemon owns: device registry, session store, bulk registry and the gRPC
 /// server on a UDS. `run()` serves until `shutdown()`; tests drive the same object in-process.
-final class Daemon: Sendable {
-    struct Config {
+package final class Daemon: Sendable {
+    package struct Config {
         var socketPath: String
         var pidfile: String?
-        var pollMs: Int = 1000
+        var pollMs: Int
         /// false hides the machine's USB dongles from this daemon: it hosts only what is attached
         /// to it (file devices, rtl_tcp). For a daemon that must be hermetic, such as an eval's.
-        var enumerateHardware: Bool = true
+        var enumerateHardware: Bool
         /// Presence grace before non-persistent channels of absent clients are reaped.
-        var presenceGraceNs: UInt64 = 5_000_000_000
-        var registryPersistPath: String? = nil
+        var presenceGraceNs: UInt64
+        var registryPersistPath: String?
         /// Remote dongles (rtl_tcp servers) to attach at startup. Failures are logged, never fatal.
-        var rtltcp: [RTLTCPEndpoint] = []
+        var rtltcp: [RTLTCPEndpoint]
         /// The remembered attach list; nil puts `devices.json` beside the socket.
-        var devicesPath: String? = nil
+        var devicesPath: String?
         /// Where to look for decoder plugins, in order: the `--decoders` flags and
         /// `LEYLINE_DECODERS`, then the platform default (docs/design/decoders.md, "Decisions":
         /// "Manifest: a file, not a flag"). A test names one directory of its own.
-        var decoderSearchPath: [String] = [defaultDecodersPath()]
+        var decoderSearchPath: [String]
         /// Where kept records live, and the retention applied to them.
-        var storePath: String = defaultStorePath()
-        var storeCapBytes: UInt64 = 2 << 30
-        var storeAgeDays: UInt32 = 90
+        var storePath: String
+        var storeCapBytes: UInt64
+        var storeAgeDays: UInt32
         /// Where recordings live, and the retention applied to them. The cap is a fixed number in
         /// one flag rather than a fraction of free space: predictable, and the same shape as the
         /// kept-records store (docs/design/recording.md, "Retention").
-        var recordingsPath: String = defaultRecordingsPath()
-        var recordingsCapBytes: UInt64 = 20 << 30
-        var recordingsAgeDays: UInt32 = 0
+        var recordingsPath: String
+        var recordingsCapBytes: UInt64
+        var recordingsAgeDays: UInt32
+        /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
+        /// `leylinedVersion`, a test its own string.
+        var version: String
+
+        package init(socketPath: String, pidfile: String? = nil, pollMs: Int = 1000, enumerateHardware: Bool = true,
+                     presenceGraceNs: UInt64 = 5_000_000_000, registryPersistPath: String? = nil,
+                     rtltcp: [RTLTCPEndpoint] = [], devicesPath: String? = nil,
+                     decoderSearchPath: [String] = [defaultDecodersPath()], storePath: String = defaultStorePath(),
+                     storeCapBytes: UInt64 = 2 << 30, storeAgeDays: UInt32 = 90,
+                     recordingsPath: String = defaultRecordingsPath(), recordingsCapBytes: UInt64 = 20 << 30,
+                     recordingsAgeDays: UInt32 = 0, version: String)
+        {
+            self.socketPath = socketPath
+            self.pidfile = pidfile
+            self.pollMs = pollMs
+            self.enumerateHardware = enumerateHardware
+            self.presenceGraceNs = presenceGraceNs
+            self.registryPersistPath = registryPersistPath
+            self.rtltcp = rtltcp
+            self.devicesPath = devicesPath
+            self.decoderSearchPath = decoderSearchPath
+            self.storePath = storePath
+            self.storeCapBytes = storeCapBytes
+            self.storeAgeDays = storeAgeDays
+            self.recordingsPath = recordingsPath
+            self.recordingsCapBytes = recordingsCapBytes
+            self.recordingsAgeDays = recordingsAgeDays
+            self.version = version
+        }
     }
 
     /// A parsed `--rtltcp host:port`.
-    struct RTLTCPEndpoint: Equatable {
+    package struct RTLTCPEndpoint: Equatable, Sendable {
         var host: String
         var port: UInt16
     }
 
     /// Parses `host:port` / `[v6::addr]:port` strings. Throws INVALID_ARGUMENT on a malformed entry.
-    static func parseRTLTCPEndpoints(_ specs: [String]) throws -> [RTLTCPEndpoint] {
+    package static func parseRTLTCPEndpoints(_ specs: [String]) throws -> [RTLTCPEndpoint] {
         try specs.map { spec in
             guard let colon = spec.lastIndex(of: ":"), colon != spec.startIndex,
                   let port = UInt16(spec[spec.index(after: colon)...]), port > 0 else {
@@ -75,11 +104,11 @@ final class Daemon: Sendable {
     private let log = Logger(label: "leyline.daemon")
     private let teardown = TeardownGate()
 
-    init(config: Config) {
+    package init(config: Config) {
         self.config = config
         registry = DefaultDeviceRegistry(persistPath: config.registryPersistPath, pollIntervalMs: config.pollMs,
                                          enumerateHardware: config.enumerateHardware)
-        let info = DaemonInfo(version: leylinedVersion, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath,
+        let info = DaemonInfo(version: config.version, pid: Int64(getpid()), startedAtNs: realtimeNs(), socketPath: config.socketPath,
                               recordingsCapBytes: config.recordingsCapBytes)
         remembered = RememberedDevices(path: config.devicesPath ?? RememberedDevices.pathBeside(socket: config.socketPath))
         store = SessionStore(registry: registry, info: info, presenceGraceNs: config.presenceGraceNs, remembered: remembered)
@@ -154,7 +183,7 @@ final class Daemon: Sendable {
 
     /// Prepares the socket, writes the pidfile, starts device polling and the store mirror, then
     /// serves until `shutdown()`. Cleans up the socket and pidfile on the way out.
-    func run() async throws {
+    package func run() async throws {
         try Self.prepareSocket(path: config.socketPath)
         if let pid = config.pidfile {
             try FileManager.default.createDirectory(at: URL(fileURLWithPath: pid).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -176,7 +205,7 @@ final class Daemon: Sendable {
         let table = jobs
         await store.setJobsProvider { await table.snapshot() }
         await store.setClientGoneHook { await table.clientGone($0) }
-        log.info("leylined \(leylinedVersion) listening on \(config.socketPath)")
+        log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
         do { try await server.serve() } catch { served = error }
         // The listener stops at the top of `shutdown()`, long before the captures and devices go,
@@ -242,7 +271,7 @@ final class Daemon: Sendable {
 
     /// Graceful stop: the listener stops accepting first, then streams close, captures stop and
     /// devices close.
-    func shutdown() async {
+    package func shutdown() async {
         log.info("shutting down")
         teardown.arm()
         defer { teardown.open() }

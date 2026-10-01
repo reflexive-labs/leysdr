@@ -9,7 +9,7 @@ import EngineCore
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 

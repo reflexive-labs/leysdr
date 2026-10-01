@@ -5,7 +5,7 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import GRPCProtobuf
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 
@@ -26,7 +26,7 @@ final class DaemonTests: XCTestCase {
             XCTAssertTrue(state.captures.isEmpty)
             XCTAssertTrue(state.channels.isEmpty)
             XCTAssertTrue(state.sinks.isEmpty)
-            XCTAssertEqual(state.daemon.version, "0.1.0-dev")
+            XCTAssertEqual(state.daemon.version, testDaemonVersion)
             XCTAssertEqual(state.daemon.pid, Int64(getpid()))
             XCTAssertEqual(state.daemon.socketPath, c.socketPath)
             XCTAssertGreaterThan(state.daemon.startedAtNs, 1_600_000_000_000_000_000)

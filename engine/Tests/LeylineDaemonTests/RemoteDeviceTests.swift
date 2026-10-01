@@ -5,7 +5,7 @@
 import EngineCore
 import Foundation
 import GRPCCore
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import TestSupport
 import XCTest

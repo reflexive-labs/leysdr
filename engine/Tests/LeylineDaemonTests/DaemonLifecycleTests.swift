@@ -3,7 +3,7 @@
 // The daemon's stop path: what runs after a signal, and in which task.
 
 import Foundation
-@testable import LeylineDaemon
+@testable import LeylineServer
 import XCTest
 
 /// Records that a piece of teardown reached its end.
