@@ -36,14 +36,14 @@ struct InspectorToggle: View {
 }
 
 /// The Radio's inspector, the Channel panel. The Library has its own (`LibraryInspector`, the
-/// part or the channel's lines; decided 2026-09-25).
+/// part or the channel's lines).
 struct InspectorView: View {
     var body: some View {
         ChannelPanel()
     }
 }
 
-/// The six regions of the M2 panel.
+/// The panel's six regions.
 struct ChannelPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -66,10 +66,9 @@ struct ChannelPanel: View {
 }
 
 /// The word `Channel`, nothing else: no tabs, and no close control, because the toolbar's
-/// toggle beside it already hides the panel. The tab strip (`Channel` / `Processors` / `＋`) is
-/// M4's and appears when there is a second tab to put in it; a one-tab tab bar now would
-/// advertise tabs that do not exist until M4. The Record pill that sat here from APP-5's first
-/// build is gone: recording is switched on in the log, beside the transmissions it keeps.
+/// toggle beside it already hides the panel. A tab strip (`Channel` / `Processors` / `＋`)
+/// waits for a second tab to put in it; a one-tab tab bar would advertise tabs that do not
+/// exist. Recording is switched on in the log, beside the transmissions it keeps, not here.
 struct InspectorHeader: View {
     var body: some View {
         HStack {
@@ -98,7 +97,7 @@ struct RecordingDot: View {
 /// bookmark. A bookmark's tags are words under the name, and its tone and note are edited in
 /// fields under the frequency (`BookmarkFieldsView`). A channel's condition is a line under
 /// the frequency with its fix beside it: the channel changed from its bookmark, and the
-/// channel outside the capture (plans/app.md, M2-6).
+/// channel outside the capture.
 struct IdentityView: View {
     @Environment(AppSession.self) private var session
     @State private var editing = false
@@ -295,7 +294,7 @@ struct NameField: View {
 }
 
 /// The tuned bookmark's tone and note, two labelled fields under the identity's frequency
-/// line (R21). The tone the daemon hears on the air sits beside the tone field as
+/// line. The tone the daemon hears on the air sits beside the tone field as
 /// `heard PL 100.0`, in `inkTertiary`, and nothing calls a difference a mismatch: a repeater's
 /// output tone is not its input tone (docs/design/channels.md, "Bookmarks gain three fields").
 /// A tone the store refuses leaves the sentence under the field in `caution`. Its own struct
@@ -382,7 +381,7 @@ struct BookmarkField: View {
 
 /// The reading: four rows in four fixed columns (label, meter, word, number), so a word that
 /// changes never moves a meter or a number. The number sits beside its word rather than one click
-/// away in a popover, and the sentence explaining it is the row's tooltip (decided 2026-09-23).
+/// away in a popover, and the sentence explaining it is the row's tooltip.
 /// Rows draw from `AppSession.channelReading`, the meter steadied with ballistics and hysteresis
 /// (`ChannelReading`), and the raw numbers stay in Measurements. Tuning and Deviation show for the
 /// FM modes, which are the only modes that measure them. While the squelch is closed the two rows

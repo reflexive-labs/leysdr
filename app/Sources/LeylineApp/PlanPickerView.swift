@@ -2,7 +2,7 @@
 
 // The plan picker: a popover from a band row's `Channels…` line listing the plan in its own
 // order, about twelve rows tall and scrolling past that (docs/design/channels.md, "The plan
-// picker"; R14). It exists so a channel is reached by name without the mouse: the filter field
+// picker"). It exists so a channel is reached by name without the mouse: the filter field
 // at its top narrows the rows for the long plans (marine, CB), Up and Down move a highlight
 // that starts on the tuned channel when the plan has it, Return picks it and Escape closes. A
 // pick tunes through the part that holds the channel and closes. The rows, the query and the

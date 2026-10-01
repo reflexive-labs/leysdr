@@ -26,25 +26,14 @@ final class AppSession {
     private var running: Task<Void, Never>?
 
     // The window's own selection: which capture it shows and which channel it plays. Ids only;
-    // the objects are always read back from `state`.
-    private(set) var captureID: String?
-    private(set) var channelID: String?
+    // the objects are always read back from `state`, or from the RPC's copy until the mirror
+    // carries them (`HeldObject`).
+    private var heldCapture = HeldObject<Leyline_V1_Capture>()
+    private var heldChannel = HeldObject<Leyline_V1_Channel>()
+    var captureID: String? { heldCapture.id }
+    var channelID: String? { heldChannel.id }
     private(set) var selectedBandID: String?
     private var adopted = false
-    /// The objects this app made, as their RPCs returned them, until the mirror carries them: a
-    /// response arrives before the event does, and in that gap the window still has a channel.
-    private var pendingCapture: Leyline_V1_Capture?
-    private var pendingChannel: Leyline_V1_Channel?
-    /// Whether the mirror has carried the object at all. An id is dropped only once the mirror
-    /// had the object and lost it (a tombstone, or a resync without it), never for the gap
-    /// between an RPC's response and its event, which once made ten channels from ten tunes.
-    private var captureSeen = false
-    private var channelSeen = false
-    /// When the id was set, so a gap that never closes is not waited on forever: an object the
-    /// daemon made and lost before its first event would otherwise leave the window pointing at
-    /// an id no event will ever carry.
-    private var captureSetAt = Date.distantPast
-    private var channelSetAt = Date.distantPast
     /// The frequency this app last asked for, until the daemon confirms it or two seconds pass:
     /// what the field shows and what a step is taken from, so two quick presses do not both
     /// start from the frequency before the first (`../dev/app.md`: a view previews its own
@@ -54,13 +43,9 @@ final class AppSession {
     /// field showing a frequency nothing is tuned to until the next event, and a quiet daemon
     /// sends none.
     private var requestedExpiry: Task<Void, Never>?
-    /// A centre write not yet confirmed by the capture's event; clicks in the meantime are
-    /// computed against it rather than the mirror's old centre.
-    private var centreInFlight: Int64?
-    /// A centre move asked for while one was in flight. The last one wins, and `retune` performs
-    /// it when the move it is waiting on confirms: two moves at once leave the coalescer holding
-    /// only the last centre, and the first offset written against a centre that never applied.
-    private var nextRetune: (centre: Int64, offset: Int64, capture: String, channel: String)?
+    /// The centre write not yet confirmed by the capture's event, and the move waiting behind
+    /// it (`RetuneQueue`). No view reads it, so it is not observed.
+    private let retunes = RetuneQueue()
     private var creatingChannel = false
     private var lastPan = Date.distantPast
     /// Where a rail drag is taking the centre, until the capture's event carries it: the rail
@@ -69,7 +54,7 @@ final class AppSession {
 
     // Files both clients own. `bands` is the part table, which every lookup below keeps reading
     // (`band(containing:)`, `defaultMode`, `tune(bookmark:)`, the last-band adoption): none of
-    // them ever answers a group (the plan's KTD4). `sidebarRows` is the fold the sidebar and
+    // them ever answers a group. `sidebarRows` is the fold the sidebar and
     // the filter draw, a group in place of its parts (docs/design/channels.md, "Bands are the
     // spine of the sidebar").
     let bands: [Band] = Bands.plain
@@ -110,8 +95,7 @@ final class AppSession {
             followAudioLevels()
         }
     }
-    /// Which of the window's two places shows, the toolbar's `Radio | Library` (decided
-    /// 2026-09-25). The live radio keeps running in the Library: its channel, sink and
+    /// Which of the window's two places shows, the toolbar's `Radio | Library`. The live radio keeps running in the Library: its channel, sink and
     /// subscriptions are the session's, not the Radio body's. Remembered in the defaults under
     /// `placeKey`, the way `inspectorShown` is. Arriving in the Library selects its first channel
     /// when none is selected, so the centre is never blank.
@@ -167,7 +151,7 @@ final class AppSession {
         }
     }
     /// The picker's filter field: a case-insensitive prefix of a channel's name or alias, the
-    /// rule the sidebar's filter uses (the plan's KTD6). Typing puts the highlight back on the
+    /// rule the sidebar's filter uses. Typing puts the highlight back on the
     /// first row.
     var pickerQuery = "" {
         didSet { if pickerQuery != oldValue { pickerHighlight = 0 } }
@@ -195,8 +179,7 @@ final class AppSession {
     /// `failureHold` on every `CaptureLevel` reading and on every mirror change (the gains pick
     /// the words), and logged when it is raised and when it clears. While it holds the device
     /// chip's dot is `caution` with the sentence as its tooltip and the gain slider's knob is
-    /// `recording`; there is no close control, because it goes when the level clears
-    /// (plans/app.md, M2-6 and M2-8).
+    /// `recording`; there is no close control, because it goes when the level clears.
     private(set) var failure: FailureState?
     /// The hold on the capture's clock that keeps a burst of clipping from showing.
     @ObservationIgnored private var failureHold = FailureHold()
@@ -209,7 +192,7 @@ final class AppSession {
     private var busy = false
     private var rejectionsSeen = 0
 
-    // Recording (plans/app.md, APP-5). The jobs and the playbacks are the mirror's; what is here is
+    // Recording. The jobs and the playbacks are the mirror's; what is here is
     // the store's listing, the manifests of the recordings the window shows as read from disk, and
     // the switch's click until its job's event arrives.
     /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
@@ -228,7 +211,7 @@ final class AppSession {
     private var recordSwitchPending: RecordSwitchClick?
     @ObservationIgnored private var recordSwitchExpiry: Task<Void, Never>?
     /// The log's switch as last written to the log (`logRecordSwitch`), so a change is logged
-    /// once: the owner's third run saw the switch go grey and left nothing in the log to say why.
+    /// once and a switch seen grey can be explained from the log.
     @ObservationIgnored private var recordSwitchLogged: String?
     /// The tuned log's frequency and mode and the record job running there, as the last mirror
     /// change left them, so `markRecordToggles` cuts the log when the job starts or ends.
@@ -255,37 +238,27 @@ final class AppSession {
     /// The EARLIER days (older than `Recordings.collapseAfterDays`) opened in place by a click,
     /// by `DayRows.id`. Presentation only.
     var openedDays: Set<String> = []
-    /// Play all's or Play day's parts still to play (`PlayQueue`); the next starts on the
-    /// tombstone of the one playing.
-    private(set) var playQueue = PlayQueue()
     /// Each Library row's level graph (`LevelGraph.columns`), by part URI, once read: the part's
     /// WAV through `ResolveLocalPath`, one pass, off the main actor. An empty array is a part whose
     /// file could not be read here (a remote daemon, a file gone), not tried again.
     private(set) var levelGraphs: [String: [Float]] = [:]
     @ObservationIgnored private var levelGraphLoads: Set<String> = []
-    /// The playback this window started, by the id `StartPlayback` returned, and the part it
-    /// plays, until its tombstone. One at a time. Its position is the mirror's: the daemon
-    /// publishes a playing playback four times a second.
-    private var playbackID: String?
-    private(set) var playingURI: String?
-    /// The start of the log row whose ▶ started the playing part, so only that row shows ■ and
-    /// the progress line: several rows can lie inside one part, and until 2026-09-25 each of them
-    /// showed the part playing (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)"). nil when
-    /// the part was started anywhere else, and cleared when the playback ends.
-    private(set) var playingRowStart: Leyline_V1_SampleTime?
-    @ObservationIgnored private var playbackSeen = false
-    @ObservationIgnored private var playbackStartedAt = Date.distantPast
-    /// Whether the live channel's sink was attached when the clip started, so it is attached
-    /// again when the clip ends and the clip is heard alone meanwhile.
-    @ObservationIgnored private var reattachAfterPlayback = false
+    /// The playback this window started, the part it plays and Play all's or Play day's parts
+    /// still to play (`PartPlayback`). Its position is the mirror's: the daemon publishes a
+    /// playing playback four times a second.
+    private var partPlayback = PartPlayback()
+    private var playbackID: String? { partPlayback.playbackID }
+    var playingURI: String? { partPlayback.playingURI }
+    var playingRowStart: Leyline_V1_SampleTime? { partPlayback.playingRowStart }
+    var playQueue: PlayQueue { partPlayback.queue }
     /// Set by Stop listening: the window adopts nothing until a band or a frequency is picked,
     /// or the next snapshot would put a capture back.
     private var listeningStopped = false
 
     private static let lastBandKey = "lastBand"
-    /// The capture rate the window opens a radio at: the plan's default, 2.4 MSPS, until the
-    /// device menu's picker sets another, which is remembered. The radio's setting, not the
-    /// band's: a band change never moves it (the owner, 2026-09-21), the way the width does.
+    /// The capture rate the window opens a radio at, 2.4 MSPS, until the device menu's picker
+    /// sets another, which is remembered. The radio's setting, not the band's: a band change
+    /// never moves it.
     static let defaultSampleRate: UInt64 = 2_400_000
     private static let sampleRateKey = "sampleRate"
     /// A one-stage radio keeps the app's established fixed first-use gain. Multi-stage radios keep
@@ -325,8 +298,8 @@ final class AppSession {
 
     // MARK: Derived
 
-    var capture: Leyline_V1_Capture? { captureID.flatMap { state.capture($0) } ?? pendingCapture }
-    var channel: Leyline_V1_Channel? { channelID.flatMap { state.channel($0) } ?? pendingChannel }
+    var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
+    var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
     var sink: Leyline_V1_Sink? {
         guard let channelID else { return nil }
@@ -337,7 +310,7 @@ final class AppSession {
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
     /// While a sweep borrows the radio there is no channel, and the field keeps showing the
-    /// frequency the window paused on rather than going blank (R18).
+    /// frequency the window paused on rather than going blank.
     var displayHz: UInt64? { requestedHz ?? tunedHz ?? (sweeping ? sweep?.paused?.hz : nil) }
     /// The transport bar's speaker: muted is no sink on the channel (the daemon has no mute), and
     /// the channel, its squelch and the meter carry on.
@@ -405,10 +378,9 @@ final class AppSession {
         return floor.isFinite ? floor : nil
     }
 
-    /// The channel's power over `channelFloorDB`. The meter's own `snr_db` was power over the
-    /// channel's running minimum, which on a carrier that never stops is the carrier itself and
-    /// read 0 (`docs/plans/app.md`, APP-3); the daemon now measures the same floor, and the
-    /// window still uses this value. Nil until the floor is known.
+    /// The channel's power over `channelFloorDB`, the band's floor at the channel's width, so a
+    /// carrier that never stops reads its level over the noise rather than over itself. Nil
+    /// until the floor is known.
     var overNoiseDB: Double? {
         guard let m = meter, m.powerDbfs.isFinite, let floor = channelFloorDB else { return nil }
         return m.powerDbfs - floor
@@ -499,7 +471,7 @@ final class AppSession {
     }
 
     /// What a tune into `row` closes: a row opened by its chevron elsewhere, the out-of-range
-    /// line's rows, and the last sweep's hits when they belong to another row (R19). The only
+    /// line's rows, and the last sweep's hits when they belong to another row. The only
     /// tune while `sweeping` holds is the resume after the sweep, which is nobody's tune
     /// elsewhere: it closes nothing, so a row opened by its chevron and swept keeps showing its
     /// hits when the radio goes back to the band it was on.
@@ -517,7 +489,7 @@ final class AppSession {
     var pickerRows: [PlanChannel] {
         guard let band = pickerBand else { return [] }
         let plan = band.plan()
-        // The sidebar filter's rule, from the library so the two agree (KTD6).
+        // The sidebar filter's rule, from the library so the two agree.
         let key = Plans.presetKey(pickerQuery)
         guard !key.isEmpty else { return plan }
         return plan.filter { channel in
@@ -527,7 +499,7 @@ final class AppSession {
     }
 
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
-    /// Selection reflects state rather than causing it (decided 2026-09-21): the band is the one
+    /// Selection reflects state rather than causing it: the band is the one
     /// the tuned frequency is in, and the clicked one only breaks a tie between overlapping bands
     /// or stands in before anything is tuned.
     var band: Band? {
@@ -557,11 +529,11 @@ final class AppSession {
     /// the band's mode over the bookmark's: one write, the bookmark's.
     private var tuningBookmark = false
 
-    // Scan band (docs/design/channels.md, "Scan the band"; the plan's KTD5). The job is the
+    // Scan band (docs/design/channels.md, "Scan the band"). The job is the
     // mirror's; what is here is which job the row started, what the window was listening to
     // when it paused for it, and the outcome the row shows once the job has ended.
     /// The sweep the band row started, or nil. Kept after the job ends, with its outcome, until
-    /// the next sweep or the next tune into another row (R19), because the row shows the hits,
+    /// the next sweep or the next tune into another row, because the row shows the hits,
     /// the empty line or the failure from it; a cancelled sweep is dropped at once.
     private(set) var sweep: SweepState?
     /// The action asked for while a sweep ran (a tune, or another row's Scan band), run once
@@ -719,30 +691,36 @@ final class AppSession {
         // RPC's response and its event closes in milliseconds and an object evicted inside it
         // has no event coming.
         if let id = captureID {
-            if state.capture(id) != nil {
-                captureSeen = true
-                pendingCapture = nil
-            } else if captureSeen {
+            let verdict = heldCapture.observe(
+                inMirror: state.capture(id) != nil, now: Date(),
+                dropAfter: Self.neverSeenDropSeconds)
+            switch verdict {
+            case .lost:
                 log("session", "capture \(id) is gone; a new one will be made")
                 dropCapture()
-            } else if Date().timeIntervalSince(captureSetAt) > Self.neverSeenDropSeconds {
+            case .neverArrived:
                 log(
                     "session",
                     "the mirror has no capture \(id) 3 s after the window took it; a new one will be made"
                 )
                 dropCapture()
+            case .waiting, .present:
+                break
             }
         }
         if let id = channelID {
-            if state.channel(id) != nil {
-                channelSeen = true
-                pendingChannel = nil
-            } else if channelSeen {
+            let verdict = heldChannel.observe(
+                inMirror: state.channel(id) != nil, now: Date(),
+                dropAfter: Self.neverSeenDropSeconds)
+            switch verdict {
+            case .lost:
                 log("session", "channel \(id) is gone")
                 dropChannel()
-            } else if Date().timeIntervalSince(channelSetAt) > Self.neverSeenDropSeconds {
+            case .neverArrived:
                 log("session", "the mirror has no channel \(id) 3 s after the window took it")
                 dropChannel()
+            case .waiting, .present:
+                break
             }
         }
         if case .live = connection {
@@ -751,8 +729,8 @@ final class AppSession {
             if !adopted, !listeningStopped, !sweeping { adopt() }
         } else {
             adopted = false
-            captureSeen = false
-            channelSeen = false
+            heldCapture.disconnected()
+            heldChannel.disconnected()
         }
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(
@@ -781,17 +759,13 @@ final class AppSession {
     /// Forgets the capture, and the channel with it: a channel cannot exist without its capture.
     /// The window then makes new ones, because `adopt` runs again.
     private func dropCapture() {
-        captureID = nil
-        captureSeen = false
-        pendingCapture = nil
+        heldCapture.drop()
         adopted = false
         dropChannel()
     }
 
     private func dropChannel() {
-        channelID = nil
-        channelSeen = false
-        pendingChannel = nil
+        heldChannel.drop()
     }
 
     /// The frequency the field shows until the daemon confirms it, with the clock that clears it
@@ -825,11 +799,9 @@ final class AppSession {
             let cap = state.captures.first(where: { $0.state == .captureActive })
                 ?? state.captures.first
         {
-            captureID = cap.captureID
-            captureSetAt = Date()
+            heldCapture.adopted(id: cap.captureID, at: Date())
             if channelID == nil, let ch = state.channels(in: cap.captureID).first {
-                channelID = ch.channelID
-                channelSetAt = Date()
+                heldChannel.adopted(id: ch.channelID, at: Date())
             }
             log(
                 "session",
@@ -873,7 +845,7 @@ final class AppSession {
 
     /// A click on a sidebar row: the band tunes as it always has. A group row tunes through the
     /// part that holds the tuned frequency, else its first part, because `select(band:at:)`
-    /// takes a part and never a group (R11, the plan's KTD4).
+    /// takes a part and never a group.
     func tune(row: Band) {
         if waitForSweep("tune row \(row.name)", { self.tune(row: row) }) { return }
         let part = part(of: row, near: tunedHz)
@@ -1044,7 +1016,7 @@ final class AppSession {
         if var cap = capture, cap.deviceID == dev.deviceID {
             // The rate is not written here: it is the radio's setting and only the device
             // menu's picker moves it. A band change moves the centre alone.
-            if cap.centerHz != centerHz { await writes.centerHz(centerHz, capture: cap.captureID) }
+            if cap.centerHz != centerHz { writes.centerHz(centerHz, capture: cap.captureID) }
             cap.centerHz = centerHz
             return cap
         }
@@ -1064,12 +1036,9 @@ final class AppSession {
                 "gain",
                 "\(g.element) \(g.auto ? "auto" : String(format: "%.1f dB", g.db)), remembered for this radio"
             )
-            await writes.gain(g, capture: cap.captureID)
+            writes.gain(g, capture: cap.captureID)
         }
-        captureID = cap.captureID
-        captureSeen = false
-        captureSetAt = Date()
-        pendingCapture = cap
+        heldCapture.made(cap, id: cap.captureID, at: Date())
         dropChannel()
         return cap
     }
@@ -1080,7 +1049,7 @@ final class AppSession {
         guard let daemon, let writes else { throw LeylineError.notDialled }
         if var ch = channel, ch.captureID == cap.captureID {
             await apply(mode: mode, bandwidthHz: bandwidthHz, to: ch)
-            if ch.offsetHz != offsetHz { await writes.offsetHz(offsetHz, channel: ch.channelID) }
+            if ch.offsetHz != offsetHz { writes.offsetHz(offsetHz, channel: ch.channelID) }
             ch.mode = mode
             ch.bandwidthHz = bandwidthHz
             ch.offsetHz = offsetHz
@@ -1096,10 +1065,7 @@ final class AppSession {
         log(
             "session",
             "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
-        channelID = ch.channelID
-        channelSeen = false
-        channelSetAt = Date()
-        pendingChannel = ch
+        heldChannel.made(ch, id: ch.channelID, at: Date())
         return ch
     }
 
@@ -1142,7 +1108,7 @@ final class AppSession {
         let (threshold, floor) = SpectrumFold.autoSquelch(
             spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
-        await writes.squelchDb(threshold, channel: ch.channelID)
+        writes.squelchDb(threshold, channel: ch.channelID)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
     }
 
@@ -1205,7 +1171,7 @@ final class AppSession {
     /// release's move (`askedFirst`), Cancel puts the pill back where the radio is.
     func pan(centreTo centre: Int64, ended: Bool, askedFirst: Bool = false) {
         guard let cap = capture, let ch = channel, let writes else { return }
-        guard panCentre != nil || centreInFlight == nil else { return }
+        guard panCentre != nil || retunes.centreInFlight == nil else { return }
         let span = Int64(cap.sampleRate)
         var newCentre = clampCentre(centre, span: span)
         if let b = band {
@@ -1229,14 +1195,12 @@ final class AppSession {
         let station = Int64(displayHz ?? cap.centerHz)
         let held = min(max(station, newCentre - bound), newCentre + bound)
         panCentre = newCentre
-        centreInFlight = newCentre
+        retunes.hold(centre: newCentre)
         request(UInt64(max(0, held)))
         spectrum.resetFolds()
         let want = UInt64(max(0, newCentre))
-        Task {
-            await writes.centerHz(want, capture: cap.captureID)
-            await writes.offsetHz(held - newCentre, channel: ch.channelID)
-        }
+        writes.centerHz(want, capture: cap.captureID)
+        writes.offsetHz(held - newCentre, channel: ch.channelID)
         if ended {
             log(
                 "tune",
@@ -1247,7 +1211,7 @@ final class AppSession {
                 await confirmed { self.capture?.centerHz == want }
                 if panCentre == newCentre {
                     panCentre = nil
-                    centreInFlight = nil
+                    retunes.release()
                 }
             }
         }
@@ -1256,11 +1220,11 @@ final class AppSession {
     /// After a cancelled pan: the centre the drag last wrote, if one, is still in flight, and is
     /// released once the capture's event carries it, as the release of a drag releases it.
     private func releaseCentreInFlight() {
-        guard let written = centreInFlight else { return }
+        guard let written = retunes.centreInFlight else { return }
         let want = UInt64(max(0, written))
         Task {
             await confirmed { self.capture?.centerHz == want }
-            if panCentre == nil, centreInFlight == written { centreInFlight = nil }
+            if panCentre == nil { retunes.release(ifCentre: written) }
         }
     }
 
@@ -1280,7 +1244,7 @@ final class AppSession {
         }
         let span = Int64(cap.sampleRate)
         let margin = Int64(ch.bandwidthHz)
-        let centre = centreInFlight ?? Int64(cap.centerHz)
+        let centre = retunes.centreInFlight ?? Int64(cap.centerHz)
         let lo = centre - span / 2 + margin
         let hi = centre + span / 2 - margin
         var target = Int64(hz)
@@ -1288,18 +1252,17 @@ final class AppSession {
             if dragging {
                 target = min(max(target, lo), hi)
                 if Date().timeIntervalSince(lastPan) > Self.panRateLimitSeconds,
-                    centreInFlight == nil
+                    retunes.centreInFlight == nil
                 {
                     lastPan = Date()
                     let newCentre = clampCentre(
                         target < lo ? centre - span / 8 : centre + span / 8, span: span)
                     request(UInt64(max(0, target)))
                     log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
-                    Task {
-                        await retune(
-                            centre: newCentre, offset: target - newCentre, capture: cap.captureID,
-                            channel: ch.channelID)
-                    }
+                    let move = RetuneQueue.Move(
+                        centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
+                        channelID: ch.channelID)
+                    Task { await retune(move) }
                     followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                     return
                 }
@@ -1309,28 +1272,22 @@ final class AppSession {
                         ? target + span * Self.edgeInsetEighths / 8
                         : target - span * Self.edgeInsetEighths / 8, span: span)
                 request(UInt64(max(0, target)))
-                // One move at a time: while one is in flight the new one waits in the slot and
-                // `retune` performs it next, because two of them leave the coalescer holding
-                // only the last centre and the first offset written against a centre that
-                // never applied.
-                if centreInFlight != nil {
-                    if let waiting = nextRetune {
-                        log("tune", "centre \(waiting.centre) Hz superseded before it ran")
+                // One move at a time: while one is in flight the new one waits and `retune`
+                // performs it next (`RetuneQueue`).
+                let move = RetuneQueue.Move(
+                    centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
+                    channelID: ch.channelID)
+                switch retunes.request(move) {
+                case .queued(let superseded):
+                    if let superseded {
+                        log("tune", "centre \(superseded.centre) Hz superseded before it ran")
                     }
                     log(
                         "tune",
                         "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
-                    nextRetune = (
-                        centre: newCentre, offset: target - newCentre, capture: cap.captureID,
-                        channel: ch.channelID
-                    )
-                } else {
+                case .start:
                     log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
-                    Task {
-                        await retune(
-                            centre: newCentre, offset: target - newCentre, capture: cap.captureID,
-                            channel: ch.channelID)
-                    }
+                    Task { await retune(move) }
                 }
                 followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                 return
@@ -1338,7 +1295,7 @@ final class AppSession {
         }
         let offset = target - centre
         request(UInt64(max(0, target)))
-        Task { await writes.offsetHz(offset, channel: ch.channelID) }
+        writes.offsetHz(offset, channel: ch.channelID)
         if !quiet {
             log(
                 "tune",
@@ -1359,32 +1316,28 @@ final class AppSession {
         return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
     }
 
-    /// The centre write, the wait for its event, then the offset — and then whatever move was
-    /// asked for in the meantime, before `centreInFlight` is cleared, so a second request never
-    /// starts a second one of these. A superseded move's offset is not written: the centre it
-    /// belonged to is already on its way somewhere else.
-    private func retune(centre: Int64, offset: Int64, capture: String, channel: String) async {
+    /// The centre write, the wait for its event, then the offset, and then whatever move was
+    /// asked for in the meantime (`RetuneQueue.perform`).
+    private func retune(_ first: RetuneQueue.Move) async {
         guard let writes else { return }
-        var move = (centre: centre, offset: offset, capture: capture, channel: channel)
-        while true {
-            centreInFlight = move.centre
-            spectrum.resetFolds()
-            let want = UInt64(max(0, move.centre))
-            await writes.centerHz(want, capture: move.capture)
-            await confirmed { self.capture?.centerHz == want }
-            if self.capture?.centerHz != want {
-                log(
-                    "tune",
-                    "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)"
-                )
-            }
-            if nextRetune == nil { await writes.offsetHz(move.offset, channel: move.channel) }
-            guard let next = nextRetune else { break }
-            nextRetune = nil
-            log("tune", "centre \(move.centre) -> \(next.centre) Hz, the move that was waiting")
-            move = next
-        }
-        centreInFlight = nil
+        await retunes.perform(
+            first,
+            moveCentre: { move in
+                spectrum.resetFolds()
+                let want = UInt64(max(0, move.centre))
+                writes.centerHz(want, capture: move.captureID)
+                await confirmed { self.capture?.centerHz == want }
+                if self.capture?.centerHz != want {
+                    log(
+                        "tune",
+                        "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)"
+                    )
+                }
+            },
+            writeOffset: { move in writes.offsetHz(move.offset, channel: move.channelID) },
+            onNext: { move, next in
+                log("tune", "centre \(move.centre) -> \(next.centre) Hz, the move that was waiting")
+            })
     }
 
     /// No channel yet (a capture adopted from another client, or the first click): the centre
@@ -1410,10 +1363,10 @@ final class AppSession {
             log(
                 "tune",
                 "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
-            centreInFlight = centre
-            await writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
+            retunes.hold(centre: centre)
+            writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
             await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
-            centreInFlight = nil
+            retunes.release()
         }
         request(hz)
         do {
@@ -1460,20 +1413,20 @@ final class AppSession {
         let id = ch.channelID
         await widenCapture(for: bandwidthHz)
         if ch.mode == mode {
-            if ch.bandwidthHz != bandwidthHz { await writes.bandwidthHz(bandwidthHz, channel: id) }
+            if ch.bandwidthHz != bandwidthHz { writes.bandwidthHz(bandwidthHz, channel: id) }
             return
         }
         let widthFirst = bandwidthHz < ch.bandwidthHz
         for attempt in 0..<2 {
             let first = (attempt == 0) == widthFirst
             if first {
-                await writes.bandwidthHz(bandwidthHz, channel: id)
+                writes.bandwidthHz(bandwidthHz, channel: id)
                 await confirmed { self.channel?.bandwidthHz == bandwidthHz }
-                await writes.mode(mode, channel: id)
+                writes.mode(mode, channel: id)
             } else {
-                await writes.mode(mode, channel: id)
+                writes.mode(mode, channel: id)
                 await confirmed { self.channel?.mode == mode }
-                await writes.bandwidthHz(bandwidthHz, channel: id)
+                writes.bandwidthHz(bandwidthHz, channel: id)
             }
             await confirmed {
                 self.channel?.mode == mode && self.channel?.bandwidthHz == bandwidthHz
@@ -1503,7 +1456,7 @@ final class AppSession {
             rate > cap.sampleRate
         else { return }
         log("tune", "capture \(cap.sampleRate) -> \(rate) S/s to hold \(bandwidthHz) Hz")
-        _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
+        writes.set(.captureSampleRate(rate), target: cap.captureID)
         spectrum.resetFolds()
         await confirmed { self.capture?.sampleRate == rate }
     }
@@ -1539,22 +1492,22 @@ final class AppSession {
         log("tune", "width \(hz) Hz chosen")
         Task {
             await widenCapture(for: hz)
-            await writes.bandwidthHz(hz, channel: ch.channelID)
+            writes.bandwidthHz(hz, channel: ch.channelID)
         }
     }
 
     func setSquelch(_ db: Double) {
         guard let ch = channel, let writes else { return }
-        Task { await writes.squelchDb(db, channel: ch.channelID) }
+        writes.squelchDb(db, channel: ch.channelID)
     }
 
     func setVolume(_ v: Double) {
         guard let s = sink, let writes else { return }
-        Task { await writes.volume(v.clamped(to: 0...1), sink: s.sinkID) }
+        writes.volume(v.clamped(to: 0...1), sink: s.sinkID)
     }
 
     /// Mute detaches the sink and unmute attaches one; the channel and its squelch stay, and so
-    /// does the radio (plans/app.md, APP-5: the button is the audio control).
+    /// does the radio: the button is the audio control.
     func toggleMute() async {
         guard let daemon, let ch = channel else { return }
         do {
@@ -1619,7 +1572,7 @@ final class AppSession {
 
     // MARK: Scan band
 
-    /// The band row's item (R17, R20): `ley scan --band`'s sweep on the window's own radio,
+    /// The band row's item: `ley scan --band`'s sweep on the window's own radio,
     /// with the window paused for it. On the row being swept it is Stop; on another row it
     /// stops that sweep and starts this one after its terminal event. A record job riding the
     /// window's capture would hear every hop, so the move alert asks first, Sweep anyway going
@@ -1662,7 +1615,7 @@ final class AppSession {
     }
 
     /// `＋` on a hit: a bookmark named as the row names the hit, the plan channel's name else
-    /// the frequency (R16, the plan's KTD7), with the band's mode and width there, and its row
+    /// the frequency, with the band's mode and width there, and its row
     /// opened as an editor as ⌘D opens one. The same name on the same frequency twice updates
     /// the bookmark in place (`BookmarkStore.add`).
     func bookmark(hit: SweepHit) {
@@ -1727,7 +1680,7 @@ final class AppSession {
         }
     }
 
-    /// The window lets go of the radio without releasing it (the plan's KTD5): the sink
+    /// The window lets go of the radio without releasing it: the sink
     /// detached as Mute detaches it and the channel destroyed as Stop listening destroys it,
     /// the capture kept so the allocator borrows it rather than a second radio. False, with
     /// the error shown, when the channel could not be removed; nothing starts then. A sink
@@ -1784,7 +1737,7 @@ final class AppSession {
     }
 
     /// While a sweep runs, a tune stops it and runs once the terminal event has put the radio
-    /// back, so no write reaches the swept capture (R20). True when the caller must return.
+    /// back, so no write reaches the swept capture. True when the caller must return.
     /// One action waits; the latest wins.
     private func waitForSweep(_ what: String, _ action: @escaping @MainActor () -> Void) -> Bool {
         guard sweeping else { return false }
@@ -1871,7 +1824,7 @@ final class AppSession {
         runAfterSweep()
     }
 
-    /// The radio back as it was (R18): the bookmark re-tuned with its saved settings, else the
+    /// The radio back as it was: the bookmark re-tuned with its saved settings, else the
     /// band select at the paused frequency, so the channel and sink come back the way a click
     /// makes them; with nothing paused, the swept row's part, as a bookmark click after Stop
     /// listening selects one. Through `moveToBand` and `open(bookmark:in:)` directly, because
@@ -1941,7 +1894,7 @@ final class AppSession {
         w.element = element.name
         fill(&w)
         log("gain", "\(element.name) \(words)")
-        Task { await writes.gain(w, capture: cap.captureID) }
+        writes.gain(w, capture: cap.captureID)
     }
 
     /// A new capture width. The daemon keeps the centre where it was, so a station off-centre
@@ -1954,7 +1907,7 @@ final class AppSession {
     /// (`retuneQuestion`); Move anyway sets it (`askedFirst`), Cancel leaves the width.
     func setSampleRate(_ rate: UInt64, askedFirst: Bool = false) {
         guard let cap = capture, let writes, rate != cap.sampleRate else { return }
-        guard centreInFlight == nil else {
+        guard retunes.centreInFlight == nil else {
             log("rate", "\(rate) S/s refused: a centre move is in flight")
             return
         }
@@ -1974,24 +1927,24 @@ final class AppSession {
         let want = UInt64(max(0, centre))
         let narrowing = rate < cap.sampleRate
         UserDefaults.standard.set(Int(rate), forKey: Self.sampleRateKey)
-        centreInFlight = Int64(want)
+        retunes.hold(centre: Int64(want))
         spectrum.resetFolds()
         log(
             "rate",
             "\(cap.sampleRate) -> \(rate) S/s, remembered; centre \(cap.centerHz) -> \(want) Hz\(tunedHz.map { " for \($0) Hz" } ?? "")"
         )
+        if narrowing, want != cap.centerHz {
+            writes.centerHz(want, capture: cap.captureID)
+        }
+        writes.set(.captureSampleRate(rate), target: cap.captureID)
+        if !narrowing, want != cap.centerHz {
+            writes.centerHz(want, capture: cap.captureID)
+        }
         Task {
-            if narrowing, want != cap.centerHz {
-                await writes.centerHz(want, capture: cap.captureID)
-            }
-            _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
-            if !narrowing, want != cap.centerHz {
-                await writes.centerHz(want, capture: cap.captureID)
-            }
             await confirmed(within: 2) {
                 self.capture?.centerHz == want && self.capture?.sampleRate == rate
             }
-            if centreInFlight == Int64(want) { centreInFlight = nil }
+            retunes.release(ifCentre: Int64(want))
         }
     }
 
@@ -2054,7 +2007,7 @@ final class AppSession {
     /// written: the daemon keeps the channel at its absolute frequency and recomputes the offset.
     func tuneInside() {
         guard let cap = capture, let ch = channel, let hz = tunedHz, let writes else { return }
-        guard centreInFlight == nil else {
+        guard retunes.centreInFlight == nil else {
             log("tune", "tune inside refused: a centre move is in flight")
             return
         }
@@ -2065,13 +2018,13 @@ final class AppSession {
         }
         let want = UInt64(max(0, placedCentre(for: ch, at: hz, rate: cap.sampleRate)))
         guard want != cap.centerHz else { return }
-        centreInFlight = Int64(want)
+        retunes.hold(centre: Int64(want))
         spectrum.resetFolds()
         log("tune", "tune inside: centre \(cap.centerHz) -> \(want) Hz for \(hz) Hz")
+        writes.centerHz(want, capture: cap.captureID)
         Task {
-            await writes.centerHz(want, capture: cap.captureID)
             await confirmed { self.capture?.centerHz == want }
-            if centreInFlight == Int64(want) { centreInFlight = nil }
+            retunes.release(ifCentre: Int64(want))
         }
     }
 
@@ -2150,7 +2103,7 @@ final class AppSession {
     }
 
     /// `＋`: the tuned frequency becomes a bookmark named after the plan channel it sits on, else
-    /// after itself (`BookmarkNaming`, the plan's KTD7), and its row opens as an editor at once
+    /// after itself (`BookmarkNaming`), and its row opens as an editor at once
     /// so the name is typed where the bookmark appears.
     func bookmarkCurrent() {
         guard let ch = channel, let hz = tunedHz else { return }
@@ -2238,8 +2191,8 @@ final class AppSession {
     }
 
     /// The row's "Replace with …": the bookmark keeps its name and takes the tuned frequency
-    /// with the channel's current mode and width (the owner's choice over a match within the
-    /// channel's width, 2026-09-21; `ley bookmarks move` is the terminal's).
+    /// with the channel's current mode and width, exactly rather than within the channel's
+    /// width (`ley bookmarks move` is the terminal's).
     func replace(bookmark: Bookmark) {
         guard let ch = channel, let hz = tunedHz else { return }
         do {
@@ -2427,7 +2380,7 @@ final class AppSession {
     func clearError() { lastError = nil }
 
     /// Marks the waterfall's rows the newest reading covers, when it is over the clipping floor
-    /// and its capture is the one the waterfall's rows come from (plans/app.md, M2-8). The raw
+    /// and its capture is the one the waterfall's rows come from. The raw
     /// reading, not `failure`: the mark records every interval that clipped, the hold does not.
     private func markClippedRows() {
         guard let level = captureLevel.level, let time = captureLevel.time,
@@ -2805,7 +2758,7 @@ final class AppSession {
 
     /// The tuned channel's manifests: every recording on its frequency and mode, not only the
     /// newest, so a row an earlier recording kept stays kept after the switch goes off and on
-    /// again (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)"). Each is read once and again
+    /// again. Each is read once and again
     /// when its job changes; the running one is the one whose job changes.
     private func followTunedRecordings() {
         for id in tunedRecordingIDs { readManifestIfNeeded(id) }
@@ -2861,7 +2814,7 @@ final class AppSession {
     var storeCapBytes: UInt64 { state.daemon.recordingsCapBytes }
 
     /// What the tuned channel is called where it is heard: the bookmark's name, else the plan
-    /// channel's (`ch5`, `WX3`; R16), else the frequency (`Frequency.format`); nil with no
+    /// channel's (`ch5`, `WX3`), else the frequency (`Frequency.format`); nil with no
     /// channel. The volume caption's name.
     var listeningName: String? {
         guard let hz = tunedHz else { return nil }
@@ -3004,7 +2957,7 @@ final class AppSession {
         guard let first = queue.start(parts: day.playOrder) else { return }
         log("playback", "play day \(day.id): \(day.rows.count) parts")
         selectedPartURI = first
-        playQueue = queue
+        partPlayback.queue = queue
         await startPlayback(first)
     }
 
@@ -3046,7 +2999,7 @@ final class AppSession {
         guard let first = queue.start(group) else { return }
         log("playback", "play all \(group.uri): \(group.chips.count) parts")
         selectedPartURI = first
-        playQueue = queue
+        partPlayback.queue = queue
         await startPlayback(first)
     }
 
@@ -3057,7 +3010,7 @@ final class AppSession {
     /// progress is ended: this part is the one asked for. `row` is the start of the log row whose
     /// ▶ was clicked (`playingRowStart`), nil from anywhere else.
     func play(partURI uri: String, row: Leyline_V1_SampleTime? = nil) async {
-        playQueue.clear()
+        partPlayback.queue.clear()
         await startPlayback(uri, row: row)
     }
 
@@ -3065,18 +3018,13 @@ final class AppSession {
     /// have set for the parts after this one.
     private func startPlayback(_ uri: String, row: Leyline_V1_SampleTime? = nil) async {
         guard let daemon else { return }
-        if let old = playbackID {
-            // Cleared first, so the old one's tombstone is not read as this one ending.
-            playbackID = nil
+        if let old = partPlayback.replace(sinkAttached: sink != nil) {
             var stop = Leyline_V1_StopPlaybackRequest()
             stop.playbackID = old
             _ = try? await daemon.control.stopPlayback(stop)
             log("playback", "\(old) stopped for \(uri)")
-        } else if playingURI == nil {
-            reattachAfterPlayback = sink != nil
         }
-        playingURI = uri
-        playingRowStart = row
+        partPlayback.playing(uri, row: row)
         if let s = sink {
             var detach = Leyline_V1_DetachSinkRequest()
             detach.sinkID = s.sinkID
@@ -3091,9 +3039,7 @@ final class AppSession {
         req.resourceUri = uri
         do {
             let pb = try await daemon.control.startPlayback(req)
-            playbackID = pb.playbackID
-            playbackSeen = false
-            playbackStartedAt = Date()
+            partPlayback.started(id: pb.playbackID, at: Date())
             log(
                 "playback",
                 "\(pb.playbackID) playing \(uri): \(pb.samples) frames at \(pb.sampleRate) Hz")
@@ -3110,9 +3056,7 @@ final class AppSession {
             let e = LeylineError(error)
             log("playback", "\(uri) not played: \(e.code) \(e.message)")
             notice = "Could not play the part: \(e.message.isEmpty ? e.code : e.message)"
-            playingURI = nil
-            playingRowStart = nil
-            playQueue.clear()
+            partPlayback.failed()
             await attachAfterPlayback()
         }
     }
@@ -3120,7 +3064,7 @@ final class AppSession {
     /// Stops the window's clip, and a Play all with it; its tombstone ends it here and attaches
     /// the live sink again.
     func stopPlayback() async {
-        playQueue.clear()
+        partPlayback.queue.clear()
         guard let daemon, let id = playbackID else { return }
         var req = Leyline_V1_StopPlaybackRequest()
         req.playbackID = id
@@ -3136,37 +3080,30 @@ final class AppSession {
     /// clip: the row loses its stop glyph and the live sink comes back.
     private func followPlayback() {
         guard let id = playbackID else { return }
-        if state.playbacks.contains(where: { $0.playbackID == id }) {
-            playbackSeen = true
-            return
-        }
-        guard
-            playbackSeen || Date().timeIntervalSince(playbackStartedAt) > Self.neverSeenDropSeconds
-        else { return }
-        endPlayback(id)
+        let listed = state.playbacks.contains { $0.playbackID == id }
+        // Folded on a copy, so a mirror change that alters nothing here is not a change to
+        // anything a view reads.
+        var folded = partPlayback
+        let ended = folded.observe(
+            listed: listed, now: Date(), dropAfter: Self.neverSeenDropSeconds)
+        if folded != partPlayback { partPlayback = folded }
+        if let ended { endPlayback(ended) }
     }
 
     /// A clip ended. During Play all the next part starts at once and the live sink stays
     /// detached between parts, so the channel is not heard in the gaps; `playingURI` is held on
-    /// the next part meanwhile, which keeps `reattachAfterPlayback` for the end of the last one.
+    /// the next part meanwhile, which keeps the sink's earlier state for the end of the last one.
     private func endPlayback(_ id: String) {
-        guard playbackID == id else { return }
+        guard let ending = partPlayback.end(id) else { return }
         log("playback", "\(id) ended")
-        playbackID = nil
-        playbackSeen = false
-        playingRowStart = nil
-        var queue = playQueue
-        if let next = queue.next() {
-            playQueue = queue
-            playingURI = next
+        switch ending {
+        case .next(let next):
             selectedPartURI = next
-            log("playback", "play all: \(next) next, \(queue.pending.count) after it")
+            log("playback", "play all: \(next) next, \(playQueue.pending.count) after it")
             Task { await startPlayback(next) }
-            return
+        case .finished:
+            Task { await attachAfterPlayback() }
         }
-        playQueue = queue
-        playingURI = nil
-        Task { await attachAfterPlayback() }
     }
 
     /// `Resources.DeleteResource` on the whole recording, from the inspector on a part: the
@@ -3175,7 +3112,7 @@ final class AppSession {
     /// forgets the recording's manifest and clears the selection (`prunePage`).
     func deleteRecording(uri: String) async {
         guard let daemon else { return }
-        if playQueue.holds(recordingURI: uri) { playQueue.clear() }
+        if playQueue.holds(recordingURI: uri) { partPlayback.queue.clear() }
         var ref = Leyline_V1_ResourceRef()
         ref.uri = uri
         do {
@@ -3209,7 +3146,7 @@ final class AppSession {
 
     // MARK: The Library's player
 
-    /// The part the player shows and ▶ plays (decided 2026-09-25): the one playing, else the
+    /// The part the player shows and ▶ plays: the one playing, else the
     /// selected part, else the page's first row, once the manifest that holds it has been read. nil
     /// leaves the player with nothing to play.
     var player: (uri: String, manifest: RecordingManifest, part: RecordingPart)? {
@@ -3263,7 +3200,7 @@ final class AppSession {
             var queue = PlayQueue()
             let group = RecordingGroup(summary: summary, manifest: p.manifest, running: running)
             if let first = queue.start(group, at: n) {
-                playQueue = queue
+                partPlayback.queue = queue
                 await startPlayback(first)
                 return
             }
@@ -3334,8 +3271,7 @@ final class AppSession {
 
     /// The live sink back on the tuned channel, when it was attached before the clip.
     private func attachAfterPlayback() async {
-        guard reattachAfterPlayback else { return }
-        reattachAfterPlayback = false
+        guard partPlayback.reattachAfterPlayback, partPlayback.takeReattach() else { return }
         guard let ch = channel else { return }
         do {
             try await ensureSink(on: ch)
@@ -3417,7 +3353,7 @@ final class AppSession {
         /// `Recordings.retuneWords`: the job named and the gap the move would leave.
         let words: String
         /// The button that goes ahead: `Move anyway` before a move, `Sweep anyway` before Find
-        /// active, which hops the radio across the band (R20).
+        /// active, which hops the radio across the band.
         let proceedLabel: String
         let proceed: @MainActor () -> Void
         let cancel: @MainActor () -> Void
@@ -3481,7 +3417,7 @@ extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
 }
 
-/// The window's two places (decided 2026-09-25): Radio is the live window, the Library what has
+/// The window's two places: Radio is the live window, the Library what has
 /// been kept. Presentation only; the radio runs the same in both.
 enum WindowPlace: String, CaseIterable, Identifiable {
     case radio

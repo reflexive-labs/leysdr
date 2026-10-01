@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// One flag per waterfall row: captured while the radio clipped (plans/app.md, M2-8). The app's
+// One flag per waterfall row: captured while the radio clipped. The app's
 // `WaterfallBuffer` keeps one of these beside its ring of levels, and the shader paints a
 // `recording` mark at the left edge of every clipped row. Here rather than in the app so the ring
 // arithmetic runs in the Linux tests. The flag is set after the rows it covers arrive, so marking

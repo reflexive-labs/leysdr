@@ -4,8 +4,8 @@
 // noise floor the ramp is keyed from, and a ring of rows the waterfall's texture is filled from.
 // One subscription per capture at 2048 bins and 30 rows a second; the frequency axis is the
 // mirror's capture, never the descriptor's, because the descriptor is a snapshot at subscribe time
-// and rows keep flowing across a retune. Signposts from a row's arrival to its draw are S1's client
-// half.
+// and rows keep flowing across a retune. Signposts from a row's arrival to its draw are the client
+// half of the antenna-to-pixel measurement.
 
 import Foundation
 import LeylineClient
@@ -16,7 +16,7 @@ let signposter = OSSignposter(subsystem: "com.leysdr.app", category: "waterfall"
 
 /// Rows as the waterfall's texture wants them: DB_U8 bytes, newest last, in a ring the renderer
 /// copies from by row count, and beside it each row's sample index and which rows were captured
-/// while the radio clipped (plans/app.md, M2-8), in `ClippedRows`; the indices also place the
+/// while the radio clipped, in `ClippedRows`; the indices also place the
 /// time gutter's kept bars. Main-actor only: the renderer draws on the main thread.
 @MainActor
 final class WaterfallBuffer {
@@ -217,8 +217,7 @@ final class SpectrumFeed {
 /// reset with it. The logs are kept per frequency and mode for the session (`TransmissionLogs`),
 /// and the one shown is the tuned frequency's: the window retunes by writing the same channel's
 /// offset, so a retune switches logs (`ChannelFrequencyWatch`), and coming back finds the rows
-/// heard there before. Until the owner's second run (plans/app.md, APP-5, "Fixed 2026-09-25 (second
-/// run)") a retune emptied the one log, and switching channel lost the transmissions. The capture
+/// heard there before. The capture
 /// rate is `duration_samples`' unit and comes from the session's capture, which can change under a
 /// live subscription, so it is taken on every `follow` and not only at subscribe time.
 @MainActor
@@ -392,8 +391,8 @@ final class ChannelTelemetryFeed {
 }
 
 /// The capture's raw level four times a second (`CaptureLevel`): samples at the converter's
-/// rails and the peak, the clipping source the failure state reads (`FailureState`,
-/// plans/app.md M2-5). One subscription per capture, reset with it.
+/// rails and the peak, the clipping source the failure state reads (`FailureState`). One
+/// subscription per capture, reset with it.
 @MainActor
 @Observable
 final class CaptureLevelFeed {

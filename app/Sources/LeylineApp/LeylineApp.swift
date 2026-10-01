@@ -2,9 +2,9 @@
 
 // The Mac app: a peer client of the daemon (AGENTS.md invariant 1). It renders what the mirror
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
-// is M1: sidebar, spectrum, waterfall, transport bar, the device menu, and a Tune menu that lists
-// every gesture (docs/plans/app.md, "The M1 cut"), plus M2's inspector on the right and the
-// Library, the window's second place, with its own menu (decided 2026-09-25).
+// is the sidebar, spectrum, waterfall, transport bar, the device menu, the inspector on the right
+// and a Tune menu that lists every gesture, plus the Library, the window's second place, with its
+// own menu.
 
 import AppKit
 import LeylineClient
@@ -133,7 +133,7 @@ struct TuneCommands: Commands {
     static let modes: [Leyline_V1_DemodMode] = [.am, .nfm, .wfm, .usb, .lsb, .cw]
 }
 
-/// The Library menu (decided 2026-09-25): the player's three controls on space, ← and →, the keys
+/// The Library menu: the player's three controls on space, ← and →, the keys
 /// the Tune menu takes in the Radio, and Stop with no key. Space pauses and resumes while a part
 /// plays (the player's ⏸) and plays otherwise. Stop ends the part and a Play all or Play day, which
 /// the player's circle no longer does, so a paused part is not left holding the live channel
@@ -187,7 +187,7 @@ enum TextFieldKeys {
     }
 }
 
-/// File ▸ the recording items (plans/app.md, APP-5) and `Import CHIRP…` (docs/design/channels.md,
+/// File ▸ the recording items and `Import CHIRP…` (docs/design/channels.md,
 /// "CHIRP import"). `Record Transmissions` (⌘R) is the log's switch: checked while a record job
 /// runs on the tuned channel, and choosing it flips the switch. Its precondition is checked in the
 /// session, which says what is missing in a notice, rather than the item being disabled: a Commands

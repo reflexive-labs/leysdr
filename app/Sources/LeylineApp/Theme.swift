@@ -32,7 +32,7 @@ enum Theme {
     static let inkFaintest = Color(hex: 0x5F656A)
     static let inkDisabled = Color(hex: 0x4A5054)
     /// A plan channel's tick on the band rail: fainter than a bookmark's `good` and than the
-    /// tuned `accent`, so a plan reads as a grid under the marks and never as marks (R15). No
+    /// tuned `accent`, so a plan reads as a grid under the marks and never as marks. No
     /// palette token is dimmer than `inkFaint` without being the disabled ink, so it is
     /// `inkFaint` at half strength; a guess until the Mac.
     static let planTick = inkFaint.opacity(0.5)
@@ -48,7 +48,7 @@ enum Theme {
     /// Squelch open, a connected device, a bookmarked frequency.
     static let good = Color(hex: 0x2FB6A3)
     /// The device dot for an unplugged radio or no daemon; the waterfall's clipped-row marks and
-    /// the gain slider's knob while the radio clips (plans/app.md, M2-8). The name is older than
+    /// the gain slider's knob while the radio clips. The name is older than
     /// `accentRec`, which is the recording's colour; the two are never on one element
     /// (docs/dev/app.md, "Palette and type").
     static let recordingHex: UInt32 = 0xB8483C
@@ -102,8 +102,8 @@ enum Theme {
         static let frequency = SwiftUI.Font.system(size: 29, weight: .medium, design: .monospaced)
             .monospacedDigit()
         /// The channel's name at the top of the inspector: the only text in the window that is
-        /// a name rather than a number, tracked by `Theme.nameTracking`. The M2 design set it
-        /// in Space Grotesk; no font is bundled (docs/dev/app.md, "Palette and type"), so it is
+        /// a name rather than a number, tracked by `Theme.nameTracking`. The design sets it in
+        /// Space Grotesk; no font is bundled (docs/dev/app.md, "Palette and type"), so it is
         /// SF at the same size and weight.
         static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
@@ -137,7 +137,7 @@ enum Theme {
         static let playingGlyph = SwiftUI.Font.system(size: 10, weight: .bold)
     }
 
-    /// `0.14em` at 9.5 pt; was `0.16em`, brought down a step on 2026-09-19.
+    /// `0.14em` at 9.5 pt.
     static let sectionTracking: CGFloat = 9.5 * 0.14
     /// `-0.02em` at 29 pt.
     static let frequencyTracking: CGFloat = 29 * -0.02
@@ -160,9 +160,9 @@ enum Theme {
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
         /// The inspector's reading rows are four fixed columns (label, meter, word, number), so
-        /// no meter or number moves when a word beside it changes. The design's 74 pt label
-        /// column came down to 62 on 2026-09-23 to make room for the number; `Deviation`, the
-        /// longest label, is about 54 pt at `Font.label`.
+        /// no meter or number moves when a word beside it changes. The label column is 62 pt,
+        /// narrower than the design's 74, to make room for the number; `Deviation`, the longest
+        /// label, is about 54 pt at `Font.label`.
         static let readingLabelWidth: CGFloat = 62
         static let readingMeterWidth: CGFloat = 72
         /// The gap between a reading's meter and its word.
@@ -306,7 +306,7 @@ struct SectionHeader: View {
     }
 }
 
-// The brand (docs/plans/app.md, APP-8): the owner's two files in docs/design/brand, drawn in code
+// The brand: the two files in docs/design/brand, drawn in code
 // by `BrandMark` and `SplashView`. Every size below is read off those SVGs.
 extension Theme.Font {
     /// `leyline` on the splash: Space Grotesk 62 medium in `leyline-splash.svg`, SF here because
@@ -324,7 +324,7 @@ extension Theme {
     /// The SVG's `letter-spacing="4.62"`: `0.42em` at 11 pt.
     static let taglineTracking: CGFloat = 11 * 0.42
 
-    /// How long each step of the first window's splash takes, in seconds (APP-8).
+    /// How long each step of the first window's splash takes, in seconds.
     enum Motion {
         /// The mark, the wordmark and the line fading in.
         static let splashFadeIn: Double = 0.4

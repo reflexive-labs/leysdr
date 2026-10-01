@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A value's place across a pixel width, and the inverse, both clamped: the squelch marker and
-// the gain slider each drag a `Double` along a track, and both used to keep their own copy of
-// this pair (docs/dev/swift-style.md, section 13). `Comparable.clamped(to:)` lives here too,
+// the gain slider each drag a `Double` along a track, and both take this pair from here rather
+// than keeping a copy each. `Comparable.clamped(to:)` lives here too,
 // because clamping is what both directions of the map are for.
 
 import CoreGraphics

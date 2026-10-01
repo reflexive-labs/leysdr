@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The window's regions: chrome above and below a body of two panels, and a third on the right since
-// M2, the inspector. The sidebar, the inspector and the transport bar are fixed; the waterfall
+// The window's regions: chrome above and below a body of two panels, and a third on the right, the
+// inspector. The sidebar, the inspector and the transport bar are fixed; the waterfall
 // takes what is left. The inspector can be closed, and the window works without it. Two places
-// share the toolbar (decided 2026-09-25): the Radio is that window, and the Library replaces the
+// share the toolbar: the Radio is that window, and the Library replaces the
 // whole body under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps
 // running, because the capture, the channel and the feeds are the session's, not the body's. The
-// first window opens under a splash (APP-8, `SplashView.swift`) that clears into it, its mark
+// first window opens under a splash (`SplashView.swift`) that clears into it, its mark
 // landing on the toolbar's.
 
 import LeylineClient
@@ -52,7 +52,7 @@ struct MainWindow: View {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
             // is hidden and each item draws the pop-ups' ground instead. The items are hidden
             // while the splash covers the window and fade in as it leaves.
-            // Left to right, as the owner set it 2026-09-25: the switch beside the traffic
+            // Left to right: the switch beside the traffic
             // lights, then the mark and `Leyline`, then the gap, then the radio and the
             // inspector toggle at the right. Without the title, nothing separates the two
             // groups on its own, so a flexible spacer holds the gap.
@@ -98,7 +98,7 @@ struct MainWindow: View {
         }
     }
 
-    /// The splash's clock (APP-8): fade in, hold until the daemon is live or `splashMinHold` has
+    /// The splash's clock: fade in, hold until the daemon is live or `splashMinHold` has
     /// passed, whichever is later and `splashMaxHold` at most, then the exit and removal. Every
     /// step's length is `Theme.Motion`'s.
     private func playSplash() async {
@@ -134,7 +134,7 @@ struct MainWindow: View {
     }
 }
 
-/// The toolbar's first item: the mark and `Leyline` (APP-8), in place of the window's title.
+/// The toolbar's first item: the mark and `Leyline`, in place of the window's title.
 /// The mark is measured for the splash's flight and stays hidden until that mark has landed.
 struct BrandTitle: View {
     let markShown: Bool
@@ -160,8 +160,8 @@ extension View {
     }
 }
 
-/// The Radio: bands and bookmarks, the canvas, the inspector and the transport bar, as M1 and M2
-/// built them, with the recording switch and kept rows. Switching to the Library and back makes the
+/// The Radio: bands and bookmarks, the canvas, the inspector and the transport bar, with the
+/// recording switch and kept rows. Switching to the Library and back makes the
 /// Metal view again; the waterfall's rows are the feed's, so it comes back with its history.
 struct RadioBody: View {
     @Environment(AppSession.self) private var session
@@ -233,12 +233,11 @@ struct RadioBody: View {
 }
 
 /// The toolbar's `Radio | Library` switch, a segmented control beside the traffic lights at the
-/// toolbar's `navigation` placement (decided 2026-09-25, restyled the same day): two segments in
+/// toolbar's `navigation` placement: two segments in
 /// `label` on the toolbar's own dark ground (`chrome`) inside a 1 pt `border` stroke with 6 pt
 /// corners. The place showing is raised on a `border` ground `placeSwitchInset` inside the stroke,
-/// in `ink`; the other has no ground and `inkTertiary` text. Until the owner's second run
-/// (2026-09-25) the whole control sat on `border`, so the unselected segment was as light as the
-/// selected one and only the ink told them apart. ⌘1 and ⌘2 are the View menu's. Two plain buttons
+/// in `ink`; the other has no ground and `inkTertiary` text, because a control all on `border`
+/// makes the unselected segment as light as the selected one. ⌘1 and ⌘2 are the View menu's. Two plain buttons
 /// rather than a segmented `Picker`, because the system draws a segmented control's selected
 /// segment and its text in its own colours, which `Theme`'s inks cannot set.
 struct PlaceSwitch: View {
@@ -294,10 +293,8 @@ struct EmptyWords: View {
 }
 
 /// One line about the last thing that happened or the last thing that went wrong, over the
-/// bottom of the waterfall; a click dismisses it. The band's failure state and a channel the
-/// capture no longer covers were shown here in M1; since M2-6 clipping is on the device chip
-/// and in its menu, and out of capture is a line in the inspector's identity
-/// (docs/plans/app.md, M2-6).
+/// bottom of the waterfall; a click dismisses it. Clipping is not shown here but on the device
+/// chip and in its menu, and a channel out of capture is a line in the inspector's identity.
 struct NoticeStrip: View {
     @Environment(AppSession.self) private var session
 

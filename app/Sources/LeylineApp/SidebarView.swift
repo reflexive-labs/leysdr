@@ -133,7 +133,7 @@ struct SidebarView: View {
         }
     }
 
-    /// `Stop` while this row is being swept, else `Scan band` (R20).
+    /// `Stop` while this row is being swept, else `Scan band`.
     private func scanBandTitle(_ row: Band) -> String {
         session.sweeping && session.sweepRow?.id == row.id ? "Stop" : "Scan band"
     }
@@ -382,7 +382,7 @@ struct BandRow: View {
 }
 
 /// `7 bands below what this radio tunes`, one dim line at the top of the list, with the chevron
-/// showing whether its rows are out (R12). The rows are the disabled band rows themselves.
+/// showing whether its rows are out. The rows are the disabled band rows themselves.
 struct OutOfRangeLine: View {
     let fold: OutOfRangeFold
     let expanded: Bool
@@ -403,13 +403,13 @@ struct OutOfRangeLine: View {
 }
 
 /// The same "selected" style as the band row's: `selected` ground and a `good` dot on the tuned
-/// bookmark, a faint dot on the rest (the in-span meaning the dot carried in M1 was not read
-/// as one; the owner, 2026-09-21). `changed` in `caution` where the frequency was, when the
+/// bookmark, a faint dot on the rest; a dot meaning "inside the span" was not read as one.
+/// `changed` in `caution` where the frequency was, when the
 /// bookmark's settings and the channel's disagree. While a record job runs on the bookmark's
 /// frequency and mode, tuned or not and whoever started it, a 6 pt `accentRec` dot sits 6 pt
 /// left of the frequency, whose ink does not change. The row is an editor while `editing`. A
 /// bookmark on a plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`),
-/// what `ley monitor` prints in its CHANNEL column (R16). The row sits in from the band's name by
+/// what `ley monitor` prints in its CHANNEL column. The row sits in from the band's name by
 /// `sidebarIndent`, under its band.
 struct BookmarkRow: View {
     let bookmark: Bookmark
@@ -474,8 +474,8 @@ struct MatchRow: View {
     }
 }
 
-/// `NameField`'s key monitor (`InspectorView.swift`) for the filter field and the picker's field
-/// (the plan's KTD12): while the field has focus its window's bare space and arrow keys go to
+/// `NameField`'s key monitor (`InspectorView.swift`) for the filter field and the picker's field:
+/// while the field has focus its window's bare space and arrow keys go to
 /// the field editor directly, because the Tune menu holds them as key equivalents and a menu's
 /// equivalent is matched before a text field sees the key, so typing `24 coast` would mute the
 /// radio and tune it. With `pickerKeys` the Up and Down arrows move the picker's highlight

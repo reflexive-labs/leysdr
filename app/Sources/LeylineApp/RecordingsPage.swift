@@ -361,8 +361,8 @@ struct PartRowView: View {
     /// The recording's bracket down the gutter: a 2 pt `border` line at the column's centre,
     /// from the top of this row's text down on its first row, through the middle rows, and to
     /// the bottom of the text on its last, so the line spans the recording's rows from the first
-    /// part's words to the last's (the owner, 2026-09-25: a line that started at the row's
-    /// middle stopped half way up the text). The rows of one recording have no gap between
+    /// part's words to the last's; a line that started at the row's middle stopped half way up
+    /// the text. The rows of one recording have no gap between
     /// them, so the pieces join.
     @ViewBuilder private var bracket: some View {
         let line = Rectangle().fill(Theme.border).frame(width: Theme.Layout.bracketWidth)

@@ -31,8 +31,8 @@ enum Frequency {
     }
 
     /// `144`, `87.5`, `462.5375`: MHz to four decimals with trailing zeros trimmed. The
-    /// sidebar's band list and the band rail's caps both use this shape and used to keep their
-    /// own copies, which drifted (`docs/dev/swift-style.md`, section 13).
+    /// sidebar's band list and the band rail's caps both use this shape, from here, so the two
+    /// cannot drift apart.
     static func mhz(_ hz: UInt64) -> String {
         var s = String(format: "%.4f", Double(hz) / 1e6)
         while s.hasSuffix("0") { s.removeLast() }

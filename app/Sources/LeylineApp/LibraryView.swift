@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Library, the window's second place (decided 2026-09-25): what has been kept, in place of the
+// The Library, the window's second place: what has been kept, in place of the
 // whole body under the toolbar. A 236 pt sidebar with the search field, the channels and the store
 // footer; the channel page in the centre (`RecordingsPage.swift`); in the inspector the part
 // (`PartInspector.swift`) or, with none selected, the channel's lines; and the player in the
@@ -191,10 +191,9 @@ struct RecordingChannelRow: View {
     }
 }
 
-/// The store footer at the Library sidebar's foot, where it is about the thing listed (moved there
-/// 2026-09-25): a 3 pt bar, `border` track and `inkTertiary` fill for the used fraction, then `3.3
-/// GB of 20 GB · oldest go first` in `footnote` `inkFaint`. Used is the listing's sizes summed; the
-/// cap is the daemon's (`DaemonInfo.recordings_cap_bytes`). Read-only: the cap is `leylined
+/// The store footer at the Library sidebar's foot, where it is about the thing listed: a 3 pt
+/// bar, `border` track and `inkTertiary` fill for the used fraction, then `3.3 GB of 20 GB ·
+/// oldest go first` in `footnote` `inkFaint`. Used is the listing's sizes summed; the cap is the daemon's (`DaemonInfo.recordings_cap_bytes`). Read-only: the cap is `leylined
 /// --recordings-cap`. Without a cap the bar has no fill and the line no `of …` clause.
 struct StoreFooter: View {
     @Environment(AppSession.self) private var session

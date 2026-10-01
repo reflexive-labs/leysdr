@@ -10,6 +10,7 @@
 import Foundation
 import GRPCCore
 import LeylineProto
+import Synchronization
 
 /// Which parameter a write sets; one pending value per `(target, kind)`.
 public enum ParamKind: Sendable, Hashable, CaseIterable {
@@ -31,7 +32,7 @@ public enum ParamKind: Sendable, Hashable, CaseIterable {
 }
 
 /// The pure part: last value per `(target, kind)`, tags minted in order. Unit-tested without a
-/// daemon; `WriteCoalescer` wraps it in an actor and a stream.
+/// daemon; `WriteCoalescer` wraps it in a lock and a stream.
 public struct PendingWrites: Sendable {
     public struct Key: Hashable, Sendable {
         public var target: String
@@ -72,30 +73,65 @@ public struct PendingWrites: Sendable {
     }
 }
 
+/// How the coalescer reaches the daemon: one `WriteParams` stream, opened for the call, whose
+/// `body` is handed a function that sends one write. It returns the daemon's summary once `body`
+/// returns and the stream is closed. Tests pass their own to see what would be sent.
+public typealias WriteStream =
+    @Sendable (
+        _ body:
+            @escaping @Sendable (
+                _ send: @escaping @Sendable (Leyline_V1_ParamWrite) async throws -> Void
+            ) async throws -> Void
+    ) async throws -> Leyline_V1_WriteSummary
+
 /// One `WriteParams` stream, flushed one tick after the first write of a burst. Idle costs
 /// nothing: the flush task sleeps on a kick that `set` sends, not on a timer.
-public actor WriteCoalescer {
-    public let connection: DaemonConnection
+///
+/// The setters are synchronous and callable from any context, and record the write before they
+/// return, under a lock. A caller's writes are therefore recorded in the order it made them, so
+/// the last value per parameter is the last one asked for. Writes made from separate unstructured
+/// tasks would not be: two `Task { await ... }` blocks are not guaranteed to run in the order they
+/// were created, which could leave an older offset as the last value.
+public final class WriteCoalescer: Sendable {
     public let tick: Duration
-    private var pending = PendingWrites()
-    private var kick: AsyncStream<Void>.Continuation?
-    private var task: Task<Void, Never>?
+    private let stream: WriteStream
+    private let state = Mutex(State())
+
+    private struct State {
+        var pending = PendingWrites()
+        var kick: AsyncStream<Void>.Continuation?
+        var task: Task<Void, Never>?
+        var lastSummary: Leyline_V1_WriteSummary?
+        var lastError: LeylineError?
+    }
+
     /// The last `WriteSummary` the daemon answered when a stream ended, for tests and logs.
-    public private(set) var lastSummary: Leyline_V1_WriteSummary?
-    public private(set) var lastError: LeylineError?
+    public var lastSummary: Leyline_V1_WriteSummary? { state.withLock { $0.lastSummary } }
+    public var lastError: LeylineError? { state.withLock { $0.lastError } }
 
     /// `tick` is the coalescing window: a 60 Hz drag is one write per tick at the default.
-    public init(connection: DaemonConnection, tick: Duration = .milliseconds(16)) {
-        self.connection = connection
+    public convenience init(connection: DaemonConnection, tick: Duration = .milliseconds(16)) {
+        self.init(tick: tick) { body in
+            try await connection.control.writeParams { writer in
+                try await body { try await writer.write($0) }
+            }
+        }
+    }
+
+    init(tick: Duration, stream: @escaping WriteStream) {
         self.tick = tick
+        self.stream = stream
     }
 
     /// Queues a write and returns its tag (echoed by a `WriteRejected` event if the daemon
     /// refuses it). The stream is opened on the first call.
     @discardableResult
     public func set(_ param: Leyline_V1_ParamWrite.OneOf_Param, target: String) -> UInt64 {
-        let tag = pending.set(param, target: target)
-        start()
+        let (tag, kick) = state.withLock { s -> (UInt64, AsyncStream<Void>.Continuation?) in
+            let tag = s.pending.set(param, target: target)
+            if s.task == nil { start(&s) }
+            return (tag, s.kick)
+        }
         kick?.yield()
         return tag
     }
@@ -125,27 +161,33 @@ public actor WriteCoalescer {
 
     /// Ends the stream after a last flush. The daemon answers with how many writes it applied.
     public func stop() async {
+        let (kick, task) = state.withLock { s in
+            defer { s.kick = nil }
+            return (s.kick, s.task)
+        }
         kick?.finish()
-        kick = nil
         await task?.value
-        task = nil
+        state.withLock { s in
+            if s.task == task { s.task = nil }
+        }
     }
 
-    private func start() {
-        guard task == nil else { return }
+    /// Opens the stream and its flush task. Called under the lock, so one write opens one stream.
+    private func start(_ s: inout State) {
         let (kicks, continuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
-        kick = continuation
+        s.kick = continuation
         let tick = tick
-        task = Task { [connection] in
+        let stream = stream
+        s.task = Task {
             do {
-                let summary = try await connection.control.writeParams { writer in
+                let summary = try await stream { send in
                     for await _ in kicks {
                         try await Task.sleep(for: tick)
-                        for write in await self.take() { try await writer.write(write) }
+                        for write in self.take() { try await send(write) }
                     }
                     // The stream is closing: whatever arrived after the last kick goes too.
-                    for write in await self.take() { try await writer.write(write) }
+                    for write in self.take() { try await send(write) }
                 }
                 self.finished(summary: summary, error: nil)
             } catch {
@@ -154,12 +196,14 @@ public actor WriteCoalescer {
         }
     }
 
-    private func take() -> [Leyline_V1_ParamWrite] { pending.drain() }
+    private func take() -> [Leyline_V1_ParamWrite] { state.withLock { $0.pending.drain() } }
 
     private func finished(summary: Leyline_V1_WriteSummary?, error: LeylineError?) {
-        lastSummary = summary
-        lastError = error
-        kick = nil
-        task = nil
+        state.withLock { s in
+            s.lastSummary = summary
+            s.lastError = error
+            s.kick = nil
+            s.task = nil
+        }
     }
 }

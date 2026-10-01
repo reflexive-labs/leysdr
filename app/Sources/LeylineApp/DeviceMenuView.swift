@@ -5,8 +5,7 @@
 // table, and the label warns that auto gain is poor on weak signals. Sample rate is the only
 // capture setting here; frequency correction and bias tee are not writable in the contract and
 // are not shown. Clipping is shown here too, drawn rather than written: the chip's dot, with the
-// sentence as the chip's tooltip, and the gain slider's knob, because the slider is its fix
-// (plans/app.md, M2-8).
+// sentence as the chip's tooltip, and the gain slider's knob, because the slider is its fix.
 
 import LeylineClient
 import LeylineProto
@@ -35,7 +34,7 @@ struct DeviceChip: View {
         .buttonStyle(.plain)
         // While the failure state holds the dot is `caution` and the sentence is here, in the
         // tooltip, and nowhere else in words; it goes when the level clears, so there is
-        // nothing to close (plans/app.md, M2-8).
+        // nothing to close.
         .help(tooltip)
         .popover(isPresented: $session.deviceMenuShown, arrowEdge: .bottom) { DeviceMenuView() }
     }
@@ -300,7 +299,7 @@ struct GainSlider: View {
     let element: Leyline_V1_GainElement
     let db: Double
     let dimmed: Bool
-    /// The radio is clipping: the knob is `recording` (plans/app.md, M2-8).
+    /// The radio is clipping: the knob is `recording`.
     let clipping: Bool
     let onChange: (Double, Bool) -> Void
 

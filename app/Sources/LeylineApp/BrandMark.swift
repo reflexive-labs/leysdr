@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The mark: a ring and a dot, `docs/design/brand/leyline-mark.svg` drawn in code rather than
-// loaded (docs/plans/app.md, APP-8), so it takes any size and `Theme`'s colours. The toolbar
+// loaded, so it takes any size and `Theme`'s colours. The toolbar
 // draws it at 13 pt beside `Leyline`, the splash at 26 pt, and `scripts/render-icon.swift` draws
 // the same proportions in CoreGraphics for the app's icon. The ring's outer edge touches the
 // box, as in both SVGs, so a thicker line eats inward and the box stays the mark's size.

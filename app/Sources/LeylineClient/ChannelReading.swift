@@ -119,7 +119,7 @@ public struct ChannelReading: Sendable, Equatable {
     /// The signal bar's release: long enough that a syllable does not flicker the bar, short
     /// enough that the end of a transmission shows within a second.
     public static let signalReleaseSeconds: Double = 0.3
-    /// The deviation meter's release, the VU-like fall decided on 2026-09-21: from a peak to under
+    /// The deviation meter's release, a VU-like fall: from a peak to under
     /// a tenth of it in about a second.
     public static let deviationReleaseSeconds: Double = 0.4
 

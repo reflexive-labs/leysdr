@@ -36,7 +36,7 @@ public enum SignalWord: String, Sendable, CaseIterable, Equatable {
 }
 
 /// Where the transmitter sits against the channel: within a tenth of the bandwidth of centre, or
-/// off tune low or high. Positive `freqErrorHz` is a transmitter ABOVE the channel (M2-2's sign).
+/// off tune low or high. Positive `freqErrorHz` is a transmitter ABOVE the channel.
 public enum TuningWord: Sendable, Equatable {
     case centred, offTuneLow, offTuneHigh
 

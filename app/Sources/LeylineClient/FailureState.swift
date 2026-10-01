@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The named failure state (docs/plans/user-stories.md, V1a: the app "detects and names failure
-// states instead of sitting silently broken"): the radio clipping, read from the daemon's
+// The named failure state, so the app names a problem instead of sitting silently broken: the
+// radio clipping, read from the daemon's
 // `CaptureLevel` and the capture's gains, a measured fact with its number and the thing to try,
 // not a detector (AGENTS.md, invariant 12). `ley tune` reports the same state from the same count
-// (`go/internal/cli/failure.go`). "Nothing above the noise" was a state here until 2026-09-21
-// and is now only `ley tune`'s one-time line: in a window it flagged a quiet band every few
-// seconds and distracted more than it helped (the owner). The daemon not running, no radio and
+// (`go/internal/cli/failure.go`). "Nothing above the noise" is only `ley tune`'s one-time line,
+// not a state here: in a window it flagged a quiet band every few seconds and distracted more
+// than it helped. The daemon not running, no radio and
 // an unplugged radio are the mirror's states and belong to the window's empty-state message.
 
 import Foundation
@@ -14,7 +14,7 @@ import LeylineProto
 
 public enum FailureState: Sendable, Equatable {
     /// Samples at the converter's rails in the daemon's newest `CaptureLevel` interval: the
-    /// radio is clipping, measured rather than read off a bin (plans/app.md, M2-5). `gainAuto`
+    /// radio is clipping, measured rather than read off a bin. `gainAuto`
     /// and `gainAtMinimum` pick the thing to try: on auto, switch to manual gain and lower it;
     /// at the lowest manual gain the radio cannot be turned down, so the antenna has to change.
     /// `lower` is the stages to turn down on a radio with several (`stagesToLower`), empty on a
@@ -56,8 +56,8 @@ public enum FailureState: Sendable, Equatable {
 
     /// Whether a gain element is a two-value switch rather than a gain to set: exactly two table
     /// entries and no step, as a HackRF advertises its AMP (0 or 11 dB). A switch is left out of
-    /// "the lowest gain", because a HackRF at LNA 8, VGA 20 and the AMP off was once told it was
-    /// at its lowest (plans/app.md, M2-10). `ley`'s `switchStage` is the same rule.
+    /// "the lowest gain", because counting it told a HackRF at LNA 8, VGA 20 and the AMP off that
+    /// it was at its lowest. `ley`'s `switchStage` is the same rule.
     static func isSwitch(_ el: Leyline_V1_GainElement) -> Bool {
         el.validDb.count == 2 && el.stepDb == 0
     }
@@ -152,7 +152,7 @@ public enum FailureState: Sendable, Equatable {
 
 /// The failure state as the window shows it: `FailureState.name` folded over the capture's
 /// `CaptureLevel` readings with a hold on the capture's clock, so a state is shown only once it
-/// has lasted (plans/app.md, M2-6). Clipping is raised after the fraction has been at or over
+/// has lasted. Clipping is raised after the fraction has been at or over
 /// `FailureState.clippingFloor` for `raiseSeconds` and cleared after it has been under
 /// `FailureState.clippingExitFraction` for `clearSeconds`; the exit fraction still applies while
 /// the state is shown. Clipping comes in bursts of half a second to two seconds (a keyed HT, an
