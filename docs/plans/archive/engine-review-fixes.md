@@ -1,6 +1,6 @@
 # Engine review fixes (v0-bootstrap)
 
-Source: the engine-focused code review of branch `v0-bootstrap` at `7df91ae6`. The review's report lived in an
+Source: the engine-focused code review of branch `v0-bootstrap` at `9417fb96`. The review's report lived in an
 ephemeral run directory that no longer exists; findings below keep their review numbers `#N` only because the
 commit messages that closed them cite those numbers. Scope: every P1-P3 primary finding. Each work item
 lands as one commit with its own tests. Go/CLI changes are limited to what a proto change forces.
@@ -164,8 +164,8 @@ Status legend: `[ ]` pending, `[x]` done (commit noted), `[-]` dropped with reas
 
 ## Closing
 
-Done on 2026-09-06, commits 4fff1d3..0dac92e (one per work item, each verified by an independent reviewer
-before landing). Gate at 0dac92e:
+Done on 2026-09-06, commits cbe4bf3..3685c36 (one per work item, each verified by an independent reviewer
+before landing). Gate at 3685c36:
 
 - Swift: `swift build` clean; `swift test` 121 tests, 0 failures (79 before this plan).
 - Go: `go build ./... && go vet ./... && go test ./...` green; `gofumpt` clean; `golangci-lint` unchanged at

@@ -1,6 +1,6 @@
 # Plan: v1.0 — what a release shared with other people is missing
 
-Status: gap analysis of `main` at `36adcb8`, 2026-09-10. Measured against the documents of record —
+Status: gap analysis of `main` at `dd51b21`, 2026-09-10. Measured against the documents of record —
 `docs/plans/user-stories.md`, `docs/plans/build-order.md`, the `leyline.v1` protos and `docs/reference/cli.md` —
 by reading the code and running the suites, not by trusting the status sections of README.md or the
 plan files (which disagree with each other). Every claim below has a `path:line` or a
@@ -256,20 +256,20 @@ CLI behaviour tested against the wrong response:
 | REL-2 | no NOTICE for librtlsdr (GPL-2.0) and Apache-2.0 Go deps — **fixed** (`NOTICE`, `third_party/licenses/`, release-checklist obligations) | — |
 | REL-3 | version hard-coded `0.1.0-dev` in Go and Swift; no ldflags, no tag, no remote | yes |
 | REL-4 | no install story beyond clone-and-build; `scripts/bootstrap-mac.sh` is referenced by nothing | yes |
-| REL-5 | README quickstart fails from a clean clone (PATH, `--bin`, fixtures) — **fixed** (`aa88c59`) | — |
-| REL-6 | README status section a milestone behind — **fixed** (`aa88c59`) | — |
-| REL-7 | README promises an app and an MCP adapter — **fixed** (`aa88c59`) | — |
+| REL-5 | README quickstart fails from a clean clone (PATH, `--bin`, fixtures) — **fixed** (`3709ba0`) | — |
+| REL-6 | README status section a milestone behind — **fixed** (`3709ba0`) | — |
+| REL-7 | README promises an app and an MCP adapter — **fixed** (`3709ba0`) | — |
 | REL-8 | `docs/reference/cli.md` CLI tree lacks `waterfall`, `phosphor` | |
 | REL-9 | `docs/reference/cli.md` opens with an MCP table nothing implements, unlabelled as a design | |
 | REL-10 | `docs/dev/engine-internals.md` module map lacks `Jobs/`, `S2Throughput`, four DSP files; says fixture round-trips are macOS-only (CI runs them on Linux) | |
 | REL-11 | `RTLTCPDeviceTests.testLinkLossReleasesSocketAndReopenReconnects` fails in roughly half of full `swift test` runs (`bad magic` on reconnect to a rebound ephemeral port), passes in isolation | yes — the gate is red at random |
 | REL-12 | no macOS CI job runs `ley`, `make e2e`, or the launchd path | |
-| REL-13 | no CONTRIBUTING, CHANGELOG, SECURITY, issue templates — the three files **added** (`9e5d69d`); issue templates remain (R-9) | |
-| REL-14 | no contact, repository URL or issues link anywhere — **fixed** in README (`aa88c59`); the repo has no remote yet | |
+| REL-13 | no CONTRIBUTING, CHANGELOG, SECURITY, issue templates — the three files **added** (`66caa35`); issue templates remain (R-9) | |
+| REL-14 | no contact, repository URL or issues link anywhere — **fixed** in README (`3709ba0`); the repo has no remote yet | |
 | REL-15 | `docs/dev/setup.md:118-124` ships one sandbox's `/home/moatuser` paths as instructions; `moat.yaml` at the root | |
 | REL-16 | two plan files cite review reports under `/tmp` on one machine; their `#N` references resolve nowhere | |
 | REL-17 | trademark check outstanding (D3) | |
-| REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`aa88c59`) | — |
+| REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`3709ba0`) | — |
 | REL-19 | `engine/launchd/com.leyline.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
 | REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails with a clear message; stubs say they are unimplemented | — |
 | REL-24 | the repo root is written for an agent (CLAUDE.md, moat.yaml), not a person | |
@@ -280,7 +280,7 @@ CLI behaviour tested against the wrong response:
 
 ### Documentation drift (facts, not style)
 
-- README.md before `aa88c59`: the `ley devices` example showed `--wide` columns and `MHz-GHz` ranges
+- README.md before `3709ba0`: the `ley devices` example showed `--wide` columns and `MHz-GHz` ranges
   the default output does not print; the two-line tune banner was collapsed into one sentence with
   "on <model>"; the spectrum header and "loudest bins:" line were shapes the renderer never prints;
   and README.md:43-44 claimed all of it was "recorded against the contract fake daemon". **Fixed**:

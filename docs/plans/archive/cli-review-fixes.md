@@ -1,6 +1,6 @@
 # CLI review fixes (v0)
 
-Source: the CLI-focused code review of `main` at `7e75220`. The review's report and machine-readable findings
+Source: the CLI-focused code review of `main` at `690a69c`. The review's report and machine-readable findings
 lived under an ephemeral `/tmp` run directory that no longer exists; finding numbers `#N` below are kept only
 because the commit messages that closed them cite those numbers. Scope: every P1-P3 primary finding plus the
 agent-native gaps. Same loop as the engine fixes: one commit per work item, verified independently, `make
@@ -119,8 +119,8 @@ Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason.
 
 ## Closing
 
-Done on 2026-09-09, commits 97d9bb1..067bb7f (one per work item, each verified by an independent reviewer before
-landing). Gate at 067bb7f, run in the container:
+Done on 2026-09-09, commits 670b43a..e15463d (one per work item, each verified by an independent reviewer before
+landing). Gate at e15463d, run in the container:
 
 - Swift: `swift build` clean; `swift test` 137 tests, 0 failures (125 before this plan; the engine gained the
   event-replay tests CLI-4 needed).

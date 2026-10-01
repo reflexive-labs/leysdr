@@ -1,6 +1,6 @@
 # Review findings, v1.0 pass (2026-09-10)
 
-The record of the deep review that `docs/plans/archive/v1-review-fixes.md` acts on: eighteen reviewers over Go quality, Swift quality, three architecture lenses and comment language, each batch of findings checked by independent verifiers told to refute (two lenses for code findings, one for comments). A finding is **confirmed** when no verifier refuted it, **contested** when one did, and **refuted** when all did; contested ones were adjudicated in the fixes plan. Severity is the verifiers' (never higher than the finder's). Line numbers are as of `36adcb8`.
+The record of the deep review that `docs/plans/archive/v1-review-fixes.md` acts on: eighteen reviewers over Go quality, Swift quality, three architecture lenses and comment language, each batch of findings checked by independent verifiers told to refute (two lenses for code findings, one for comments). A finding is **confirmed** when no verifier refuted it, **contested** when one did, and **refuted** when all did; contested ones were adjudicated in the fixes plan. Severity is the verifiers' (never higher than the finder's). Line numbers are as of `dd51b21`.
 
 Totals: 206 findings — 179 confirmed, 11 contested, 16 refuted.
 
@@ -1178,7 +1178,7 @@ Suggested fix: Emit the destroy event with `state` left UNSPECIFIED, the same to
 
 `docs/dev/engine-internals.md:30` · P2 · scoped · confirmed
 
-CLAUDE.md points at `docs/dev/engine-internals.md` as "the implementation contract (threads, hot path, pipeline math, daemon rules)". Its module map line 30 says `Services/ Control, Telemetry, Bulk (Jobs/Resources return UNIMPLEMENTED in v0)`, which stopped being true at commit 017214a. The map has no `Jobs/` entry at all, and the DSP list omits four files that now exist: SweepPlan.swift, EnergyDetector.swift, SubAudible.swift, Persistence.swift. Grepping the whole doc for sweep, scan, job, detector, sub-audible, persistence or phosphor returns four incidental hits, none about these features.
+CLAUDE.md points at `docs/dev/engine-internals.md` as "the implementation contract (threads, hot path, pipeline math, daemon rules)". Its module map line 30 says `Services/ Control, Telemetry, Bulk (Jobs/Resources return UNIMPLEMENTED in v0)`, which stopped being true at commit ddbbeb9. The map has no `Jobs/` entry at all, and the DSP list omits four files that now exist: SweepPlan.swift, EnergyDetector.swift, SubAudible.swift, Persistence.swift. Grepping the whole doc for sweep, scan, job, detector, sub-audible, persistence or phosphor returns four incidental hits, none about these features.
 
 Why it matters: Three shipped subsystems — daemon-side scan jobs with the capture allocator and lease protocol, sub-audible/CTCSS detection, and the persistence (phosphor) bulk stream — have no entry in the document a maintainer is told to read before structural changes. The doc is not merely incomplete, it actively misdirects: someone reading line 30 concludes the Jobs service is a stub and that the don't-disturb policy is unimplemented, when `SessionCaptureAllocator` already owns it and `refuseIfSwept` already blocks user writes on a swept capture. D.15 (durable jobs, watch jobs, the resource store) lands …
 

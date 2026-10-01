@@ -325,9 +325,9 @@ division right of centre). rtl_tcp went down before that could be run.
 
 ## Closing
 
-Done on 2026-09-09, commits bdec168..3768071 (the `ui` package with two follow-ups, then one
+Done on 2026-09-09, commits 6233048..ed2946f (the `ui` package with two follow-ups, then one
 commit per screen group, each built in its own worktree and applied to main with the suite run
-between). Gate in the container at 3768071:
+between). Gate in the container at ed2946f:
 
 - Go: build, vet, `go test ./...` green; `make lint` 0 issues; `gofumpt` clean.
 - Swift: 137 tests, 0 failures (untouched by this pass).

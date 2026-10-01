@@ -307,7 +307,7 @@ What the second look found, 2026-09-12.
   allocator opened the decode capture at 3.2 MSPS, the fastest rate the device lists (the sweep's
   rule), and the channel's audio rate followed it to 49.2 kHz, which the AFSK demodulator refused
   and the daemon spent the run respawning. A channel's capture now opens at the default rate and
-  the demodulator accepts up to 96 kHz (commit e789f34).
+  the demodulator accepts up to 96 kHz (commit bc0e62f).
 - **144.39 MHz is quiet at the owner's location.** Two three-minute captures (auto gain and 40 dB;
   `rf-captures/`, gitignored) held one decodable packet between them, one station's position beacon at 27.6 s of the
   first, and `leydec-aprs` recovered it; a tone-energy scan of the same file found the same

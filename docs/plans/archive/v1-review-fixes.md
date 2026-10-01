@@ -284,8 +284,8 @@ with `--json`, against the fake and in the e2e.
 
 ### SW-10 `[x]` What the audit of the engine lanes found
 
-An independent read of commits `6044fcb..HEAD` on the engine side, made after the per-item
-verifiers, which each saw one item in isolation. Line numbers are as of `c25b12d`.
+An independent read of commits `d8ad068..HEAD` on the engine side, made after the per-item
+verifiers, which each saw one item in isolation. Line numbers are as of `c0b4421`.
 
 1. `ChannelDSPCore.reset()` (`Channels/ChannelDSPCore.swift:~332`) swaps in a fresh, closed
    squelch without an edge. If the squelch was open, push a `.squelch(open: false)` telemetry
@@ -408,8 +408,8 @@ formatting on the hot path). A test that each new name is distinct and stable is
 
 ### GO-11 `[x]` What the audit of the Go lanes found
 
-An independent read of commits `6044fcb..42a84a3` on the Go side, made after the per-item
-verifiers. Line numbers are as of `42a84a3`.
+An independent read of commits `d8ad068..ac9b74b` on the Go side, made after the per-item
+verifiers. Line numbers are as of `ac9b74b`.
 
 1. q-go-fake-5 landed without its test: add one where a telemetry subscriber arriving during an
    open transmission receives no fabricated `SquelchTransition` (a revert of
@@ -451,7 +451,7 @@ range to 0 dB is exact parity with `GainElement.snapped` and unreachable behind 
 
 ### SW-13 `[x]` What the audit of the remote-radio daemon code found
 
-An independent read of `6dca426..c686a4b` on the engine side. Line numbers as of `c686a4b`. Edit
+An independent read of `b0a8c22..75867ee` on the engine side. Line numbers as of `75867ee`. Edit
 only under `engine/` and `docs/`; the Go lane is running concurrently (the e2e sleep the audit
 noted is handled separately).
 
@@ -467,7 +467,7 @@ Decisions:
   device, so `reconnectDisconnectedRemotes` brings it back on a later poll, as the proto and the
   plan promise; the log line says it is waiting. Same for a `--rtltcp` flag that fails at start.
 - `DetachFileDevice` on a hosted non-file device goes back to `INVALID_ARGUMENT` (an observable
-  code changed in `64cd45e`; `DaemonTests.swift:1078-1086` asserts the old code again).
+  code changed in `0b2ad9d`; `DaemonTests.swift:1078-1086` asserts the old code again).
 
 1. `SessionStore.swift:383-393`: hold the endpoint in an in-flight set across `await device.open()`
    (the `startingDevices` pattern at `:474`); a second attach of the same endpoint during the

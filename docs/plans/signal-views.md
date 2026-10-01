@@ -479,8 +479,8 @@ its two header lines exactly, so there was no wording to re-record.
 
 ### SV-8e `[x]` What the second look at the demod tap found (Swift lane)
 
-An independent read of `c2a0b08..d39aa56` on the engine side, after the per-item verifiers. Line
-numbers as of `4212935`. Engine and docs only.
+An independent read of `c45db8e..2ac0987` on the engine side, after the per-item verifiers. Line
+numbers as of `427dbc0`. Engine and docs only.
 
 1. `Demodulators.swift:284-286` (WFM): the one early return that does not zero `rawOut.count`; make
    it `rawOut?.count = 0` like every other exit, so a stale scratch block is never sent.
@@ -724,8 +724,8 @@ prose there rather than shown, the way `scope`'s are: a nine-band row is one 470
 
 ### SV-10f `[x]` What the second look at the audio spectrum found (cross-language)
 
-An independent read of `fe26cd3..54ca99f`, after the per-item verifiers. Line numbers as of
-`54ca99f`. Engine, fake, client and docs together.
+An independent read of `573cc79..d898648`, after the per-item verifiers. Line numbers as of
+`d898648`. Engine, fake, client and docs together.
 
 1. **Cap channel-sourced `bins` at 4096**, the design's number, in the engine
    (`AudioSpectrum.swift:23` rounds up the whole ladder to 16384, a 32768-point transform inline
@@ -822,7 +822,7 @@ A narrow-mode handheld (`fixtures/ht-narrow.cu8`: PL at 305 Hz, speech to 2.8 kH
 quarter of the trace and plays quietly, because NFM full scale is hard-wired to ±5 kHz while the
 default channel is 12.5 kHz wide and cannot carry more than ±2.5 kHz. Three items, in order.
 
-Closed 2026-09-12 (d87c5b8, e860a98, 347b009): the owner confirmed on the real handheld that
+Closed 2026-09-12 (23af55b, add1acc, bb507b3): the owner confirmed on the real handheld that
 scope, waveform and levels all fill the trace now. Measured on the narrow take, speech p90 moved
 from −10.0 to −4.1 dBFS and the PL band from −24.3 to −18.3 dBFS.
 
