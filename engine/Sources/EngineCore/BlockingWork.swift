@@ -8,7 +8,7 @@ import Foundation
 /// milliseconds (`rtlsdr_open` claiming a USB interface, a retry sleep, a long `ioctl`) parks one of
 /// them and starves every actor in the daemon. Wrapping such calls in `BlockingWork.run` moves the
 /// wait onto a fresh `Thread` and suspends the caller until it finishes (docs/dev/engine-internals.md,
-/// "Threads").
+/// "Threads and ownership").
 ///
 /// Not for the hot path: spawning a thread per call is fine for open/close-class operations and for
 /// the device registry's enumeration pass, which runs once a second. A thread costs microseconds to

@@ -13,48 +13,66 @@ swift/LeylineProto/           SwiftPM package: generated leyline.v1 messages + g
                               depend on it without the engine (../decisions/D2-licensing.md).
 
 engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swift 5 language mode),
-                              depending on swift/LeylineProto for the contract
+                              depending on swift/LeylineProto for the contract. One product,
+                              `leylined`; every declaration in the libraries is `package`, visible to
+                              the targets here and to nothing outside.
 ├── Sources/CRTLSDR           optional dlopen shim over librtlsdr
 ├── Sources/CHackRF           optional dlopen shim over libhackrf
-├── Sources/EngineCore        the engine. Proto-free: it never imports LeylineProto.
-│   ├── CoreProtocols.swift   the contract (hand-written)
+├── Sources/EngineCore        library: the engine. Proto-free: it never imports LeylineProto.
+│   ├── CoreProtocols.swift   the contract (hand-written): the timebase here, and devices, capture,
+│   │                         channels, sinks and jobs in its CoreProtocols+*.swift siblings
 │   ├── Identifiers.swift     ULID + prefixed IDs
 │   ├── Buffers.swift         SampleBuffer / SampleFormat / SampleStorage
 │   ├── Model.swift           DeviceDescriptor, GainElement, ChannelConfig helpers, EngineError codes
 │   ├── Rings.swift           lock-free SPSC rings (audio floats, sample blocks)
 │   ├── Signposts.swift       os_signpost wrappers (no-op off macOS)
-│   ├── BlockingWork.swift    runs non-cancellable blocking calls (device open/close) off the cooperative pool
-│   ├── Devices/              DefaultDeviceRegistry, RTLSDRDevice, RTLTCPDevice, FilePlaybackDevice, IQFile (sidecar format)
+│   ├── BlockingWork.swift    runs non-cancellable blocking calls (device open, close and joins) off
+│   │                         the cooperative pool
+│   ├── Devices/              DefaultDeviceRegistry, RTLSDRDevice, HackRFDevice, RTLTCPDevice,
+│   │                         FilePlaybackDevice, IQFile (sidecar format)
 │   ├── Capture/              DefaultCaptureEngine (actor façade) + CaptureDSPCore (hot path, DSP thread)
 │   ├── Channels/             DefaultChannelEngine (actor façade) + ChannelDSPCore (hot path)
-│   ├── DSP/                  Kernels (Accelerate + portable), FIR, NCO, Channelizer, Demodulators, FFT, SpectrumLadder,
-│   │                         SweepPlan (scan job sweep math), EnergyDetector (carrier detection), SubAudible (CTCSS), DCS,
+│   ├── DSP/                  Kernels (Accelerate + portable), FIR, NCO, Channelizer, Demodulators, FFT,
+│   │                         SpectrumLadder, BandFloor (the band's noise floor), CaptureLevel (rails
+│   │                         and peak), AudioSpectrum (a channel tap's FFT), SweepPlan (scan job sweep
+│   │                         math), EnergyDetector (carrier detection), SubAudible (CTCSS), DCS,
 │   │                         Persistence (phosphor histogram)
 │   └── Sinks/                CoreAudioSink (AVFoundation), NullSink, CallbackSink
-├── Sources/LeylineDaemon     `leylined`: gRPC over UDS; maps EngineCore <-> leyline.v1
-│   ├── DaemonCommand.swift   ArgumentParser entry (--socket, --log-level, --pidfile)
-│   ├── Server.swift          GRPCServer + UDS lifecycle + signals
+├── Sources/LeylineServer     library: the daemon. gRPC over UDS; maps EngineCore <-> leyline.v1
+│   ├── Server.swift          Daemon: GRPCServer + UDS lifecycle, the stop order
+│   ├── Lifecycle.swift       default paths, environment lists, signals, serve-then-teardown
 │   ├── ClientContext.swift   per-RPC client identity (interceptor -> task-local)
-│   ├── Session/              SessionStore actor (devices/captures/channels/sinks tables, events, attribution)
-│   ├── Jobs/                 JobStore (durable job table), ScanRunner (sweep execution), DecodeRunner
-│   │                         (a decode job's plugin and its records), SessionCaptureAllocator
-│   │                         (don't-disturb capture and channel leasing for jobs)
+│   ├── Session/              SessionStore actor (devices/captures/channels/sinks tables, events,
+│   │                         attribution), one SessionStore+<concern>.swift extension per table
+│   ├── Jobs/                 JobStore (the job table) with JobStore+Scan, +Monitor and +Decode;
+│   │                         ScanRunner (sweep execution), MonitorRunner (the stationary band-watch),
+│   │                         DecodeRunner and IQDecodeRunner (a decode job's plugin and its records),
+│   │                         DecodeLiveness, SessionCaptureAllocator (don't-disturb capture and
+│   │                         channel leasing for jobs)
 │   ├── Decoders/             DecoderRegistry (manifests on disk), PluginProcess (the stdio wire),
-│   │                         RecordHub (the live plane), RecordStore/RecordWriter (kept records)
-│   ├── Recording/            RecordRunner (a record job's drain and gate), RecordGateMachine (the
-│   │                         squelch state machine, no DSP), PartWriter (one open file + the
-│   │                         manifest), RecordingStore (the directory, retention, restart repair),
-│   │                         PlaybackEngine + WAVReader (playing a recording back through the
-│   │                         daemon's own audio device)
+│   │                         RecordHub (the live plane), RecordStore/RecordWriter (kept records),
+│   │                         PredicateEval, Notifier
+│   ├── Recording/            JobStore+Record, RecordRunner (a record job's drain and gate),
+│   │                         RecordGateMachine (the squelch state machine, no DSP), PartWriter (one
+│   │                         open file + the manifest), RecordingStore (the directory, retention,
+│   │                         restart repair), PlaybackEngine + WAVReader (playing a recording back
+│   │                         through the daemon's own audio device)
 │   ├── Services/             Control, Telemetry, Bulk, Jobs (scan, monitor, decode and record
 │   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
 │   ├── RememberedDevices.swift  devices.json beside the socket: the rtl_tcp endpoints to re-attach
 │   └── Mapping/              engine <-> proto conversions
+├── Sources/LeylineDaemon     executable `leylined`: DaemonCommand (ArgumentParser: --socket,
+│                             --log-level, --pidfile, ...) and the generated Version.swift
+├── Sources/S2Throughput      executable `s2-throughput`, the S2 harness (../decisions/S2-throughput.md);
+│                             built, not shipped
+├── Sources/FakeDecoder       executable `leyline-fake-decoder`, a decoder plugin that decodes nothing,
+│                             for the decode-job tests; built, not shipped
 ├── Tests/EngineCoreTests     unit tests; fixture round-trips. Most of the target builds and runs on Linux;
 │                             `KernelParityTests` and anything under `#if canImport(Accelerate)` or
 │                             `#if canImport(AVFoundation)` need macOS and do not compile elsewhere.
+├── Tests/LeylineDaemonTests  the daemon in-process over a real socket (`DaemonTestHarness`)
 └── Tests/TestSupport         fakes both test targets drive (the rtl_tcp server); no product depends on it
 ```
 
@@ -82,7 +100,10 @@ There are exactly three kinds of execution context in the engine. Every function
    *swapping* immutable tables (see below), never by mutating shared state under the DSP thread.
 3. **Control plane** — Swift concurrency. `DefaultCaptureEngine`, `DefaultChannelEngine`,
    `DefaultDeviceRegistry` and the daemon's `SessionStore` are actors. They own the hot-path core
-   objects and hand them configuration.
+   objects and hand them configuration. Nothing here blocks a cooperative-pool thread: a driver
+   call that can block (`rtlsdr_open`, a connect) and every join of a device or DSP thread runs
+   through `BlockingWork`, which waits on a thread of its own. The pool has one thread per core,
+   and a few parked joins would otherwise leave no thread for any actor in the daemon.
 
 ### Hot-path rules (invariant 4, enforced)
 
@@ -293,8 +314,8 @@ builds, and the new core's first block ends it with a close record stamped with 
 last block and carrying its duration and peaks so far. That block then decides afresh, so a
 signal at the new frequency opens a new transmission and a quiet one does not. A channel the
 capture no longer covers has no core, and the DSP thread ends its transmission on the next block
-(`ChannelTransmission.noCore`). Until 2026-09-25 no close was sent, so every client's log kept the
-old frequency's transmission running after a retune. Everything in `ChannelTransmission` belongs
+(`ChannelTransmission.noCore`). Without that close, every client's log would keep the old
+frequency's transmission running after a retune. Everything in `ChannelTransmission` belongs
 to the capture's one DSP thread, which is also the telemetry queue's single producer. A channel
 whose squelch is off reports no edges, before or after a retune, because it never announced one.
 `snrDB` is the block's power over the band's floor at the channel's width: the capture's
@@ -305,8 +326,8 @@ dBFS per hertz, in one atomic; each channel adds `10·log10(bandwidth)` once per
 the same number the Mac app's "over noise" and `ley tune`'s auto squelch compute from a 2048-bin
 row (median bin plus `10·log10(bandwidth / bin width)`; the bin count cancels), so the meter and
 the clients agree by construction. NaN until a row has been read, which is the first block of a
-stream. Until 2026-09-19 the floor was the channel's own running minimum over 5 s, which on a
-carrier that never stops is the carrier, so a −12 dBFS signal read 0 dB over noise. The squelch
+stream. The floor is the band's and not the channel's own running minimum, which on a carrier
+that never stops is the carrier: a −12 dBFS signal would read 0 dB over noise. The squelch
 never reads `snrDB`: it compares power to its threshold in dBFS. The FM demodulators keep a
 `DiscriminatorInterval` (sum, count, high and low of the raw discriminator since the last meter,
 folded in where the sub-audible tap reads, ahead of de-emphasis and the high-pass), and the meter
@@ -373,7 +394,8 @@ is once per process, so installing or replacing a library requires a daemon rest
 - Streaming: `rtlsdr_reset_buffer` then `rtlsdr_read_async(cb, ctx, 32, 32768)` on a dedicated
   thread; `stopStreaming` waits for the thread's `started` handshake, calls `rtlsdr_cancel_async`
   until it takes (it is a no-op before the thread reaches `rtlsdr_read_async`) and joins with a
-  bounded wait — never unbounded; a `rtlsdr_read_async` failure clears `streaming`, is exposed as
+  bounded wait — never unbounded, and on a `BlockingWork` thread, since the whole sequence can take
+  about 4 s; a `rtlsdr_read_async` failure clears `streaming`, is exposed as
   `streamError`, and reports `.disconnected` through the state-change hook so the capture detaches
   like a physical unplug. The callback context is an
   `Unmanaged` pointer to the device; the callback must not touch Swift concurrency.
@@ -462,7 +484,8 @@ coverage: `RTLTCPTests` and `RemoteDeviceTests` against `TestSupport`'s fake ser
   clear the fd/thread slots itself (a concurrent `close()` keeps ownership of the socket and the
   reader only signals the join), then report `.disconnected` through the same state-change hook
   `FilePlaybackDevice` uses, so the registry publishes `changed` and the capture detaches. `close()`
-  shuts the socket down and joins the reader without waiting for a read timeout.
+  shuts the socket down and joins the reader without waiting for a read timeout; the join, and
+  `stopStreaming`'s wait for a `deliver` in flight, run on a `BlockingWork` thread.
 - Reconnect: `DefaultDeviceRegistry.poll()` gives every hosted `RTLTCPDevice` in `.disconnected` one
   `open()` attempt per poll (a detached task, so the 5 s connect timeout never blocks the actor; at
   most one attempt in flight per device). On success the entry is `.available` and `arrived` is
@@ -665,7 +688,7 @@ tears the subscription down; a subscription with no `Stream` reader for 10 s is 
 
 ### Jobs service and lease lifecycle
 
-`StartJob(ScanConfig{once})` is implemented (Milestone D.13), and so are `StartJob(DecodeConfig)`
+`StartJob(ScanConfig{once})` is implemented, and so are `StartJob(DecodeConfig)`
 ("Decoders" below), `StartJob(MonitorConfig)` and `StartJob(RecordConfig)` ("Recording" below); a
 `watch` config and `GetTranscript` still return `UNIMPLEMENTED`. A scan job never touches a capture directly
 (invariant 9): it asks `SessionCaptureAllocator` for a range, and the allocator either hands back a
