@@ -1,33 +1,56 @@
-# Leyline
+# Leyline SDR
 
-A native macOS SDR engine with peer clients. A background daemon (`leylined`, Swift) owns the radio
-and does all the signal processing; the `ley` command-line tool (Go) drives it over a Unix socket
-using one gRPC contract, `leyline.v1`. Anything else that speaks the contract — a script, an agent,
-the Mac app — is a peer of the CLI, never a second path into the hardware.
+[![CI](https://github.com/reflexive-labs/leysdr/actions/workflows/ci.yml/badge.svg)](https://github.com/reflexive-labs/leysdr/actions/workflows/ci.yml)
+[![Licence: Apache-2.0 and GPL-3.0-or-later](https://img.shields.io/badge/licence-Apache--2.0%20%7C%20GPL--3.0--or--later-blue)](#contributing-security-licence)
 
-**What works today:** an RTL-SDR or HackRF plugged into the Mac (or an RTL-SDR another machine serves with
-`rtl_tcp`, added by `ley devices attach rtltcp pi.local:1234` and remembered from then on), or an
-IQ recording, through capture, channelizing, NFM / WFM / AM / USB / LSB / CW demodulation,
-squelch, CTCSS detection and the Mac's audio output; live spectrum, waterfall and persistence
-views in the terminal; band-level meters and a few seconds of a channel's waveform; a band scan
-with an energy detector that never guesses a modulation; two channels on one radio; a second
-terminal adjusting the channel the first is playing; recording audio or IQ to files through a
-daemon-side job and playing it back; decoders for APRS, SAME weather alerts and AIS, with
-`ley watch` notifying on matching records; `--json` for scripts and `ley mcp` for agents, which
-serves the same verbs as MCP tools. The Mac app is in progress: built from source with
-`make app-run`, it shows a spectrum and waterfall, plays and tunes a channel, and has an
-inspector for signal, tuning error, deviation and recent transmissions.
+Leyline SDR lets you listen to, scan, record and decode radio on a Mac. It works with an RTL-SDR
+or a HackRF, plugged in or served over the network with `rtl_tcp`. It only receives; it never
+transmits.
 
-**Not yet:** a signed app bundle, the app's lifecycle handling, durable watch jobs and
-transcripts, and the terminal dashboard. `docs/plans/build-order.md` is the order they arrive in
-and `docs/plans/v1-release.md` is the gap analysis for the first shared release.
+**Status:** pre-release. There are no binaries yet; you build it from source.
 
-## Requirements
+**Requirements:** macOS 26 with Xcode 26 (the Swift 6.2 toolchain), Homebrew, and Go 1.25 or
+later. A radio is optional: an IQ recording plays through the same pipeline.
 
-- macOS 26 with Xcode 26 (the Swift 6.2 toolchain).
-- Homebrew, Go 1.25 or later.
-- An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
-  No radio? See "Without a radio" below.
+<!-- screenshot: app window -->
+
+## How it works
+
+A background daemon, `leylined` (Swift), owns the radio and does all the signal processing. The
+`ley` command (Go) drives it over a Unix socket using one gRPC contract, `leyline.v1`. The Mac app,
+a script or an agent speaks the same contract. Each is a peer of `ley`; none has a second path to
+the hardware.
+
+## What works today
+
+- **Radios.** An RTL-SDR or HackRF on USB, an RTL-SDR another machine serves with `rtl_tcp`
+  (`ley devices attach rtltcp pi.local:1234`, remembered from then on), or an IQ recording.
+- **Listening.** NFM, WFM, AM, USB, LSB and CW demodulation, squelch, CTCSS and DCS tone
+  detection, and audio out through the Mac's speakers. Two channels can play from one radio, and a
+  second terminal can adjust the channel the first is playing.
+- **Seeing the band.** Live spectrum, waterfall and persistence views in the terminal, band-level
+  meters, and a few seconds of a channel's waveform.
+- **Scanning.** A band scan with an energy detector that reports what it found and never guesses
+  a modulation, and `ley monitor`, which logs each transmission on a band.
+- **Recording.** Audio or IQ to files through a job the daemon runs, and playback of what was
+  recorded.
+- **Decoding.** APRS, SAME weather alerts and marine AIS, with `ley watch` to notify on matching
+  records.
+- **Bands and bookmarks.** Channel plans for common bands, bookmarks, and CHIRP CSV import.
+- **Scripts and agents.** `--json` on every verb, and `ley mcp`, which serves the same verbs as MCP
+  tools.
+- **The Mac app**, built from source with `make app-run`. It shows a spectrum and waterfall, plays
+  and tunes a channel, records, lists bands and bookmarks, and has an inspector for signal, tuning
+  error, deviation and recent transmissions.
+
+"Where things stand" below lists what is partial or not built yet.
+
+<!-- screenshot: ley spectrum --watch -->
+
+## Receive only
+
+Leyline has no transmit path. Listening is legal in most places, but some countries and states
+restrict decoding, recording or sharing certain transmissions. Check the rules where you are.
 
 ## Install (from source)
 
@@ -37,19 +60,20 @@ brew install librtlsdr                 # for a local RTL-SDR
 brew install hackrf                    # for a local HackRF; install either or both drivers
 git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
+make install-decoders                # the APRS, SAME and AIS decoders
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
 ```
 
 `scripts/bootstrap-mac.sh` runs the same steps; pass `--rtl-only` or `--hackrf-only` to install
-just one native driver. The daemon builds and runs if either or both are absent, and logs each
-unavailable backend once while continuing with the others and with `rtl_tcp`/file radios. Restart
+just one native driver. The daemon builds and runs if either or both drivers are absent. It logs
+each unavailable backend once and carries on with the others, `rtl_tcp` and file radios. Restart
 the daemon after installing a missing library. `ley daemon install --bin …` instead of `start`
 writes a LaunchAgent so the daemon starts at login; after that `ley daemon start|stop|status|logs`
 go through launchd. Starting at login, a radio on another machine over `rtl_tcp`, where the daemon
 keeps its files and uninstalling are in [`docs/guide/install.md`](docs/guide/install.md); when
 something fails, [`docs/guide/troubleshooting.md`](docs/guide/troubleshooting.md). Building for
-development (the gate, `make reload`, the Linux container) is [`docs/dev/setup.md`](docs/dev/setup.md).
+development (the gate, `make reload`, Linux) is [`docs/dev/setup.md`](docs/dev/setup.md).
 
 ## Quickstart
 
@@ -118,45 +142,46 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 | path | what |
 |---|---|
 | `proto/leyline/v1` | the contract: control, telemetry and bulk planes; jobs and resources |
-| `swift/LeylineProto` | SwiftPM package: the generated Swift contract (`make proto`), outside `engine/` so the Apache-2.0 code is outside the GPL directory and both Swift packages can depend on it |
-| `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks), `LeylineDaemon` (`leylined`: services, session store, jobs), the `s2-throughput` spike harness |
-| `go/` | Go module: `pkg/leyline` client library, `cmd/ley`, `cmd/leyfix` (fixture generator and analyser), `internal/fakedaemon` (an in-memory implementation of the contract the CLI tests run against), `internal/e2e` (`ley` driving a real `leylined`) |
+| `engine/` | SwiftPM package: `EngineCore` (devices, capture, DSP, sinks) and `LeylineDaemon` (`leylined`: services, session store, jobs). GPL-3.0-or-later |
+| `app/` | SwiftPM package: the Mac app and its client façade (`docs/dev/app.md`) |
+| `swift/LeylineProto` | SwiftPM package: the generated Swift contract (`make proto`), shared by the engine and the app |
+| `go/` | Go module: the `pkg/leyline` client library, `ley`, the decoders' binaries, `leyfix` (fixture generator), `leyeval` (agent evals), the fake daemon the `ley` tests run against, and the end-to-end tests |
+| `decoders/` | decoder manifests (APRS, SAME, AIS, and the `iqstat` test decoder); `make install-decoders` installs them |
+| `evals/` | scenarios that grade an agent's use of `ley mcp` (`docs/dev/evals.md`) |
+| `scripts/` | setup, code generation, licence checks, bundling the app |
+| `third_party/` | licence texts of the dependencies (`third_party/licenses/MANIFEST.txt`) |
 | `fixtures/` | generated IQ signals with expected demod outputs (`make fixtures`; gitignored) |
-| `docs/` | [`docs/README.md`](docs/README.md) is the map: `guide/` for using Leyline, `reference/` for `ley` and the contract, `design/` for why it is built this way, `dev/` for contributor contracts (engine internals, CLI style), `decisions/`, `plans/` |
+| `docs/` | [`docs/README.md`](docs/README.md) is the map: `guide/` for using Leyline, `reference/` for `ley` and the contract, `design/` for why it is built this way, `dev/` for contributors, `decisions/`, `plans/` |
 
 ## Where things stand
 
-Against [`docs/plans/build-order.md`](docs/plans/build-order.md):
+"Works" means built, tested in CI, and used with a real radio or a recording. The milestone
+detail is [`docs/plans/build-order.md`](docs/plans/build-order.md).
 
-- Device backends: RTL-SDR and HackRF on USB (librtlsdr/libhackrf), and an RTL-SDR another machine serves with
-  `rtl_tcp`. These are supported: the engine tests drive a fake `rtl_tcp` server and
-  the e2e attaches one to the real daemon, on both CI hosts.
-- Milestone A (scaffold, daemon lifecycle, fixtures and file playback): done.
-- Milestone B (device registry and RTL-SDR, capture engine, FFT stream, NFM to CoreAudio): done.
-- Milestone C (live adjust, second-client concurrency, AM/WFM/SSB/CW, two channels): done,
-  C.12 included -- `ley record` writes WAV or raw IQ through a daemon-side job, the squelch gate
-  writes one file per exchange, and `ley recordings` reads the store back through `Resources`.
-- Milestone D: D.13 (the energy detector, the telemetry plane, `ley scan`) done; D.17 (decoders:
-  the plugin contract, the record store, `ley decode`, `ley records`, `ley track`, `ley watch` with
-  predicates and notifiers, `ley devices-seen`/`ley label`, and an IQ input mode) done for APRS,
-  SAME weather alerts and marine AIS, the other four drivers listed in `docs/plans/decoders.md`; D.16
-  (MCP adapter, `ley mcp`) done for the tools the daemon can back, the rest waiting on the milestones
-  `docs/plans/mcp.md` lists; D.14 (terminal dashboard) not started; of D.15 (durable jobs, watch, transcripts) only kept decode
-  jobs surviving a daemon restart is done.
-- Spikes: S3 (USB posture) and S2 (20 MSPS throughput) decided in `docs/decisions/`; S2 sustained
-  the full rate for ten minutes on one fifth of a core, with no overruns and an allocation-free
-  sample path, so the all-Swift engine stands. S1 (latency chain) is the app's first spectrum.
-- Milestone E (the Mac app, `docs/plans/app.md`): E.1 to E.3 done -- the `app/` package, a Swift
-  client façade tested against the real daemon (`docs/dev/app.md`), and a window with the spectrum,
-  the waterfall, click to hear and the layer 1 controls, confirmed on the owner's Mac (the M1 cut).
-  E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`: the channel plans, the
-  sidebar on the spine, Scan band, tone and note, CHIRP import; the window's views await the
-  owner's Mac), the M2 inspector has landed, and recording from the window (E.5) with it;
-  lifecycle (E.6) and the bundle (E.7) are open.
-- Verified on real RF (2026-09-05): built on macOS 26 against a Nooelec RTL-SDR (`ley tune` with
-  audio confirmed by ear), and from Linux over `rtl_tcp`: FFT peaks on known broadcasters, WFM audio
-  with the 19 kHz stereo pilot intact, NFM squelch transitions and a 100 Hz CTCSS tone recovered
-  from a handheld, live `ley set` from a second terminal.
+| feature | status | notes |
+|---|---|---|
+| RTL-SDR on USB | works | tested on real RF with a Nooelec RTL-SDR |
+| HackRF on USB | works | HackRF One and HackRF Pro, through libhackrf |
+| RTL-SDR over `rtl_tcp` | works | no authentication or encryption on the link |
+| IQ file playback | works | `.cf32` with a JSON sidecar; files from other software are not read yet |
+| Demodulation: NFM, WFM, AM, USB, LSB, CW | works | with squelch and audio out on macOS |
+| CTCSS and DCS detection | works | |
+| Terminal views | works | `spectrum`, `waterfall`, `phosphor`, `scope`, `levels`, `waveform` |
+| Band scan and `ley monitor` | works | energy detector; no modulation guess |
+| Two channels on one radio, several clients | works | |
+| Recording and playback | works | audio (WAV) or IQ; a squelch-gated recording writes one file per transmission |
+| Bands, channel plans, bookmarks, CHIRP import | works | in `ley` and the app |
+| Decoders: APRS, SAME, AIS | works | more are planned (`docs/plans/decoders.md`) |
+| `ley watch` notifications | works | webhook, shell command or macOS notification |
+| MCP adapter (`ley mcp`) | partial | resource tools, signal identification and transcripts are planned (`docs/plans/mcp.md`) |
+| Mac app | partial | build from source; does not start the daemon itself yet; no settings inspector |
+| Signed app bundle and installer | planned | the bundle layout exists, signed for local use only |
+| Terminal dashboard | planned | |
+| Durable watch jobs | partial | kept decode jobs survive a daemon restart; other jobs do not |
+| Audio transcripts | planned | |
+| Channel occupancy and burst capture | planned | `docs/plans/band-watching.md` |
+| Audio spectrogram (`ley sonogram`) | planned | |
+| Transmit | not planned | Leyline is receive only |
 
 ## Writing a client
 
@@ -168,9 +193,9 @@ and the fix is one dial option.
 
 ## Contributing, security, licence
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) has the gate and the rules; `AGENTS.md` is the invariant list
-that doubles as the review checklist. [`SECURITY.md`](SECURITY.md) describes what the daemon trusts
-(a local socket, your user, no authentication) and how to report a problem.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) says how to build, test and propose a change.
+[`SECURITY.md`](SECURITY.md) describes what the daemon trusts (a local socket, your user, no
+authentication) and how to report a problem.
 
 Everything here is open source. The engine under `engine/` (`leylined`) is GPL-3.0-or-later because
 it links librtlsdr; everything else, the `leyline.v1` contract, the generated code, the client
