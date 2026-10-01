@@ -3,6 +3,7 @@
 package iqfile
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -81,7 +82,7 @@ func TestRoundTripCF32(t *testing.T) {
 	for {
 		n, err := r.Read(buf)
 		all = append(all, buf[:n]...)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -140,7 +141,7 @@ func TestReadRefusesAnEmptyBuffer(t *testing.T) {
 	}
 	defer r.Close()
 	n, err := r.Read(nil)
-	if n != 0 || err == nil || err == io.EOF {
+	if n != 0 || err == nil || errors.Is(err, io.EOF) {
 		t.Fatalf("Read(nil) = %d, %v; want an error that is not io.EOF", n, err)
 	}
 	if n, err := r.Read(make([]complex64, 16)); n != 16 || err != nil {

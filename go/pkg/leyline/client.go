@@ -5,6 +5,7 @@ package leyline
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -175,7 +176,7 @@ func (c *Client) streamInterceptor(ctx context.Context, desc *grpc.StreamDesc, c
 type errStream struct{ grpc.ClientStream }
 
 func (s *errStream) mapErr(err error) error {
-	if err == nil || err == io.EOF {
+	if err == nil || errors.Is(err, io.EOF) {
 		return err
 	}
 	return FromStatusWithTrailer(err, s.Trailer())
@@ -320,7 +321,7 @@ func pump[T any](ctx context.Context, recv func() (T, error), buffer int) (<-cha
 			m, err := recv()
 			if err != nil {
 				switch {
-				case err == io.EOF:
+				case errors.Is(err, io.EOF):
 					errs <- nil
 				case ctx.Err() != nil:
 					errs <- ctx.Err()
@@ -350,7 +351,7 @@ func (c *Client) WriteParams(ctx context.Context, writes ...*leylinev1.ParamWrit
 	}
 	for _, w := range writes {
 		if err := stream.Send(w); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break // server closed early; CloseAndRecv returns the real status
 			}
 			return nil, err

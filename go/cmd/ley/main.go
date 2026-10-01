@@ -39,7 +39,7 @@ func exitStatus(ctx context.Context, app *cli.App, err error) int {
 	if err == nil {
 		return 0
 	}
-	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || leyline.Code(err) == "CANCELED") {
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || leyline.Code(err) == leyline.CodeCanceled) {
 		fmt.Fprintln(os.Stderr, app.ErrorLine("interrupted"))
 		return cli.ExitInterrupted
 	}

@@ -4,6 +4,7 @@ package fakedaemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -97,7 +98,7 @@ func (d *Daemon) WriteParams(srv grpc.ClientStreamingServer[leylinev1.ParamWrite
 			flush()
 		case err := <-recvErr:
 			flush()
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				return nil
 			}
 			return srv.SendAndClose(&leylinev1.WriteSummary{WritesReceived: received, WritesApplied: applied})
