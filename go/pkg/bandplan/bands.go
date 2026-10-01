@@ -425,7 +425,7 @@ type marineRow struct {
 // and Frequencies", read 2026-09-28). A duplex channel is two entries, `24` (the ship's side)
 // and `24 coast`; a US `A` channel, simplex on the ship's frequency of an ITU duplex channel, is
 // its own entry and comes before the ITU entry that shares its frequency, so a carrier there is
-// named by the US use (the plan's KTD2). Channels 87 and 88 are simplex in both tables now; the
+// named by the US use. Channels 87 and 88 are simplex in both tables now; the
 // former 87B and 88B are AIS 1 and AIS 2, kept under the names radios print with the AIS decoder.
 // 27 and 28 are the US table's duplex pairs: the ITU table has replaced them (WRC-19) and the US
 // table says the FCC has not adopted that yet.
@@ -664,7 +664,7 @@ func BandFor(hz uint64) *Band {
 // channelTolerance is how far a frequency may sit from a plan channel and
 // still be "on" it: the one tolerance the Go and Swift lookups share, chosen
 // so that CB's 10 kHz spacing and GMRS's 12.5 kHz both resolve to the nearer
-// channel (the plan's KTD2).
+// channel.
 const channelTolerance = 6_000
 
 // ChannelAt names the plan channel nearest hz within 6 kHz, with the band or
@@ -672,7 +672,7 @@ const channelTolerance = 6_000
 // only 12.5 kHz apart and a detection can sit inside the tolerance of two. Two
 // entries at equal distance, which marine's US variants make common (22A and
 // ITU 22 share 157.100 MHz), go to the earlier entry in plan order, walking
-// the bands by frequency and then the groups (the plan's KTD2).
+// the bands by frequency and then the groups.
 func ChannelAt(hz uint64) (Band, Channel, bool) {
 	var (
 		bestBand Band

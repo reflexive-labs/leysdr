@@ -10,8 +10,8 @@
 //
 // A plugin's main is two lines: build the manifest, call Main. Everything the
 // daemon fills in later -- record_id, rssi_dbfs, snr_db, job_id, seq,
-// channel_id -- is left alone here, per the plugin wire in
-// docs/plans/decoders.md (DEC-1).
+// channel_id -- is left alone here (docs/reference/writing-a-decoder.md,
+// "The wire").
 package plugin
 
 import (
@@ -43,8 +43,8 @@ type Decoder interface {
 }
 
 // Starter is the optional half of Decoder: a decoder that stamps records with
-// SampleTimeAt needs the capture rate, which only the descriptor carries
-// (span_hz, per DEC-1 in docs/plans/decoders.md).
+// SampleTimeAt needs the capture rate, which only the descriptor carries: its
+// span_hz is the capture's sample rate.
 type Starter interface {
 	Start(desc *leylinev1.StreamDescriptor)
 }
@@ -87,8 +87,7 @@ func RunIQ(ctx context.Context, newDecoder IQFactory) error {
 // It returns nil at end of input: the daemon closing stdin is how a decode job
 // stops, not a failure. It handles an AUDIO descriptor; an IQ plugin calls
 // RunIQStreams. The descriptor's span_hz is the capture's rate, which is what
-// SampleTime counts in (DEC-1: "the descriptor's center_hz and span_hz name the
-// capture rate as span_hz").
+// SampleTime counts in.
 func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factory) error {
 	return runFramed(ctx, r, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
 		audio := desc.GetAudio()
@@ -124,7 +123,7 @@ func RunIQStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder IQFa
 		}
 		// For capture IQ the IQ sample rate and the capture rate (span_hz) are
 		// equal, so a within-frame offset maps 1:1; a decoder still stamps via
-		// SampleTimeAt for consistency with the audio path (DEC-1).
+		// SampleTimeAt for consistency with the audio path.
 		dec := newDecoder(uint32(iq.GetSampleRate()))
 		if st, ok := dec.(Starter); ok {
 			st.Start(desc)
@@ -242,7 +241,7 @@ func decodeIQPayload(dst []complex64, payload []byte) []complex64 {
 }
 
 // SampleTimeAt places an audio-sample offset inside a frame on the capture's
-// timeline. The formula is DEC-1's: sample_index + offset·capture_rate/audio_rate,
+// timeline: sample_index + offset·capture_rate/audio_rate,
 // because SampleTime counts capture samples everywhere (invariant 5) and the
 // plugin only ever sees decimated audio.
 func SampleTimeAt(frameTime *leylinev1.SampleTime, offsetSamples int, audioRate, captureRate float64) *leylinev1.SampleTime {

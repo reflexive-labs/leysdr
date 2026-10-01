@@ -36,7 +36,7 @@ func parsePositionlessWeather(rec *leylinev1.DecodeRecord, s string) {
 }
 
 // parseWeatherFields reads the letter-prefixed groups of a weather report and
-// returns what was left over. Units follow the plan's field names: degrees
+// returns what was left over. Units follow the record's field names: degrees
 // Celsius, km/h, millimetres, hPa.
 func parseWeatherFields(rec *leylinev1.DecodeRecord, s string) string {
 	var rest strings.Builder

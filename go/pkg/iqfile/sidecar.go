@@ -49,7 +49,7 @@ type MeterExpect struct {
 // DecodeExpect describes what a decoder run over the channel must produce. It
 // is what a fixture carrying a data mode asserts instead of a tone: the
 // protocol whose plugin is expected to read it, how many records it holds, and
-// which transmitters they come from (docs/plans/decoders.md, DEC-3).
+// which transmitters they come from.
 type DecodeExpect struct {
 	// Protocol is the decoder manifest's name, which is also DecodeRecord.protocol.
 	Protocol string `json:"protocol"`

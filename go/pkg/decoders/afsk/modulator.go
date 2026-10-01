@@ -5,8 +5,7 @@ package afsk
 import "math"
 
 // Modulator generates continuous-phase Bell 202 AFSK. It exists so the tests
-// and the aprs_afsk fixture can make signal without a radio
-// (docs/plans/decoders.md, DEC-2 and DEC-3).
+// and the aprs_afsk fixture can make signal without a radio.
 type Modulator struct {
 	rate      float64
 	amplitude float64

@@ -108,8 +108,8 @@ func (c *Client) SetPlaybackPaused(ctx context.Context, playbackID string, pause
 	return c.Control.SetPlaybackPaused(ctx, &leylinev1.SetPlaybackPausedRequest{PlaybackId: playbackID, Paused: paused})
 }
 
-// NothingHeard is the status_detail of a record job that ended with no part
-// written. The daemon discards such a recording, so its URI resolves to
+// NothingHeard is the status_detail the daemon sets, word for word, on a record
+// job that ended with no part written; clients compare against it. The daemon discards such a recording, so its URI resolves to
 // JOB_NOT_FOUND; a client says so rather than reading a manifest that is gone
 // (docs/design/recording.md, "Nothing heard").
 const NothingHeard = "nothing was heard"

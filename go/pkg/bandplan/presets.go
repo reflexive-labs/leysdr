@@ -21,7 +21,7 @@ import (
 type Preset struct {
 	// Name is the plan-prefixed alias (wx3, marine16, cb19, murs1; GMRS keeps
 	// ch17): the one word that resolves without a band and the one every
-	// table prints (the plan's KTD1).
+	// table prints.
 	Name string
 	// Aliases start with the name the service's radios print (WX3, 16) when
 	// it differs from Name, then the entry's other names. A bare number

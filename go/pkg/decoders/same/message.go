@@ -58,7 +58,7 @@ func (m *Message) RawList() string {
 // Parse turns a decoded header ("ZCZC-ORG-EEE-...-CALLSIGN-", with or without
 // the trailing dash) into a Message. The issue time carries no year, so it is
 // resolved against the current UTC year, and the validity window is the issue
-// time plus the purge duration (docs/plans/decoders.md, DEC-9b).
+// time plus the purge duration.
 func Parse(header string) (*Message, error) {
 	return parseAt(header, time.Now().UTC())
 }

@@ -2,7 +2,7 @@
 
 // Package ax25 deframes and frames AX.25 over HDLC: flag detection, bit
 // stuffing, the X.25 FCS, and the address field. It is the layer between the
-// afsk bit stream and the aprs parser (docs/plans/decoders.md, DEC-2).
+// afsk bit stream and the aprs parser.
 package ax25
 
 import (
