@@ -270,7 +270,7 @@ CLI behaviour tested against the wrong response:
 | REL-16 | two plan files cite review reports under `/tmp` on one machine; their `#N` references resolve nowhere | |
 | REL-17 | trademark check outstanding (D3) | |
 | REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`aa88c59`) | — |
-| REL-19 | `engine/launchd/com.leysdr.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
+| REL-19 | `engine/launchd/com.leyline.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
 | REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails with a clear message; stubs say they are unimplemented | — |
 | REL-24 | the repo root is written for an agent (CLAUDE.md, moat.yaml), not a person | |
 | REL-26 | S1/S2 never measured on hardware (D5) | |
@@ -337,7 +337,7 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
   `-v`), which is why `make swift-test` and `make e2e` are the gate.
 - `docs/plans/archive/engine-review-fixes.md` and `docs/plans/archive/cli-review-fixes.md` headers: the review reports were
   ephemeral; the `#N` numbers are kept because the commit messages cite them.
-- Delete `engine/launchd/com.leysdr.daemon.plist.template` (REL-19): `ley daemon install` writes
+- Delete `engine/launchd/com.leyline.daemon.plist.template` (REL-19): `ley daemon install` writes
   the plist from `go/internal/cli/daemon.go`, and the template disagrees with it.
 - `docs/guide/using-ley.md`: a section for `ley waterfall` and `ley phosphor` (what question each answers,
   from `docs/design/signal-views.md` and `docs/design/band-watching.md`), and the two factual fixes.
