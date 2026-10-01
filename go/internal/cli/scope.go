@@ -403,8 +403,6 @@ func runScope(ctx context.Context, s *verbSession, o scopeOptions) error {
 		w = newChartWriter(s.app, out, true, o.rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	window := o.windowMs * int(rate) / 1000
 	if window < 1 {
 		window = 1
@@ -422,18 +420,13 @@ func runScope(ctx context.Context, s *verbSession, o scopeOptions) error {
 	meterHz := math.NaN()
 	scaler := newScopeScaler(o.scale, interval)
 	frames := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			if w != nil {
-				w.idle()
-			}
-		case m, ok := <-msgs:
-			if !ok {
-				msgs, tone, muted, meterHz = nil, nil, false, math.NaN()
-				continue
+	return liveLoop{
+		w:         w,
+		telemetry: msgs,
+		onTelemetry: func(m *leylinev1.TelemetryMsg) (bool, error) {
+			if m == nil {
+				tone, muted, meterHz = nil, false, math.NaN()
+				return false, nil
 			}
 			switch b := m.Body.(type) {
 			case *leylinev1.TelemetryMsg_SubAudible:
@@ -442,16 +435,17 @@ func runScope(ctx context.Context, s *verbSession, o scopeOptions) error {
 				muted = !b.Meter.GetSquelchOpen()
 				meterHz = b.Meter.GetFreqErrorHz()
 			}
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return scopeEnd(ctx, sub.Err(), frames)
-			}
+			return false, nil
+		},
+		frames: sub.Frames,
+		end:    func() error { return scopeEnd(ctx, sub.Err(), frames) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			buf = append(buf, leyline.DecodeAudio(fr.Payload, format)...)
 			if keep := 2 * window; len(buf) > keep {
 				buf = append(buf[:0], buf[len(buf)-keep:]...)
 			}
 			if len(buf) < window || time.Since(last) < interval {
-				continue
+				return false, nil
 			}
 			last = time.Now()
 			start := len(buf) - window
@@ -472,7 +466,7 @@ func runScope(ctx context.Context, s *verbSession, o scopeOptions) error {
 				}
 				b, err := json.Marshal(row)
 				if err != nil {
-					return err
+					return true, err
 				}
 				out.Write(b)
 				out.WriteByte('\n')
@@ -487,14 +481,12 @@ func runScope(ctx context.Context, s *verbSession, o scopeOptions) error {
 				}), "")
 			}
 			if err := out.Flush(); err != nil {
-				return err
+				return true, err
 			}
 			frames++
-			if o.count > 0 && frames >= o.count {
-				return nil
-			}
-		}
-	}
+			return o.count > 0 && frames >= o.count, nil
+		},
+	}.run(ctx)
 }
 
 // scopeEnd turns the end of the audio stream into what to do next, by the one

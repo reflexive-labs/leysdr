@@ -269,8 +269,6 @@ func runWaveform(ctx context.Context, s *verbSession, o waveformOptions) error {
 		w = newChartWriter(s.app, out, true, o.rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	interval := time.Duration(float64(time.Second) / o.rate)
 	frame := waveformFrame{
 		cols: make([]waveformCol, view.cols()), tap: tap, what: what,
@@ -296,32 +294,27 @@ func runWaveform(ctx context.Context, s *verbSession, o waveformOptions) error {
 		w.frame(view.render(frame, scaler.next(waveformPeak(frame.cols))), "")
 		return out.Flush()
 	}
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			if w != nil {
-				w.idle()
-			}
-		case m, ok := <-msgs:
-			if !ok {
+	return liveLoop{
+		w:         w,
+		telemetry: msgs,
+		onTelemetry: func(m *leylinev1.TelemetryMsg) (bool, error) {
+			if m == nil {
 				// The telemetry stream ended: a header that kept showing the
 				// squelch, and columns kept blank because of it, would be
 				// drawn from a stale reading (scope and levels forget theirs
 				// the same way).
-				msgs = nil
 				frame.forgetTelemetry()
-				continue
+				return false, nil
 			}
 			if b, is := m.Body.(*leylinev1.TelemetryMsg_Meter); is {
 				frame.squelchOpen, frame.squelchKnown = b.Meter.GetSquelchOpen(), true
 				acc.open = acc.open || frame.squelchOpen
 			}
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return waveformEnd(ctx, sub.Err(), cols)
-			}
+			return false, nil
+		},
+		frames: sub.Frames,
+		end:    func() error { return waveformEnd(ctx, sub.Err(), cols) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			index := fr.Time.GetSampleIndex()
 			for _, v := range leyline.DecodeAudio(fr.Payload, format) {
 				if acc.n == 0 {
@@ -346,26 +339,27 @@ func runWaveform(ctx context.Context, s *verbSession, o waveformOptions) error {
 						RmsDbfs: col.rmsDbfs, SquelchOpen: col.open,
 					})
 					if err != nil {
-						return err
+						return true, err
 					}
 					out.Write(b)
 					out.WriteByte('\n')
 					if err := out.Flush(); err != nil {
-						return err
+						return true, err
 					}
 				}
 				cols++
 				if o.count > 0 && cols >= o.count {
-					return draw()
+					return true, draw()
 				}
 				if time.Since(last) >= interval {
 					if err := draw(); err != nil {
-						return err
+						return true, err
 					}
 				}
 			}
-		}
-	}
+			return false, nil
+		},
+	}.run(ctx)
 }
 
 // waveformEnd turns the end of the audio stream into what to do next, by the

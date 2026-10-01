@@ -137,33 +137,24 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	defer out.Flush()
 	w := newChartWriter(app, out, true, o.rate)
 	defer w.finish()
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	n := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			w.idle()
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return spectrumEnd(ctx, "persistence", sub.Err(), n)
-			}
+	return liveLoop{
+		w:      w,
+		frames: sub.Frames,
+		end:    func() error { return spectrumEnd(ctx, "persistence", sub.Err(), n) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			h, ok := leyline.DecodePersistence(fr.Payload, int(p.GetBins()), int(p.GetLevels()))
 			if !ok {
-				continue
+				return false, nil
 			}
 			w.frame(view.render(h), "")
 			if err := out.Flush(); err != nil {
-				return err
+				return true, err
 			}
 			n++
-			if o.count > 0 && n >= o.count {
-				return nil
-			}
-		}
-	}
+			return o.count > 0 && n >= o.count, nil
+		},
+	}.run(ctx)
 }
 
 // firstFloorDb takes one FFT row and returns its median bin: the noise floor
