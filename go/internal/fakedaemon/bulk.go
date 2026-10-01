@@ -126,8 +126,8 @@ func audioSpectrumBins(bins uint32) uint32 {
 	return maxAudioSpectrumBins
 }
 
-// Subscribe implements Bulk: answers with the authoritative descriptor. v0
-// rules: GRPC only (SHM_RING downgraded), LIVE only, LATEST_WINS default.
+// Subscribe implements Bulk: answers with the authoritative descriptor. As in
+// the daemon: GRPC only (SHM_RING downgraded), LIVE only, LATEST_WINS default.
 func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest) (*leylinev1.StreamDescriptor, error) {
 	d := b.d
 	d.touchUnary(clientFrom(ctx))
@@ -209,7 +209,7 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 func negotiateAudio(ctx context.Context, req *leylinev1.SubscribeRequest, ch *leylinev1.Channel, c *capture, desc *leylinev1.StreamDescriptor) error {
 	a := req.GetAudio()
 	rate := audioRate(c.GetSampleRate())
-	// No resampling in v0 (engine parity): only the channel's own rate is served.
+	// No resampling, as in the engine: only the channel's own rate is served.
 	if a.GetSampleRate() != 0 && a.GetSampleRate() != rate {
 		return fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
 			fmt.Sprintf("audio sample_rate %d unavailable; channel produces %d Hz (request 0 to accept it)", a.GetSampleRate(), rate)))
@@ -355,8 +355,8 @@ func negotiatePersistence(ctx context.Context, req *leylinev1.SubscribeRequest, 
 // negotiateIQ answers an IQ subscription: raw CF32 at the capture's native rate only. d.mu is
 // held.
 func negotiateIQ(ctx context.Context, req *leylinev1.SubscribeRequest, c *capture, desc *leylinev1.StreamDescriptor) error {
-	// v0 IQ contract (engine parity with StreamRegistry.subscribe): raw CF32 at the capture's
-	// native rate only. Anything else is refused rather than silently overridden.
+	// The engine's IQ contract (StreamRegistry.subscribe): anything else is refused rather than
+	// silently overridden.
 	iq := req.GetIq()
 	if format := iq.GetFormat(); format != leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED && format != leylinev1.SampleFormat_CF32 {
 		return fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,

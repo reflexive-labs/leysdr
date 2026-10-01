@@ -253,7 +253,7 @@ func (d *Daemon) CreateChannel(ctx context.Context, req *leylinev1.CreateChannel
 		Agc:         leylinev1.GainMode_AUTO,
 		State:       leylinev1.ChannelState_CHANNEL_ACTIVE,
 		// Sub-audible detection is on for NFM, the only mode CTCSS is sent under, and a mode
-		// write re-decides it (writes.go), as the daemon does since 2026-09-20.
+		// write re-decides it (writes.go), as the daemon does.
 		SubaudibleDetect: mode == leylinev1.DemodMode_NFM,
 		Persistent:       req.Persistent,
 		RequiredHz:       req.RequiredHz,
@@ -284,8 +284,8 @@ func (d *Daemon) DestroyChannel(ctx context.Context, req *leylinev1.DestroyChann
 }
 
 // AttachSink implements Control. system_audio is accepted (the fake "plays"
-// nothing but counts it in activity); stream and file sinks are UNIMPLEMENTED
-// in v0, as in the Swift daemon.
+// nothing but counts it in activity); stream and file sinks are UNIMPLEMENTED,
+// as in the Swift daemon.
 func (d *Daemon) AttachSink(ctx context.Context, req *leylinev1.AttachSinkRequest) (*leylinev1.Sink, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)

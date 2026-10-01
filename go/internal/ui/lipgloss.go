@@ -92,18 +92,17 @@ func (s Style) ink(st lipgloss.Style, text string) string {
 // levelStops is the ramp of section 3a of docs/dev/cli-style.md as RGB: teal
 // at the noise floor, then green, amber, orange and a salmon red at full
 // scale. The hue sweeps monotonically from cold to hot. The stops are the
-// brand's terminal ramp, sampled from the design system's dashboard mock and
-// adopted on 2026-09-14 with a known trade-off: they are tuned for a dark
+// brand's terminal ramp, sampled from the design system's dashboard mock, with
+// a known trade-off: they are tuned for a dark
 // ground, and ley is forbidden from asking which ground it is on (no OSC
 // query, no HasDarkBackground). Every stop clears 3.9:1 against #1e1e1e; on
 // white the cold end drops to 2.6:1, so a light terminal reads the noise
 // floor faint. Level is carried by height and texture as well as hue, which
-// is what keeps that chart readable. The previous ramp held every stop in
-// one luminance band so both grounds cleared 3.2:1, and read as thin on a
-// dark terminal; the trade was made with both renders side by side.
-// level_contrast_test.go holds the dark bar and a floor on white, so no
-// future stop can drift to invisible on either: an early saturated
-// {0,0,160} cold end was 1.2:1 on a dark terminal and hid most of every chart.
+// is what keeps that chart readable. Holding every stop in one luminance band
+// clears 3.2:1 on both grounds but reads as thin on a dark terminal.
+// level_contrast_test.go holds the dark bar and a floor on white, so no stop
+// can drift to invisible on either: a saturated {0,0,160} cold end is 1.2:1
+// on a dark terminal and hides most of every chart.
 var levelStops = [5][3]float64{
 	{88, 176, 160}, // teal
 	{104, 160, 96}, // green

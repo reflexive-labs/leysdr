@@ -319,7 +319,7 @@ func syntheticPower(now time.Time) float64 {
 // deviation separates a real 100.0 Hz PL from 50 Hz mains hum, so the fake sends a deviation a
 // transmitter would. A DCS code, when the carrier sends one, is reported in place of any tone:
 // no tone was measured, so tone_hz and tone_snr_db stay NaN, and the deviation is the bit
-// amplitude the owner's handheld sends (docs/plans/signal-views.md, SV-7).
+// amplitude a recorded GMRS handheld sends.
 func subAudibleReport(channelID string, toneHz float64, code *DCSCode, open bool) *leylinev1.SubAudible {
 	sa := &leylinev1.SubAudible{
 		ChannelId:      channelID,

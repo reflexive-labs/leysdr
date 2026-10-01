@@ -284,7 +284,7 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		j.seq++
 		rec.Seq = j.seq
 		d.publishRecord(j, rec)
-		// The liveness the daemon carries in status_detail (DEC-23): the count and the age of the
+		// The liveness the daemon carries in status_detail: the count and the age of the
 		// last record. The detail moves on every record; the Job event that carries it goes out
 		// for the first record and then every fifth, the daemon's timer at this record rate.
 		j.proto.StatusDetail = fmt.Sprintf("decoding %s on %s: %s, last just now", man.GetName(),

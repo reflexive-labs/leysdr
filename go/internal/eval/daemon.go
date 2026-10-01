@@ -74,7 +74,7 @@ func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
 	}
 	d.logBuf = f
 	// --no-hardware: the machine's own dongles stay out of the run. An agent that tunes "146.52"
-	// with no device named gets the fixture, not the owner's radio, and nothing on the air can
+	// with no device named gets the fixture, not the machine's radio, and nothing on the air can
 	// leak into a graded answer.
 	args := []string{"--socket", d.socket, "--store", d.store, "--log-level", "info", "--no-hardware"}
 	if env.Decoders != "" {

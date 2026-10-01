@@ -329,7 +329,7 @@ func carrierAt(hz uint64) (carrierHz uint64, tone float64, ok bool) {
 
 // subTone is what the carrier a channel at hz is sitting on sends below the voice: its CTCSS
 // tone, or the DCS code Options.DCS puts on it in its place. A DCS carrier reports no CTCSS tone,
-// as the daemon suppresses the CTCSS claim while DCS is locked (docs/plans/signal-views.md, SV-7).
+// as the daemon suppresses the CTCSS claim while DCS is locked (docs/design/signal-views.md, "DCS").
 func (d *Daemon) subTone(hz uint64) (tone float64, code *DCSCode) {
 	at, tone, ok := carrierAt(hz)
 	if !ok {

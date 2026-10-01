@@ -24,9 +24,8 @@ type packet struct {
 // The pattern is one second long and repeats, so a longer fixture holds the
 // same three packets again rather than trailing off into silence. The silence
 // between packets is whatever the second has left over after the frames, which
-// is about 17 ms: at 1200 baud the three frames are already 0.93 s, and the
-// 200 ms docs/plans/decoders.md asked for does not exist inside a one-second
-// fixture. Twenty bit times is ample for HDLC to resynchronise.
+// is about 17 ms: at 1200 baud the three frames are already 0.93 s, so a
+// 200 ms gap does not fit inside a one-second fixture. Twenty bit times is ample for HDLC to resynchronise.
 type afskPacket struct {
 	rate, carrierHz, devHz, dbfs float64
 	packets                      []packet

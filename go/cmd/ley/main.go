@@ -29,17 +29,16 @@ func run() int {
 	return exitStatus(ctx, app, cli.Execute(ctx, app, os.Args[1:]))
 }
 
-// exitStatus maps Execute's error to a process status, per the taxonomy in
-// docs/reference/cli.md and `ley help scripting`: 0 ok, 1 daemon/runtime error,
-// 2 usage error (bad flag, unknown verb or parameter), 3 daemon not running,
-// 130 interrupted by Ctrl-C before the live phase (a verb whose live phase
-// was interrupted returns nil and so exits 0). Verbs carry 2 and 3 as
-// cli.ExitError; everything else is 1. The line takes stderr's resolved ink
-// (plain when the style never resolved, as for a flag error). An interrupt
-// shows up either as
-// context.Canceled in the chain or as a CANCELED daemon error (gRPC turns a
-// cancelled call context into a Canceled status); both count only while the
-// signal context is actually cancelled, so a stray CANCELED stays exit 1.
+// exitStatus maps Execute's error to a process status and prints its line, per the taxonomy in
+// docs/reference/cli.md and `ley help scripting`: 0 ok, 1 daemon or runtime error, 2 usage
+// error (bad flag, unknown verb or parameter), 3 daemon not running, 130 interrupted by Ctrl-C
+// before the live phase. A verb whose live phase was interrupted returns nil and so exits 0.
+// Verbs carry 2 and 3 as cli.ExitError; everything else is 1.
+//
+// The error line takes stderr's resolved ink, which is plain when the style never resolved (a
+// flag error). An interrupt arrives either as context.Canceled in the chain or as a CANCELED
+// daemon error, because gRPC turns a cancelled call context into a Canceled status. Both count
+// as an interrupt only while the signal context is cancelled, so a stray CANCELED exits 1.
 func exitStatus(ctx context.Context, app *cli.App, err error) int {
 	if err == nil {
 		return 0
