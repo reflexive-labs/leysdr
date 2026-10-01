@@ -127,8 +127,8 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	cmd.Flags().StringVar(&partStr, "part", "", "cut a new file every so often, e.g. 60s (default: audio is one file, IQ is cut every 60s)")
 	cmd.Flags().BoolVar(&o.listen, "listen", false, "also play what is being recorded through the speakers, so you can hear it go in (not with --iq or --detach)")
 	// Audio is what record writes unless --iq says otherwise, so this asks for the default. It is
-	// accepted because the V0 story spells the pair `--iq` and `--audio`
-	// (docs/plans/user-stories.md) and a user following it should not get "unknown flag".
+	// accepted because the user stories spell the pair `--iq` and `--audio`
+	// (docs/plans/user-stories.md), and a user following them should not get "unknown flag".
 	cmd.Flags().BoolVar(&o.audio, "audio", false, "record demodulated audio (the default; --iq records raw samples instead)")
 	_ = cmd.Flags().MarkHidden("audio")
 	cmd.Flags().BoolVar(&o.detach, "detach", false, "start the recording and exit, printing its job id and URI (for scripts; 'ley jobs cancel' stops it)")

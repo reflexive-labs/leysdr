@@ -173,8 +173,8 @@ func scopeMutedNote(width int) []string {
 
 // dcsHeader is the DCS code for a view's header, "023" or "023 inverted", or
 // nothing when the daemon reports no code. The JSON rows carry no code: tone_hz
-// is a CTCSS tone's, and the code is the telemetry's (docs/plans/signal-views.md,
-// SV-7).
+// is a CTCSS tone's, and the code is the telemetry's (docs/design/signal-views.md,
+// "DCS").
 func dcsHeader(sa *leylinev1.SubAudible) string {
 	if sa == nil || sa.Kind != leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS {
 		return ""

@@ -77,8 +77,8 @@ type verbSession struct {
 	failureNote string
 	// bandNote is what the same row shows (bandWords), or "": the one line a
 	// live tune's banner carries about the band, said once at tune and never
-	// again in the session (plans/app.md, M2-10). Clipping is not in it: a
-	// live tune leaves that to clip, which says it once it has lasted.
+	// again in the session. Clipping is not in it: a live tune leaves that to
+	// clip, which says it once it has lasted.
 	bandNote string
 	// clip is the hold on the capture's CaptureLevel readings in a live tune.
 	clip clipHold

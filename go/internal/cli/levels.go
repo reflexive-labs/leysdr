@@ -280,10 +280,8 @@ func runLevels(ctx context.Context, s *verbSession, o levelsOptions) error {
 			what, scopeTapName(tap), s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	}
 	// Keep the event stream flowing (and the mirror current) while frames are
-	// drawn; the drain owns the mirror, so it starts after the last read of it
-	// and stops before teardown.
-	// The full scale is read from the channel before the drain starts: the drain owns the mirror
-	// from then on, and the race detector flagged a channel event folding in during this read.
+	// drawn. The drain owns the mirror while it runs, so the full scale is read
+	// from the channel before it starts, and it stops before teardown.
 	fullScaleHz := scopeFullScaleHz(nil, s.Channel)
 	stopDrain := s.DrainEvents()
 	defer stopDrain()

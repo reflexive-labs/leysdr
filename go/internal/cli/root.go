@@ -814,8 +814,7 @@ func orientDaemonLine(s ui.Style, d *leylinev1.DaemonInfo) string {
 
 // renderOrientation renders the orientation screen for one state snapshot:
 // daemon status, devices, what is playing, and the next commands chosen from
-// the state. err is the daemon probe's failure (state is nil then). The V0.5
-// dashboard reuses this for its no-daemon/no-device states.
+// the state. err is the daemon probe's failure (state is nil then).
 func renderOrientation(s ui.Style, state *leylinev1.GetStateResponse, err error) string {
 	var b strings.Builder
 	next := func(pairs ...string) {

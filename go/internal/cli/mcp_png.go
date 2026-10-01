@@ -14,8 +14,8 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
-// The snapshot PNG is the one picture the adapter draws (docs/plans/mcp.md,
-// MCP-6): a spectrum row the daemon already computed, rendered as pixels so
+// The snapshot PNG is the one picture the adapter draws: a spectrum row the
+// daemon already computed, rendered as pixels so
 // an agent that can look at an image sees what `ley spectrum` shows a person.
 // It draws the trace, not the area, on a dark ground, with the same five-stop
 // level ramp as the terminal chart, so a level is the same colour in both.

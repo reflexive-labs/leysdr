@@ -539,7 +539,7 @@ func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 			}
 			// One line when the hold raises clipping, carrying the reading
 			// that raised it, and nothing when it clears: the transmission's
-			// own line already carries its peak (plans/app.md, M2-10).
+			// own line already carries its peak.
 			if s.clip.fold(b.CaptureLevel, m.Time, leyline.ChannelCaptureRate(s.State, s.Channel)) {
 				if note := clippingWords(b.CaptureLevel, s.Capture.GetGains(), s.device.GetGainElements()); note != "" {
 					clearLine()

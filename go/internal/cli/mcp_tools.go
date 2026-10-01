@@ -26,10 +26,10 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
-// The tool table of docs/plans/mcp.md, in the order an agent reads it: orient,
+// The tool table (docs/reference/mcp.md, "Tools"), in the order an agent reads it: orient,
 // control, observe, decode, record, jobs. Each tool names the RPC it maps onto
 // and the `ley` verb that mirrors it, and returns that verb's `--json` shape.
-// The blocked tools of the plan (get_transcript, identify_signal,
+// The tools the daemon cannot back yet (get_transcript, identify_signal,
 // lookup_identity, whats_out_there) are not registered: a tool that only
 // refuses wastes an agent's context, and the server's instructions list what
 // is not here yet.
@@ -152,7 +152,7 @@ func (srv *mcpServer) registerTools() {
 // gainSchema is the input schema the SDK would infer for a tool's arguments, with the gain field
 // described by gainHelp and the tool's own default after it. A struct tag cannot name a constant,
 // and the four tools that take a gain (tune, listen_summary, record, scan) describe it in the same
-// sentence as every --gain (plans/v1-release.md, R-23).
+// sentence as every --gain.
 func gainSchema[T any](tail string) *jsonschema.Schema {
 	sch, err := jsonschema.For[T](&jsonschema.ForOptions{})
 	if err != nil {
@@ -562,7 +562,7 @@ type listenSummaryArgs struct {
 }
 
 // listenMaxSeconds bounds a listen_summary, because a tool call that runs for
-// an hour blocks the agent; a long watch is a job (Milestone D.15).
+// an hour blocks the agent; a long watch is a job.
 const listenMaxSeconds = 300
 
 // meterStats is the listen_summary's reading of the meter: a client-side
@@ -754,8 +754,8 @@ func (sum *listenSummary) apply(m *leylinev1.TelemetryMsg) {
 		sum.transcript.Segments = append(sum.transcript.Segments, seg)
 	case *leylinev1.TelemetryMsg_SubAudible:
 		// A report that found a code beats one that found nothing, and DCS beats CTCSS: the
-		// daemon suppresses the CTCSS claim while DCS is locked (docs/plans/signal-views.md,
-		// SV-7), so a CTCSS report next to a DCS one is from before the lock or after it, and
+		// daemon suppresses the CTCSS claim while DCS is locked (docs/design/signal-views.md,
+		// "DCS"), so a CTCSS report next to a DCS one is from before the lock or after it, and
 		// the code is the answer. Among reports of one kind the latest wins.
 		if subAudibleRank(b.SubAudible) >= subAudibleRank(sum.tone) {
 			sum.tone = b.SubAudible

@@ -96,10 +96,10 @@ func (s *verbSession) writeGain(ctx context.Context, g units.GainSetting) error 
 	return nil
 }
 
-// stageGainWords is the one way a capture's gain prints, wherever it prints (plans/v1-release.md,
-// R-23): "gain 28 dB" or "gain auto" on a radio with one stage, every stage by name on a radio
-// with several ("gain LNA 0 dB, VGA 20 dB, AMP off"), because "gain 8.0 dB" on a HackRF read as
-// the radio's whole gain when it was the LNA alone (plans/app.md, M2-10). Names are the daemon's
+// stageGainWords is the one way a capture's gain prints, wherever it prints: "gain 28 dB" or
+// "gain auto" on a radio with one stage, every stage by name on a radio with several ("gain LNA
+// 0 dB, VGA 20 dB, AMP off"), because "gain 8.0 dB" on a HackRF reads as the radio's whole gain
+// when it is the LNA alone. Names are the daemon's
 // spelling. els is the device's gain elements, which is how a two-value stage is known to be a
 // switch; without them (the device is gone) such a stage prints its level ("AMP 11 dB").
 func stageGainWords(gains []*leylinev1.GainState, els []*leylinev1.GainElement) string {

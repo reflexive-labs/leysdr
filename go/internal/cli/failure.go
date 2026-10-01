@@ -136,9 +136,9 @@ func gainAuto(gains []*leylinev1.GainState) bool {
 
 // switchStage reports whether a gain element is a two-value switch rather
 // than a gain to set: exactly two table entries and no step, as a HackRF
-// advertises its AMP (0 or 11 dB). A switch is left out of "the lowest gain",
-// because the HackRF at LNA 8, VGA 20 and the AMP off was once told it was at
-// its lowest (plans/app.md, M2-10).
+// advertises its AMP (0 or 11 dB). A switch is left out of "the lowest gain":
+// counted in, it would tell a HackRF at LNA 8, VGA 20 and the AMP off that it
+// was at its lowest.
 func switchStage(el *leylinev1.GainElement) bool {
 	return len(el.GetValidDb()) == 2 && el.GetStepDb() == 0
 }

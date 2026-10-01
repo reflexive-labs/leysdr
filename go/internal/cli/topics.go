@@ -236,8 +236,8 @@ ripple, a carrier in CW is a sine, NFM voice is a voice.
 }
 
 // gainHelp is the one sentence every place that takes a gain describes it with: --gain on every
-// verb, 'ley set gain', and the gain field of the MCP tune, listen_summary, record and scan tools
-// (plans/v1-release.md, R-23). 'ley help gain' is the one place the syntax is explained.
+// verb, 'ley set gain', and the gain field of the MCP tune, listen_summary, record and scan
+// tools. 'ley help gain' is the one place the syntax is explained.
 const gainHelp = "receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain)"
 
 func topicGain() string {

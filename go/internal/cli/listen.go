@@ -202,7 +202,7 @@ func runListen(ctx context.Context, s *verbSession, o *tuneOptions, lo listenOpt
 	defer stop()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// Rate 0 accepts the channel's own audio rate (v0 serves no other) and
+	// Rate 0 accepts the channel's own audio rate (the daemon serves no other) and
 	// UNSPECIFIED takes the daemon's default format; the descriptor says what
 	// it settled on and every row repeats it.
 	sub, err := s.Client.SubscribeAudio(sctx, s.Channel.ChannelId, 0, leylinev1.AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED)
