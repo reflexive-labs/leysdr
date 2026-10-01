@@ -86,7 +86,7 @@ headers everywhere, `make license-check` in the gate and CI. REL-1 and REL-2 are
 release." Not recorded as done. The name is now in the proto package, the launchd label
 (`com.leysdr.daemon`), the socket path and the URI scheme, so a rename after release is a breaking
 change. Owner action, before the repo goes public. Settled 2026-10-01: the repository is
-`github.com/reflexive-labs/leysdr` (the Go module path follows it), Reflexive Labs holds the
+`github.com/reflexive-labs/leysdr` (the Go module path follows it), Reflexive Labs, LLC holds the
 copyright and the marks, and reverse-DNS identifiers come from `leysdr.com` (`com.leysdr.app`,
 `com.leysdr.daemon`, `com.leysdr.engine`) so they stay with the product. "Leyline SDR" is the
 product's full name, `leyline` the contract and on-disk name, `ley` the command.
