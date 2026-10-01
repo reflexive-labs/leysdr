@@ -185,7 +185,10 @@ func prepKeptDecode(t *testing.T, _ string, c *leyline.Client) []string {
 	t.Cleanup(func() {
 		_, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId})
 	})
-	time.Sleep(2 * fakedaemon.RecordInterval)
+	waitFor(t, "two records in the store", func() bool {
+		page, err := c.QueryRecords(t.Context(), &leylinev1.RecordQuery{Protocol: "aprs"})
+		return err == nil && len(page.GetRecords()) >= 2
+	})
 	return nil
 }
 

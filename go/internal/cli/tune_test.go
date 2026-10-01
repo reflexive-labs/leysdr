@@ -239,34 +239,22 @@ func TestTuneJSONMeter(t *testing.T) {
 // deterministic: -100 + 10·log10(12.5 kHz / (2.4 MHz / 2048)) + 10 ≈ -80.
 func TestTuneAutoSquelch(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	var out string
-	go func() {
-		// The banner is prose and lives on stderr; the assertion below is about
-		// what a person saw, so it reads both streams.
-		o, e, err := run(t, ctx, sock, "tune", "146.52", "--no-audio")
-		out = o + e
-		done <- err
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		st, err := c.State(context.Background())
-		if err == nil && len(st.Channels) == 1 && !math.IsNaN(st.Channels[0].SquelchDb) {
-			if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
-				t.Fatalf("auto squelch: got %v, want about -80", got)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatalf("auto squelch never applied")
-		}
-		time.Sleep(10 * time.Millisecond)
+	// The banner is printed once the squelch write is confirmed, so the state has it by then.
+	stdout, stderr, cancel, done := startTune(t, sock, "Squelch auto", "tune", "146.52", "--no-audio")
+	defer cancel()
+	st, err := c.State(t.Context())
+	if err != nil || len(st.Channels) != 1 || math.IsNaN(st.Channels[0].SquelchDb) {
+		t.Fatalf("auto squelch never applied: %v %v", st.GetChannels(), err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
+		t.Fatalf("auto squelch: got %v, want about -80", got)
+	}
 	cancel()
-	if err := <-done; err != nil {
+	err = <-done
+	// The banner is prose and lives on stderr; the assertion below is about
+	// what a person saw, so it reads both streams.
+	out := stdout.String() + stderr.String()
+	if err != nil {
 		t.Fatalf("tune: %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "Squelch auto → -80 dBFS (10 dB above the band's noise floor") {

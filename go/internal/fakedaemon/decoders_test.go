@@ -4,6 +4,7 @@ package fakedaemon_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,7 +116,11 @@ func TestSubscribeRecordsReplaysSinceSeq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}) }()
-	time.Sleep(3 * fakedaemon.RecordInterval)
+	// Records retained before the subscription opens are what the replay must deliver.
+	eventually(t, "the job's first record", func() bool {
+		j, err := c.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+		return err == nil && strings.Contains(j.GetStatusDetail(), "last just now")
+	})
 
 	from := uint64(0)
 	recs, errs, err := c.SubscribeRecords(ctx, leyline.RecordScopeJob(job.JobId, &from))
@@ -148,12 +153,15 @@ func TestQueryRecordsReadsKeptJobs(t *testing.T) {
 	if uris := job.GetResultUris(); len(uris) != 1 || uris[0] != "ley://records/"+job.JobId {
 		t.Errorf("a kept job names its records as a resource: %v", uris)
 	}
-	time.Sleep(4 * fakedaemon.RecordInterval)
-
-	page, err := c.QueryRecords(ctx, &leylinev1.RecordQuery{Protocol: "aprs"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	var page *leylinev1.RecordPage
+	eventually(t, "three records in the store", func() bool {
+		p, err := c.QueryRecords(ctx, &leylinev1.RecordQuery{Protocol: "aprs"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		page = p
+		return len(page.Records) >= 3
+	})
 	if len(page.Records) < 3 || len(page.Anchors) != 1 {
 		t.Fatalf("page: %d records, %d anchors", len(page.Records), len(page.Anchors))
 	}

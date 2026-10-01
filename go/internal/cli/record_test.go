@@ -665,9 +665,11 @@ func TestRecordingsDeleteRefusesARunningRecording(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(dir, jobID)); serr != nil {
 		t.Fatalf("the refusal removed the recording: %v", serr)
 	}
-	// Long enough for the fake to have written some audio: a recording cancelled before it heard
-	// anything is discarded at the cancel and there would be nothing left to delete.
-	time.Sleep(200 * time.Millisecond)
+	// Wait for a part to be open: a recording cancelled before it heard anything is discarded at
+	// the cancel and there would be nothing left to delete.
+	waitFor(t, "the recording's first part", func() bool {
+		return openPart.MatchString(mustRun(t, sock, "state", "--json"))
+	})
 	mustRun(t, sock, "jobs", "cancel", jobID)
 	mustRun(t, sock, "recordings", "delete", jobID, "--yes")
 }
@@ -732,7 +734,8 @@ func TestPlaySpacePausesAndResumes(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- Execute(t.Context(), app, []string{"--socket", sock, "play", uri}) }()
 	waitFor(t, "the key hint", func() bool { return strings.Contains(errb.String(), "Space pauses") })
-	time.Sleep(200 * time.Millisecond)
+	// A position of zero is left out of the JSON, so the pause is pressed once it has moved.
+	waitFor(t, "the playback to move", func() bool { return positionOf(mustRun(t, sock, "state", "--json")) != "" })
 	_, _ = press.Write([]byte(" "))
 	waitFor(t, "the paused line", func() bool { return strings.Contains(errb.String(), ", paused; space resumes") })
 	paused := mustRun(t, sock, "state", "--json")
@@ -751,6 +754,9 @@ func TestPlaySpacePausesAndResumes(t *testing.T) {
 	}
 	_ = press.Close()
 }
+
+// openPart matches a running record job's status_detail once it holds at least one part.
+var openPart = regexp.MustCompile(`recording [^"]*, [1-9][0-9]* parts?, `)
 
 // positionOf pulls the one playback's position out of `ley state --json`.
 func positionOf(stateJSON string) string {

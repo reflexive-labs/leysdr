@@ -497,10 +497,9 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	}
 	// A running job says how much it has heard (DEC-23), so get_job tells a working decoder
 	// from a silent one without a subscription.
-	time.Sleep(3 * fakedaemon.RecordInterval)
-	if text := resultText(h.must(t, "get_job", map[string]any{"job": job.JobId})); !strings.Contains(text, "records, last") {
-		t.Errorf("get_job should carry the record count:\n%s", text)
-	}
+	waitFor(t, "get_job to carry the record count", func() bool {
+		return strings.Contains(resultText(h.must(t, "get_job", map[string]any{"job": job.JobId})), "records, last")
+	})
 	// list_entities folds the running job's records rather than starting a second decoder.
 	ent := h.must(t, "list_entities", map[string]any{"protocol": "aprs", "duration_s": 0.5})
 	raw := resultJSON(ent)
@@ -519,12 +518,11 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if len(kept.ResultUris) != 1 || kept.ResultUris[0] != "ley://records/"+kept.JobId {
 		t.Fatalf("kept job names no records resource: %v", &kept)
 	}
-	time.Sleep(3 * fakedaemon.RecordInterval)
 	var page leylinev1.RecordPage
-	structured(t, h.must(t, "query_records", map[string]any{"job_id": kept.JobId}), &page)
-	if len(page.Records) == 0 {
-		t.Fatal("the kept job's records are not in the store")
-	}
+	waitFor(t, "the kept job's records in the store", func() bool {
+		structured(t, h.must(t, "query_records", map[string]any{"job_id": kept.JobId}), &page)
+		return len(page.Records) > 0
+	})
 	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: kept.ResultUris[0]})
 	if err != nil {
 		t.Fatalf("read resource: %v", err)

@@ -124,12 +124,9 @@ func TestDevicesSeenQuietSince(t *testing.T) {
 	if _, err := c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	time.Sleep(600 * time.Millisecond)
-
-	quiet := devicesSeenJSONArgs(t, sock, path, "--quiet-since", "300ms")
-	if len(quiet.Devices) == 0 {
-		t.Fatalf("transmitters silent longer than the window must appear under --quiet-since:\n%+v", quiet)
-	}
+	waitFor(t, "transmitters silent longer than the window to appear under --quiet-since", func() bool {
+		return len(devicesSeenJSONArgs(t, sock, path, "--quiet-since", "300ms").Devices) > 0
+	})
 	loud := devicesSeenJSONArgs(t, sock, path, "--quiet-since", "1h")
 	if len(loud.Devices) != 0 {
 		t.Errorf("nothing heard within the hour has gone quiet for an hour: %+v", loud.Devices)

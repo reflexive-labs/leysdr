@@ -64,38 +64,25 @@ func TestPlayWithSidecar(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "nfm_tone.json"), []byte(side), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	var out, errOut string
-	go func() {
-		o, e, err := run(t, ctx, sock, "play", iq, "--no-audio")
-		out, errOut = o, e
-		done <- err
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		st, err := c.State(context.Background())
-		if err == nil && len(st.Channels) == 1 {
-			ch := st.Channels[0]
-			if ch.OffsetHz != 100_000 || ch.Mode.String() != "AM" || ch.BandwidthHz != 10000 {
-				t.Fatalf("channel from sidecar: %v", ch)
-			}
-			if len(st.Devices) != 2 || st.Captures[0].CenterHz != 146_520_000 {
-				t.Fatalf("file device/capture: %v %v", st.Devices, st.Captures)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("play never created its channel")
-		}
-		time.Sleep(10 * time.Millisecond)
+	// The meter line is the live phase: the channel exists by then.
+	stdout, stderr, cancel, done := startTune(t, sock, "146.620 MHz AM  signal ", "play", iq, "--no-audio")
+	defer cancel()
+	st, err := c.State(t.Context())
+	if err != nil || len(st.Channels) != 1 {
+		t.Fatalf("play never created its channel: %v %v", st.GetChannels(), err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	if ch := st.Channels[0]; ch.OffsetHz != 100_000 || ch.Mode.String() != "AM" || ch.BandwidthHz != 10000 {
+		t.Fatalf("channel from sidecar: %v", ch)
+	}
+	if len(st.Devices) != 2 || st.Captures[0].CenterHz != 146_520_000 {
+		t.Fatalf("file device/capture: %v %v", st.Devices, st.Captures)
+	}
 	cancel()
 	if err := <-done; err != nil {
-		t.Fatalf("play: %v\n%s", err, out)
+		t.Fatalf("play: %v\n%s", err, stdout.String())
 	}
-	st, _ := c.State(context.Background())
+	errOut := stderr.String()
+	st, _ = c.State(t.Context())
 	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
 		t.Fatalf("play did not detach/tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
 	}
