@@ -6,10 +6,12 @@ import EngineCore
 import Foundation
 import GRPCCore
 import LeylineProto
+import Synchronization
 
 /// Runs one `WriteParams` stream: keeps the last value per `(target_id, param case[, gain element])`,
 /// applies the pending set every `tickNs` and once more when the stream ends. Rejections become
 /// `WriteRejected` events; the summary counts received vs. applied writes.
+/// Unchecked Sendable: the pending writes and counters are read and written only under `lock`.
 final class WriteCoalescer: @unchecked Sendable {
     struct Key: Hashable {
         var target: String
@@ -121,10 +123,9 @@ final class WriteCoalescer: @unchecked Sendable {
     }
 }
 
-/// Minimal lock-protected boolean shared between the reader task and the tick loop.
-final class LockedFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var flag = false
-    var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
-    func set() { lock.lock(); flag = true; lock.unlock() }
+/// A boolean shared between the reader task and the tick loop; set once, read every tick.
+final class LockedFlag: Sendable {
+    private let flag = Atomic<Bool>(false)
+    var value: Bool { flag.load(ordering: .acquiring) }
+    func set() { flag.store(true, ordering: .releasing) }
 }

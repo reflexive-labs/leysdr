@@ -17,6 +17,7 @@ import Foundation
 /// (`PersistenceFrameSink`) calls `add` and `snapshot` back to back from the same `write`, itself
 /// invoked from the DSP thread, so the lock guards a histogram that one thread both folds into and
 /// reads: uncontended, and cheap enough that the safety is worth the pair of atomics.
+/// Unchecked Sendable: the counts and row counters are read and written only under `lock`.
 public final class PersistenceAccumulator: @unchecked Sendable {
     public let bins: Int
     public let levels: Int

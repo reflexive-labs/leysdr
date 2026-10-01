@@ -33,6 +33,7 @@ func realtimeNowNs() -> Int64 {
 }
 
 /// Owns the block ring, the immutable channel/tap tables and the DSP thread for one capture.
+/// Unchecked Sendable: the tables are swapped under `tableLock`, the counters are atomics, and everything else belongs to the device or DSP thread.
 public final class CaptureDSPCore: @unchecked Sendable {
     public static let blockSize = 16384
     public static let ringSlots = 64

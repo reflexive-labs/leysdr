@@ -5,6 +5,7 @@
 // `ley://` URIs and log lines.
 
 import Foundation
+import Synchronization
 
 /// A 128-bit ULID (https://github.com/ulid/spec): 48-bit millisecond timestamp + 80 random bits.
 /// Lexicographic order of the string form equals creation order within a millisecond resolution.
@@ -27,9 +28,8 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
 
     /// Monotonic generator state: ids minted within the same millisecond increment the random
     /// part instead of redrawing it, so ids always sort in creation order (clients number rows by it).
-    private static let monotonic = MonotonicState()
-    private final class MonotonicState: @unchecked Sendable {
-        let lock = NSLock()
+    private static let monotonic = Mutex(MonotonicState())
+    private struct MonotonicState {
         var lastMs: UInt64 = 0
         var hi: UInt64 = 0
         var lo: UInt64 = 0
@@ -38,23 +38,19 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
     /// New ULID from the current time and the system RNG, monotonic within a millisecond.
     public init() {
         let now = UInt64(Date().timeIntervalSince1970 * 1000)
-        let st = ULID.monotonic
-        st.lock.lock()
-        let ms: UInt64
-        if now > st.lastMs {
-            var r = SystemRandomNumberGenerator()
-            st.lastMs = now
-            st.hi = r.next() & 0xFFFF   // 16 random bits; the low 64 come next
-            st.lo = r.next() & 0x7FFF_FFFF_FFFF_FFFF // leave headroom so increments cannot overflow
-            ms = now
-        } else {
+        let (ms, hi, lo) = ULID.monotonic.withLock { st -> (UInt64, UInt64, UInt64) in
+            if now > st.lastMs {
+                var r = SystemRandomNumberGenerator()
+                st.lastMs = now
+                st.hi = r.next() & 0xFFFF   // 16 random bits; the low 64 come next
+                st.lo = r.next() & 0x7FFF_FFFF_FFFF_FFFF // leave headroom so increments cannot overflow
+                return (now, st.hi, st.lo)
+            }
             // Same (or earlier, on clock steps) millisecond: bump the random part.
             st.lo &+= 1
             if st.lo == 0 { st.hi &+= 1 }
-            ms = st.lastMs
+            return (st.lastMs, st.hi, st.lo)
         }
-        let hi = st.hi, lo = st.lo
-        st.lock.unlock()
         bytes = (
             UInt8(truncatingIfNeeded: ms >> 40), UInt8(truncatingIfNeeded: ms >> 32),
             UInt8(truncatingIfNeeded: ms >> 24), UInt8(truncatingIfNeeded: ms >> 16),

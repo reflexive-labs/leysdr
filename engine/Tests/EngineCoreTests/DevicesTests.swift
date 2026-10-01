@@ -116,6 +116,7 @@ final class DevicesIQFileTests: XCTestCase {
 }
 
 /// Collects delivered blocks off the device thread. Copies the first float of each block and the index.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class DeliveryLog: @unchecked Sendable {
     private let lock = NSLock()
     private(set) var indices: [UInt64] = []
@@ -292,6 +293,7 @@ final class DevicesFilePlaybackTests: XCTestCase {
 }
 
 /// Counts completions reported from detached tasks.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class CallCount: @unchecked Sendable {
     private let lock = NSLock()
     private var n = 0
@@ -299,6 +301,7 @@ final class CallCount: @unchecked Sendable {
     func bump() { lock.lock(); n += 1; lock.unlock() }
 }
 
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class StateLog: @unchecked Sendable {
     private let lock = NSLock()
     private var _states: [DeviceState] = []
@@ -326,6 +329,7 @@ func assertCode(_ code: String, file: StaticString = #filePath, line: UInt = #li
 }
 
 /// Holds an event iterator so the read can run in a child task; only one child ever touches it.
+/// Unchecked Sendable: only one child task at a time touches the iterator.
 private final class EventCursor: @unchecked Sendable {
     var iterator: AsyncStream<DeviceEvent>.AsyncIterator
     init(_ it: AsyncStream<DeviceEvent>.AsyncIterator) { iterator = it }
@@ -481,6 +485,7 @@ final class DevicesRegistryTests: XCTestCase {
 }
 
 /// A hosted virtual device that counts `close()` calls.
+/// Unchecked Sendable: the descriptor is read and written only under `lock`; the count is atomic.
 final class ClosableVirtualDevice: VirtualDevice, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: DeviceDescriptor

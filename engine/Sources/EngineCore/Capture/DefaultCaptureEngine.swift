@@ -269,15 +269,15 @@ public actor DefaultCaptureEngine: CaptureEngine {
     }
 }
 
-/// A tiny lock-guarded box for values read from nonisolated accessors.
-public final class LockedValue<T>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: T
+/// A mutex-guarded box for values read from nonisolated accessors. A class, not a bare `Mutex`, so
+/// closures and other objects can share one by reference.
+public final class LockedValue<T: Sendable>: Sendable {
+    private let stored: Mutex<T>
 
-    public init(_ value: T) { stored = value }
+    public init(_ value: T) { stored = Mutex(value) }
 
     public var value: T {
-        get { lock.lock(); defer { lock.unlock() }; return stored }
-        set { lock.lock(); stored = newValue; lock.unlock() }
+        get { stored.withLock { $0 } }
+        set { stored.withLock { $0 = newValue } }
     }
 }

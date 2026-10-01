@@ -13,7 +13,7 @@ import Synchronization
 
 /// Everything a running daemon owns: device registry, session store, bulk registry and the gRPC
 /// server on a UDS. `run()` serves until `shutdown()`; tests drive the same object in-process.
-final class Daemon: @unchecked Sendable {
+final class Daemon: Sendable {
     struct Config {
         var socketPath: String
         var pidfile: String?

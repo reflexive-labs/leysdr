@@ -60,6 +60,7 @@ public struct SampleBuffer {
 }
 
 /// Owned, preallocated, 16-byte aligned sample storage. Hand out `SampleBuffer` borrows with `view`.
+/// Unchecked Sendable: the memory is shared by design; which thread may write it when is the protocol of the ring or core that owns it.
 public final class SampleStorage: @unchecked Sendable {
     public let capacity: Int
     public let format: SampleFormat

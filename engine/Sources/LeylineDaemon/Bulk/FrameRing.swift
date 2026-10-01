@@ -15,6 +15,7 @@ import Foundation
 /// Concurrency: the writer owns `tail`; both sides move `head` with compare-exchange. The reader
 /// copies a slot out and then claims it (`head: h -> h+1`); if the writer evicted that slot in the
 /// meantime the claim fails and the (possibly torn) copy is discarded and retried.
+/// Unchecked Sendable: the writer owns `writeSeq` and `tail`; both sides move `head` by compare-exchange, and a reader discards a slot it lost.
 final class FrameRing: @unchecked Sendable {
     let slots: Int
     let slotBytes: Int

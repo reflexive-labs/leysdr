@@ -46,6 +46,7 @@ public struct ChannelTelemetryRecord: Sendable {
 /// newest readings instead of a stale prefix. Each slot carries a seqlock version (odd while being
 /// written) so the consumer can detect a slot overwritten underneath it and retry; records are
 /// plain-old-data, so a torn copy is harmless and simply discarded.
+/// Unchecked Sendable: one producer (the DSP thread) and one consumer; each slot is guarded by its seqlock version.
 public final class ChannelTelemetryQueue: @unchecked Sendable {
     public let capacity: Int
     private let slots: UnsafeMutablePointer<ChannelTelemetryRecord>
@@ -192,6 +193,7 @@ public final class ChannelTransmission: @unchecked Sendable {
 /// Immutable-by-structure DSP core for one channel. Built on the control plane, run on the DSP
 /// thread. Squelch threshold and AGC are adjustable in place through atomics; anything else
 /// (offset, bandwidth, mode, capture rate) requires a new core.
+/// Unchecked Sendable: built on the control plane and then run only by the DSP thread; the settings shared with the control plane are atomics.
 public final class ChannelDSPCore: @unchecked Sendable {
     public let captureRate: UInt64
     public let config: ChannelConfig

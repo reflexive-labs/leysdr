@@ -231,20 +231,21 @@ struct TelemetryService: Leyline_V1_Telemetry.SimpleServiceProtocol {
 }
 
 /// Per-subscription channel drain tasks (one per channel engine), cancelled when the RPC ends.
-private final class ChannelDrains: @unchecked Sendable {
-    private let lock = NSLock()
-    private var tasks: [ChannelID: Task<Void, Never>] = [:]
+private final class ChannelDrains: Sendable {
+    private let tasks = Mutex<[ChannelID: Task<Void, Never>]>([:])
 
     func start(_ id: ChannelID, _ body: @escaping @Sendable () async -> Void) {
-        lock.lock(); defer { lock.unlock() }
-        guard tasks[id] == nil else { return }
-        tasks[id] = Task { await body() }
+        tasks.withLock { tasks in
+            guard tasks[id] == nil else { return }
+            tasks[id] = Task { await body() }
+        }
     }
 
     func cancelAll() {
-        lock.lock(); defer { lock.unlock() }
-        for t in tasks.values { t.cancel() }
-        tasks.removeAll()
+        tasks.withLock { tasks in
+            for t in tasks.values { t.cancel() }
+            tasks.removeAll()
+        }
     }
 }
 

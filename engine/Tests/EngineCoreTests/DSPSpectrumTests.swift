@@ -4,6 +4,7 @@ import XCTest
 @testable import EngineCore
 
 /// Collects rows on the DSP thread; test-only sink.
+/// Unchecked Sendable: the DSP thread appends, and the test reads only after the capture has stopped.
 final class CollectingSpectrumSink: SpectrumSink, @unchecked Sendable {
     var rows: [(bins: Int, index: UInt64, peakBin: Int, peakDB: Float)] = []
     func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
@@ -118,6 +119,7 @@ final class DSPSpectrumTests: XCTestCase {
     /// Three subscriptions ordered [1024, 4096, 1024]: the later 1024 subscriber must get the
     /// same full-span row as the first, not a slice of the 4096-point spectrum computed between them.
     func testLadderSameSizeRowsSurviveInterleavedSizes() async {
+        /// Unchecked Sendable: the DSP thread appends, and the test reads only after the capture has stopped.
         final class FullRowSink: SpectrumSink, @unchecked Sendable {
             var rows: [[Float]] = []
             func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {

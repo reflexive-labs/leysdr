@@ -157,6 +157,7 @@ func rtltcpEndpointsFromEnvironment() -> [String] {
 }
 
 /// Resolves once any of the given signals arrives.
+/// Unchecked Sendable: `sources` only keeps the signal handlers alive and is never touched after init.
 final class SignalWatcher: @unchecked Sendable {
     private let sources: [DispatchSourceSignal]
     private let stream: AsyncStream<Void>

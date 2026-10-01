@@ -365,7 +365,7 @@ final class ChannelTests: XCTestCase {
     /// A PCM-only sink (system audio) must never receive a raw-IQ channel's cf32 blocks: attach to a
     /// raw-IQ channel is refused, and so is switching a channel to raw IQ while one is attached.
     func testPCMOnlySinkRejectedOnRawIQChannel() async throws {
-        final class PCMOnlyNull: PCMOnlyAudioSink, @unchecked Sendable {
+        final class PCMOnlyNull: PCMOnlyAudioSink, Sendable {
             let id = SinkID()
             func write(_ audio: SampleBuffer, at time: SampleTime) {}
             func flush() async {}
@@ -923,6 +923,7 @@ final class ChannelTests: XCTestCase {
 }
 
 /// Squelch edges as a subscription saw them, read from the test's own task.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 private final class EdgeLog: @unchecked Sendable {
     private let lock = NSLock()
     private var edges: [(open: Bool, samples: UInt64)] = []

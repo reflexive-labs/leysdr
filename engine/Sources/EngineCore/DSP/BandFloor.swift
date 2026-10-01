@@ -19,6 +19,7 @@ import Synchronization
 /// never stops the minimum is the carrier, so a -12 dBFS signal read `0 dB over noise`
 /// (`docs/plans/app.md`, APP-3). The band's median is not raised by a steady carrier, because a
 /// carrier occupies a few bins of the band and the median ignores them.
+/// Unchecked Sendable: the analyzer and row belong to the DSP thread; other threads touch only the atomics.
 public final class BandFloor: @unchecked Sendable {
     /// Bins in the transform the floor is read from. The density does not depend on the count
     /// (per-bin noise power scales with bin width, and the density divides it back out), so the

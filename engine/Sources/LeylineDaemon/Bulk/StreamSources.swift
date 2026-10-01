@@ -17,7 +17,7 @@ func dbToU8(_ db: Float) -> UInt8 {
 }
 
 /// Copies FFT rows into the ring as DB_F32 (little-endian f32) or DB_U8.
-final class FFTFrameSink: SpectrumSink, @unchecked Sendable {
+final class FFTFrameSink: SpectrumSink, Sendable {
     let ring: FrameRing
     let u8: Bool
     let bins: Int
@@ -47,6 +47,7 @@ final class FFTFrameSink: SpectrumSink, @unchecked Sendable {
 /// Audio path: the channel's CallbackSink pushes f32 frames into a FloatRing; the Stream reader
 /// drains it into ≤ 4096-sample S16/F32 frames. Frame times are derived from the most recent block's
 /// capture time and the ring backlog (audio is not sample-indexed by the channel).
+/// Unchecked Sendable: `read`, `lastDropped` and `scratch` belong to the one Stream reader; the sink side touches only the ring and the atomics.
 final class AudioFrameSource: @unchecked Sendable {
     static let maxFrame = 4096
     let ring: FloatRing
@@ -54,7 +55,7 @@ final class AudioFrameSource: @unchecked Sendable {
     let poke: AsyncStream<Void>
     private let pokeContinuation: AsyncStream<Void>.Continuation
     /// Shared with the sink closure (stdlib atomics are non-copyable, so they live in a box).
-    private final class Counters: @unchecked Sendable {
+    private final class Counters: Sendable {
         let lastBlockStart = Atomic<UInt64>(0)
         let written = Atomic<Int>(0)
     }
@@ -137,7 +138,7 @@ final class AudioFrameSource: @unchecked Sendable {
 }
 
 /// IQ path: one capture block (cf32) per frame.
-final class IQFrameTap: CaptureTap, @unchecked Sendable {
+final class IQFrameTap: CaptureTap, Sendable {
     let id: StreamID
     let ring: FrameRing
 
@@ -167,6 +168,7 @@ final class IQFrameTap: CaptureTap, @unchecked Sendable {
 /// second.
 ///
 /// Every frame is the entire state, so LATEST_WINS costs a subscriber nothing but freshness.
+/// Unchecked Sendable: `nextEmit` and `started` are touched only from `write`, on the DSP thread.
 final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
     let ring: FrameRing
     let accumulator: PersistenceAccumulator

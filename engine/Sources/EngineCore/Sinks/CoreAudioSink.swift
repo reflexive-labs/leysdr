@@ -37,12 +37,13 @@ import AudioToolbox
 
 /// Reference box for the underrun counter: `Atomic` is non-copyable, so it cannot be copied out of a
 /// class stored property into the render block's captures; the block captures this box instead.
-private final class UnderrunCounter: @unchecked Sendable {
+private final class UnderrunCounter: Sendable {
     let value = Atomic<UInt64>(0)
 }
 
 /// Plays a channel's audio through CoreAudio. `write` pushes into a `FloatRing` (never blocks);
 /// the render callback drains it and fills with zeros on underrun.
+/// Unchecked Sendable: `write` touches only the SPSC ring; the audio engine is set up in init and stopped in `closeSink`.
 public final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
     public let id: SinkID
     public let rate: UInt32

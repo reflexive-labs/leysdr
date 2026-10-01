@@ -28,6 +28,7 @@ func cmd(_ op: UInt8, _ arg: UInt32) -> [UInt8] {
 }
 
 /// Collects delivered blocks from the I/O thread (copies out; the buffer is a borrow).
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class BlockCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var _blocks: [(index: UInt64, count: Int, format: SampleFormat, bytes: [UInt8])] = []
@@ -465,6 +466,7 @@ private final class DeliverCount: Sendable {
 }
 
 /// Tiny lock-guarded flags for the in-flight deliver test.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 private final class ManagedAtomicFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var entered = false

@@ -11,6 +11,7 @@ import Synchronization
 /// SPSC ring of `Float`. Producer calls `push`, consumer calls `pop`. When the ring is full,
 /// `push` drops the excess (LATEST is *not* preserved — the writer's tail is dropped, keeping the
 /// stream continuous from the consumer's point of view) and counts it in `dropped`.
+/// Unchecked Sendable: one producer and one consumer, ordered by the head and tail atomics; each side touches only its own end of the storage.
 public final class FloatRing: @unchecked Sendable {
     /// Number of floats the ring can hold.
     public let capacity: Int
@@ -110,6 +111,7 @@ public final class FloatRing: @unchecked Sendable {
 ///
 /// Consumer (DSP thread): `wait(timeoutMs:)` blocks on a semaphore until a block is committed,
 /// `peek()` borrows the oldest committed block, `release()` frees it. Exactly one of each side.
+/// Unchecked Sendable: one producer and one consumer, ordered by the head and tail atomics; `acquired` and the slot being filled are the producer's alone.
 public final class BlockRing: @unchecked Sendable {
     /// Slots in the ring.
     public let slots: Int

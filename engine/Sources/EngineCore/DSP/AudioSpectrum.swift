@@ -17,6 +17,7 @@ import Synchronization
 /// and a row is emitted whenever the window has advanced by `rate / rowsPerSecond` samples --
 /// windows overlap when rows come faster than the window is long, and skip samples when they come
 /// slower. Each row is the newest window, not an average of the samples since the last row.
+/// Unchecked Sendable: the window state and transform buffers belong to the DSP thread that calls `write`; `closed` is atomic.
 public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     /// Fastest rows served. A row is a whole transform of a window several tens of milliseconds
     /// long; a meter updating faster than 20 times a second shows nothing extra.

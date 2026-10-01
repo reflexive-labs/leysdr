@@ -7,7 +7,7 @@ import Foundation
 import Synchronization
 
 /// An `AudioSink` that discards everything it receives, counting frames for diagnostics.
-public final class NullSink: AudioSink, @unchecked Sendable {
+public final class NullSink: AudioSink, Sendable {
     public let id: SinkID
     private let frameCount = Atomic<UInt64>(0)
     private let writeCount = Atomic<UInt64>(0)

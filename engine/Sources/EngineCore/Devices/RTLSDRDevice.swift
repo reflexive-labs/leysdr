@@ -40,6 +40,7 @@ public struct RTLSDRProbe: Hashable, Sendable {
 }
 
 /// One RTL2832U dongle. Control methods run on the control plane; `deliver` runs on the USB thread.
+/// Unchecked Sendable: control state is read and written under `lock`; `deliver`, `captureID` and `runningIndex` are set before the USB thread starts and read only by it until it is joined.
 public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// A missing native library disables only this backend; the daemon and other drivers remain usable.
     public static var backendAvailable: Bool { leyline_rtlsdr_available() != 0 }

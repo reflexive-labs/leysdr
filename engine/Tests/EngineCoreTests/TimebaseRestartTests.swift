@@ -9,6 +9,7 @@ import XCTest
 
 /// Streams 4096-sample zero blocks from its own thread; the device index restarts at 0 on every
 /// `startStreaming`, like `RTLTCPDevice` and the rtl-sdr callback. Supports two rates.
+/// Unchecked Sendable: mutable state is read and written under `lock` or in `LockedValue`s; `thread` is touched only by start and stop, which the test calls in order.
 final class RestartingDevice: RadioDevice, @unchecked Sendable {
     let descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "restarting", serial: "r",
                                       tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
@@ -51,6 +52,7 @@ final class RestartingDevice: RadioDevice, @unchecked Sendable {
 }
 
 /// Lock-guarded row recorder (rows are written on the DSP thread, read by the test).
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class LockedSpectrumSink: SpectrumSink, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [(index: UInt64, spanHz: UInt64)] = []

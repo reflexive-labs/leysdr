@@ -21,6 +21,7 @@ import XCTest
 /// buffers of already-captured samples queued, and a sweep that trusts the frame's centre
 /// frequency attributes those samples to the wrong step. Without the delay, hop discard passes
 /// trivially.
+/// Unchecked Sendable: mutable state is read and written under `lock` or in `LockedValue`s; `thread` is touched only by start and stop, which the test calls in order.
 final class SyntheticBandDevice: VirtualDevice, @unchecked Sendable {
     struct Carrier {
         var hz: Double

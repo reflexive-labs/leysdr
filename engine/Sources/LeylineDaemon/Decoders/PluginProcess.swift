@@ -138,6 +138,7 @@ func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Doubl
 }
 
 /// A spawned decoder. One instance runs one child; a restart makes a new one.
+/// Unchecked Sendable: the process and its pipes are set up in init and only read afterwards; the write descriptor is behind a Mutex.
 final class PluginProcess: @unchecked Sendable {
     let name: String
     private let executable: String

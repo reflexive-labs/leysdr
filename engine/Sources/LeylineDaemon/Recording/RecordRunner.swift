@@ -684,7 +684,7 @@ actor RecordRunner: RecordRunning {
 /// A record job's hold on a channel it did not make (`RecordConfig.channel_id`): the job borrows
 /// what somebody is listening to and leaves it exactly as it found it. Releasing does nothing:
 /// destroying the listener's channel when a recording ends would cut off their audio.
-final class BorrowedChannelLease: ChannelLease, @unchecked Sendable {
+final class BorrowedChannelLease: ChannelLease, Sendable {
     let channelID: ChannelID
     let captureID: CaptureID
     let engine: any ChannelEngine

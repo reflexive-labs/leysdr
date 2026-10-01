@@ -7,6 +7,7 @@ import Foundation
 import Logging
 
 /// Replays `<name>.cf32|.cu8` + sidecar as a `RadioDevice`. See docs/dev/engine-internals.md "Devices".
+/// Unchecked Sendable: mutable state is read and written under `lock`; the reader and the sample index belong to the I/O thread.
 public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
     /// Samples per delivered block (docs/dev/engine-internals.md "Block size").
     public static let blockSize = 16384

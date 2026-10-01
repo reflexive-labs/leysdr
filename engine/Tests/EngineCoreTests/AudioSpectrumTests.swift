@@ -12,6 +12,7 @@ struct RowsNeverArrived: Error, CustomStringConvertible {
 }
 
 /// Collects the rows an `AudioSpectrumSink` produces.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class SpectrumCollector: SpectrumSink, @unchecked Sendable {
     private let lock = NSLock()
     private var rows: [[Float]] = []

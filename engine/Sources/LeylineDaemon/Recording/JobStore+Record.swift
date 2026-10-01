@@ -383,7 +383,7 @@ extension JobStore {
 
 /// A record job's hold on a capture it did not make: the IQ sibling of `BorrowedChannelLease`.
 /// Releasing does nothing, because the capture belongs to whoever was listening on it.
-final class BorrowedCaptureIQLease: CaptureIQLease, @unchecked Sendable {
+final class BorrowedCaptureIQLease: CaptureIQLease, Sendable {
     let captureID: CaptureID
     let sampleRateHz: UInt64
     let capture: any CaptureEngine

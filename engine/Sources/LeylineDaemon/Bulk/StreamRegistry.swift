@@ -10,7 +10,7 @@ import Logging
 import Synchronization
 
 /// One negotiated bulk subscription and the engine hook feeding it.
-final class BulkSubscription: @unchecked Sendable {
+final class BulkSubscription: Sendable {
     enum Source {
         case fft(FrameRing, SpectrumSubscription, any SpectrumLadder, FFTFrameSink)
         case audio(AudioFrameSource, any ChannelEngine)

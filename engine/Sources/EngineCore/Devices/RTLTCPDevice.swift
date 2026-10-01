@@ -17,6 +17,7 @@ import Glibc
 import Darwin
 #endif
 
+/// Unchecked Sendable: mutable state is read and written under `lock`; `storage` belongs to the reader thread.
 public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// The rtl_tcp server runs librtlsdr with the same async queue this side would, so a retune
     /// has at least that much already-captured air behind it, plus whatever the socket and the

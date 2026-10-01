@@ -14,6 +14,7 @@ import Darwin
 
 /// Minimal fake rtl_tcp server: accepts one client, sends the 12-byte header, streams a running
 /// byte counter (`byte k == UInt8(k)`) and records every 5-byte command it receives.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 public final class FakeRTLTCPServer: @unchecked Sendable {
     public let port: UInt16
     private let listener: Int32

@@ -12,6 +12,7 @@ import XCTest
 
 /// A registry-hosted virtual device that streams zero blocks from its own thread until stopped and
 /// can be driven to `.disconnected` through the registry's state-change hook, like an rtl_tcp link loss.
+/// Unchecked Sendable: mutable state is read and written under `lock` or in `LockedValue`s; `thread` is touched only by start and stop, which the test calls in order.
 final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     private let lock = NSLock()
     private var _descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "rebindable", serial: "rebind-1",

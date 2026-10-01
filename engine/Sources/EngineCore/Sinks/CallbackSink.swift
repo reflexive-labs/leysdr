@@ -10,7 +10,7 @@ import Synchronization
 /// The `SampleBuffer` is a borrow valid only for the duration of the call: copy what you need.
 /// The handler runs on the hot path, so it must not block, allocate heavily, or await. Tests and
 /// the bulk-stream adapter use it to collect audio; `closeSink` disables further delivery.
-public final class CallbackSink: AudioSink, @unchecked Sendable {
+public final class CallbackSink: AudioSink, Sendable {
     public typealias Handler = @Sendable (SampleBuffer, SampleTime) -> Void
 
     public let id: SinkID

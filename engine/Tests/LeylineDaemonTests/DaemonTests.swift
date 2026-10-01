@@ -974,6 +974,7 @@ struct StallingTelemetryWriter: RPCWriterProtocol {
 
 /// A registry-hosted virtual device whose `startStreaming` throws `DEVICE_IO` while `failStartStreaming`
 /// is set; used to drive CreateCapture through the engine's start() unwinding.
+/// Unchecked Sendable: the descriptor and hook are read and written only under `lock`; the rest are `LockedValue`s.
 final class FaultyStreamDevice: VirtualDevice, @unchecked Sendable {
     private let lock = NSLock()
     private var _descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "faulty", serial: "faulty-1",

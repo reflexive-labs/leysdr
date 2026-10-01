@@ -5,36 +5,34 @@
 
 import Foundation
 import Logging
+import Synchronization
 
-/// Fan-out of `DeviceEvent`s to every `events()` subscriber. Lock-guarded so `events()` can be
+/// Fan-out of `DeviceEvent`s to every `events()` subscriber. Mutex-guarded so `events()` can be
 /// called from any context (the protocol makes it non-async); the lock is never held across calls.
-final class DeviceEventHub: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuations: [UUID: AsyncStream<DeviceEvent>.Continuation] = [:]
+final class DeviceEventHub: Sendable {
+    private let continuations = Mutex<[UUID: AsyncStream<DeviceEvent>.Continuation]>([:])
 
     func subscribe() -> AsyncStream<DeviceEvent> {
         let id = UUID()
         let (stream, continuation) = AsyncStream<DeviceEvent>.makeStream(bufferingPolicy: .unbounded)
         continuation.onTermination = { [weak self] _ in
             guard let self else { return }
-            self.lock.lock(); self.continuations[id] = nil; self.lock.unlock()
+            _ = self.continuations.withLock { $0.removeValue(forKey: id) }
         }
-        lock.lock(); continuations[id] = continuation; lock.unlock()
+        continuations.withLock { $0[id] = continuation }
         return stream
     }
 
     func publish(_ event: DeviceEvent) {
-        lock.lock()
-        let targets = Array(continuations.values)
-        lock.unlock()
+        let targets = continuations.withLock { Array($0.values) }
         for c in targets { c.yield(event) }
     }
 
     func finishAll() {
-        lock.lock()
-        let targets = Array(continuations.values)
-        continuations.removeAll()
-        lock.unlock()
+        let targets = continuations.withLock { all in
+            defer { all.removeAll() }
+            return Array(all.values)
+        }
         for c in targets { c.finish() }
     }
 }

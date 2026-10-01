@@ -6,6 +6,7 @@ import XCTest
 @testable import EngineCore
 
 /// Collects f32 audio frames delivered by a `CallbackSink`.
+/// Unchecked Sendable: the samples are read and written only under `lock`; `sink` is set once in init.
 final class AudioCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [Float] = []

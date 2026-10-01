@@ -13,6 +13,7 @@ import XCTest
 
 /// A registry-hosted virtual device whose `setSampleRate` throws while `failSetSampleRate` is set and
 /// whose `startStreaming` throws for the next `failStartStreamingTimes` calls (then succeeds).
+/// Unchecked Sendable: the descriptor and hook are read and written only under `lock`; the rest are `LockedValue`s.
 final class RateRefusingDevice: VirtualDevice, @unchecked Sendable {
     private let lock = NSLock()
     private var _descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "rate-refusing", serial: "rate-refusing-1",

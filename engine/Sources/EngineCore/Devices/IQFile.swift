@@ -279,6 +279,7 @@ public enum IQFilePaths {
 /// Streams an IQ file block by block into a caller-provided cf32 `SampleBuffer`. `.cu8` sources are
 /// converted on the fly through a fixed scratch buffer sized at init; reads never allocate.
 /// Not thread-safe: one reader belongs to one I/O thread.
+/// Unchecked Sendable: one thread uses a reader at a time; Sendable only so it can be handed to that thread.
 public final class IQFileReader: @unchecked Sendable {
     public let samplesPath: String
     public let sidecar: IQSidecar
@@ -392,6 +393,7 @@ public final class IQFileReader: @unchecked Sendable {
 
 /// Writes cf32 samples plus a sidecar. `write` appends raw bytes without allocation; `finish`
 /// stamps `samples` and saves the sidecar. Not thread-safe: one writer per sink thread.
+/// Unchecked Sendable: one thread uses a writer at a time; Sendable only so it can be handed to that thread.
 public final class IQFileWriter: @unchecked Sendable {
     public let samplesPath: String
     public let sidecarPath: String

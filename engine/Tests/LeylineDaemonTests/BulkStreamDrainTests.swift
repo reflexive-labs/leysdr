@@ -78,6 +78,7 @@ final class BulkStreamDrainTests: XCTestCase {
 }
 
 /// Collects frames from the nonisolated reader loop.
+/// Unchecked Sendable: the one reader loop appends, and the test reads only after that loop has returned.
 private final class FrameBox: @unchecked Sendable {
     private var frames: [Leyline_V1_Frame] = []
     func append(_ f: Leyline_V1_Frame) { frames.append(f) }

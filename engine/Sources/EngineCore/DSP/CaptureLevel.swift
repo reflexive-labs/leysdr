@@ -38,6 +38,7 @@ public struct CaptureLevelReading: Hashable, Sendable {
 /// Accumulates one capture's rail counts and peak on the device thread and publishes a reading
 /// per interval in a seqlock: a reader from any thread copies four words and retries if a write
 /// overlapped. Allocation-free and lock-free on both sides (invariant 4).
+/// Unchecked Sendable: the accumulators belong to the device thread; the published reading is a seqlock of atomics.
 public final class CaptureLevelMeter: @unchecked Sendable {
     /// Readings per second, the `BandFloor` cadence: fast enough to follow a gain change within
     /// a meter or two, slow enough that the fraction is measured over hundreds of thousands of

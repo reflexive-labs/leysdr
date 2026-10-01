@@ -27,6 +27,7 @@ struct ScanHit: Sendable {
 /// `write` runs on the hot path (invariant 4): it copies into a preallocated slot and returns. All
 /// the analysis -- a local median per bin over 192 reference bins, grouping, moments -- happens on
 /// the sweep's own task.
+/// Unchecked Sendable: the slots and their cursors are read and written only under `lock`.
 final class RowCollector: SpectrumSink, @unchecked Sendable {
     /// One collected row. The dB samples live in raw storage rather than a Swift Array because an
     /// Array is copy-on-write: handing a slot's Array to the draining task makes the storage

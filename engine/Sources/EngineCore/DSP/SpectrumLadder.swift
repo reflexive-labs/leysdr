@@ -6,6 +6,7 @@
 import Foundation
 
 /// Ladder of fixed FFT sizes fanned out to rate-limited subscribers.
+/// Unchecked Sendable: the subscriber table is swapped under `lock`; the transform scratch belongs to the DSP thread.
 public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
     /// Sizes the ladder computes.
     public static let sizes = [256, 512, 1024, 2048, 4096, 8192, 16384]

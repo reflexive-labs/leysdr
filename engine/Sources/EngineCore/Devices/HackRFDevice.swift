@@ -41,7 +41,7 @@ protocol HackRFLibrary: AnyObject, Sendable {
     func errorName(_ code: Int32) -> String
 }
 
-final class SystemHackRFLibrary: HackRFLibrary, @unchecked Sendable {
+final class SystemHackRFLibrary: HackRFLibrary, Sendable {
     static let shared = SystemHackRFLibrary()
     private init() {}
 
@@ -113,6 +113,7 @@ final class SystemHackRFLibrary: HackRFLibrary, @unchecked Sendable {
 
 /// A HackRF in libhackrf's backwards-compatible 8-bit receive mode. `deliver` runs on libhackrf's
 /// transfer thread and receives the library-owned buffer as native signed 8-bit interleaved IQ.
+/// Unchecked Sendable: control state is read and written under `lock`; `deliver`, `captureID` and `runningIndex` are set before `hackrf_start_rx` and read only by its transfer thread until `hackrf_stop_rx` joins it.
 public final class HackRFDevice: RadioDevice, @unchecked Sendable {
     public static let driverName = "hackrf"
     /// A missing native library disables only this backend; the daemon and other drivers remain usable.

@@ -8,6 +8,7 @@ import Synchronization
 
 /// The handle a capture's DSP thread reads each block: the channel's current core, or nil while
 /// the channel is out of capture. Lock held only for the reference copy.
+/// Unchecked Sendable: `core` is read and written only under `lock`; `transmission` is a constant.
 public final class ChannelSlot: @unchecked Sendable {
     private let lock = NSLock()
     private var core: ChannelDSPCore?
@@ -345,30 +346,34 @@ public final class ChannelTelemetrySubscription: Sendable {
     }
 }
 
-/// Lock-guarded set of telemetry subscribers. Publishing happens on the drain task, never on the DSP thread.
+/// Mutex-guarded set of telemetry subscribers. Publishing happens on the drain task, never on the DSP thread.
 /// Each subscriber's buffer is drop-oldest; a drop is counted on that subscriber's `ChannelTelemetrySubscription`.
-final class TelemetryHub: @unchecked Sendable {
+final class TelemetryHub: Sendable {
     /// Per-subscriber buffer depth before the oldest unread record is discarded (and counted).
     static let capacity = 256
-    private let lock = NSLock()
-    private var subscribers: [UUID: (continuation: AsyncStream<ChannelTelemetry>.Continuation, subscription: ChannelTelemetrySubscription)] = [:]
-    private var finished = false
+    private typealias Subscriber = (continuation: AsyncStream<ChannelTelemetry>.Continuation, subscription: ChannelTelemetrySubscription)
+    private struct State {
+        var subscribers: [UUID: Subscriber] = [:]
+        var finished = false
+    }
+    private let state = Mutex(State())
 
     func subscribe() -> ChannelTelemetrySubscription {
         let (stream, continuation) = AsyncStream<ChannelTelemetry>.makeStream(bufferingPolicy: .bufferingNewest(Self.capacity))
         let subscription = ChannelTelemetrySubscription(stream: stream)
         let key = UUID()
-        lock.lock()
-        if finished {
-            lock.unlock()
+        let added = state.withLock { st -> Bool in
+            guard !st.finished else { return false }
+            st.subscribers[key] = (continuation, subscription)
+            return true
+        }
+        guard added else {
             continuation.finish()
             return subscription
         }
-        subscribers[key] = (continuation, subscription)
-        lock.unlock()
         continuation.onTermination = { [weak self] _ in
             guard let self else { return }
-            self.lock.lock(); self.subscribers[key] = nil; self.lock.unlock()
+            _ = self.state.withLock { $0.subscribers.removeValue(forKey: key) }
         }
         return subscription
     }
@@ -381,9 +386,7 @@ final class TelemetryHub: @unchecked Sendable {
     }
 
     private func publish(event: ChannelTelemetry) {
-        lock.lock()
-        let subs = Array(subscribers.values)
-        lock.unlock()
+        let subs = state.withLock { Array($0.subscribers.values) }
         for (c, sub) in subs {
             if case .dropped = c.yield(event) { sub.countDrop() }
         }
@@ -406,11 +409,11 @@ final class TelemetryHub: @unchecked Sendable {
     }
 
     func finishAll() {
-        lock.lock()
-        finished = true
-        let subs = Array(subscribers.values)
-        subscribers.removeAll()
-        lock.unlock()
+        let subs = state.withLock { st in
+            st.finished = true
+            defer { st.subscribers.removeAll() }
+            return Array(st.subscribers.values)
+        }
         for (c, _) in subs { c.finish() }
     }
 }
