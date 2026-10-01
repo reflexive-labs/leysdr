@@ -20,7 +20,7 @@ import (
 
 func setupCaptureChannel(t *testing.T, c *leyline.Client) (*leylinev1.Capture, *leylinev1.Channel) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
@@ -35,7 +35,7 @@ func setupCaptureChannel(t *testing.T, c *leyline.Client) (*leylinev1.Capture, *
 
 func TestWriteParams(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -90,7 +90,7 @@ func TestWriteParams(t *testing.T) {
 
 func TestFFTStream(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
 	sub, err := c.SubscribeFFT(ctx, cp.CaptureId, 1000, 30, leylinev1.FftBinFormat_DB_U8)
 	if err != nil {
@@ -145,7 +145,7 @@ func TestFFTStream(t *testing.T) {
 
 func TestAudioStream(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	_, ch := setupCaptureChannel(t, c)
 	for _, tc := range []struct {
 		format leylinev1.AudioSampleFormat
@@ -185,7 +185,7 @@ func TestAudioStream(t *testing.T) {
 
 func TestIQStreamContract(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
 	subscribe := func(format leylinev1.SampleFormat, rate uint64) (*leyline.Subscription, error) {
 		return c.Subscribe(ctx, &leylinev1.SubscribeRequest{
@@ -245,7 +245,7 @@ func TestIQStreamContract(t *testing.T) {
 
 func TestPresenceReaping(t *testing.T) {
 	c, sock := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
-	ctx := context.Background()
+	ctx := t.Context()
 	// Unary calls keep a client present for one grace period, so poll from a
 	// second identity that owns nothing.
 	poller, err := leyline.Dial(ctx, sock, leyline.WithClientID(leyline.NewID("cli_")))
@@ -282,7 +282,7 @@ func TestPresenceReaping(t *testing.T) {
 
 func TestFileDevice(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nfm.cf32")
 	_ = os.WriteFile(path, nil, 0o644)
@@ -313,7 +313,7 @@ func TestFileDevice(t *testing.T) {
 // asks why the stream ended.
 func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
 	req := &leylinev1.SubscribeRequest{
 		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
@@ -355,7 +355,7 @@ func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
 // reader goes, so a client whose Stream RPC dropped can come back to the same subscription.
 func TestStreamHasOneReaderAtATime(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
 	desc, err := c.Bulk.Subscribe(ctx, &leylinev1.SubscribeRequest{
 		Source: &leylinev1.SubscribeRequest_CaptureId{CaptureId: cp.CaptureId},
@@ -402,7 +402,7 @@ func TestStreamHasOneReaderAtATime(t *testing.T) {
 // in the table -- 0 dB on this radio, the lowest gain.
 func TestGainWriteMustBeFinite(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
 	before := mustState(t, c).Captures[0].Gains[0].Db
 	evCtx, cancel := context.WithCancel(ctx)
@@ -443,7 +443,7 @@ func TestGainWriteMustBeFinite(t *testing.T) {
 // carries a Gap whose bounds are the samples between the last frame it got and this one.
 func TestGapMarksWhatWasLost(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
@@ -499,7 +499,7 @@ func TestGapMarksWhatWasLost(t *testing.T) {
 // frame rate) are the ones a reader decodes the payload with.
 func TestPersistenceNegotiation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
@@ -588,7 +588,7 @@ func sumCounts(h []uint16) int {
 // which is why a view hunting bursts asks for one.
 func TestFFTAccumulation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
@@ -653,7 +653,7 @@ func median(t *testing.T, row []float64) float64 {
 // part that ran rather than an empty one.
 func TestPresenceDropEndsASweepLikeACancel(t *testing.T) {
 	c, sock := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
-	ctx := context.Background()
+	ctx := t.Context()
 	// A second identity to watch with: the owner must make no calls, or it stays present.
 	watcher, err := leyline.Dial(ctx, sock, leyline.WithClientID(leyline.NewID("cli_")))
 	if err != nil {
@@ -699,7 +699,7 @@ func TestPresenceDropEndsASweepLikeACancel(t *testing.T) {
 // completed, with the detail it ended on.
 func TestCancelLeavesAFinishedJobAlone(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	job, err := c.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{
 		Scan: &leylinev1.ScanConfig{Range: &leylinev1.FrequencyRange{MinHz: 145_000_000, MaxHz: 147_000_000}, DwellMs: 20},
 	}})
@@ -783,7 +783,7 @@ func firstAudioFrame(t *testing.T, sub *leyline.Subscription) []float64 {
 
 func TestAudioTaps(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
@@ -843,7 +843,7 @@ func TestAudioTaps(t *testing.T) {
 
 func TestAudioTapRefusals(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
 	// A raw-IQ channel has no detector to tap.
 	raw, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
@@ -876,7 +876,7 @@ func TestAudioTapRefusals(t *testing.T) {
 
 func TestAudioSpectrumStream(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {
@@ -956,7 +956,7 @@ func binLevel(t *testing.T, row []float64, hz, binHz float64) float64 {
 
 func TestAudioSpectrumRefusals(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
 	// A raw-IQ channel carries no audio, on either tap; the spectrum of silence would look
 	// like a quiet band.
@@ -1034,7 +1034,7 @@ func TestAudioSpectrumRefusals(t *testing.T) {
 // broadcast's 75 kHz on WFM, and is 0 where the samples are amplitude.
 func TestAudioDescriptorFullScaleDeviation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
 	if err != nil {

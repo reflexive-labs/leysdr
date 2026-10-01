@@ -334,7 +334,7 @@ func runWithEnv(t *testing.T, sock string, env map[string]string, args ...string
 		v, ok := env[name]
 		return v, ok
 	}}
-	err := Execute(context.Background(), app, append([]string{"--socket", sock}, args...))
+	err := Execute(t.Context(), app, append([]string{"--socket", sock}, args...))
 	return out.String(), errb.String(), err
 }
 
@@ -500,7 +500,7 @@ func runStyled(t *testing.T, sock string, color bool, args ...string) (string, s
 	if color {
 		mode = "--color=always"
 	}
-	out, errOut, err := run(t, context.Background(), sock, append([]string{mode}, args...)...)
+	out, errOut, err := run(t, t.Context(), sock, append([]string{mode}, args...)...)
 	if err != nil {
 		t.Fatalf("ley %v: %v\n%s\n%s", args, err, out, errOut)
 	}

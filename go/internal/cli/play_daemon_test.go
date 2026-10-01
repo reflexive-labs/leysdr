@@ -110,14 +110,14 @@ func TestPlayExplicitModeBeatsSidecar(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent", "--mode", "nfm", "--bw", "12.5", "--freq", "146.6")
+	out, _, err := run(t, t.Context(), sock, "play", iq, "--no-audio", "--persistent", "--mode", "nfm", "--bw", "12.5", "--freq", "146.6")
 	if err != nil {
 		t.Fatalf("play: %v\n%s", err, out)
 	}
 	if strings.Contains(out, "using ") {
 		t.Fatalf("explicit mode should print no rationale:\n%s", out)
 	}
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	ch := st.Channels[0]
 	if ch.Mode.String() != "NFM" || ch.BandwidthHz != 12_500 || ch.OffsetHz != 80_000 {
 		t.Fatalf("explicit flags not honoured: %v", ch)
@@ -131,13 +131,13 @@ func TestDaemonStatus(t *testing.T) {
 		t.Fatalf("status: %s", out)
 	}
 	dead := testutil.SocketPath(t, "dead.sock")
-	out, _, err := run(t, context.Background(), dead, "daemon", "status")
+	out, _, err := run(t, t.Context(), dead, "daemon", "status")
 	var ee *ExitError
 	if !strings.Contains(out, "not running") || !errors.As(err, &ee) || ee.Code != ExitNotRunning {
 		t.Fatalf("dead status: %s %v", out, err)
 	}
 	// Not running: the same DaemonInfo shape with pid absent, exit status 3.
-	out, _, err = run(t, context.Background(), dead, "--json", "daemon", "status")
+	out, _, err = run(t, t.Context(), dead, "--json", "daemon", "status")
 	if !errors.As(err, &ee) || ee.Code != ExitNotRunning || ee.Message != "" {
 		t.Fatalf("dead status exit: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestDaemonStatus(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &js); err != nil || js["socketPath"] != dead || js["pid"] != nil || js["running"] != nil {
 		t.Fatalf("json dead status: %v %s", err, out)
 	}
-	out, _, err = run(t, context.Background(), sock, "--json", "daemon", "status")
+	out, _, err = run(t, t.Context(), sock, "--json", "daemon", "status")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestDaemonStartStop(t *testing.T) {
 	if _, err := os.Stat(pidfile); !os.IsNotExist(err) {
 		t.Fatalf("pidfile not removed: %v", err)
 	}
-	if out, _, err := run(t, context.Background(), sock, "daemon", "status"); !strings.Contains(out, "not running") || err == nil {
+	if out, _, err := run(t, t.Context(), sock, "daemon", "status"); !strings.Contains(out, "not running") || err == nil {
 		t.Fatalf("status after stop: %s %v", out, err)
 	}
 	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "not running") {
@@ -230,7 +230,7 @@ func TestDaemonStartStop(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &info); err != nil || info["socketPath"] != sock || info["pid"] == nil {
 		t.Fatalf("stop --json: %v %s", err, out)
 	}
-	out, errOut, err := run(t, context.Background(), sock, "--json", "daemon", "stop")
+	out, errOut, err := run(t, t.Context(), sock, "--json", "daemon", "stop")
 	if err != nil || !strings.Contains(errOut, "not running") {
 		t.Fatalf("stop --json not running: %v stderr=%q", err, errOut)
 	}
@@ -240,7 +240,7 @@ func TestDaemonStartStop(t *testing.T) {
 	}
 	// Verbs without a JSON shape refuse the flag before doing anything.
 	for _, args := range [][]string{{"daemon", "logs", "--log", logPath}, {"daemon", "install"}, {"daemon", "uninstall"}} {
-		out, _, err := run(t, context.Background(), sock, append([]string{"--json"}, args...)...)
+		out, _, err := run(t, t.Context(), sock, append([]string{"--json"}, args...)...)
 		if exitCode(err) != ExitUsage || out != "" || !strings.Contains(err.Error(), "no --json output") {
 			t.Errorf("ley --json %v: exit %d (%v) stdout=%q, want %d", args, exitCode(err), err, out, ExitUsage)
 		}
@@ -259,11 +259,11 @@ func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, errOut, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent")
+	out, errOut, err := run(t, t.Context(), sock, "play", iq, "--no-audio", "--persistent")
 	if err != nil {
 		t.Fatalf("play --persistent: %v\n%s\n%s", err, out, errOut)
 	}
-	st, err := c.State(context.Background())
+	st, err := c.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,22 +284,22 @@ func TestPlayPersistentKeepsDeviceUntilDetach(t *testing.T) {
 	if !strings.Contains(errOut, "ley devices detach "+fileDev) {
 		t.Fatalf("expected the detach hint on stderr for %q:\n%s", fileDev, errOut)
 	}
-	if out, _, err := run(t, context.Background(), sock, "devices", "detach", fileDev); err != nil {
+	if out, _, err := run(t, t.Context(), sock, "devices", "detach", fileDev); err != nil {
 		t.Fatalf("devices detach: %v\n%s", err, out)
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if len(st.Devices) != 1 || len(st.Captures) != 0 || len(st.Channels) != 0 {
 		t.Fatalf("detach did not tear down: %d devices %d captures %d channels", len(st.Devices), len(st.Captures), len(st.Channels))
 	}
-	if _, _, err := run(t, context.Background(), sock, "devices", "detach", fileDev); err == nil {
+	if _, _, err := run(t, t.Context(), sock, "devices", "detach", fileDev); err == nil {
 		t.Fatalf("second detach should fail")
 	}
 	// A persistent play whose tune fails (frequency outside the file's span)
 	// must not leave an orphan file device behind.
-	if _, _, err := run(t, context.Background(), sock, "play", iq, "--no-audio", "--persistent", "--freq", "900M"); err == nil {
+	if _, _, err := run(t, t.Context(), sock, "play", iq, "--no-audio", "--persistent", "--freq", "900M"); err == nil {
 		t.Fatalf("play outside span should fail")
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if len(st.Devices) != 1 {
 		t.Fatalf("failed persistent play left a file device: %v", st.Devices)
 	}
@@ -340,7 +340,7 @@ func TestDaemonStopWithoutPidfile(t *testing.T) {
 	if out := mustRun(t, sock, "daemon", "stop"); !strings.Contains(out, "stopped") {
 		t.Fatalf("stop without pidfile: %s", out)
 	}
-	if _, _, err := run(t, context.Background(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
+	if _, _, err := run(t, t.Context(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
 		t.Fatalf("status after stop: %v", err)
 	}
 }
@@ -376,7 +376,7 @@ func TestDaemonStopPidReused(t *testing.T) {
 	if syscall.Kill(sleeper, 0) != nil {
 		t.Fatal("stop signalled the process that reused the pid")
 	}
-	if _, _, err := run(t, context.Background(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
+	if _, _, err := run(t, t.Context(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
 		t.Fatalf("status after stop: %v", err)
 	}
 }
@@ -386,7 +386,7 @@ func TestDaemonStopPidReused(t *testing.T) {
 func TestDaemonStartChildExits(t *testing.T) {
 	script, sock, pidfile, logPath := fakeDaemonScript(t, t.TempDir(), "#!/bin/sh\necho boom\nexit 3\n")
 	started := time.Now()
-	_, _, err := run(t, context.Background(), sock, "daemon", "start", "--bin", script, "--log", logPath)
+	_, _, err := run(t, t.Context(), sock, "daemon", "start", "--bin", script, "--log", logPath)
 	if err == nil || !strings.Contains(err.Error(), "exited during startup") || !strings.Contains(err.Error(), "exit status 3") {
 		t.Fatalf("start with a dying daemon: %v", err)
 	}
@@ -408,11 +408,11 @@ func TestDaemonStartPidfileUnwritable(t *testing.T) {
 	if err := os.Mkdir(pidfile, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := run(t, context.Background(), sock, "daemon", "start", "--bin", script, "--log", logPath)
+	_, _, err := run(t, t.Context(), sock, "daemon", "start", "--bin", script, "--log", logPath)
 	if err == nil || !strings.Contains(err.Error(), "write pidfile") || !strings.Contains(err.Error(), "stopped the daemon again") {
 		t.Fatalf("start with an unwritable pidfile: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
+	if _, _, err := run(t, t.Context(), sock, "daemon", "status"); exitCode(err) != ExitNotRunning {
 		t.Fatalf("daemon left running after the failed start: %v", err)
 	}
 	waitFor(t, "the daemon's exit in the log", func() bool {

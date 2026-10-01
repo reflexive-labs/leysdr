@@ -5,7 +5,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"math"
 	"os"
 	"testing"
@@ -119,7 +118,7 @@ func TestPluginDecodesAStreamOfFrames(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := plugin.RunStreams(context.Background(), &in, &out, func(rate uint32) plugin.Decoder {
+	if err := plugin.RunStreams(t.Context(), &in, &out, func(rate uint32) plugin.Decoder {
 		return newDecoder(float64(rate))
 	}); err != nil {
 		t.Fatal(err)

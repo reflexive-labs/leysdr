@@ -492,11 +492,11 @@ func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 	if len(scan.Config.Gains) != 1 || scan.Config.Gains[0]["db"] != 30.0 {
 		t.Errorf("the Scan's config should echo the gain asked for: %v", scan.Config.Gains)
 	}
-	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "auto")
+	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M", "--gain", "auto")
 	if err != nil || !oneStageGain.MatchString(errOut) {
 		t.Errorf("--gain auto: %v\n%s", err, errOut)
 	}
-	if _, _, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "loud"); exitCode(err) != ExitUsage {
+	if _, _, err := run(t, t.Context(), sock, "scan", "145M..147M", "--gain", "loud"); exitCode(err) != ExitUsage {
 		t.Errorf("--gain loud should be a usage error, got %v", err)
 	}
 }
@@ -511,14 +511,14 @@ var oneStageGain = regexp.MustCompile(`, gain \d+(\.\d)? dB\n`)
 func TestScanPinsEveryStageNamed(t *testing.T) {
 	hackrf := fakedaemon.HackRFPro()
 	sock, _ := harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
-	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "lna=0,VGA=20,amp=11")
+	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "lna=0,VGA=20,amp=11")
 	if err != nil {
 		t.Fatalf("ley scan: %v\n%s", err, errOut)
 	}
 	if !strings.Contains(errOut, ", gain LNA 0 dB, VGA 20 dB, AMP on\n") {
 		t.Errorf("the summary should name every stage as the device spells it:\n%s", errOut)
 	}
-	_, errOut, err = run(t, context.Background(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "LNA=0,IF=0")
+	_, errOut, err = run(t, t.Context(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "LNA=0,IF=0")
 	if err == nil || !strings.Contains(err.Error(), "no gain element named IF; this radio's are LNA, VGA and AMP") {
 		t.Errorf("an unknown stage should fail the sweep with the stages the radio has, got %v\n%s", err, errOut)
 	}
@@ -528,7 +528,7 @@ func TestScanPinsEveryStageNamed(t *testing.T) {
 // duration and reports where, so two scans of a band can be read against each other.
 func TestScanSaysWhatGainItRanAt(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M")
+	out, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
 	if err != nil {
 		t.Fatalf("ley scan: %v\n%s", err, errOut)
 	}
@@ -591,11 +591,11 @@ func TestScanRefusesTheBlindSpot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dev, err := c.Control.AttachFileDevice(context.Background(), &leylinev1.AttachFileDeviceRequest{Path: iq, Loop: true})
+	dev, err := c.Control.AttachFileDevice(t.Context(), &leylinev1.AttachFileDeviceRequest{Path: iq, Loop: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = run(t, context.Background(), sock, "scan", "146.45M..146.59M", "--device", dev.DeviceId)
+	_, _, err = run(t, t.Context(), sock, "scan", "146.45M..146.59M", "--device", dev.DeviceId)
 	if err == nil {
 		t.Fatal("a scan of nothing but the DC guard should fail")
 	}

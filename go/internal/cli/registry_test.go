@@ -121,7 +121,7 @@ func TestDevicesSeenQuietSince(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "labels.json")
 	job := keptJob(t, sock, c, 6*fakedaemon.RecordInterval)
 	// Stop the job so nothing new is heard, then let the last-seen ages grow past the window.
-	if _, err := c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}); err != nil {
+	if _, err := c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.JobId}); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	waitFor(t, "transmitters silent longer than the window to appear under --quiet-since", func() bool {
@@ -176,7 +176,7 @@ func devicesSeenJSONArgs(t *testing.T, sock, path string, args ...string) Device
 // "packets", so `ley decode packets` and `ley track packets` reach it and its records.
 func TestDecodeResolvesAnAlias(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "decode", "packets", "--json", "--count", "1")
 	if err != nil {
@@ -193,7 +193,7 @@ func TestDecodeResolvesAnAlias(t *testing.T) {
 
 func TestTrackResolvesAnAlias(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "track", "packets", "--count", "3")
 	if err != nil {

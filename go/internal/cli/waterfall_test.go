@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"math/rand"
@@ -192,7 +191,7 @@ func TestWaterfallKeySwatchMatchesTheMap(t *testing.T) {
 // control.
 func TestWaterfallSaysHowManyLooksARowIs(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "waterfall", "146.52", "--count", "3", "--width", "60", "--rate", "10")
+	out, errOut, err := run(t, t.Context(), sock, "waterfall", "146.52", "--count", "3", "--width", "60", "--rate", "10")
 	if err != nil {
 		t.Fatalf("waterfall: %v\n%s\n%s", err, out, errOut)
 	}
@@ -208,7 +207,7 @@ func TestWaterfallSaysHowManyLooksARowIs(t *testing.T) {
 // plus the look count, and nothing drawn.
 func TestWaterfallJSONRows(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, _, err := run(t, context.Background(), sock, "--json", "waterfall", "146.52", "--count", "3", "--rate", "10", "--bins", "64")
+	out, _, err := run(t, t.Context(), sock, "--json", "waterfall", "146.52", "--count", "3", "--rate", "10", "--bins", "64")
 	if err != nil {
 		t.Fatalf("waterfall --json: %v\n%s", err, out)
 	}

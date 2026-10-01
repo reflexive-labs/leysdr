@@ -4,7 +4,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -57,7 +56,7 @@ func TestStyleResolvedPerStream(t *testing.T) {
 				env = map[string]string{}
 			}
 			app := styleApp(tc.stdout, tc.stderr, env)
-			if err := Execute(context.Background(), app, tc.args); err != nil {
+			if err := Execute(t.Context(), app, tc.args); err != nil {
 				t.Fatalf("execute: %v", err)
 			}
 			if app.Style.Color != tc.wantOut {
@@ -76,7 +75,7 @@ func TestStyleResolvedPerStream(t *testing.T) {
 // TestBadColorFlagIsUsage keeps the flag's own error at exit 2.
 func TestBadColorFlagIsUsage(t *testing.T) {
 	app := styleApp(true, true, map[string]string{})
-	err := Execute(context.Background(), app, []string{"version", "--color=maybe"})
+	err := Execute(t.Context(), app, []string{"version", "--color=maybe"})
 	want := ExitUsage
 	if code := exitCode(err); code != want {
 		t.Fatalf("exit code = %d (%v), want %d", code, err, want)

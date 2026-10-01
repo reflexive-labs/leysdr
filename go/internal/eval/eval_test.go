@@ -3,7 +3,6 @@
 package eval
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,7 +188,7 @@ func TestRunWithAFakeAgent(t *testing.T) {
 		Daemon: daemon, Ley: ley, Fixtures: fixtures, Claude: fake, Mode: "mcp", MaxTurns: 5,
 		Timeout: time.Minute, Log: func(string, ...any) {},
 	}
-	res := Run(context.Background(), env, s, dir)
+	res := Run(t.Context(), env, s, dir)
 	if res.Error != "" {
 		t.Fatalf("run: %s", res.Error)
 	}

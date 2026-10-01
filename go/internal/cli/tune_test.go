@@ -22,7 +22,7 @@ import (
 
 func TestTunePersistent(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "tune", "146.52M", "--no-audio", "--persistent")
+	out, errOut, err := run(t, t.Context(), sock, "tune", "146.52M", "--no-audio", "--persistent")
 	if err != nil {
 		t.Fatalf("persistent tune: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestTunePersistent(t *testing.T) {
 	if !strings.Contains(errOut, "Squelch auto → -80 dBFS") {
 		t.Fatalf("persistent tune should say what squelch it measured:\n%s", errOut)
 	}
-	st, err := c.State(context.Background())
+	st, err := c.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,13 +60,13 @@ func TestTunePersistent(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[1]), &ch); err != nil || ch["offsetHz"] != "80000" || ch["mode"] != "AM" {
 		t.Fatalf("json channel: %v %s", err, lines[1])
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if len(st.Captures) != 1 || len(st.Channels) != 2 {
 		t.Fatalf("expected capture reuse: %d captures %d channels", len(st.Captures), len(st.Channels))
 	}
 	// Out of span with two channels listening: refused with the centre, the
 	// count and the fix, exit 1; nothing moved. A bare number is MHz.
-	_, _, err = run(t, context.Background(), sock, "tune", "150", "--no-audio", "--persistent")
+	_, _, err = run(t, t.Context(), sock, "tune", "150", "--no-audio", "--persistent")
 	if exitCode(err) != 1 {
 		t.Fatalf("shared capture retune: exit %d %v", exitCode(err), err)
 	}
@@ -75,7 +75,7 @@ func TestTunePersistent(t *testing.T) {
 			t.Errorf("refusal lacks %q: %v", want, err)
 		}
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Captures[0].CenterHz != 146_520_000 || len(st.Channels) != 2 {
 		t.Fatalf("refusal must not touch the capture: %v", st.Captures[0])
 	}
@@ -84,7 +84,7 @@ func TestTunePersistent(t *testing.T) {
 	if !strings.Contains(out, "retuning capture") {
 		t.Fatalf("expected retune notice:\n%s", out)
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Captures[0].CenterHz != 150_000_000 {
 		t.Fatalf("capture not retuned: %d", st.Captures[0].CenterHz)
 	}
@@ -94,15 +94,15 @@ func TestTunePersistent(t *testing.T) {
 // before and reports it.
 func TestTuneRetunesIdleCapture(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	st, _ := c.State(context.Background())
-	if _, err := c.Control.CreateCapture(context.Background(), &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 101_100_000}); err != nil {
+	st, _ := c.State(t.Context())
+	if _, err := c.Control.CreateCapture(t.Context(), &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 101_100_000}); err != nil {
 		t.Fatal(err)
 	}
 	out := mustSay(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	if !strings.Contains(out, "retuning capture") || !strings.Contains(out, "101.100 MHz to 146.520 MHz") {
 		t.Fatalf("expected retune notice:\n%s", out)
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Captures[0].CenterHz != 146_520_000 {
 		t.Fatalf("capture not retuned: %d", st.Captures[0].CenterHz)
 	}
@@ -112,19 +112,19 @@ func TestTuneRetunesIdleCapture(t *testing.T) {
 func TestTuneGain(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "30")
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	if g := st.Captures[0].Gains[0]; g.Auto || math.Abs(g.Db-29.7) > 0.01 {
 		t.Fatalf("gain 30 should snap to 29.7 dB: %v", g)
 	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "auto")
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if !st.Captures[0].Gains[0].Auto {
 		t.Fatalf("gain auto not applied: %v", st.Captures[0].Gains[0])
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "loud"); err == nil || !strings.Contains(err.Error(), "--gain") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "loud"); err == nil || !strings.Contains(err.Error(), "--gain") {
 		t.Fatalf("bad --gain error: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "80"); err == nil || !strings.Contains(err.Error(), "49.6") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "80"); err == nil || !strings.Contains(err.Error(), "49.6") {
 		t.Fatalf("out-of-range --gain should name the range: %v", err)
 	}
 }
@@ -152,7 +152,7 @@ func (s *syncBuffer) String() string {
 // cancels and returns the captured stdout/stderr.
 func liveTune(t *testing.T, sock string, want string, args ...string) (string, string) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	var out, errOut syncBuffer
 	app := &App{Stdout: &out, Stderr: &errOut, LookupEnv: func(string) (string, bool) { return "", false }}
@@ -202,7 +202,7 @@ func TestTuneLifecycle(t *testing.T) {
 	if strings.Count(out, "using NFM: 2 m amateur band default") != 1 {
 		t.Fatalf("expected one rationale line:\n%s", out)
 	}
-	st, err := c.State(context.Background())
+	st, err := c.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestTuneModePrecedence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		out := mustSay(t, sock, append(tc.args, "--no-audio", "--persistent", "--retune")...)
-		st, _ := c.State(context.Background())
+		st, _ := c.State(t.Context())
 		ch := st.Channels[len(st.Channels)-1]
 		if leyline.ModeName(ch.Mode) != tc.mode {
 			t.Errorf("%v: mode %s, want %s", tc.args, leyline.ModeName(ch.Mode), tc.mode)
@@ -292,7 +292,7 @@ func TestTuneModePrecedence(t *testing.T) {
 			t.Errorf("%v: want %q in:\n%s", tc.args, tc.said, out)
 		}
 	}
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	// FM broadcast default bandwidth follows the band table; --bw is parsed
 	// with ParseBandwidth (bare numbers are kHz).
 	if st.Channels[2].BandwidthHz != 200_000 {
@@ -304,21 +304,21 @@ func TestTuneModePrecedence(t *testing.T) {
 	if bw := st.Channels[len(st.Channels)-1].BandwidthHz; bw != 11_250 {
 		t.Errorf("MURS 1 should be 11.25 kHz wide, got %d", bw)
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "99", "--band", "marine"); err == nil || !strings.Contains(err.Error(), "marine VHF") || !strings.Contains(err.Error(), "ley bands marine") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "99", "--band", "marine"); err == nil || !strings.Contains(err.Error(), "marine VHF") || !strings.Contains(err.Error(), "ley bands marine") {
 		t.Errorf("a channel the plan lacks names the band and the plan: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "16", "--band", "nonsuch"); err == nil || !strings.Contains(err.Error(), "--band") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "16", "--band", "nonsuch"); err == nil || !strings.Contains(err.Error(), "--band") {
 		t.Errorf("an unknown band names the flag: %v", err)
 	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--retune", "--bw", "25", "--volume", "50%")
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Channels[len(st.Channels)-1].BandwidthHz != 25_000 {
 		t.Errorf("--bw 25 should be 25 kHz: %d", st.Channels[len(st.Channels)-1].BandwidthHz)
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--bw", "wide"); err == nil || !strings.Contains(err.Error(), "--bw") || !strings.Contains(err.Error(), "12.5k") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "146.52", "--bw", "wide"); err == nil || !strings.Contains(err.Error(), "--bw") || !strings.Contains(err.Error(), "12.5k") {
 		t.Errorf("bad --bw error: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--volume", "loud"); err == nil || !strings.Contains(err.Error(), "--volume") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "146.52", "--volume", "loud"); err == nil || !strings.Contains(err.Error(), "--volume") {
 		t.Errorf("bad --volume error: %v", err)
 	}
 }
@@ -326,7 +326,7 @@ func TestTuneModePrecedence(t *testing.T) {
 func TestTunePresetsAndErrors(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "tune", "NOAA", "--no-audio", "--persistent")
-	st, err := c.State(context.Background())
+	st, err := c.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,19 +334,19 @@ func TestTunePresetsAndErrors(t *testing.T) {
 		t.Fatalf("preset noaa: %v %v\n%s", st.Captures[0], st.Channels[0], out)
 	}
 	// Unknown preset: the nearest names, and the frequency alternative.
-	_, _, err = run(t, context.Background(), sock, "tune", "nooa", "--no-audio")
+	_, _, err = run(t, t.Context(), sock, "tune", "nooa", "--no-audio")
 	if err == nil || !strings.Contains(err.Error(), "noaa") || !strings.Contains(err.Error(), "146.52") {
 		t.Fatalf("unknown preset error: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), sock, "tune", "--no-audio"); err == nil || !strings.Contains(err.Error(), "ley tune 146.52") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "--no-audio"); err == nil || !strings.Contains(err.Error(), "ley tune 146.52") {
 		t.Fatalf("missing positional error: %v", err)
 	}
 	// Commas are rejected with a hint rather than misread.
-	if _, _, err := run(t, context.Background(), sock, "tune", "146,520"); err == nil || !strings.Contains(err.Error(), "comma") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "146,520"); err == nil || !strings.Contains(err.Error(), "comma") {
 		t.Fatalf("comma error: %v", err)
 	}
 	// Out of range: the device range, plus the kHz re-read hint when that lands in a band.
-	out, errOut, err := run(t, context.Background(), sock, "tune", "1800", "--no-audio", "--persistent")
+	out, errOut, err := run(t, t.Context(), sock, "tune", "1800", "--no-audio", "--persistent")
 	if err == nil || leyline.Code(err) != leyline.CodeFreqOutOfRange {
 		t.Fatalf("expected FREQ_OUT_OF_RANGE, got %v", err)
 	}
@@ -360,31 +360,31 @@ func TestTunePresetsAndErrors(t *testing.T) {
 		}
 	}
 	// In range but in no band, while the same digits as kHz are: warn and continue.
-	out, errOut, err = run(t, context.Background(), sock, "tune", "1010", "--no-audio", "--persistent", "--retune")
+	out, errOut, err = run(t, t.Context(), sock, "tune", "1010", "--no-audio", "--persistent", "--retune")
 	if err != nil || !strings.Contains(out, "channel chan_") {
 		t.Fatalf("tune 1010: %v\n%s", err, out)
 	}
 	if !strings.Contains(errOut, "1010 MHz is not a band I know; for 1010 kHz AM broadcast type 1010k") {
 		t.Errorf("expected the kHz warning on stderr:\n%s", errOut)
 	}
-	if _, errOut, _ = run(t, context.Background(), sock, "tune", "1800", "--no-audio", "--persistent", "--retune"); strings.Contains(errOut, "not a band I know") {
+	if _, errOut, _ = run(t, t.Context(), sock, "tune", "1800", "--no-audio", "--persistent", "--retune"); strings.Contains(errOut, "not a band I know") {
 		t.Errorf("out of range keeps the hint, not the warning:\n%s", errOut)
 	}
-	_, _, err = run(t, context.Background(), sock, "tune", "5", "--no-audio", "--persistent")
+	_, _, err = run(t, t.Context(), sock, "tune", "5", "--no-audio", "--persistent")
 	if err == nil || !strings.Contains(err.Error(), "cannot tune below 24.000 MHz") || !strings.Contains(err.Error(), "upconverter") {
 		t.Errorf("HF error should give the honest reason: %v", err)
 	}
 	// Device selectors: row number and prefix.
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--retune", "--device", "1")
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--device", st.Devices[0].DeviceId[:8])
-	if _, _, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio", "--device", "9"); err == nil || !strings.Contains(err.Error(), "device") {
+	if _, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--device", "9"); err == nil || !strings.Contains(err.Error(), "device") {
 		t.Errorf("bad device selector: %v", err)
 	}
 }
 
 func TestTuneNoDevice(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
-	_, _, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio")
+	_, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio")
 	if err == nil {
 		t.Fatal("expected an error with no device")
 	}
@@ -420,7 +420,7 @@ func TestMeterLine(t *testing.T) {
 // stderr like every other decision.
 func TestTuneJSONMeasuresSquelch(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "--json", "tune", "146.52M", "--no-audio", "--persistent")
+	out, errOut, err := run(t, t.Context(), sock, "--json", "tune", "146.52M", "--no-audio", "--persistent")
 	if err != nil {
 		t.Fatalf("json tune: %v (stderr: %s)", err, errOut)
 	}

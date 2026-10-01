@@ -18,7 +18,7 @@ import (
 // Only the offset-independent bound (0 < bandwidth <= capture rate) is checked.
 func TestStoredWritesWhileOutOfCapture(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
@@ -120,7 +120,7 @@ func gainOf(t *testing.T, c *leyline.Client, capID, element string) *leylinev1.G
 // than at the minimum, which would deafen the radio.
 func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
@@ -163,7 +163,7 @@ func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
 // refusal is about the argument's shape rather than the name.
 func TestGainWriteNeedsAValue(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestGainWriteNeedsAValue(t *testing.T) {
 // and the daemon applies; the confirmed state comes back under that element's name.
 func TestGainWriteWithAnEmptyElementIsTheFirst(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {

@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"image/png"
 	"os"
@@ -26,7 +25,7 @@ func (e *env) mcpSession(t *testing.T) *mcp.ClientSession {
 	cmd := exec.Command(e.ley, "--socket", e.socket, "mcp")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	cs, err := client.Connect(context.Background(), &mcp.CommandTransport{Command: cmd}, nil)
+	cs, err := client.Connect(t.Context(), &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
 		t.Fatalf("connect to ley mcp: %v\n%s", err, stderr.String())
 	}
@@ -44,7 +43,7 @@ func (e *env) mcpSession(t *testing.T) *mcp.ClientSession {
 // tool error.
 func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any) (any, string) {
 	t.Helper()
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -111,7 +110,7 @@ func TestMCPAgainstRealDaemon(t *testing.T) {
 	devID := devs[0]["deviceId"].(string)
 
 	cs := e.mcpSession(t)
-	tools, err := cs.ListTools(context.Background(), nil)
+	tools, err := cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +143,7 @@ func TestMCPAgainstRealDaemon(t *testing.T) {
 
 	// snapshot: the row shape of `ley spectrum --json`, and a PNG one pixel per bin. A recording
 	// tunes only its own centre, so the capture is made there and the carriers sit inside it.
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "snapshot", Arguments: map[string]any{"frequency": "146.0", "device": devID, "bins": 512, "include_bins": true}})
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "snapshot", Arguments: map[string]any{"frequency": "146.0", "device": devID, "bins": 512, "include_bins": true}})
 	if err != nil || res.IsError {
 		var text string
 		if res != nil {
@@ -270,7 +269,7 @@ func TestMCPDecodeAgainstRealDaemon(t *testing.T) {
 	if want := parseJSON(t, e.mustRun("records", "--json", "--job-id", jobID)); len(list(want, "records")) != len(list(page.(map[string]any), "records")) {
 		t.Errorf("query_records and ley records disagree on the count")
 	}
-	rr, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://records/" + jobID})
+	rr, err := cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://records/" + jobID})
 	if err != nil || len(rr.Contents) != 1 || !strings.Contains(rr.Contents[0].Text, `"records"`) {
 		t.Errorf("records resource: %v %v", err, rr)
 	}

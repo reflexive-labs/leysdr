@@ -5,7 +5,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"math"
 	"os"
 	"testing"
@@ -84,7 +83,7 @@ func TestPluginDecodesAMessage(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := plugin.RunStreams(context.Background(), &in, &out, func(rate uint32) plugin.Decoder {
+	err := plugin.RunStreams(t.Context(), &in, &out, func(rate uint32) plugin.Decoder {
 		if rate != audioRate {
 			t.Errorf("decoder built for %d Hz, want %d", rate, audioRate)
 		}

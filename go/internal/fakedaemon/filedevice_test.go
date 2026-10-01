@@ -31,7 +31,7 @@ func writeRecording(t *testing.T, dir, name string, samples int, sidecar string)
 // FilePlaybackDevice and answers with its codes.
 func TestAttachFileDeviceValidation(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	attach := func(path string) error {
 		_, err := c.Control.AttachFileDevice(ctx, &leylinev1.AttachFileDeviceRequest{Path: path})
@@ -82,7 +82,7 @@ func TestAttachFileDeviceValidation(t *testing.T) {
 // the way the daemon does when a FilePlaybackDevice hits EOF.
 func TestFileDeviceEOFDetaches(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	const rate, samples = 100_000, 15_000 // 150 ms of playback
 	path := writeRecording(t, t.TempDir(), "short", samples, `{"sample_rate": 100000, "center_hz": 146520000}`)
 	dev, err := c.Control.AttachFileDevice(ctx, &leylinev1.AttachFileDeviceRequest{Path: path, Loop: false})

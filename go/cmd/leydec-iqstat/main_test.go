@@ -5,7 +5,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/binary"
 	"math"
 	"os"
@@ -62,7 +61,7 @@ func TestPluginEmitsBlockPower(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := plugin.RunIQStreams(context.Background(), &in, &out, func(r uint32) plugin.IQDecoder {
+	if err := plugin.RunIQStreams(t.Context(), &in, &out, func(r uint32) plugin.IQDecoder {
 		return newDecoder(r)
 	}); err != nil {
 		t.Fatal(err)

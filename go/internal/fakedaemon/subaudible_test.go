@@ -20,7 +20,7 @@ func TestDCSOptionReportsTheCode(t *testing.T) {
 		MeterInterval: 20 * time.Millisecond,
 		DCS:           map[uint64]fakedaemon.DCSCode{146_940_000: {Code: 754, Inverted: true}},
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	st := mustState(t, c)
 	capt, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_900_000})

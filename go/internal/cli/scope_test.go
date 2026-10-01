@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -254,7 +253,7 @@ func TestScopeFullScaleHz(t *testing.T) {
 // tuning error. The view measures neither.
 func TestScopeDemodHeaderCarriesTheDaemonsTone(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
+	out, errOut, err := run(t, t.Context(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
 	if err != nil {
 		t.Fatalf("ley scope: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -278,7 +277,7 @@ func TestScopeDemodHeaderCarriesTheDaemonsTone(t *testing.T) {
 // carrier shows.
 func TestScopeDemodHeaderCarriesADCSCode(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{DCS: map[uint64]fakedaemon.DCSCode{145_230_000: {Code: 754}}})
-	out, errOut, err := run(t, context.Background(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
+	out, errOut, err := run(t, t.Context(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
 	if err != nil {
 		t.Fatalf("ley scope: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -304,7 +303,7 @@ func TestScopeAudioTapHasNoTuningError(t *testing.T) {
 // the sentence a person reads is the daemon's own.
 func TestScopeDemodTapRefusedOnRawIQ(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, _, err := run(t, context.Background(), sock, "scope", "146.52", "--mode", "raw", "--tap", "demod", "--count", "1")
+	out, _, err := run(t, t.Context(), sock, "scope", "146.52", "--mode", "raw", "--tap", "demod", "--count", "1")
 	if exitCode(err) != 1 {
 		t.Fatalf("ley scope --mode raw --tap demod: exit %d (%v), want 1", exitCode(err), err)
 	}
@@ -382,7 +381,7 @@ func TestScopeUsageErrors(t *testing.T) {
 		{[]string{"scope", "chan_01J", "--mode", "am"}, "--mode cannot be used with a channel id"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			out, _, err := run(t, context.Background(), sock, tc.args...)
+			out, _, err := run(t, t.Context(), sock, tc.args...)
 			if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("ley %v: exit %d (%v), want exit %d saying %q", tc.args, exitCode(err), err, ExitUsage, tc.want)
 			}

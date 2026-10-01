@@ -117,7 +117,7 @@ func TestAxisLabelRowKeepsLabelsApart(t *testing.T) {
 // reported whether or not anything was drawn -- a reader must never be left
 // with a frozen picture and a zero exit.
 func TestLiveStreamEndIsNeverSilent(t *testing.T) {
-	live := context.Background()
+	live := t.Context()
 	stopped, cancel := context.WithCancel(live)
 	cancel()
 	daemon := errors.New("CHANNEL_NOT_FOUND")

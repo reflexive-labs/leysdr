@@ -245,7 +245,7 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 			// stops it, by cancelling: a deadline reaches the daemon as
 			// DEADLINE_EXCEEDED, which is a real error rather than the
 			// clean exit this checks for.
-			ctx := context.Background()
+			ctx := t.Context()
 			if c.timeout > 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)

@@ -40,7 +40,7 @@ func detections(t *testing.T, ctx context.Context, c *leyline.Client, sub *leyli
 // daemon's job hub filters detections by the capture the sweep leased, and so does the fake.
 func TestDetectionsFollowTheSubscriptionScope(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	st := mustState(t, c)
 	swept, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_000_000})
@@ -87,7 +87,7 @@ func TestDetectionsFollowTheSubscriptionScope(t *testing.T) {
 // a tick. Any tick at all proves the handler survived.
 func TestSlowMeterIntervalStillTicks(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{MeterInterval: 1200 * time.Millisecond})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	setupCaptureChannel(t, c)
 	msgs, _, err := c.WatchTelemetry(ctx, &leylinev1.TelemetrySubscription{})
@@ -112,7 +112,7 @@ func TestSlowMeterIntervalStillTicks(t *testing.T) {
 // about a transmission that opened before anyone was listening.
 func TestNoSquelchTransitionOnFirstTick(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	setupCaptureChannel(t, c)
 	msgs, _, err := c.WatchTelemetry(ctx, &leylinev1.TelemetrySubscription{})

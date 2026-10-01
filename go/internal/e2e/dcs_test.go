@@ -36,7 +36,7 @@ func TestDCSAgainstRealDaemon(t *testing.T) {
 	st := e.waitChannels(1)
 	chanID := list(st, "channels")[0].(map[string]any)["channelId"].(string)
 
-	ctx, cancel := context.WithTimeout(context.Background(), dcsWindow)
+	ctx, cancel := context.WithTimeout(t.Context(), dcsWindow)
 	defer cancel()
 	c, err := leyline.Dial(ctx, e.socket, leyline.WithLabel("e2e"))
 	if err != nil {

@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -29,7 +28,7 @@ func indentedRows(out string) int {
 func TestPresetsAndBands(t *testing.T) {
 	// A socket nothing listens on: these verbs never dial.
 	sock := "/nonexistent/leyline-tables.sock"
-	out, errOut, err := run(t, context.Background(), sock, "presets")
+	out, errOut, err := run(t, t.Context(), sock, "presets")
 	if err != nil || errOut != "" {
 		t.Fatalf("ley presets: err=%v stderr=%q", err, errOut)
 	}
@@ -51,7 +50,7 @@ func TestPresetsAndBands(t *testing.T) {
 		t.Fatalf("description still restates the frequency column:\n%s", out)
 	}
 
-	out, errOut, err = run(t, context.Background(), sock, "--json", "presets")
+	out, errOut, err = run(t, t.Context(), sock, "--json", "presets")
 	if err != nil || errOut != "" {
 		t.Fatalf("ley presets --json: err=%v stderr=%q", err, errOut)
 	}
@@ -66,7 +65,7 @@ func TestPresetsAndBands(t *testing.T) {
 		t.Fatalf("presets --json first row: %+v", ps[0])
 	}
 
-	out, errOut, err = run(t, context.Background(), sock, "bands")
+	out, errOut, err = run(t, t.Context(), sock, "bands")
 	if err != nil || errOut != "" {
 		t.Fatalf("ley bands: err=%v stderr=%q", err, errOut)
 	}
@@ -84,7 +83,7 @@ func TestPresetsAndBands(t *testing.T) {
 		t.Fatalf("note still repeats its group heading:\n%s", out)
 	}
 
-	out, errOut, err = run(t, context.Background(), sock, "--json", "bands")
+	out, errOut, err = run(t, t.Context(), sock, "--json", "bands")
 	if err != nil || errOut != "" {
 		t.Fatalf("ley bands --json: err=%v stderr=%q", err, errOut)
 	}
@@ -176,11 +175,11 @@ func TestBandsChannelsColumnDropsFirst(t *testing.T) {
 // presets` stays the prose topic (the verb owns the bare name).
 func TestPresetsTopicKeepsProse(t *testing.T) {
 	sock := "/nonexistent/leyline-tables.sock"
-	table, _, err := run(t, context.Background(), sock, "presets")
+	table, _, err := run(t, t.Context(), sock, "presets")
 	if err != nil {
 		t.Fatal(err)
 	}
-	prose, _, err := run(t, context.Background(), sock, "help", "presets")
+	prose, _, err := run(t, t.Context(), sock, "help", "presets")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +201,7 @@ func TestBandsJSONResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v; run: make bands-json", err)
 	}
-	got, errOut, err := run(t, context.Background(), "/nonexistent/leyline-tables.sock", "--json", "bands")
+	got, errOut, err := run(t, t.Context(), "/nonexistent/leyline-tables.sock", "--json", "bands")
 	if err != nil || errOut != "" {
 		t.Fatalf("ley bands --json: err=%v stderr=%q", err, errOut)
 	}

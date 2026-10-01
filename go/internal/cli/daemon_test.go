@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func TestDaemonStatusDaemonError(t *testing.T) {
 	go func() { _ = srv.Serve(l) }()
 	t.Cleanup(srv.Stop)
 	for _, args := range [][]string{{"daemon", "status"}, {"--json", "daemon", "status"}} {
-		out, _, err := run(t, context.Background(), sock, args...)
+		out, _, err := run(t, t.Context(), sock, args...)
 		if exitCode(err) != 1 || !strings.HasSuffix(err.Error(), "[UNIMPLEMENTED]") || out != "" {
 			t.Errorf("ley %v: err %v (exit %d), stdout %q; want exit 1 with [UNIMPLEMENTED]", args, err, exitCode(err), out)
 		}

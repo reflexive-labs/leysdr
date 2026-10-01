@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"math"
@@ -220,7 +219,7 @@ func TestPhosphorAgainstDaemon(t *testing.T) {
 // re-derive every cell the chart shades.
 func TestPhosphorJSONFrames(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, _, err := run(t, context.Background(), sock, "--json", "phosphor", "146.52", "--count", "2", "--half-life", "5", "--bins", "64", "--levels", "16")
+	out, _, err := run(t, t.Context(), sock, "--json", "phosphor", "146.52", "--count", "2", "--half-life", "5", "--bins", "64", "--levels", "16")
 	if err != nil {
 		t.Fatalf("phosphor --json: %v\n%s", err, out)
 	}

@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"strings"
@@ -298,7 +297,7 @@ func TestWaveformStaysInsideTheWidth(t *testing.T) {
 // what it is drawing, and counts the seconds back from the playhead.
 func TestWaveformDrawsTheDaemonsAudio(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "waveform", "145.23", "--seconds", "2", "--count", "12")
+	out, errOut, err := run(t, t.Context(), sock, "waveform", "145.23", "--seconds", "2", "--count", "12")
 	if err != nil {
 		t.Fatalf("ley waveform: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -381,7 +380,7 @@ func TestWaveformUsageErrors(t *testing.T) {
 		{[]string{"waveform", "chan_01J", "--mode", "am"}, "--mode cannot be used with a channel id"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			out, _, err := run(t, context.Background(), sock, tc.args...)
+			out, _, err := run(t, t.Context(), sock, tc.args...)
 			if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("ley %v: exit %d (%v), want exit %d saying %q", tc.args, exitCode(err), err, ExitUsage, tc.want)
 			}

@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"regexp"
@@ -82,16 +81,16 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if !strings.ContainsAny(text, ".:-=+*#%") {
 		t.Fatalf("no bars drawn:\n%s", text)
 	}
-	if _, _, err := run(t, context.Background(), sock, "spectrum", "--bins", "256", "--width", "60"); err != nil {
+	if _, _, err := run(t, t.Context(), sock, "spectrum", "--bins", "256", "--width", "60"); err != nil {
 		t.Fatalf("second run must not have torn down the daemon's capture: %v", err)
 	}
 	// A frequency outside the band while a channel listens: refused with the
 	// fix, exit 1, and the capture stays where it was; --retune moves it.
-	_, _, err := run(t, context.Background(), sock, "spectrum", "101.1", "--bins", "256")
+	_, _, err := run(t, t.Context(), sock, "spectrum", "101.1", "--bins", "256")
 	if exitCode(err) != 1 || !strings.Contains(err.Error(), "the radio is on 146.520 MHz with 1 channel listening") || !strings.Contains(err.Error(), "--retune") {
 		t.Fatalf("shared capture: exit %d %v", exitCode(err), err)
 	}
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	if st.Captures[0].CenterHz != 146_520_000 {
 		t.Fatalf("refusal moved the capture: %v", st.Captures[0])
 	}
@@ -99,12 +98,12 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &typed); err != nil || typed.CenterHz != 101_100_000 {
 		t.Fatalf("--retune row: %v %+v", err, typed)
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Captures[0].CenterHz != 101_100_000 || len(st.Channels) != 1 {
 		t.Fatalf("--retune should move the shared capture and keep the channel: %v %v", st.Captures, st.Channels)
 	}
 	// A comma is rejected once, without a doubled "frequency:" prefix.
-	_, _, err = run(t, context.Background(), sock, "spectrum", "101,1")
+	_, _, err = run(t, t.Context(), sock, "spectrum", "101,1")
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "comma") || strings.Contains(err.Error(), "frequency: frequency:") {
 		t.Fatalf("comma error: %v", err)
 	}
@@ -112,7 +111,7 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 
 func TestSpectrumWatchCountAndCapture(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	// No capture and no frequency: a usage error that shows the fix.
 	_, _, err := run(t, ctx, sock, "spectrum")
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "ley spectrum 101.1") {
@@ -170,7 +169,7 @@ func TestSpectrumWatchCountAndCapture(t *testing.T) {
 // different width is refused with exit 2 rather than ignored.
 func TestSpectrumSpan(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	out, errOut, err := run(t, ctx, sock, "--json", "spectrum", "101.1", "--span", "200k", "--bins", "256")
 	if err != nil {
 		t.Fatalf("fresh capture with --span 200k: %v\n%s", err, errOut)
@@ -279,7 +278,7 @@ func framed(screen string) bool {
 // capture's centre on stderr and says what it covers.
 func TestSpectrumSaysWhenTheCaptureIsOffCentre(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := c.State(ctx)
 	if err != nil {
 		t.Fatal(err)

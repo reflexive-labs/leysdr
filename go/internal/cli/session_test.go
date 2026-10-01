@@ -56,7 +56,7 @@ func harnessStop(t *testing.T, opts fakedaemon.Options) (sock string, c *leyline
 // want; the caller cancels ctx and reads done.
 func startTune(t *testing.T, sock, want string, args ...string) (out, errOut *syncBuffer, cancel context.CancelFunc, done <-chan error) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	res := make(chan error, 1)
 	out, errOut = &syncBuffer{}, &syncBuffer{}
 	app := &App{Stdout: out, Stderr: errOut, LookupEnv: func(string) (string, bool) { return "", false }}
@@ -107,7 +107,7 @@ func TestTuneDaemonClosesStreams(t *testing.T) {
 func TestTeardownKeepsSharedCapture(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	_, errOut, cancel, done := startTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio")
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := c.State(ctx)
 	if err != nil || len(st.Captures) != 1 {
 		t.Fatalf("state: %v %v", err, st)
@@ -137,7 +137,7 @@ func TestTeardownKeepsSharedCapture(t *testing.T) {
 // rather than listening with the wrong squelch.
 func TestTuneSquelchRejected(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	_, errOut, err := run(t, context.Background(), sock, "tune", "146.52", "--no-audio", "--squelch", "-1000")
+	_, errOut, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--squelch", "-1000")
 	if exitCode(err) != 2 || !strings.Contains(err.Error(), "-200 dBFS") {
 		t.Fatalf("want usage error naming the floor, got %v (exit %d)\n%s", err, exitCode(err), errOut)
 	}
@@ -151,14 +151,14 @@ func TestTuneSquelchRejected(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{RejectWrites: reject})
 	for _, extra := range [][]string{nil, {"--persistent"}} {
 		args := append([]string{"tune", "146.52", "--no-audio", "--squelch", "-40"}, extra...)
-		out, errOut, err := run(t, context.Background(), sock, args...)
+		out, errOut, err := run(t, t.Context(), sock, args...)
 		if err == nil || exitCode(err) != 1 || !strings.Contains(err.Error(), "--squelch") || !strings.Contains(err.Error(), "squelch not available") {
 			t.Fatalf("%v: want the rejection as a tune failure (exit 1), got %v\n%s\n%s", args, err, out, errOut)
 		}
 		if strings.Contains(out, "Listening to") {
 			t.Fatalf("%v: must not start listening after a rejected squelch:\n%s", args, out)
 		}
-		st, serr := c.State(context.Background())
+		st, serr := c.State(t.Context())
 		if serr != nil {
 			t.Fatal(serr)
 		}

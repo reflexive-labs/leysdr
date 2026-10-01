@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -24,12 +23,12 @@ func TestSetParams(t *testing.T) {
 	// WatchEvents stream is registered, so the WriteRejected asserted below
 	// cannot be emitted before the CLI is listening.
 	sock, c := harness(t, fakedaemon.Options{WriteAwaitsWatcher: true})
-	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40"); err == nil || !strings.Contains(err.Error(), "nothing is playing; start with: ley tune 146.52") {
+	if _, _, err := run(t, t.Context(), sock, "set", "squelch", "-40"); err == nil || !strings.Contains(err.Error(), "nothing is playing; start with: ley tune 146.52") {
 		t.Fatalf("expected no-channel error, got %v", err)
 	}
 	mustRun(t, sock, "tune", "146.52M", "--no-audio", "--persistent")
 	state := func() *leylinev1.GetStateResponse {
-		st, err := c.State(context.Background())
+		st, err := c.State(t.Context())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -101,12 +100,12 @@ func TestSetParams(t *testing.T) {
 		t.Fatalf("mode/bw: %v", st.Channels[0])
 	}
 	// A rejection is reported with its code.
-	_, _, err := run(t, context.Background(), sock, "set", "gain", "nope=20")
+	_, _, err := run(t, t.Context(), sock, "set", "gain", "nope=20")
 	if err == nil || !strings.Contains(err.Error(), "rejected") || exitCode(err) != 1 {
 		t.Fatalf("expected rejection, got %v", err)
 	}
 	// Under --json the WriteRejected event is the report: on stdout, exit 1, no prose.
-	out, errOut, err := run(t, context.Background(), sock, "--json", "set", "gain", "nope=20")
+	out, errOut, err := run(t, t.Context(), sock, "--json", "set", "gain", "nope=20")
 	var ee *ExitError
 	if !errors.As(err, &ee) || ee.Code != 1 || ee.Message != "" || errOut != "" {
 		t.Fatalf("set --json rejection: %v stderr=%q", err, errOut)
@@ -118,12 +117,12 @@ func TestSetParams(t *testing.T) {
 	if rej := ev["writeRejected"].(map[string]any); rej["error"].(map[string]any)["code"] != leyline.CodeGainElementUnknown {
 		t.Fatalf("set --json rejection code: %s", out)
 	}
-	if _, _, err := run(t, context.Background(), sock, "set", "volume", "0.5"); err == nil || leyline.Code(err) != leyline.CodeSinkNotFound || !strings.Contains(err.Error(), "not playing through the speakers") {
+	if _, _, err := run(t, t.Context(), sock, "set", "volume", "0.5"); err == nil || leyline.Code(err) != leyline.CodeSinkNotFound || !strings.Contains(err.Error(), "not playing through the speakers") {
 		t.Fatalf("expected sink error, got %v", err)
 	}
 	// Two channels made by ley: a numbered list with the example.
 	mustRun(t, sock, "tune", "155.1M", "--no-audio", "--persistent")
-	_, _, err = run(t, context.Background(), sock, "set", "squelch", "-40")
+	_, _, err = run(t, t.Context(), sock, "set", "squelch", "-40")
 	if err == nil || !strings.Contains(err.Error(), "2 channels are playing") || !strings.Contains(err.Error(), "  2  155.100 MHz NFM") || !strings.Contains(err.Error(), "ley set squelch -40 --channel 2") {
 		t.Fatalf("expected ambiguity list, got %v", err)
 	}
@@ -141,11 +140,11 @@ func TestSetParams(t *testing.T) {
 	}
 	// The resolver's sentence is the error line: it names what it could not
 	// find rather than the flag it came in on.
-	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "-40", "--channel", "9"); err == nil || !strings.Contains(err.Error(), "no channel matches \"9\"") {
+	if _, _, err := run(t, t.Context(), sock, "set", "squelch", "-40", "--channel", "9"); err == nil || !strings.Contains(err.Error(), "no channel matches \"9\"") {
 		t.Fatalf("bad selector: %v", err)
 	}
 	// A frequency that matches no channel lists rows a person can pick from.
-	_, _, err = run(t, context.Background(), sock, "set", "squelch", "-40", "--channel", "162.55")
+	_, _, err = run(t, t.Context(), sock, "set", "squelch", "-40", "--channel", "162.55")
 	if err == nil || !strings.Contains(err.Error(), "pick one:\n  1  chan_") || !strings.Contains(err.Error(), "  2  chan_") || !strings.Contains(err.Error(), "  155.100 MHz NFM") {
 		t.Fatalf("no-match rows: %v", err)
 	}
@@ -153,7 +152,7 @@ func TestSetParams(t *testing.T) {
 
 func TestFFTJSONAndBin(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	if _, _, err := run(t, context.Background(), sock, "fft", "--count", "1"); err == nil || !strings.Contains(err.Error(), "--freq") {
+	if _, _, err := run(t, t.Context(), sock, "fft", "--count", "1"); err == nil || !strings.Contains(err.Error(), "--freq") {
 		t.Fatalf("expected --freq requirement, got %v", err)
 	}
 	out := mustRun(t, sock, "fft", "--count", "2", "--bins", "256", "--rate", "30", "--freq", "100M")
@@ -170,7 +169,7 @@ func TestFFTJSONAndBin(t *testing.T) {
 			t.Fatalf("row shape: center %d span %d bins %d", row.CenterHz, row.SpanHz, len(row.Bins))
 		}
 	}
-	if st, _ := c.State(context.Background()); len(st.Captures) != 0 {
+	if st, _ := c.State(t.Context()); len(st.Captures) != 0 {
 		t.Fatalf("temporary capture not destroyed")
 	}
 	out = mustRun(t, sock, "fft", "--count", "2", "--bins", "256", "--rate", "30", "--freq", "100M", "--format", "bin", "--u8")
@@ -193,7 +192,7 @@ func TestFFTJSONAndBin(t *testing.T) {
 func TestSetNoArgsAndTargetRule(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	// Nothing playing: the same next-step error as a write.
-	if _, _, err := run(t, context.Background(), sock, "set"); err == nil || !strings.Contains(err.Error(), "ley tune 146.52") {
+	if _, _, err := run(t, t.Context(), sock, "set"); err == nil || !strings.Contains(err.Error(), "ley tune 146.52") {
 		t.Fatalf("set with nothing playing: %v", err)
 	}
 	mustRun(t, sock, "tune", "146.52", "--persistent", "--squelch", "-45", "--volume", "50%")
@@ -209,31 +208,31 @@ func TestSetNoArgsAndTargetRule(t *testing.T) {
 		t.Fatalf("json set view: %v %s", err, out)
 	}
 	// A second channel owned by the app: set still knows which one ley made and says so.
-	app, err := leyline.Dial(context.Background(), sock, leyline.WithKind("app"), leyline.WithLabel("Leyline.app"), leyline.WithClientID("app_test"))
+	app, err := leyline.Dial(t.Context(), sock, leyline.WithKind("app"), leyline.WithLabel("Leyline.app"), leyline.WithClientID("app_test"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer app.Close()
-	st, _ := c.State(context.Background())
-	if _, err := app.Control.CreateChannel(context.Background(), &leylinev1.CreateChannelRequest{CaptureId: st.Captures[0].CaptureId, OffsetHz: 100_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_NFM, Persistent: true}); err != nil {
+	st, _ := c.State(t.Context())
+	if _, err := app.Control.CreateChannel(t.Context(), &leylinev1.CreateChannelRequest{CaptureId: st.Captures[0].CaptureId, OffsetHz: 100_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_NFM, Persistent: true}); err != nil {
 		t.Fatal(err)
 	}
 	out = mustRun(t, sock, "set", "squelch", "-50")
 	if !strings.Contains(out, "using channel 1, 146.520 MHz NFM, chan_") || !strings.Contains(out, "(cli:ley) (the only active channel ley made)") {
 		t.Fatalf("expected the cli-owned channel to be chosen and announced:\n%s", out)
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Channels[0].SquelchDb != -50 || !math.IsNaN(st.Channels[1].SquelchDb) {
 		t.Fatalf("wrong channel written: %v", st.Channels)
 	}
 	// Under --json the choice is announced on stderr, stdout stays JSON.
-	out, errOut, err := run(t, context.Background(), sock, "--json", "set", "squelch", "-51")
+	out, errOut, err := run(t, t.Context(), sock, "--json", "set", "squelch", "-51")
 	if err != nil || !strings.HasPrefix(out, "{") || !strings.Contains(errOut, "using channel 1") {
 		t.Fatalf("json target notice: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
 	// The app's channel is reachable by frequency.
 	mustRun(t, sock, "set", "squelch", "-52", "--channel", "146.62")
-	if st, _ = c.State(context.Background()); st.Channels[1].SquelchDb != -52 {
+	if st, _ = c.State(t.Context()); st.Channels[1].SquelchDb != -52 {
 		t.Fatalf("frequency selector: %v", st.Channels)
 	}
 }
@@ -245,7 +244,7 @@ func TestSetSquelchAuto(t *testing.T) {
 	if !strings.Contains(out, "squelch auto → -80 dBFS (10 dB above the band's noise floor") {
 		t.Fatalf("auto squelch report:\n%s", out)
 	}
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
 		t.Fatalf("auto squelch value: %v", got)
 	}
@@ -254,7 +253,7 @@ func TestSetSquelchAuto(t *testing.T) {
 	mustRun(t, sock, "set", "mode", "wfm")
 	mustRun(t, sock, "set", "bw", "200k")
 	mustRun(t, sock, "set", "squelch", "auto")
-	if st, _ = c.State(context.Background()); math.Abs(st.Channels[0].SquelchDb-(-68)) > 1.5 {
+	if st, _ = c.State(t.Context()); math.Abs(st.Channels[0].SquelchDb-(-68)) > 1.5 {
 		t.Fatalf("auto squelch at 200 kHz: %v", st.Channels[0].SquelchDb)
 	}
 }
@@ -263,14 +262,14 @@ func TestSetParameterErrors(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	// Unknown parameter: listed before any daemon or target lookup (dead socket).
 	dead := testutil.SocketPath(t, "dead.sock")
-	_, _, err := run(t, context.Background(), dead, "set", "foo", "1")
+	_, _, err := run(t, t.Context(), dead, "set", "foo", "1")
 	if err == nil || !strings.Contains(err.Error(), `"foo" is not a setting`) || !strings.Contains(err.Error(), "squelch") || strings.Contains(err.Error(), "daemon") {
 		t.Fatalf("unknown param: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), dead, "set", "squelch"); err == nil || !strings.Contains(err.Error(), "needs a value (-40, -40dB, off, auto)") {
+	if _, _, err := run(t, t.Context(), dead, "set", "squelch"); err == nil || !strings.Contains(err.Error(), "needs a value (-40, -40dB, off, auto)") {
 		t.Fatalf("missing value: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), dead, "set", "squelch", "-40", "extra"); err == nil || !strings.Contains(err.Error(), "one parameter and one value") {
+	if _, _, err := run(t, t.Context(), dead, "set", "squelch", "-40", "extra"); err == nil || !strings.Contains(err.Error(), "one parameter and one value") {
 		t.Fatalf("too many words: %v", err)
 	}
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
@@ -284,7 +283,7 @@ func TestSetParameterErrors(t *testing.T) {
 		"accepted: 146.52 (MHz), 1010k":    {"freq", "146,520"},
 	}
 	for want, args := range cases {
-		_, _, err := run(t, context.Background(), sock, append([]string{"set"}, args...)...)
+		_, _, err := run(t, t.Context(), sock, append([]string{"set"}, args...)...)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("set %v: want %q in %v", args, want, err)
 		}
@@ -296,18 +295,18 @@ func TestSetParameterErrors(t *testing.T) {
 		}
 	}
 	for _, args := range [][]string{{"set", "foo", "1"}, {"set", "squelch"}, {"set", "squelch", "-40", "extra"}} {
-		if _, _, err := run(t, context.Background(), dead, args...); exitCode(err) != ExitUsage {
+		if _, _, err := run(t, t.Context(), dead, args...); exitCode(err) != ExitUsage {
 			t.Errorf("ley %v: exit %d (%v), want %d", args, exitCode(err), err, ExitUsage)
 		}
 	}
-	if _, _, err := run(t, context.Background(), sock, "set", "gain", "-5"); err == nil || !strings.Contains(err.Error(), "gain \"-5\" is negative") {
+	if _, _, err := run(t, t.Context(), sock, "set", "gain", "-5"); err == nil || !strings.Contains(err.Error(), "gain \"-5\" is negative") {
 		t.Errorf("gain prefix once: %v", err)
 	}
-	if _, _, err := run(t, context.Background(), sock, "set", "squelch", "5"); err == nil || !strings.Contains(err.Error(), "dBFS") {
+	if _, _, err := run(t, t.Context(), sock, "set", "squelch", "5"); err == nil || !strings.Contains(err.Error(), "dBFS") {
 		t.Errorf("positive squelch should explain the scale: %v", err)
 	}
 	// Out-of-range frequency: device range and the reason.
-	_, _, err = run(t, context.Background(), sock, "set", "freq", "5")
+	_, _, err = run(t, t.Context(), sock, "set", "freq", "5")
 	if err == nil || leyline.Code(err) != leyline.CodeFreqOutOfRange || !strings.Contains(err.Error(), "cannot tune below 24.000 MHz") {
 		t.Errorf("set freq out of range: %v", err)
 	}
@@ -328,7 +327,7 @@ func TestSetNegativeNumbers(t *testing.T) {
 		{"--json", "set", "squelch", "-43"},
 	} {
 		out := mustRun(t, sock, args...)
-		st, _ := c.State(context.Background())
+		st, _ := c.State(t.Context())
 		if st.Channels[0].SquelchDb != float64(-40-i) {
 			t.Errorf("%v: squelch %v", args, st.Channels[0].SquelchDb)
 		}
@@ -336,7 +335,7 @@ func TestSetNegativeNumbers(t *testing.T) {
 			t.Errorf("%v: expected JSON output: %s", args, out)
 		}
 	}
-	out, _, err := run(t, context.Background(), sock, "set", "-h")
+	out, _, err := run(t, t.Context(), sock, "set", "-h")
 	if err != nil || !strings.Contains(out, "Parameters:") || !strings.Contains(out, "squelch") || !strings.Contains(out, "--channel") {
 		t.Fatalf("set -h: %v\n%s", err, out)
 	}
@@ -406,25 +405,25 @@ func TestParseNegativeSafe(t *testing.T) {
 func TestSetBandwidthBeyondTheNarrowLimit(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
-	_, _, err := run(t, context.Background(), sock, "set", "bw", "100k")
+	_, _, err := run(t, t.Context(), sock, "set", "bw", "100k")
 	if err == nil {
 		t.Fatal("a 100 kHz NFM channel must be refused: the daemon cannot build it")
 	}
 	if !strings.Contains(err.Error(), "43200 Hz") || !strings.Contains(err.Error(), "use wfm") {
 		t.Errorf("the refusal must name the limit and the way through: %v", err)
 	}
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	if st.Channels[0].BandwidthHz != leyline.DefaultBandwidth(leylinev1.DemodMode_NFM) {
 		t.Errorf("a refused write must not move the channel: %v", st.Channels[0])
 	}
 	// Wide FM has no such limit: it is demodulated before the second stage.
 	mustRun(t, sock, "set", "mode", "wfm")
 	mustRun(t, sock, "set", "bw", "100k")
-	if st, _ = c.State(context.Background()); st.Channels[0].BandwidthHz != 100_000 {
+	if st, _ = c.State(t.Context()); st.Channels[0].BandwidthHz != 100_000 {
 		t.Errorf("wfm should carry 100 kHz: %v", st.Channels[0])
 	}
 	// And a mode the width no longer fits is refused too, rather than quietly filtered.
-	if _, _, err := run(t, context.Background(), sock, "set", "mode", "nfm"); err == nil || !strings.Contains(err.Error(), "43200 Hz") {
+	if _, _, err := run(t, t.Context(), sock, "set", "mode", "nfm"); err == nil || !strings.Contains(err.Error(), "43200 Hz") {
 		t.Errorf("nfm cannot carry the 100 kHz this channel has: %v", err)
 	}
 }

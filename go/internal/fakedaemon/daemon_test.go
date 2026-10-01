@@ -51,7 +51,7 @@ func harness(t *testing.T, opts fakedaemon.Options) (*leyline.Client, string) {
 
 func TestStateAndDevices(t *testing.T) {
 	c, sock := harness(t, fakedaemon.Options{})
-	st, err := c.State(context.Background())
+	st, err := c.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestStateAndDevices(t *testing.T) {
 
 func TestLifecycleAndEvents(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := c.State(ctx)
 	devID := st.Devices[0].DeviceId
 
@@ -206,7 +206,7 @@ func TestLifecycleAndEvents(t *testing.T) {
 
 func TestErrorMapping(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := c.State(ctx)
 	devID := st.Devices[0].DeviceId
 
@@ -261,7 +261,7 @@ func TestErrorMapping(t *testing.T) {
 
 func mustState(t *testing.T, c *leyline.Client) *leylinev1.GetStateResponse {
 	t.Helper()
-	st, err := c.State(context.Background())
+	st, err := c.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func mustState(t *testing.T, c *leyline.Client) *leylinev1.GetStateResponse {
 // and anything outside 0..1 is INVALID_ARGUMENT.
 func TestAttachSinkVolumePresence(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := c.State(ctx)
 	devID := st.Devices[0].DeviceId
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: devID, CenterHz: 100_000_000})
@@ -319,7 +319,7 @@ func TestAttachSinkVolumePresence(t *testing.T) {
 // WriteRejected it produces reaches the stream instead of being lost.
 func TestWriteAwaitsWatcher(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{WriteAwaitsWatcher: true})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := c.State(ctx)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
@@ -375,7 +375,7 @@ func TestWriteAwaitsWatcher(t *testing.T) {
 // going live, so "GetState then WatchEvents" misses nothing.
 func TestWatchEventsSinceSeq(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := c.State(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -439,7 +439,7 @@ func TestWatchEventsSinceSeq(t *testing.T) {
 // two are different requests).
 func TestWatchEventsSinceSeqScoped(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := c.State(ctx)
 	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
@@ -490,7 +490,7 @@ func TestWatchEventsSinceSeqScoped(t *testing.T) {
 // an unplugged radio (CAPTURE_DETACHED, which stays in state and rebinds).
 func TestDestroyCaptureEmitsTheTombstone(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := c.State(ctx)
 	devID := st.Devices[0].DeviceId
 

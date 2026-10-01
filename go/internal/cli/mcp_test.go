@@ -92,7 +92,7 @@ func newMCPHarnessWith(t *testing.T, opts fakedaemon.Options) *mcpHarness {
 // test, a tool error (IsError) is the caller's to inspect.
 func (h *mcpHarness) call(t *testing.T, name string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
-	res, err := h.cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	res, err := h.cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -171,7 +171,7 @@ func structuredField(t *testing.T, res *mcp.CallToolResult, key string, m proto.
 // MCP-1: an MCP client lists the server's tools, and the list is the table.
 func TestMCPListsTheToolTable(t *testing.T) {
 	h := newMCPHarness(t)
-	res, err := h.cs.ListTools(context.Background(), nil)
+	res, err := h.cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 	if strings.Join(names, " ") != strings.Join(want, " ") {
 		t.Errorf("tools:\n got %v\nwant %v", names, want)
 	}
-	tmpl, err := h.cs.ListResourceTemplates(context.Background(), nil)
+	tmpl, err := h.cs.ListResourceTemplates(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
 func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	h := newMCPHarness(t)
 	listening(t, h.client)
-	before, _ := h.client.State(context.Background())
+	before, _ := h.client.State(t.Context())
 	res := h.call(t, "tune", map[string]any{"frequency": "150"})
 	if !res.IsError {
 		t.Fatalf("tune moved a radio somebody was listening on:\n%s", resultText(res))
@@ -287,7 +287,7 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	if strings.Contains(text, "--retune") {
 		t.Errorf("an agent has no flags; the refusal names one:\n%s", text)
 	}
-	after, _ := h.client.State(context.Background())
+	after, _ := h.client.State(t.Context())
 	if after.EventSeq != before.EventSeq {
 		t.Errorf("a refusal changed the daemon: seq %d -> %d", before.EventSeq, after.EventSeq)
 	}
@@ -310,7 +310,7 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	}
 	// The tool's own session has closed by now; the channel is still there
 	// because the server's presence stream holds it.
-	st, _ := h.client.State(context.Background())
+	st, _ := h.client.State(t.Context())
 	if channelByID(st, ephemeral.GetChannelId()) == nil {
 		t.Fatal("the channel died with the tool's session; the server's presence should hold it")
 	}
@@ -318,7 +318,7 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	h.srv.close()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		st, _ = h.client.State(context.Background())
+		st, _ = h.client.State(t.Context())
 		if channelByID(st, ephemeral.GetChannelId()) == nil || time.Now().After(deadline) {
 			break
 		}
@@ -411,7 +411,7 @@ func TestMCPListenSummary(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}
 	}
-	st, _ := h.client.State(context.Background())
+	st, _ := h.client.State(t.Context())
 	if len(st.Channels) != 0 {
 		t.Errorf("listen_summary left a channel behind: %v", st.Channels)
 	}
@@ -452,7 +452,7 @@ func TestMCPSnapshot(t *testing.T) {
 	if !strings.Contains(resultText(res), "noise floor") {
 		t.Errorf("text:\n%s", resultText(res))
 	}
-	st, _ := h.client.State(context.Background())
+	st, _ := h.client.State(t.Context())
 	if len(st.Captures) != 0 {
 		t.Errorf("snapshot left its capture behind: %v", st.Captures)
 	}
@@ -523,7 +523,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 		structured(t, h.must(t, "query_records", map[string]any{"job_id": kept.JobId}), &page)
 		return len(page.Records) > 0
 	})
-	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: kept.ResultUris[0]})
+	rr, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: kept.ResultUris[0]})
 	if err != nil {
 		t.Fatalf("read resource: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if err := protojson.Unmarshal([]byte(rr.Contents[0].Text), &viaResource); err != nil || len(viaResource.Records) == 0 {
 		t.Errorf("the resource is not the RecordPage (%v): %s", err, rr.Contents[0].Text)
 	}
-	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://records/job_nothing"}); err == nil {
+	if _, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://records/job_nothing"}); err == nil {
 		t.Error("an unknown job's records resource must not be found")
 	}
 	if r := h.call(t, "query_records", map[string]any{"near": "37.76,-122.42"}); !r.IsError || !strings.Contains(resultText(r), "radius") {
@@ -909,7 +909,7 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 	if !strings.Contains(resultText(res), "ley://scans/"+trimmed.ScanId) {
 		t.Errorf("the text should name the whole scan's resource:\n%s", resultText(res))
 	}
-	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://scans/" + trimmed.ScanId})
+	rr, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://scans/" + trimmed.ScanId})
 	if err != nil {
 		t.Fatalf("read the scan resource: %v", err)
 	}
@@ -917,10 +917,10 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 	if err := protojson.Unmarshal([]byte(rr.Contents[0].Text), &viaResource); err != nil || len(viaResource.Detections) != len(whole.Detections) {
 		t.Errorf("the resource is not the whole scan (%v): %d detections", err, len(viaResource.Detections))
 	}
-	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://scans/scan_nothing"}); err == nil {
+	if _, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://scans/scan_nothing"}); err == nil {
 		t.Error("an unknown scan must not be found")
 	}
-	tmpl, _ := h.cs.ListResourceTemplates(context.Background(), nil)
+	tmpl, _ := h.cs.ListResourceTemplates(t.Context(), nil)
 	if len(tmpl.ResourceTemplates) != 3 {
 		t.Errorf("resource templates: %+v", tmpl.ResourceTemplates)
 	}
@@ -943,7 +943,7 @@ func TestMCPSnapshotSaysHowMuchOfABandItCovers(t *testing.T) {
 func TestMCPNeedsADaemon(t *testing.T) {
 	sock := testutil.SocketPath(t, "gone.sock")
 	app := &App{Socket: sock, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}, LookupEnv: func(string) (string, bool) { return "", false }}
-	_, err := newMCPServer(context.Background(), app)
+	_, err := newMCPServer(t.Context(), app)
 	if exitCode(err) != ExitNotRunning || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("want the exit-3 not-running error, got %v", err)
 	}
@@ -1090,7 +1090,7 @@ func TestMCPRecordFindAndGet(t *testing.T) {
 	}
 
 	// The resource template serves the same manifest.
-	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri})
+	rr, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
 	if err != nil {
 		t.Fatalf("read the recording resource: %v", err)
 	}
@@ -1098,7 +1098,7 @@ func TestMCPRecordFindAndGet(t *testing.T) {
 	if err := json.Unmarshal([]byte(rr.Contents[0].Text), &manifest); err != nil || manifest["job_id"] != job.GetJobId() {
 		t.Errorf("the resource is not the manifest (%v): %s", err, rr.Contents[0].Text)
 	}
-	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://recordings/job_nothing"}); err == nil {
+	if _, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://recordings/job_nothing"}); err == nil {
 		t.Error("a recording nobody made must not be found")
 	}
 	if res := h.call(t, "get_recording", map[string]any{"id": "job_nothing"}); !res.IsError ||
@@ -1147,7 +1147,7 @@ func TestMCPDeleteRecording(t *testing.T) {
 	}
 
 	// A running recording: started through the client, since the record tool waits.
-	running, err := h.client.StartRecord(context.Background(), &leylinev1.RecordConfig{FrequencyHz: 146_520_000, Mode: leylinev1.DemodMode_NFM})
+	running, err := h.client.StartRecord(t.Context(), &leylinev1.RecordConfig{FrequencyHz: 146_520_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}

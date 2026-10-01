@@ -21,7 +21,7 @@ import (
 // which is what puts anything in the store for `ley records` to find.
 func keptJob(t *testing.T, _ string, c *leyline.Client, wait time.Duration) *leylinev1.Job {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs", Keep: true})
 	if err != nil {
 		t.Fatalf("start decode: %v", err)
@@ -153,7 +153,7 @@ func TestRecordsInputParsing(t *testing.T) {
 		{"records", "--radius", "10km"},
 		{"track", "aprs", "--rate", "0"},
 	} {
-		_, _, err := run(t, context.Background(), sock, args...)
+		_, _, err := run(t, t.Context(), sock, args...)
 		if exitCode(err) != ExitUsage {
 			t.Errorf("ley %v: exit %d (%v), want %d", args, exitCode(err), err, ExitUsage)
 		}
@@ -165,7 +165,7 @@ func TestRecordsInputParsing(t *testing.T) {
 func TestTrackTableAndJSON(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	keptJob(t, sock, c, 0)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "track", "aprs", "--rate", "2", "--count", "3")
 	if err != nil {
@@ -230,7 +230,7 @@ func TestTrackAgesOutASilentStation(t *testing.T) {
 // so the table fills without a second terminal (docs/plans/decoders.md, DEC-9 follow-up).
 func TestTrackStartsADecoder(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "track", "aprs", "--rate", "4", "--count", "5")
 	if err != nil {
@@ -243,7 +243,7 @@ func TestTrackStartsADecoder(t *testing.T) {
 	// or a channel holding the radio.
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		jobs, lerr := c.ListJobs(context.Background())
+		jobs, lerr := c.ListJobs(t.Context())
 		if lerr != nil {
 			t.Fatalf("list jobs: %v", lerr)
 		}
@@ -268,12 +268,12 @@ func TestTrackStartsADecoder(t *testing.T) {
 func TestTrackAttachesToARunningDecoder(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	keptJob(t, sock, c, 0) // one kept decode job for aprs
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	if _, errOut, err := run(t, ctx, sock, "track", "aprs", "--count", "2"); err != nil {
 		t.Fatalf("ley track: %v\n%s", err, errOut)
 	}
-	jobs, err := c.ListJobs(context.Background())
+	jobs, err := c.ListJobs(t.Context())
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestTrackAttachesToARunningDecoder(t *testing.T) {
 // --attach never starts a decoder: with nothing decoding, the table is empty and no job is left.
 func TestTrackAttachDoesNotStart(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "track", "aprs", "--attach", "--count", "1")
 	if err != nil {
@@ -303,7 +303,7 @@ func TestTrackAttachDoesNotStart(t *testing.T) {
 	if !strings.Contains(errOut, "folding what is already being decoded") {
 		t.Errorf("--attach must say it is only folding: %q", errOut)
 	}
-	jobs, err := c.ListJobs(context.Background())
+	jobs, err := c.ListJobs(t.Context())
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}

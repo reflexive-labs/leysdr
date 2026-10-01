@@ -18,7 +18,7 @@ import (
 // RTLTCPDevice builds from an rtl_tcp header, and the endpoint is what identifies it.
 func TestAttachRTLTCPDevice(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestAttachRTLTCPDevice(t *testing.T) {
 // TestAttachRTLTCPDuplicate: one endpoint is one radio, however many times a client asks.
 func TestAttachRTLTCPDuplicate(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	first, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestAttachRTLTCPDuplicate(t *testing.T) {
 // not a radio to remember. The refusal names the endpoint so the typo is visible.
 func TestAttachRTLTCPUnreachable(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := c.AttachDevice(ctx, leyline.RtlTCPSource("nosuch.invalid", 1234))
 	if leyline.Code(err) != leyline.CodeDeviceIO {
 		t.Fatalf("unreachable host: want DEVICE_IO, got %v", err)
@@ -109,7 +109,7 @@ func TestAttachRTLTCPUnreachable(t *testing.T) {
 // and the device list forgets it.
 func TestDetachRTLTCPDevice(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestDetachRTLTCPDevice(t *testing.T) {
 // AttachDevice to the same playback device, and DetachDevice takes any hosted device away.
 func TestAttachDeviceFileSource(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	path := writeRecording(t, t.TempDir(), "clip", 4096, `{"sample_rate": 100000, "center_hz": 146520000}`)
 	dev, err := c.AttachDevice(ctx, leyline.FileSource(path, true))
 	if err != nil {
@@ -191,7 +191,7 @@ func TestAttachDeviceFileSource(t *testing.T) {
 // TestDetachDeviceRefusesUSB: a client cannot remove a dongle in this machine's USB port.
 func TestDetachDeviceRefusesUSB(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	var usb string
 	for _, d := range mustState(t, c).Devices {
 		if d.Driver == "rtlsdr" {

@@ -15,8 +15,8 @@ import (
 )
 
 func TestExitStatus(t *testing.T) {
-	live := context.Background()
-	cancelled, cancel := context.WithCancel(context.Background())
+	live := t.Context()
+	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 	cases := []struct {
 		name string

@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -15,11 +14,11 @@ import (
 // stderr, and the sentence says both that the daemon keeps the radio and how to get rid of it.
 func TestDevicesAttachRTLTCP(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
-	out, errOut, err := run(t, context.Background(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
+	out, errOut, err := run(t, t.Context(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
 	if err != nil {
 		t.Fatalf("attach: %v stderr=%q", err, errOut)
 	}
-	st, serr := c.State(context.Background())
+	st, serr := c.State(t.Context())
 	if serr != nil {
 		t.Fatal(serr)
 	}
@@ -44,7 +43,7 @@ func TestDevicesAttachRTLTCP(t *testing.T) {
 // TestDevicesAttachJSON: --json is the descriptor and nothing else, so a script can read the id.
 func TestDevicesAttachJSON(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
-	out, errOut, err := run(t, context.Background(), sock, "--json", "devices", "attach", "rtltcp", "10.0.0.5:1234")
+	out, errOut, err := run(t, t.Context(), sock, "--json", "devices", "attach", "rtltcp", "10.0.0.5:1234")
 	if err != nil {
 		t.Fatalf("attach --json: %v stderr=%q", err, errOut)
 	}
@@ -66,7 +65,7 @@ func TestDevicesAttachJSON(t *testing.T) {
 func TestDevicesAttachDuplicate(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
 	first := mustRun(t, sock, "devices", "attach", "rtltcp", "pi.local:1234")
-	out, errOut, err := run(t, context.Background(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
+	out, errOut, err := run(t, t.Context(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
 	if err != nil {
 		t.Fatalf("a duplicate attach must succeed: %v stderr=%q", err, errOut)
 	}
@@ -85,7 +84,7 @@ func TestDevicesAttachDuplicate(t *testing.T) {
 // nothing and the failure is the daemon's own sentence, exit 1.
 func TestDevicesAttachUnreachable(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
-	out, _, err := run(t, context.Background(), sock, "devices", "attach", "rtltcp", "nosuch.invalid:1234")
+	out, _, err := run(t, t.Context(), sock, "devices", "attach", "rtltcp", "nosuch.invalid:1234")
 	if exitCode(err) != 1 || err == nil {
 		t.Fatalf("unreachable host: exit %d (%v)", exitCode(err), err)
 	}
@@ -95,7 +94,7 @@ func TestDevicesAttachUnreachable(t *testing.T) {
 	if out != "" {
 		t.Errorf("nothing was attached, so stdout must be empty, got %q", out)
 	}
-	st, serr := c.State(context.Background())
+	st, serr := c.State(t.Context())
 	if serr != nil {
 		t.Fatal(serr)
 	}
@@ -118,7 +117,7 @@ func TestDevicesAttachUsage(t *testing.T) {
 		{[]string{"devices", "attach", "rtltcp"}, "accepts 2 arg"},
 	}
 	for _, tc := range cases {
-		_, _, err := run(t, context.Background(), sock, tc.args...)
+		_, _, err := run(t, t.Context(), sock, tc.args...)
 		if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("ley %v: exit %d (%v), want %d saying %q", tc.args, exitCode(err), err, ExitUsage, tc.want)
 		}
