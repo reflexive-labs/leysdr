@@ -188,7 +188,7 @@ var productsDirectory: URL {
     return URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
 }
 
-/// The fake decoder built by the `leyline-fake-decoder` product (DEC-4).
+/// The fake decoder SwiftPM builds from the `leyline-fake-decoder` executable target.
 func fakeDecoderPath() -> String {
     productsDirectory.appendingPathComponent("leyline-fake-decoder").path
 }

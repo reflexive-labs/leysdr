@@ -27,9 +27,6 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "leylined", targets: ["LeylineDaemon"]),
-        .executable(name: "s2-throughput", targets: ["S2Throughput"]),
-        // A decoder plugin that decodes nothing, for the daemon's decode-job tests (DEC-4).
-        .executable(name: "leyline-fake-decoder", targets: ["FakeDecoder"]),
         .library(name: "EngineCore", targets: ["EngineCore"]),
     ],
     dependencies: [
@@ -85,16 +82,23 @@ let package = Package(
             ],
             path: "Sources/LeylineDaemon"
         ),
+        // The two executables below are not products: they are a test fixture and a spike harness,
+        // not something this package ships. SwiftPM still builds an executable target in the root
+        // package under the target's name, so the names are the binaries' names, which
+        // DaemonTestHarness, scripts/hot-path-allocations.sh and docs/decisions/S2-throughput.md use.
+        //
+        // A decoder plugin that decodes nothing, for the daemon's decode-job tests.
         .executableTarget(
-            name: "FakeDecoder",
+            name: "leyline-fake-decoder",
             dependencies: [
                 .product(name: "LeylineProto", package: "LeylineProto"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             path: "Sources/FakeDecoder"
         ),
+        // The S2 throughput harness (docs/decisions/S2-throughput.md).
         .executableTarget(
-            name: "S2Throughput",
+            name: "s2-throughput",
             dependencies: ["EngineCore"],
             path: "Sources/S2Throughput"
         ),
