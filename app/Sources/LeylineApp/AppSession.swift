@@ -240,29 +240,19 @@ final class AppSession {
     /// The EARLIER days (older than `Recordings.collapseAfterDays`) opened in place by a click,
     /// by `DayRows.id`. Presentation only.
     var openedDays: Set<String> = []
-    /// Play all's or Play day's parts still to play (`PlayQueue`); the next starts on the
-    /// tombstone of the one playing.
-    private(set) var playQueue = PlayQueue()
     /// Each Library row's level graph (`LevelGraph.columns`), by part URI, once read: the part's
     /// WAV through `ResolveLocalPath`, one pass, off the main actor. An empty array is a part whose
     /// file could not be read here (a remote daemon, a file gone), not tried again.
     private(set) var levelGraphs: [String: [Float]] = [:]
     @ObservationIgnored private var levelGraphLoads: Set<String> = []
-    /// The playback this window started, by the id `StartPlayback` returned, and the part it
-    /// plays, until its tombstone. One at a time. Its position is the mirror's: the daemon
-    /// publishes a playing playback four times a second.
-    private var playbackID: String?
-    private(set) var playingURI: String?
-    /// The start of the log row whose ▶ started the playing part, so only that row shows ■ and
-    /// the progress line: several rows can lie inside one part, and until 2026-09-25 each of them
-    /// showed the part playing (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)"). nil when
-    /// the part was started anywhere else, and cleared when the playback ends.
-    private(set) var playingRowStart: Leyline_V1_SampleTime?
-    @ObservationIgnored private var playbackSeen = false
-    @ObservationIgnored private var playbackStartedAt = Date.distantPast
-    /// Whether the live channel's sink was attached when the clip started, so it is attached
-    /// again when the clip ends and the clip is heard alone meanwhile.
-    @ObservationIgnored private var reattachAfterPlayback = false
+    /// The playback this window started, the part it plays and Play all's or Play day's parts
+    /// still to play (`PartPlayback`). Its position is the mirror's: the daemon publishes a
+    /// playing playback four times a second.
+    private var partPlayback = PartPlayback()
+    private var playbackID: String? { partPlayback.playbackID }
+    var playingURI: String? { partPlayback.playingURI }
+    var playingRowStart: Leyline_V1_SampleTime? { partPlayback.playingRowStart }
+    var playQueue: PlayQueue { partPlayback.queue }
     /// Set by Stop listening: the window adopts nothing until a band or a frequency is picked,
     /// or the next snapshot would put a capture back.
     private var listeningStopped = false
@@ -2970,7 +2960,7 @@ final class AppSession {
         guard let first = queue.start(parts: day.playOrder) else { return }
         log("playback", "play day \(day.id): \(day.rows.count) parts")
         selectedPartURI = first
-        playQueue = queue
+        partPlayback.queue = queue
         await startPlayback(first)
     }
 
@@ -3012,7 +3002,7 @@ final class AppSession {
         guard let first = queue.start(group) else { return }
         log("playback", "play all \(group.uri): \(group.chips.count) parts")
         selectedPartURI = first
-        playQueue = queue
+        partPlayback.queue = queue
         await startPlayback(first)
     }
 
@@ -3023,7 +3013,7 @@ final class AppSession {
     /// progress is ended: this part is the one asked for. `row` is the start of the log row whose
     /// ▶ was clicked (`playingRowStart`), nil from anywhere else.
     func play(partURI uri: String, row: Leyline_V1_SampleTime? = nil) async {
-        playQueue.clear()
+        partPlayback.queue.clear()
         await startPlayback(uri, row: row)
     }
 
@@ -3031,18 +3021,13 @@ final class AppSession {
     /// have set for the parts after this one.
     private func startPlayback(_ uri: String, row: Leyline_V1_SampleTime? = nil) async {
         guard let daemon else { return }
-        if let old = playbackID {
-            // Cleared first, so the old one's tombstone is not read as this one ending.
-            playbackID = nil
+        if let old = partPlayback.replace(sinkAttached: sink != nil) {
             var stop = Leyline_V1_StopPlaybackRequest()
             stop.playbackID = old
             _ = try? await daemon.control.stopPlayback(stop)
             log("playback", "\(old) stopped for \(uri)")
-        } else if playingURI == nil {
-            reattachAfterPlayback = sink != nil
         }
-        playingURI = uri
-        playingRowStart = row
+        partPlayback.playing(uri, row: row)
         if let s = sink {
             var detach = Leyline_V1_DetachSinkRequest()
             detach.sinkID = s.sinkID
@@ -3057,9 +3042,7 @@ final class AppSession {
         req.resourceUri = uri
         do {
             let pb = try await daemon.control.startPlayback(req)
-            playbackID = pb.playbackID
-            playbackSeen = false
-            playbackStartedAt = Date()
+            partPlayback.started(id: pb.playbackID, at: Date())
             log(
                 "playback",
                 "\(pb.playbackID) playing \(uri): \(pb.samples) frames at \(pb.sampleRate) Hz")
@@ -3076,9 +3059,7 @@ final class AppSession {
             let e = LeylineError(error)
             log("playback", "\(uri) not played: \(e.code) \(e.message)")
             notice = "Could not play the part: \(e.message.isEmpty ? e.code : e.message)"
-            playingURI = nil
-            playingRowStart = nil
-            playQueue.clear()
+            partPlayback.failed()
             await attachAfterPlayback()
         }
     }
@@ -3086,7 +3067,7 @@ final class AppSession {
     /// Stops the window's clip, and a Play all with it; its tombstone ends it here and attaches
     /// the live sink again.
     func stopPlayback() async {
-        playQueue.clear()
+        partPlayback.queue.clear()
         guard let daemon, let id = playbackID else { return }
         var req = Leyline_V1_StopPlaybackRequest()
         req.playbackID = id
@@ -3102,37 +3083,30 @@ final class AppSession {
     /// clip: the row loses its stop glyph and the live sink comes back.
     private func followPlayback() {
         guard let id = playbackID else { return }
-        if state.playbacks.contains(where: { $0.playbackID == id }) {
-            playbackSeen = true
-            return
-        }
-        guard
-            playbackSeen || Date().timeIntervalSince(playbackStartedAt) > Self.neverSeenDropSeconds
-        else { return }
-        endPlayback(id)
+        let listed = state.playbacks.contains { $0.playbackID == id }
+        // Folded on a copy, so a mirror change that alters nothing here is not a change to
+        // anything a view reads.
+        var folded = partPlayback
+        let ended = folded.observe(
+            listed: listed, now: Date(), dropAfter: Self.neverSeenDropSeconds)
+        if folded != partPlayback { partPlayback = folded }
+        if let ended { endPlayback(ended) }
     }
 
     /// A clip ended. During Play all the next part starts at once and the live sink stays
     /// detached between parts, so the channel is not heard in the gaps; `playingURI` is held on
-    /// the next part meanwhile, which keeps `reattachAfterPlayback` for the end of the last one.
+    /// the next part meanwhile, which keeps the sink's earlier state for the end of the last one.
     private func endPlayback(_ id: String) {
-        guard playbackID == id else { return }
+        guard let ending = partPlayback.end(id) else { return }
         log("playback", "\(id) ended")
-        playbackID = nil
-        playbackSeen = false
-        playingRowStart = nil
-        var queue = playQueue
-        if let next = queue.next() {
-            playQueue = queue
-            playingURI = next
+        switch ending {
+        case .next(let next):
             selectedPartURI = next
-            log("playback", "play all: \(next) next, \(queue.pending.count) after it")
+            log("playback", "play all: \(next) next, \(playQueue.pending.count) after it")
             Task { await startPlayback(next) }
-            return
+        case .finished:
+            Task { await attachAfterPlayback() }
         }
-        playQueue = queue
-        playingURI = nil
-        Task { await attachAfterPlayback() }
     }
 
     /// `Resources.DeleteResource` on the whole recording, from the inspector on a part: the
@@ -3141,7 +3115,7 @@ final class AppSession {
     /// forgets the recording's manifest and clears the selection (`prunePage`).
     func deleteRecording(uri: String) async {
         guard let daemon else { return }
-        if playQueue.holds(recordingURI: uri) { playQueue.clear() }
+        if playQueue.holds(recordingURI: uri) { partPlayback.queue.clear() }
         var ref = Leyline_V1_ResourceRef()
         ref.uri = uri
         do {
@@ -3229,7 +3203,7 @@ final class AppSession {
             var queue = PlayQueue()
             let group = RecordingGroup(summary: summary, manifest: p.manifest, running: running)
             if let first = queue.start(group, at: n) {
-                playQueue = queue
+                partPlayback.queue = queue
                 await startPlayback(first)
                 return
             }
@@ -3300,8 +3274,7 @@ final class AppSession {
 
     /// The live sink back on the tuned channel, when it was attached before the clip.
     private func attachAfterPlayback() async {
-        guard reattachAfterPlayback else { return }
-        reattachAfterPlayback = false
+        guard partPlayback.reattachAfterPlayback, partPlayback.takeReattach() else { return }
         guard let ch = channel else { return }
         do {
             try await ensureSink(on: ch)
