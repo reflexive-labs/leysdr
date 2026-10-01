@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The transmissions log: one channel's squelch edges paired into transmissions, folded from the
-// telemetry plane with no daemon and no clock in it (docs/plans/app.md, "The M2 cut", M2-1).
+// telemetry plane with no daemon and no clock in it.
 // The daemon summarises a transmission on the close edge of a `SquelchTransition` (its length
 // in capture samples, the peaks it reached), so the log keeps the last ones without timing
 // anything itself, and the tone under each is the CTCSS tone or DCS code `SubAudible` reported
@@ -293,8 +293,8 @@ public struct TransmissionLog: Sendable, Equatable {
 
 /// Tells a retune of a channel from a move of its capture, so the window can switch to the
 /// transmission log of the channel's new frequency (`TransmissionLogs`): a log is the
-/// transmissions heard on one frequency, and one from before a retune was not heard on this
-/// (plans/app.md, APP-5, "Fixed 2026-09-25" and "Fixed 2026-09-25 (second run)"). A channel
+/// transmissions heard on one frequency, and one from before a retune was not heard on this. A
+/// channel
 /// follows its absolute frequency when its capture moves, and the daemon publishes the capture
 /// before the channel's recomputed offset, so the mirror passes through the new centre with the
 /// old offset for one event. The frequency is therefore read only when the channel's own offset
@@ -321,8 +321,7 @@ public struct ChannelFrequencyWatch: Sendable, Equatable {
 }
 
 /// The window's transmission logs, one per frequency and mode tuned this session, so switching
-/// channel and back keeps what was heard there (plans/app.md, APP-5, "Fixed 2026-09-25 (second
-/// run)"). Until then the log started over on every retune and the owner lost the history.
+/// channel and back keeps what was heard there rather than starting the log over.
 /// Edges fold into the current log only. A retune closes the open transmission in the daemon
 /// (docs/dev/engine-internals.md, "Squelch and meters"), but that close arrives on the telemetry
 /// stream and the retune on the event stream, so it can reach the window after the log has

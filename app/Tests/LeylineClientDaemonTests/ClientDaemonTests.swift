@@ -171,11 +171,11 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertEqual(seen, 3)
     }
 
-    /// The inspector's audio ladder off the real daemon (docs/plans/app.md, M2-7):
+    /// The inspector's audio ladder off the real daemon:
     /// `nfm_pl.cf32` is a 1 kHz tone over a 100.0 Hz PL (`go/cmd/leyfix/catalog.go`), and on
     /// the demod tap, before the high-pass takes the PL out, both are there: 100 Hz in the 125 Hz
     /// band (88 to 177 Hz) and the tone in the 1 kHz band, each well over the 8 and 16 kHz bands,
-    /// which hold only the discriminator's noise. Measured 2026-09-23 against the Linux-built
+    /// which hold only the discriminator's noise. Measured against the Linux-built
     /// daemon, the same on three runs: 125 Hz −11.3, 1 kHz 0.0, 8 kHz −49.6 and 16 kHz
     /// −95.6 dBFS, the first two as `go/internal/e2e/meters_test.go` reads them from `ley
     /// levels`. 20 dB over the louder of 8 and 16 kHz leaves 18 dB of that 38 dB to spare.
@@ -580,13 +580,13 @@ final class ClientDaemonTests: XCTestCase {
     /// The channel page's Record transmissions switch, by the page's own path: the channel is a
     /// row of the store's listing, with no manifest read and no channel of the window's to copy,
     /// so the request carries the listing's frequency, mode and width and no squelch. The job it
-    /// starts must run and be the one the page's switch finds (plans/app.md, APP-5, "Fixed
-    /// 2026-09-25").
-    /// The owner, 2026-09-25: "make sure that toggling a recording on and off creates a
-    /// transmission. treat it as a manual marker." The tone fixture is a continuous carrier, so
+    /// starts must run and be the one the page's switch finds.
+    /// Toggling a recording on or off cuts the log's open transmission there, as a manual
+    /// marker. The tone fixture is a continuous carrier, so
     /// its squelch is open from the channel's creation and sends no edge at all; the meters say
-    /// it is open, the recording's gate is seeded open and its part starts at once. The log is cut the way `AppSession` cuts it: at the newest telemetry time
-    /// when the mirror first shows the job running, and again when it shows it ended.
+    /// it is open, the recording's gate is seeded open and its part starts at once. The log is
+    /// cut the way `AppSession` cuts it: at the newest telemetry time when the mirror first shows
+    /// the job running, and again when it shows it ended.
     @MainActor
     func testARecordingOverACarrierCutsTheLogAtItsToggles() async throws {
         let app = try DaemonConnection(

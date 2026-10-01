@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A real `leylined --no-hardware` on a temp socket, an IQ fixture attached as its radio. This is
-// the harness the app's tests are written against (docs/plans/build-order.md, Milestone E): the
+// the harness the app's tests are written against: the
 // daemon under test is the product, and the radio is a file, so the suite needs no hardware.
 // Skipped unless LEYLINED_BIN names a built daemon; `make app-e2e` sets it.
 

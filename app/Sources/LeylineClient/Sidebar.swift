@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The sidebar's rules, kept out of the views so each has a Linux test (docs/design/channels.md,
-// "Bands are the spine of the sidebar"; the plan's KTD4, KTD6 and KTD13). The sidebar is one
+// "Bands are the spine of the sidebar"). The sidebar is one
 // list of bands in frequency order with a group standing in for its parts, because a plan that
 // hangs off GMRS would otherwise have no row; the band lookups `AppSession` keeps reading
 // (`Bands.plain`, `band(containing:)`) still answer parts, and a part maps to its group only
@@ -46,7 +46,7 @@ extension Bands {
 
 /// The rows the radio cannot tune and the one dim line that stands in for them: `7 bands below
 /// what this radio tunes`, `above`, or `outside` when they lie on both sides of its reach or in
-/// a gap between two of its ranges (R12). The line counts bands, not their bookmarks, which the
+/// a gap between two of its ranges. The line counts bands, not their bookmarks, which the
 /// filter still lists as disabled rows. `Bands.outOfRangeWords` is the same judgement for one
 /// band, with the reach spelled out; this one is for the fold and leaves the numbers to the
 /// expanded rows.
@@ -115,7 +115,7 @@ public struct SidebarMatch: Sendable, Hashable, Identifiable {
 }
 
 /// The filter's match and order, built once from the session's bands, bookmarks, tuned frequency
-/// and the radio's reach, then asked per keystroke (the plan's KTD6). A match is a
+/// and the radio's reach, then asked per keystroke. A match is a
 /// case-insensitive prefix of a name or of any alias, so `5` finds channel 5 and not `ch15`.
 /// The order is the tuned band's matches first, then the rest, and within each: bookmarks and
 /// channels by frequency with a bookmark before a channel on the same one, then band rows by
@@ -210,7 +210,7 @@ public struct SidebarIndex: Sendable {
 // MARK: Naming
 
 /// The one rule for what a new bookmark is called (docs/design/channels.md, "A new bookmark is
-/// named after the channel it sits on"; the plan's KTD7): ⌘D, the inspector's pencil, Find
+/// named after the channel it sits on"): ⌘D, the inspector's pencil, Find
 /// active's ＋ and a CHIRP row with no name all come here.
 public enum BookmarkNaming {
     /// The radio-printed name of the plan channel within `Plans.toleranceHz` of `hz` (`ch5`,

@@ -61,8 +61,8 @@ public enum Sweep {
     }
 
     /// Where a detection must lie to count for `band`: the band itself, or each part of a group,
-    /// so a hit in the gap between GMRS's halves is dropped for the reason MURS is two halves
-    /// (the plan's KTD11). A group none of whose parts resolves counts as one range.
+    /// so a hit in the gap between GMRS's halves is dropped, for the reason MURS is two halves.
+    /// A group none of whose parts resolves counts as one range.
     static func ranges(of band: Band, in bands: [Band]) -> [ClosedRange<UInt64>] {
         let parts = self.parts(of: band, in: bands)
         guard !parts.isEmpty else { return [band.minHz...band.maxHz] }

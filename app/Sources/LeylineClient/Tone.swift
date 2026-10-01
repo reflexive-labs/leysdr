@@ -38,8 +38,8 @@ public enum Tone: Sendable, Hashable {
     ]
 
     /// The 104 standard DCS codes radio menus offer, ascending, octal. A copy of
-    /// `engine/Sources/EngineCore/DSP/DCS.swift`'s `standardCodes` (checked there on 2026-09-24
-    /// against the RadioReference chart) and of `go/pkg/dcs.Codes`, because the app never links
+    /// `engine/Sources/EngineCore/DSP/DCS.swift`'s `standardCodes` (checked there against the
+    /// RadioReference chart) and of `go/pkg/dcs.Codes`, because the app never links
     /// `EngineCore` (`app/Package.swift`, the licence boundary).
     public static let dcsCodes: [Int] = [
         0o023, 0o025, 0o026, 0o031, 0o032, 0o036, 0o043, 0o047, 0o051, 0o053, 0o054, 0o065,

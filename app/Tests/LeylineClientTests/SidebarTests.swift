@@ -226,7 +226,7 @@ final class SidebarTests: XCTestCase {
         XCTAssertEqual(BookmarkNaming.name(for: 462_662_500), "ch5")
         XCTAssertEqual(BookmarkNaming.name(for: 146_520_000), "calling")
         XCTAssertEqual(BookmarkNaming.name(for: 146_940_000), "146.940 MHz")
-        // 500 Hz off ch5 is still on it: the one 6 kHz tolerance (the plan's KTD2), which is
+        // 500 Hz off ch5 is still on it: the one 6 kHz tolerance, which is
         // what makes a bookmark dropped a little off a channel take the channel's name.
         XCTAssertEqual(BookmarkNaming.name(for: 462_662_000), "ch5")
         XCTAssertEqual(BookmarkNaming.name(for: 445_925_000), "445.925 MHz", "70 cm has no plan")

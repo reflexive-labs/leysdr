@@ -275,10 +275,9 @@ final class TransmissionsTests: XCTestCase {
         }
     }
 
-    /// The owner, 2026-09-25: "make sure that toggling a recording on and off creates a
-    /// transmission. treat it as a manual marker." A carrier on air since sample 0, cut by the
-    /// switch at 2 s: a closed row ending at the cut with the peaks and tone it had, and an open
-    /// one starting there with no tone yet.
+    /// Toggling a recording on or off cuts the open transmission there, as a manual marker. A
+    /// carrier on air since sample 0, cut by the switch at 2 s: a closed row ending at the cut
+    /// with the peaks and tone it had, and an open one starting there with no tone yet.
     func testRecordingOnCutsTheOpenTransmissionAtTheToggle() {
         var log = TransmissionLog(channelID: channel)
         log.fold(edge(open: true, at: 0), captureRate: rate)
@@ -422,8 +421,8 @@ final class TransmissionsTests: XCTestCase {
             captureRate: rate)
     }
 
-    /// The owner, 2026-09-25: "switching channel lost the transmissions". Each frequency keeps
-    /// its own rows for the session, and edges fold only into the one tuned.
+    /// Switching channel and back keeps the transmissions: each frequency keeps its own rows for
+    /// the session, and edges fold only into the one tuned.
     func testRowsSurviveASwitchAwayAndBack() {
         var logs = TransmissionLogs()
         XCTAssertNil(logs.log, "no channel, no log")

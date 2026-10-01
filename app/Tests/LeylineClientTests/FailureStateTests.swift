@@ -78,8 +78,8 @@ final class FailureStateTests: XCTestCase {
 
     /// A HackRF's three stages as the daemon advertises them
     /// (`engine/Sources/EngineCore/Devices/HackRFDevice.swift`): the AMP is a two-value switch
-    /// that "the lowest gain" leaves out. The owner's radio on 2026-09-24 was at LNA 8, VGA 20,
-    /// AMP 0 and was told it was at its lowest (plans/app.md, M2-10); `ley`'s
+    /// that "the lowest gain" leaves out, or a radio at LNA 8, VGA 20, AMP 0 is told it is at its
+    /// lowest; `ley`'s
     /// `TestFailureWordsOnAMultiStageRadio` holds the same cases.
     private let hackrf: [Leyline_V1_GainElement] = [
         .with {
@@ -121,11 +121,11 @@ final class FailureStateTests: XCTestCase {
 
     func testAMultiStageRadioIsToldWhichStagesToLower() {
         let level = level(clipped: 35108, total: 655_360)
-        let owners = FailureState.name(level: level, gains: hackrfGains(8, 20, 0), elements: hackrf)
+        let both = FailureState.name(level: level, gains: hackrfGains(8, 20, 0), elements: hackrf)
         XCTAssertEqual(
-            owners?.detail,
+            both?.detail,
             "35108 of 655360 samples (5.4 %) hit the converter's rails. Lower the LNA or VGA gain.")
-        XCTAssertEqual(owners?.namesGain, true)
+        XCTAssertEqual(both?.namesGain, true)
         let vga = FailureState.name(level: level, gains: hackrfGains(0, 20, 0), elements: hackrf)
         XCTAssertEqual(
             vga?.detail,

@@ -8,7 +8,7 @@
 // store's own add-or-update, so the update semantics are the store's and a re-import never
 // clears a value typed in the inspector. The CSV reader is here rather than a dependency
 // because the format is small (RFC 4180, quoted fields with doubled quotes, CRLF or LF) and
-// the plan forbids a new package for it.
+// not worth a new package.
 
 import Foundation
 import LeylineProto
@@ -253,7 +253,7 @@ public enum CHIRP {
     /// `tag` joins every bookmark's tags, the file's basename without its extension, so `ley
     /// bookmarks --tag <file>` lists what one import filed. A row's name is its own when it has
     /// one, else the plan channel's radio-printed name when the frequency sits on one, else the
-    /// frequency's words (`BookmarkNaming`, the plan's KTD7), so a blank name is never an empty
+    /// frequency's words (`BookmarkNaming`), so a blank name is never an empty
     /// row. The mode and width are always the row's (`add`'s rule); a tone and a note only when
     /// non-blank, a duplex and an offset only when the row has them, and the tag joins the set:
     /// a blank column never clears a value typed in the inspector. An unloaded store throws, as

@@ -223,7 +223,7 @@ public enum Bands {
 public enum Plans {
     /// How far a frequency may sit from a plan channel and still be "on" it: the one tolerance
     /// the two lookups share, chosen so CB's 10 kHz spacing and GMRS's 12.5 kHz both resolve to
-    /// the nearer channel (`channelTolerance` in `go/pkg/leyline/bands.go`, the plan's KTD2).
+    /// the nearer channel (`channelTolerance` in `go/pkg/leyline/bands.go`).
     public static let toleranceHz: UInt64 = 6_000
 
     /// A plan drawn as ticks on the band rail has at most this many channels: NOAA, GMRS, MURS
@@ -255,7 +255,7 @@ public enum Plans {
 
     /// What a bookmark made on `hz` is named after: the radio-printed name of the channel it
     /// sits on within `toleranceHz`, else nil and the caller names it after the frequency
-    /// (the plan's KTD7, one naming function for ⌘D, the pencil, a scan hit's ＋ and CHIRP).
+    /// (one naming function for ⌘D, the pencil, a scan hit's ＋ and CHIRP).
     public static func name(at hz: UInt64, in bands: [Band] = Bands.builtIn) -> String? {
         channel(at: hz, in: bands)?.channel.name
     }
@@ -296,7 +296,7 @@ public enum Plans {
 
     /// The channels the rail draws as ticks for `band`: its plan when it has `tickLimit`
     /// channels or fewer, and only the entries inside the band's own range, so a half of GMRS
-    /// shows the group's channels that lie in it (R15). Empty for a long plan or none.
+    /// shows the group's channels that lie in it. Empty for a long plan or none.
     public static func ticks(for band: Band, in bands: [Band] = Bands.builtIn) -> [PlanChannel] {
         let plan = band.plan(in: bands)
         guard plan.count <= tickLimit else { return [] }

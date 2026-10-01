@@ -149,8 +149,8 @@ public struct HeldFloor: Sendable, Equatable {
     /// How far the median may drift from the floor before the floor follows it.
     public static let slackDB: Float = 4
     /// How long the median must stay over the floor plus the slack before the floor rises.
-    /// Longer than the clipping over in the owner's GMRS log of 2026-09-23 (12206080 samples at
-    /// 4 MS/s, 3 s); an over that lasts longer than this still moves the floor once it has.
+    /// Longer than a clipping over measured on a real GMRS handheld (12206080 samples at 4 MS/s,
+    /// 3 s); an over that lasts longer than this still moves the floor once it has.
     public static let riseSeconds: Double = 5
 
     /// The held floor in dBFS, rounded to 1 dB; NaN until the first median.

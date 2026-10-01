@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Recordings as the window reads them (docs/plans/app.md, APP-5): `recording.json` decoded, the
+// Recordings as the window reads them: `recording.json` decoded, the
 // rule that says which part holds a transmission (a kept row of the log), the frequency form of
 // `RecordConfig` the switch starts, the switch's state and status line, and the question asked
 // before the window moves the radio out from under a recording. The manifest is the file format the
@@ -82,7 +82,7 @@ public struct RecordingManifest: Sendable, Equatable, Codable {
             self.fromSample = fromSample
         }
 
-        // Anchors written before DEC-11 carried no capture id; they date the recording's one
+        // Anchors from older daemons carry no capture id; they date the recording's one
         // capture, which is then unknown, and nothing matches against it.
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -422,9 +422,8 @@ public enum RecordingParts {
     /// The URI of the part that holds `t` in any of `manifests`, searched in order (newest
     /// first, as `Recordings.recordingIDs` lists them), or nil for a heard row. A log row is
     /// matched against every recording of its channel, not only the newest: switching the
-    /// switch off and on starts a new recording whose manifest is empty at first, and until
-    /// 2026-09-25 that one replaced the old and the rows the old one kept lost their ▶
-    /// (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)").
+    /// switch off and on starts a new recording whose manifest is empty at first, and matching
+    /// only that one would take the ▶ from the rows the old one kept.
     public static func keptPartURI(of t: Transmission, in manifests: [RecordingManifest])
         -> String?
     {
@@ -445,7 +444,7 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var frequencyHz: UInt64
     public var mode: Leyline_V1_DemodMode
     /// The channel width recorded, from `bandwidth_hz`; 0 for an IQ recording and for a listing
-    /// from a daemon older than the key (2026-09-24).
+    /// from a daemon older than the key.
     public var bandwidthHz: UInt32
     public var startedAt: Date?
     /// When the job ended, from `ended_at_ns`; nil while it runs.
@@ -568,7 +567,7 @@ extension Leyline_V1_Job {
 /// arrives, and without the hold the switch would flick back for the round trip. The hold never
 /// disables the switch, and after its seconds the switch shows the job whatever the event did;
 /// the session's clock clears it then, and `shown` ignores an expired one in case that clock is
-/// late (plans/app.md, APP-5, "Fixed 2026-09-25 (third run)"). One click is shown by every switch
+/// late. One click is shown by every switch
 /// that names its channel (`Recordings.sameChannel`), because the channel page's switch and the
 /// log's are one state in two places when they name the same channel.
 public struct RecordSwitchClick: Sendable, Equatable {
@@ -635,8 +634,7 @@ public enum Recordings {
     /// How far apart two frequencies may be and still name one channel: 1 Hz. The window's
     /// frequency is the capture's centre plus the channel's offset, both whole hertz, and a job
     /// copies it at the start; the tolerance keeps a rounding of either side from turning the
-    /// Record transmissions switch off under a running job (plans/app.md, APP-5, "Fixed
-    /// 2026-09-25 (third run)"). No channel plan puts two channels 1 Hz apart.
+    /// Record transmissions switch off under a running job. No channel plan puts two channels 1 Hz apart.
     public static let matchToleranceHz: UInt64 = 1
 
     /// Whether a frequency and mode name the same channel as another: the frequencies within
@@ -651,10 +649,10 @@ public enum Recordings {
 
     /// The window's hang: how long a part stays open after the squelch closes. The daemon's
     /// default of 5 s (`RecordConfig.hang_ms`) keeps an exchange of several overs in one part,
-    /// and on the owner's second run (2026-09-25) one 25 s part held four 4 s log rows, so one ▶
-    /// lit three rows and the Library showed one part where the log showed four. The switch's
-    /// line promises `Each transmission becomes a part, cut at dead air.`, so the window asks for
-    /// the pre-roll's length: a gap shorter than half a second stays one part, as the log's
+    /// and on a real radio one 25 s part held four 4 s log rows, so one ▶ lit three rows and the
+    /// Library showed one part where the log showed four. The switch's line promises `Each
+    /// transmission becomes a part, cut at dead air.`, so the window asks for the pre-roll's
+    /// length: a gap shorter than half a second stays one part, as the log's
     /// quarter-second rule (`TransmissionLog.shortestSeconds`) keeps a kerchunk out of the log.
     /// `ley record` keeps the daemon's default.
     public static let windowHangMs: UInt32 = 500
@@ -664,7 +662,7 @@ public enum Recordings {
 
     /// The window's recording: the frequency form of `RecordConfig` with the channel's settings
     /// copied at the start, so the job owns its channel and outlives the window, a retune and a
-    /// quit (docs/plans/app.md, APP-5). Gated by squelch, because the daemon's gate cuts a part
+    /// quit. Gated by squelch, because the daemon's gate cuts a part
     /// at dead air and a channel that never goes quiet is one long part; an ungated recording is
     /// `ley record` without `--gate`. Pre-roll and hang are the window's (`windowPreRollMs`,
     /// `windowHangMs`), so each transmission is its own part; part length is the daemon's default,
@@ -719,8 +717,8 @@ public enum Recordings {
     /// The notice for a record job a switch started that the daemon then ended FAILED, or nil
     /// while it runs or once it ended any other way. `StartJob` answers before the radio is
     /// allocated, so a job the allocator declines fails after the call returned, and its reason
-    /// reaches the window only on its event; until 2026-09-25 the window dropped it, and the
-    /// channel page's switch went back off with nothing said (plans/app.md, APP-5). A busy radio
+    /// reaches the window only on its event; without this notice the channel page's switch
+    /// would go back off with nothing said. A busy radio
     /// is the page's usual case, a channel outside the band the window is listening to, and the
     /// notice says what to do about it.
     public static func failureNotice(_ job: Leyline_V1_Job) -> String? {
