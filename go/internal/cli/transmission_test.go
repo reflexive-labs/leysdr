@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
@@ -222,13 +223,13 @@ func TestCaptureAnchorFromTheMirror(t *testing.T) {
 		t.Errorf("cap_c is not in state, got %v", got)
 	}
 	// An Anchor event replaces the one the Capture arrived with.
-	s := &session{state: state, capture: state.Captures[0]}
+	s := &verbSession{Session: &session.Session{State: state, Capture: state.Captures[0]}}
 	fresh := &leylinev1.CaptureAnchor{CaptureId: "cap_a", HostTimeNs: 2, SampleRate: 2_400_000}
-	s.fold(&leylinev1.Event{Body: &leylinev1.Event_Anchor{Anchor: fresh}})
-	if got := captureAnchor(s.state, "cap_a"); got != fresh {
+	s.Apply(&leylinev1.Event{Body: &leylinev1.Event_Anchor{Anchor: fresh}})
+	if got := captureAnchor(s.State, "cap_a"); got != fresh {
 		t.Errorf("after the anchor event: got %v, want the fresh anchor", got)
 	}
-	if s.capture.GetAnchor() != fresh {
+	if s.Capture.GetAnchor() != fresh {
 		t.Errorf("the session's own capture keeps the fresh anchor too")
 	}
 }

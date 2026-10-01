@@ -178,7 +178,7 @@ octaves, on a terminal at least 100 columns wide.
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
@@ -189,7 +189,7 @@ octaves, on a terminal at least 100 columns wide.
 			o.height = levelsFitHeight(o.height, app.Style.Height,
 				chartFramed(app.Style, o.width, app.IsTTY()))
 			if o.tune != nil {
-				if s.device, err = pickDevice(s.state, o.tune.device); err != nil {
+				if s.device, err = pickDevice(s.State, o.tune.device); err != nil {
 					return err
 				}
 			}
@@ -227,7 +227,7 @@ func levelsFitHeight(want, term int, framed bool) int {
 // runLevels taps the channel's audio spectrum, folds each row into bands and
 // draws the meter: the ladders under their ballistics, the master pair from
 // the daemon's own meter, and the numbers that are neither.
-func runLevels(ctx context.Context, s *session, o levelsOptions) error {
+func runLevels(ctx context.Context, s *verbSession, o levelsOptions) error {
 	stop, err := s.openChannel(ctx, o.tune, o.channel)
 	if err != nil {
 		return err
@@ -243,7 +243,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	}
 	// DB_F32 because the bands are power sums: quantising every bin to a
 	// whole dB before adding them up would show in the total.
-	sub, err := s.client.SubscribeAudioSpectrum(sctx, s.channel.ChannelId, levelsBins, rate,
+	sub, err := s.Client.SubscribeAudioSpectrum(sctx, s.Channel.ChannelId, levelsBins, rate,
 		leylinev1.FftBinFormat_DB_F32, o.tap)
 	if err != nil {
 		return err
@@ -257,8 +257,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// two clients watching one channel report the same numbers. The stream's
 	// error is not read: a telemetry stream that ends takes the pair and the
 	// header's PL with it and leaves the bands drawing.
-	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
+	msgs, _, err := s.Client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.ChannelId},
 		Types: []leylinev1.TelemetryType{
 			leylinev1.TelemetryType_SUB_AUDIBLE,
 			leylinev1.TelemetryType_METER,
@@ -270,22 +270,22 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// The capture's level drives OVER and the header's peak. It has its own
 	// subscription, scoped to the capture: the level is the radio's, not the
 	// channel's, and a channel-scoped stream carries none.
-	levels := s.watchLevel(sctx, s.channel.GetCaptureId())
+	levels := s.watchLevel(sctx, s.Channel.GetCaptureId())
 	what := audioWhat(s)
 	if o.watch {
 		s.say("metering %s: the %s tap, %g rows a second. Ctrl-C stops. %s\n",
-			what, scopeTapName(tap), fp.GetRowsPerSecond(), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+			what, scopeTapName(tap), fp.GetRowsPerSecond(), s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	} else {
 		s.say("metering %s: the %s tap. %s\n",
-			what, scopeTapName(tap), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+			what, scopeTapName(tap), s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	}
 	// Keep the event stream flowing (and the mirror current) while frames are
 	// drawn; the drain owns the mirror, so it starts after the last read of it
 	// and stops before teardown.
 	// The full scale is read from the channel before the drain starts: the drain owns the mirror
 	// from then on, and the race detector flagged a channel event folding in during this read.
-	fullScaleHz := scopeFullScaleHz(nil, s.channel)
-	stopDrain := s.drainEvents()
+	fullScaleHz := scopeFullScaleHz(nil, s.Channel)
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 
 	view := newLevelsView(s.app.Style, o.width, o.height, o.third, s.app.IsTTY())

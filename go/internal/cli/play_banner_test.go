@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
@@ -56,11 +57,11 @@ func TestPlayedSourceSurvivesAThinDescriptor(t *testing.T) {
 // file device refuses every gain write, so offering `ley set gain` there
 // would suggest a command that fails.
 func TestBannerSecondHintFollowsTheDevice(t *testing.T) {
-	radio := &session{capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Db: 30}}}}
+	radio := &verbSession{Session: &session.Session{Capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Db: 30}}}}}
 	if got := radio.bannerSecondHint(); got != "ley set gain 30" {
 		t.Errorf("a radio with gain offers it, got %q", got)
 	}
-	file := &session{capture: &leylinev1.Capture{}}
+	file := &verbSession{Session: &session.Session{Capture: &leylinev1.Capture{}}}
 	if got := file.bannerSecondHint(); got == "ley set gain 30" {
 		t.Errorf("a device with no gain must not be offered a gain write: %q", got)
 	}
@@ -69,10 +70,10 @@ func TestBannerSecondHintFollowsTheDevice(t *testing.T) {
 // The banner is still five lines, and stripping the ink gives back the plain
 // screen character for character.
 func TestPlayBannerStripsToPlain(t *testing.T) {
-	s := &session{
+	s := &verbSession{
+		Session:    &session.Session{Capture: &leylinev1.Capture{}},
 		app:        &App{Style: ui.Style{}, ErrStyle: ui.Style{}},
 		device:     &leylinev1.DeviceDescriptor{Model: "nfm_tone.cf32"},
-		capture:    &leylinev1.Capture{},
 		sourceLine: "nfm_tone.cf32, 1.0 s at 2.4 MSPS, looping",
 	}
 	o := &tuneOptions{freq: 146_620_000, mode: leylinev1.DemodMode_NFM, squelch: 0}
@@ -93,15 +94,15 @@ func TestPlayBannerStripsToPlain(t *testing.T) {
 		for _, w := range []int{0, 40, 100} {
 			base := ui.Style{Unicode: uni, Width: w}
 			ink := ui.Style{Color: true, Profile: ui.ProfileTrueColor, Unicode: uni, Width: w}
-			p := &session{app: &App{Style: base, ErrStyle: base}, device: s.device, capture: s.capture, sourceLine: s.sourceLine}
-			q := &session{app: &App{Style: ink, ErrStyle: ink}, device: s.device, capture: s.capture, sourceLine: s.sourceLine}
+			p := &verbSession{Session: &session.Session{Capture: s.Capture}, app: &App{Style: base, ErrStyle: base}, device: s.device, sourceLine: s.sourceLine}
+			q := &verbSession{Session: &session.Session{Capture: s.Capture}, app: &App{Style: ink, ErrStyle: ink}, device: s.device, sourceLine: s.sourceLine}
 			if got, want := ui.Strip(q.banner(o)), p.banner(o); got != want {
 				t.Errorf("unicode %v width %d:\n plain  %q\n styled %q", uni, w, want, got)
 			}
 		}
 	}
 	// An unknown width is not a narrow one: piped, the source line arrives whole.
-	whole := &session{app: &App{Style: ui.Style{}, ErrStyle: ui.Style{}}, device: s.device, capture: s.capture, sourceLine: s.sourceLine}
+	whole := &verbSession{Session: &session.Session{Capture: s.Capture}, app: &App{Style: ui.Style{}, ErrStyle: ui.Style{}}, device: s.device, sourceLine: s.sourceLine}
 	if !strings.Contains(whole.banner(o), s.sourceLine) {
 		t.Errorf("an unknown width must not truncate:\n%s", whole.banner(o))
 	}

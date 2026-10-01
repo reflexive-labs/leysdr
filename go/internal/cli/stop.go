@@ -55,7 +55,7 @@ several radios in use, --device says which.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			if all {
 				return stopAll(cmd.Context(), s, deviceSel)
 			}
@@ -74,14 +74,14 @@ several radios in use, --device says which.`,
 // stopChannel destroys one channel and says what happened. The capture stays
 // (another channel or a spectrum watcher may use it); the line says how to
 // free the radio when the channel was the last one on it.
-func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) error {
+func stopChannel(ctx context.Context, s *verbSession, ch *leylinev1.Channel, cap *leylinev1.Capture) error {
 	if ch == nil {
 		return fmt.Errorf("nothing to stop; ley state lists what is running")
 	}
 	st := s.app.Style
-	desc := fmt.Sprintf("%s %s %s", channelFreqLabel(s.state, ch), strings.ToUpper(leyline.ModeName(ch.Mode)),
-		st.Muted(fmt.Sprintf("(channel %d, %s)", channelRow(s.state, ch), ch.ChannelId)))
-	resp, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId})
+	desc := fmt.Sprintf("%s %s %s", channelFreqLabel(s.State, ch), strings.ToUpper(leyline.ModeName(ch.Mode)),
+		st.Muted(fmt.Sprintf("(channel %d, %s)", channelRow(s.State, ch), ch.ChannelId)))
+	resp, err := s.Client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId})
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 		return s.app.printJSON(resp)
 	}
 	others := 0
-	for _, c := range s.state.Channels {
+	for _, c := range s.State.Channels {
 		if c.CaptureId == ch.CaptureId && c.ChannelId != ch.ChannelId {
 			others++
 		}
@@ -108,8 +108,8 @@ func stopChannel(ctx context.Context, s *session, ch *leylinev1.Channel, cap *le
 // stopAll destroys every channel on one device and its captures, freeing the
 // radio. Without --device the device is the one in use; several in use need
 // the flag.
-func stopAll(ctx context.Context, s *session, deviceSel string) error {
-	st := s.state
+func stopAll(ctx context.Context, s *verbSession, deviceSel string) error {
+	st := s.State
 	var dev *leylinev1.DeviceDescriptor
 	if deviceSel != "" {
 		d, err := leyline.ResolveDevice(st, deviceSel)
@@ -163,14 +163,14 @@ func stopAll(ctx context.Context, s *session, deviceSel string) error {
 			// A channel another client removed a moment ago is not one this
 			// command stopped, and the count is the only feedback the verb
 			// gives, so it counts confirmed removals alone.
-			switch _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); {
+			switch _, err := s.Client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: ch.ChannelId}); {
 			case err == nil:
 				stopped++
 			case leyline.Code(err) != leyline.CodeChannelNotFound:
 				return err
 			}
 		}
-		if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
+		if _, err := s.Client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: cap.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
 			return err
 		}
 	}
@@ -216,7 +216,7 @@ func deviceDoing(st *leylinev1.GetStateResponse, d *leylinev1.DeviceDescriptor) 
 // stopNothing reports that stop --all found nothing to do. The sentence is
 // for a person, so it goes to stderr and is dropped under --json; either way
 // the exit status is 0 (a free radio is the state stop --all asks for).
-func (s *session) stopNothing(msg string) {
+func (s *verbSession) stopNothing(msg string) {
 	if s.app.JSON {
 		return
 	}

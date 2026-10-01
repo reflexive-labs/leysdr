@@ -125,7 +125,7 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			ch, cap, err := resolveTarget(s, channelSel, captureSel, setTarget)
 			if err != nil {
 				return err
@@ -170,8 +170,8 @@ var (
 // an agent or a job), and the choice is printed; otherwise a numbered list
 // worded with hint. Selectors accept an id, id prefix, row number or
 // frequency; an explicit channel and capture that disagree are a usage error.
-func resolveTarget(s *session, channelSel, captureSel string, hint targetHint) (*leylinev1.Channel, *leylinev1.Capture, error) {
-	st := s.state
+func resolveTarget(s *verbSession, channelSel, captureSel string, hint targetHint) (*leylinev1.Channel, *leylinev1.Capture, error) {
+	st := s.State
 	var ch *leylinev1.Channel
 	var cap *leylinev1.Capture
 	var err error
@@ -254,15 +254,15 @@ func channelTable(st *leylinev1.GetStateResponse, chs []*leylinev1.Channel) stri
 
 // showSettings prints the target channel's current values (the proto3 JSON
 // of the channel under --json).
-func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) error {
+func showSettings(s *verbSession, ch *leylinev1.Channel, cap *leylinev1.Capture) error {
 	if ch == nil {
 		return fmt.Errorf("no channel to show; ley state lists captures and channels")
 	}
 	if s.app.JSON {
 		return s.app.printJSON(ch)
 	}
-	hz, _ := leyline.ChannelFrequency(s.state, ch)
-	freq := channelFreqLabel(s.state, ch)
+	hz, _ := leyline.ChannelFrequency(s.State, ch)
+	freq := channelFreqLabel(s.State, ch)
 	if b := bandplan.BandFor(hz); b != nil {
 		freq += " (" + b.Name + ")"
 	}
@@ -271,14 +271,14 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 		squelch = fmt.Sprintf("%.0f dBFS", ch.SquelchDb)
 	}
 	volume := "no speaker sink"
-	for _, sk := range s.state.Sinks {
+	for _, sk := range s.State.Sinks {
 		if sa, ok := sk.Kind.(*leylinev1.Sink_SystemAudio); ok && sk.ChannelId == ch.ChannelId {
 			volume = fmt.Sprintf("%.0f%%", sa.SystemAudio.GetVolume()*100)
 		}
 	}
 	model := "unknown radio"
 	if cap != nil {
-		for _, d := range s.state.Devices {
+		for _, d := range s.State.Devices {
 			if d.DeviceId == cap.DeviceId {
 				model = d.Model
 			}
@@ -294,7 +294,7 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 	settingRow(s.app, "mode", strings.ToUpper(leyline.ModeName(ch.Mode)), true)
 	settingRow(s.app, "bandwidth", units.FormatFrequency(uint64(ch.BandwidthHz)), true)
 	settingRow(s.app, "squelch", squelch, !units.SquelchOff(ch.SquelchDb))
-	gain := strings.TrimPrefix(stageGainWords(cap.GetGains(), deviceGainElements(s.state, cap.GetDeviceId())), "gain ")
+	gain := strings.TrimPrefix(stageGainWords(cap.GetGains(), deviceGainElements(s.State, cap.GetDeviceId())), "gain ")
 	fmt.Fprintf(s.app.Stdout, "%s\n", st.Muted("on the radio"))
 	settingRow(s.app, "gain", gain, gain != "no gain control")
 	fmt.Fprintf(s.app.Stdout, "%s\n", st.Muted("through the speakers"))
@@ -325,7 +325,7 @@ func paramErr(name string, err error) error {
 // buildWrites turns (param, value) into the ParamWrites and a predicate that
 // recognises the confirming event. hz is the frequency the write concerns
 // (for friendly out-of-range errors), 0 when none.
-func buildWrites(ctx context.Context, s *session, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, retune bool) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, hz uint64, err error) {
+func buildWrites(ctx context.Context, s *verbSession, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, retune bool) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, hz uint64, err error) {
 	needChannel := func() error {
 		if ch == nil {
 			return fmt.Errorf("set %s needs a channel; pick one with --channel", param)
@@ -349,7 +349,7 @@ func buildWrites(ctx context.Context, s *session, param, value string, ch *leyli
 			return nil, nil, 0, err
 		}
 		if s.device == nil {
-			for _, d := range s.state.Devices {
+			for _, d := range s.State.Devices {
 				if d.DeviceId == cap.DeviceId {
 					s.device = d
 				}
@@ -389,7 +389,7 @@ func buildWrites(ctx context.Context, s *session, param, value string, ch *leyli
 			// Either order of the two confirmations may arrive first; judge the mirror.
 			switch ev.Body.(type) {
 			case *leylinev1.Event_Channel, *leylinev1.Event_Capture:
-				return channelByID(s.state, ch.ChannelId).GetOffsetHz() == 0 && captureByID(s.state, cap.CaptureId).GetCenterHz() == hz
+				return channelByID(s.State, ch.ChannelId).GetOffsetHz() == 0 && captureByID(s.State, cap.CaptureId).GetCenterHz() == hz
 			}
 			return false
 		}, hz, nil
@@ -400,7 +400,7 @@ func buildWrites(ctx context.Context, s *session, param, value string, ch *leyli
 
 // buildChannelWrites handles the channel-scoped parameters (squelch, bw,
 // mode, volume) for buildWrites.
-func buildChannelWrites(ctx context.Context, s *session, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, needChannel func() error) ([]*leylinev1.ParamWrite, func(*leylinev1.Event) bool, error) {
+func buildChannelWrites(ctx context.Context, s *verbSession, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, needChannel func() error) ([]*leylinev1.ParamWrite, func(*leylinev1.Event) bool, error) {
 	channelEvent := func(match func(*leylinev1.Channel) bool) func(*leylinev1.Event) bool {
 		return func(ev *leylinev1.Event) bool {
 			c, ok := ev.Body.(*leylinev1.Event_Channel)
@@ -444,7 +444,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 		if err := needChannel(); err != nil {
 			return nil, nil, err
 		}
-		hz, _ := leyline.ChannelFrequency(s.state, ch)
+		hz, _ := leyline.ChannelFrequency(s.State, ch)
 		m, reason, err := bandplan.ResolveMode(value, hz)
 		if err != nil {
 			return nil, nil, paramErr(param, err)
@@ -463,7 +463,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 			return nil, nil, err
 		}
 		var sink *leylinev1.Sink
-		for _, sk := range s.state.Sinks {
+		for _, sk := range s.State.Sinks {
 			if _, ok := sk.Kind.(*leylinev1.Sink_SystemAudio); ok && sk.ChannelId == ch.ChannelId {
 				sink = sk
 			}
@@ -488,7 +488,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 // recognises the capture event holding every one of them. stages is the stages written, spelled
 // as the device spells them, for the confirmation line. A stage the device does not list goes as
 // typed, so the refusal is the daemon's, with the stages the radio has.
-func buildGainWrites(s *session, value string, cap *leylinev1.Capture) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, stages []string, err error) {
+func buildGainWrites(s *verbSession, value string, cap *leylinev1.Capture) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, stages []string, err error) {
 	settings, err := units.ParseGains(value)
 	if err != nil {
 		return nil, nil, nil, paramErr("gain", err)
@@ -496,7 +496,7 @@ func buildGainWrites(s *session, value string, cap *leylinev1.Capture) (writes [
 	if cap == nil {
 		return nil, nil, nil, fmt.Errorf("set gain needs a capture; pick one with --capture")
 	}
-	els := deviceGainElements(s.state, cap.DeviceId)
+	els := deviceGainElements(s.State, cap.DeviceId)
 	if len(els) == 0 {
 		return nil, nil, nil, fmt.Errorf("this radio reports no gain stages; gain cannot be set")
 	}
@@ -554,7 +554,7 @@ func buildGainWrites(s *session, value string, cap *leylinev1.Capture) (writes [
 }
 
 // runSet writes, waits for confirmation (or a rejection) and prints the result.
-func runSet(ctx context.Context, s *session, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, retune bool) error {
+func runSet(ctx context.Context, s *verbSession, param, value string, ch *leylinev1.Channel, cap *leylinev1.Capture, retune bool) error {
 	var (
 		writes    []*leylinev1.ParamWrite
 		confirmed func(*leylinev1.Event) bool
@@ -570,13 +570,13 @@ func runSet(ctx context.Context, s *session, param, value string, ch *leylinev1.
 	if err != nil {
 		return err
 	}
-	sum, err := s.client.WriteParams(ctx, writes...)
+	sum, err := s.Client.WriteParams(ctx, writes...)
 	if err != nil {
 		return s.friendly(err, value, hz)
 	}
 	rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
-	ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
-		if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok && s.mine(ev) {
+	ev, err := s.AwaitEvent(ctx, func(ev *leylinev1.Event) bool {
+		if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok && s.Mine(ev) {
 			for _, w := range writes {
 				if w.Tag == r.WriteRejected.Tag {
 					return true
@@ -606,7 +606,7 @@ func runSet(ctx context.Context, s *session, param, value string, ch *leylinev1.
 	if wasRejected {
 		return fmt.Errorf("rejected: %w", s.friendly(rejectedError(r.WriteRejected), value, hz))
 	}
-	fmt.Fprintln(s.app.Stdout, confirmLine(s.app.Style, s.state, param, stages, ev, ch, cap))
+	fmt.Fprintln(s.app.Stdout, confirmLine(s.app.Style, s.State, param, stages, ev, ch, cap))
 	return nil
 }
 

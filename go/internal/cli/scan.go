@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
@@ -122,11 +123,11 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			// The daemon takes a device id, not a row number or a prefix, so the selector is
 			// resolved here against the same list every other verb uses.
 			if o.device != "" {
-				d, derr := pickDevice(s.state, o.device)
+				d, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -148,7 +149,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 }
 
 // runScan starts the sweep, follows it on the event stream, and prints what it found.
-func runScan(ctx context.Context, s *session, o scanOptions) error {
+func runScan(ctx context.Context, s *verbSession, o scanOptions) error {
 	scan, final, err := s.sweep(ctx, o)
 	if err != nil {
 		return err
@@ -163,7 +164,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	if s.app.JSON {
 		return s.app.printJSON(scan)
 	}
-	printScan(s.app, scan, o, scanGainElements(s.state, o.deviceID, scan))
+	printScan(s.app, scan, o, scanGainElements(s.State, o.deviceID, scan))
 	return nil
 }
 
@@ -171,7 +172,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 // Scan with a nil error means the sweep ended with nothing to fetch and the reason was already
 // printed on stderr: an interrupted sweep the daemon could not report on in time, or a job that
 // named no scan. `ley scan` prints what comes back; the MCP adapter's scan tool returns it.
-func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
+func (s *verbSession) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
 	cfg := &leylinev1.ScanConfig{
 		Range:    &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
 		DwellMs:  o.dwellMs,
@@ -180,7 +181,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		DeviceId: o.deviceID,
 		Gains:    gainWrites(o.gain),
 	}
-	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
+	job, err := s.Client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -198,10 +199,10 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 	// An interrupted sweep still has valid measurements for the part that ran.
 	read := ctx
 	if ctx.Err() != nil {
-		c, stop := context.WithTimeout(context.Background(), confirmTimeout)
+		c, stop := session.CleanupContext(ctx, confirmTimeout)
 		defer stop()
 		read = c
-		if j, cerr := s.client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
+		if j, cerr := s.Client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
 			final = j
 		}
 	}
@@ -218,7 +219,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		s.say("%s (%s)\n", final.StatusDetail, idErr)
 		return nil, final, nil
 	}
-	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
+	scan, err := s.Client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
 	if err != nil {
 		// Interrupted, and the daemon was still handing the radio back when we asked. Say so:
 		// exiting 0 with an empty screen reads as an empty band.
@@ -234,7 +235,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 
 // followJob renders progress until the job leaves RUNNING, and returns its last state. Job state
 // arrives on the event stream every client already drains -- there is no polling here.
-func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *scanProgress) (*leylinev1.Job, error) {
+func (s *verbSession) followJob(ctx context.Context, job *leylinev1.Job, progress *scanProgress) (*leylinev1.Job, error) {
 	last := job
 	// A backstop, not the mechanism: job state arrives on the event stream. But a stream can end
 	// cleanly (a daemon reload) or drop an event (the fan-out buffer is bounded and says so), and
@@ -246,7 +247,7 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 		case <-ctx.Done():
 			return last, nil
 		case <-poll.C:
-			j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+			j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 			if err != nil {
 				if ctx.Err() != nil {
 					return last, nil
@@ -260,14 +261,14 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 			if last.State != leylinev1.JobState_RUNNING {
 				return last, nil
 			}
-		case ev, ok := <-s.events:
+		case ev, ok := <-s.Events():
 			if !ok {
 				// The stream ended. pump reports a clean EOF as a nil error, so nothing here can
 				// distinguish "the daemon went away" from "the daemon finished with us" -- ask.
-				if err := <-s.eventErrs; err != nil {
+				if err := <-s.EventErrs(); err != nil {
 					return last, err
 				}
-				j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+				j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 				if err != nil {
 					if ctx.Err() != nil {
 						return last, nil
@@ -281,7 +282,7 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 			}
 			b, isJob := ev.Body.(*leylinev1.Event_Job)
 			if !isJob || b.Job.JobId != job.JobId {
-				s.apply(ev)
+				s.Apply(ev)
 				continue
 			}
 			last = b.Job

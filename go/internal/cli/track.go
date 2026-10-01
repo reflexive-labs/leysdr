@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
@@ -161,7 +162,7 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		if id != "" {
 			// Free the radio as soon as track exits rather than waiting out the presence grace.
 			defer func() {
-				cctx, ccl := context.WithTimeout(context.Background(), 2*time.Second)
+				cctx, ccl := session.CleanupContext(ctx, 2*time.Second)
 				defer ccl()
 				_, _ = c.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: id})
 			}()

@@ -15,6 +15,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
@@ -548,7 +549,7 @@ func TestTuneGainSetsEachStageNamed(t *testing.T) {
 	}
 	// The banner, the tree and the --wide cell print the gain in the same words, the AMP as the
 	// switch the device says it is (plans/v1-release.md, R-23).
-	banner := &session{device: hackrf, capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "LNA", Db: 16}, {Element: "VGA", Db: 4}, {Element: "AMP", Db: 0}}}}
+	banner := &verbSession{Session: &session.Session{Capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "LNA", Db: 16}, {Element: "VGA", Db: 4}, {Element: "AMP", Db: 0}}}}, device: hackrf}
 	if got, want := banner.bannerSource(ui.Style{}), "Radio HackRF Pro, gain LNA 16 dB, VGA 4 dB, AMP off"; got != want {
 		t.Errorf("the banner reads %q, want %q", got, want)
 	}

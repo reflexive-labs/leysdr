@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
@@ -32,9 +33,9 @@ func covers(cap *leylinev1.Capture, freq uint64, bw uint32) bool {
 // ensureCapture reuses the device's capture when it covers freq±bw/2, retunes
 // it (WriteParams center_hz) when it exists but does not, and creates one
 // otherwise. It returns after the capture state is confirmed.
-func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
-	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap != nil {
-		s.capture = cap
+func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
+	if cap := leyline.FindCapture(s.State, s.device.DeviceId); cap != nil {
+		s.Capture = cap
 		if covers(cap, o.freq, o.bw) {
 			return nil
 		}
@@ -56,17 +57,17 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		}
 		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, units.FormatFrequency(cap.CenterHz), units.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
-		sum, err := s.client.WriteParams(ctx, w)
+		sum, err := s.Client.WriteParams(ctx, w)
 		if err != nil {
 			return s.friendly(err, o.input, o.freq)
 		}
 		rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
-		ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
+		ev, err := s.AwaitEvent(ctx, func(ev *leylinev1.Event) bool {
 			switch b := ev.Body.(type) {
 			case *leylinev1.Event_Capture:
 				return !rejected && b.Capture.CaptureId == cap.CaptureId && b.Capture.CenterHz == o.freq
 			case *leylinev1.Event_WriteRejected:
-				return s.mine(ev) && b.WriteRejected.Tag == 1
+				return s.Mine(ev) && b.WriteRejected.Tag == 1
 			}
 			return false
 		})
@@ -85,7 +86,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 	if o.captureCenter != 0 {
 		center = o.captureCenter
 	}
-	cap, err := s.client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: center, SampleRate: o.rate})
+	cap, err := s.Client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: center, SampleRate: o.rate})
 	if err != nil {
 		if leyline.Code(err) != leyline.CodeDeviceBusy {
 			return s.friendly(err, o.input, o.freq)
@@ -94,11 +95,11 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		// to appear in the state and then reuse or retune it like any existing capture.
 		deadline := time.Now().Add(5 * time.Second)
 		for {
-			st, serr := s.client.State(ctx)
+			st, serr := s.Client.State(ctx)
 			if serr != nil {
 				return serr
 			}
-			s.state = st
+			s.State = st
 			if leyline.FindCapture(st, s.device.DeviceId) != nil {
 				return s.ensureCapture(ctx, o)
 			}
@@ -112,9 +113,8 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 			}
 		}
 	}
-	s.capture = cap
+	s.TrackCapture(cap)
 	s.createdCapture = true
-	replaceCapture(s.state, cap)
 	return nil
 }
 
@@ -122,7 +122,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 // so an impossible frequency fails with the friendly message before a write
 // is attempted (the daemon remains the authority; it rejects anything the
 // mirror lets through). Devices with unknown ranges are not checked.
-func (s *session) checkRange(input string, hz uint64) error {
+func (s *verbSession) checkRange(input string, hz uint64) error {
 	if s.device == nil || len(s.device.TuningRanges) == 0 || units.InRanges(hz, s.device.TuningRanges) {
 		return nil
 	}
@@ -140,19 +140,19 @@ func (s *session) checkRange(input string, hz uint64) error {
 // The daemon never refuses a user's write on a job's behalf -- it degrades the
 // recording and records the gap. The client that takes the user's action does
 // the check, which for `ley` is here (docs/design/recording.md, "Don't-disturb").
-func (s *session) recordingsOn(captureID string) []*leylinev1.Job {
-	cap := captureByID(s.state, captureID)
+func (s *verbSession) recordingsOn(captureID string) []*leylinev1.Job {
+	cap := captureByID(s.State, captureID)
 	if cap == nil {
 		return nil
 	}
 	var out []*leylinev1.Job
-	for _, j := range s.state.GetJobs() {
+	for _, j := range s.State.GetJobs() {
 		cfg := j.GetRecord()
 		if cfg == nil || !isLiveJob(j) {
 			continue
 		}
 		if cfg.GetChannelId() != "" {
-			if ch := channelByID(s.state, cfg.GetChannelId()); ch != nil && ch.GetCaptureId() == captureID {
+			if ch := channelByID(s.State, cfg.GetChannelId()); ch != nil && ch.GetCaptureId() == captureID {
 				out = append(out, j)
 			}
 			continue
@@ -161,7 +161,7 @@ func (s *session) recordingsOn(captureID string) []*leylinev1.Job {
 		// this capture's span around where it was asked to listen.
 		hz := cfg.GetFrequencyHz()
 		onChannel := false
-		for _, ch := range s.state.GetChannels() {
+		for _, ch := range s.State.GetChannels() {
 			if ch.GetCaptureId() == captureID && ch.GetOwner().GetKind() == "job" && ch.GetRequiredHz() == hz {
 				onChannel = true
 			}
@@ -176,7 +176,7 @@ func (s *session) recordingsOn(captureID string) []*leylinev1.Job {
 // refuseRetuneOverRecording is the sentence `ley tune` and `ley set freq` print
 // rather than moving a radio out from under a recording. nil when nothing is
 // recording, or when --retune said to go ahead.
-func (s *session) refuseRetuneOverRecording(captureID string, retune bool) error {
+func (s *verbSession) refuseRetuneOverRecording(captureID string, retune bool) error {
 	recs := s.recordingsOn(captureID)
 	if len(recs) == 0 || retune {
 		return nil
@@ -196,9 +196,9 @@ func (s *session) refuseRetuneOverRecording(captureID string, retune bool) error
 }
 
 // activeChannels counts the ACTIVE channels riding on a capture in the mirror.
-func (s *session) activeChannels(captureID string) int {
+func (s *verbSession) activeChannels(captureID string) int {
 	n := 0
-	for _, ch := range s.state.GetChannels() {
+	for _, ch := range s.State.GetChannels() {
 		if ch.CaptureId == captureID && ch.State == leylinev1.ChannelState_CHANNEL_ACTIVE {
 			n++
 		}
@@ -209,18 +209,17 @@ func (s *session) activeChannels(captureID string) int {
 // createChannel creates the demod channel at freq relative to the capture and
 // applies the initial squelch: an explicit level, or the measured one when
 // the run asked for auto (a failed measurement leaves squelch off and says so).
-func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
-	offset := int64(o.freq) - int64(s.capture.CenterHz)
-	ch, err := s.client.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
-		CaptureId: s.capture.CaptureId, OffsetHz: offset, BandwidthHz: o.bw, Mode: o.mode, Persistent: o.persistent,
+func (s *verbSession) createChannel(ctx context.Context, o *tuneOptions) error {
+	offset := int64(o.freq) - int64(s.Capture.CenterHz)
+	ch, err := s.Client.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
+		CaptureId: s.Capture.CaptureId, OffsetHz: offset, BandwidthHz: o.bw, Mode: o.mode, Persistent: o.persistent,
 	})
 	if err != nil {
 		return s.friendly(err, o.input, o.freq)
 	}
-	s.channel = ch
-	replaceChannel(s.state, ch)
+	s.TrackChannel(ch)
 	if o.squelchAuto {
-		db, floor, err := s.measureSquelch(ctx, s.capture, ch.BandwidthHz)
+		db, floor, err := s.measureSquelch(ctx, s.Capture, ch.BandwidthHz)
 		if err != nil {
 			s.squelchNote = fmt.Sprintf("Squelch auto: %v; squelch stays off (set one with: ley set squelch -40).", err)
 			return nil
@@ -234,17 +233,17 @@ func (s *session) createChannel(ctx context.Context, o *tuneOptions) error {
 		// tears down what was created) rather than listening with the wrong
 		// squelch and calling it applied.
 		w := &leylinev1.ParamWrite{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: o.squelch}}
-		sum, err := s.client.WriteParams(ctx, w)
+		sum, err := s.Client.WriteParams(ctx, w)
 		if err != nil {
 			return fmt.Errorf("--squelch was not applied: %w", err)
 		}
 		rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
-		ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
+		ev, err := s.AwaitEvent(ctx, func(ev *leylinev1.Event) bool {
 			switch b := ev.Body.(type) {
 			case *leylinev1.Event_Channel:
 				return !rejected && b.Channel.ChannelId == ch.ChannelId && b.Channel.SquelchDb == o.squelch
 			case *leylinev1.Event_WriteRejected:
-				return s.mine(ev) && b.WriteRejected.Tag == 2
+				return s.Mine(ev) && b.WriteRejected.Tag == 2
 			}
 			return false
 		})
@@ -269,9 +268,9 @@ func rejectedError(r *leylinev1.WriteRejected) error {
 
 // attachAudio attaches a system_audio sink; PLATFORM_UNSUPPORTED is reported
 // as a warning rather than an error so headless hosts can still tune.
-func (s *session) attachAudio(ctx context.Context, o *tuneOptions) error {
-	sink, err := s.client.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{
-		ChannelId: s.channel.ChannelId,
+func (s *verbSession) attachAudio(ctx context.Context, o *tuneOptions) error {
+	sink, err := s.Client.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{
+		ChannelId: s.Channel.ChannelId,
 		Sink:      &leylinev1.Sink{Kind: &leylinev1.Sink_SystemAudio{SystemAudio: &leylinev1.SystemAudioSink{Volume: proto.Float64(o.volume)}}},
 	})
 	if err != nil {
@@ -281,7 +280,7 @@ func (s *session) attachAudio(ctx context.Context, o *tuneOptions) error {
 		}
 		return err
 	}
-	s.sink = sink
+	s.Sink = sink
 	return nil
 }
 
@@ -292,39 +291,39 @@ func (s *session) attachAudio(ctx context.Context, o *tuneOptions) error {
 // last event was folded, and DestroyCapture would silence it. A failed
 // destroy is reported on stderr with the recovery, since the next tune would
 // otherwise fail with DEVICE_BUSY and no explanation.
-func (s *session) teardown() {
-	ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+func (s *verbSession) teardown(ctx context.Context) {
+	ctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 	defer cancel()
-	if s.channel != nil {
-		if _, err := s.client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: s.channel.ChannelId}); err != nil && leyline.Code(err) != leyline.CodeChannelNotFound {
-			s.cleanupFailed("channel "+s.channel.ChannelId, err)
+	if s.Channel != nil {
+		if _, err := s.Client.Control.DestroyChannel(ctx, &leylinev1.DestroyChannelRequest{ChannelId: s.Channel.ChannelId}); err != nil && leyline.Code(err) != leyline.CodeChannelNotFound {
+			s.cleanupFailed("channel "+s.Channel.ChannelId, err)
 		}
 	}
-	if s.capture == nil || !s.createdCapture {
+	if s.Capture == nil || !s.createdCapture {
 		return
 	}
-	if st, err := s.client.State(ctx); err == nil {
-		s.state = st
+	if st, err := s.Client.State(ctx); err == nil {
+		s.State = st
 	}
 	var others []string
-	for _, ch := range s.state.Channels {
-		if ch.CaptureId == s.capture.CaptureId && (s.channel == nil || ch.ChannelId != s.channel.ChannelId) {
+	for _, ch := range s.State.Channels {
+		if ch.CaptureId == s.Capture.CaptureId && (s.Channel == nil || ch.ChannelId != s.Channel.ChannelId) {
 			others = append(others, ch.ChannelId)
 		}
 	}
 	if len(others) > 0 {
 		fmt.Fprintf(s.app.Stderr, "leaving capture %s running: %s still on it (%s); ley stop --all frees the radio\n",
-			s.capture.CaptureId, words.Count(len(others), "other channel"), strings.Join(others, ", "))
+			s.Capture.CaptureId, words.Count(len(others), "other channel"), strings.Join(others, ", "))
 		return
 	}
-	if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: s.capture.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
-		s.cleanupFailed("capture "+s.capture.CaptureId, err)
+	if _, err := s.Client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: s.Capture.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {
+		s.cleanupFailed("capture "+s.Capture.CaptureId, err)
 		return
 	}
 	s.freedRadio = true
 }
 
 // cleanupFailed reports a teardown RPC failure with the way out.
-func (s *session) cleanupFailed(what string, err error) {
+func (s *verbSession) cleanupFailed(what string, err error) {
 	fmt.Fprintf(s.app.Stderr, "warning: could not remove %s: %v; the radio may still be held, free it with: ley stop --all\n", what, err)
 }

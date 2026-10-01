@@ -109,7 +109,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if err != nil {
 		return err
 	}
-	defer s.close()
+	defer s.Close()
 	if err := s.openBand(ctx, app, bandOptions{
 		freq: o.freq, span: o.span, freqInput: o.freqInput,
 		band: o.band, retune: o.retune, device: o.device, verb: "spectrum",
@@ -117,7 +117,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 		return err
 	}
 	if s.createdCapture {
-		defer s.teardown()
+		defer s.teardown(ctx)
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -125,14 +125,14 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if !o.watch {
 		rate = 2
 	}
-	sub, err := s.client.SubscribeFFT(sctx, s.capture.CaptureId, o.bins, rate, leylinev1.FftBinFormat_DB_F32)
+	sub, err := s.Client.SubscribeFFT(sctx, s.Capture.CaptureId, o.bins, rate, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		return err
 	}
 	defer sub.Close()
 	// Keep the event stream flowing (and the mirror current) while rows render;
 	// stopped before teardown reads the mirror.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 	desc := sub.Descriptor
 	binFormat := desc.GetFft().GetBinFormat()

@@ -40,7 +40,7 @@ type bandOptions struct {
 // A group (gmrs: two halves 5 MHz apart) that the radio cannot capture whole
 // is refused with its parts named rather than centred on the empty spectrum
 // between them, which would show neither half.
-func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
+func (s *verbSession) resolveBandFlag(app *App, o *bandOptions) error {
 	b := o.band
 	if b == nil {
 		return nil
@@ -106,16 +106,16 @@ func groupGapPhrase(b bandplan.Band) string {
 // frequency, and prints a note on stderr whenever the radio ended up somewhere
 // other than where the user pointed. The caller tears down a capture it created
 // (s.createdCapture says whether there is one).
-func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
+func (s *verbSession) openBand(ctx context.Context, app *App, o bandOptions) error {
 	var err error
-	if s.device, err = pickDevice(s.state, o.device); err != nil {
+	if s.device, err = pickDevice(s.State, o.device); err != nil {
 		return err
 	}
 	// --band needs the device's rates to know how much of the band fits.
 	if err := s.resolveBandFlag(app, &o); err != nil {
 		return err
 	}
-	cap := leyline.FindCapture(s.state, s.device.DeviceId)
+	cap := leyline.FindCapture(s.State, s.device.DeviceId)
 	if cap == nil && o.freq == 0 {
 		return usageErrorf("%s is not tuned to anything yet; say where to look, e.g.: ley %s 101.1",
 			deviceName(s.device), o.verb)
@@ -156,8 +156,8 @@ func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 	// A reused capture keeps its own centre, so the picture can be centred
 	// somewhere other than the frequency that was asked for. Print a note so
 	// the offset axis is explained.
-	if o.freq != 0 && s.capture != nil && s.capture.CenterHz != o.freq {
-		fmt.Fprintf(app.Stderr, "showing the capture at %s, which covers %s\n", units.FormatFrequency(s.capture.CenterHz), units.FormatFrequency(o.freq))
+	if o.freq != 0 && s.Capture != nil && s.Capture.CenterHz != o.freq {
+		fmt.Fprintf(app.Stderr, "showing the capture at %s, which covers %s\n", units.FormatFrequency(s.Capture.CenterHz), units.FormatFrequency(o.freq))
 	}
 	return nil
 }

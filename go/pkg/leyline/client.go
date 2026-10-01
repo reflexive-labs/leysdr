@@ -443,7 +443,9 @@ func (s *Subscription) Err() error {
 	}
 }
 
-// Close cancels the frame pump and unsubscribes on the daemon.
+// Close cancels the frame pump and unsubscribes on the daemon. The unsubscribe
+// gets a context of its own: Close is usually called because the caller's
+// context has ended, and the daemon should still free the stream.
 func (s *Subscription) Close() error {
 	s.cancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

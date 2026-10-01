@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
@@ -100,9 +101,9 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			if o.device != "" {
-				d, derr := pickDevice(s.state, o.device)
+				d, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -311,11 +312,11 @@ func isChannelID(arg string) bool { return strings.HasPrefix(arg, "chan_") }
 
 // resolveChannel checks a named channel exists before the job is started, so a typo is a usage
 // error here rather than a job that failed somewhere else.
-func (o *recordOptions) resolveChannel(s *session) error {
+func (o *recordOptions) resolveChannel(s *verbSession) error {
 	if o.channelID == "" {
 		return nil
 	}
-	for _, ch := range s.state.GetChannels() {
+	for _, ch := range s.State.GetChannels() {
 		if ch.GetChannelId() == o.channelID {
 			return nil
 		}
@@ -347,8 +348,8 @@ func (o *recordOptions) config() *leylinev1.RecordConfig {
 }
 
 // runRecord starts the job and, unless --detach, follows it until it ends.
-func runRecord(ctx context.Context, s *session, o recordOptions) error {
-	job, err := s.client.StartRecord(ctx, o.config())
+func runRecord(ctx context.Context, s *verbSession, o recordOptions) error {
+	job, err := s.Client.StartRecord(ctx, o.config())
 	if err != nil {
 		return recordFailure(s, o, err)
 	}
@@ -362,9 +363,9 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 		if sink := s.attachRecordAudio(ctx, job, o); sink != "" {
 			playing = true
 			defer func() {
-				cctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+				cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 				defer cancel()
-				_ = s.client.DetachSink(cctx, sink)
+				_ = s.Client.DetachSink(cctx, sink)
 			}()
 		}
 	}
@@ -388,7 +389,7 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 		// Under --json stdout is the Job stream and nothing else; the URI is in its resultUris.
 		if !s.app.JSON {
 			s.say("%s %s stops it\n", s.app.ErrStyle.Muted("Left running;"),
-				s.app.ErrStyle.Cmd("ley jobs cancel "+jobRowName(s, job)))
+				s.app.ErrStyle.Cmd("ley jobs cancel "+jobRowName(ctx, s, job)))
 			fmt.Fprintln(s.app.Stdout, job.GetJobId())
 			fmt.Fprintln(s.app.Stdout, uri)
 		}
@@ -401,9 +402,9 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 	// Ctrl-C stops the job: the next thing somebody does is usually tune, and a cancelled
 	// recording is complete rather than damaged.
 	if ctx.Err() != nil && isLiveJob(final) {
-		cctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+		cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 		defer cancel()
-		if j, cerr := s.client.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: job.GetJobId()}); cerr == nil {
+		if j, cerr := s.Client.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: job.GetJobId()}); cerr == nil {
 			final = j
 			if s.app.JSON {
 				if err := s.app.printJSON(final); err != nil {
@@ -431,7 +432,7 @@ func runRecord(ctx context.Context, s *session, o recordOptions) error {
 // recordedNothing is the closing line of a recording the daemon discarded because no part was
 // written. A gated recording heard nothing because its squelch stayed shut; a continuous one
 // because no audio reached it before it ended.
-func recordedNothing(s *session, o recordOptions) string {
+func recordedNothing(s *verbSession, o recordOptions) string {
 	return s.app.ErrStyle.Label("Recorded nothing:") + " " + nothingHeardReason(o.gated)
 }
 
@@ -446,13 +447,13 @@ func nothingHeardReason(gated bool) string {
 // attachRecordAudio puts this terminal's speakers on the channel the recording is writing from,
 // and returns the sink id to detach afterwards. A host with no audio is a warning, not a failure:
 // the recording is already running and does not depend on the speakers.
-func (s *session) attachRecordAudio(ctx context.Context, job *leylinev1.Job, o recordOptions) string {
+func (s *verbSession) attachRecordAudio(ctx context.Context, job *leylinev1.Job, o recordOptions) string {
 	ch := s.recordChannel(ctx, job, o)
 	if ch == "" {
 		fmt.Fprintln(s.app.Stderr, s.app.ErrStyle.Warn("could not find the channel the recording is on; it is recording, but nothing is playing"))
 		return ""
 	}
-	sink, err := s.client.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{
+	sink, err := s.Client.Control.AttachSink(ctx, &leylinev1.AttachSinkRequest{
 		ChannelId: ch,
 		Sink:      &leylinev1.Sink{Kind: &leylinev1.Sink_SystemAudio{SystemAudio: &leylinev1.SystemAudioSink{Volume: proto.Float64(1)}}},
 	})
@@ -470,18 +471,18 @@ func (s *session) attachRecordAudio(ctx context.Context, job *leylinev1.Job, o r
 // recordChannel is the channel the job is recording: the one it was told to borrow, or the one
 // the allocator made for it. A job's channel carries the frequency it was asked for in
 // required_hz, which is what tells it apart from anything else on the radio.
-func (s *session) recordChannel(ctx context.Context, job *leylinev1.Job, o recordOptions) string {
+func (s *verbSession) recordChannel(ctx context.Context, job *leylinev1.Job, o recordOptions) string {
 	if o.channelID != "" {
 		return o.channelID
 	}
 	// The channel appears when the daemon has its radio, which is when the manifest does.
 	deadline := time.Now().Add(recordManifestWait)
 	for {
-		st, err := s.client.State(ctx)
+		st, err := s.Client.State(ctx)
 		if err == nil {
 			for _, ch := range st.GetChannels() {
 				if ch.GetOwner().GetKind() == "job" && ch.GetRequiredHz() == o.freqHz {
-					s.state = st
+					s.State = st
 					return ch.GetChannelId()
 				}
 			}
@@ -502,15 +503,15 @@ func (s *session) recordChannel(ctx context.Context, job *leylinev1.Job, o recor
 // manifest yet; the banner falls back to what was asked for rather than making the reader wait.
 // A job that ended before writing one is returned as well, so a gain the radio refused is
 // reported at once rather than after the wait.
-func awaitManifest(ctx context.Context, s *session, jobID string) (*leyline.RecordingManifest, string, *leylinev1.Job) {
+func awaitManifest(ctx context.Context, s *verbSession, jobID string) (*leyline.RecordingManifest, string, *leylinev1.Job) {
 	deadline := time.Now().Add(recordManifestWait)
 	for {
-		if dir, err := s.client.ResolveLocalPath(ctx, leyline.RecordingURI(jobID)); err == nil {
+		if dir, err := s.Client.ResolveLocalPath(ctx, leyline.RecordingURI(jobID)); err == nil {
 			if m, merr := leyline.ReadRecordingManifest(dir); merr == nil {
 				return m, dir, nil
 			}
 		}
-		if j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: jobID}); err == nil && !isLiveJob(j) {
+		if j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: jobID}); err == nil && !isLiveJob(j) {
 			return nil, "", j
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
@@ -530,7 +531,7 @@ const recordManifestWait = 2 * time.Second
 
 // recordClosing is the line a finished recording ends with, and what to type next: raw samples
 // tune back through play, and an audio recording's own manifest offers the player.
-func recordClosing(s *session, final *leylinev1.Job, jobID string, iq bool) string {
+func recordClosing(s *verbSession, final *leylinev1.Job, jobID string, iq bool) string {
 	st := s.app.ErrStyle
 	detail := final.GetStatusDetail()
 	lead, rest, _ := strings.Cut(detail, " ")
@@ -549,7 +550,7 @@ func isLiveJob(j *leylinev1.Job) bool {
 
 // followRecord renders the job's own progress until it ends. Job state arrives on the event
 // stream every client already drains; the poll is a backstop, as it is for a sweep.
-func (s *session) followRecord(ctx context.Context, job *leylinev1.Job) (*leylinev1.Job, error) {
+func (s *verbSession) followRecord(ctx context.Context, job *leylinev1.Job) (*leylinev1.Job, error) {
 	progress := newScanProgress(s.app)
 	defer progress.clear()
 	last := job
@@ -560,7 +561,7 @@ func (s *session) followRecord(ctx context.Context, job *leylinev1.Job) (*leylin
 		case <-ctx.Done():
 			return last, nil
 		case <-poll.C:
-			j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()})
+			j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()})
 			if err != nil {
 				if ctx.Err() != nil {
 					return last, nil
@@ -579,12 +580,12 @@ func (s *session) followRecord(ctx context.Context, job *leylinev1.Job) (*leylin
 				return last, nil
 			}
 			progress.show(last.GetStatusDetail())
-		case ev, ok := <-s.events:
+		case ev, ok := <-s.Events():
 			if !ok {
-				if err := <-s.eventErrs; err != nil {
+				if err := <-s.EventErrs(); err != nil {
 					return last, err
 				}
-				j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()})
+				j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()})
 				if err != nil {
 					if ctx.Err() != nil {
 						return last, nil
@@ -595,7 +596,7 @@ func (s *session) followRecord(ctx context.Context, job *leylinev1.Job) (*leylin
 			}
 			b, isJob := ev.Body.(*leylinev1.Event_Job)
 			if !isJob || b.Job.GetJobId() != job.GetJobId() {
-				s.apply(ev)
+				s.Apply(ev)
 				continue
 			}
 			last = b.Job
@@ -626,7 +627,7 @@ func recordURI(job *leylinev1.Job) string {
 // recordBanner is the first block of a run: what is being recorded, in what, what opens and
 // closes the files, and when it stops. One fact per line, each led by a label word, as
 // `ley tune`'s banner is. `m` is the manifest the daemon wrote, or nil when it is not there yet.
-func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir string, playing bool) string {
+func recordBanner(s *verbSession, o recordOptions, m *leyline.RecordingManifest, dir string, playing bool) string {
 	st := s.app.ErrStyle
 	lines := []string{
 		leadLabel(st, "Recording", recordWhat(o, m)),
@@ -645,7 +646,7 @@ func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir
 		}
 		lines = append(lines, leadLabel(st, "Gate     ", gate))
 	}
-	if radio := recordRadio(m, manifestGainElements(s.state.GetDevices(), m)); radio != "" {
+	if radio := recordRadio(m, manifestGainElements(s.State.GetDevices(), m)); radio != "" {
 		lines = append(lines, leadLabel(st, "Radio    ", radio))
 	}
 	lines = append(lines, leadLabel(st, "Until    ", recordUntil(o)))
@@ -785,7 +786,7 @@ func recordSpan(given, def time.Duration) string {
 }
 
 // recordFailure turns the daemon's refusal into the sentence the reader acts on.
-func recordFailure(s *session, o recordOptions, err error) error {
+func recordFailure(s *verbSession, o recordOptions, err error) error {
 	st := s.app.ErrStyle
 	switch leyline.Code(err) {
 	case leyline.CodeDeviceBusy:

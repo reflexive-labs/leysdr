@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
@@ -160,8 +161,8 @@ through its own speakers, and on a terminal space pauses and resumes it.`,
 			// because play prints its first line before runTune is reached. Ids
 			// stay on stdout in printCreated.
 			s.proseToStderr = true
-			defer s.close()
-			dev, err := s.client.Control.AttachFileDevice(cmd.Context(), &leylinev1.AttachFileDeviceRequest{Path: path, Loop: loop})
+			defer s.Close()
+			dev, err := s.Client.Control.AttachFileDevice(cmd.Context(), &leylinev1.AttachFileDeviceRequest{Path: path, Loop: loop})
 			if err != nil {
 				return err
 			}
@@ -173,9 +174,9 @@ through its own speakers, and on a terminal space pauses and resumes it.`,
 					// The persistent channel rides on this device's capture; detaching would destroy both.
 					return
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+				ctx, cancel := session.CleanupContext(cmd.Context(), confirmTimeout)
 				defer cancel()
-				if _, err := s.client.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId}); err != nil && leyline.Code(err) != leyline.CodeDeviceNotFound {
+				if _, err := s.Client.Control.DetachFileDevice(ctx, &leylinev1.DetachFileDeviceRequest{DeviceId: dev.DeviceId}); err != nil && leyline.Code(err) != leyline.CodeDeviceNotFound {
 					fmt.Fprintf(app.Stderr, "warning: could not detach file device %s: %v; detach it with: ley devices detach %s\n", dev.DeviceId, err, dev.DeviceId)
 				}
 			}()
@@ -344,8 +345,8 @@ func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part 
 	if err != nil {
 		return err
 	}
-	defer s.close()
-	c := s.client
+	defer s.Close()
+	c := s.Client
 	pb, err := c.StartPlayback(ctx, leyline.RecordingPartURI(jobID, part), -1)
 	if err != nil {
 		if leyline.Code(err) == leyline.CodePlatformUnsupported {
@@ -364,7 +365,7 @@ func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part 
 	}
 	fmt.Fprintln(app.Stderr, st.Muted(playbackLength(pb)+". "+hint))
 	defer func() {
-		cctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+		cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 		defer cancel()
 		_ = c.StopPlayback(cctx, pb.GetPlaybackId())
 	}()
@@ -392,7 +393,7 @@ func playbackLength(pb *leylinev1.Playback) string {
 // keys, when not nil, is the terminal's key presses: space pauses and resumes through the
 // daemon (Control.SetPlaybackPaused), and the line shows `paused` from the playback's own
 // event, so a pause from another client (the app's player) shows here too.
-func (s *session) followPlayback(ctx context.Context, pb *leylinev1.Playback, keys <-chan byte) error {
+func (s *verbSession) followPlayback(ctx context.Context, pb *leylinev1.Playback, keys <-chan byte) error {
 	progress := newScanProgress(s.app)
 	defer progress.clear()
 	total := float64(pb.GetSamples()) / float64(max(pb.GetSampleRate(), 1))
@@ -422,7 +423,7 @@ func (s *session) followPlayback(ctx context.Context, pb *leylinev1.Playback, ke
 			}
 			// The reply is the playback's full state; the event carrying the same state follows
 			// on the stream, so the line is drawn from whichever arrives first.
-			got, err := s.client.SetPlaybackPaused(ctx, pb.GetPlaybackId(), !live.GetPaused())
+			got, err := s.Client.SetPlaybackPaused(ctx, pb.GetPlaybackId(), !live.GetPaused())
 			if err != nil {
 				if ctx.Err() != nil || leyline.Code(err) == leyline.CodeSinkNotFound {
 					// Gone between the key and the call: its tombstone ends the loop.
@@ -432,13 +433,13 @@ func (s *session) followPlayback(ctx context.Context, pb *leylinev1.Playback, ke
 			}
 			live = got
 			show()
-		case ev, ok := <-s.events:
+		case ev, ok := <-s.Events():
 			if !ok {
 				return nil
 			}
 			b, isPlayback := ev.Body.(*leylinev1.Event_Playback)
 			if !isPlayback || b.Playback.GetPlaybackId() != pb.GetPlaybackId() {
-				s.apply(ev)
+				s.Apply(ev)
 				continue
 			}
 			if b.Playback.GetState() == leylinev1.PlaybackState_PLAYBACK_STATE_UNSPECIFIED {

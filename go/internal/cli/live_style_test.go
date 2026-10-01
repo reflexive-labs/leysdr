@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 )
@@ -50,10 +51,10 @@ func liveState(squelch float64, mode leylinev1.DemodMode) (*leylinev1.GetStateRe
 func TestBannerSurvivesColourOff(t *testing.T) {
 	plain, styled := liveStyles()
 	render := func(st ui.Style, note string) string {
-		s := &session{
+		s := &verbSession{
+			Session:     &session.Session{Capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}}}},
 			app:         &App{Style: st},
 			device:      &leylinev1.DeviceDescriptor{Model: "Generic RTL2832U (R820T)"},
-			capture:     &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}}},
 			squelchNote: note,
 		}
 		o := &tuneOptions{freq: 146_520_000, mode: leylinev1.DemodMode_NFM, band: bandplan.BandFor(146_520_000), squelch: math.NaN()}
@@ -127,7 +128,7 @@ func TestSettingsViewSurvivesColourOff(t *testing.T) {
 	render := func(sty ui.Style) string {
 		buf := &bytes.Buffer{}
 		st, ch, cap := liveState(math.NaN(), leylinev1.DemodMode_NFM)
-		s := &session{app: &App{Stdout: buf, Style: sty}, state: st}
+		s := &verbSession{Session: &session.Session{State: st}, app: &App{Stdout: buf, Style: sty}}
 		if err := showSettings(s, ch, cap); err != nil {
 			t.Fatal(err)
 		}

@@ -20,7 +20,7 @@ import (
 // given (the first stage for a bare level), and waits for each confirming
 // capture event so the banner shows the values the daemon settled on (the
 // daemon snaps to the element's table, as set.go mirrors).
-func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
+func (s *verbSession) applyGain(ctx context.Context, o *tuneOptions) error {
 	if o.gain == "" {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 // refuse it. A named stage is matched against the device ignoring case; one
 // the device does not list is sent as typed, so the refusal is the daemon's,
 // with the stages the radio has.
-func (s *session) writeGain(ctx context.Context, g units.GainSetting) error {
+func (s *verbSession) writeGain(ctx context.Context, g units.GainSetting) error {
 	el := s.device.GainElements[0]
 	name := el.GetName()
 	if g.Element != "" {
@@ -67,14 +67,14 @@ func (s *session) writeGain(ctx context.Context, g units.GainSetting) error {
 	} else {
 		gw.Value = &leylinev1.GainWrite_Db{Db: db}
 	}
-	w := &leylinev1.ParamWrite{Tag: 3, TargetId: s.capture.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: gw}}
-	if _, err := s.client.WriteParams(ctx, w); err != nil {
+	w := &leylinev1.ParamWrite{Tag: 3, TargetId: s.Capture.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: gw}}
+	if _, err := s.Client.WriteParams(ctx, w); err != nil {
 		return fmt.Errorf("--gain was not applied: %w", err)
 	}
-	ev, err := s.awaitEvent(ctx, func(ev *leylinev1.Event) bool {
+	ev, err := s.AwaitEvent(ctx, func(ev *leylinev1.Event) bool {
 		switch b := ev.Body.(type) {
 		case *leylinev1.Event_Capture:
-			if b.Capture.CaptureId != s.capture.CaptureId {
+			if b.Capture.CaptureId != s.Capture.CaptureId {
 				return false
 			}
 			for _, gs := range b.Capture.Gains {
@@ -83,7 +83,7 @@ func (s *session) writeGain(ctx context.Context, g units.GainSetting) error {
 				}
 			}
 		case *leylinev1.Event_WriteRejected:
-			return s.mine(ev) && b.WriteRejected.Tag == 3
+			return s.Mine(ev) && b.WriteRejected.Tag == 3
 		}
 		return false
 	})

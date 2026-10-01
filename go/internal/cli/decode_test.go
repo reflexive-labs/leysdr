@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
@@ -194,7 +195,7 @@ func TestDecodeScreensSurviveColourOff(t *testing.T) {
 		printDecoderTable(app, list)
 		printRecordTable(app, page)
 		out.WriteString(renderTrack(app, table, trackDefaultWindow))
-		s := &session{app: app}
+		s := &verbSession{Session: &session.Session{}, app: app}
 		for _, rec := range page.Records {
 			if err := printRecord(s, rec); err != nil {
 				t.Fatal(err)

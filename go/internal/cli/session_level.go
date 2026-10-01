@@ -28,8 +28,8 @@ const levelProbeTimeout = 600 * time.Millisecond
 // stream's error is not read: a daemon that sends no levels leaves the channel
 // silent, and every reader of it is bounded by something else. A subscription
 // that could not be opened is a nil channel, which blocks the same way.
-func (s *session) watchLevel(ctx context.Context, captureID string) <-chan *leylinev1.TelemetryMsg {
-	msgs, _, err := s.client.WatchTelemetry(ctx, &leylinev1.TelemetrySubscription{
+func (s *verbSession) watchLevel(ctx context.Context, captureID string) <-chan *leylinev1.TelemetryMsg {
+	msgs, _, err := s.Client.WatchTelemetry(ctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_CaptureId{CaptureId: captureID},
 		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_CAPTURE_LEVEL},
 	})
@@ -67,14 +67,14 @@ func awaitLevel(ctx context.Context, msgs <-chan *leylinev1.TelemetryMsg, wait t
 // 10·log10(bw / bin width); the threshold sits 10 dB above that. It returns
 // an error when no row arrives within squelchProbeTimeout so callers can
 // leave squelch off and say so.
-func (s *session) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw uint32) (threshold, floor float64, err error) {
+func (s *verbSession) measureSquelch(ctx context.Context, cap *leylinev1.Capture, bw uint32) (threshold, floor float64, err error) {
 	sctx, cancel := context.WithTimeout(ctx, squelchProbeTimeout+levelProbeTimeout)
 	defer cancel()
 	// The capture's level is asked for first, so its first reading, a quarter
 	// of a second away at most, is usually in hand by the time the row is: it
 	// shows whether the radio is clipping, which the row cannot.
 	levels := s.watchLevel(sctx, cap.CaptureId)
-	sub, err := s.client.SubscribeFFT(sctx, cap.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
+	sub, err := s.Client.SubscribeFFT(sctx, cap.CaptureId, 2048, 10, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		return 0, 0, fmt.Errorf("no spectrum available (%v)", err)
 	}

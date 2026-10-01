@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
@@ -108,9 +109,9 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			if o.device != "" {
-				dev, derr := pickDevice(s.state, o.device)
+				dev, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -225,14 +226,14 @@ const monitorDrain = 250 * time.Millisecond
 
 // runMonitor starts the watch, folds the detections on the telemetry plane into a transmission
 // log, and prints it when the watch ends (the duration elapsed, or the user hit Ctrl-C).
-func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
+func runMonitor(ctx context.Context, s *verbSession, o monitorOptions) error {
 	cfg := &leylinev1.MonitorConfig{
 		Range:      &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
 		DurationMs: o.forDur.Milliseconds(),
 		DeviceId:   o.deviceID,
 		TakeOver:   o.takeOver,
 	}
-	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Monitor{Monitor: cfg}})
+	job, err := s.Client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Monitor{Monitor: cfg}})
 	if err != nil {
 		return err
 	}
@@ -240,7 +241,7 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 	// detections stream there just like a scan's, and the client folds them into the log.
 	tctx, tcancel := context.WithCancel(ctx)
 	defer tcancel()
-	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
+	msgs, terrs, err := s.Client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
 		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_DETECTION},
 	})
 	if err != nil {
@@ -301,7 +302,7 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 	interrupted := false
 	poll := time.NewTicker(2 * time.Second)
 	defer poll.Stop()
-	events := s.events
+	events := s.Events()
 follow:
 	for last.State == leylinev1.JobState_RUNNING {
 		select {
@@ -311,7 +312,7 @@ follow:
 		case <-poll.C:
 			// A fallback: job state normally arrives on the event stream, but a stream
 			// can end cleanly or drop an event, and without this the watch would never return.
-			j, gerr := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+			j, gerr := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 			if gerr != nil {
 				if ctx.Err() != nil {
 					interrupted = true
@@ -322,10 +323,10 @@ follow:
 			last = j
 		case ev, ok := <-events:
 			if !ok {
-				if e := <-s.eventErrs; e != nil {
+				if e := <-s.EventErrs(); e != nil {
 					return e
 				}
-				j, gerr := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+				j, gerr := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 				if gerr != nil {
 					if ctx.Err() != nil {
 						interrupted = true
@@ -338,7 +339,7 @@ follow:
 			if b, isJob := ev.Body.(*leylinev1.Event_Job); isJob && b.Job.JobId == job.JobId {
 				last = b.Job
 			} else {
-				s.apply(ev)
+				s.Apply(ev)
 			}
 		case m, ok := <-msgs:
 			if !ok {
@@ -358,9 +359,9 @@ follow:
 	// Interrupted: stop the watch now rather than waiting out its duration -- the next thing the
 	// user does after Ctrl-C is usually tune -- and then print what it heard before it stopped.
 	if interrupted {
-		c, stop := context.WithTimeout(context.Background(), confirmTimeout)
+		c, stop := session.CleanupContext(ctx, confirmTimeout)
 		defer stop()
-		if j, cerr := s.client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
+		if j, cerr := s.Client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
 			last = j
 		}
 	} else {

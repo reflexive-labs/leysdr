@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
@@ -114,9 +115,9 @@ notifier, so it fires whether or not ley is attached.
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			if o.device != "" {
-				d, derr := pickDevice(s.state, o.device)
+				d, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -144,8 +145,8 @@ notifier, so it fires whether or not ley is attached.
 // runWatch starts the decode job with its predicate and notifier. Attached (the default) it
 // streams the matching records the way decode streams every record; detached it leaves the job
 // running for the notifier and prints how to stop it.
-func runWatch(ctx context.Context, s *session, o watchOptions) error {
-	if name, _, err := s.client.ResolveDecoder(ctx, o.decoder); err == nil {
+func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
+	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
 	}
 	cfg := &leylinev1.DecodeConfig{
@@ -157,20 +158,20 @@ func runWatch(ctx context.Context, s *session, o watchOptions) error {
 		Predicate:   o.predicate,
 		Notify:      o.notify,
 	}
-	job, err := s.client.StartDecode(ctx, cfg)
+	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
 	}
-	s.say("%s\n", watchBanner(s, job, o))
+	s.say("%s\n", watchBanner(ctx, s, job, o))
 	if o.detach {
 		st := s.app.ErrStyle
-		s.say("left running; %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(s, job)))
+		s.say("left running; %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(ctx, s, job)))
 		return nil
 	}
 	from := uint64(0)
 	sctx, stop := context.WithCancel(ctx)
 	defer stop()
-	recs, errs, err := s.client.SubscribeRecords(sctx, leyline.RecordScopeJob(job.GetJobId(), &from))
+	recs, errs, err := s.Client.SubscribeRecords(sctx, leyline.RecordScopeJob(job.GetJobId(), &from))
 	if err != nil {
 		return err
 	}
@@ -178,22 +179,22 @@ func runWatch(ctx context.Context, s *session, o watchOptions) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return watchStopped(s, job)
+			return watchStopped(ctx, s, job)
 		case err := <-errs:
 			if err != nil && ctx.Err() == nil {
 				return err
 			}
-			return watchStopped(s, job)
+			return watchStopped(ctx, s, job)
 		case rec, ok := <-recs:
 			if !ok {
-				return watchStopped(s, job)
+				return watchStopped(ctx, s, job)
 			}
 			if err := printRecord(s, rec); err != nil {
 				return err
 			}
 			n++
 			if o.count > 0 && n >= o.count {
-				return watchStopped(s, job)
+				return watchStopped(ctx, s, job)
 			}
 		}
 	}
@@ -201,12 +202,12 @@ func runWatch(ctx context.Context, s *session, o watchOptions) error {
 
 // watchStopped ends an attached watch: the job is ephemeral, so cancel it and hand the radio
 // back, the way decode does with a job it started for one run.
-func watchStopped(s *session, job *leylinev1.Job) error {
+func watchStopped(ctx context.Context, s *verbSession, job *leylinev1.Job) error {
 	st := s.app.ErrStyle
-	ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+	ctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 	defer cancel()
-	if _, err := s.client.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()}); err != nil {
-		s.say("the job is still running: %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(s, job)))
+	if _, err := s.Client.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()}); err != nil {
+		s.say("the job is still running: %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(ctx, s, job)))
 	}
 	return nil
 }
@@ -214,14 +215,14 @@ func watchStopped(s *session, job *leylinev1.Job) error {
 // watchBanner names what the watch is doing: the decoder and where it listens (from decode's
 // banner), then the filter in words and the notifier, so a reader sees what will and will not
 // reach them.
-func watchBanner(s *session, job *leylinev1.Job, o watchOptions) string {
+func watchBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchOptions) string {
 	st := s.app.ErrStyle
 	where := ""
-	if hz := decodeFrequency(s, job); hz > 0 {
+	if hz := decodeFrequency(ctx, s, job); hz > 0 {
 		where = " on " + units.FormatFrequency(hz)
 	}
 	line := fmt.Sprintf("watching %s%s", o.decoder, where)
-	if ch := decodeChannel(s); ch != nil {
+	if ch := decodeChannel(ctx, s); ch != nil {
 		line += ", " + st.Muted(ch.GetChannelId())
 	}
 	line += "\n  " + st.Muted("filter: "+o.predWords)

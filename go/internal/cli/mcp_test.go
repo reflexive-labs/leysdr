@@ -23,6 +23,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/testutil"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
@@ -670,7 +671,7 @@ func TestListenSummaryKeepsDCSOverCTCSS(t *testing.T) {
 		t.Errorf("a tone is not forgotten for a later report that found nothing: %v", sum.tone)
 	}
 	sum.apply(dcs)
-	s := &session{capture: &leylinev1.Capture{CenterHz: 146_520_000}, channel: &leylinev1.Channel{Mode: leylinev1.DemodMode_NFM}}
+	s := &verbSession{Session: &session.Session{Capture: &leylinev1.Capture{CenterHz: 146_520_000}, Channel: &leylinev1.Channel{Mode: leylinev1.DemodMode_NFM}}}
 	if text := sum.text(s, 10*time.Second); !strings.Contains(text, "DCS  023") {
 		t.Errorf("the text names the code: %q", text)
 	}
@@ -715,7 +716,7 @@ func TestListenSummaryFold(t *testing.T) {
 	if sum.meter.Samples != 4 || math.Abs(sum.meter.SquelchOpenFraction-0.75) > 0.001 || sum.meter.OpenAtEnd {
 		t.Errorf("meter stats: %+v", sum.meter)
 	}
-	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
+	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
 	if !strings.Contains(text, "1 transmission") || !strings.Contains(text, "already open when listening began") {
 		t.Errorf("text:\n%s", text)
 	}
@@ -830,7 +831,7 @@ func TestListenSummaryNamesANearMiss(t *testing.T) {
 	meter := func(sum *listenSummary, db float64) {
 		sum.apply(&leylinev1.TelemetryMsg{Time: at(1), Body: &leylinev1.TelemetryMsg_Meter{Meter: &leylinev1.Meter{PowerDbfs: db}}})
 	}
-	sess := &session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}
+	sess := &verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}
 	near := newListenSummary(-23, 2_400_000)
 	meter(near, -27)
 	meter(near, -24)
@@ -862,7 +863,7 @@ func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
 	if err != nil || !strings.Contains(string(raw), `"squelch_open_fraction":null`) || !strings.Contains(string(raw), `"squelch_db":null`) {
 		t.Errorf("meter JSON: %s (%v)", raw, err)
 	}
-	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
+	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
 	if !strings.Contains(text, "squelch off") || strings.Contains(text, "% of the time") {
 		t.Errorf("text:\n%s", text)
 	}
