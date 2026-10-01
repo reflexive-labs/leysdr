@@ -12,9 +12,9 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the mirror copied, the selection, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the M1 views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the M2 inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items; APP-5), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`; APP-5b), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
-| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order | both |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer and its write order, the session's state machines, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
 The package depends on the generated contract (`.package(path: "../swift/LeylineProto")`) and on
@@ -75,11 +75,26 @@ found). Bulk rows and telemetry never pass through it.
 **The coalescer** (`WriteCoalescer`, `PendingWrites`). A drag produces a frequency per frame;
 the daemon keeps the last value per `(target, parameter)` every 20 ms, and so does this side:
 `set` records the write and kicks a flush one tick (16 ms) later, so a frame's worth of writes
-is one message and an idle coalescer sleeps on the kick, not a timer. Writes are fire-and-forget
+is one message and an idle coalescer sleeps on the kick, not a timer. The setters are
+synchronous and take a lock, so a write is recorded before the call returns and the last value
+is the last one the caller asked for; a write wrapped in its own `Task` would not be, because
+Swift does not run two unstructured tasks in the order they were made. Writes are fire-and-forget
 inside one `WriteParams` stream (`../design/control-plane.md`, "Parameter writes"); the
 confirmation is the state event the mirror folds, and a refusal is a `WriteRejected` event
 carrying the write's tag, which `set` returned. A view previews its own write and reconciles
 on the event; it never treats the write as done.
+
+**The session's state machines** (`HeldObject`, `RetuneQueue`, `PartPlayback`). `AppSession`
+is the composition root: it owns these, does the I/O they describe, and forwards the names the
+views already read. Each is in the façade so it is tested on Linux. A type a view renders through
+is a value stored as one property of the observable session, so Observation sees each change;
+`RetuneQueue`, which no view reads, is a main-actor class. `HeldObject` holds the capture or
+channel the window made as its RPC returned it, from the response until the mirror's event, and
+lets the id go only once the mirror had the object and lost it, or after 3 s when it never
+arrives. `RetuneQueue` keeps one centre move in flight: a move asked for meanwhile waits, the last
+one wins, and a superseded move's offset is never written. `PartPlayback` is the window's
+playback of a recorded part, its end on the tombstone (or after 3 s unseen), Play all's queue,
+and whether the live sink goes back on after the last part.
 
 **Streams** (`Streams.swift`). `subscribe(_:)` is `Bulk.Subscribe` then `Bulk.Stream`;
 `fft(capture:bins:rowsPerSecond:)` is the FFT of a band decoded to dBFS per bin against the
@@ -110,8 +125,8 @@ one such log per frequency and mode for the window's session, 32 at most with th
 tuned dropped, so a retune switches to the new frequency's log and coming back finds the rows
 heard there; edges fold into the current log only, and a log left while its transmission was
 open takes the next close edge, which is the daemon's close on retune arriving after the
-retune's event (an open edge first drops the old transmission instead). Until the owner's second
-run on 2026-09-25 a retune emptied the one log. A record job on the tuned log's frequency and mode
+retune's event (an open edge first drops the old transmission instead). A record job on the
+tuned log's frequency and mode
 starting or ending is a manual marker (`mark`, `Transmission.startMarker` and `endMarker`): the
 open transmission closes there, with its tone and the peaks its meters reached, and a new one
 opens at the same sample with no tone yet, because the squelch is still open. A continuous carrier
@@ -142,19 +157,19 @@ that clears it; `CaptureLevelFeed` subscribes it per capture), with the gain as 
 (on auto, take it by hand; above the lowest, lower it, naming the stages above their lowest on a
 radio with several, "Lower the LNA or VGA gain."; at the lowest, move the antenna). "The lowest"
 means every continuous or table stage set by hand to its lowest; a two-value stage, the HackRF's
-AMP, does not count (`../plans/app.md`, M2-10). A measured fact
+AMP, does not count. A measured fact
 with its number and one action; not a detector (invariant 12). `ley tune` reports the same state
 from the same count and words (`go/internal/cli/failure.go`), held by the same rule
 (`cliphold.go`) and said once when raised, and also warns once, in its banner at tune, when
-nothing on the band is 15 dB above the floor. The window showed that warning too until 2026-09-21. It
-was removed because repeating it every few seconds on a quiet band distracted more than it helped.
-The daemon
-not running, no radio and an unplugged radio are the mirror's states and live in
+nothing on the band is 15 dB above the floor. The window does not show that warning, because
+repeating it every few seconds on a quiet band distracts more than it helps. The daemon not
+running, no radio and an unplugged radio are the mirror's states and live in
 `AppSession.emptyWords`. The session folds every level reading, and every mirror change for the
 gains, through `FailureHold`: clipping is raised after 1 s at or over the floor and cleared after
 2 s under the exit fraction, on the capture's clock, because clipping comes in bursts of half a
-second to two seconds and each burst used to show and clear the words. Each change is logged
-after the hold. Clipping is drawn in three places and written in none (`../plans/app.md`, M2-8).
+second to two seconds and without the hold each burst would show and clear the words. Each
+change is logged
+after the hold. Clipping is drawn in three places and written in none.
 While the state holds, the toolbar's device chip has a `caution` dot with the headline and detail
 as its tooltip, and the gain slider's knob is `recording`. The waterfall marks every row captured
 during a reading at or over the floor, the raw reading rather than the held state, with 2 px of
@@ -183,9 +198,7 @@ the channel's mode changes. The number is one click away
 under each word, and a row whose measurement is NaN is hidden rather than dashed. Wall clock in
 the log comes through `SampleClock` from the capture's anchor and is relative otherwise. The panel
 keeps no state of its own; its one write is a bookmark's name, through `BookmarkStore`. The
-failure strip read here from M2-3 until M2-6 retired it, and the transport bar's signal readout
-left when the panel arrived, the one exception to the rule that no milestone moves a control an
-earlier one introduced.
+signal readout is the panel's, not the transport bar's.
 
 **Recording** (`Recordings.swift`; `AppSession`'s "Recording" and "Moving the radio over a
 recording" sections). A recording is a record job's output
@@ -195,7 +208,7 @@ Record transmissions switch. On starts `Jobs.StartJob` in the frequency form of 
 gated by squelch, with the tuned channel's frequency, mode, width and squelch copied
 (`Recordings.config`) and a hang and pre-roll of 500 ms each (`windowHangMs`, `windowPreRollMs`),
 so each transmission is its own part: the daemon's default 5 s hang folded a simplex exchange of
-four overs into one part on the owner's second run (2026-09-25), and `ley record` keeps that
+four overs into one part on a real radio, and `ley record` keeps that
 default; off is `CancelJob`; the job owns its channel and outlives the window. The
 switch shows `Recordings.activeJob`, the running or degraded record job on the tuned channel's
 frequency and mode in the mirror's `jobs`, whoever started it, and keeps only a click until that
@@ -236,11 +249,11 @@ slider says what is heard (`playing GMRS CH3`, `muted · GMRS CH3`, `playing a p
 held`) with the output device as its tooltip. File ▸ Show Recordings in Finder opens the store.
 Tune ▸ Stop Listening removes the channel and destroys the capture only when this window made it
 and no other channel rides on it. The window was written in the container and is unverified until
-it runs on a Mac (`../plans/app.md`, APP-5); the façade's rules are tested in `RecordingsTests` and
+it runs on a Mac; the façade's rules are tested in `RecordingsTests` and
 `ClippedRowsTests`, and against the daemon's own manifest by the daemon-backed suite.
 
 **Two places: the Radio and the Library** (`MainWindow.swift`, `LibraryView.swift`,
-`PlayerBar.swift`; decided 2026-09-25). The toolbar's leading edge has a `Radio | Library`
+`PlayerBar.swift`). The toolbar's leading edge has a `Radio | Library`
 switch (`PlaceSwitch`, two plain buttons on the toolbar's `chrome` inside a 1 pt `border`
 stroke, styled as a segmented control: the place showing raised on a `border` ground 2 pt inside
 the stroke in `ink`, the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which
@@ -292,8 +305,8 @@ caption reads `GMRS CH3 · live` between parts and `live radio held while this p
 plays or is paused. The Library menu puts Play, Pause or Resume on space, Previous/Next Part on ←
 and →, and Stop with no key; the Tune menu's bare arrows and space are disabled in the Library,
 both menus act through `pressSpace`/`pressArrow` for the place showing, and a text field being
-typed into gets the key back (`TextFieldKeys`). Unverified until the Mac (`../plans/app.md`,
-APP-5b and APP-5c); the façade's rules are tested in `RecordingPagesTests` and against the
+typed into gets the key back (`TextFieldKeys`). Unverified until the Mac; the façade's rules are
+tested in `RecordingPagesTests` and against the
 daemon's manifest in the daemon-backed suite.
 
 **The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`). Between the reading and the
@@ -303,7 +316,7 @@ while the panel is shown, summed into nine octave bands by the façade's `BandLe
 `LevelBar`'s ballistics on the capture's sample clock. Its rms and peak are the meter's
 `audio_dbfs` and `audio_peak_dbfs`, and a closed squelch leaves every bar unlit, because the
 demod tap carries the discriminator's noise between transmissions. The view was written in the
-container and is unverified until it runs on a Mac (`../plans/app.md`, M2-7).
+container and is unverified until it runs on a Mac.
 
 ## Palette and type
 
@@ -321,7 +334,7 @@ font that is not one of them.
 | `raised` | `#14181B` | a control's ground inside the chrome; a selected row's ground |
 | `selected` | `#1A1E21` | a selected sidebar row |
 | `hairline` | `#1C2125` | a divider inside a panel |
-| `border` | `#23282C` | a divider between regions, a control's edge; a pop-up's ground inside the chrome (2026-09-19) |
+| `border` | `#23282C` | a divider between regions, a control's edge; a pop-up's ground inside the chrome |
 | `borderStrong` | `#2A3034` | a control that accepts a drag; a popover's ground edge |
 | `borderFocus` | `#3A4044` | the tuning field, an open popover |
 | `ink` | `#E7E9EA` | primary text, the tuned frequency |
@@ -333,9 +346,9 @@ font that is not one of them.
 | `inkDisabled` | `#4A5054` | the sub-kHz digits of the tuning field |
 | `accent` | `#E8814A` | the tuned channel, and nothing else |
 | `good` | `#2FB6A3` | squelch open, a connected device, a bookmarked frequency |
-| `caution` | `#C9C06A` | off tune, overdeviating, the radio clipping, a channel outside the capture; the ramp's fourth stop (2026-09-20) |
-| `recording` | `#B8483C` | the radio clipping: the waterfall's clipped-row marks, the gain slider's knob (M2-8) |
-| `accentRec` | `#E5484D` | what is being kept: the Record transmissions switch, the live row's dot, a recording bookmark's dot, the time gutter's kept bars (2026-09-24) |
+| `caution` | `#C9C06A` | off tune, overdeviating, the radio clipping, a channel outside the capture; the ramp's fourth stop |
+| `recording` | `#B8483C` | the radio clipping: the waterfall's clipped-row marks, the gain slider's knob |
+| `accentRec` | `#E5484D` | what is being kept: the Record transmissions switch, the live row's dot, a recording bookmark's dot, the time gutter's kept bars |
 
 `recording` and `accentRec` are never on one element, so red on a control always means kept and
 red on the waterfall's edge always means clipped.
@@ -348,26 +361,25 @@ cold to hot for the app's dark ground, six stops from near-black to cream:
  cold end                          cold end + 40 dB
 ```
 
-**The hot end is 40 dB over the cold end, fixed** (decided 2026-09-23, replacing the
-2026-09-19 rule that it was the loudest level on the band, held and let go at 1 dB a second).
-Every row on screen is coloured with the current ramp on every frame, so a hot end that moved
+**The hot end is 40 dB over the cold end, fixed**, not the loudest level on the band. Every
+row on screen is coloured with the current ramp on every frame, so a hot end that moved
 recoloured the whole history: a transmission already drawn dimmed when something louder keyed
 up anywhere in the capture, off screen included, and brightened again as the peak decayed after
 it. With a fixed reach a row keeps its colour while it scrolls, and only a squelch change
 recolours it. Six stops over 40 dB is about 8 dB a stop; anything 40 dB over the cold end is
 cream. The cost is that a weak band no longer stretches to reach the last stop.
 
-**The ramp's cold end is the squelch** (decided 2026-09-19): the channel's threshold converted
+**The ramp's cold end is the squelch**: the channel's threshold converted
 to a level per bin (`squelch − 10·log10(bandwidth / bin width)`, the auto squelch's scaling in
 reverse), so dragging the marker up darkens the noise and only signals above the squelch have
 colour. Under the squelch the waterfall fades from the first stop to `ground` over 6 dB and
-stays there (decided 2026-09-19): bins below the squelch go almost black, a clip rather than a
+stays there: bins below the squelch go almost black, a clip rather than a
 rescaled ramp, so the scale above the squelch is unchanged. With the squelch off, or before a
 floor is known, the cold end is the floor plus 6 dB (`SpectrumFeed.noiseHeadroomDB`): noise
 spreads a few dB either side of the median, and with the cold end on the median half of it had
 colour and the picture was a teal haze. The floor is held (`HeldFloor`): it falls as soon as the
 smoothed median is 4 dB under it, rises only after the median has stayed 4 dB over it for 5 s on
-the capture's clock (decided 2026-09-23), and is re-taken at once after a retune or a gain
+the capture's clock, and is re-taken at once after a retune or a gain
 change. The rise waits because a keyed handheld that clips the radio lifts the whole band's
 median with overload spurs for as long as it transmits, and a floor that followed it recoloured
 every row on screen at each press of PTT.
@@ -388,13 +400,13 @@ name is SF, each at the size and tracking the role calls for.
 | role | token | face | size | notes |
 |---|---|---|---|---|
 | tuned frequency | `frequency` | SF Mono | 29 | tabular figures, `-0.02em` tracking |
-| the channel's name in the inspector | `name` | SF | 21 medium | `-0.015em` tracking (2026-09-20) |
+| the channel's name in the inspector | `name` | SF | 21 medium | `-0.015em` tracking |
 | signal readout | | SF Mono | 21 | tabular |
 | body, control labels | `body`, `label` | SF | 12.5–13 | |
 | a value beside a label | `value`, `valueSmall` | SF Mono | 10.5–11.5 | tabular wherever it changes |
-| section header | `section` | SF Mono | 9.5 | uppercase, `0.14em` tracking (was `0.16em`; a step down, 2026-09-19) |
-| a table's column head | `columnHead` | SF Mono | 8.5 | the inspector's log (2026-09-20) |
-| a clause under a sentence | `aside` | SF | 11.5 | (2026-09-20) |
+| section header | `section` | SF Mono | 9.5 | uppercase, `0.14em` tracking |
+| a table's column head | `columnHead` | SF Mono | 8.5 | the inspector's log |
+| a clause under a sentence | `aside` | SF | 11.5 | |
 | footnote under a control | `footnote` | SF | 10.5 | |
 
 Every number that changes while you watch it uses tabular figures, without exception, so a
@@ -402,8 +414,8 @@ frequency does not change width while tuning.
 
 ## Brand
 
-The mark and the splash are the owner's SVGs in `../design/brand/`, drawn in code rather than
-loaded, so they take `Theme`'s colours at any size (`../plans/app.md`, APP-8). `BrandMark` is the
+The mark and the splash are the SVGs in `../design/brand/`, drawn in code rather than loaded,
+so they take `Theme`'s colours at any size. `BrandMark` is the
 ring and dot at a `size` in `accent`, its ring's outer edge on the box; the toolbar's first leading
 item is the 13 pt mark and `Leyline` in `label`, and the window's title is removed from the toolbar
 with `.toolbar(removing: .title)` so the word is drawn once while the Window menu still lists the
@@ -437,11 +449,11 @@ open app/Package.swift   # or: Xcode, with previews; Product > Run runs LeylineA
 process name in the Dock). The bundle adds `Info.plist` (identifier `com.leysdr.app`, the
 version from `VERSION`), resource bundles beside the binary, and a signature; with
 `--with-daemon` it carries `leylined`, `ley` and the decoders under `Contents/Helpers`, which is
-the shape a distributed build has (APP-7) and nothing installs yet. `CODESIGN_IDENTITY` signs
+the shape a distributed build has and nothing installs yet. `CODESIGN_IDENTITY` signs
 for real; notarization is `release-checklist.md`'s step.
 
-The waterfall's shader is Swift source compiled at launch, not a `.metal` resource: APP-2 tried
-the resource path and `swift build` does not produce the `default.metallib` Xcode does, so the
+The waterfall's shader is Swift source compiled at launch, not a `.metal` resource: `swift
+build` does not produce the `default.metallib` Xcode does, so the
 source lives in `WaterfallShader.swift` and a compile failure is a sentence in the window rather
 than a dark panel (`swift-style.md`, "AppKit and Metal").
 
@@ -474,7 +486,8 @@ rather than guessing.
 ## Testing
 
 `make app-test` is the façade without a daemon: the fold's rules, the coalescer's last-value
-rule, the decoders, the ULID, the error mapping. `make app-e2e` is the façade against the
+rule and write order, the session's state machines, the decoders, the ULID, the error mapping.
+`make app-e2e` is the façade against the
 product: it builds `leylined`, generates the fixtures, and `LeylineClientDaemonTests` starts a
 `leylined --no-hardware` on a temp socket with `nfm_tone.cf32` attached as a looping file
 device. The suite covers the app's guarantees, one test each: a second client's capture and channel
