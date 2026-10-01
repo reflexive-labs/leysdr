@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Preallocated SPSC slot ring carrying encoded bulk frames from the DSP/device thread to the
-// Stream RPC reader. Hot path on the writer side: no allocation, no locks (AGENTS.md invariant 4).
+// Stream RPC reader. Hot path on the writer side: no allocation, and no lock but the wake-up
+// poke's (AGENTS.md invariant 4; docs/dev/engine-internals.md, "Hot-path rules").
 
 import Synchronization
 import EngineCore
@@ -87,6 +88,7 @@ final class FrameRing: @unchecked Sendable {
         writeSeq += 1
         seqs[slot] = writeSeq
         tail.store(t + 1, ordering: .releasing)
+        // The one lock on the writer side: `yield` takes the stream's internal lock for the hand-off.
         pokeContinuation.yield(())
     }
 

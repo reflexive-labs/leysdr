@@ -39,7 +39,8 @@ public struct ChannelTelemetryRecord: Sendable {
 }
 
 /// Fixed-capacity telemetry ring plus a "poke" stream that wakes the drain task.
-/// Producer: the DSP thread (`push`, allocation-free, lock-free). Consumer: one drain task.
+/// Producer: the DSP thread (`push`, allocation-free; the ring is lock-free, and the poke takes the
+/// stream's short internal lock). Consumer: one drain task.
 ///
 /// Policy is drop-oldest: when the ring is full the producer evicts the oldest unread record
 /// (advancing `head` with a CAS) and counts it in `dropped`, so a stalled consumer always sees the
@@ -81,7 +82,8 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
     /// Cumulative count of records evicted (oldest first) because the queue was full.
     public var dropped: Int { droppedCount.load(ordering: .relaxed) }
 
-    /// Producer side (DSP thread). Never blocks or allocates; evicts the oldest record when full.
+    /// Producer side (DSP thread). Never allocates; evicts the oldest record when full. The poke at
+    /// the end is the one lock it takes: `yield` holds the stream's internal lock for the hand-off.
     public func push(_ record: ChannelTelemetryRecord) {
         let t = tail.load(ordering: .relaxed)
         while true {

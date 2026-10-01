@@ -224,6 +224,8 @@ public final class CaptureDSPCore: @unchecked Sendable {
         }
     }
 
+    /// Device thread, on the first block of each stream only: `anchorLock` and the stream's
+    /// internal lock in `yield` are each held for a copy, never across a call.
     private func publishAnchor(firstIndex: UInt64, count: Int) {
         let rate = sampleRate
         let now = realtimeNowNs()

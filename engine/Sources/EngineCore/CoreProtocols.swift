@@ -12,8 +12,11 @@
 //   - Sample buffers are engine-owned, preallocated, and reused. No allocation in process paths.
 //   - `SampleBuffer` wraps raw memory + count + format; it is a borrow, never an owner, inside
 //     processing calls. It never escapes the call it is passed to.
-//   - Anything marked "hot path" is synchronous, allocation-free, lock-free, and non-async. It is
-//     invoked from the capture's DSP thread (or the device I/O thread for `RadioDevice` delivery).
+//   - Anything marked "hot path" is synchronous, allocation-free and non-async, and never holds a
+//     lock across a call. It is invoked from the capture's DSP thread (or the device I/O thread
+//     for `RadioDevice` delivery). It is not lock-free: it copies the channel and tap tables under
+//     a lock once per block, and the wake-up poke to a drain task (`AsyncStream.Continuation.yield`)
+//     takes the stream's short internal lock (docs/dev/engine-internals.md, "Hot-path rules").
 
 import Foundation
 

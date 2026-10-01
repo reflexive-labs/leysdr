@@ -86,6 +86,7 @@ final class AudioFrameSource: @unchecked Sendable {
             let n = r.push(UnsafeBufferPointer(audio.floats))
             k.lastBlockStart.store(time.sampleIndex, ordering: .relaxed)
             k.written.wrappingAdd(n, ordering: .releasing)
+            // The one lock on this path: `yield` takes the stream's internal lock for the hand-off.
             c.yield(())
         }
     }

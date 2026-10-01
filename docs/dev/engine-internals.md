@@ -77,8 +77,9 @@ There are exactly three kinds of execution context in the engine. Every function
 2. **DSP thread** — one per capture (`Thread`, `.userInteractive` QoS, named `leyline.dsp.<cap_id>`).
    Loop: wait for a block; snapshot the channel table; for each channel run
    channelizer → demodulator → squelch/meter → `AudioSink.write`; run the spectrum ladder; feed
-   capture taps. Everything here is synchronous, allocation-free and lock-free. Config changes
-   arrive by *swapping* immutable tables (see below), never by mutating shared state under the DSP thread.
+   capture taps. Everything here is synchronous and allocation-free, and holds no lock across a
+   call (the two short locks it does take are in "Hot-path rules" below). Config changes arrive by
+   *swapping* immutable tables (see below), never by mutating shared state under the DSP thread.
 3. **Control plane** — Swift concurrency. `DefaultCaptureEngine`, `DefaultChannelEngine`,
    `DefaultDeviceRegistry` and the daemon's `SessionStore` are actors. They own the hot-path core
    objects and hand them configuration.
@@ -88,10 +89,18 @@ There are exactly three kinds of execution context in the engine. Every function
 - No `async`, no `await`, no actor hops, no `Task`, no `DispatchQueue` from the device or DSP thread.
 - No allocation: all scratch is `SampleStorage` sized at configure time for `maxBlock`. If a block
   would exceed scratch, process it in sub-blocks; never grow.
-- No locks *held across calls*. Config handoff uses one pattern: the control side builds a new
-  immutable table (channels, subscribers, taps) and stores it under an `NSLock`; the DSP thread
-  takes the lock, copies the reference, releases — a few nanoseconds, once per block. Anything
-  finer-grained than "per block" is unnecessary at 16384-sample blocks.
+- No locks *held across calls*. The hot path is not lock-free, and takes exactly two kinds of
+  short lock:
+  - **The table copy.** Config handoff uses one pattern: the control side builds a new immutable
+    table (channels, subscribers, taps) and stores it under an `NSLock`; the DSP thread takes the
+    lock, copies the reference, releases — a few nanoseconds, once per block. Anything
+    finer-grained than "per block" is unnecessary at 16384-sample blocks.
+  - **The wake-up poke.** A ring the DSP or device thread writes wakes its reader task with
+    `AsyncStream.Continuation.yield` on a stream buffering the newest one element: the channel
+    telemetry queue (`ChannelTelemetryQueue.push`), the bulk audio source and `FrameRing.write`
+    once per block, and the anchor stream once per stream start (`CaptureDSPCore.publishAnchor`).
+    `yield` takes the stream's internal lock for the hand-off. This is the one place the hot
+    path calls into Swift concurrency's runtime; the rings themselves are lock-free.
 - Sinks copy-or-consume. `CoreAudioSink.write` pushes into an SPSC float ring the render callback
   drains; bulk-stream sinks push into a slot ring and poke an `AsyncStream<Void>` (buffering
   newest 1) whose reader `Task` drains the ring into gRPC frames.
@@ -312,7 +321,8 @@ Telemetry records leave the DSP thread through `ChannelTelemetryQueue`, a fixed-
 with per-slot seqlock versions. Policy is drop-oldest: a full ring evicts the oldest unread record
 (the producer advances `head` by CAS and counts it in `dropped`) so a stalled drain always sees the
 newest readings; the consumer re-checks the slot version and retries if the producer overwrote it
-mid-copy. Push and pop are allocation- and lock-free.
+mid-copy. Push and pop are allocation-free and the ring itself is lock-free; the push's wake-up
+poke is the one lock it takes ("Hot-path rules").
 
 ### Spectrum ladder
 
