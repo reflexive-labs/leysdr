@@ -13,6 +13,9 @@ DerivedData/
 # Agent scratch (worktrees created by parallel runs)
 .claude/
 
+# Notes for one machine (AGENTS.md points to it)
+AGENTS.local.md
+
 # Pinned protoc plugins installed by scripts/gen-proto.sh
 .tools/
 

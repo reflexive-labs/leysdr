@@ -4,7 +4,7 @@ Native macOS SDR engine + app. Read `docs/design/*.md` before structural changes
 
 ## What this is
 
-A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`, its own SwiftPM package; `docs/dev/app.md`), `ley` CLI/TUI, and MCP adapter as peer clients over one gRPC contract (`proto/leyline.v1`). Mac-only, so use platform frameworks (vDSP, CoreAudio, Metal, IOUSBHost, os_signpost) directly. Languages: **Swift** for the engine and Mac app; **Go** for terminal clients — `ley` is one Go binary (CLI verbs + terminal live views today: `spectrum --watch`, `waterfall`,
+A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`, its own SwiftPM package; `docs/dev/app.md`), `ley` CLI/TUI, and MCP adapter as peer clients over one gRPC contract (`proto/leyline/v1`). Mac-only, so use platform frameworks (vDSP, CoreAudio, Metal, IOUSBHost, os_signpost) directly. Languages: **Swift** for the engine and Mac app; **Go** for terminal clients — `ley` is one Go binary (CLI verbs + terminal live views today: `spectrum --watch`, `waterfall`,
 `phosphor`; the dashboard is Milestone D.14) and the MCP adapter shares its Go client library. The Go clients show that the contract works across languages; never ship a feature that only works from Swift.
 
 ## Invariants — do not violate without a design-doc change
@@ -83,13 +83,6 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
 
 Follow `docs/plans/build-order.md`. Spikes S1–S3 gate everything: if S2 (20 MSPS throughput) fails its threshold, stop and escalate — the all-Swift decision gets revisited, not worked around silently.
 
-## Working from the Moat container
+## Local notes
 
-The Linux container (`run_*`, aarch64, no root) reaches the owner's Mac as `moat-host`
-(`192.168.64.1`); `localhost` is the container. When the owner runs `rtl_tcp` on the Mac it is
-`moat-host:1234`, so a real-radio capture needs no dongle in the container:
-either attach it to a local daemon (`ley devices attach rtltcp moat-host:1234`) or speak rtl_tcp
-directly and write cu8 (a recorder lives in the session scratchpad; `rf-captures/` is gitignored
-and holds what has been recorded). The container's Swift toolchain, stub librtlsdr and e2e
-environment are in `docs/dev/setup.md`; `LD_LIBRARY_PATH` must include the stub before any built
-`leylined` will start.
+If `AGENTS.local.md` exists, read it too: it holds notes for one machine and is not committed.
