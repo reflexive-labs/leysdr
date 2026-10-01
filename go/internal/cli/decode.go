@@ -14,6 +14,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type decodeOptions struct {
@@ -69,7 +70,7 @@ reads; 'ley jobs cancel' is how to stop one.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
 			if freq != "" {
-				hz, err := leyline.ParseUserFrequency(freq)
+				hz, err := units.ParseFrequency(freq)
 				if err != nil {
 					return usageErrorf("--freq %v", err)
 				}
@@ -187,7 +188,7 @@ func decodeBanner(s *session, job *leylinev1.Job, o decodeOptions) string {
 	st := s.app.ErrStyle
 	where := ""
 	if hz := decodeFrequency(s, job); hz > 0 {
-		where = " on " + leyline.FormatFrequency(hz)
+		where = " on " + units.FormatFrequency(hz)
 	}
 	line := fmt.Sprintf("decoding %s%s", o.decoder, where)
 	if ch := decodeChannel(s); ch != nil {

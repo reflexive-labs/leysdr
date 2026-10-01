@@ -20,6 +20,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type recordingsOptions struct {
@@ -139,7 +140,7 @@ func printRecordingsTable(app *App, found []*leylinev1.Resource) {
 		m := r.GetMetadata()
 		freq := "-"
 		if hz, err := strconv.ParseUint(m["frequency_hz"], 10, 64); err == nil && hz > 0 {
-			freq = leyline.FormatFrequency(hz)
+			freq = units.FormatFrequency(hz)
 		}
 		add(cols, recordingClock(r.GetCreatedAtNs()), freq, absentIfEmpty(s, m["mode"]),
 			absentIfEmpty(s, m["kind"]), recordingLength(m["duration_ms"]),
@@ -264,7 +265,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 	}
 	// One fact per line, each led by a label word, as `ley tune`'s banner is.
 	fmt.Fprintln(out, leadLabel(s, "Recording", fmt.Sprintf("%s %s, %s",
-		leyline.FormatFrequency(m.FrequencyHz), what, m.Format)))
+		units.FormatFrequency(m.FrequencyHz), what, m.Format)))
 	// The manifest's own byte count is the samples; the SIZE column of `ley recordings` is what the
 	// directory takes on disk, sidecars included, which is the bigger and different number.
 	fmt.Fprintln(out, leadLabel(s, "Holds    ", fmt.Sprintf("%s of signal in %s, %s of samples",
@@ -510,7 +511,7 @@ func deleteSummary(r *leylinev1.Resource) string {
 	m := r.GetMetadata()
 	var what []string
 	if hz, err := strconv.ParseUint(m["frequency_hz"], 10, 64); err == nil && hz > 0 {
-		what = append(what, leyline.FormatFrequency(hz))
+		what = append(what, units.FormatFrequency(hz))
 	}
 	switch {
 	case m["kind"] == "iq":

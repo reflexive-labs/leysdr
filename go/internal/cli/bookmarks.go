@@ -14,9 +14,11 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/bookmarks"
 	"github.com/reflexive-labs/leysdr/go/pkg/chirp"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // bookmarkJSON is the `--json` shape of `ley bookmarks`: the fields the file holds, plus the id
@@ -353,7 +355,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 	// was; the sentence is the one the app's validator prints (docs/design/channels.md,
 	// "Bookmarks gain three fields").
 	if fields.tone != "" {
-		if _, err := leyline.ParseTone(fields.tone); err != nil {
+		if _, err := bookmarks.ParseTone(fields.tone); err != nil {
 			return usageError(err)
 		}
 	}
@@ -372,7 +374,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 	var bw uint32
 	switch {
 	case bwFlag != "":
-		bw, err = leyline.ParseBandwidth(bwFlag)
+		bw, err = units.ParseBandwidth(bwFlag)
 		if err != nil {
 			return usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
@@ -381,7 +383,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 		// 11.25 kHz) and is kept; a band's default is left at 0 so the bookmark
 		// keeps following the table (docs/design/channels.md, "The plan is data
 		// in the band table").
-		if _, c, ok := leyline.ChannelAt(t.Hz); ok && c.BandwidthHz != 0 {
+		if _, c, ok := bandplan.ChannelAt(t.Hz); ok && c.BandwidthHz != 0 {
 			bw = c.BandwidthHz
 		}
 	}
@@ -406,7 +408,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 		return app.printArray(bookmarkRow(b))
 	}
 	s := app.Style
-	line := []string{b.Name, leyline.FormatFrequency(b.Hz), leyline.ModeName(mode), bookmarkBandwidth(s, b)}
+	line := []string{b.Name, units.FormatFrequency(b.Hz), leyline.ModeName(mode), bookmarkBandwidth(s, b)}
 	if b.Tone != "" {
 		line = append(line, bookmarkTone(b))
 	}
@@ -429,7 +431,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 // The reason is kept so the output shows where a mode the user did not pass came from.
 func bookmarkMode(t dialTarget, modeFlag string) (leylinev1.DemodMode, string, error) {
 	if modeFlag != "" {
-		m, reason, err := leyline.ResolveMode(modeFlag, t.Hz)
+		m, reason, err := bandplan.ResolveMode(modeFlag, t.Hz)
 		if err != nil {
 			return 0, "", usageError(fmt.Errorf("--mode %w", err))
 		}
@@ -438,7 +440,7 @@ func bookmarkMode(t dialTarget, modeFlag string) (leylinev1.DemodMode, string, e
 	if t.Preset != nil && t.Preset.Mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
 		return t.Preset.Mode, "preset " + t.Preset.Name + ": " + t.Preset.Description, nil
 	}
-	m, band := leyline.DefaultMode(t.Hz)
+	m, band := bandplan.DefaultMode(t.Hz)
 	if band != nil {
 		return m, band.Name + " band default", nil
 	}
@@ -457,7 +459,7 @@ func runBookmarkRemove(app *App, arg string) error {
 	if app.JSON {
 		return app.printArray(bookmarkRow(b))
 	}
-	fmt.Fprintf(app.Stdout, "%s\n", app.Style.Muted(fmt.Sprintf("forgot %s (%s)", b.Name, leyline.FormatFrequency(b.Hz))))
+	fmt.Fprintf(app.Stdout, "%s\n", app.Style.Muted(fmt.Sprintf("forgot %s (%s)", b.Name, units.FormatFrequency(b.Hz))))
 	return nil
 }
 
@@ -480,7 +482,7 @@ func runBookmarkMove(app *App, arg, freq string) error {
 		return app.printArray(bookmarkRow(b))
 	}
 	s := app.Style
-	fmt.Fprintf(app.Stdout, "%s  %s  %s  %s\n", b.Name, leyline.FormatFrequency(b.Hz),
+	fmt.Fprintf(app.Stdout, "%s  %s  %s  %s\n", b.Name, units.FormatFrequency(b.Hz),
 		bookmarkModeName(b), bookmarkBandwidth(s, b))
 	fmt.Fprintf(app.Stdout, "  %s\n", s.Cmd("ley tune "+freq))
 	return nil
@@ -516,7 +518,7 @@ func printBookmarkTable(app *App, list []bookmarks.Bookmark) error {
 		if len(b.Tags) > 0 {
 			tags = strings.Join(b.Tags, ", ")
 		}
-		add(cols, b.Name, leyline.FormatFrequency(b.Hz), bookmarkModeName(b),
+		add(cols, b.Name, units.FormatFrequency(b.Hz), bookmarkModeName(b),
 			bookmarkBandwidth(s, b), tone, note, tags, s.Muted(b.ID))
 	}
 	if _, err := printColumns(app.Stdout, s, cols, nil); err != nil {
@@ -532,7 +534,7 @@ func printBookmarkTable(app *App, list []bookmarks.Bookmark) error {
 // app shows for a heard tone. A spelling this build cannot read (the file is shared, and the
 // other client may be newer) is printed as the file has it rather than hidden.
 func bookmarkTone(b bookmarks.Bookmark) string {
-	t, err := leyline.ParseTone(b.Tone)
+	t, err := bookmarks.ParseTone(b.Tone)
 	if err != nil {
 		return b.Tone
 	}

@@ -9,6 +9,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // Changes made by other clients, rendered as sentences.
@@ -160,10 +161,10 @@ func captureChanges(was, now, ours *leylinev1.Capture, els []*leylinev1.GainElem
 	}
 	var out []change
 	if was.CenterHz != now.CenterHz {
-		out = append(out, change{"retuned", "the radio to " + leyline.FormatFrequency(now.CenterHz)})
+		out = append(out, change{"retuned", "the radio to " + units.FormatFrequency(now.CenterHz)})
 	}
 	if was.SampleRate != now.SampleRate {
-		out = append(out, change{"set", "the sample rate to " + leyline.FormatFrequency(now.SampleRate)})
+		out = append(out, change{"set", "the sample rate to " + units.FormatFrequency(now.SampleRate)})
 	}
 	if g := gainChange(was.Gains, now.Gains, els); g != "" {
 		out = append(out, change{"set", g})
@@ -238,10 +239,10 @@ func (s *session) channelChanges(was, now *leylinev1.Channel, st ui.Style) ([]ch
 		out = append(out, change{"set", "the mode to " + strings.ToUpper(leyline.ModeName(now.Mode))})
 	}
 	if was.BandwidthHz != now.BandwidthHz {
-		out = append(out, change{"set", "the filter to " + leyline.FormatFrequency(uint64(now.BandwidthHz))})
+		out = append(out, change{"set", "the filter to " + units.FormatFrequency(uint64(now.BandwidthHz))})
 	}
 	if squelchMoved(was.SquelchDb, now.SquelchDb) {
-		if leyline.SquelchOff(now.SquelchDb) {
+		if units.SquelchOff(now.SquelchDb) {
 			out = append(out, change{"turned", "the squelch off"})
 		} else {
 			out = append(out, change{"set", fmt.Sprintf("the squelch to %.0f dBFS", now.SquelchDb)})
@@ -267,8 +268,8 @@ func otherChannelChanges(state *leylinev1.GetStateResponse, was, now *leylinev1.
 // NaN: a plain comparison would report a change on every event of an
 // unsquelched channel.
 func squelchMoved(was, now float64) bool {
-	if leyline.SquelchOff(was) || leyline.SquelchOff(now) {
-		return leyline.SquelchOff(was) != leyline.SquelchOff(now)
+	if units.SquelchOff(was) || units.SquelchOff(now) {
+		return units.SquelchOff(was) != units.SquelchOff(now)
 	}
 	return was != now
 }

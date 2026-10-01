@@ -7,7 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // A dial target is a point on the dial the user named: a frequency, or a preset
@@ -22,7 +23,7 @@ type dialTarget struct {
 	Hz uint64
 	// Preset is the preset the argument named, or nil when it was a frequency.
 	// Callers that have a use for its mode (only `tune` does) read it here.
-	Preset *leyline.Preset
+	Preset *bandplan.Preset
 }
 
 // resolveDialTarget reads a frequency (bare numbers are MHz) or a preset name.
@@ -33,7 +34,7 @@ type dialTarget struct {
 // one: `usage` is whole commands, for someone who gave no argument at all and
 // needs to see the shape; `example` is a readable frequency, for someone whose
 // argument did not parse and needs to see what one looks like.
-func resolveDialTarget(arg, verb, usage, example string, band *leyline.Band) (dialTarget, error) {
+func resolveDialTarget(arg, verb, usage, example string, band *bandplan.Band) (dialTarget, error) {
 	if arg == "" {
 		if band != nil {
 			return dialTarget{}, usageErrorf("%s needs a channel of the %s plan: %s; check with: ley bands %s", verb, band.Name, usage, band.Aliases[0])
@@ -64,9 +65,9 @@ func resolveDialTarget(arg, verb, usage, example string, band *leyline.Band) (di
 // because a frequency needs no band. A miss names the band and its plan rather
 // than offering a frequency (docs/design/channels.md, "The CLI"; the plan's
 // KTD8).
-func resolveDial(arg, example string, band *leyline.Band) (dialTarget, error) {
+func resolveDial(arg, example string, band *bandplan.Band) (dialTarget, error) {
 	if band != nil {
-		p, ok := leyline.ResolvePlanChannel(*band, arg)
+		p, ok := bandplan.ResolvePlanChannel(*band, arg)
 		if !ok {
 			return dialTarget{}, fmt.Errorf("no channel called %q in the %s plan; %s", arg, band.Name, planHint(*band))
 		}
@@ -75,13 +76,13 @@ func resolveDial(arg, example string, band *leyline.Band) (dialTarget, error) {
 	// A leading digit or sign means it is meant as a number; report the parse
 	// error rather than sending it off to be spell-checked against presets.
 	if looksNumeric(arg) {
-		hz, err := leyline.ParseUserFrequency(arg)
+		hz, err := units.ParseFrequency(arg)
 		if err != nil {
 			return dialTarget{}, err
 		}
 		return dialTarget{Hz: hz}, nil
 	}
-	p, err := leyline.ResolvePreset(arg)
+	p, err := bandplan.ResolvePreset(arg)
 	if err != nil {
 		return dialTarget{}, fmt.Errorf("%w; or give a frequency such as %s", err, example)
 	}
@@ -91,7 +92,7 @@ func resolveDial(arg, example string, band *leyline.Band) (dialTarget, error) {
 // planHint is the plan a miss under --band is shown: every name when the plan
 // is short enough to read in one line (the design's threshold for drawing a
 // plan as ticks), else its span and where to see the whole of it.
-func planHint(band leyline.Band) string {
+func planHint(band bandplan.Band) string {
 	plan := band.Plan()
 	alias := band.Aliases[0]
 	switch {
@@ -111,11 +112,11 @@ func planHint(band leyline.Band) string {
 // bandFlag resolves a --band value for a dial verb, or nil when the flag was
 // not given. The error names the flag so it cannot be mistaken for the
 // positional's.
-func bandFlag(value string) (*leyline.Band, error) {
+func bandFlag(value string) (*bandplan.Band, error) {
 	if value == "" {
 		return nil, nil
 	}
-	b, err := leyline.ResolveBand(value)
+	b, err := bandplan.ResolveBand(value)
 	if err != nil {
 		return nil, usageError(fmt.Errorf("--band %w", err))
 	}

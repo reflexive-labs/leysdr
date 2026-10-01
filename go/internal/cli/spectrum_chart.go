@@ -7,7 +7,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // header states what band this is, how wide, and what the floor is, then the
@@ -18,11 +18,11 @@ func (v *spectrumView) header(nbins int, floor float64, centerHz, spanHz uint64)
 	lo, hi := spectrumEdges(centerHz, spanHz)
 	binWidth := float64(spanHz) / math.Max(1, float64(nbins))
 	segs := []headerSeg{
-		{value: leyline.FormatFrequency(centerHz)},
-		{name: "span ", value: leyline.FormatFrequency(spanHz)},
+		{value: units.FormatFrequency(centerHz)},
+		{name: "span ", value: units.FormatFrequency(spanHz)},
 		{name: "floor ", value: fmtDb(floor) + " dBFS"},
-		{value: leyline.FormatFrequency(lo) + " to " + leyline.FormatFrequency(hi), dim: true},
-		{value: fmt.Sprintf("%d bins of %s", nbins, leyline.FormatFrequency(uint64(math.Round(binWidth)))), dim: true},
+		{value: units.FormatFrequency(lo) + " to " + units.FormatFrequency(hi), dim: true},
+		{value: fmt.Sprintf("%d bins of %s", nbins, units.FormatFrequency(uint64(math.Round(binWidth)))), dim: true},
 	}
 	return packSegments(v.st, segs, v.inner())
 }

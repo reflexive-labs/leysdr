@@ -13,6 +13,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 func newStateCommand(app *App) *cobra.Command {
@@ -293,7 +294,7 @@ func deviceNode(s ui.Style, d *leylinev1.DeviceDescriptor) treeNode {
 
 // captureNode is a radio tuned to a band. els is its device's gain elements, for the gain words.
 func captureNode(s ui.Style, c *leylinev1.Capture, els []*leylinev1.GainElement) treeNode {
-	head := []string{leyline.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), inkState(s, stateWord(c.State.String()))}
+	head := []string{units.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), inkState(s, stateWord(c.State.String()))}
 	if g := captureGains(c.Gains, els); g != "" {
 		head = append(head, g)
 	}
@@ -467,7 +468,7 @@ func printStateTables(app *App, st *leylinev1.GetStateResponse) {
 		if c.Activity != nil {
 			sinks = c.Activity.LiveAudioSinks
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", c.CaptureId, c.DeviceId, leyline.FormatFrequency(c.CenterHz),
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", c.CaptureId, c.DeviceId, units.FormatFrequency(c.CenterHz),
 			ratesString([]uint64{c.SampleRate}), enumName(c.State.String()), gains, sinks, clientString(c.CreatedBy))
 	}
 	w.Flush()

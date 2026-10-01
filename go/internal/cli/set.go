@@ -13,7 +13,9 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // setParam describes one adjustable parameter: its help line and the forms a
@@ -261,11 +263,11 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 	}
 	hz, _ := leyline.ChannelFrequency(s.state, ch)
 	freq := channelFreqLabel(s.state, ch)
-	if b := leyline.BandFor(hz); b != nil {
+	if b := bandplan.BandFor(hz); b != nil {
 		freq += " (" + b.Name + ")"
 	}
 	squelch := "off (audio always on)"
-	if !leyline.SquelchOff(ch.SquelchDb) {
+	if !units.SquelchOff(ch.SquelchDb) {
 		squelch = fmt.Sprintf("%.0f dBFS", ch.SquelchDb)
 	}
 	volume := "no speaker sink"
@@ -290,8 +292,8 @@ func showSettings(s *session, ch *leylinev1.Channel, cap *leylinev1.Capture) err
 	fmt.Fprintf(s.app.Stdout, "%s %s on %s\n", st.Label("channel"), st.Muted(ch.ChannelId), model)
 	settingRow(s.app, "frequency", freq, true)
 	settingRow(s.app, "mode", strings.ToUpper(leyline.ModeName(ch.Mode)), true)
-	settingRow(s.app, "bandwidth", leyline.FormatFrequency(uint64(ch.BandwidthHz)), true)
-	settingRow(s.app, "squelch", squelch, !leyline.SquelchOff(ch.SquelchDb))
+	settingRow(s.app, "bandwidth", units.FormatFrequency(uint64(ch.BandwidthHz)), true)
+	settingRow(s.app, "squelch", squelch, !units.SquelchOff(ch.SquelchDb))
 	gain := strings.TrimPrefix(stageGainWords(cap.GetGains(), deviceGainElements(s.state, cap.GetDeviceId())), "gain ")
 	fmt.Fprintf(s.app.Stdout, "%s\n", st.Muted("on the radio"))
 	settingRow(s.app, "gain", gain, gain != "no gain control")
@@ -378,7 +380,7 @@ func buildWrites(ctx context.Context, s *session, param, value string, ch *leyli
 				return ok && c.Channel.ChannelId == ch.ChannelId && c.Channel.OffsetHz == offset
 			}, hz, nil
 		}
-		s.say("retuning capture %s to %s (channel offset 0)\n", cap.CaptureId, leyline.FormatFrequency(hz))
+		s.say("retuning capture %s to %s (channel offset 0)\n", cap.CaptureId, units.FormatFrequency(hz))
 		ws := []*leylinev1.ParamWrite{
 			{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: hz}},
 			{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_OffsetHz{OffsetHz: 0}},
@@ -407,7 +409,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 	}
 	switch param {
 	case "squelch":
-		db, auto, err := leyline.ParseSquelch(value)
+		db, auto, err := units.ParseSquelch(value)
 		if err != nil {
 			return nil, nil, paramErr(param, err)
 		}
@@ -426,10 +428,10 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 		}
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: db}}
 		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool {
-			return leyline.SquelchOff(db) && leyline.SquelchOff(c.SquelchDb) || c.SquelchDb == db
+			return units.SquelchOff(db) && units.SquelchOff(c.SquelchDb) || c.SquelchDb == db
 		}), nil
 	case "bw":
-		bw, err := leyline.ParseBandwidth(value)
+		bw, err := units.ParseBandwidth(value)
 		if err != nil {
 			return nil, nil, paramErr(param, err)
 		}
@@ -443,7 +445,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 			return nil, nil, err
 		}
 		hz, _ := leyline.ChannelFrequency(s.state, ch)
-		m, reason, err := leyline.ResolveMode(value, hz)
+		m, reason, err := bandplan.ResolveMode(value, hz)
 		if err != nil {
 			return nil, nil, paramErr(param, err)
 		}
@@ -453,7 +455,7 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_Mode{Mode: m}}
 		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool { return c.Mode == m }), nil
 	case "volume":
-		v, err := leyline.ParseVolume(value)
+		v, err := units.ParseVolume(value)
 		if err != nil {
 			return nil, nil, paramErr(param, err)
 		}
@@ -481,13 +483,13 @@ func buildChannelWrites(ctx context.Context, s *session, param, value string, ch
 	return nil, nil, unknownParam(param)
 }
 
-// buildGainWrites turns a gain value (leyline.ParseGains: auto, a level for the first stage, or
+// buildGainWrites turns a gain value (units.ParseGains: auto, a level for the first stage, or
 // STAGE=dB pairs) into one ParamWrite per stage, in the order given, and a predicate that
 // recognises the capture event holding every one of them. stages is the stages written, spelled
 // as the device spells them, for the confirmation line. A stage the device does not list goes as
 // typed, so the refusal is the daemon's, with the stages the radio has.
 func buildGainWrites(s *session, value string, cap *leylinev1.Capture) (writes []*leylinev1.ParamWrite, confirmed func(*leylinev1.Event) bool, stages []string, err error) {
-	settings, err := leyline.ParseGains(value)
+	settings, err := units.ParseGains(value)
 	if err != nil {
 		return nil, nil, nil, paramErr("gain", err)
 	}
@@ -516,10 +518,10 @@ func buildGainWrites(s *session, value string, cap *leylinev1.Capture) (writes [
 		// here so the confirmation predicate matches the value the daemon will actually report.
 		w := want{name: name, db: g.DB, tol: 1.0, auto: g.Auto}
 		if el != nil && !g.Auto {
-			if err := leyline.CheckGain(g.DB, el); err != nil {
+			if err := units.CheckGain(g.DB, el); err != nil {
 				return nil, nil, nil, paramErr("gain", err)
 			}
-			w.db, w.tol = leyline.SnapGain(el, g.DB), leyline.GainTolerance(el)
+			w.db, w.tol = units.SnapGain(el, g.DB), units.GainTolerance(el)
 		}
 		wants[i] = w
 		gw := &leylinev1.GainWrite{Element: name}
@@ -656,12 +658,12 @@ func setValue(param string, stages []string, els []*leylinev1.GainElement, ev *l
 	switch param {
 	case "freq":
 		if ch == nil {
-			return leyline.FormatFrequency(cap.GetCenterHz()), "frequency"
+			return units.FormatFrequency(cap.GetCenterHz()), "frequency"
 		}
 		if cap != nil {
 			// centre plus offset, so the pre-write pair reads back the
 			// frequency the channel had before the write moved it.
-			return leyline.FormatFrequency(uint64(int64(cap.GetCenterHz()) + ch.GetOffsetHz())), "frequency"
+			return units.FormatFrequency(uint64(int64(cap.GetCenterHz()) + ch.GetOffsetHz())), "frequency"
 		}
 		if st == nil {
 			return "", "frequency"
@@ -670,12 +672,12 @@ func setValue(param string, stages []string, els []*leylinev1.GainElement, ev *l
 	case "gain":
 		return setGainWords(cap, stages, els), "gain"
 	case "squelch":
-		if leyline.SquelchOff(ch.GetSquelchDb()) {
+		if units.SquelchOff(ch.GetSquelchDb()) {
 			return "off (audio always on)", "squelch"
 		}
 		return fmt.Sprintf("%.0f dBFS", ch.GetSquelchDb()), "squelch"
 	case "bw":
-		return leyline.FormatFrequency(uint64(ch.GetBandwidthHz())), "bandwidth"
+		return units.FormatFrequency(uint64(ch.GetBandwidthHz())), "bandwidth"
 	case "mode":
 		return strings.ToUpper(leyline.ModeName(ch.GetMode())), "mode"
 	case "volume":

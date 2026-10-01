@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // spectrumTick is one frequency the axis names: a round number and the chart
@@ -26,7 +26,7 @@ func spectrumTicks(lo, hi uint64, cols int) []spectrumTick {
 	if span <= 0 || cols <= 0 {
 		return nil
 	}
-	label := len(leyline.FormatFrequency(hi)) + 2
+	label := len(units.FormatFrequency(hi)) + 2
 	want := cols / label
 	if want < 1 {
 		want = 1
@@ -88,7 +88,7 @@ func (v *spectrumView) axis(b *strings.Builder, cols int, centerHz, spanHz uint6
 func spectrumMarks(ticks []spectrumTick) []axisTick {
 	marks := make([]axisTick, len(ticks))
 	for i, t := range ticks {
-		marks[i] = axisTick{col: t.col, text: leyline.FormatFrequency(t.hz)}
+		marks[i] = axisTick{col: t.col, text: units.FormatFrequency(t.hz)}
 	}
 	return marks
 }
@@ -107,7 +107,7 @@ func (v *spectrumView) markerRow(cols int, lo, hi uint64) string {
 	if col < 0 {
 		col = 0
 	}
-	label := " " + leyline.FormatFrequency(v.mark)
+	label := " " + units.FormatFrequency(v.mark)
 	line := strings.Repeat(" ", spectrumGutter+col) + string(v.st.Glyphs().Marker)
 	if ui.Visible(line)+len(label) <= v.inner() {
 		return line + label
@@ -129,7 +129,7 @@ func (v *spectrumView) peakBlock(b *strings.Builder, peaks []Peak, floor float64
 		return
 	}
 	top := peaks[0]
-	head := fmt.Sprintf("%s  %s dBFS", leyline.FormatFrequency(top.CenterHz), v.levelInk(top.Db, fmtDb(top.Db)))
+	head := fmt.Sprintf("%s  %s dBFS", units.FormatFrequency(top.CenterHz), v.levelInk(top.Db, fmtDb(top.Db)))
 	margin := fmt.Sprintf("%s dB above the floor", fmtDb(top.Db-floor))
 	if col+ui.Visible(head)+2+len(margin) <= v.width {
 		b.WriteString(label("peak") + head + "  " + v.st.Muted(margin) + "\n")
@@ -140,7 +140,7 @@ func (v *spectrumView) peakBlock(b *strings.Builder, peaks []Peak, floor float64
 	if len(peaks) > 1 {
 		parts := make([]string, 0, len(peaks)-1)
 		for _, p := range peaks[1:] {
-			parts = append(parts, fmt.Sprintf("%s %s", leyline.FormatFrequency(p.CenterHz), v.levelInk(p.Db, fmtDb(p.Db))))
+			parts = append(parts, fmt.Sprintf("%s %s", units.FormatFrequency(p.CenterHz), v.levelInk(p.Db, fmtDb(p.Db))))
 		}
 		rest := v.st.Truncate(strings.Join(parts, ", "), v.width-col)
 		b.WriteString(label("others") + rest + "\n")

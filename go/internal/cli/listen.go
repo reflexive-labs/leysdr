@@ -13,6 +13,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // AudioRow is one JSON row of `ley listen --format json`. Bulk audio frames
@@ -267,7 +268,7 @@ func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions
 func audioWhat(s *session) string {
 	mode := strings.ToUpper(leyline.ModeName(s.channel.Mode))
 	if hz, ok := leyline.ChannelFrequency(s.state, s.channel); ok {
-		return leyline.FormatFrequency(hz) + " " + mode
+		return units.FormatFrequency(hz) + " " + mode
 	}
 	return mode
 }

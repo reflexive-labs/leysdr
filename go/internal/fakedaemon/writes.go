@@ -17,6 +17,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // coalesceTick mirrors the Swift WriteCoalescer's 20 ms apply cadence.
@@ -315,7 +316,7 @@ func (d *Daemon) applyGainLocked(c *capture, dev *leylinev1.DeviceDescriptor, g 
 				c.manualGain[el.Name] = gs.Db
 			case *leylinev1.GainWrite_Db:
 				gs.Auto = false
-				gs.Db = leyline.SnapGain(el, v.Db)
+				gs.Db = units.SnapGain(el, v.Db)
 				c.manualGain[el.Name] = gs.Db
 			default:
 				return errorf(leyline.CodeInvalidArgument, target, "gain value is required")
@@ -348,7 +349,7 @@ func unknownGainElement(name string, dev *leylinev1.DeviceDescriptor, target str
 func midGain(el *leylinev1.GainElement) float64 {
 	valid := slices.Sorted(slices.Values(el.GetValidDb()))
 	if len(valid) == 0 {
-		return leyline.SnapGain(el, (el.GetMinDb()+el.GetMaxDb())/2)
+		return units.SnapGain(el, (el.GetMinDb()+el.GetMaxDb())/2)
 	}
 	return valid[len(valid)/2]
 }

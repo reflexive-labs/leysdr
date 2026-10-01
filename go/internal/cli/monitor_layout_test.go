@@ -169,9 +169,9 @@ func TestMonitorFailureAndRangeWording(t *testing.T) {
 		t.Errorf("a detail with no remedy still gets one: %q", got)
 	}
 	for _, in := range []string{"88.5", "89M..88M", "gmrs"} {
-		_, _, err := leyline.ParseUserRange(in)
+		_, _, err := parseRange(in)
 		if err == nil || strings.HasPrefix(err.Error(), "range:") {
-			t.Errorf("ParseUserRange(%q) = %v, want a sentence with no field prefix", in, err)
+			t.Errorf("parseRange(%q) = %v, want a sentence with no field prefix", in, err)
 		}
 	}
 }

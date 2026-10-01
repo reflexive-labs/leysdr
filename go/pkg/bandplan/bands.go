@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+// Package bandplan is the client-local band table: the bands, the channel plans inside some of
+// them, and the presets drawn from those plans. It decides the defaults and the words a client
+// shows for a frequency (mode, bandwidth, tuning step, band and channel names) and never the
+// daemon's behaviour. The Mac app reads the same table as bands.json, printed by `ley bands
+// --json`.
+package bandplan
 
 import (
 	"fmt"
@@ -8,6 +13,7 @@ import (
 	"strings"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // Band is a named slice of spectrum with the mode and bandwidth a newcomer
@@ -569,7 +575,7 @@ func bandKey(s string) string {
 func ResolveBand(name string) (Band, error) {
 	key := bandKey(name)
 	if key == "" {
-		return Band{}, fmt.Errorf("no band name given; try one of %s", strings.Join(BandAliases(), ", "))
+		return Band{}, fmt.Errorf("no band name given; try one of %s", strings.Join(bandAliases(), ", "))
 	}
 	for _, table := range [][]Band{bands, bandGroups} {
 		for _, b := range table {
@@ -583,15 +589,15 @@ func ResolveBand(name string) (Band, error) {
 			}
 		}
 	}
-	if near := NearestBandNames(name); len(near) > 0 {
+	if near := nearestBandNames(name); len(near) > 0 {
 		return Band{}, fmt.Errorf("no band called %q; did you mean %s? Check with: ley bands", name, strings.Join(near, ", "))
 	}
-	return Band{}, fmt.Errorf("no band called %q; try one of %s, or check with: ley bands", name, strings.Join(BandAliases(), ", "))
+	return Band{}, fmt.Errorf("no band called %q; try one of %s, or check with: ley bands", name, strings.Join(bandAliases(), ", "))
 }
 
-// BandAliases is every band's first alias, in frequency order, the groups
+// bandAliases is every band's first alias, in frequency order, the groups
 // after: the short list an error message can print without becoming a table.
-func BandAliases() []string {
+func bandAliases() []string {
 	out := make([]string, 0, len(bands)+len(bandGroups))
 	for _, table := range [][]Band{bands, bandGroups} {
 		for _, b := range table {
@@ -603,9 +609,9 @@ func BandAliases() []string {
 	return out
 }
 
-// NearestBandNames returns up to three aliases that look like input, for error
+// nearestBandNames returns up to three aliases that look like input, for error
 // hints: prefix and substring matches first, then a small edit distance.
-func NearestBandNames(input string) []string {
+func nearestBandNames(input string) []string {
 	key := bandKey(input)
 	if key == "" {
 		return nil
@@ -734,5 +740,39 @@ func BandwidthFor(hz uint64, mode leylinev1.DemodMode) uint32 {
 			return b.BandwidthHz
 		}
 	}
-	return DefaultBandwidth(mode)
+	return leyline.DefaultBandwidth(mode)
+}
+
+// ResolveMode turns a mode name into a demodulator, using the frequency to
+// settle the ambiguous names: "fm" is WFM on the FM broadcast band (87.5 to
+// 108 MHz) and NFM elsewhere; "ssb" is USB at or above 10 MHz and LSB
+// below; "nbfm"/"narrowfm" and "wbfm"/"widefm"/"broadcast" are aliases. Any
+// other name goes through ParseMode unchanged. The returned reason is a
+// short phrase explaining an inferred choice ("" when the name was explicit).
+func ResolveMode(name string, hz uint64) (mode leylinev1.DemodMode, reason string, err error) {
+	t := strings.ToLower(strings.TrimSpace(name))
+	t = strings.ReplaceAll(t, "_", "")
+	t = strings.ReplaceAll(t, "-", "")
+	switch t {
+	case "fm":
+		if b := BandFor(hz); b != nil && b.Mode == leylinev1.DemodMode_WFM {
+			return leylinev1.DemodMode_WFM, "fm on the " + b.Name + " band means WFM", nil
+		}
+		return leylinev1.DemodMode_NFM, "fm outside the FM broadcast band means NFM", nil
+	case "ssb":
+		m := sidebandFor(hz)
+		if m == leylinev1.DemodMode_USB {
+			return m, "ssb at or above 10 MHz means USB", nil
+		}
+		return m, "ssb below 10 MHz means LSB", nil
+	case "nbfm", "narrowfm":
+		return leylinev1.DemodMode_NFM, "", nil
+	case "wbfm", "widefm", "broadcast":
+		return leylinev1.DemodMode_WFM, "", nil
+	}
+	m, err := leyline.ParseMode(name)
+	if err != nil {
+		return m, "", fmt.Errorf("%s; also accepted: fm, ssb, nbfm, wbfm", strings.TrimPrefix(err.Error(), "mode: "))
+	}
+	return m, "", nil
 }

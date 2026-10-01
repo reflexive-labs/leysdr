@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // bandOptions is what a band view needs to find its capture. `ley spectrum`
@@ -21,7 +23,7 @@ type bandOptions struct {
 	// band is a named band to show whole, from --band. It is resolved after the
 	// device is picked, because how much of a band fits depends on the rates
 	// that radio supports.
-	band *leyline.Band
+	band *bandplan.Band
 	// verb is the command name used in the messages that report what happened
 	// to the radio.
 	verb string
@@ -50,8 +52,8 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 		}
 		if top < b.WidthHz() {
 			return usageErrorf("%s is %s wide, its parts %s apart, and %s captures at most %s; ask for one part: %s",
-				b.Name, leyline.FormatFrequency(b.WidthHz()), groupGapPhrase(*b), deviceName(s.device),
-				leyline.FormatFrequency(top), strings.Join(b.Parts, " or "))
+				b.Name, units.FormatFrequency(b.WidthHz()), groupGapPhrase(*b), deviceName(s.device),
+				units.FormatFrequency(top), strings.Join(b.Parts, " or "))
 		}
 	}
 	o.freq = b.CenterHz()
@@ -61,8 +63,8 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 	if o.span != 0 {
 		if o.span < b.WidthHz() {
 			fmt.Fprintf(app.Stderr, "%s is %s wide; --span shows %s of it, centred on %s\n",
-				b.Name, leyline.FormatFrequency(b.WidthHz()),
-				leyline.FormatFrequency(o.span), leyline.FormatFrequency(b.CenterHz()))
+				b.Name, units.FormatFrequency(b.WidthHz()),
+				units.FormatFrequency(o.span), units.FormatFrequency(b.CenterHz()))
 		}
 		return nil
 	}
@@ -82,8 +84,8 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 		}
 		if best > 0 {
 			fmt.Fprintf(app.Stderr, "%s is %s wide and this radio captures at most %s; showing that much, centred on %s\n",
-				b.Name, leyline.FormatFrequency(want), leyline.FormatFrequency(best),
-				leyline.FormatFrequency(b.CenterHz()))
+				b.Name, units.FormatFrequency(want), units.FormatFrequency(best),
+				units.FormatFrequency(b.CenterHz()))
 		}
 	}
 	o.span = best
@@ -92,12 +94,12 @@ func (s *session) resolveBandFlag(app *App, o *bandOptions) error {
 
 // groupGapPhrase is the distance between a group's first two parts, for the
 // error that refuses to centre the view between them.
-func groupGapPhrase(b leyline.Band) string {
-	parts := leyline.BandsWithin(b.MinHz, b.MaxHz)
+func groupGapPhrase(b bandplan.Band) string {
+	parts := bandplan.BandsWithin(b.MinHz, b.MaxHz)
 	if len(parts) < 2 {
 		return "far"
 	}
-	return leyline.FormatFrequency(parts[1].MinHz - parts[0].MaxHz)
+	return units.FormatFrequency(parts[1].MinHz - parts[0].MaxHz)
 }
 
 // openBand picks the device, reuses or creates a capture covering the
@@ -119,9 +121,9 @@ func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 			deviceName(s.device), o.verb)
 	}
 	if o.freq != 0 && (cap == nil || !leyline.CaptureCovers(cap, o.freq)) {
-		if !leyline.InRanges(o.freq, s.device.TuningRanges) && len(s.device.TuningRanges) > 0 {
-			msg := fmt.Sprintf("%s is outside %s's range (%s)", leyline.FormatFrequency(o.freq), deviceName(s.device), leyline.FormatRanges(s.device.TuningRanges))
-			if hint := leyline.FrequencyHint(o.freqInput, o.freq, s.device.TuningRanges); hint != "" {
+		if !units.InRanges(o.freq, s.device.TuningRanges) && len(s.device.TuningRanges) > 0 {
+			msg := fmt.Sprintf("%s is outside %s's range (%s)", units.FormatFrequency(o.freq), deviceName(s.device), units.FormatRanges(s.device.TuningRanges))
+			if hint := frequencyHint(o.freqInput, o.freq, s.device.TuningRanges); hint != "" {
 				msg += "; " + hint
 			}
 			return usageErrorf("%s", msg)
@@ -132,13 +134,13 @@ func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 	// a different span is refused up front rather than silently ignored.
 	span := o.span
 	if span != 0 {
-		span = leyline.NearestRate(s.device.SampleRates, o.span)
+		span = units.NearestRate(s.device.SampleRates, o.span)
 		if cap != nil && cap.SampleRate != span {
 			return usageErrorf("the radio is already capturing %s wide, and %s shows the capture's width; drop --span, ask for --span %s, or free the radio with: ley stop all",
-				leyline.FormatFrequency(cap.SampleRate), o.verb, leyline.FormatFrequency(cap.SampleRate))
+				units.FormatFrequency(cap.SampleRate), o.verb, units.FormatFrequency(cap.SampleRate))
 		}
 		if span != o.span {
-			fmt.Fprintf(app.Stderr, "showing %s, the closest this radio can do to %s\n", leyline.FormatFrequency(span), leyline.FormatFrequency(o.span))
+			fmt.Fprintf(app.Stderr, "showing %s, the closest this radio can do to %s\n", units.FormatFrequency(span), units.FormatFrequency(o.span))
 		}
 	}
 	// ensureCapture reuses a capture that covers the frequency, refuses to
@@ -155,7 +157,7 @@ func (s *session) openBand(ctx context.Context, app *App, o bandOptions) error {
 	// somewhere other than the frequency that was asked for. Print a note so
 	// the offset axis is explained.
 	if o.freq != 0 && s.capture != nil && s.capture.CenterHz != o.freq {
-		fmt.Fprintf(app.Stderr, "showing the capture at %s, which covers %s\n", leyline.FormatFrequency(s.capture.CenterHz), leyline.FormatFrequency(o.freq))
+		fmt.Fprintf(app.Stderr, "showing the capture at %s, which covers %s\n", units.FormatFrequency(s.capture.CenterHz), units.FormatFrequency(o.freq))
 	}
 	return nil
 }

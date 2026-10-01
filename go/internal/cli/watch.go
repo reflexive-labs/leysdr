@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type watchOptions struct {
@@ -92,7 +93,7 @@ notifier, so it fires whether or not ley is attached.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
 			if freq != "" {
-				hz, err := leyline.ParseUserFrequency(freq)
+				hz, err := units.ParseFrequency(freq)
 				if err != nil {
 					return usageErrorf("--freq %v", err)
 				}
@@ -217,7 +218,7 @@ func watchBanner(s *session, job *leylinev1.Job, o watchOptions) string {
 	st := s.app.ErrStyle
 	where := ""
 	if hz := decodeFrequency(s, job); hz > 0 {
-		where = " on " + leyline.FormatFrequency(hz)
+		where = " on " + units.FormatFrequency(hz)
 	}
 	line := fmt.Sprintf("watching %s%s", o.decoder, where)
 	if ch := decodeChannel(s); ch != nil {

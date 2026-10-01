@@ -10,7 +10,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 )
 
 // liveStyles are the two renders every screen is compared in: the same
@@ -56,7 +56,7 @@ func TestBannerSurvivesColourOff(t *testing.T) {
 			capture:     &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}}},
 			squelchNote: note,
 		}
-		o := &tuneOptions{freq: 146_520_000, mode: leylinev1.DemodMode_NFM, band: leyline.BandFor(146_520_000), squelch: math.NaN()}
+		o := &tuneOptions{freq: 146_520_000, mode: leylinev1.DemodMode_NFM, band: bandplan.BandFor(146_520_000), squelch: math.NaN()}
 		return s.banner(o)
 	}
 	for _, note := range []string{"", "Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS)."} {

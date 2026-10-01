@@ -14,7 +14,9 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type monitorOptions struct {
@@ -90,9 +92,9 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A range (462.5M..462.75M) first; then a band name (gmrs, 2m), so
 			// `ley monitor gmrs` works, exactly as scan resolves its positional.
-			if lo, hi, rerr := leyline.ParseUserRange(args[0]); rerr == nil {
+			if lo, hi, rerr := parseRange(args[0]); rerr == nil {
 				o.minHz, o.maxHz, o.rangeInput = lo, hi, args[0]
-			} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
+			} else if b, berr := bandplan.ResolveBand(args[0]); berr == nil {
 				o.minHz, o.maxHz, o.rangeInput, o.parts = b.MinHz, b.MaxHz, b.Name, b.Parts
 			} else {
 				return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
@@ -245,9 +247,9 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 		return err
 	}
 	if o.forDur > 0 {
-		s.say("watching %s to %s for %s\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz), forPhrase(o.forDur))
+		s.say("watching %s to %s for %s\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz), forPhrase(o.forDur))
 	} else {
-		s.say("watching %s to %s until you stop it (Ctrl-C)\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
+		s.say("watching %s to %s until you stop it (Ctrl-C)\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 	}
 
 	carriers := map[string]*monitorCarrier{}
@@ -575,7 +577,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 	// in the headers (section 5), so the cells are numbers.
 	cols := []column{
 		{head: "TIME", cells: timeGutter(ts, rows)},
-		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
+		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return units.FormatFrequency(c.centerHz) })},
 	}
 	cols = append(cols,
 		// A band with no named channels, which is most of them, omits the column.
@@ -602,7 +604,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 	}
 	// A channel label gets the frequency beside it, since the label is what a radio shows and
 	// the number is what ley tune takes; a carrier with no label shows the frequency once.
-	label := leyline.FormatFrequency(best.centerHz)
+	label := units.FormatFrequency(best.centerHz)
 	if ch := monitorChannel(best.centerHz); ch != "-" {
 		label = ch + " (" + trimZeros(float64(best.centerHz)/1e6) + ")"
 	}
@@ -640,7 +642,7 @@ func hiddenReasons(h monitorHidden, o monitorOptions) string {
 // a name, and how strong. The absent glyph is left out rather than printed, since "-" sitting
 // immediately left of a level reads as its sign.
 func liveLine(st ui.Style, o monitorOptions, now float64, c *monitorCarrier) string {
-	parts := []string{"  " + mmss(now), leyline.FormatFrequency(c.centerHz)}
+	parts := []string{"  " + mmss(now), units.FormatFrequency(c.centerHz)}
 	if ch := monitorChannel(c.centerHz); ch != "-" {
 		parts = append(parts, ch)
 	}

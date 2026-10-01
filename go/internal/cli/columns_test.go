@@ -10,7 +10,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 )
 
 // tableApp is an app whose stdout is a buffer and whose style is dictated: a
@@ -68,12 +68,12 @@ func TestScreensSurviveColourOff(t *testing.T) {
 			printDeviceTable(a, nil, false)
 		},
 		"presets": func(a *App) {
-			if err := printPresetTable(a, leyline.Presets()); err != nil {
+			if err := printPresetTable(a, bandplan.Presets()); err != nil {
 				t.Fatal(err)
 			}
 		},
 		"bands": func(a *App) {
-			if err := printBandTable(a, leyline.Bands()); err != nil {
+			if err := printBandTable(a, bandplan.Bands()); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -182,13 +182,13 @@ func TestDeviceStateInk(t *testing.T) {
 func TestTableWidthDiscipline(t *testing.T) {
 	for _, width := range []int{80, 160} {
 		app, buf := tableApp(ui.Style{Width: width})
-		if err := printBandTable(app, leyline.Bands()); err != nil {
+		if err := printBandTable(app, bandplan.Bands()); err != nil {
 			t.Fatal(err)
 		}
 		checkWidth(t, "bands", buf.String(), width)
 
 		app, buf = tableApp(ui.Style{Width: width})
-		if err := printPresetTable(app, leyline.Presets()); err != nil {
+		if err := printPresetTable(app, bandplan.Presets()); err != nil {
 			t.Fatal(err)
 		}
 		out := buf.String()
@@ -201,7 +201,7 @@ func TestTableWidthDiscipline(t *testing.T) {
 	}
 	// At 40 columns the prose has to go before the columns a reader types.
 	app, buf := tableApp(ui.Style{Width: 40})
-	if err := printPresetTable(app, leyline.Presets()); err != nil {
+	if err := printPresetTable(app, bandplan.Presets()); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -221,7 +221,7 @@ func TestTableWidthDiscipline(t *testing.T) {
 func TestPipedTablesAreWhole(t *testing.T) {
 	app, buf := tableApp(ui.Style{Width: 40})
 	app.IsTTY = func() bool { return false }
-	if err := printBandTable(app, leyline.Bands()); err != nil {
+	if err := printBandTable(app, bandplan.Bands()); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

@@ -13,7 +13,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The fake daemon renders a -100 dB floor with a -40 dB peak at every channel
@@ -57,10 +57,10 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	}
 
 	text := mustRun(t, sock, "spectrum", "--bins", "256", "--width", "60")
-	if !strings.HasPrefix(text, "146.520 MHz  span "+leyline.FormatFrequency(typed.SpanHz)) || !strings.Contains(text, "256 bins of") || !strings.Contains(text, "floor -") {
+	if !strings.HasPrefix(text, "146.520 MHz  span "+units.FormatFrequency(typed.SpanHz)) || !strings.Contains(text, "256 bins of") || !strings.Contains(text, "floor -") {
 		t.Fatalf("header:\n%s", text)
 	}
-	wantPeak := "peak    " + leyline.FormatFrequency(top.CenterHz) + "  -40 dBFS"
+	wantPeak := "peak    " + units.FormatFrequency(top.CenterHz) + "  -40 dBFS"
 	if !strings.Contains(text, wantPeak) {
 		t.Fatalf("want %q in:\n%s", wantPeak, text)
 	}

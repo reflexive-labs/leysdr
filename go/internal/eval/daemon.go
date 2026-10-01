@@ -14,6 +14,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // Env is where the runner finds what it drives.
@@ -152,7 +153,7 @@ func (d *daemon) attach(ctx context.Context, f Fixture) error {
 		return fmt.Errorf("fixture %s: sidecar: %w", f.File, err)
 	}
 	if f.Center != "" {
-		hz, err := leyline.ParseUserFrequency(f.Center)
+		hz, err := units.ParseFrequency(f.Center)
 		if err != nil {
 			return fmt.Errorf("fixture %s: center: %w", f.File, err)
 		}
@@ -207,7 +208,7 @@ func (d *daemon) setup(ctx context.Context, steps []SetupStep) error {
 		case st.Job != nil:
 			cfg := &leylinev1.DecodeConfig{Decoder: st.Job.Decoder, Keep: st.Job.Keep}
 			if st.Job.Frequency != "" {
-				hz, err := leyline.ParseUserFrequency(st.Job.Frequency)
+				hz, err := units.ParseFrequency(st.Job.Frequency)
 				if err != nil {
 					return fmt.Errorf("setup %d: frequency %v", i+1, err)
 				}

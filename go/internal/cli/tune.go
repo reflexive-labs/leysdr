@@ -14,7 +14,9 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // tuneFlags holds the raw flag values before parsing.
@@ -74,14 +76,14 @@ type modeDefault struct {
 func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOptions, error) {
 	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
 	if f.gain != "" {
-		if _, err := leyline.ParseGains(f.gain); err != nil {
+		if _, err := units.ParseGains(f.gain); err != nil {
 			return nil, usageError(fmt.Errorf("--gain %w", err))
 		}
 	}
-	o.band = leyline.BandFor(freq)
+	o.band = bandplan.BandFor(freq)
 	switch {
 	case f.mode != "":
-		m, reason, err := leyline.ResolveMode(f.mode, freq)
+		m, reason, err := bandplan.ResolveMode(f.mode, freq)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--mode %w", err))
 		}
@@ -89,7 +91,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	case def.mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED:
 		o.mode, o.modeReason = def.mode, def.reason
 	default:
-		m, band := leyline.DefaultMode(freq)
+		m, band := bandplan.DefaultMode(freq)
 		o.mode = m
 		if band != nil {
 			o.modeReason = band.Name + " band default"
@@ -99,7 +101,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	}
 	switch {
 	case f.bw != "":
-		bw, err := leyline.ParseBandwidth(f.bw)
+		bw, err := units.ParseBandwidth(f.bw)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
@@ -109,10 +111,10 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 		// --mode the mode's own default applies, as it does for a band.
 		o.bw = def.bw
 	default:
-		o.bw = leyline.BandwidthFor(freq, o.mode)
+		o.bw = bandplan.BandwidthFor(freq, o.mode)
 	}
 	if f.squelch != "" {
-		db, auto, err := leyline.ParseSquelch(f.squelch)
+		db, auto, err := units.ParseSquelch(f.squelch)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--squelch %w (examples: -40, -40dB, off, auto)", err))
 		}
@@ -123,7 +125,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 		// asks for it with --squelch off.
 		o.squelchAuto = true
 	}
-	v, err := leyline.ParseVolume(f.volume)
+	v, err := units.ParseVolume(f.volume)
 	if err != nil {
 		return nil, usageError(fmt.Errorf("--volume %w (examples: 0.5, 50%%)", err))
 	}
@@ -321,11 +323,11 @@ func bandWarning(input string, hz uint64) string {
 		return ""
 	}
 	v, err := strconv.ParseFloat(input, 64)
-	if err != nil || v <= 0 || leyline.BandFor(hz) != nil {
+	if err != nil || v <= 0 || bandplan.BandFor(hz) != nil {
 		return ""
 	}
 	khz := uint64(math.Round(v * 1e3))
-	b := leyline.BandFor(khz)
+	b := bandplan.BandFor(khz)
 	if b == nil || khz == hz {
 		return ""
 	}
@@ -378,7 +380,7 @@ func (s *session) banner(o *tuneOptions) string {
 	// "Squelch <value>" and "<device>, gain auto" with single spaces; the
 	// leading word carries Label ink instead.
 	lines := []string{
-		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", leyline.FormatFrequency(o.freq), where)),
+		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", units.FormatFrequency(o.freq), where)),
 		s.bannerSource(st),
 		leadWord(st, squelch),
 	}

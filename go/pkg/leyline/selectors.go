@@ -9,12 +9,13 @@ import (
 	"strings"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // Selectors let a person name a device, capture or channel the way it
 // appears in ley's own output: a full id, an unambiguous id prefix, the
 // 1-based row number of the printed list (the order the daemon's state lists
-// them), or a frequency ("146.52" via ParseUserFrequency) that the object
+// them), or a frequency ("146.52" via units.ParseFrequency) that the object
 // covers. Resolution is presentation-only: the result is always an id the
 // daemon already reported.
 
@@ -88,7 +89,7 @@ func resolveIndex(kind, sel string, ids []string, covers func(i int, hz uint64) 
 	if n, err := strconv.Atoi(s); err == nil && n >= 1 && n <= len(ids) {
 		return n - 1, nil
 	}
-	if hz, err := ParseUserFrequency(s); err == nil && covers != nil {
+	if hz, err := units.ParseFrequency(s); err == nil && covers != nil {
 		var hits []int
 		for i := range ids {
 			if covers(i, hz) {
@@ -122,7 +123,7 @@ func ResolveDevice(state *leylinev1.GetStateResponse, sel string) (*leylinev1.De
 		ids[i] = d.GetDeviceId()
 	}
 	i, err := resolveIndex("device", sel, ids, func(i int, hz uint64) bool {
-		return InRanges(hz, devs[i].GetTuningRanges())
+		return units.InRanges(hz, devs[i].GetTuningRanges())
 	})
 	if err != nil {
 		return nil, err
@@ -212,7 +213,7 @@ func ResolveChannel(state *leylinev1.GetStateResponse, sel string) (*leylinev1.C
 			for _, id := range se.Candidates {
 				for row, c := range chans {
 					if c.GetChannelId() == id {
-						se.Rows = append(se.Rows, ChannelRow(state, row+1, c))
+						se.Rows = append(se.Rows, channelRow(state, row+1, c))
 					}
 				}
 			}
@@ -222,12 +223,12 @@ func ResolveChannel(state *leylinev1.GetStateResponse, sel string) (*leylinev1.C
 	return chans[i], nil
 }
 
-// ChannelRow renders one channel the way selector lists show it:
+// channelRow renders one channel the way selector lists show it:
 // "1  chan_01J…  146.620 MHz NFM" (row number, id, frequency, mode).
-func ChannelRow(state *leylinev1.GetStateResponse, row int, ch *leylinev1.Channel) string {
+func channelRow(state *leylinev1.GetStateResponse, row int, ch *leylinev1.Channel) string {
 	freq := "frequency unknown"
 	if hz, ok := ChannelFrequency(state, ch); ok {
-		freq = FormatFrequency(hz)
+		freq = units.FormatFrequency(hz)
 	}
 	return fmt.Sprintf("%d  %s  %s %s", row, ch.GetChannelId(), freq, strings.ToUpper(ModeName(ch.GetMode())))
 }

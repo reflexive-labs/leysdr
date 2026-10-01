@@ -9,6 +9,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // stateWord renders a proto state enum the way people say it: lower case,
@@ -43,7 +44,7 @@ func formatOffset(hz int64) string {
 	if hz < 0 {
 		sign, hz = "-", -hz
 	}
-	return sign + leyline.FormatFrequency(uint64(hz))
+	return sign + units.FormatFrequency(uint64(hz))
 }
 
 // clientLabel is the short owner form ("cli:ley"); the session id it hides
@@ -118,7 +119,7 @@ func gainsString(gs []*leylinev1.GainElement) string {
 
 // squelchString renders a squelch value ("off" for NaN).
 func squelchString(db float64) string {
-	if leyline.SquelchOff(db) {
+	if units.SquelchOff(db) {
 		return "off"
 	}
 	return fmt.Sprintf("%.1f dB", db)
@@ -140,7 +141,7 @@ func channelFreqLabel(state *leylinev1.GetStateResponse, ch *leylinev1.Channel) 
 	if !ok {
 		return "?"
 	}
-	return leyline.FormatFrequency(hz)
+	return units.FormatFrequency(hz)
 }
 
 // humanEvent reports whether an event is worth showing to a person watching a
@@ -164,7 +165,7 @@ func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 		return fmt.Sprintf("device %s %s %s%s", d.DeviceId, d.Model, enumName(d.State.String()), who)
 	case *leylinev1.Event_Capture:
 		c := p.Capture
-		return fmt.Sprintf("capture %s %s %s @ %s%s%s", c.CaptureId, enumName(c.State.String()), leyline.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), gainStatesString(c.Gains, deviceGainElements(state, c.DeviceId)), who)
+		return fmt.Sprintf("capture %s %s %s @ %s%s%s", c.CaptureId, enumName(c.State.String()), units.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), gainStatesString(c.Gains, deviceGainElements(state, c.DeviceId)), who)
 	case *leylinev1.Event_Channel:
 		c := p.Channel
 		freq := ""
@@ -242,10 +243,10 @@ func rangesPhrase(rs []*leylinev1.FrequencyRange) string {
 		}
 		lo, hi := r.GetMinHz(), r.GetMaxHz()
 		if lo == hi {
-			parts = append(parts, leyline.FormatFrequency(lo))
+			parts = append(parts, units.FormatFrequency(lo))
 			continue
 		}
-		parts = append(parts, leyline.FormatFrequency(lo)+" to "+leyline.FormatFrequency(hi))
+		parts = append(parts, units.FormatFrequency(lo)+" to "+units.FormatFrequency(hi))
 	}
 	return strings.Join(parts, ", ")
 }

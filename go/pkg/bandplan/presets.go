@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package bandplan
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // Preset is a named frequency a newcomer is likely to reach for: one plan
@@ -79,7 +80,7 @@ func PresetOf(b Band, c Channel) Preset {
 	if c.Note != "" {
 		desc += ", " + c.Note
 	}
-	p.Description = desc + " (" + FormatFrequency(c.Hz) + ")"
+	p.Description = desc + " (" + units.FormatFrequency(c.Hz) + ")"
 	return p
 }
 
@@ -127,7 +128,7 @@ func ResolvePreset(name string) (Preset, error) {
 			}
 		}
 	}
-	near := NearestPresetNames(name)
+	near := nearestPresetNames(name)
 	if len(near) > 0 {
 		return Preset{}, fmt.Errorf("no preset called %q; did you mean %s? Check with: ley help presets", name, strings.Join(near, ", "))
 	}
@@ -170,11 +171,11 @@ func ResolvePlanChannel(band Band, name string) (Preset, bool) {
 	return Preset{}, false
 }
 
-// NearestPresetNames returns up to three preset names (or aliases, whichever
+// nearestPresetNames returns up to three preset names (or aliases, whichever
 // is closer) that look like input,
 // for error hints: an exact alias first, then prefix and substring matches,
 // then names within a small edit distance. Empty when nothing is close.
-func NearestPresetNames(input string) []string {
+func nearestPresetNames(input string) []string {
 	key := presetKey(input)
 	if key == "" {
 		return nil

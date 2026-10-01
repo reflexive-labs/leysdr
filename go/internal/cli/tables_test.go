@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 )
 
 // indentedRows counts the body rows of a grouped table: rows sit indented
@@ -35,8 +35,8 @@ func TestPresetsAndBands(t *testing.T) {
 	}
 	// Rows are indented under their band's heading; the header row and the
 	// headings are the only unindented lines.
-	if rows := indentedRows(out); rows != len(leyline.Presets()) {
-		t.Fatalf("want %d preset rows, got %d:\n%s", len(leyline.Presets()), rows, out)
+	if rows := indentedRows(out); rows != len(bandplan.Presets()) {
+		t.Fatalf("want %d preset rows, got %d:\n%s", len(bandplan.Presets()), rows, out)
 	}
 	if !strings.Contains(out, "NAME") || !strings.Contains(out, "noaa1, noaa, weather") {
 		t.Fatalf("preset table shape:\n%s", out)
@@ -59,8 +59,8 @@ func TestPresetsAndBands(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &ps); err != nil {
 		t.Fatalf("presets --json: %v\n%s", err, out)
 	}
-	if len(ps) != len(leyline.Presets()) {
-		t.Fatalf("presets --json: %d rows, want %d", len(ps), len(leyline.Presets()))
+	if len(ps) != len(bandplan.Presets()) {
+		t.Fatalf("presets --json: %d rows, want %d", len(ps), len(bandplan.Presets()))
 	}
 	if ps[0].Name != "cb1" || ps[0].Hz != 26_965_000 || ps[0].Mode != "am" || ps[0].BandwidthHz != 10_000 || len(ps[0].Aliases) == 0 {
 		t.Fatalf("presets --json first row: %+v", ps[0])
@@ -71,7 +71,7 @@ func TestPresetsAndBands(t *testing.T) {
 		t.Fatalf("ley bands: err=%v stderr=%q", err, errOut)
 	}
 	// The bands, then the groups (gmrs and murs, whole services) under the family they belong to.
-	if want := len(leyline.Bands()) + len(leyline.BandGroups()); indentedRows(out) != want {
+	if want := len(bandplan.Bands()) + len(bandplan.BandGroups()); indentedRows(out) != want {
 		t.Fatalf("want %d band rows, got %d:\n%s", want, indentedRows(out), out)
 	}
 	for _, head := range []string{"broadcast", "amateur radio", "other services", "GMRS and MURS"} {
@@ -92,7 +92,7 @@ func TestPresetsAndBands(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &bs); err != nil {
 		t.Fatalf("bands --json: %v\n%s", err, out)
 	}
-	if want := len(leyline.Bands()) + len(leyline.BandGroups()); len(bs) != want {
+	if want := len(bandplan.Bands()) + len(bandplan.BandGroups()); len(bs) != want {
 		t.Fatalf("bands --json: %d rows, want %d", len(bs), want)
 	}
 	gmrs, murs := bs[len(bs)-2], bs[len(bs)-1]

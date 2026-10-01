@@ -25,6 +25,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/testutil"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // mcpToolNames is the tool table of docs/plans/mcp.md as `ley mcp` serves it,
@@ -354,7 +355,7 @@ func TestMCPScanReturnsTheDetections(t *testing.T) {
 		t.Errorf("the tool and the verb found different carriers: %v vs %v", got, exp)
 	}
 	text := resultText(res)
-	for _, want := range []string{"FREQUENCY", "SNR (dB)", "SEEN", leyline.FormatFrequency(scan.Detections[0].CenterHz)} {
+	for _, want := range []string{"FREQUENCY", "SNR (dB)", "SEEN", units.FormatFrequency(scan.Detections[0].CenterHz)} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}

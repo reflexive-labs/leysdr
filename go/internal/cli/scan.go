@@ -17,7 +17,9 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type scanOptions struct {
@@ -87,15 +89,15 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 			case len(args) == 1:
 				// A range (144M..148M) first; then a band name (gmrs, 2m), so `ley scan gmrs`
 				// works. A bare frequency is neither and stays an error -- a scan needs a span.
-				if lo, hi, rerr := leyline.ParseUserRange(args[0]); rerr == nil {
+				if lo, hi, rerr := parseRange(args[0]); rerr == nil {
 					o.minHz, o.maxHz, o.rangeInput = lo, hi, args[0]
-				} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
+				} else if b, berr := bandplan.ResolveBand(args[0]); berr == nil {
 					o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
 				} else {
 					return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
 				}
 			case o.bandName != "":
-				b, err := leyline.ResolveBand(o.bandName)
+				b, err := bandplan.ResolveBand(o.bandName)
 				if err != nil {
 					return usageErrorf("%v", err)
 				}
@@ -104,7 +106,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				return usageErrorf("scan needs a range: ley scan 144M..148M, or ley scan --band 2m; check with: ley bands")
 			}
 			if o.gain != "" {
-				if _, err := leyline.ParseGains(o.gain); err != nil {
+				if _, err := units.ParseGains(o.gain); err != nil {
 					return usageErrorf("--gain %v", err)
 				}
 			}
@@ -183,7 +185,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		return nil, nil, err
 	}
 	st := s.app.ErrStyle
-	s.say("sweeping %s to %s\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
+	s.say("sweeping %s to %s\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 
 	progress := newScanProgress(s.app)
 	final, err := s.followJob(ctx, job, progress)
@@ -430,7 +432,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 		return
 	}
 	cols := []column{
-		{head: "FREQUENCY", cells: mapDet(rows, func(d *leylinev1.Detection) string { return leyline.FormatFrequency(d.CenterHz) })},
+		{head: "FREQUENCY", cells: mapDet(rows, func(d *leylinev1.Detection) string { return units.FormatFrequency(d.CenterHz) })},
 		{head: "WIDTH", cells: mapDet(rows, func(d *leylinev1.Detection) string { return widthCell(d, scan) })},
 		// The unit sits in the header (section 5) and the number takes the level ramp from
 		// --min-snr upward, as the peak list under ley spectrum does, so chart and table agree.
@@ -464,8 +466,8 @@ func coverageNote(app *App, scan *leylinev1.Scan, o scanOptions) {
 		return
 	}
 	fmt.Fprintf(app.Stderr, "covered %s to %s of the %s to %s asked for\n",
-		leyline.FormatFrequency(c.MinHz), leyline.FormatFrequency(c.MaxHz),
-		leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
+		units.FormatFrequency(c.MinHz), units.FormatFrequency(c.MaxHz),
+		units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 }
 
 func mapDet(rows []*leylinev1.Detection, f func(*leylinev1.Detection) string) []string {
@@ -481,12 +483,12 @@ func mapDet(rows []*leylinev1.Detection, f func(*leylinev1.Detection) string) []
 func widthCell(d *leylinev1.Detection, scan *leylinev1.Scan) string {
 	res := binWidth(scan)
 	if res > 0 && float64(d.BandwidthHz) < res {
-		return "under " + leyline.FormatFrequency(uint64(math.Round(res)))
+		return "under " + units.FormatFrequency(uint64(math.Round(res)))
 	}
 	if d.BandwidthHz == 0 {
 		return "-"
 	}
-	return leyline.FormatFrequency(uint64(d.BandwidthHz))
+	return units.FormatFrequency(uint64(d.BandwidthHz))
 }
 
 // binWidth is the analysis resolution: how finely the sweep looked, which is what every dB it
@@ -501,7 +503,7 @@ func unconfirmedNote(app *App, rows []*leylinev1.Detection) {
 	var weak []string
 	for _, d := range rows {
 		if d.LooksPossible > 1 && d.Looks*2 < d.LooksPossible {
-			weak = append(weak, fmt.Sprintf("%s (%s)", leyline.FormatFrequency(d.CenterHz), seenCell(d)))
+			weak = append(weak, fmt.Sprintf("%s (%s)", units.FormatFrequency(d.CenterHz), seenCell(d)))
 		}
 	}
 	if len(weak) == 0 {
@@ -523,7 +525,7 @@ func seenCell(d *leylinev1.Detection) string {
 // the same ones `ley bands` and `ley presets` print: presentation over the daemon's measurement.
 func bandCell(d *leylinev1.Detection) string {
 	var parts []string
-	if b := leyline.BandFor(d.CenterHz); b != nil {
+	if b := bandplan.BandFor(d.CenterHz); b != nil {
 		parts = append(parts, b.Name)
 	}
 	if p := presetAt(d.CenterHz); p != "" {
@@ -539,7 +541,7 @@ func bandCell(d *leylinev1.Detection) string {
 // marine16): the nearest within 6 kHz, a tie to the earlier plan entry, which is ChannelAt's rule
 // and the app's (the plan's KTD2). Empty when nothing sits there.
 func presetAt(hz uint64) string {
-	if _, c, ok := leyline.ChannelAt(hz); ok {
+	if _, c, ok := bandplan.ChannelAt(hz); ok {
 		return c.Aliases[0]
 	}
 	return ""
@@ -573,7 +575,7 @@ func floorPhrase(scan *leylinev1.Scan) string {
 	sort.Float64s(vals)
 	median := vals[len(vals)/2]
 	if bw := binWidth(scan); bw > 0 {
-		return fmt.Sprintf(", floor %.0f dBFS per %s bin", median, leyline.FormatFrequency(uint64(math.Round(bw))))
+		return fmt.Sprintf(", floor %.0f dBFS per %s bin", median, units.FormatFrequency(uint64(math.Round(bw))))
 	}
 	return fmt.Sprintf(", floor %.0f dBFS", median)
 }

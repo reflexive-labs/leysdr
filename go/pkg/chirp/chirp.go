@@ -19,8 +19,10 @@ import (
 	"strings"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/bookmarks"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // ErrNoFrequency is Parse's error for a file whose header has no Frequency column: it is not
@@ -33,7 +35,7 @@ var ErrNoFrequency = errors.New("no Frequency column")
 // demodulator at two widths; AM, USB, LSB, CW and WFM are themselves at the mode's default
 // width; anything else (DV, DN, P25, a digital mode ley does not decode) is the band's default
 // mode and width, and ModeFromBand says so. Tone is the store's spelling, validated by
-// leyline.ParseTone, or empty. Warnings are the fields that could not be taken as written, one
+// bookmarks.ParseTone, or empty. Warnings are the fields that could not be taken as written, one
 // sentence each, for the person: the row is still imported without them.
 type Row struct {
 	Line         int
@@ -122,13 +124,13 @@ func parseRow(line int, field func(string) string) (Row, string) {
 	row.Mode, row.BandwidthHz, row.ModeFromBand = mapMode(field("mode"), hz)
 	if row.ModeFromBand {
 		what := "no band recognised"
-		if _, band := leyline.DefaultMode(hz); band != nil {
+		if _, band := bandplan.DefaultMode(hz); band != nil {
 			what = "the " + band.Name + " band's default"
 		}
 		row.warn("mode %q is not one ley decodes; kept as %s, %s", field("mode"), leyline.ModeName(row.Mode), what)
 	}
 	if tone, spelled := mapTone(field); tone != "" {
-		if _, err := leyline.ParseTone(tone); err != nil {
+		if _, err := bookmarks.ParseTone(tone); err != nil {
 			row.warn("tone %q is not a CTCSS tone or a DCS code; left empty", spelled)
 		} else {
 			row.Tone = tone
@@ -168,8 +170,8 @@ func mapMode(mode string, hz uint64) (leylinev1.DemodMode, uint32, bool) {
 		m, _ := leyline.ParseMode(mode)
 		return m, leyline.DefaultBandwidth(m), false
 	}
-	m, _ := leyline.DefaultMode(hz)
-	return m, leyline.BandwidthFor(hz, m), true
+	m, _ := bandplan.DefaultMode(hz)
+	return m, bandplan.BandwidthFor(hz, m), true
 }
 
 // mapTone picks the tone the radio transmits, by the Tone column's mode: Tone takes rToneFreq,
@@ -296,10 +298,10 @@ func Apply(store *bookmarks.Store, rows []Row, tag string) (Result, error) {
 // NameFor is the name a blank-named row takes: the plan channel it sits on, as its radios print
 // it (GMRS channel 5 is "ch5"), else the frequency as ley prints it ("445.925 MHz").
 func NameFor(hz uint64) string {
-	if _, c, ok := leyline.ChannelAt(hz); ok {
+	if _, c, ok := bandplan.ChannelAt(hz); ok {
 		return c.Name
 	}
-	return leyline.FormatFrequency(hz)
+	return units.FormatFrequency(hz)
 }
 
 // Tag is the tag an import files its rows under: the file's basename without its extension,

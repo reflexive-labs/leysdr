@@ -9,7 +9,7 @@ import (
 
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The waterfall's geometry. The gutter is the time axis: mm:ss and the axis
@@ -85,14 +85,14 @@ func (v *waterfallView) binWidthHz(cols int) uint64 {
 func (v *waterfallView) header(cols int) []string {
 	lo, hi := spectrumEdges(v.centerHz, v.spanHz)
 	segs := []headerSeg{
-		{value: leyline.FormatFrequency(v.centerHz)},
-		{name: "span ", value: leyline.FormatFrequency(v.spanHz)},
+		{value: units.FormatFrequency(v.centerHz)},
+		{name: "span ", value: units.FormatFrequency(v.spanHz)},
 		{name: "floor ", value: fmtDb(v.floor) + " dBFS"},
 		{name: "range ", value: fmt.Sprintf("%d dB", waterfallRangeDb)},
-		{value: leyline.FormatFrequency(lo) + " to " + leyline.FormatFrequency(hi), dim: true},
+		{value: units.FormatFrequency(lo) + " to " + units.FormatFrequency(hi), dim: true},
 		// What a column covers is the difference between a picture of a signal
 		// and a map of where energy is, so it is a fact, not scaffolding.
-		{value: fmt.Sprintf("%d columns of %s", cols, leyline.FormatFrequency(v.binWidthHz(cols))), dim: true},
+		{value: fmt.Sprintf("%d columns of %s", cols, units.FormatFrequency(v.binWidthHz(cols))), dim: true},
 	}
 	return packSegments(v.st, segs, v.width)
 }
@@ -204,7 +204,7 @@ func (v *waterfallView) axis(cols int) []string {
 		if col >= cols {
 			col = cols - 1
 		}
-		text := string(g.Marker) + " " + leyline.FormatFrequency(v.mark)
+		text := string(g.Marker) + " " + units.FormatFrequency(v.mark)
 		at := waterfallGutter + col
 		if at+len(text) <= v.width {
 			out = append(out, strings.Repeat(" ", at)+text)

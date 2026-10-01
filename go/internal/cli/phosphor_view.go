@@ -9,6 +9,7 @@ import (
 
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The chart's geometry matches ley spectrum's: frequency across, level up. It
@@ -58,11 +59,11 @@ func (v *phosphorView) cols(bins int) int {
 func (v *phosphorView) header(cols int) []string {
 	lo, hi := spectrumEdges(v.centerHz, v.spanHz)
 	segs := []headerSeg{
-		{value: leyline.FormatFrequency(v.centerHz)},
-		{name: "span ", value: leyline.FormatFrequency(v.spanHz)},
+		{value: units.FormatFrequency(v.centerHz)},
+		{name: "span ", value: units.FormatFrequency(v.spanHz)},
 		{name: "over the last ", value: fmtSeconds(v.halfLife)},
-		{value: leyline.FormatFrequency(lo) + " to " + leyline.FormatFrequency(hi), dim: true},
-		{value: fmt.Sprintf("%d columns of %s", cols, leyline.FormatFrequency(v.binWidthHz(cols))), dim: true},
+		{value: units.FormatFrequency(lo) + " to " + units.FormatFrequency(hi), dim: true},
+		{value: fmt.Sprintf("%d columns of %s", cols, units.FormatFrequency(v.binWidthHz(cols))), dim: true},
 	}
 	return packSegments(v.st, segs, v.width)
 }
@@ -189,7 +190,7 @@ func (v *phosphorView) axis(b *strings.Builder, cols int) {
 		if col >= cols {
 			col = cols - 1
 		}
-		text := string(g.Marker) + " " + leyline.FormatFrequency(v.mark)
+		text := string(g.Marker) + " " + units.FormatFrequency(v.mark)
 		at := phosphorGutter + col
 		if at+len(text) <= v.width {
 			b.WriteString(strings.Repeat(" ", at) + text + "\n")

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package bandplan
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 func TestResolveBandByAliasAndName(t *testing.T) {
@@ -88,9 +90,9 @@ func TestMetreAliasesAlreadyParseAsFrequencies(t *testing.T) {
 		{"20m", 20_000_000},
 		{"160m", 160_000_000},
 	} {
-		hz, err := ParseUserFrequency(tc.alias)
+		hz, err := units.ParseFrequency(tc.alias)
 		if err != nil || hz != tc.hz {
-			t.Errorf("ParseUserFrequency(%q) = %v, %v; want %d", tc.alias, hz, err, tc.hz)
+			t.Errorf("units.ParseFrequency(%q) = %v, %v; want %d", tc.alias, hz, err, tc.hz)
 		}
 		// And the same string is a band alias, which is the collision.
 		if _, err := ResolveBand(tc.alias); err != nil {

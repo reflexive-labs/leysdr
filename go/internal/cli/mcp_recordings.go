@@ -17,6 +17,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The recording tools (docs/design/recording.md, "MCP"): start one, find the
@@ -198,7 +199,7 @@ func (srv *mcpServer) findRecordings(ctx context.Context, _ *mcp.CallToolRequest
 		m := r.GetMetadata()
 		hz, _ := strconv.ParseUint(m["frequency_hz"], 10, 64)
 		fmt.Fprintf(&b, "%s  %s %s  %s in %s parts  %s\n", r.GetOriginatingJobId(),
-			leyline.FormatFrequency(hz), strings.TrimSpace(m["mode"]+" "+m["kind"]),
+			units.FormatFrequency(hz), strings.TrimSpace(m["mode"]+" "+m["kind"]),
 			recordingLength(m["duration_ms"]), m["parts"], recordingSize(r.GetSizeBytes()))
 	}
 	return protoResult(&leylinev1.ListResourcesResponse{Resources: found}, b.String())
@@ -297,7 +298,7 @@ func recordingSummary(m *leyline.RecordingManifest) string {
 		what = m.Mode + " audio"
 	}
 	fmt.Fprintf(&b, "%s %s, %s of signal in %s, %s",
-		what, leyline.FormatFrequency(m.FrequencyHz),
+		what, units.FormatFrequency(m.FrequencyHz),
 		forPhrase(time.Duration(m.DurationMs())*time.Millisecond),
 		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))
 	if m.Gate != nil {

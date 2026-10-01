@@ -10,7 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // A topic is a longer explanation reached with `ley help <topic>`. Topics
@@ -298,20 +300,20 @@ takes, and by the older names that still work.
 `)
 	// Each plan is aligned on its own: one writer across all of them would pad
 	// CB's short rows out to the width of marine's notes.
-	for _, band := range append(leyline.Bands(), leyline.BandGroups()...) {
+	for _, band := range append(bandplan.Bands(), bandplan.BandGroups()...) {
 		if len(band.Channels) == 0 {
 			continue
 		}
 		fmt.Fprintf(&b, "%s (ley bands %s)\n", band.Name, band.Aliases[0])
 		tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 		for _, c := range band.Channels {
-			p := leyline.PresetOf(band, c)
+			p := bandplan.PresetOf(band, c)
 			aliases := ""
 			if len(p.Aliases) > 0 {
 				aliases = "also: " + strings.Join(p.Aliases, ", ")
 			}
 			// The note alone: the heading, the columns and 'also:' carry the rest.
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), p.Note, aliases)
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", p.Name, units.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), p.Note, aliases)
 		}
 		_ = tw.Flush()
 	}
@@ -324,12 +326,12 @@ usb/lsb means the sideband follows the amateur convention: USB at and above
 `)
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	// The bands, then the groups, as `ley bands` lists them: a group is a name a sweep takes whole.
-	for _, band := range append(leyline.Bands(), leyline.BandGroups()...) {
+	for _, band := range append(bandplan.Bands(), bandplan.BandGroups()...) {
 		mode := leyline.ModeName(band.Mode)
 		if band.Mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
 			mode = "usb/lsb"
 		}
-		fmt.Fprintf(tw, "  %s\t%s to %s\t%s\t%s\t%s\n", band.Name, leyline.FormatFrequency(band.MinHz), leyline.FormatFrequency(band.MaxHz), mode, formatBandwidth(band.BandwidthHz), band.Note)
+		fmt.Fprintf(tw, "  %s\t%s to %s\t%s\t%s\t%s\n", band.Name, units.FormatFrequency(band.MinHz), units.FormatFrequency(band.MaxHz), mode, formatBandwidth(band.BandwidthHz), band.Note)
 	}
 	_ = tw.Flush()
 	b.WriteString(`

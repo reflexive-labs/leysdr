@@ -15,7 +15,9 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // confirmTimeout bounds how long verbs wait for the daemon's confirming event.
@@ -32,7 +34,7 @@ type tuneOptions struct {
 	mode          leylinev1.DemodMode
 	// modeReason is the one-line rationale when the mode was inferred ("" when explicit).
 	modeReason string
-	band       *leyline.Band
+	band       *bandplan.Band
 	bw         uint32
 	device     string
 	rate       uint64
@@ -45,7 +47,7 @@ type tuneOptions struct {
 	// retune allows moving a shared capture even when other channels ride on it.
 	retune bool
 	// gain, when non-empty, is applied to the capture once it exists: "auto",
-	// dB, or stage=dB pairs (leyline.ParseGains).
+	// dB, or stage=dB pairs (units.ParseGains).
 	gain string
 }
 
@@ -195,8 +197,8 @@ func (s *session) friendly(err error, input string, hz uint64) error {
 		if s.device != nil {
 			ranges, model = s.device.TuningRanges, s.device.Model
 		}
-		msg := fmt.Sprintf("%s is outside what %s can tune (%s)", leyline.FormatFrequency(hz), model, leyline.FormatRanges(ranges))
-		if hint := leyline.FrequencyHint(input, hz, ranges); hint != "" {
+		msg := fmt.Sprintf("%s is outside what %s can tune (%s)", units.FormatFrequency(hz), model, units.FormatRanges(ranges))
+		if hint := frequencyHint(input, hz, ranges); hint != "" {
 			msg += "; " + hint
 		}
 		return &friendlyError{msg: msg, cause: err}
@@ -492,9 +494,9 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 				hint = fmt.Sprintf("Add --retune to move it anyway, or free %s with: ley stop --all", words.Pick(n, "it", "them"))
 			}
 			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. %s",
-				leyline.FormatFrequency(cap.CenterHz), words.Count(n, "channel"), leyline.FormatFrequency(o.freq), words.Pick(n, "it", "them"), hint)
+				units.FormatFrequency(cap.CenterHz), words.Count(n, "channel"), units.FormatFrequency(o.freq), words.Pick(n, "it", "them"), hint)
 		}
-		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(o.freq))
+		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, units.FormatFrequency(cap.CenterHz), units.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
 		sum, err := s.client.WriteParams(ctx, w)
 		if err != nil {
@@ -512,7 +514,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		})
 		if err != nil {
 			if rejected {
-				return fmt.Errorf("retune to %s rejected (no reason observed)", leyline.FormatFrequency(o.freq))
+				return fmt.Errorf("retune to %s rejected (no reason observed)", units.FormatFrequency(o.freq))
 			}
 			return err
 		}
@@ -563,7 +565,7 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 // is attempted (the daemon remains the authority; it rejects anything the
 // mirror lets through). Devices with unknown ranges are not checked.
 func (s *session) checkRange(input string, hz uint64) error {
-	if s.device == nil || len(s.device.TuningRanges) == 0 || leyline.InRanges(hz, s.device.TuningRanges) {
+	if s.device == nil || len(s.device.TuningRanges) == 0 || units.InRanges(hz, s.device.TuningRanges) {
 		return nil
 	}
 	return s.friendly(&leyline.Error{
@@ -654,7 +656,7 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 	if o.gain == "" {
 		return nil
 	}
-	settings, err := leyline.ParseGains(o.gain)
+	settings, err := units.ParseGains(o.gain)
 	if err != nil {
 		return fmt.Errorf("--gain %w", err)
 	}
@@ -673,7 +675,7 @@ func (s *session) applyGain(ctx context.Context, o *tuneOptions) error {
 // refuse it. A named stage is matched against the device ignoring case; one
 // the device does not list is sent as typed, so the refusal is the daemon's,
 // with the stages the radio has.
-func (s *session) writeGain(ctx context.Context, g leyline.GainSetting) error {
+func (s *session) writeGain(ctx context.Context, g units.GainSetting) error {
 	el := s.device.GainElements[0]
 	name := el.GetName()
 	if g.Element != "" {
@@ -686,10 +688,10 @@ func (s *session) writeGain(ctx context.Context, g leyline.GainSetting) error {
 	}
 	db, auto, tol := g.DB, g.Auto, 1.0
 	if el != nil && !auto {
-		if err := leyline.CheckGain(db, el); err != nil {
+		if err := units.CheckGain(db, el); err != nil {
 			return fmt.Errorf("--gain %w", err)
 		}
-		db, tol = leyline.SnapGain(el, db), leyline.GainTolerance(el)
+		db, tol = units.SnapGain(el, db), units.GainTolerance(el)
 	}
 	gw := &leylinev1.GainWrite{Element: name}
 	if auto {
@@ -955,7 +957,7 @@ func (s *session) cleanupFailed(what string, err error) {
 // meterLine renders the in-place status line in plain words: the signal
 // level and whether audio is passing. OPEN/CLOSED live in --json only.
 func meterLine(freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, air onAir) string {
-	return fmt.Sprintf("%s %s  signal %.0f dBFS  %s", leyline.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, meterGate(m, air))
+	return fmt.Sprintf("%s %s  signal %.0f dBFS  %s", units.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, meterGate(m, air))
 }
 
 // meterGate is the meter line's last words: whether audio is passing and, when

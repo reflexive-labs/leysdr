@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package units
 
 import (
 	"fmt"
@@ -66,10 +66,10 @@ func ParseSquelch(s string) (db float64, auto bool, err error) {
 	return v, false, nil
 }
 
-// ParseGain parses a gain setting: "auto" (agc) or a dB value with an
+// parseGain parses a gain setting: "auto" (agc) or a dB value with an
 // optional "dB" suffix ("30", "30dB"). Negative gains are rejected. Use
 // CheckGain to validate against a device's gain element.
-func ParseGain(s string) (db float64, auto bool, err error) {
+func parseGain(s string) (db float64, auto bool, err error) {
 	t := strings.ToLower(strings.TrimSpace(s))
 	switch t {
 	case "":
@@ -102,7 +102,7 @@ type GainSetting struct {
 // and refuses one it does not have with the ones it does.
 func ParseGains(s string) ([]GainSetting, error) {
 	if !strings.Contains(s, "=") {
-		db, auto, err := ParseGain(s)
+		db, auto, err := parseGain(s)
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +120,7 @@ func ParseGains(s string) ([]GainSetting, error) {
 			return nil, fmt.Errorf("names %s twice; give each stage once, e.g. LNA=0,VGA=0", name)
 		}
 		seen[strings.ToLower(name)] = true
-		db, auto, err := ParseGain(value)
+		db, auto, err := parseGain(value)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
@@ -157,13 +157,13 @@ func ParseBandwidth(s string) (uint32, error) {
 		return 0, fmt.Errorf("%q contains a comma; use a dot for decimals (12.5) or a unit (12500)", s)
 	}
 	var hz float64
-	if v, ok := bareNumber(t); ok {
+	if v, ok := BareNumber(t); ok {
 		if v < 1000 {
 			v *= 1e3
 		}
 		hz = v
 	} else {
-		raw, err := ParseFrequency(t)
+		raw, err := ParseHz(t)
 		if err != nil {
 			return 0, fmt.Errorf("cannot read %q; try 12.5 (kHz), 12.5k or 12500", s)
 		}
@@ -197,40 +197,6 @@ func ParseVolume(s string) (float64, error) {
 		return 0, fmt.Errorf("%q is out of range; use 0 to 1, 0%% to 100%%, or 1 to 100", s)
 	}
 	return v, nil
-}
-
-// ResolveMode turns a mode name into a demodulator, using the frequency to
-// settle the ambiguous names: "fm" is WFM on the FM broadcast band (87.5 to
-// 108 MHz) and NFM elsewhere; "ssb" is USB at or above 10 MHz and LSB
-// below; "nbfm"/"narrowfm" and "wbfm"/"widefm"/"broadcast" are aliases. Any
-// other name goes through ParseMode unchanged. The returned reason is a
-// short phrase explaining an inferred choice ("" when the name was explicit).
-func ResolveMode(name string, hz uint64) (mode leylinev1.DemodMode, reason string, err error) {
-	t := strings.ToLower(strings.TrimSpace(name))
-	t = strings.ReplaceAll(t, "_", "")
-	t = strings.ReplaceAll(t, "-", "")
-	switch t {
-	case "fm":
-		if b := BandFor(hz); b != nil && b.Mode == leylinev1.DemodMode_WFM {
-			return leylinev1.DemodMode_WFM, "fm on the " + b.Name + " band means WFM", nil
-		}
-		return leylinev1.DemodMode_NFM, "fm outside the FM broadcast band means NFM", nil
-	case "ssb":
-		m := sidebandFor(hz)
-		if m == leylinev1.DemodMode_USB {
-			return m, "ssb at or above 10 MHz means USB", nil
-		}
-		return m, "ssb below 10 MHz means LSB", nil
-	case "nbfm", "narrowfm":
-		return leylinev1.DemodMode_NFM, "", nil
-	case "wbfm", "widefm", "broadcast":
-		return leylinev1.DemodMode_WFM, "", nil
-	}
-	m, err := ParseMode(name)
-	if err != nil {
-		return m, "", fmt.Errorf("%s; also accepted: fm, ssb, nbfm, wbfm", strings.TrimPrefix(err.Error(), "mode: "))
-	}
-	return m, "", nil
 }
 
 // SnapGain returns the dB value the daemon will hold for this element, applying

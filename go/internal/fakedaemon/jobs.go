@@ -13,6 +13,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 func unimplemented(ctx context.Context, what string) error {
@@ -143,7 +144,7 @@ func (d *Daemon) busyReason(deviceID string) string {
 					who = ch.GetOwner().GetKind()
 				}
 				hz := uint64(int64(cap.CenterHz) + ch.OffsetHz)
-				return fmt.Sprintf("%s is listening on %s", who, leyline.FormatFrequency(hz))
+				return fmt.Sprintf("%s is listening on %s", who, units.FormatFrequency(hz))
 			}
 		}
 		if cap.GetActivity().GetLiveAudioSinks() > 0 {
@@ -234,7 +235,7 @@ func (d *Daemon) runScan(jobID string, sc *leylinev1.ScanConfig, dev *leylinev1.
 		}
 		d.failScan(jobID, leyline.CodeBlindSpot, fmt.Sprintf(
 			"all of that range sits within %s of %s, where this radio's own DC spike is; a scan does not look there",
-			leyline.FormatFrequency(uint64(guardFraction*float64(rate))), leyline.FormatFrequency(centre)))
+			units.FormatFrequency(uint64(guardFraction*float64(rate))), units.FormatFrequency(centre)))
 		return
 	}
 	d.planScan(jobID, plan, rate)
@@ -391,7 +392,7 @@ func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor, sc *leylinev1.ScanC
 	}
 	var out []*leylinev1.GainState
 	for _, el := range dev.GainElements {
-		g := &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, el.MaxDb/2)}
+		g := &leylinev1.GainState{Element: el.Name, Db: units.SnapGain(el, el.MaxDb/2)}
 		for _, c := range d.captures {
 			if c.DeviceId == dev.DeviceId {
 				for _, have := range c.Gains {
@@ -404,7 +405,7 @@ func (d *Daemon) sweepGains(dev *leylinev1.DeviceDescriptor, sc *leylinev1.ScanC
 		if want := asked[el.Name]; want != nil {
 			switch v := want.GetValue().(type) {
 			case *leylinev1.GainWrite_Db:
-				g = &leylinev1.GainState{Element: el.Name, Db: leyline.SnapGain(el, v.Db)}
+				g = &leylinev1.GainState{Element: el.Name, Db: units.SnapGain(el, v.Db)}
 			case *leylinev1.GainWrite_Auto:
 				if v.Auto {
 					g = &leylinev1.GainState{Element: el.Name, Auto: true}

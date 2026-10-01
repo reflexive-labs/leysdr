@@ -14,7 +14,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type recordOptions struct {
@@ -260,7 +262,7 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 	if !o.iq {
 		switch {
 		case mode != "":
-			m, _, merr := leyline.ResolveMode(mode, o.freqHz)
+			m, _, merr := bandplan.ResolveMode(mode, o.freqHz)
 			if merr != nil {
 				return usageErrorf("--mode %v", merr)
 			}
@@ -268,18 +270,18 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 		case t.Preset != nil && t.Preset.Mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED:
 			o.mode = t.Preset.Mode
 		default:
-			o.mode, _ = leyline.DefaultMode(o.freqHz)
+			o.mode, _ = bandplan.DefaultMode(o.freqHz)
 		}
 	}
 	if bw != "" {
-		hz, berr := leyline.ParseBandwidth(bw)
+		hz, berr := units.ParseBandwidth(bw)
 		if berr != nil {
 			return usageErrorf("--bw %v (examples: 12.5, 12.5k, 200k, 12500)", berr)
 		}
 		o.bwHz = hz
 	}
 	if squelch != "" {
-		db, auto, serr := leyline.ParseSquelch(squelch)
+		db, auto, serr := units.ParseSquelch(squelch)
 		if serr != nil {
 			return usageErrorf("--squelch %v (examples: -40, -40dB, off, auto)", serr)
 		}
@@ -297,7 +299,7 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 		}
 	}
 	if o.gain != "" {
-		if _, gerr := leyline.ParseGains(o.gain); gerr != nil {
+		if _, gerr := units.ParseGains(o.gain); gerr != nil {
 			return usageError(fmt.Errorf("--gain %w", gerr))
 		}
 	}
@@ -664,7 +666,7 @@ func recordBanner(s *session, o recordOptions, m *leyline.RecordingManifest, dir
 // one per stage for pairs. The stage names go as typed; the daemon matches them ignoring case and
 // fails the job on one the radio does not have. nil leaves the radio's gain alone.
 func gainWrites(flag string) []*leylinev1.GainWrite {
-	settings, err := leyline.ParseGains(flag)
+	settings, err := units.ParseGains(flag)
 	if flag == "" || err != nil {
 		return nil
 	}
@@ -723,7 +725,7 @@ func recordWhat(o recordOptions, m *leyline.RecordingManifest) string {
 	if m != nil && m.FrequencyHz != 0 {
 		hz = m.FrequencyHz
 	}
-	where := leyline.FormatFrequency(hz)
+	where := units.FormatFrequency(hz)
 	if o.channelID != "" {
 		where += " " + o.channelID
 	}
@@ -735,7 +737,7 @@ func recordWhat(o recordOptions, m *leyline.RecordingManifest) string {
 		}
 		about = append(about, mode)
 	}
-	if b := leyline.BandFor(hz); b != nil {
+	if b := bandplan.BandFor(hz); b != nil {
 		about = append(about, b.Name)
 	}
 	if len(about) == 0 {

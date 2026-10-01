@@ -17,9 +17,6 @@ import (
 // SocketEnv is the environment variable that overrides DefaultSocketPath.
 const SocketEnv = "LEYLINE_SOCKET"
 
-// LaunchAgentLabel is the launchd label of the daemon's LaunchAgent.
-const LaunchAgentLabel = "com.leysdr.daemon"
-
 // DefaultSocketPath returns the daemon's UDS path for this user. LEYLINE_SOCKET
 // overrides; otherwise macOS uses ~/Library/Application Support/Leyline/leyline.sock,
 // and other platforms use $XDG_RUNTIME_DIR/leyline.sock or /tmp/leyline-<uid>.sock.
@@ -74,13 +71,6 @@ func LogPathFor(socket string) string {
 // sibling is socket's directory joined with its base name, extension replaced by ext.
 func sibling(socket, ext string) string {
 	return filepath.Join(filepath.Dir(socket), strings.TrimSuffix(filepath.Base(socket), filepath.Ext(socket))+ext)
-}
-
-// DefaultLaunchAgentPath returns the path of the daemon's launchd plist
-// (~/Library/LaunchAgents/com.leysdr.daemon.plist). It is a macOS concept but
-// the path is computed on every platform so tooling can print it.
-func DefaultLaunchAgentPath() string {
-	return filepath.Join(homeDir(), "Library", "LaunchAgents", LaunchAgentLabel+".plist")
 }
 
 func homeDir() string {

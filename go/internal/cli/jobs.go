@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 func newJobsCommand(app *App) *cobra.Command {
@@ -184,14 +185,14 @@ func jobRange(j *leylinev1.Job) string {
 	// no frequency of its own, so it shows "recipe" rather than an invented number.
 	if dec, ok := j.GetConfig().(*leylinev1.Job_Decode); ok {
 		if hz := dec.Decode.GetFrequencyHz(); hz > 0 {
-			return leyline.FormatFrequency(hz)
+			return units.FormatFrequency(hz)
 		}
 		return "recipe"
 	}
 	// A recording is on one frequency too, or on somebody else's channel, shown by its id.
 	if rec, ok := j.GetConfig().(*leylinev1.Job_Record); ok {
 		if hz := rec.Record.GetFrequencyHz(); hz > 0 {
-			return leyline.FormatFrequency(hz)
+			return units.FormatFrequency(hz)
 		}
 		return rec.Record.GetChannelId()
 	}

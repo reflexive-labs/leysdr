@@ -18,6 +18,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -652,10 +653,10 @@ func TestScanLabelsGMRSChannels(t *testing.T) {
 		}
 	}
 	// Marine channel 16 keeps its own name after ceding the bare "ch16" alias to GMRS.
-	if p, err := leyline.ResolvePreset("ch16"); err != nil || p.Hz != 462_575_000 {
+	if p, err := bandplan.ResolvePreset("ch16"); err != nil || p.Hz != 462_575_000 {
 		t.Errorf("ch16 should now be GMRS channel 16: %+v %v", p, err)
 	}
-	if p, err := leyline.ResolvePreset("marine16"); err != nil || p.Hz != 156_800_000 {
+	if p, err := bandplan.ResolvePreset("marine16"); err != nil || p.Hz != 156_800_000 {
 		t.Errorf("marine16 must still resolve: %+v %v", p, err)
 	}
 }

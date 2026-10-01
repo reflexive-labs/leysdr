@@ -23,6 +23,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // BookmarksEnv overrides the store path; tests set it to a temp file.
@@ -44,7 +45,7 @@ type Bookmark struct {
 	// Tone, Note and Tags are the fields a person fills in; OffsetHz and Duplex are written by
 	// the CHIRP import and read by nothing yet (docs/design/channels.md, "Bookmarks gain three
 	// fields"). All are optional and left out of the file when empty, so a bookmark that has
-	// none keeps the shape an older build wrote. Tone is CHIRP's spelling as leyline.ParseTone
+	// none keeps the shape an older build wrote. Tone is CHIRP's spelling as ParseTone
 	// reads it ("100.0", "D023N"); Tags is kept sorted and without repeats, a set.
 	Tone     string   `json:"tone,omitempty"`
 	Note     string   `json:"note,omitempty"`
@@ -260,7 +261,7 @@ func (s *Store) Keep(bm Bookmark) (Bookmark, bool, error) {
 		return Bookmark{}, false, fmt.Errorf("a bookmark needs a mode: one of %s", strings.Join(ModeNames(), ", "))
 	}
 	if bm.Tone != "" {
-		if _, err := leyline.ParseTone(bm.Tone); err != nil {
+		if _, err := ParseTone(bm.Tone); err != nil {
 			return Bookmark{}, false, err
 		}
 	}
@@ -298,7 +299,7 @@ func (s *Store) Keep(bm Bookmark) (Bookmark, bool, error) {
 // SetFields writes the fields a person edits on the bookmark an argument names, and persists
 // the file: a tone or a note that is non-nil is set, an empty string clears it, and addTags
 // join the set the bookmark has. The tone is validated the way both clients validate one
-// (leyline.ParseTone), so the file never holds a spelling the other cannot read; a refused
+// (ParseTone), so the file never holds a spelling the other cannot read; a refused
 // tone changes nothing. The argument is resolved the way Remove resolves one, and the stamp
 // moves.
 func (s *Store) SetFields(idOrName string, tone, note *string, addTags []string) (Bookmark, error) {
@@ -307,7 +308,7 @@ func (s *Store) SetFields(idOrName string, tone, note *string, addTags []string)
 		return Bookmark{}, err
 	}
 	if tone != nil && *tone != "" {
-		if _, err := leyline.ParseTone(*tone); err != nil {
+		if _, err := ParseTone(*tone); err != nil {
 			return Bookmark{}, err
 		}
 	}
@@ -351,7 +352,7 @@ func (s *Store) Move(idOrName string, hz uint64) (Bookmark, error) {
 	for _, other := range s.bookmarks {
 		if other.ID != bm.ID && other.Hz == hz && other.Name == bm.Name {
 			return Bookmark{}, fmt.Errorf("%q is already kept at %s (%s); remove one of them first",
-				bm.Name, leyline.FormatFrequency(hz), other.ID)
+				bm.Name, units.FormatFrequency(hz), other.ID)
 		}
 	}
 	bm.Hz = hz
@@ -389,7 +390,7 @@ func (s *Store) resolve(idOrName, verb string) (Bookmark, error) {
 	default:
 		names := make([]string, 0, len(match))
 		for _, bm := range match {
-			names = append(names, fmt.Sprintf("%s (%s)", bm.ID, leyline.FormatFrequency(bm.Hz)))
+			names = append(names, fmt.Sprintf("%s (%s)", bm.ID, units.FormatFrequency(bm.Hz)))
 		}
 		return Bookmark{}, fmt.Errorf("%q names %d bookmarks; %s one by id: %s",
 			idOrName, len(match), verb, strings.Join(names, ", "))

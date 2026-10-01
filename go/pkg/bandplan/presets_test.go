@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package bandplan
 
 import (
 	"strings"
@@ -68,22 +68,22 @@ func TestResolvePreset(t *testing.T) {
 
 func TestNearestPresetNames(t *testing.T) {
 	// An exact alias comes first, ahead of the names it is a prefix of.
-	if got := NearestPresetNames("noaa"); len(got) == 0 || got[0] != "noaa" {
+	if got := nearestPresetNames("noaa"); len(got) == 0 || got[0] != "noaa" {
 		t.Errorf("NearestPresetNames(noaa) = %v", got)
 	}
-	if got := NearestPresetNames("marine"); len(got) == 0 || got[0] != "marine" {
+	if got := nearestPresetNames("marine"); len(got) == 0 || got[0] != "marine" {
 		t.Errorf("NearestPresetNames(marine) = %v", got)
 	}
-	if got := NearestPresetNames("caling"); len(got) == 0 || got[0] != "calling" {
+	if got := nearestPresetNames("caling"); len(got) == 0 || got[0] != "calling" {
 		t.Errorf("NearestPresetNames(caling) = %v", got)
 	}
-	if got := NearestPresetNames("nooa"); len(got) == 0 || got[0] != "noaa" {
+	if got := nearestPresetNames("nooa"); len(got) == 0 || got[0] != "noaa" {
 		t.Errorf("NearestPresetNames(nooa) = %v, want the noaa alias first", got)
 	}
-	if got := NearestPresetNames("xyzxyz"); len(got) != 0 {
+	if got := nearestPresetNames("xyzxyz"); len(got) != 0 {
 		t.Errorf("NearestPresetNames(xyzxyz) = %v, want none", got)
 	}
-	if got := NearestPresetNames("n"); len(got) > 3 {
+	if got := nearestPresetNames("n"); len(got) > 3 {
 		t.Errorf("NearestPresetNames(n) returned %d names, want at most 3", len(got))
 	}
 }
