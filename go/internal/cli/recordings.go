@@ -18,6 +18,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -268,7 +269,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 	// directory takes on disk, sidecars included, which is the bigger and different number.
 	fmt.Fprintln(out, leadLabel(s, "Holds    ", fmt.Sprintf("%s of signal in %s, %s of samples",
 		forPhrase(time.Duration(m.DurationMs())*time.Millisecond),
-		plural(len(m.Parts), "part"), recordingSize(m.Bytes))))
+		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))))
 	if !m.StartedAt().IsZero() {
 		when := m.StartedAt().Format("2006-01-02 15:04:05")
 		if m.EndedBy != "" {
@@ -286,7 +287,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 	if m.Gate != nil {
 		gate := fmt.Sprintf("%s, %d ms pre-roll, %s hang, %s", m.Gate.Kind, m.Gate.PreRollMs,
 			forPhrase(time.Duration(m.Gate.HangMs)*time.Millisecond),
-			plural(m.SquelchOpens(), "transmission"))
+			words.Count(m.SquelchOpens(), "transmission"))
 		fmt.Fprintln(out, leadLabel(s, "Gate     ", gate))
 	}
 	fmt.Fprintln(out, s.Muted(dir))
@@ -334,7 +335,7 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 	// Gaps where nothing was recorded are listed here rather than hidden inside a file, so the
 	// recording's timeline matches the air (AGENTS.md invariant 5).
 	if len(m.Gaps) > 0 && m.SampleRate > 0 {
-		fmt.Fprintf(out, "\n%s\n", s.Muted(plural(len(m.Gaps), "gap")+" where nothing was recorded:"))
+		fmt.Fprintf(out, "\n%s\n", s.Muted(words.Count(len(m.Gaps), "gap")+" where nothing was recorded:"))
 		for _, g := range m.Gaps {
 			span := float64(g.ToSample-g.FromSample) / float64(anchorRate(m))
 			fmt.Fprintf(out, "  %s  %s\n", forPhrase(time.Duration(span*float64(time.Second))), s.Muted(g.Reason))
@@ -523,7 +524,7 @@ func deleteSummary(r *leylinev1.Resource) string {
 	}
 	parts, _ := strconv.Atoi(m["parts"])
 	return fmt.Sprintf("%s, %s in %s, %s", head, recordingLength(m["duration_ms"]),
-		plural(parts, "part"), recordingSize(r.GetSizeBytes()))
+		words.Count(parts, "part"), recordingSize(r.GetSizeBytes()))
 }
 
 // recordingDeleteFailure adds what to do next to the daemon's refusal: a running recording is

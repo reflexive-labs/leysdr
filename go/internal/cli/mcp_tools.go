@@ -18,6 +18,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
@@ -295,7 +296,7 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 	fmt.Fprintf(&b, "%s, last %d of %d daemon lines", path, len(lines), len(all))
 	if driver > 0 {
-		fmt.Fprintf(&b, " (%s from the radio driver left out; include_driver: true shows them)", plural(driver, "line"))
+		fmt.Fprintf(&b, " (%s from the radio driver left out; include_driver: true shows them)", words.Count(driver, "line"))
 	}
 	b.WriteString(":\n")
 	for _, l := range lines {
@@ -426,8 +427,8 @@ func refuseRetune(s *session, freq uint64, bw uint32, takeOver bool) error {
 		return nil
 	}
 	return fmt.Errorf("the radio is on %s with %s listening: %s. Retuning to %s would silence %s. %s",
-		leyline.FormatFrequency(cap.GetCenterHz()), plural(len(who), "channel"), strings.Join(who, ", "),
-		leyline.FormatFrequency(freq), themOrIt(len(who)), takeOverHint)
+		leyline.FormatFrequency(cap.GetCenterHz()), words.Count(len(who), "channel"), strings.Join(who, ", "),
+		leyline.FormatFrequency(freq), words.Pick(len(who), "it", "them"), takeOverHint)
 }
 
 // ---------- observe ----------
@@ -501,7 +502,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		}
 		if hidden := len(scan.Detections) - len(kept.Detections); hidden > 0 {
 			text += fmt.Sprintf("%s under %.0f dB left out of the result; ley://scans/%s carries all %d.\n",
-				plural(hidden, "detection"), o.minSNR, scan.GetScanId(), len(scan.Detections))
+				words.Count(hidden, "detection"), o.minSNR, scan.GetScanId(), len(scan.Detections))
 		}
 		scan = kept
 	}
@@ -840,7 +841,7 @@ func (sum *listenSummary) text(s *session, dur time.Duration) string {
 	var b strings.Builder
 	what := audioWhat(s)
 	segs := sum.transcript.GetSegments()
-	fmt.Fprintf(&b, "%s for %s: %s", what, fmtDuration(dur.Seconds()), plural(len(segs), "transmission"))
+	fmt.Fprintf(&b, "%s for %s: %s", what, fmtDuration(dur.Seconds()), words.Count(len(segs), "transmission"))
 	if len(segs) > 0 {
 		longest, loudest := math.NaN(), math.NaN()
 		for _, seg := range segs {
@@ -1208,34 +1209,12 @@ func (srv *mcpServer) emptyPageReason(ctx context.Context, q *leylinev1.RecordQu
 	switch {
 	case len(kept) > 0:
 		return fmt.Sprintf("no records: the kept %s for %s (%s) %s written none%s. The band may be quiet, or the decoder may hear nothing: listen_summary on the job's channel says whether audio is flowing, and get_job whether the decoder is still up.",
-			noun(len(kept), "job"), what, strings.Join(kept, ", "), hasOrHave(len(kept)), narrowed)
+			words.Noun(len(kept), "job"), what, strings.Join(kept, ", "), words.Pick(len(kept), "has", "have"), narrowed)
 	case len(unkept) > 0:
 		return fmt.Sprintf("no records: the %s for %s (%s) %s started without keep, so records stay on the live stream and never reach the store. list_entities folds a running job's records; start_decode_job with keep: true stores them.",
-			noun(len(unkept), "decode job"), what, strings.Join(unkept, ", "), wasOrWere(len(unkept)))
+			words.Noun(len(unkept), "decode job"), what, strings.Join(unkept, ", "), words.Pick(len(unkept), "was", "were"))
 	}
 	return fmt.Sprintf("no records: no kept decode job for %s has run, so the store has nothing to search (the daemon lists the last sixteen finished jobs; a restart forgets them). start_decode_job with keep: true stores what it hears.", what)
-}
-
-// noun is the word alone, pluralised: "job", "jobs".
-func noun(n int, word string) string {
-	if n == 1 {
-		return word
-	}
-	return word + "s"
-}
-
-func hasOrHave(n int) string {
-	if n == 1 {
-		return "has"
-	}
-	return "have"
-}
-
-func wasOrWere(n int) string {
-	if n == 1 {
-		return "was"
-	}
-	return "were"
 }
 
 type listEntitiesArgs struct {
@@ -1323,7 +1302,7 @@ fold:
 	}
 	table.Expire(time.Now(), silence)
 	app, out, _ := srv.toolApp()
-	how := fmt.Sprintf("%s, %s", protocol, plural(table.Len(), "transmitter"))
+	how := fmt.Sprintf("%s, %s", protocol, words.Count(table.Len(), "transmitter"))
 	if started {
 		how += fmt.Sprintf(" heard in %s (a decoder was started for this call and stopped after it)", fmtDuration(dur.Seconds()))
 	} else {

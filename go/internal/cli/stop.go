@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -207,7 +208,7 @@ func deviceDoing(st *leylinev1.GetStateResponse, d *leylinev1.DeviceDescriptor) 
 	}
 	doing := fmt.Sprintf("%s %s", channelFreqLabel(st, chs[0]), strings.ToUpper(leyline.ModeName(chs[0].Mode)))
 	if len(chs) > 1 {
-		doing += fmt.Sprintf(" and %s", plural(len(chs)-1, "other channel"))
+		doing += fmt.Sprintf(" and %s", words.Count(len(chs)-1, "other channel"))
 	}
 	return doing
 }

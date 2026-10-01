@@ -13,6 +13,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -552,7 +553,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		if hidden.any() {
 			// Filtered carriers are not the same as an empty band, and the remedy differs: a
 			// longer watch will not bring back a carrier a filter left out.
-			fmt.Fprintf(app.Stderr, "%s heard, all filtered out (%s)\n", plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o))
+			fmt.Fprintf(app.Stderr, "%s heard, all filtered out (%s)\n", words.Count(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o))
 			fmt.Fprintf(app.Stderr, "drop the filters to see them: %s\n", st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
 			return
 		}
@@ -606,13 +607,13 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		label = ch + " (" + trimZeros(float64(best.centerHz)/1e6) + ")"
 	}
 	fmt.Fprintf(app.Stderr, "%s over %s; strongest %s at %s\n",
-		plural(len(rows), "carrier"), forPhrase(watched), label, snrInk(st, o.minSNR, best.peakSNR, fmt.Sprintf("%.0f dB", best.peakSNR)))
+		words.Count(len(rows), "carrier"), forPhrase(watched), label, snrInk(st, o.minSNR, best.peakSNR, fmt.Sprintf("%.0f dB", best.peakSNR)))
 	if note := refinedNote(rows); note != "" {
 		fmt.Fprintln(app.Stderr, st.Muted(note))
 	}
 	if hidden.any() {
 		fmt.Fprintf(app.Stderr, "%s not shown (%s); %s\n",
-			plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o), st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
+			words.Count(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o), st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
 	}
 }
 
@@ -630,7 +631,7 @@ func hiddenReasons(h monitorHidden, o monitorOptions) string {
 		parts = append(parts, fmt.Sprintf("%d held under %s", h.brief, forPhrase(o.minHold)))
 	}
 	if h.skirt > 0 {
-		parts = append(parts, fmt.Sprintf("%s of a stronger carrier", plural(h.skirt, "skirt")))
+		parts = append(parts, fmt.Sprintf("%s of a stronger carrier", words.Count(h.skirt, "skirt")))
 	}
 	return strings.Join(parts, ", ")
 }

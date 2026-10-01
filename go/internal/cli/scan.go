@@ -16,6 +16,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -419,7 +420,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 		// remedy differs: a longer dwell will not bring back a row --min-snr filtered out.
 		if hidden := len(scan.Detections); hidden > 0 {
 			fmt.Fprintf(app.Stderr, "%s below %.0f dB, so nothing to show%s\n",
-				plural(hidden, "signal"), o.minSNR, floorPhrase(scan))
+				words.Count(hidden, "signal"), o.minSNR, floorPhrase(scan))
 			fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley scan "+scanArg(o)))
 			return
 		}
@@ -442,7 +443,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 	// tableStyle, not app.Style: off a terminal the width is unknown rather than 80, and fitting
 	// to 80 would silently drop the BAND column out of a piped table.
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
-	fmt.Fprintf(app.Stderr, "%s%s%s\n", plural(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
+	fmt.Fprintf(app.Stderr, "%s%s%s\n", words.Count(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
 	unconfirmedNote(app, rows)
 	coverageNote(app, scan, o)
 	if best := strongest(rows); best != nil {

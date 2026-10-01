@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -283,7 +284,7 @@ func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part in
 	}
 	if chosen == nil {
 		return "", usageErrorf("%s has no part %d; it has %s (ley recordings show %s lists them)",
-			jobID, part, plural(len(manifest.Parts), "part"), jobID)
+			jobID, part, words.Count(len(manifest.Parts), "part"), jobID)
 	}
 	path := filepath.Join(dir, chosen.File)
 	if manifest.Kind != "iq" {

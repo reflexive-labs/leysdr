@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -488,10 +489,10 @@ func (s *session) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		if n := s.activeChannels(cap.CaptureId); n > 0 && !o.retune {
 			hint := s.takeOverHint
 			if hint == "" {
-				hint = fmt.Sprintf("Add --retune to move it anyway, or free %s with: ley stop --all", themOrIt(n))
+				hint = fmt.Sprintf("Add --retune to move it anyway, or free %s with: ley stop --all", words.Pick(n, "it", "them"))
 			}
 			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. %s",
-				leyline.FormatFrequency(cap.CenterHz), plural(n, "channel"), leyline.FormatFrequency(o.freq), themOrIt(n), hint)
+				leyline.FormatFrequency(cap.CenterHz), words.Count(n, "channel"), leyline.FormatFrequency(o.freq), words.Pick(n, "it", "them"), hint)
 		}
 		s.say("retuning capture %s from %s to %s\n", cap.CaptureId, leyline.FormatFrequency(cap.CenterHz), leyline.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
@@ -631,7 +632,7 @@ func (s *session) refuseRetuneOverRecording(captureID string, retune bool) error
 			st.Cmd("ley jobs cancel "+ids[0])
 	}
 	return fmt.Errorf("%s recording on this radio (%s); retuning would leave a gap in %s. %s",
-		plural(len(recs), "job is"), strings.Join(ids, ", "), themOrIt(len(recs)), hint)
+		words.Count(len(recs), "job is"), strings.Join(ids, ", "), words.Pick(len(recs), "it", "them"), hint)
 }
 
 // activeChannels counts the ACTIVE channels riding on a capture in the mirror.
@@ -643,21 +644,6 @@ func (s *session) activeChannels(captureID string) int {
 		}
 	}
 	return n
-}
-
-// plural renders "1 channel" / "2 channels".
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-func themOrIt(n int) string {
-	if n == 1 {
-		return "it"
-	}
-	return "them"
 }
 
 // applyGain writes --gain to the capture, one stage at a time in the order
@@ -951,7 +937,7 @@ func (s *session) teardown() {
 	}
 	if len(others) > 0 {
 		fmt.Fprintf(s.app.Stderr, "leaving capture %s running: %s still on it (%s); ley stop --all frees the radio\n",
-			s.capture.CaptureId, plural(len(others), "other channel"), strings.Join(others, ", "))
+			s.capture.CaptureId, words.Count(len(others), "other channel"), strings.Join(others, ", "))
 		return
 	}
 	if _, err := s.client.Control.DestroyCapture(ctx, &leylinev1.DestroyCaptureRequest{CaptureId: s.capture.CaptureId}); err != nil && leyline.Code(err) != leyline.CodeCaptureNotFound {

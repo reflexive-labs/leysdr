@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -314,7 +315,7 @@ func (d *Daemon) runRecord(jobID string) {
 			rec.closePart(partStartMs, elapsed, clipped)
 		}
 		j.proto.StatusDetail = fmt.Sprintf("recording %s: %s, %d part%s, %d KB",
-			rec.manifest.Kind, forSeconds(elapsed), rec.parts(partOpen), plural(rec.parts(partOpen)), rec.kb(partOpen, elapsed-partStartMs))
+			rec.manifest.Kind, forSeconds(elapsed), rec.parts(partOpen), words.Pick(rec.parts(partOpen), "", "s"), rec.kb(partOpen, elapsed-partStartMs))
 		done := cfg.GetDurationMs() > 0 && elapsed >= cfg.GetDurationMs()
 		if done && partOpen {
 			partOpen = false
@@ -544,13 +545,6 @@ func forSeconds(ms int64) string {
 		return fmt.Sprintf("%.0f s", s)
 	}
 	return fmt.Sprintf("%d m %02d s", int(s)/60, int(s)%60)
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 // ---------- the files ----------

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -171,7 +172,7 @@ func (v *waterfallView) gutter(elapsed float64) string {
 // it was, and transmission timing is what this view reports.
 func (v *waterfallView) gapRow(rows uint64) string {
 	g := v.st.Glyphs()
-	text := " " + plural(int(rows), "row") + " lost "
+	text := " " + words.Count(int(rows), "row") + " lost "
 	width := v.width - waterfallGutter
 	side := (width - len(text)) / 2
 	if side < 2 {

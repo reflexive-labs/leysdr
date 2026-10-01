@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -298,12 +299,12 @@ func recordingSummary(m *leyline.RecordingManifest) string {
 	fmt.Fprintf(&b, "%s %s, %s of signal in %s, %s",
 		what, leyline.FormatFrequency(m.FrequencyHz),
 		forPhrase(time.Duration(m.DurationMs())*time.Millisecond),
-		plural(len(m.Parts), "part"), recordingSize(m.Bytes))
+		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))
 	if m.Gate != nil {
-		fmt.Fprintf(&b, "; the squelch opened %s", plural(m.SquelchOpens(), "time"))
+		fmt.Fprintf(&b, "; the squelch opened %s", words.Count(m.SquelchOpens(), "time"))
 	}
 	if len(m.Gaps) > 0 {
-		fmt.Fprintf(&b, "; %s where nothing was recorded", plural(len(m.Gaps), "gap"))
+		fmt.Fprintf(&b, "; %s where nothing was recorded", words.Count(len(m.Gaps), "gap"))
 	}
 	if m.EndedBy != "" {
 		fmt.Fprintf(&b, "; ended by %s", m.EndedBy)
