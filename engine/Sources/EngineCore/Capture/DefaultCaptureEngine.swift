@@ -73,7 +73,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
                 await device.stopStreaming()
                 streaming = false
             }
-            core.stopThread()
+            await stopDSPThread()
             await device.close()
             started = false
             throw error
@@ -90,7 +90,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
         started = false
         core.setChannels([])
         core.setTaps([])
-        core.stopThread()
+        await stopDSPThread()
         for id in channelOrder {
             await channelTable[id]?.close()
         }
@@ -100,6 +100,13 @@ public actor DefaultCaptureEngine: CaptureEngine {
         tapTable = []
         for t in taps { await t.closeTap() }
         core.finish()
+    }
+
+    /// Joins the DSP thread on a dedicated thread (`BlockingWork`): the join lasts until the loop
+    /// finishes the block in hand and its next ring wait times out, and an actor must not park a
+    /// cooperative-pool thread for that long.
+    private func stopDSPThread() async {
+        try? await BlockingWork.run { [core] in core.stopThread() }
     }
 
     private func beginStreaming() async throws {

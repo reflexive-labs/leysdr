@@ -262,7 +262,8 @@ public final class CaptureDSPCore: @unchecked Sendable {
         t.start()
     }
 
-    /// Stops and joins the DSP thread. Blocks the caller briefly (≤ one wait timeout).
+    /// Stops and joins the DSP thread. Blocks the caller for up to one block's processing plus one
+    /// ring wait (50 ms), so a caller in Swift concurrency runs it through `BlockingWork`.
     public func stopThread() {
         guard running.exchange(false, ordering: .acquiringAndReleasing) else { return }
         joined.wait()

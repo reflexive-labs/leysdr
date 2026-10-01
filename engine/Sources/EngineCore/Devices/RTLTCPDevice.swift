@@ -358,6 +358,10 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     }
 
     /// Shuts the socket down, joins the reader and releases the descriptor. Safe to call twice.
+    ///
+    /// The shutdown makes the reader's `recv` return at once, but the reader may be inside a
+    /// `deliver` call, so the join waits on a dedicated thread (`BlockingWork`) rather than a
+    /// cooperative-pool thread every actor shares.
     public func close() async {
         let (sock, t): (Int32, Thread?) = withLock {
             closing = true
@@ -366,7 +370,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
             if fd >= 0 { RTLTCPDevice.shutdownFD(fd) }
             return (fd, thread)
         }
-        if t != nil { joined.wait() }
+        if t != nil { try? await BlockingWork.run { [joined] in joined.wait() } }
         withLock {
             thread = nil
             if sock >= 0 { RTLTCPDevice.closeFD(sock) }
@@ -450,9 +454,10 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     }
 
     /// Disarms delivery; the connection stays up (the reader keeps draining so the server does not
-    /// drop us). Returns once the reader can no longer be inside `deliver`.
+    /// drop us). Returns once the reader can no longer be inside `deliver`; that wait runs on a
+    /// dedicated thread (`BlockingWork`), because it lasts as long as the `deliver` in flight.
     public func stopStreaming() async {
-        disarmAndWaitForReader()
+        try? await BlockingWork.run { [self] in disarmAndWaitForReader() }
     }
 
     /// Synchronous body of stopStreaming. The reader snapshots (streaming, deliver) and raises

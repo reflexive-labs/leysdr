@@ -525,6 +525,9 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// keeps that requirement inside this file.
     private func setStreamError(_ error: EngineError?) { _streamError = error }
 
+    /// Cancels the USB stream and joins its thread. The wait for the thread to start, the cancel
+    /// loop and the bounded join together can take about 4 s, so they run on a dedicated thread
+    /// (`BlockingWork`) rather than parking a cooperative-pool thread every actor shares.
     public func stopStreaming() async {
         let (d, wasStreaming): (OpaquePointer?, Bool) = withLock {
             guard thread != nil, let d = dev else { return (nil, false) }
@@ -532,6 +535,16 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
             return (d, streaming)
         }
         guard let d else { return }
+        // An OpaquePointer is not Sendable; the handle crosses to the worker thread as its address.
+        let address = UInt(bitPattern: d)
+        try? await BlockingWork.run { [self] in
+            guard let d = OpaquePointer(bitPattern: address) else { return }
+            cancelAndJoin(d, wasStreaming: wasStreaming)
+        }
+    }
+
+    /// The blocking half of `stopStreaming`, on a `BlockingWork` thread.
+    private func cancelAndJoin(_ d: OpaquePointer, wasStreaming: Bool) {
         if wasStreaming {
             // Wait for the USB thread to be scheduled: rtlsdr_cancel_async is a no-op (returns -2)
             // until rtlsdr_read_async has set RTLSDR_RUNNING on that thread.
