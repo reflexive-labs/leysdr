@@ -1,8 +1,8 @@
-# Mac SDR — User Stories by Milestone
+# Plan: Leyline SDR user stories by milestone
 
 Persona baseline: a licensed ham / developer with an RTL-SDR (USB or rtl_tcp) plugged into a Mac, or IQ files. Stories are acceptance-level, not exhaustive.
 
-Positioning note (post ham-radio-apps.com review): Leyline serves the *spectrum explorer* — generic SDR hardware, wideband RX, monitoring, agents — not the commercial-transceiver operator, who is well served by the Roskosch per-brand apps (SDR-Control et al.). Zero device overlap with that catalog. Their UX standard ("just works, no drivers, no cables") is table stakes for us, not a differentiator. Transceiver-operation features (logbook, FT8 QSO workflow, TX operation) are their turf; entering it is a deliberate future decision, not scope drift.
+Positioning note: Leyline serves the *spectrum explorer* — generic SDR hardware, wideband RX, monitoring, agents — not the operator of a commercial transceiver. "Just works, no drivers, no cables" is the baseline. Transceiver-operation features (logbook, FT8 QSO workflow, TX operation) are out of scope; entering them is a deliberate future decision, not scope drift.
 
 ## V0 — Engine + CLI only
 Proves the daemon, device layer, and control/data planes with no UI investment.

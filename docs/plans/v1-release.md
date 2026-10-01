@@ -266,13 +266,10 @@ CLI behaviour tested against the wrong response:
 | REL-12 | no macOS CI job runs `ley`, `make e2e`, or the launchd path | |
 | REL-13 | no CONTRIBUTING, CHANGELOG, SECURITY, issue templates — the three files **added** (`66caa35`); issue templates remain (R-9) | |
 | REL-14 | no contact, repository URL or issues link anywhere — **fixed** in README (`3709ba0`); the repo has no remote yet | |
-| REL-15 | `docs/dev/setup.md:118-124` ships one sandbox's `/home/moatuser` paths as instructions; `moat.yaml` at the root | |
-| REL-16 | two plan files cite review reports under `/tmp` on one machine; their `#N` references resolve nowhere | |
 | REL-17 | trademark check outstanding (D3) | |
 | REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`3709ba0`) | — |
-| REL-19 | `engine/launchd/com.leyline.daemon.plist.template` is referenced by nothing and disagrees with the plist `daemon.go:151` writes | |
+| REL-19 | a launchd plist template under `engine/launchd/` was referenced by nothing and disagreed with the plist `ley daemon install` writes — **fixed** (deleted) | — |
 | REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails with a clear message; stubs say they are unimplemented | — |
-| REL-24 | the repo root is written for an agent (CLAUDE.md, moat.yaml), not a person | |
 | REL-26 | S1/S2 never measured on hardware (D5) | |
 | REL-27 | the audio path (`CoreAudioSink.swift`, all of it under `canImport(AVFoundation)`) has no automated proof anywhere; the headline story rests on a Mac acceptance run (R-17) | yes |
 | REL-28 | `ley phosphor` has never run against any daemon in a test: the fake lacks the PERSISTENCE stream (R-14) | yes |
@@ -304,12 +301,10 @@ CLI behaviour tested against the wrong response:
 ## Work list
 
 Status legend: `[ ]` pending, `[x]` done, `[-]` dropped with reason, `[d]` waits on a decision above.
-Sizes: S under a day, M a few days, L a week or two. "Sonnet"/"Opus"/"owner" shows who does it: the
-mechanical items go to the smaller model, the scoped code changes to the larger one, and the
-measurements and decisions to the person with the hardware. The review findings from the same pass
-get their own list, `docs/plans/archive/v1-review-fixes.md`, written when the review returns; they land first.
+Sizes: S under a day, M a few days, L a week or two. The review findings from the same pass
+get their own list, `docs/plans/archive/v1-review-fixes.md`; they land first.
 
-### R-1 `[x]` The documents tell the truth (S, Sonnet)
+### R-1 `[x]` The documents tell the truth (S)
 
 Every item in "Documentation drift" above except README.md, which R-8 rewrites whole. Plus:
 
@@ -330,19 +325,17 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
   "Bubble Tea TUI" → "terminal live views today (`spectrum --watch`, `waterfall`, `phosphor`); the
   dashboard is Milestone D.14" in CLAUDE.md, `docs/reference/cli.md` and `docs/plans/archive/planning-phase.md`; tick S3 in
   `docs/plans/archive/planning-phase.md` §6 and point at the decision note.
-- `docs/dev/setup.md`: replace the `/home/moatuser` paragraph with the generic recipe (a Swift 6.2
-  toolchain, librtlsdr headers or a stub `.so` that reports zero devices, `protoc`; `LD_LIBRARY_PATH`
-  at the stub for `make e2e`) with no personal paths; state that a bare `swift test` skips the
+- `docs/dev/setup.md`: replace one machine's paths with a generic Linux recipe; state that a bare `swift test` skips the
   fixture round-trips and a bare `go test ./...` skips the e2e package (both visibly only under
   `-v`), which is why `make swift-test` and `make e2e` are the gate.
 - `docs/plans/archive/engine-review-fixes.md` and `docs/plans/archive/cli-review-fixes.md` headers: the review reports were
   ephemeral; the `#N` numbers are kept because the commit messages cite them.
-- Delete `engine/launchd/com.leyline.daemon.plist.template` (REL-19): `ley daemon install` writes
-  the plist from `go/internal/cli/daemon.go`, and the template disagrees with it.
+- Delete the launchd plist template under `engine/launchd/` (REL-19): `ley daemon install` writes
+  the plist from `go/internal/cli/daemon.go`, and the template disagreed with it.
 - `docs/guide/using-ley.md`: a section for `ley waterfall` and `ley phosphor` (what question each answers,
   from `docs/design/signal-views.md` and `docs/design/band-watching.md`), and the two factual fixes.
 
-### R-2 `[x]` One version, stamped at build time (S, Opus)
+### R-2 `[x]` One version, stamped at build time (S)
 
 - A root `VERSION` file is the single source of truth (content stays `0.1.0-dev` until the owner
   tags; the release step bumps it).
@@ -359,13 +352,13 @@ Every item in "Documentation drift" above except README.md, which R-8 rewrites w
 - `docs/dev/setup.md` gets a "Cutting a release" paragraph: bump `VERSION`, `make version`, commit,
   tag `v<VERSION>`.
 
-### R-3 `[x]` CI proves the product on the product's platform (S, Sonnet)
+### R-3 `[x]` CI proves the product on the product's platform (S)
 
 `.github/workflows/ci.yml` `swift-macos` job also runs `make go-test lint e2e` (the e2e target
 builds both binaries and the fixtures it needs). Note in the job why: the Go clients and the UDS
 contract were previously proven only on Linux.
 
-### R-4 `[x]` The engine test gate is deterministic (M, Opus)
+### R-4 `[x]` The engine test gate is deterministic (M)
 
 `RTLTCPDeviceTests.testLinkLossReleasesSocketAndReopenReconnects`
 (`engine/Tests/EngineCoreTests/RTLTCPTests.swift:365-392`) fails intermittently in a full `swift test`
@@ -377,7 +370,7 @@ the listener is closed and joined, or whether the device's reconnect path has a 
 harness or the device accordingly, and prove it with ten consecutive full runs. If the fix is in
 `RTLTCPDevice`, add the regression test.
 
-### R-4a `[ ]` One intermittent failure still to catch with its name on (owner, Mac)
+### R-4a `[ ]` One intermittent failure still to catch with its name on (Mac)
 
 The e2e half of this item is closed: `TestCLIAgainstRealDaemon`'s 0.42 s failure was caught with
 its message on the fourth logged run — the DB_U8 and DB_F32 spectrum rows' peak bins two apart —
@@ -395,7 +388,7 @@ lost the same way). Both look like start-up races under load rather than product
 now keeps failure lines; the next occurrence will show the test's name. If either shows on the Mac,
 keep the whole log and file it against this item.
 
-### R-5 `[x]` Every verb answers `--json` or refuses it (M, Opus)
+### R-5 `[x]` Every verb answers `--json` or refuses it (M)
 
 - `ley waterfall --json` prints one NDJSON object per rendered row in the existing bulk-row shape
   (`{seq, sample_index, center_hz, span_hz, bins, floor_db}`) plus `looks` (the look count the daemon
@@ -410,7 +403,7 @@ keep the whole log and file it against this item.
   JSON on stdout under `--json` (against the fake) or exits 2 with the documented message — so the
   V0 story cannot regress silently again.
 
-### R-6 `[d]` `ley play` for IQ files this project did not write (M, Opus; after D1)
+### R-6 `[d]` `ley play` for IQ files this project did not write (M; after D1)
 
 A `.cf32` without a sidecar is refused by the daemon (`DEVICE_IO: cannot stat sidecar`) while
 `go/internal/cli/play.go:30` says a missing sidecar is not an error. Additive
@@ -448,7 +441,7 @@ than paraphrasing), the docs map, a status section that agrees with `docs/plans/
 
 ### R-10 `[ ]` (folded into R-1: delete the dead launchd template)
 
-### R-11 `[x]` Recording (L, Opus; in every cut, so it waited only on the review fixes)
+### R-11 `[x]` Recording (L; in every cut, so it waited only on the review fixes)
 
 Landed 2026-09-18 as Milestone C.12, to `docs/design/recording.md`, which the design note this item
 asked for grew into. What shipped differs from the sketch here in one decision and gains two
@@ -467,7 +460,7 @@ features the design added:
   `SCAN`, so the service covers every kind, not one), `ley record` / `ley recordings` /
   `ley recordings show` / `ley recordings path`, and `ley play` on a `ley://` URI.
 
-### R-12 `[x]` MCP adapter (L, Opus; after D1 and R-13)
+### R-12 `[x]` MCP adapter (L; after D1 and R-13)
 
 Landed 2026-09-14 as `ley mcp`, a subcommand rather than a `leymcp` binary, per the decision in
 `docs/plans/mcp.md` (which superseded this item's shape); the tools the daemon can back are in
@@ -483,14 +476,14 @@ the reference client (`docs/design/semantic-tier.md`), so every tool ships with 
 `tune`, `listen`, `spectrum` exist, `jobs` arrives with R-15, `recordings` with R-11, and `watch`
 stays a stub until D.15 — the adapter's `start_job(watch)` refuses with the same sentence.
 
-### R-13 `[d]` The client library carries the behaviour, not just the vocabulary (M, Opus; after D1)
+### R-13 `[d]` The client library carries the behaviour, not just the vocabulary (M; after D1)
 
 LIB-1. Promote from `go/internal/cli/session.go`, `tune.go`, `set.go`, `scan.go` into `go/pkg/leyline`:
 the state mirror with event folding (`fold`), bring-up of a capture and channel with the tune decision
 logic, the auto-squelch measurement, the live parameter write with confirmation, and following a scan
 job to completion. The CLI becomes a renderer over those. Prerequisite for R-12 and for D.14.
 
-### R-14 `[x]` The fake daemon tells the daemon's story (M, Opus)
+### R-14 `[x]` The fake daemon tells the daemon's story (M)
 
 The ten divergences listed under "The wire contract". For each: make the fake match the Swift daemon's
 semantics, and add the CLI test that could not exist before (a `ley phosphor` run against the fake;
@@ -501,7 +494,7 @@ last 60 s; the real driver's feature keys — check `RTLSDRDevice.swift` for wha
 `docs/dev/engine-internals.md` if the doc disagrees; `BLIND_SPOT` from the fake when the request falls in
 the DC guard). Split into two commits if it helps: bulk/telemetry parity, then jobs parity.
 
-### R-15 `[x]` Contract hygiene (S, Opus)
+### R-15 `[x]` Contract hygiene (S)
 
 - `go/pkg/leyline/errors.go` gains constants for every code the daemon emits (`BLIND_SPOT`,
   `NO_DEVICE`, `FAILED_PRECONDITION`, `INTERNAL`); `scan.go:274` uses them; a test asserts the Go list
@@ -516,7 +509,7 @@ the DC guard). Split into two commits if it helps: bulk/telemetry parity, then j
   running or finished scan can be listed and stopped from another terminal (the RPCs exist in both
   daemons and are called by nothing).
 
-### R-16 `[ ]` Measurements only the owner can make (owner)
+### R-16 `[ ]` Measurements only the owner can make
 
 - S2 on an M-series Mac under Instruments against `docs/plans/build-order.md`'s criteria; record the result
   as `docs/decisions/S2-throughput.md`, pass or fail.
@@ -532,16 +525,16 @@ tone audible, a real station audible, `set` from a second terminal, `scan` of a 
 record → play, `daemon install` / `status` / `uninstall`, unplug and replug — plus the mechanical
 steps (VERSION bump, `make check` on both hosts, tag, release notes).
 
-### R-18 `[d]` Trademark check (owner; D3)
+### R-18 `[d]` Trademark check (D3)
 
-### R-19 `[x]` Signposts on the sample-path code added since Milestone B (S, Opus)
+### R-19 `[x]` Signposts on the sample-path code added since Milestone B (S)
 
 `Signposts.swift` names six intervals and none covers `AudioSink.write` (`CoreAudioSink`,
 `CallbackSink`), the daemon's `FrameRing` writes, the persistence accumulator, or the sweep's row
 collection. Add the names and the intervals (the wrappers are already allocation-free and compile to
 nothing off macOS), so the S1/S2 Instruments runs in R-16 can see the whole path.
 
-### R-21 `[ ]` Hardware-derived fixtures, optional and local (S, Opus)
+### R-21 `[ ]` Hardware-derived fixtures, optional and local (S)
 
 `fixtures/ht-narrow.cu8` (ten seconds of a narrow-mode handheld on 147.435 MHz with a 100 Hz PL,
 recorded with `rtl_sdr`, gitignored) is the first real capture the views were checked against, and
@@ -554,7 +547,7 @@ the channel> -s 2400000 -g 0 -n 24000000`, the sidecar, `ley play … --freq`). 
 waveform's blank-when-squelched rule over a real key-up, and `levels` reading the PL band within 2
 dB of the value measured here.
 
-### R-22 `[ ]` The content layer needs a specification before pricing (M, owner + Opus)
+### R-22 `[ ]` The content layer needs a specification before pricing (M)
 
 D2 makes a curated content layer half of the revenue model and nothing describes it. Write
 `docs/design/content-layer.md` before v1 pricing is announced: what a pack is (band plans,
@@ -564,7 +557,7 @@ community submits and who curates, and the licence per pack (data, not code: CC-
 decided per source). The daemon-side home for the data is D6 (bookmarks live in the daemon), so the
 document also specifies which pack contents become daemon state and which stay files.
 
-### R-23 `[x]` One gain syntax, one gain line (S, Opus)
+### R-23 `[x]` One gain syntax, one gain line (S)
 
 Asked 2026-09-24 after M2-10 gave `--gain` stage pairs: "let's align all the gain flags." The
 inventory found four surfaces still on older shapes and one print form that differs by command.
@@ -626,7 +619,7 @@ float's tail, a HackRF with the AMP off and on, and with the device gone),
 cases in `TestGainsStringUnknownTable`, and on the engine `testTheSweepPinsEveryStageItIsGiven`
 and `testTheSweepFailsOnAStageTheRadioDoesNotHave`.
 
-### R-20 `[x]` Remote radios become daemon state (M, Opus; after D7)
+### R-20 `[x]` Remote radios become daemon state (M; after D7)
 
 Today a dongle served by `rtl_tcp` is a daemon flag (`leylined --rtltcp host:port`) or an environment
 variable, read once at startup. Under launchd that means editing the plist and restarting the
@@ -651,7 +644,7 @@ drives over the one protocol; this should be too.
 - Fake and e2e: the fake accepts any `rtl_tcp` source and manufactures the descriptor; the e2e
   attaches the engine tests' fake `rtl_tcp` server.
 - Attach dedupes on host and port before connecting, which closes the duplicate-attach leak the
-  review found (q-swift-control-3).
+  v1 review found (q-swift-control-3 in `archive/v1-review-fixes.md`).
 
 Remote *control* of the daemon (a TCP listener with authentication) is a separate milestone and
 this does not touch it. Discovery (Bonjour) is not worth it yet: `rtl_tcp` does not advertise.

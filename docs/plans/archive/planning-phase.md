@@ -1,4 +1,4 @@
-# Mac SDR App — Planning & Design Phase
+# Plan: Leyline SDR planning and design phase
 
 Goal for this phase: resolve the open architectural questions and land interface designs in code (types, interfaces, protocol schemas) — no function bodies yet.
 

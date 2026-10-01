@@ -1,18 +1,8 @@
----
-title: "Plan: Bands, channels and bookmarks"
-type: feat
-date: 2026-09-28
-artifact_contract: ce-unified-plan/v1
-product_contract_source: legacy-requirements
-origin: docs/design/channels.md
-execution: code
----
-
 # Plan: Bands, channels and bookmarks
 
 Status: implemented 2026-09-29. All seven units and the review follow-up are on `main`, the whole
-gate is green, and `app.md` holds the remaining Mac acceptance checklist. Implements
-`../design/channels.md` as APP-9 in `app.md`, E.4 in `build-order.md`; the unit detail below is the
+gate is green, and `../app.md` holds the remaining Mac acceptance checklist. Implements
+`../../design/channels.md` as APP-9 in `../app.md`, E.4 in `../build-order.md`; the unit detail below is the
 execution record.
 
 ---
@@ -34,7 +24,7 @@ execution record.
 - **Execution profile.** One unit at a time, in U-ID order; each unit ends in one commit on
   `main` (the repo's rule: no branches, no PRs), signed off, with the Mac checklist in its body.
 - **Who finishes.** The agent finishes every unit's Linux-verifiable work; the owner runs the
-  accumulated Mac checklist in `app.md` under APP-9 afterwards, and fixes from that are new
+  accumulated Mac checklist in `../app.md` under APP-9 afterwards, and fixes from that are new
   items, not this plan's.
 
 ---
@@ -170,7 +160,7 @@ cannot deliver it. The design doc has the full context and the decisions.
   the M1 design handoff and `docs/dev/app.md` follows the file.
 - R26. Every unit that touches `app/Sources/LeylineApp` ends with the by-eye checklist from
   `docs/dev/swift-style.md` section 12 applied to the diff and a Mac checklist appended under
-  APP-9 in `app.md`; the run continues to the next unit without waiting for it.
+  APP-9 in `../app.md`; the run continues to the next unit without waiting for it.
 
 ### Key Decisions
 
@@ -520,7 +510,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   filter, arrow keys, Return), `BandRailView.swift` (plan ticks), `AppSession.swift` (`bands`
   from the fold, `filterQuery`, `pickerShown`, `goTo()`, `bookmarkCurrent` and `renameTuned`
   through KTD7, last-band id mapped to its group), `LeylineApp.swift` (`Go to…` ⌘G in the Tune
-  menu), `Theme.swift` (only if a new token is needed); `app.md` (the Mac checklist);
+  menu), `Theme.swift` (only if a new token is needed); `../app.md` (the Mac checklist);
   `CHANGELOG.md`.
 - **Approach:**
   1. `Bands.sidebar` folds parts into groups and keeps frequency order; `SidebarIndex` builds the
@@ -558,7 +548,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   - `ticks(in:)` returns 7 for NOAA, 22 for GMRS, none for marine.
   - `Plans.name(at:)` names `ch5` for ⌘D on 462.6625 MHz and nil on 146.52 MHz.
 - **Verification:** `make app-test`, `make app-lint`, `make lint`; `make app` builds the façade.
-  Mac checklist (appended to `app.md`): the chevron and the tap, the tuned band expanding, the
+  Mac checklist (appended to `../app.md`): the chevron and the tap, the tuned band expanding, the
   filter's focus and Space, Return tuning, Escape clearing, the picker's arrows and Return on
   marine's list, the ticks' colour against bookmarks, the out-of-range line, the row label
   `ch5`, the inspector title on a plan channel.
@@ -577,7 +567,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   `resumeAfterSweep`, `followScanJob` in the mirror-follow list, `sweeping`, cancel-on-tune in
   `tune(to:)`, `select(band:at:)` and `tune(bookmark:)`, the ask when a record job rides the
   capture), `SidebarView.swift` (the item, Stop, the hit rows, ＋), `BandRailView.swift` (hit
-  ticks with help text); `app.md`; `CHANGELOG.md`.
+  ticks with help text); `../app.md`; `CHANGELOG.md`.
 - **Approach:**
   1. `scanBand(row:)`: if `Recordings.jobs(riding: cap.captureID, in: state)` is non-empty,
      `ask` with `Recordings.retuneWords` for those jobs, Sweep anyway proceeding (the question
@@ -740,7 +730,7 @@ the hand-off, never re-recorded to pass.
 | U1 | the design answers every flow-analysis question; the paths check passes; committed |
 | U2 | both round-trip tests pass on the shared fixture; `make lint` and `make app-lint` green |
 | U3 | every scenario listed passes; goldens re-recorded; seed regenerated and drift test green; `cli.md` and `using-ley.md` updated |
-| U4 | `SidebarTests` pass; façade builds; the Mac checklist is in `app.md` |
+| U4 | `SidebarTests` pass; façade builds; the Mac checklist is in `../app.md` |
 | U5 | `SweepTests` and the e2e pass; the Mac checklist names the audio-gone measurement |
 | U6 | tone validators agree on the listed inputs in both languages; goldens; docs updated |
 | U7 | both parsers produce `expected.json`; `--dry-run` and refusal cases pass; `make check` green |

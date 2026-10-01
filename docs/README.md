@@ -88,7 +88,7 @@ What is being built, in what order, and the record of what each step found.
   daemon can back landed as `ley mcp`, the rest wait on their milestones),
   [the Mac app](plans/app.md) (Milestone E: the façade and the skeleton window landed as APP-1,
   the spectrum and spike S1 are next), and
-  [bands, channels and bookmarks](plans/2026-09-28-2037-feat-bands-channels-bookmarks-plan.md)
+  [bands, channels and bookmarks](plans/archive/channels.md)
   (APP-9 as seven units an agent can run unattended, with the gates and the Mac checklist each
   leaves behind).
 - [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit

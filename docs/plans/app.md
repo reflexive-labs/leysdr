@@ -11,8 +11,9 @@ external prerequisite.
 The core closed on 2026-09-18 (`build-order.md`, "Closing the core"): recording landed as C.12
 and S2 passed on the owner's Mac, so the app is the next thing to build. The designs exist outside
 the repository and arrive as a handoff, the way the terminal visuals did (`../dev/cli-style.md`
-records how that one was reconciled). This plan is the order the app lands in and where each piece
-of the handoff goes.
+records how that one was reconciled). The design handoffs (M1, M2 and M3) were kept outside the
+repository; where this plan cites one, it states the decision it took from it. This plan is the
+order the app lands in and where each piece of the handoff goes.
 
 The app is a peer client (`AGENTS.md`, invariant 1): it links the generated contract and never
 the engine, keeps no state of its own, and every contract addition it needs ships with its `ley`
@@ -165,7 +166,7 @@ strip reports an out-of-capture channel when another client causes one. Unverifi
 the placement and the one-tick order, which `LeylineApp` alone compiles.
 
 Added 2026-09-19: the band rail (`BandRailView.swift`) replaces the band header, from a mockup
-the owner brought and the four answers recorded in the handoff's "Decided 2026-09-19": the
+the owner brought and four answers decided with it on 2026-09-19: the
 band's edges as a track with numbered caps, the slice on screen as a pill, bookmarks and the
 tuned frequency as ticks, the neighbouring bands named at the caps, a drag that moves the
 region and pushes the station only from the middle 80 % of it (`AppSession.pan`: centre and
@@ -186,8 +187,7 @@ file, `bookmarks.json` and `ley bookmarks` entered the M1 cut; CHIRP import foll
 Landed 2026-09-18, the file half: `go/pkg/bookmarks` and `ley bookmarks` (list, add, remove, move,
 `--json`), `Band.StepHz` and `step_hz` in `ley bands --json`, `bands.json` under
 `LeylineClient/Resources` with `make bands-json` and `TestBandsJSONResource` holding it to the table
-(the sidebar's selection and editing model was revised 2026-09-21: the M1 handoff's "Decided
-2026-09-21: the sidebar"); on the Swift side `Bands.swift` (the seed file decoded, the sideband rule
+(the sidebar's selection and editing model was revised in the M1 design on 2026-09-21); on the Swift side `Bands.swift` (the seed file decoded, the sideband rule
 `ley` applies) and `Bookmarks.swift` (the same file, the same shape, reloaded when the directory
 changes), both tested on Linux. The sidebar renders both. Completed 2026-09-29 by APP-9: plan
 channels, the band-spine sidebar, tone and note, and CHIRP import from both clients.
@@ -222,20 +222,20 @@ still opens in auto mode, and a fixed default there is a separate decision.
 
 ## The M1 cut
 
-Decided 2026-09-18 from the M1 design handoff, "What M1 is": a window that tunes and
+Decided 2026-09-18 from the M1 design: a window that tunes and
 plays audio. M1 is APP-2, APP-3, the file half of APP-4, and the device menu with its gain control
-from APP-6; the inspector, recording, lifecycle prose and distribution wait. The handoff's
-"Deliberately not in M1" lists what should not be in the window yet. Two
+from APP-6; the inspector, recording, lifecycle prose and distribution wait. The M1 design
+also listed what should not be in the window yet. Two
 things the handoff settled that the plan had left open: the waterfall runs at 2048 bins and
 30 rows a second (the ladder's ceiling, and what the desktop SDRs do), and pause is the sink
 detached rather than a volume of zero.
 
 ## The M2 cut
 
-Decided 2026-09-20 from the handoff's ladder ("M2: the inspector: signal, tuning error, time on
-air, recent transmissions on this channel"). M2 adds the right third of the window and moves
+Decided 2026-09-20 from the design's ladder of steps (M2: the inspector: signal, tuning error, time on
+air, recent transmissions on this channel). M2 adds the right third of the window and moves
 nothing an earlier step added, except the signal readout, which leaves the transport bar; the
-handoff lists that as its only exception (Region 5). The order is data first, panel last: the folds
+design makes that its only exception. The order is data first, panel last: the folds
 and the engine work are built and tested here, against fixtures, with their `ley` mirrors; the panel
 waits for its handoff and is built on the Mac. The failure strip's presentation (above) is revisited
 with the panel, since the panel is where measurements are explained in words.
@@ -305,8 +305,8 @@ edges and tones folded into a `TransmissionLog`; `BookmarkStore.renameBookmark` 
 tokens in `Theme.swift`; `View ▸ Show Inspector` (⌥⌘I) and `AppSession.inspectorShown`. The
 exception: the signal readout left the transport bar (`SignalReadout` is deleted) and the squelch
 track has the slot. The strip: `NoticeStrip` keeps the notice and the last error; the failure state
-and the out-of-capture words read in the panel. The handoff's "Decided 2026-09-20" records where the
-tree and the design differed, and "Decided 2026-09-21" what the first day on the Mac changed: meters
+and the out-of-capture words read in the panel. Where the
+tree and the design differed was decided on 2026-09-20, and what the first day on the Mac changed on 2026-09-21: meters
 for tuning and deviation, one disclosure group, secondary ink. Written in the container, so
 unverified without a Mac: that the panel compiles at all; the layout at 820 pt without a scroll
 view; the popovers, the dotted underline and the ramp-filled bar; the inline rename's focus on
@@ -314,7 +314,7 @@ appear and its key monitor (space and the arrows handed to the field editor past
 toolbar toggle beside the chip; the disclosure rows; that the `Show Inspector` title follows the
 state; and that the widened telemetry subscription is accepted by the daemon and the log fills.
 
-Revised 2026-09-23 after a review of the panel (the handoff's "Decided 2026-09-23"): the reading
+Revised 2026-09-23 after a review of the panel: the reading
 is four fixed columns with the number beside each word and the sentence as a tooltip, the
 popovers are gone, `ChannelReading` in the façade steadies the meters and words (12 tests), one
 `MeterTrack` draws all three meters, Tuning and Deviation hold the last transmission dimmed, the
@@ -395,8 +395,8 @@ whether the daemon ever reported one: the feed logs the first sub-audible report
 a tone or not (`lastToneHz` starts unknown, not at 0), and the transmission-ended line says which
 tone the transmission carried or `no tone`.
 
-Docs: the M2 design handoff gets a "Decided 2026-09-24" entry and Region 2 is
-marked retired; `../dev/app.md`'s failure-state paragraph follows.
+Docs: the M2 design records the decision and retires the region; `../dev/app.md`'s failure-state
+paragraph follows.
 
 Landed 2026-09-24: `FailureHold` in the façade (`FailureState.swift`) folds each `CaptureLevel`
 through `FailureState.name` and times the run from its first interval's first sample, so four
@@ -417,8 +417,8 @@ the out-of-capture wait are unverified until a run on the Mac.
 
 ### M2-7 `[x]` The audio ladder in the panel
 
-The M2 handoff's open item ("the audio levels meter `ley levels` draws, band by band, in the
-panel"), decided 2026-09-23 by the owner: its own region between the reading and the log, the
+The M2 design's open item (the audio levels meter `ley levels` draws, band by band, in the
+panel), decided 2026-09-23 by the owner: its own region between the reading and the log, the
 demod tap, octave bands. The stream exists (`docs/design/audio-meters.md`: an FFT subscription
 whose source is a channel, `FftParams.tap`, at most 20 rows a second; the daemon refuses raw
 IQ), `ley levels` reads it, and the Swift client lacks only the call.
@@ -454,7 +454,7 @@ IQ), `ley levels` reads it, and the Swift client lacks only the call.
 - **e2e** (`LeylineClientDaemonTests`, `nfm_pl.cf32` on the demod tap): the 125 Hz band (the
   100 Hz PL) and the 1 kHz band read well over the 8 and 16 kHz bands.
 
-Docs: the M2 handoff gains "Region 3b: audio" and the open item is closed; `../dev/app.md` lists
+Docs: the M2 design gains the audio region and the open item is closed; `../dev/app.md` lists
 the feed; `docs/dev/app.md`'s unverified list names the view, which the container cannot build.
 
 Landed 2026-09-24. Façade: `fft(channel:tap:bins:rowsPerSecond:format:policy:buffer:)` on
@@ -508,7 +508,7 @@ the picture, one at the radio, one at the fix, none of them a sentence.
   fault is on the fix.
 - `FailureHold` and the `failure:` log lines are unchanged.
 
-Docs: the M2 handoff's "Decided 2026-09-24" gains the change; `../dev/app.md`'s failure-state
+Docs: the M2 design records the change; `../dev/app.md`'s failure-state
 paragraph names the three places.
 
 Landed 2026-09-24: `ClippedRows` in the façade (`ClippedRows.swift`) keeps a sample index and a
@@ -637,14 +637,14 @@ still names only the first stage.
 ### APP-5b `[x]` The Library: two places, one switch
 
 Decided 2026-09-25 with the owner after the first run of the recording screens
-(the M3 design handoff, "Decided 2026-09-25: the Library"): a `Radio | Library`
+(recorded in the M3 design): a `Radio | Library`
 switch in the toolbar (⌘1, ⌘2); Radio is the window with 8a and 8b and no sidebar source or
 footer; Library replaces the body with the channel list and store footer in its sidebar, 8c's
 channel page in the centre, the part in the inspector, and a player in the transport bar's
 place (play/stop, previous/next part, the part's words, a display-only progress track, the
 volume caption); the live radio keeps running underneath and is held silent while a part plays.
 
-Landed 2026-09-25 (the handoff's "Decided in the build" bullets record what the build decided:
+Landed 2026-09-25 (what the build decided:
 the switch as two plain buttons, the body switched rather than overlaid, the selection rule, the
 channel's lines, the player's part, the keys and the caption). Façade, `RecordingPages.swift`:
 `PlayerWords` and `Recordings.playerWords` (`GMRS CH3 · Tuesday 14:02 · part 5 of 11`,
@@ -699,7 +699,7 @@ rename field in the Radio, which the Tune menu's bare keys may reach first as th
 
 ### APP-5c `[x]` The Library, revised (10a)
 
-The owner's revised Library design (the M3 design handoff, "The Library, revised"):
+The owner's revised Library design (M3):
 rows are parts with a recording as a bracket in the gutter, a level graph a row, a 24-hour
 strip a day, `Play day`, the inspector as the part's numbers and its recording's, the sidebar
 grouped by frequency, the switch as a segmented control by the traffic lights, and a player
@@ -723,7 +723,7 @@ renders `Playback.paused` from the mirror; a recording that heard nothing never 
 `ListResources`, so the Library needs no filter of its own for it.
 
 **Landed 2026-09-25 (window).** With both lanes in, the item is `[x]`. What the build decided
-that 10a left open is the handoff's "10a", "Decided in the build (APP-5c, 2026-09-25)". Façade:
+that 10a left open is recorded with the M3 design. Façade:
 `RecordingPart.clippedMs` (`clipped_ms`, absent when nothing clipped); `Recordings.channels` by
 frequency alone, the mode the newest recording's and the subtitle `19 recordings · today`;
 `LibraryRows.swift` with `Recordings.dayRows` (`DayRows`: title, EARLIER, head and EARLIER words,
@@ -799,7 +799,7 @@ the wordmark is SF at 62 medium with the same tracking.
   bundle time by `scripts/render-icon.swift` (CoreGraphics, macOS only) into every size
   `iconutil` needs, `AppIcon.icns` placed by `scripts/bundle-app.sh` and named in `Info.plist`;
   the same drawing at 1024 px is checked in as `../design/brand/leyline-icon.png` when first
-  rendered on a Mac, so the docs have it. This closes the M1 handoff's open "An icon" item.
+  rendered on a Mac, so the docs have it. This closes the M1 design's open icon item.
 
 Landed 2026-09-25. `BrandMark.swift` draws the mark at any size (`Ring`, a circle's outline with
 its radius and line animatable, and the dot at 1.5 in 13); `MainWindow`'s first `navigation`
@@ -836,8 +836,8 @@ are a continuous curve, and the mark at half the tile (412 px, the ring's line 3
 16, 32, 64, 128, 256, 512 and 1024 px into `AppIcon.iconset` under iconutil's ten names and runs
 `iconutil -c icns`. `bundle-app.sh` runs it into `app/.build/icon` and copies `AppIcon.icns`
 into `Contents/Resources`, or says the icon was skipped when `iconutil` is missing; `Info.plist`
-has `CFBundleIconFile` `AppIcon`. `../design/brand/README.md` lists the files. The M1 handoff's
-open "An icon" item is closed below.
+has `CFBundleIconFile` `AppIcon`. `../design/brand/README.md` lists the files. The M1 design's
+open icon item is closed below.
 
 Verified in the container: `make app-lint`, and `swift test --filter LeylineClientTests`, which
 the change does not touch. Unverified until the first `make app-run` and `make app-bundle` on a
@@ -941,9 +941,8 @@ Verified by `RecordingJobTests` (`testDeletingAFinishedRecordingRemovesItsDirect
 for destructive tools, and the unit test grades everything a scenario could. The façade and
 window lanes are open, so the item stays `[ ]`.
 
-Landed 2026-09-24 (façade and window), from the design above and the handoff written from it,
-the M3 design handoff, whose "Decided 2026-09-24" records where the build and
-the design differ. With both lanes in, the item is `[x]`. Façade: `Recordings.swift`, with
+Landed 2026-09-24 (façade and window), from the design above and the M3 design written from it; where the build and
+that design differ was decided on 2026-09-24. With both lanes in, the item is `[x]`. Façade: `Recordings.swift`, with
 `RecordingManifest` and `RecordingPart` (`recording.json` decoded with the daemon's defaults for a
 missing key, NaN for an absent squelch, and `read(at:)` for the directory `ResolveLocalPath`
 returns), `RecordingParts.match` (the containment rule on the part's capture, from the manifest's
@@ -988,7 +987,7 @@ the speaker glyphs and their help; ⌘R and ⌘. in the menus, and ⌘. not caug
 Stop Listening's empty state, and a band, bookmark or recording click opening the radio again;
 Reveal in Finder and Show Recordings in Finder.
 
-Follow-ups 2026-09-24, the three departures the handoff's "Decided 2026-09-24" named. The daemon
+Follow-ups 2026-09-24, the three departures from the M3 design decided that day. The daemon
 publishes a playing playback four times a second with `position` current
 (`SessionStore.playbackInterval`, the whole object each time, the tombstone unchanged), so
 `ley play` follows its playback on the session's event stream and the window's progress line
@@ -1007,8 +1006,8 @@ daemon-backed recording case. Unverified until a Mac: `AppSession.swift`'s playb
 recording-row changes, the progress line moving from the mirror, and a clip ended by a delete
 attaching the live sink again.
 
-Revised 2026-09-24 by the owner's M3 design handoff (its recording switch and log row states,
-and its "Decided 2026-09-24, read against the code"), which replaces this item's recording surfaces
+Revised 2026-09-24 by the owner's M3 design (its recording switch and log row states,
+read against the code), which replaces this item's recording surfaces
 under one rule: a transmission is heard, a recording is kept, and no surface offers to play what
 is not on disk. Removed: the sidebar's `Recordings` section with its context menu and delete
 confirmation (and `AppSession.recordings`, `sidebarRecordings`, `tune(recording:)`,
@@ -1017,7 +1016,7 @@ header reads `Channel` alone again), the log's rows made from a recording's part
 (`RecordingParts.merge`, `LogEntry`, `logEntries`) and its `recording since …` line, File ▸
 Record Continuously and Stop Recording, and the façade's `continuous` option and
 `statusWords`. Delete stays with `ley recordings delete` and the MCP tool until 8c. The IQ toast
-the handoff names was never built. Added: the log's head row, `Record transmissions` and a
+the design names was never built. Added: the log's head row, `Record transmissions` and a
 `.switch` toggle tinted `Theme.accentRec` (`#E5484D`, a new token; `recording` stays the clipping
 red), with `Each transmission becomes a part, cut at dead air.` under it while off; the switch is
 `Recordings.activeJob` on the tuned channel's frequency and mode, whoever started the job, and
@@ -1069,12 +1068,11 @@ second colour and buffer 3, and the 3 px bars at the right edge, including after
 the span and after the ring is emptied by a new subscription; the alert's flow on a band click,
 on a neighbour's name, on a rail drag's release (the pill parked off the radio during the drag,
 Cancel putting it back and releasing the centre in flight) and on the sample-rate picker in the
-device popover; File ▸ Record Transmissions' check mark and ⌘R. Moves the handoff does not list
+device popover; File ▸ Record Transmissions' check mark and ⌘R. Moves the design does not list
 (a click, a typed frequency or a bookmark outside the span, `Tune inside`) do not ask.
 
-Screens 2026-09-24. The owner's exports of the M3 handoff's screens put chrome in every screen
-that the prose had filed under the Recordings page or not drawn (the handoff's "The screens, read
-against the prose", and the bullets this adds to its "Decided" section). Contract:
+Screens 2026-09-24. The owner's exports of the M3 design's screens put chrome in every screen
+that the prose had filed under the Recordings page or not drawn. Contract:
 `DaemonInfo.recordings_cap_bytes = 5`, the daemon's `--recordings-cap` (`DaemonInfo` in
 `SessionStore.swift`, filled in `Daemon.init`), the fake reporting leylined's 20 GiB default, and
 `ley state`'s first line ending `recordings 944 MB of 20 GB` when a cap is reported, the use summed
@@ -1127,8 +1125,7 @@ status line, and the 18 pt ring in the 20 pt column; the volume caption truncati
 6 pt from the frequency. `docs/guide/using-ley.md`'s `ley state` transcript predates the
 recordings clause and needs recording again on a radio.
 
-The Recordings page landed 2026-09-24 (the M3 design handoff's Recordings section, its screen
-and the bullets this adds to "Decided"). Façade, `RecordingPages.swift`: `RecordingGroup` (a card
+The Recordings page landed 2026-09-24 (the M3 design's Recordings section and its screen). Façade, `RecordingPages.swift`: `RecordingGroup` (a card
 from the listing's summary and, once read, the manifest: the parts' span through the anchors, their
 lengths summed, the manifest's bytes, running, `ended_by`, and a `RecordingChip` per part in
 part order), `Recordings.days` (today, yesterday, the day before by name, then `earlier`, the one
@@ -1223,7 +1220,7 @@ until a Mac: `AppSession.swift` (`noticeFailedRecordJobs`, the switch letting go
 with it), and `RecordingsPage.swift` (the notice strip at the page's foot, over the cards).
 
 Fixed 2026-09-25 (second run), five items from the owner's second run of the recording build
-(the M3 design handoff, "Decided after the second run"). **One part held several
+(recorded with the M3 design). **One part held several
 transmissions**: the window left `hang_ms` at the daemon's 5 s, so a simplex exchange of four
 4 s overs was one 25 s part in the Library and one ▶ lit three of the log's four rows. Both
 switches now send `hang_ms` 500 and `pre_roll_ms` 500 (`Recordings.config`, which
@@ -1338,7 +1335,7 @@ The release pass is `../dev/release-checklist.md`.
 
 `../design/channels.md` is the design, written 2026-09-28 from the owner's ask: NOAA and GMRS
 channels reachable without programming, bands as the sidebar's order, defaults that need no
-setup, and a sidebar that does not fill. `2026-09-28-2037-feat-bands-channels-bookmarks-plan.md`
+setup, and a sidebar that does not fill. `archive/channels.md`
 is the implementation plan: all seven units and the review follow-up landed on 2026-09-29, with
 `make check` green. The Mac checklist below is acceptance work, not an open implementation unit.
 The items here are the record:

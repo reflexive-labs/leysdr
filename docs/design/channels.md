@@ -1,7 +1,7 @@
 # Design: Bands, channels and bookmarks
 
 Status: implemented 2026-09-29 as APP-9, from the plan
-`../plans/2026-09-28-2037-feat-bands-channels-bookmarks-plan.md`; the `ley` side and the client
+`../plans/archive/channels.md`; the `ley` side and the client
 library are tested on Linux, the window's views are unverified on the Mac (`../plans/app.md`,
 APP-9, "Unverified on the Mac"), and the audio-gone measurement below is still open. Companion
 to `scan.md` (which owns the sweep behind Scan band), `decoders.md` (which owns the labels store
