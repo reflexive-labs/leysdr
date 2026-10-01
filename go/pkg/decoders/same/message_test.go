@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Two real-shaped SAME headers: the Required Weekly Test from the plan and a
+// Two real-shaped SAME headers: a Required Weekly Test and a
 // tornado warning with three counties.
 const (
 	rwtHeader = "ZCZC-WXR-RWT-020103-020209-020091-020121-029047-029165-029095-029037+0030-1051700-KEAX/NWS-"

@@ -24,8 +24,7 @@ func contrast(a, b float64) float64 {
 	return (hi + 0.05) / (lo + 0.05)
 }
 
-// The ramp is tuned for a dark terminal by decision (2026-09-14, the design
-// system's palette adopted with both renders side by side), and ley is
+// The ramp is tuned for a dark terminal, and ley is
 // forbidden from asking which ground the reader has (no OSC background
 // query, no HasDarkBackground). So the test holds two bars, not one: every
 // stop clears WCAG AA for graphical objects against a black ground and

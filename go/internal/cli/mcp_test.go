@@ -29,7 +29,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
-// mcpToolNames is the tool table of docs/plans/mcp.md as `ley mcp` serves it,
+// mcpToolNames is the tool table as `ley mcp` serves it,
 // in the order it is registered. The reference page (docs/reference/mcp.md)
 // lists the same names; a tool added here is added there.
 var mcpToolNames = []string{
@@ -168,7 +168,7 @@ func structuredField(t *testing.T, res *mcp.CallToolResult, key string, m proto.
 	}
 }
 
-// MCP-1: an MCP client lists the server's tools, and the list is the table.
+// An MCP client lists the server's tools, and the list is the table.
 func TestMCPListsTheToolTable(t *testing.T) {
 	t.Parallel()
 	h := newMCPHarness(t)
@@ -182,8 +182,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		if tool.Description == "" || tool.InputSchema == nil {
 			t.Errorf("%s: no description or input schema", tool.Name)
 		}
-		// Every tool that takes a gain describes it in the sentence every --gain uses
-		// (plans/v1-release.md, R-23).
+		// Every tool that takes a gain describes it in the sentence every --gain uses.
 		var schema struct {
 			Properties map[string]struct {
 				Description string `json:"description"`
@@ -221,7 +220,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 	}
 }
 
-// MCP-1: the server's daemon connection is the shared client library's, with
+// The server's daemon connection is the shared client library's, with
 // the adapter's identity: what it creates is attributed to kind "mcp".
 func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
 	t.Parallel()
@@ -244,7 +243,7 @@ func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
 	}
 }
 
-// MCP-2: list_devices and get_state return exactly what the verbs print.
+// list_devices and get_state return exactly what the verbs print.
 func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
 	t.Parallel()
 	h := newMCPHarness(t)
@@ -270,7 +269,7 @@ func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
 	}
 }
 
-// MCP-2: tune refuses to move a radio somebody is listening on, names who,
+// tune refuses to move a radio somebody is listening on, names who,
 // and says how to insist; take_over moves it. The refusal is made before
 // anything is written, so the daemon's state is untouched by it.
 func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
@@ -303,7 +302,7 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	}
 }
 
-// MCP-2: a channel tune makes ends when the server does; keep leaves it.
+// A channel tune makes ends when the server does; keep leaves it.
 func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	h := newMCPHarness(t)
 	var ephemeral, kept leylinev1.Channel
@@ -336,7 +335,7 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	}
 }
 
-// MCP-3: scan returns the Scan the verb prints, with the fake's detections.
+// scan returns the Scan the verb prints, with the fake's detections.
 func TestMCPScanReturnsTheDetections(t *testing.T) {
 	t.Parallel()
 	h := newMCPHarness(t)
@@ -384,7 +383,7 @@ func TestMCPScanReturnsTheDetections(t *testing.T) {
 	}
 }
 
-// MCP-3: listen_summary folds the squelch edges and the meter for its window
+// listen_summary folds the squelch edges and the meter for its window
 // and leaves no channel behind.
 func TestMCPListenSummary(t *testing.T) {
 	h := newMCPHarness(t)
@@ -425,7 +424,7 @@ func TestMCPListenSummary(t *testing.T) {
 	}
 }
 
-// MCP-3 and MCP-6: snapshot returns the `ley spectrum --json` row and a PNG
+// snapshot returns the `ley spectrum --json` row and a PNG
 // whose plot is one pixel per negotiated bin.
 func TestMCPSnapshot(t *testing.T) {
 	t.Parallel()
@@ -484,7 +483,7 @@ func TestMCPSnapshot(t *testing.T) {
 	}
 }
 
-// MCP-4 and MCP-5: the decoder and job tools over the DEC-6 fake.
+// The decoder and job tools over the fake's decoders.
 func TestMCPDecoderAndJobTools(t *testing.T) {
 	h := newMCPHarness(t)
 	var decs leylinev1.ListDecodersResponse
@@ -501,7 +500,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if r := h.call(t, "start_decode_job", map[string]any{"decoder": "morse"}); !r.IsError || !strings.Contains(resultText(r), "list_decoders") {
 		t.Errorf("an unknown decoder must be refused and point at list_decoders: %s", resultText(r))
 	}
-	// A running job says how much it has heard (DEC-23), so get_job tells a working decoder
+	// A running job says how much it has heard, so get_job tells a working decoder
 	// from a silent one without a subscription.
 	waitFor(t, "get_job to carry the record count", func() bool {
 		return strings.Contains(resultText(h.must(t, "get_job", map[string]any{"job": job.JobId})), "records, last")
@@ -973,7 +972,7 @@ func TestMCPHelpNamesEveryTool(t *testing.T) {
 	}
 }
 
-// MCP-6: the PNG is the row, one column per bin, with the level ramp on the
+// The PNG is the row, one column per bin, with the level ramp on the
 // columns above the floor and nothing drawn where the floor is.
 func TestRenderSpectrumPNG(t *testing.T) {
 	bins := make([]float64, 512)

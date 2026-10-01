@@ -242,7 +242,7 @@ func TestSnapGain(t *testing.T) {
 }
 
 // --gain takes a bare level for the first stage or stage=level pairs for several, and leaves the
-// names to the daemon (plans/app.md, M2-10).
+// names to the daemon.
 func TestParseGains(t *testing.T) {
 	cases := []struct {
 		in   string

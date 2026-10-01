@@ -230,7 +230,7 @@ func TestTrackAgesOutASilentStation(t *testing.T) {
 }
 
 // track now runs the decoder itself: with nothing decoding, `ley track aprs` starts a decode job,
-// so the table fills without a second terminal (docs/plans/decoders.md, DEC-9 follow-up).
+// so the table fills without a second terminal.
 func TestTrackStartsADecoder(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)

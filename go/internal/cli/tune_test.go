@@ -534,8 +534,7 @@ func TestChannelSaysWhetherItListensForATone(t *testing.T) {
 }
 
 // tune --gain writes each stage named, in order, and the banner lists every stage on a radio
-// with several, where "gain 8.0 dB" once read as the whole of a HackRF's gain (plans/app.md,
-// M2-10). A stage the radio does not have is the daemon's refusal, with the stages it has.
+// with several, because "gain 8.0 dB" reads as the whole of a HackRF's gain. A stage the radio does not have is the daemon's refusal, with the stages it has.
 func TestTuneGainSetsEachStageNamed(t *testing.T) {
 	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()
@@ -551,7 +550,7 @@ func TestTuneGainSetsEachStageNamed(t *testing.T) {
 		}
 	}
 	// The banner, the tree and the --wide cell print the gain in the same words, the AMP as the
-	// switch the device says it is (plans/v1-release.md, R-23).
+	// switch the device says it is.
 	banner := &verbSession{Session: &session.Session{Capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "LNA", Db: 16}, {Element: "VGA", Db: 4}, {Element: "AMP", Db: 0}}}}, device: hackrf}
 	if got, want := banner.bannerSource(ui.Style{}), "Radio HackRF Pro, gain LNA 16 dB, VGA 4 dB, AMP off"; got != want {
 		t.Errorf("the banner reads %q, want %q", got, want)
@@ -574,7 +573,7 @@ func TestTuneGainSetsEachStageNamed(t *testing.T) {
 	}
 }
 
-// A capture's gain prints one way wherever it prints (plans/v1-release.md, R-23): the level alone
+// A capture's gain prints one way wherever it prints: the level alone
 // on a one-stage radio, every stage by name on a radio with several, a switch as on or off, and a
 // decimal only when the level has one.
 func TestStageGainWords(t *testing.T) {
@@ -603,9 +602,9 @@ func TestStageGainWords(t *testing.T) {
 
 // A handheld keyed beside the radio clips it for the whole transmission. The line is said once,
 // after the hold's second, and nothing is said while it holds; the banner carries no clipping
-// line of its own, and the quiet-band line is said at most once (plans/app.md, M2-10).
+// line of its own, and the quiet-band line is said at most once.
 func TestTuneSaysClippingOnce(t *testing.T) {
-	// Each reading counts a different number of samples at the rails, as the owner's did
+	// Each reading counts a different number of samples at the rails, as a real radio's do
 	// (1092, 20494, 35108 ...): a rule that printed on every change of words printed each one.
 	var readings atomic.Uint64
 	sock, _ := harness(t, fakedaemon.Options{

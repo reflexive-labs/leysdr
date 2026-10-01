@@ -124,11 +124,11 @@ func TestPresetsTable(t *testing.T) {
 	}
 }
 
-// TestPresetNamesOf20260928KeepResolving pins every name and alias the preset table carried on
-// 2026-09-28, the day the literal became a view over the band table's plans, to the frequency
-// and mode each stood for. Scripts and the MCP tool descriptions use these words, so the plans
-// must keep answering them (docs/design/channels.md, "The CLI"; the plan's R4).
-func TestPresetNamesOf20260928KeepResolving(t *testing.T) {
+// TestPresetNamesKeepResolving pins every name and alias the preset table carried before it
+// became a view over the band table's plans to the frequency and mode each stood for. Scripts
+// and the MCP tool descriptions use these words, so the plans must keep answering them
+// (docs/design/channels.md, "The CLI").
+func TestPresetNamesKeepResolving(t *testing.T) {
 	pinned := []struct {
 		name string
 		hz   uint64
@@ -218,7 +218,7 @@ func TestPresetNamesOf20260928KeepResolving(t *testing.T) {
 }
 
 // The preset table is a view over the plans: one preset per channel, named by the plan-prefixed
-// alias (the plan's KTD1), with the radio-printed name first among its aliases when it differs,
+// alias, with the radio-printed name first among its aliases when it differs,
 // the channel's own mode and width where it has them, and the description built from the band's
 // name and the channel's note.
 func TestPresetsAreAViewOverThePlans(t *testing.T) {

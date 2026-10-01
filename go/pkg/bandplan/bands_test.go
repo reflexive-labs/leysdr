@@ -272,8 +272,7 @@ func TestPlansMatchTheirListings(t *testing.T) {
 }
 
 // One tolerance for "on a channel", the nearest within 6 kHz, and a tie goes to the earlier
-// entry in plan order: the US variant entered before the ITU entry that shares its frequency
-// (the plan's KTD2).
+// entry in plan order: the US variant entered before the ITU entry that shares its frequency.
 func TestChannelAt(t *testing.T) {
 	for _, tc := range []struct {
 		hz   uint64

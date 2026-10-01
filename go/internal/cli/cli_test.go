@@ -207,7 +207,7 @@ func TestGainsStringUnknownTable(t *testing.T) {
 		{&leylinev1.GainElement{Name: "TUNER", ValidDb: []float64{0}}, "TUNER 0 dB"},
 		{&leylinev1.GainElement{Name: "LNA", MaxDb: 40, StepDb: 8}, "LNA 0–40 dB"},
 		{&leylinev1.GainElement{Name: "TUNER", MaxDb: 49.6, SupportsAuto: true, ValidDb: fakedaemon.R820TGains}, "TUNER 0–49.6 dB auto"},
-		// A switch lists the two levels --gain takes for off and on (plans/v1-release.md, R-23).
+		// A switch lists the two levels --gain takes for off and on.
 		{&leylinev1.GainElement{Name: "AMP", MaxDb: 11, ValidDb: []float64{0, 11}}, "AMP 0 or 11 dB"},
 	}
 	for _, c := range cases {

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// The decoder tier end to end (docs/plans/decoders.md, DEC-7): the real daemon plays the AFSK
+// The decoder tier end to end: the real daemon plays the AFSK
 // fixture, spawns the real leydec-aprs plugin over the stdio contract, and `ley decode aprs`
 // prints the three packets the fixture carries. LEYLINE_DECODERS must name the repository's
 // decoders/ directory and leydec-aprs must be on PATH (the Makefile's e2e target sets both).
@@ -139,7 +139,7 @@ func ndjson(t *testing.T, s string) []map[string]any {
 	return out
 }
 
-// Driver C end to end (docs/plans/decoders.md, DEC-9): the real daemon decodes a SAME weather
+// A watch with a predicate and a notifier end to end: the real daemon decodes a SAME weather
 // alert, a predicate keeps only the county asked for, and a shell notifier fires with the record.
 // A non-matching county fires nothing.
 func TestWatchSameCountyAgainstRealDaemon(t *testing.T) {
@@ -210,7 +210,7 @@ func TestWatchSameCountyAgainstRealDaemon(t *testing.T) {
 	}
 }
 
-// The AIS decoder end to end (docs/plans/decoders.md): the real daemon decodes the marine GMSK
+// The AIS decoder end to end: the real daemon decodes the marine GMSK
 // fixture into vessel records keyed by MMSI, with positions.
 func TestDecodeAISAgainstRealDaemon(t *testing.T) {
 	decoders := os.Getenv("LEYLINE_DECODERS")

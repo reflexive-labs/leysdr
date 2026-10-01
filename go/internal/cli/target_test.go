@@ -93,7 +93,7 @@ func TestResolveDialTargetDoesNotAcceptBands(t *testing.T) {
 
 // With a band, the positional is a channel name in that band's plan and nothing else: the
 // numeric parse is not tried (a frequency needs no --band), and a miss names the band and its
-// plan rather than offering a frequency (docs/design/channels.md, "The CLI"; the plan's KTD8).
+// plan rather than offering a frequency (docs/design/channels.md, "The CLI").
 func TestResolveDialTargetInABand(t *testing.T) {
 	marine, err := bandplan.ResolveBand("marine")
 	if err != nil {

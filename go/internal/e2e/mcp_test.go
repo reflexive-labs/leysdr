@@ -86,11 +86,11 @@ func resultValue(t *testing.T, res *mcp.CallToolResult) any {
 	return v
 }
 
-// TestMCPAgainstRealDaemon is docs/plans/mcp.md's end-to-end check: the adapter
+// TestMCPAgainstRealDaemon is the adapter's end-to-end check: the adapter
 // spawned as an MCP client would spawn it, driving the real daemon over the
 // same socket `ley` uses, on the scan_band fixture. The tools' answers are
-// held against the verbs' `--json`, which is the compatibility test the plan
-// names: an agent and a shell script read identical shapes.
+// held against the verbs' `--json`: an agent and a shell script read identical
+// shapes.
 func TestMCPAgainstRealDaemon(t *testing.T) {
 	e, _ := setup(t)
 	band, err := filepath.Abs("../../../fixtures/scan_band.cf32")
@@ -217,7 +217,7 @@ func TestMCPAgainstRealDaemon(t *testing.T) {
 	}
 }
 
-// TestMCPDecodeAgainstRealDaemon is MCP-4's end-to-end: the real daemon plays
+// TestMCPDecodeAgainstRealDaemon checks the decoder tools end to end: the real daemon plays
 // the AFSK fixture and runs the real APRS plugin; the decoder tools see its
 // records. LEYLINE_DECODERS and leydec-aprs on PATH, as `make e2e` sets them.
 func TestMCPDecodeAgainstRealDaemon(t *testing.T) {

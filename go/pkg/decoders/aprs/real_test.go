@@ -13,7 +13,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
 )
 
-// TestRealCaptureDecodes runs the chain over the owner's off-air recordings of
+// TestRealCaptureDecodes runs the chain over off-air recordings of
 // 144.39 MHz, 48 kHz S16 mono through the NFM chain. The files are gitignored
 // and the test skips without them. It reports what it found and fails only on
 // an error, never on a count: 144.39 is quiet where the recordings were made,

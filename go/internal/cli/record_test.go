@@ -377,8 +377,7 @@ func TestRecordAudioPlaysWhatIsBeingRecorded(t *testing.T) {
 	}
 }
 
-// The V0 user story spells the pair `ley record --iq` and `--audio`
-// (docs/plans/user-stories.md), so `--audio` is accepted as the default record already writes
+// People spell the pair `ley record --iq` and `--audio`, so `--audio` is accepted as the default record already writes
 // rather than failing with "unknown flag". Passing both is a usage error.
 func TestRecordAudioIsTheDefaultSpelledOut(t *testing.T) {
 	t.Parallel()
@@ -519,8 +518,8 @@ func runStyled(t *testing.T, sock string, color bool, args ...string) (string, s
 }
 
 // --gain names stages on a radio with several: each pair is its own write, in the order typed,
-// the names go to the daemon as typed, and the banner lists every stage the take started at
-// (plans/app.md, M2-10). A stage the radio does not have fails the job with the ones it does.
+// the names go to the daemon as typed, and the banner lists every stage the take started at.
+// A stage the radio does not have fails the job with the ones it does.
 func TestRecordGainSetsEachStageNamed(t *testing.T) {
 	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()

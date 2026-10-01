@@ -152,7 +152,7 @@ func TestHelpMeta(t *testing.T) {
 				if f.Usage == "" {
 					t.Errorf("%s --%s: no description", path, f.Name)
 				}
-				// One gain syntax, described in one sentence (plans/v1-release.md, R-23).
+				// One gain syntax, described in one sentence.
 				if f.Name == "gain" && !strings.HasPrefix(f.Usage, gainHelp) {
 					t.Errorf("%s --gain: %q does not use the shared gain sentence", path, f.Usage)
 				}

@@ -14,7 +14,7 @@ import (
 )
 
 // dcsWindow is how long the daemon has to name the code once the channel exists. The decoder locks
-// on three consecutive words (docs/plans/signal-views.md, SV-7), 0.51 s of the bit stream, so 3 s
+// on three consecutive words, 0.51 s of the bit stream, so 3 s
 // covers the detector's hop, the lock and a heartbeat.
 const dcsWindow = 3 * time.Second
 

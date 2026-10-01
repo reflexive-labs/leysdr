@@ -511,12 +511,12 @@ func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 }
 
 // oneStageGain is a one-stage radio's gain as every screen prints it: the level alone, a decimal
-// only when it has one (plans/v1-release.md, R-23).
+// only when it has one.
 var oneStageGain = regexp.MustCompile(`, gain \d+(\.\d)? dB\n`)
 
 // --gain on a sweep takes the syntax every verb takes: stages by name, any case, in order, and
 // the summary names every stage the sweep ran at with a switch as on or off. A stage the radio
-// does not have fails the sweep with the ones it has (plans/v1-release.md, R-23).
+// does not have fails the sweep with the ones it has.
 func TestScanPinsEveryStageNamed(t *testing.T) {
 	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()
@@ -640,13 +640,13 @@ func TestScanResolvesABandName(t *testing.T) {
 // The scan labels every GMRS detection with its channel number (ch1..ch22), the numbering every
 // GMRS radio shares, so a row is unambiguous. The eight repeater outputs are ch15..ch22 (rpt1..8
 // still tune them). presetAt takes the nearest within 6 kHz, since the channels are only 12.5 kHz
-// apart, and a tie goes to the earlier plan entry (the plan's KTD2).
+// apart, and a tie goes to the earlier plan entry.
 func TestScanLabelsGMRSChannels(t *testing.T) {
 	cases := []struct {
 		hz    uint64
 		label string
 	}{
-		{462_625_000, "ch18"},      // the repeater output the owner found
+		{462_625_000, "ch18"},      // a repeater output heard off air
 		{462_562_500, "ch1"},       // a 462 interstitial
 		{462_600_000, "ch17"},      // RPT3's frequency, labelled by channel number
 		{467_562_500, "ch8"},       // a 467 interstitial (the inputs band)

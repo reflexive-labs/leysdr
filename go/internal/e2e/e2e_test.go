@@ -481,7 +481,7 @@ func TestScanAgainstRealDaemon(t *testing.T) {
 			}
 		}
 		if m["modulationGuess"] != nil && m["modulationGuess"] != "" {
-			t.Errorf("v0 has no opinion about modulation (invariant 12): %v", m["modulationGuess"])
+			t.Errorf("the detector has no opinion about modulation (invariant 12): %v", m["modulationGuess"])
 		}
 	}
 	for _, w := range want {

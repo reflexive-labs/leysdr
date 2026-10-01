@@ -22,7 +22,7 @@ func word(t *testing.T, s string) Word {
 	return w
 }
 
-// The two words the owner's handheld sent on 2026-09-23 (rf-captures/ht-dcs-023.cf32 and
+// The two words a handheld sent on 2026-09-23 (rf-captures/ht-dcs-023.cf32 and
 // ht-dcs-754.cf32), as sliced from the keyed span in transmitted order, positive deviation a one.
 // The receiver's alignment was arbitrary, so each is a rotation of the word as framed.
 const (
@@ -82,7 +82,7 @@ func TestEveryRotationAndComplementIsACodeword(t *testing.T) {
 	}
 }
 
-// The alias facts the two takes showed (docs/plans/signal-views.md, SV-7): the fixed bits do not
+// The alias facts the two takes showed: the fixed bits do not
 // frame a word, and the standard list is what picks the code.
 func TestAliases(t *testing.T) {
 	oct := func(cs []int) []string {

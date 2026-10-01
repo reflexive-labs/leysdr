@@ -312,7 +312,7 @@ func TestFileDevice(t *testing.T) {
 	}
 }
 
-// Subscribe fills in the transport and start position a v0 client needs, and the
+// Subscribe fills in the transport and start position a client needs, and the
 // caller keeps the request it built — to retry with, or to log what it asked
 // for. Err is repeatable, because one goroutine may drain frames while another
 // asks why the stream ended.

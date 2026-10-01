@@ -510,9 +510,9 @@ func TestSpectrumFramedFitsWidth(t *testing.T) {
 	}
 }
 
-// The scale tracks the data. It used to reserve 30 dB above the noise line
-// whatever the row held, so a band whose loudest column was a few dB over the
-// noise drew into the bottom third of the chart with 70% of the rows blank.
+// The scale tracks the data. A fixed 30 dB above the noise line, whatever the
+// row held, would draw a band whose loudest column is a few dB over the noise
+// into the bottom third of the chart with 70% of the rows blank.
 func TestSpectrumScaleTracksTheData(t *testing.T) {
 	st := ui.Style{Unicode: true, Width: 80}
 	bins := noiseFrame(3, 1024)
@@ -528,11 +528,11 @@ func TestSpectrumScaleTracksTheData(t *testing.T) {
 	if v.top < peak {
 		t.Fatalf("the top must clear the data: %v under a peak of %v", v.top, peak)
 	}
-	// The row is never finer than spectrumMinSpanDb/spectrumHeight. The scale
-	// used to shrink to fit whatever the loudest column was, which on a band
-	// with nothing on it is a noise column a few dB over the median: the row
-	// came out at 1.5 dB, the floor's own 7 dB of spread smeared across five
-	// rows, and an empty band drew as scattered cells instead of as a line.
+	// The row is never finer than spectrumMinSpanDb/spectrumHeight. A scale
+	// that shrank to fit the loudest column would, on a band with nothing on
+	// it, fit a noise column a few dB over the median: a 1.5 dB row, the
+	// floor's own 7 dB of spread smeared across five rows, and an empty band
+	// drawn as scattered cells instead of as a line.
 	// Empty headroom above the band is the cost of a row coarse enough to draw
 	// a floor.
 	if span := v.top - v.bottom; span < spectrumMinSpanDb {
