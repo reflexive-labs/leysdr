@@ -1,7 +1,7 @@
 # Using `ley`
 
 `ley` is the command-line client of the Leyline daemon, the background process that owns your SDR
-and does all the radio work. This guide walks the V0 stories from `docs/plans/user-stories.md` in
+and does all the radio work. This guide walks the tasks in
 the order a newcomer meets them. It is written from `ley`'s own help texts (a golden-file test
 keeps them from drifting), so when a section is short, the longer explanation is one command
 away: `ley help squelch`, `ley help frequencies`, `ley help modes`, `ley help gain`,
@@ -34,8 +34,8 @@ Next:
   ley state                    everything the daemon knows
 ```
 
-This screen is the placeholder for the V0.5 dashboard, which will take over the terminal when
-you run bare `ley` on a TTY.
+This screen is the placeholder for a planned terminal dashboard, which will take over the
+terminal when you run bare `ley` on a TTY.
 
 ## 1. See your radio
 
@@ -700,8 +700,7 @@ When a stage was set, the banner gains a line with every stage the take started 
 the recording's manifest (`Radio     HackRF Pro, gain LNA 0 dB, VGA 0 dB, AMP off`), so a
 gain that did not apply shows before the file does. A stage the radio does not have fails the job
 before anything is written: `ley: the gain asked for could not be set: no gain element named IF;
-this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]`. Before 2026-09-24 the daemon dropped
-`--gain` on every real radio and recorded at whatever gain it was on.
+this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]`.
 
 Recording a busy channel continuously fills a disk with silence, so `--gate squelch` records only
 while something is on the air, one file per exchange:
@@ -796,8 +795,8 @@ line per record. `ley decoders` lists what is installed and where each one liste
 $ ley decoders
 NAME  FREQUENCY         MODE        OUTPUTS            VERSION
 aprs  144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0
-looked in /workspace/decoders, /home/dpup/.local/share/leyline/decoders
-kept records in /home/dpup/.local/share/leyline/store, 2 GiB or 90 days, whichever comes first
+looked in /Users/you/Library/Application Support/Leyline/decoders
+kept records in /Users/you/Library/Application Support/Leyline/store, 2 GiB or 90 days, whichever comes first
 ```
 
 A decoder carries its own recipe (the frequency, the mode, the bandwidth), so `decode` takes no

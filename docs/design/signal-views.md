@@ -166,10 +166,10 @@ spaced as tightly as 2.3 Hz (67.0 / 69.3), so identity comes from a phase-slope 
 at the winning bin, taken across hops. Voice is rejected by requiring that estimate to be *stable*
 for a whole second (eight hops at the tap's 1 kHz): a human pitch contour moves far more than 1 Hz
 per 100 ms, but a synthesised one can hold a vowel still for three hops, and NOAA weather radio's
-announcer was reported as a PL that way on 2026-09-14 (233.6 Hz, then 241.8, on a station that sends
+announcer is reported as a PL without that check (233.6 Hz, then 241.8, on a station that sends
 none). The deviation must hold too, within a ratio of 1.5 across the horizon: a transmitter sends
 its tone at one level, while a voice fundamental's level rises and falls with every syllable. The
-numbers behind both, from the captures, are in `docs/plans/signal-views.md`, SV-13.
+numbers behind both, from the captures, are in `docs/plans/signal-views.md`.
 
 ### What honest means here
 

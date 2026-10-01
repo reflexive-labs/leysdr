@@ -126,8 +126,8 @@ Notes a table cell cannot hold:
   `get_state`. The socket does not report why a daemon exited; the log does. A restart also
   shows in `get_state` on its own: `DaemonInfo.pid` and `startedAtNs` change and the event
   sequence starts over. A job started before the restart is gone with it unless it was a decode
-  job started with `keep`, which the next daemon brings back as the same job (DEC-11); the rest
-  of the durable job store is Milestone D.15. The path is the default log unless `ley daemon start` was given
+  job started with `keep`, which the next daemon brings back as the same job; other jobs do
+  not survive a restart yet. The path is the default log unless `ley daemon start` was given
   `--log`, in which case the tool says which file it read and the agent can tell they differ.
   The radio driver writes to the same file: librtlsdr prints its tuner banner and `PLL not
   locked!` on every device open, and a dozen tunes push every daemon line out of a short tail.
@@ -232,14 +232,14 @@ Notes a table cell cannot hold:
   deletes has nothing to grade that `TestMCPDeleteRecording` does not.
 
 Job status: a decode job reads `RUNNING` whether the decoder is producing records or
-not, by design (`docs/plans/decoders.md`, DEC-16: a silent decoder is indistinguishable from a quiet
-band, and SAME is silent by design), and a decoder that exits is restarted with the job saying so
-in `statusDetail`. The same field carries the job's liveness (DEC-23): "decoding with aprs: 12
+not, by design: a silent decoder is indistinguishable from a quiet
+band, and SAME is silent by design, and a decoder that exits is restarted with the job saying so
+in `statusDetail`. The same field carries the job's liveness: "decoding with aprs: 12
 records, last 3 s ago", or "no records yet", refreshed every two seconds while records arrive, so
 `get_job` and `list_jobs` distinguish a decoder that is receiving packets from one that is not.
 
 Not registered, because the daemon cannot back them yet: `get_transcript` (audio-transcript watch
-jobs, D.15), `identify_signal` (the signal characteriser, DEC-14), `lookup_identity` (no external
+jobs, not built), `identify_signal` (the signal characteriser, not built), `lookup_identity` (no external
 lookup adapters exist) and `whats_out_there` (needs `identify_signal`). The server's instructions,
 which an MCP client shows the agent at connect time, list the same, so an agent does not look
 for them.
@@ -257,8 +257,7 @@ heard nothing yet is an empty page. `ley://scans/{scan_id}` is the whole `Scan` 
 every detection included, resolved through `Jobs.GetScan`: what a job's `resultUris` names and
 what the `scan` tool returns before `min_snr` trims it. It lives as long as the daemon remembers
 the job (its last sixteen finished ones) and not across a restart, because a scan is not yet a
-stored resource. Snapshots become resources when their store is built (`docs/plans/mcp.md`,
-MCP-7).
+stored resource. Snapshots become resources when their store is built (`docs/plans/mcp.md`).
 
 ## A recorded exchange
 

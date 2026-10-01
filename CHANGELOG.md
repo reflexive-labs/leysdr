@@ -95,8 +95,7 @@ Nothing has been released yet. This file starts with everything that exists on `
   `Recorded nothing: the squelch never opened.`
 
 - The Mac app's Record transmissions switches no longer go grey. Their red tint was switched off
-  along with the switch, and on the owner's third run a switch went grey until it was clicked
-  again. The tint now stays set; macOS paints it on the on track only, so an off switch still
+  along with the switch, so a switch could go grey until it was clicked again. The tint now stays set; macOS paints it on the on track only, so an off switch still
   shows the system's dark track. A switch now matches a recording within 1 Hz of its frequency,
   and after a click it shows that click for 3 s at most before it shows the recording again. Each
   change to what the switch shows is written to the app's log.

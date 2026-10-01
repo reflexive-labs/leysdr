@@ -51,7 +51,7 @@ transcripts are plain text; this is for the colour.
 
 `make proto` needs only `protoc` from outside the repo (`brew install protobuf`; any current version).
 `scripts/gen-proto.sh` installs the pinned plugins into `.tools/<os>-<arch>/bin` (gitignored, per host so a
-checkout shared with a Linux container keeps separate binaries): `protoc-gen-go` and
+checkout shared with a Linux machine keeps separate binaries): `protoc-gen-go` and
 `protoc-gen-go-grpc` from the `tool` directives in `go/go.mod`, and `protoc-gen-swift` /
 `protoc-gen-grpc-swift-2` built from the `LeylineProto` package's resolved dependencies
 (`swift/LeylineProto/Package.resolved`, rebuilt when that file changes). Nothing on your `PATH`
@@ -86,7 +86,29 @@ comma-separated (`Apache-2.0,MIT`), and each must be allowed. `scripts/check-lic
 copying its licence text (and NOTICE, if it ships one) beside it, and naming it in `NOTICE`; the
 check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is the decision.
 
-## Linux / the moat container (Go clients, contract tests, engine compile checks)
+## Linux (including a Moat container)
+
+Linux builds the Go clients, runs the contract tests, and compiles and tests most of the engine and
+the app's client façade. Any Linux machine or container works. [Moat](https://majorcontext.com/moat)
+is one option: `moat.yaml` at the root is an example configuration for it, and grants are per user.
+
+The Swift side needs a Swift 6.2 toolchain and `protoc`. No SDR libraries are needed:
+`engine/Sources/CRTLSDR/loader.c` loads librtlsdr at runtime, so a `leylined` built without it
+starts and lists no USB radios. A recipe that needs no root:
+
+```sh
+# a Swift 6.2 toolchain from swift.org for your distribution and architecture
+curl -LO https://download.swift.org/swift-6.2-release/<platform>/swift-6.2-RELEASE/swift-6.2-RELEASE-<platform>.tar.gz
+mkdir -p ~/swift-toolchain && tar -xzf swift-6.2-RELEASE-*.tar.gz -C ~/swift-toolchain --strip-components=1
+export PATH=~/swift-toolchain/usr/bin:$PATH
+swift --version                       # if it fails on a missing shared library (libncurses.so.6, say),
+                                      # extract it from the distribution's package into a directory
+                                      # and add that directory to LD_LIBRARY_PATH
+make check GOBIN=/tmp/ley-bin         # the whole gate; GOBIN keeps Linux binaries out of go/bin
+```
+
+`make e2e` and `make app-e2e` start `leylined` from `go test` and `swift test`, so the same
+`PATH` and `LD_LIBRARY_PATH` must be exported in the shell that runs them.
 
 - Go side: `make go go-test lint`. `ley` is tested against `go/internal/fakedaemon`, an in-memory
   implementation of the contract.
@@ -100,7 +122,7 @@ check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is t
   code is compiled out; the portable DSP kernels run the DSP tests and the daemon's control plane
   end to end (`go/internal/e2e` drives a Linux-built `leylined` with `ley`). System audio is
   `PLATFORM_UNSUPPORTED` there by design.
-- A container needs a Swift 6.2 toolchain on `PATH` and `protoc`. `make swift-test` compiles tiny
+- `make swift-test` compiles tiny
   mock libraries and proves all four runtime combinations: neither driver, RTL-SDR only, HackRF
   only, and both. A checkout shared with a Mac should run the
   gate with a scratch install directory (`make check GOBIN=/tmp/ley-bin`) to keep the Linux
@@ -113,7 +135,7 @@ check tells you which of those you forgot. `docs/decisions/D2-licensing.md` is t
 
 ### What a Linux build cannot check
 
-The container has no Accelerate, so **everything under `#if canImport(Accelerate)` is never
+Linux has no Accelerate, so **everything under `#if canImport(Accelerate)` is never
 compiled there**: `AccelerateKernels` in `DSP/Kernels.swift`, the vDSP half of `DSP/FFT.swift`, and
 `KernelParityTests` itself. A green Linux build does not check any of it.
 
@@ -134,12 +156,12 @@ exist — it was assumed by analogy with `vvlog10f`, which does. So:
 
 ## Spikes (docs/plans/build-order.md)
 
-- **S1 latency chain** — not run; it is APP-2 in `docs/plans/app.md` (the Metal waterfall over the
+- **S1 latency chain** — not run; `docs/plans/app.md` tracks it (the Metal waterfall over the
   gRPC FFT stream, signposts on both ends, a dongle on the Mac).
 - **S2 throughput** — measured and passed (`docs/decisions/S2-throughput.md`): 20 MSPS sustained for
   ten minutes on 19% of one core, no overruns, Accelerate kernels. The harness is
   `swift run -c release s2-throughput --seconds 600` (synthetic 20 MSPS → NFM → null sink); numbers
-  from the Linux container are not meaningful, because it builds the portable kernels rather than
+  from a Linux build are not meaningful, because it builds the portable kernels rather than
   the vDSP ones the gate is about. The allocations criterion passed as well, at 0.0165 per block:
   `scripts/hot-path-allocations.sh` is the half-minute terminal check (it differences allocation
   counts across two run lengths, so only per-block allocation shows) and is worth running after any

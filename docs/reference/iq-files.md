@@ -115,8 +115,8 @@ These five test a CTCSS detector against specific failure modes:
 
 These three carry a DCS word under the voice tone in place of a CTCSS tone: the 23-bit word
 repeated at 134.4 bit/s, NRZ with a one as positive deviation, through a 300 Hz low-pass, at the
-±550 Hz the owner's GMRS handheld sends. The format and the deviation were read from two
-recordings of that handheld on 2026-09-23 (`docs/plans/signal-views.md`, SV-7), and
+±550 Hz a GMRS handheld sends. The format and the deviation were read from two
+recordings of a real handheld (`docs/plans/signal-views.md`, "DCS"), and
 `go/pkg/dcs` holds the encoder and the rule that names a code.
 
 - **`nfm_dcs` is the everyday case**: 023, the first code on every radio's list.
@@ -160,8 +160,8 @@ The three fixtures carrying a real 700 Hz PL tone expect a much lower **audio** 
 sub-audible deviation is only 11 dB under the 2.5 kHz voice deviation, the 300 Hz high-pass takes
 about 20 dB off it, and de-emphasis then pulls the 1 kHz tone down by another 10 while leaving the
 sub-audible residue alone. `nfm_tone` remains the fixture that pins audio quality; these exist to
-exercise the tone detector. The DCS fixtures assert the same 8 dB; `leyfix check` measured 18 to
-19 dB on them on 2026-09-24, and the bar was not raised because the engine's chain has not been
+exercise the tone detector. The DCS fixtures assert the same 8 dB; `leyfix check` measures 18 to
+19 dB on them, and the bar was not raised because the engine's chain has not been
 measured on them yet.
 
 `detect` is separate from `tone_hz`: a fixture can carry a tone and still expect no

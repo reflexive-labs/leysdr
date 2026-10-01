@@ -1,4 +1,4 @@
-# A GMRS handheld set to DCS 754 normal, recorded on 2026-09-23 with the HackRF (SV-7). The
+# A GMRS handheld set to DCS 754 normal, recorded with a HackRF. The
 # capture lives only on the checkout that recorded it (rf-captures/). 754's word also reads 076
 # and 203 at other rotations, and 116 inverted, so the answer is the one code the daemon names.
 name: dcs-code-present

@@ -113,7 +113,7 @@ means the same distance above that chart's own zero reference.
 
 **The ramp is tuned for a dark terminal.** Querying the terminal background is forbidden (no
 OSC query, no `HasDarkBackground`), so the ramp cannot adapt and has to target one background.
-The stops adopted on 2026-09-14 clear 3.9:1 or better against black and `#1e1e1e`, and
+The current stops clear 3.9:1 or better against black and `#1e1e1e`, and
 between 2.5:1 and 4.2:1 against white and `#fafafa`, with the teal cold end at the low end of
 that. On a light terminal the noise floor, which is the cold end and most of any chart, reads
 faint. That cost was accepted after rendering both ramps side by side: the ramp before

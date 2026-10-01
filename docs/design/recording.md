@@ -1,10 +1,9 @@
 # Design: Recording
 
-Status: implemented (C.12), 2026-09-18. Companion to `data-planes.md` (which owns the rule that lossless output
+Status: implemented. Companion to `data-planes.md` (which owns the rule that lossless output
 is a daemon-side sink), `semantic-tier.md` (which owns "persistence follows intent" and the
 activity segment) and `decoders.md` (whose kept-records store is the pattern the recording store
-copies). Milestone C.12 in `docs/plans/build-order.md`, and the last engine work before the Mac
-app starts.
+copies).
 
 ## The story
 
@@ -34,8 +33,7 @@ decode job's id names `ley://records/<job_id>`: one job, one recording, `Job.res
 
 **A recording is a sequence of parts, each a file with its own sidecar.** A part is the unit
 `ley play` already understands: samples plus a JSON sidecar giving format, rate, centre and the
-anchor. A continuous recording is one part. A gated recording has one part per exchange (decided
-2026-09-17): the squelch stays open through the pauses between overs, and every squelch opening
+anchor. A continuous recording is one part. A gated recording has one part per exchange: the squelch stays open through the pauses between overs, and every squelch opening
 inside the part is listed, so the overs are countable and an exchange plays back whole. A long
 recording is cut into parts on a timer. The rules compose: a transmission longer than the
 part length is two parts, contiguous on the sample timebase.
@@ -43,7 +41,7 @@ part length is two parts, contiguous on the sample timebase.
 **A gated recording is a transcript with audio attached.** Each part of a gated recording is an
 `ActivitySegment` (`jobs.proto`): start and end on the sample timebase, peak and mean level, and a
 `clip_uri` naming the part. The manifest lists them in order with the coverage gaps between them.
-This is the shape the semantic-tier doc gives a watch job's transcript, so when D.15 builds the
+This is the shape the semantic-tier doc gives a watch job's transcript, so when the durable job store builds the
 watch job its `record_clips` is this sink and this manifest, not a second format.
 
 **Time is never edited.** Silence is not removed from a file; the file is not written while the
@@ -117,8 +115,8 @@ is the channel's frequency, on an IQ part the capture's centre. `squelch_opens` 
 open-and-close of the squelch inside the part, on the same timeline; a continuous recording
 with no gate has none.
 
-`clipped_ms` is how long inside the part the radio clipped (added 2026-09-25 for the Library's
-inspector). It comes from the capture's `CaptureLevel` readings, the same count the window's
+`clipped_ms` is how long inside the part the radio clipped (shown in the app's
+Library inspector). It comes from the capture's `CaptureLevel` readings, the same count the window's
 clipping marks and `ley tune`'s warning use:
 a reading is a quarter second of capture samples, it counts when at least 1e-4 of its samples
 were at a converter rail, and the part is charged the stretch of each counting reading that lies
@@ -176,8 +174,7 @@ anchor of its own capture.
 
 ### Nothing heard
 
-A record job that ends with no part written is discarded (decided 2026-09-25, the Library's
-engine ask 4): a gated recording switched on and off while the squelch never opened, or a
+A record job that ends with no part written is discarded: a gated recording switched on and off while the squelch never opened, or a
 continuous one that ended before any audio reached it. It has nothing to play, and listing it put
 `0 parts · 0 s · 0 B` in every client. When the job ends (cancelled, duration, quiet, the channel
 closing, a restart) the runner removes the directory through `RecordingStore.delete` before the
@@ -227,7 +224,7 @@ message RecordConfig {
   uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 5000
   int64 stop_after_quiet_ms = 14; // end the job after this long with the squelch closed; 0 = never
   int64 part_ms = 15;         // cut parts on this timer; 0 = audio: one part, IQ: 60000
-  repeated GainWrite gains = 16; // in order; wins over gain when set (2026-09-24, plans/app.md M2-10)
+  repeated GainWrite gains = 16; // in order; wins over gain when set
 }
 
 enum RecordGate { RECORD_GATE_UNSPECIFIED = 0; NONE = 1; SQUELCH = 2; }
@@ -242,7 +239,7 @@ Rules the daemon enforces, each with its code:
 - `channel_id` naming a channel that is not there is `CHANNEL_NOT_FOUND`; a channel whose
   squelch is off (NaN) with `gate = SQUELCH` is `FAILED_PRECONDITION`, "squelch is off on
   chan_…; set one with ley set squelch".
-- `start_at_ns != 0` is `UNIMPLEMENTED` (a scheduled recording is a D.15 job).
+- `start_at_ns != 0` is `UNIMPLEMENTED` (a scheduled recording needs the durable job store).
 - Allocation failures are the allocator's: `NO_DEVICE`, `BLIND_SPOT`, and a declined
   don't-disturb with the reason, exactly as a decode job.
 
@@ -255,7 +252,7 @@ message naming the free space; a code a client can branch on is added when a cli
   `kind = RECORDING`, `size_bytes` the sum of the parts, `originating_job_id` the job, and a
   `metadata` map with these keys, frozen because `metadata_filter` matches on them by exact
   string: `kind` (`audio`|`iq`), `frequency_hz`, `mode`, `bandwidth_hz` (the channel's width,
-  `0` for IQ; added 2026-09-24 so the app's sidebar tunes the width recorded), `sample_rate`,
+  `0` for IQ; the app's sidebar tunes the width recorded), `sample_rate`,
   `format`, `duration_ms` (the sum of the parts' durations), `parts`, `started_at_ns`,
   `ended_at_ns`, `ended_by`, `device`. `RECORDS` and `SCAN` are answered too, from the stores that exist, so the
   service covers every kind that has a store; `SNAPSHOT` and `TRANSCRIPT` return nothing until
@@ -266,13 +263,12 @@ message naming the free space; a code a client can branch on is added when a cli
   part's samples file for `ley://recordings/<id>/<part>`. Clients on the same machine open the
   file; nothing is streamed.
 - `DeleteResource(uri)` removes a recording's directory, every part, sidecar and the manifest,
-  and returns `DeletedResource` with `freed_bytes`, what the directory held (added 2026-09-24
-  for the app's delete button, `plans/app.md` APP-5). It refuses while the recording's job is
+  and returns `DeletedResource` with `freed_bytes`, what the directory held. It refuses while the recording's job is
   `RUNNING` or `DEGRADED`, `FAILED_PRECONDITION` with "cancel the job first", because the runner
   has a part open there and cancelling finalises it. A part's URI is `INVALID_ARGUMENT`, since a
   recording is deleted whole, and a missing one is `JOB_NOT_FOUND`. A playback of one of its parts
   is stopped first, through the path `StopPlayback` takes, so its tombstone (caused by the
-  deleting client) goes out before the files go (2026-09-24). Otherwise nothing goes out on the
+  deleting client) goes out before the files go. Otherwise nothing goes out on the
   event plane: a recording is a resource, the job's entry is left as it was, and a client re-reads
   `ListResources`. Deleting the directory in Finder does the same, except that a playback
   already reading a part keeps its open file and plays to the end.
@@ -324,7 +320,7 @@ second reader on the channel's DSP-side ring), and drives a small state machine:
   comes back into a squelch that is already open. After that, a meter that disagrees with the
   machine is applied as the transition it missed (one sent before the runner subscribed, or lost
   to the fan-out buffer), at the meter's sample. Cancel closes the seeded part with what it
-  holds. Found 2026-09-25 by the owner, whose gated recordings of an FM station were 0 s and 0 B;
+  holds; without that, gated recordings of an FM station were 0 s and 0 B.
   `RecordingJobTests` holds a gated recording of `nfm_tone` cancelled after 2 s to one part of
   about 2 s, in both the frequency form and the channel form.
 - **closed**: audio goes into a pre-roll ring of `pre_roll_ms` at the audio rate (24000 floats,
@@ -348,18 +344,18 @@ is the accuracy claim, and the fixture test below holds the daemon to it.
 consumer of it. If the human retunes the capture away, the channel goes `OUT_OF_CAPTURE`, the
 runner closes the open part, records a coverage gap, marks the job `DEGRADED`, and resumes with
 a new part when the capture comes back to cover it. It does not hunt for another device; that
-rebinding is D.15's and the control-plane doc's "the human is never blocked by a job" is
+rebinding belongs to the durable job store, and the control-plane doc's "the human is never blocked by a job" is
 honoured by degrading, not refusing. A device detach is the same story through the capture's
 `detached` state. A daemon restart does not resume a recording: the next daemon finds the job in
 `kept-jobs.json`, repairs the last part's WAV header from the file length, closes the manifest
 with `ended_by = restart`, and marks the job `COMPLETED` with "ended by a daemon restart". A
 recording is a bounded artefact; whoever wanted a longer one starts another, and the open-ended
-"record everything while I am away" intent is the watch job (D.15), which will resume.
+"record everything while I am away" intent is the planned watch job, which will resume.
 
 **Don't-disturb.** A record job that created its capture holds it as a scan does, so the
 allocator's `inUse` refuses another job the radio without `take_over`. An interactive client is
-never refused by the daemon (decided 2026-09-17, keeping the control-plane rule that a job never
-blocks a person): the retune-away path above is what happens instead, and the check is in the
+never refused by the daemon, keeping the control-plane rule that a job never
+blocks a person: the retune-away path above is what happens instead, and the check is in the
 client that retunes. `ley set` and `ley tune` warn when the capture they would move has a running
 recording and need `--retune` to proceed, the same flag that already guards a capture other
 channels ride on; the app confirms before retuning such a capture, since it renders job state
@@ -383,7 +379,7 @@ ley play ley://recordings/<id> [--part N]
 ley jobs cancel <id>
 ```
 
-- **The app's record button is the channel form** (decided 2026-09-17): it records the channel
+- **The app's record button is the channel form**: it records the channel
   being listened to and ends when that channel closes. The frequency form is for scripts and
   agents, and `ley` has both.
 - **`ley record` runs in the foreground by default.** It prints a banner stating the decisions
@@ -422,7 +418,7 @@ Four tools and one resource, each with the `ley` mirror above and the same proto
 | `record` | `Jobs.StartJob(RecordConfig)` | `duration_s` is required (1 to 3600): what an agent starts must end without it. `gate`, `pre_roll_ms`, `hang_ms`, `take_over` as the config. Returns the `Job` and the URI, and refuses an active capture the way `tune` does |
 | `find_recordings` | `Resources.ListResources(RECORDING)` | the filters are the frozen metadata keys; the summary is the `ley recordings` table |
 | `get_recording` | `Resources.GetResource` + `ResolveLocalPath` | the manifest with each part's local path, so an agent hands a file to another tool by path |
-| `delete_recording` | `Resources.DeleteResource` | returns the `DeletedResource`; refused while the job runs, with `cancel_job` named (2026-09-24) |
+| `delete_recording` | `Resources.DeleteResource` | returns the `DeletedResource`; refused while the job runs, with `cancel_job` named |
 
 The resource `ley://recordings/<id>` returns the manifest as JSON. Samples are never returned
 through MCP; a file path is. `find_recordings` leaves the "not registered" list in
@@ -485,8 +481,8 @@ IQ but not for audio: a WAV holds what a demodulator already produced, and there
 in it for a channel to decode. Attaching one as a radio would put a fake capture and mode into
 `ley state`, and every other view would then show a signal that does not exist.
 
-**The daemon plays it** (decided 2026-09-18). The first cut handed the file to the client's own
-player (`open`, `$LEYLINE_PLAYER`), which works on one machine and is wrong in three ways: audio
+**The daemon plays it.** Handing the file to the client's own
+player (`open`, `$LEYLINE_PLAYER`) works on one machine and is wrong in three ways: audio
 comes out of the client rather than the radio's host, where `ley tune`'s does; the path is the
 daemon's, so a remote client is pointed at a file that is not there; and `open` returns the moment
 the player launches, so `ley play` cannot hold the terminal or stop what it started. Playback in
@@ -509,7 +505,7 @@ message Playback {
   double volume = 7;
   ClientInfo created_by = 8;
   PlaybackState state = 9;      // PLAYBACK_PLAYING; unset on the final event is the tombstone
-  bool paused = 10;             // position held (SetPlaybackPaused), added 2026-09-25
+  bool paused = 10;             // position held (SetPlaybackPaused)
 }
 ```
 
@@ -517,13 +513,12 @@ message Playback {
 `Event.playback` and `GetStateResponse.playbacks` on the pattern every other object already
 follows: full state, never a delta, and a tombstone with `state` unset when it ends, so a client watching its own playback can
 tell "it finished" from "somebody stopped it". While it plays the daemon publishes the whole
-playback four times a second with `position` current (`SessionStore.playbackInterval`, added
-2026-09-24), so `ley play` and the app render elapsed time from the event plane and neither polls
+playback four times a second with `position` current (`SessionStore.playbackInterval`), so `ley play` and the app render elapsed time from the event plane and neither polls
 `GetState`. A playback counts against the 256 events the daemon retains for `since_seq` replay
 like any other event: at four a second it fills them in about a minute, and a client resuming
 from an older seq re-reads `GetState` by the seq-gap rule.
 
-**A playback can be paused** (added 2026-09-25, the Library's engine ask 3).
+**A playback can be paused.**
 `Control.SetPlaybackPaused(playback_id, paused)` holds the position: the reader stops pushing
 blocks, the sink's ring runs dry and the device plays silence, and `position` stays where it was;
 resuming continues from it, with the pacing clock moved so the time spent paused is not owed as a
@@ -556,8 +551,8 @@ case where the file is local anyway, because a headless daemon is usually the on
   `FilePlaybackDevice` plays it), so only the write side is missing. And the re-quantising is not
   a loss on the radio this targets: the capture converts cu8 to cf32 as `(u-127.5)/127.5`, a pure
   affine map with nothing applied in between, and inverting it recovers every one of the 256
-  levels exactly -- 0 mismatches over all 256 levels and over 8,000,000 real samples of
-  `rf-captures/ht-narrow.cu8`. Storing cf32 from an 8-bit dongle is 8 bytes carrying 2 bytes of
+  levels exactly -- 0 mismatches over all 256 levels and over 8,000,000 real samples of a
+  real-radio capture (not in the repository). Storing cf32 from an 8-bit dongle is 8 bytes carrying 2 bytes of
   information: 69 GB an hour where 17 GB would do, and a 20 GiB cap that holds 18 minutes instead
   of 70. The additive change is `iq_format`, and the accurate value is *the device's native
   format* (`DeviceDescriptor.nativeFormat` already carries it), which is exact for a cs8 or cs16
@@ -565,18 +560,18 @@ case where the file is local anyway, because a headless daemon is usually the on
   the store's size becomes a problem**, ahead of anything about the audio format.
 - **Gating IQ.** It needs either a named channel's squelch or the detector. The first is the
   likely answer and is one additive field (`gate_channel_id`) when someone asks for it.
-- **Resuming a recording after a restart.** The watch job resumes (D.15); a recording ends.
-- **Scheduled starts.** `start_at_ns` is refused; a schedule is a job-store feature (D.15).
+- **Resuming a recording after a restart.** The planned watch job will resume; a recording ends.
+- **Scheduled starts.** `start_at_ns` is refused; a schedule is a feature of the durable job store.
 - **Streaming a recording's samples** over MCP or gRPC. `ResolveLocalPath` and `ley play` are
   the two ways in, and the data-planes doc's "no lossless network stream" holds. A playback moves
   no samples over the socket either: the daemon opens the file itself and the client sees a
   position.
 - **Seeking and looping a playback.** `position` is reported and not writable; a person who wants
   to hear a passage again plays the part again. A seek is one additive request field when somebody
-  asks. Pausing landed on 2026-09-25 ("Playing a recording back").
+  asks. Pausing exists ("Playing a recording back").
 - **Opus or any compressed audio.** Tied to the remote-access milestone, as the data-planes doc
-  says, and measurement (2026-09-18) shows disk space is not a reason for it. On the owner's
-  own captures, lossless compression buys 25% on NFM transmissions (75% of PCM) and 39% on
+  says, and measurement (2026-09-18) shows disk space is not a reason for it. On real
+  captures, lossless compression buys 25% on NFM transmissions (75% of PCM) and 39% on
   broadcast audio (61%) -- estimated with FLAC's fixed predictors and Rice coding, so real FLAC
   would do a few points better and not more. A radio recording is largely noise, and noise does
   not compress. That is a modest saving for an encoder dependency and for giving up the property
@@ -598,13 +593,12 @@ case where the file is local anyway, because a headless daemon is usually the on
 
 ## Open questions
 
-- **Pre-roll and hang defaults.** 500 ms and 5 s are chosen, not measured, and ship as such
-  (decided 2026-09-17). 500 ms covers the squelch's own attack and a syllable. The hang has to
+- **Pre-roll and hang defaults.** 500 ms and 5 s are chosen, not measured, and ship as such. 500 ms covers the squelch's own attack and a syllable. The hang has to
   outlast the pause between overs, because a part is an exchange; on a repeater the repeater's
   own tail holds the carrier up through part of that pause, on simplex nothing does, and 5 s is
-  the guess for both. `--hang` overrides it. Measure against `fixtures/hardware/ht-narrow.cu8`
-  (R-21) for the pre-roll and a day of real use for the hang, and write the numbers here.
-- **The store cap's number.** A fixed cap in one flag is decided (2026-09-17): predictable, and
+  the guess for both. `--hang` overrides it. Measure against a real-radio capture
+  (not in the repository) for the pre-roll and a day of real use for the hang, and write the numbers here.
+- **The store cap's number.** A fixed cap in one flag: predictable, and
   the same shape as the kept-records store. 20 GiB is the guess; a fraction of free space and
   separate IQ and audio caps were considered and set aside until a machine shows the fixed
   number wrong.

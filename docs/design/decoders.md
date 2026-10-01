@@ -1,6 +1,6 @@
 # Design: Decoders
 
-Status: draft, being implemented (Milestone D.17, `docs/plans/decoders.md`). Companion to
+Status: implemented for APRS, SAME and AIS (`docs/plans/decoders.md`). Companion to
 `control-plane.md`, `data-planes.md` and `semantic-tier.md`; this doc assumes their vocabulary
 (capture, channel, sink, job, resource, telemetry plane) and their invariants. The requirements are
 the first half; the second half, "Decisions", records what the first build chose where the
@@ -291,7 +291,7 @@ other decoders running.
 
 ## Decisions
 
-What the first build (D.17, driver D) chose. Each is additive on the wire and can be revisited
+What the first build chose. Each is additive on the wire and can be revisited
 without a schema change unless it says otherwise.
 
 **Transport: stdio.** The daemon spawns the plugin and writes to its stdin one varint-delimited
@@ -317,7 +317,7 @@ makes a capture (a capture that already covers the frequency on any device, else
 else a capture nobody is using by the don't-disturb test, else it declines naming who has the
 radio unless `take_over`), adds a persistent channel the job owns with `required_hz` set, attaches
 the plugin as a sink, and spawns the process. This is the first use of
-`AllocationRequest.channel`, which watch jobs (D.15) will share. A channel that goes
+`AllocationRequest.channel`, which the planned watch jobs will share. A channel that goes
 `OUT_OF_CAPTURE` puts the job in `DEGRADED` with a coverage gap; the daemon rebuilds it when the
 capture returns and the job goes back to `RUNNING`. Without `keep`, a decode job is ephemeral in
 exactly the way a scan is: it belongs to the client that started it and its records are the live
@@ -357,8 +357,8 @@ daemon side of the boundary.
 
 **APRS is decoded in Go, in this repository.** `leydec-aprs` is an AFSK 1200 demodulator, HDLC
 deframer, AX.25 parser and APRS parser written for the plugin contract, rather than an adapter
-around Direwolf or multimon-ng. It costs a user no Homebrew formula, it runs in the Linux
-container where the contract's tests live, and a synthetic AFSK fixture round-trips through the
+around Direwolf or multimon-ng. It costs a user no Homebrew formula, it runs on Linux,
+where the contract's tests also run, and a synthetic AFSK fixture round-trips through the
 whole pipeline in the engine test suite. Direwolf decodes weak packets this one will miss; a
 Direwolf adapter is a second plugin, not a replacement, and the contract exists so both can sit
 side by side.

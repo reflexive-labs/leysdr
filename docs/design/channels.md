@@ -1,12 +1,10 @@
 # Design: Bands, channels and bookmarks
 
-Status: implemented 2026-09-29 as APP-9, from the plan
-`../plans/2026-09-28-2037-feat-bands-channels-bookmarks-plan.md`; the `ley` side and the client
-library are tested on Linux, the window's views are unverified on the Mac (`../plans/app.md`,
-APP-9, "Unverified on the Mac"), and the audio-gone measurement below is still open. Companion
-to `scan.md` (which owns the sweep behind Scan band), `decoders.md` (which owns the labels store
-this copies and the decoders a plan channel can name) and `semantic-tier.md`. Work items are APP-9
-in `../plans/app.md`; E.4 in `../plans/build-order.md` is the milestone.
+Status: implemented. The `ley` side and the client library are tested on Linux; the window's
+views have not been checked on a Mac (`../plans/app.md` lists what remains), and the audio-gone
+measurement below is still open. Companion to `scan.md` (which owns the sweep behind Scan band),
+`decoders.md` (which owns the labels store this copies and the decoders a plan channel can name)
+and `semantic-tier.md`. The build record is `../plans/archive/channels.md`.
 
 ## The stories
 
@@ -84,7 +82,7 @@ sidebar's bands come from a file both clients agree on rather than a second tabl
   `ley bookmarks` (list, `add`, `move`, `remove`, `--tag`, `--json`) is the mirror, so nothing
   here works only from Swift. The app reloads the file when it changes on disk, so a bookmark
   added from a terminal appears in the sidebar.
-- **CHIRP import** landed with APP-9 ("CHIRP import", below): `ley bookmarks import` and
+- **CHIRP import** ("CHIRP import", below): `ley bookmarks import` and
   `File > Import CHIRP…`, both converters into the same file.
 
 ## Decisions for the app
@@ -150,8 +148,8 @@ Repeater offsets (2 m ±600 kHz, 70 cm +5 MHz, GMRS +5 MHz) are notes on the ent
 paired input frequency on a bookmark is a later feature and its file field is reserved below.
 
 The table stays US and the page says so. PMR446, the European marine and airband channelisation
-(8.33 kHz) and every other region are the content layer's business (`../plans/v1-release.md`,
-R-22), which will ship them as packs into the same shape. Two amateur bands the table lacks and an
+(8.33 kHz) and every other region are the content layer's business (`../plans/v1-release.md`),
+which will ship them as packs into the same shape. Two amateur bands the table lacks and an
 RTL-SDR reaches, 6 m and 1.25 m, are added with no plan.
 
 ### Bands are the spine of the sidebar
@@ -167,7 +165,7 @@ expands to what is inside it; the rest is collapsed.
   plan, `Channels…`. The raised, bordered controls distinguish actions from the bookmark rows
   below them. A sweep's progress or hits sit beneath the strip, followed by the bookmarks. The
   band the tuned frequency is in is the expanded one, following the rule that selection reflects
-  state rather than causing it (decided 2026-09-21), so the click expands the row by tuning it; a
+  state rather than causing it, so the click expands the row by tuning it; a
   disclosure chevron at the row's edge expands or collapses without tuning, for a ham looking
   through 70 cm while listening on 2 m, and a row opened that way closes on the next tune elsewhere.
   A band whose plan has 24 channels or fewer also draws them as faint ticks on the band rail;
@@ -359,8 +357,7 @@ asked for next.
   capture id survives the sweep: the allocator never destroys a capture it did not create, so the
   window's mirror sees the same capture retuned and restored, never a tombstone. One thing to
   measure before the item is ticked: how long the window's audio is gone for a 2 m sweep at
-  2.4 MSPS on the owner's dongle, observable from the event stream, and the answer belongs in the
-  plan item.
+  2.4 MSPS on an RTL-SDR, observable from the event stream; the answer belongs here.
 - **Tone squelch stays undecided.** A bookmark carrying a tone is the first client feature that
   would want the daemon to mute audio when the tone is absent. The proto comment on field 13
   says why it is not done: a missed tone mutes audio with no sign of why. The design for that is
@@ -430,7 +427,7 @@ asked for next.
   asks to hide bands.
 - **Usage ordering and a Recent section.** Frequency order is the sidebar's; the Tune menu and
   the filter field are where a recent frequency is reached. Reconsider when a user asks.
-- **Regional plans.** US only; packs later (R-22).
+- **Regional plans.** US only; packs later, with the content layer.
 - **An MCP `bookmarks` tool** (list, add) and its eval scenario (`../dev/evals.md`). No story
   asks for an agent writing bookmarks; the file is readable through `ley bookmarks --json`, and
   the tool comes with the first agent session that wants to keep a frequency.
@@ -440,7 +437,7 @@ asked for next.
 
 ## Open questions
 
-- **Marine's plan size**, decided 2026-09-28: the full ITU plan with the US A and B variants
+- **Marine's plan size**, decided: the full ITU plan with the US A and B variants
   and ship and coast entries, in the data, the picker and `ley bands marine`, because the
   picker's filter copes with a hundred rows and a boater's dozen is a subset of it.
 - **The Scan band measurement** in "The daemon": how long the audio is gone.

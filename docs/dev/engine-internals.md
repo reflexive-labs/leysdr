@@ -850,7 +850,7 @@ resolved values in `PersistenceParams` on the stream descriptor.
 The product is Mac-only and uses vDSP, AVFoundation, os_signpost directly (AGENTS.md). Files that
 import those frameworks are wrapped in `#if canImport(Accelerate)` / `#if canImport(AVFoundation)` /
 `#if canImport(os)` with a portable branch that exists only so the non-DSP core compiles and the
-control plane can be exercised on Linux CI and in the moat container. `DSP/Kernels.swift` is the one
+control plane can be exercised on Linux, in CI and in a development container. `DSP/Kernels.swift` is the one
 place with two implementations of the same primitives; the Accelerate one is the product, the
 portable one is the reference the macOS parity tests compare against (`KernelParityTests`). The
 demodulators and ladder call kernels only — no `vDSP_*` outside `Kernels.swift` and `FFT.swift`.

@@ -1,6 +1,7 @@
 # Review fixes, v1.0 pass
 
-Source: `docs/plans/archive/v1-review-findings.md` (in-repo this time, so the ids below resolve). Scope: every
+Source: the v1 review (its findings report is not kept in the repository; the ids below are its
+finding ids, which commit messages cite). Scope: every
 confirmed or adjudicated finding that is a code or comment change. Design findings that need a
 milestone go to `docs/plans/v1-release.md` and are listed under "Deferred" here with the item that
 carries them. One commit per work item, verified independently, both suites green after each.

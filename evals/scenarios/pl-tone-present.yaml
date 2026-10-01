@@ -1,4 +1,4 @@
-# The other half: a handheld with a real 100 Hz PL, recorded on the owner's dongle. Same task,
+# The other half: a handheld with a real 100 Hz PL, recorded on an RTL-SDR. Same task,
 # opposite answer, so a detector tuned to say "none" fails here.
 name: pl-tone-present
 description: Listening to a handheld with a 100 Hz PL, the agent names it.

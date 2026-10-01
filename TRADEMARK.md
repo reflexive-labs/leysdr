@@ -1,8 +1,8 @@
 # Trademark policy
 
 Reflexive Labs, LLC claims "Leyline", the `ley` command name and "leysdr" (the repository, domain and
-handle) as trademarks for this project. They are unregistered: use ™ with them if you need a symbol, never ® until a registration issues. A
-clearance search and an application are planned before the first public release.
+handle) as trademarks for this project. They are unregistered: use ™ with them if you need a
+symbol, never ® until a registration issues.
 
 The code is open source (see `LICENSE` and `engine/LICENSE`), and open code does not open the name.
 Neither licence grants trademark rights: Apache-2.0 says so in section 6, and the GPL is a copyright

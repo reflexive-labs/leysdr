@@ -5,7 +5,7 @@ people and agents working on it. Prose in this directory follows the [writing gu
 
 ## Using Leyline
 
-You have an RTL-SDR (or an IQ recording) and a Mac.
+You have an RTL-SDR or a HackRF (or an IQ recording) and a Mac.
 
 | read | when |
 |---|---|
@@ -27,17 +27,17 @@ things stand" section of the [README](../README.md) and `ley help roadmap`;
 
 Contributors and coding agents. Read first, in this order:
 
-1. [`AGENTS.md`](../AGENTS.md): the thirteen invariants, written as instructions to an agent and
-   used as the review checklist. Each has its rationale in a design doc below.
-2. [`CONTRIBUTING.md`](../CONTRIBUTING.md): the gate (`make check`), tests without hardware,
-   commits, the licence of your contribution.
-3. [Writing guide](writing-guide.md): the voice, the words, and which kind of document goes where.
+1. [`CONTRIBUTING.md`](../CONTRIBUTING.md): building and testing, the gate (`make check`), how to
+   propose a change, sign-off, the licence of your contribution.
+2. [Writing guide](writing-guide.md): the voice, the words, and which kind of document goes where.
+3. [`AGENTS.md`](../AGENTS.md): the thirteen invariants as a condensed rule list for coding agents,
+   also used as the review checklist. Each has its rationale in a design doc below.
 
 ### Contracts and setup (`dev/`)
 
 | read | before |
 |---|---|
-| [Developer setup](dev/setup.md) | building on the Mac, the Linux container, regenerating protos, cutting a release |
+| [Developer setup](dev/setup.md) | building on the Mac or on Linux, regenerating protos, cutting a release |
 | [Engine internals](dev/engine-internals.md) | touching the engine or daemon: threads, the hot path, pipeline math, devices, services, the error-code table, daemon lifecycle |
 | [CLI style](dev/cli-style.md) | changing anything a `ley` user sees: colour, streams, glyphs, layout, the frozen contracts |
 | [Swift style](dev/swift-style.md) | writing Swift anywhere in the repository: file headers and SPDX, comment and doc-comment voice, naming and unit suffixes, isolation and `Task`, the session, mirror and coalescer patterns, what only the Mac can check |
@@ -52,26 +52,26 @@ changes the doc first.
 
 | doc | question | status |
 |---|---|---|
-| [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | draft; v0 implements it |
-| [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | draft; v0 implements it |
-| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | draft; scan and the MCP adapter (`ley mcp`) implemented, durable jobs and transcripts not |
-| [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | decided, implemented (D.13) |
-| [Signal views](design/signal-views.md) | the waterfall, the channel view, sub-audible (CTCSS) tones, and what honest means | draft; implemented except DCS and the sonogram |
-| [Scope](design/scope.md) | the audio waveform and the demod tap under it | draft; `ley scope` implements it |
+| [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | implemented |
+| [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | implemented; the shared-memory ring is not built |
+| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scan and the MCP adapter (`ley mcp`) implemented; durable jobs and transcripts not |
+| [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | implemented |
+| [Signal views](design/signal-views.md) | the waterfall, the channel view, sub-audible (CTCSS) tones, and what honest means | implemented except the sonogram |
+| [Scope](design/scope.md) | the audio waveform and the demod tap under it | implemented (`ley scope`) |
 | [Audio meters](design/audio-meters.md) | `ley levels` and `ley waveform` as instruments | implemented |
-| [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | draft; persistence implemented, the rest not |
-| [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | draft; APRS being built (D.17) |
-| [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented (C.12) |
-| [Brand](design/brand/README.md) | the mark and the splash as the owner drew them, drawn in code (APP-8); how the icon is made | 2026-09-25 |
-| [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Scan band over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | implemented 2026-09-29 (APP-9); views unverified on the Mac |
+| [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | partial: persistence and `ley monitor` implemented; occupancy and burst capture not |
+| [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | implemented for APRS, SAME and AIS; more decoders planned |
+| [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented |
+| [Brand](design/brand/README.md) | the mark and the splash, drawn in code; how the icon is made | implemented |
+| [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Scan band over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | implemented |
 
 ### Decisions (`decisions/`)
 
 One decision each, dated, with what it costs and what would reopen it.
 [D2 licensing](decisions/D2-licensing.md) (everything ships open; engine GPL-3.0-or-later, all else
-Apache-2.0), [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb now, IOUSBHost later)
-and [S2 throughput](decisions/S2-throughput.md) (20 MSPS on one fifth of a core: the all-Swift
-engine stands).
+Apache-2.0), [S2 throughput](decisions/S2-throughput.md) (20 MSPS on one fifth of a core: the
+all-Swift engine stands) and [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb now,
+IOUSBHost later).
 
 ### Plans (`plans/`)
 
@@ -81,18 +81,15 @@ What is being built, in what order, and the record of what each step found.
   and "Closing the core", the gate between the engine milestones and the app.
   [User stories](plans/user-stories.md) are the acceptance tests of record.
 - Live plans, with `[ ]` items still open: [v1 release](plans/v1-release.md) (the gap analysis and
-  work list for the first shared release), [signal views](plans/signal-views.md) (DCS and the
-  sonogram remain), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
-  [decoders](plans/decoders.md) (the plugin contract and APRS first; the other four drivers follow),
-  [MCP adapter](plans/mcp.md) (where the server lives and the order the tools land; the tools the
-  daemon can back landed as `ley mcp`, the rest wait on their milestones),
-  [the Mac app](plans/app.md) (Milestone E: the façade and the skeleton window landed as APP-1,
-  the spectrum and spike S1 are next), and
-  [bands, channels and bookmarks](plans/2026-09-28-2037-feat-bands-channels-bookmarks-plan.md)
-  (APP-9 as seven units an agent can run unattended, with the gates and the Mac checklist each
-  leaves behind).
-- [`plans/archive/`](plans/archive/): finished plans and review records, kept because commit
-  messages cite their item ids. Nothing in there is a work list any more.
+  work list for the first shared release), [signal views](plans/signal-views.md) (the sonogram
+  remains), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
+  [decoders](plans/decoders.md) (APRS, SAME and AIS are done; more decoders follow),
+  [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
+  milestones) and [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
+  sidebar are done; lifecycle and distribution remain).
+- [`plans/archive/`](plans/archive/): finished plans and review records, among them
+  [bands, channels and bookmarks](plans/archive/channels.md), kept because commit messages cite
+  their item ids. Nothing in there is a work list any more.
 
 ### For coding agents
 
@@ -101,8 +98,8 @@ this directory is where its rules come from. The four reads
 that prevent the most rework: the design doc for the area before a structural change,
 [CLI style](dev/cli-style.md) before changing output, [Engine internals](dev/engine-internals.md)
 plus the fixture round-trips in [IQ files and fixtures](reference/iq-files.md) before DSP, and
-[Swift style](dev/swift-style.md) before writing Swift — its last two sections say what the Linux
-container can verify, what only the Mac catches, and what to say when handing over work that was
+[Swift style](dev/swift-style.md) before writing Swift — its last two sections say what a Linux
+build can verify, what only the Mac catches, and what to say when handing over work that was
 never compiled.
 
 Two documents are parsed by tests, so their shape is part of the contract: the "Error codes" table
@@ -117,9 +114,9 @@ docs/
 ├── README.md              this page
 ├── writing-guide.md       voice, words, document kinds
 ├── guide/                 using Leyline: install, using-ley, troubleshooting
-├── reference/             lookup: cli, iq-files, clients
-├── design/                why it is built this way, with the measured numbers
-├── decisions/             dated decision records (D2, S3)
-├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, release-checklist
+├── reference/             lookup: cli, iq-files, clients, mcp, writing-a-decoder
+├── design/                why it is built this way, with the measured numbers; brand/
+├── decisions/             decision records (D2, S2, S3)
+├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, evals, release-checklist
 └── plans/                 build-order, user-stories, live plans; archive/ for finished ones
 ```
