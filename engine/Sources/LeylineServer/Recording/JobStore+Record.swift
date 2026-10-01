@@ -254,11 +254,11 @@ extension JobStore {
                               gated: Bool, job: JobID) async
     {
         // 0 dBFS is not a squelch anybody means: proto3 has no "absent" for a double, so an unset
-        // field and a request to mute everything look the same, so 0 is read as unset. NaN is
-        // the channel default too for a gated recording (`jobs.proto`, `squelch_dbfs`): a gate
-        // with the squelch off has nothing to watch, and the app's channel page, which has no
-        // squelch of its own to copy, sends NaN (plans/app.md, APP-5, "Fixed 2026-09-25").
-        // `ley record --squelch off` sends NaN for a continuous recording, where it means off.
+        // field and a request to mute everything look the same, so 0 is read as unset. NaN is the
+        // channel default too for a gated recording (`jobs.proto`, `squelch_dbfs`): a gate with the
+        // squelch off has nothing to watch, and the app's channel page, which has no squelch of its
+        // own to copy, sends NaN. `ley record --squelch off` sends NaN for a continuous recording,
+        // where it means off.
         var want = config.squelchDbfs
         if want == 0 || (gated && want.isNaN) {
             // No level asked for. A continuous recording needs none; a gated one needs one or it
@@ -279,11 +279,11 @@ extension JobStore {
     /// The noise floor at the channel's width plus 10 dB, from its own meter: the band's floor,
     /// which is the meter's power less its SNR, once the capture has measured one, else the
     /// channel's own power. The channel's power is its floor only while nothing is on it; on a
-    /// broadcast carrier it is the carrier, and a squelch 10 dB above that never opens, so a
-    /// gated recording from the channel page wrote nothing (plans/app.md, APP-5, "Fixed
-    /// 2026-09-25"). `ley tune`'s auto sits over the band's floor for the same reason. Bounded: a
-    /// channel whose meter never arrives leaves the squelch alone, and the gate then sees a
-    /// squelch that is off -- which the runner reports rather than silently recording nothing.
+    /// broadcast carrier it is the carrier, and a squelch 10 dB above that never opens, so a gated
+    /// recording of it would write nothing. `ley tune`'s auto sits over the band's floor for the
+    /// same reason. Bounded: a channel whose meter never arrives leaves the squelch alone, and the
+    /// gate then sees a squelch that is off -- which the runner reports rather than silently
+    /// recording nothing.
     private func autoSquelch(_ lease: any ChannelLease) async -> Double? {
         let subscription = lease.engine.telemetrySubscription()
         var floors: [Double] = []
@@ -310,10 +310,9 @@ extension JobStore {
     /// Sets the gains the request asked for on the capture the allocator made, in order, and
     /// returns why one could not be set, or nil. `gains` wins over `gain` when both are sent
     /// (`jobs.proto`, `RecordConfig`). An empty element is the first the device lists and a name
-    /// matches ignoring case (`resolvedGainElement`), as a gain write and a sweep read it. Until
-    /// 2026-09-24 this passed the empty element through and dropped the refusal, so `ley record
-    /// --gain` never reached a real radio: a HackRF take asked for 0 dB ran at LNA 8
-    /// (plans/app.md, M2-10).
+    /// matches ignoring case (`resolvedGainElement`), as a gain write and a sweep read it. Passing
+    /// an empty element through, or dropping the refusal, would leave `ley record --gain` never
+    /// reaching a real radio: a HackRF take asked for 0 dB would run at LNA 8.
     private func applyGain(_ config: Leyline_V1_RecordConfig, capture: CaptureID) async -> EngineError? {
         let writes = config.gains.isEmpty ? (config.hasGain ? [config.gain] : []) : config.gains
         guard !writes.isEmpty else { return nil }

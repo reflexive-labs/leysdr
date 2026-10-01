@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The tone detector is decided by the mode, at creation and again on every mode write: a channel
-// that starts as AM and is written to NFM looks for a tone from then on, and one written away
-// from NFM stops. The Mac app keeps one channel across bands and writes the mode, which is how
-// the bug of a channel that never ran tone detection was found (2026-09-20).
+// that starts as AM and is written to NFM looks for a tone from then on, and one written away from
+// NFM stops. The Mac app keeps one channel across bands and writes the mode, so a detector decided
+// only at creation would leave its channel never looking for a tone.
 
 import Foundation
 @testable import LeylineServer

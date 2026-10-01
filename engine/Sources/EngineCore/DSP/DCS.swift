@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // DCS (digital-coded squelch) decoding over the sub-audible tap (docs/design/signal-views.md,
-// "DCS"; docs/plans/signal-views.md, SV-7).
+// "DCS").
 //
-// Everything this file assumes about the format was read off two real takes on 2026-09-23
-// (`rf-captures/ht-dcs-023.cf32` and `ht-dcs-754.cf32`, the SV-7 entry "Recorded and read
-// 2026-09-23"): a 23-bit word repeated without a gap at 134.4 bit/s; in received order, with
-// positive deviation as a one, nine code bits low bit first, the fixed bits `001` and eleven
-// parity bits; the word a Golay(23,12) codeword under g(x) = x^11 + x^9 + x^7 + x^6 + x^5 + x + 1
-// with the first received bit as the coefficient of x^22. The decoder runs in the channel's
-// detached sub-audible task beside the CTCSS detector, never on the DSP thread.
+// Everything this file assumes about the format was read off two real takes of a handheld recorded
+// on 2026-09-23 (`rf-captures/ht-dcs-023.cf32` and `ht-dcs-754.cf32`, gitignored with the rest of
+// `rf-captures/`): a 23-bit word repeated without a gap at 134.4 bit/s; in received order, with
+// positive deviation as a one, nine code bits low bit first, the fixed bits `001` and eleven parity
+// bits; the word a Golay(23,12) codeword under g(x) = x^11 + x^9 + x^7 + x^6 + x^5 + x + 1 with the
+// first received bit as the coefficient of x^22. The decoder runs in the channel's detached
+// sub-audible task beside the CTCSS detector, never on the DSP thread.
 
 import Foundation
 
@@ -269,9 +269,8 @@ package final class DCSDecoder {
     ///
     /// where `eye` is mean |sample| over the standard deviation of |sample| at the sliced bit
     /// centres. At an eye of 2 about one sample in 44 lands on the wrong side under Gaussian
-    /// scatter, and 8 or more is a clean eye. The two real takes read 30 to 68 from the first lock
-    /// (docs/plans/signal-views.md, SV-7, "Landed (engine)"), so the score separates a weak or
-    /// noisy lock from a clean one and does not rank clean ones.
+    /// scatter, and 8 or more is a clean eye. The two real takes read 30 to 68 from the first lock,
+    /// so the score separates a weak or noisy lock from a clean one and does not rank clean ones.
     package static func confidence(wordsAgreeing: Int, eye: Double) -> Double {
         let words = Double(Swift.min(Swift.max(wordsAgreeing, 0), wordsForLock)) / Double(wordsForLock)
         guard eye.isFinite else { return words }

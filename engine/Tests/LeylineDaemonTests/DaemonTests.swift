@@ -33,7 +33,7 @@ final class DaemonTests: XCTestCase {
             XCTAssertEqual(state.daemon.recordingsCapBytes, 20 << 30)  // the harness's default cap
             XCTAssertEqual(state.eventSeq, 0)
 
-            // Scan jobs are implemented (D.13): an idle daemon has none, and that is not an error.
+            // An idle daemon has no jobs, and that is not an error.
             let none = try await c.jobs.listJobs(Leyline_V1_ListJobsRequest(), metadata: testMetadata)
             XCTAssertTrue(none.jobs.isEmpty)
             XCTAssertTrue(state.jobs.isEmpty)
@@ -48,8 +48,8 @@ final class DaemonTests: XCTestCase {
                 XCTAssertEqual(detail?.code, "UNIMPLEMENTED")
                 XCTAssertEqual((error as? RPCError)?.code, .unimplemented)
             }
-            // Resources is implemented (C.12). An idle daemon holds none, and an empty list is the
-            // correct answer rather than an error.
+            // An idle daemon holds no resources, and an empty list is the correct answer rather
+            // than an error.
             let resources = try await c.resources.listResources(Leyline_V1_ListResourcesRequest(), metadata: testMetadata)
             XCTAssertTrue(resources.resources.isEmpty)
         }

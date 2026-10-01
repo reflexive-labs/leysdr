@@ -20,9 +20,9 @@ struct StoredAnchor: Codable, Sendable {
     var driftPpm: Double
     var fromSample: UInt64
     /// The capture this anchor dates, once a job has outlived one: a kept job resumed after a
-    /// daemon restart writes into the same file from a new capture whose sample index starts
-    /// over, and an anchor that did not say which capture it belonged to would date the old
-    /// records by the new clock. Absent in sidecars written before DEC-11, which had one capture.
+    /// daemon restart writes into the same file from a new capture whose sample index starts over,
+    /// and an anchor that did not say which capture it belonged to would date the old records by
+    /// the new clock. Absent in a sidecar whose job never outlived a capture.
     var captureID: String?
 
     enum CodingKeys: String, CodingKey {
@@ -92,9 +92,9 @@ actor RecordStore {
     /// Opens a writer for a kept job. Throws if the store directory cannot be made: a `keep` job
     /// that silently kept nothing would be worse than one that refused to start.
     ///
-    /// A job the store already has files for -- a kept job resumed after a daemon restart
-    /// (DEC-11) -- appends to them: the records and the count carry on, the old anchors stay
-    /// (each naming the capture it dated), and the new capture's anchor joins them.
+    /// A job the store already has files for -- a kept job resumed after a daemon restart --
+    /// appends to them: the records and the count carry on, the old anchors stay (each naming the
+    /// capture it dated), and the new capture's anchor joins them.
     func open(job: JobID, config: Leyline_V1_DecodeConfig, manifest: Leyline_V1_DecoderManifest,
               capture: CaptureID, anchor: CaptureAnchor?) throws -> RecordWriter
     {

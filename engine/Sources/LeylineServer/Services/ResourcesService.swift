@@ -4,8 +4,8 @@
 //
 // Every kind that has a store is answered, rather than one kind of the service: RECORDING from the
 // recordings store's manifests, RECORDS from the kept-decode store's sidecars, SCAN from the jobs
-// the daemon still remembers. SNAPSHOT and TRANSCRIPT return nothing until their milestones --
-// an empty list, not an error, because there are none.
+// the daemon still remembers. SNAPSHOT and TRANSCRIPT return nothing until the jobs that make them
+// are built -- an empty list, not an error, because there are none.
 //
 // Samples are never streamed. `ResolveLocalPath` hands a client on this machine a path and it
 // opens the file (docs/design/data-planes.md, "no lossless network stream").

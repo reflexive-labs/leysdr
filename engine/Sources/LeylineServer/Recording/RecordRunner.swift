@@ -515,11 +515,11 @@ actor RecordRunner: RecordRunning {
 
     /// A meter carries the squelch's state every 100 ms. The gate opens on transitions, and a
     /// squelch that was open before the recording started sends none: a broadcast carrier holds it
-    /// open for as long as it is on the air, and a gated recording of one wrote nothing until
-    /// 2026-09-25. So the first meter seeds the gate, opening a part at once when the squelch is
-    /// already open (docs/design/recording.md, "The gate"). After that a meter that disagrees
-    /// with the gate is an edge the recording never saw -- one sent before it subscribed, or lost
-    /// to the fan-out buffer -- and is applied at the meter's sample.
+    /// open for as long as it is on the air, and a gate waiting for a transition would record
+    /// nothing of it. So the first meter seeds the gate, opening a part at once when the squelch is
+    /// already open (docs/design/recording.md, "The gate"). After that a meter that disagrees with
+    /// the gate is an edge the recording never saw -- one sent before it subscribed, or lost to the
+    /// fan-out buffer -- and is applied at the meter's sample.
     private func noteMeter(open: Bool, at sample: UInt64) async {
         if open != squelchOpen {
             squelchOpen = open

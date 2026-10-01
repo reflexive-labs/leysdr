@@ -3,7 +3,7 @@
 // The capture's raw level: samples at the converter's rails and the peak, counted on the device
 // thread where every block is already converted. The daemon uses it to report whether the radio
 // is clipping. The loudest FFT bin is not used because it reads near full scale on a
-// strong steady carrier at auto gain when nothing is wrong (`docs/plans/app.md`, M2-5). Owned by
+// strong steady carrier at auto gain when nothing is wrong. Owned by
 // `CaptureDSPCore`, published a quarter of a second at a time, read by `TelemetryService` as
 // `CaptureLevel`.
 

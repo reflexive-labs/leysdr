@@ -48,10 +48,10 @@ actor IQDecodeRunner: DecodeRunning {
     private let ring = FrameRing(slots: IQDecodeRunner.iqSlots, slotBytes: CaptureDSPCore.blockSize * 8)
     private nonisolated let tapID = StreamID()
 
-    /// The record sequence: 1-based and contiguous per job, so it continues from what a kept
-    /// job's store already holds when the job is resumed after a restart (DEC-11).
+    /// The record sequence: 1-based and contiguous per job, so it continues from what a kept job's
+    /// store already holds when the job is resumed after a restart.
     private var seq: UInt64
-    /// Record count and last-record time, for the detail it publishes while RUNNING (DEC-23).
+    /// Record count and last-record time, for the detail it publishes while RUNNING.
     private var liveness = DecodeLiveness()
     private var task: Task<Void, Never>?
     /// The plugin the drain is feeding. Held outside the actor because the drain runs as its own
@@ -118,7 +118,8 @@ actor IQDecodeRunner: DecodeRunning {
             let status = await runPlugin()
             if Task.isCancelled || stopped { break }
             restarts += 1
-            // A coverage gap the job reports. The transcript's own Gap list arrives with D.15.
+            // A coverage gap the job reports. A transcript's own Gap list arrives with the watch
+            // job, which is not built yet (docs/plans/build-order.md).
             await onStatus(.degraded, "the decoder exited (status \(status)); restarting in \(Int(wait)) s (restart \(restarts))")
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, DecodeRunner.maxRestartSeconds)
@@ -233,9 +234,9 @@ actor IQDecodeRunner: DecodeRunning {
 
     // MARK: Stamping
 
-    /// The daemon's own fields (DEC-1): a record id, the job, the sequence. There is no channel, so
-    /// `channel_id` is empty and `rssi_dbfs`/`snr_db` stay NaN -- an IQ decoder reads the whole band
-    /// and there is no channel meter to stamp from (docs/design/decoders.md, section 4).
+    /// The daemon's own fields: a record id, the job, the sequence. There is no channel, so
+    /// `channel_id` is empty and `rssi_dbfs`/`snr_db` stay NaN -- an IQ decoder reads the whole
+    /// band and there is no channel meter to stamp from (docs/design/decoders.md, section 4).
     private func emit(_ incoming: Leyline_V1_DecodeRecord) async {
         var rec = incoming
         if rec.protocol.isEmpty { rec.protocol = installed.manifest.name }

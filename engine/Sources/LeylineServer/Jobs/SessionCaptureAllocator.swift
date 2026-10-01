@@ -55,7 +55,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
     }
 
-    // MARK: One channel (decode jobs, and watch jobs from D.15)
+    // MARK: One channel (decode jobs, and watch jobs once they are built)
 
     /// The order and the reasons are the design doc's (docs/design/decoders.md, "Decisions": "A
     /// decode job is a job"): a capture that already covers the frequency on any device, else a

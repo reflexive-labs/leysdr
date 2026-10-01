@@ -155,10 +155,10 @@ extension RecordingJobTests {
         XCTAssertEqual(tone.hz, 1000, accuracy: 20, "the part holds the fixture's tone, not silence")
     }
 
-    /// A broadcast's squelch is open before the recording starts and never closes, so no
-    /// transition arrives. The job's own channel gets its squelch after it is built, in place, and
-    /// the carrier keeps it open across that write: no edge there either. Until 2026-09-25 this
-    /// finalised an empty recording on cancel.
+    /// A broadcast's squelch is open before the recording starts and never closes, so no transition
+    /// arrives. The job's own channel gets its squelch after it is built, in place, and the carrier
+    /// keeps it open across that write: no edge there either. A gate that waited for an edge would
+    /// finalise an empty recording on cancel.
     func testAGatedRecordingOfACarrierThatNeverStopsHoldsOnePart() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -173,9 +173,8 @@ extension RecordingJobTests {
     }
 
     /// The app's channel page has no squelch to copy and sends NaN, which asks a gated recording
-    /// for the channel default. Until 2026-09-25 the daemon read NaN as "off", and a gate with the
-    /// squelch off has nothing to watch; the auto squelch it now measures sits over the band's
-    /// floor, so the carrier opens it.
+    /// for the channel default, not "off": a gate with the squelch off has nothing to watch. The
+    /// auto squelch the daemon measures sits over the band's floor, so the carrier opens it.
     func testAGatedRecordingAskingForNoSquelchGetsTheAutoSquelchUnderTheCarrier() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }

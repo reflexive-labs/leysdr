@@ -599,8 +599,8 @@ package enum DemodulatorFactory {
 }
 
 /// Per-block power meter: mean power of a cf32 block in dBFS. The floor a block is judged against
-/// is the capture's (`BandFloor`), not this meter's: until 2026-09-19 it kept a running minimum
-/// of its own block power, which on a carrier that never stops is the carrier.
+/// is the capture's (`BandFloor`), not this meter's: a running minimum of the meter's own block
+/// power would, on a carrier that never stops, be the carrier.
 package struct PowerMeter {
     /// Most recent block power (dBFS); NaN before the first block.
     package private(set) var powerDBFS: Float = .nan

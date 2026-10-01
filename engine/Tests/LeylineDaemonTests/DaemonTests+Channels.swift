@@ -130,9 +130,9 @@ extension DaemonTests {
         }
     }
 
-    /// FU-2: WriteParams on an OUT_OF_CAPTURE channel. `bandwidth_hz` and `mode` are stored (the
-    /// Channel event carries the new values with state OUT_OF_CAPTURE, no WriteRejected), and the
-    /// channel comes back ACTIVE with them once `center_hz` moves the capture back over it.
+    /// WriteParams on an OUT_OF_CAPTURE channel. `bandwidth_hz` and `mode` are stored (the Channel
+    /// event carries the new values with state OUT_OF_CAPTURE, no WriteRejected), and the channel
+    /// comes back ACTIVE with them once `center_hz` moves the capture back over it.
     func testStructuralWritesOnOutOfCaptureChannelAreStored() async throws {
         try await withDaemon { c in
             let device = RebindableDevice()

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The DCS decoder against synthesised bits and against the two real takes of the owner's GMRS
-// handheld (docs/plans/signal-views.md, SV-7, "Recorded and read 2026-09-23"). The synthesis
-// encodes a code with the generator the takes confirmed, sends it NRZ at 134.4 bit/s and
-// ±550 Hz, the handheld's deviation, and filters it to the tap's 1 kHz through a 320 Hz low-pass
-// as the demodulator's second decimation stage does. The takes run from their committed taps.
+// The DCS decoder against synthesised bits and against two real takes of a GMRS handheld
+// (`DCS.swift` says what they showed). The synthesis encodes a code with the generator the takes
+// confirmed, sends it NRZ at 134.4 bit/s and ±550 Hz, the handheld's deviation, and filters it to
+// the tap's 1 kHz through a 320 Hz low-pass as the demodulator's second decimation stage does. The
+// takes run from their committed taps.
 
 import Foundation
 import XCTest
@@ -96,8 +96,8 @@ final class DCSTests: XCTestCase {
         XCTAssertEqual(DCS.octalAsDecimal(0o754), 754)
     }
 
-    /// The aliases the SV-7 entry lists from the takes: the fixed bits alone do not frame the word,
-    /// and the complement of a listed code's word carries another listed code.
+    /// The aliases the takes showed: the fixed bits alone do not frame the word, and the complement
+    /// of a listed code's word carries another listed code.
     func testRotationsAndComplementsReadAsThePlanRecords() {
         func reads(_ w: UInt32) -> Set<Int> {
             Set((0 ..< 23).compactMap { DCS.frameCode(DCS.rotate(w, by: $0)) })

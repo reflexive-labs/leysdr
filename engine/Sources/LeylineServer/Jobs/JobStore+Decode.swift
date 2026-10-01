@@ -11,11 +11,11 @@ import Synchronization
 extension JobStore {
     // MARK: Starting a decode
 
-    /// Runs a decoder on its recipe (docs/design/decoders.md, "Decisions": "A decode job is a job").
-    /// The lookup and the refusals happen here, where the caller can be told; everything that can
-    /// take a radio's time happens in the task.
-    /// `resuming` starts a kept job again as the job it was (DEC-11): the same id, so its records
-    /// and its resource URI carry on, and the time it was first started.
+    /// Runs a decoder on its recipe (docs/design/decoders.md, "Decisions": "A decode job is a
+    /// job"). The lookup and the refusals happen here, where the caller can be told; everything
+    /// that can take a radio's time happens in the task. `resuming` starts a kept job again as the
+    /// job it was: the same id, so its records and its resource URI carry on, and the time it was
+    /// first started.
     func startDecode(config: Leyline_V1_DecodeConfig, by client: ClientContext,
                      resuming: (id: JobID, createdAtNs: Int64)? = nil) async throws -> Leyline_V1_Job
     {

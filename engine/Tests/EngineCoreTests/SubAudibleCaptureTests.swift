@@ -2,9 +2,10 @@
 
 // The sub-audible detector against recordings of real radios: the handheld with a 100 Hz PL that
 // the detector must keep identifying, and NOAA weather radio, which transmits no CTCSS and whose
-// synthesised announcer once read as one (docs/plans/signal-views.md, SV-13). The captures are
-// large and gitignored, so these tests run only where `LEYLINE_CAPTURES` names the directory that
-// holds them; the committed test input is the 1 kHz tap the same code writes beside them.
+// synthesised announcer can read as one over too short a horizon
+// (`SubAudibleDetector.stabilityHops`). The captures are large and gitignored, so these tests run
+// only where `LEYLINE_CAPTURES` names the directory that holds them; the committed test input is
+// the 1 kHz tap the same code writes beside them.
 
 import Foundation
 import XCTest
@@ -89,10 +90,10 @@ final class SubAudibleCaptureTests: XCTestCase {
         }
     }
 
-    /// NOAA weather radio transmits no CTCSS. Its synthesised announcer's pitch fundamental sits
-    /// in the 60-260 Hz band and, over three hops, held steady enough to be classified as a tone
-    /// (233.6 Hz, then 241.8) on the owner's radio on 2026-09-14; the capture is that broadcast at
-    /// gain auto. The detector must report no tone on it, on any hop.
+    /// NOAA weather radio transmits no CTCSS. Its synthesised announcer's pitch fundamental sits in
+    /// the 60-260 Hz band and, over three hops, held steady enough to be classified as a tone
+    /// (233.6 Hz, then 241.8) on a real radio on 2026-09-14; the capture is that broadcast at gain
+    /// auto. The detector must report no tone on it, on any hop.
     func testNOAAAnnouncerIsNotATone() throws {
         let tap = try Self.committedTap("noaa-wx2-auto")
         let claimed = Self.hops(over: tap, rate: Self.tapRate, fullScale: Self.tapFullScale).filter(\.result.detected)

@@ -15,10 +15,10 @@ import Synchronization
 /// clients (`SpectrumFold.channelFloorDB`, `session.measureSquelch`): the bin count cancels, so
 /// the daemon can take a smaller transform than they do and land on the same number.
 ///
-/// The floor was the channel's own running minimum until 2026-09-19, and on a carrier that
-/// never stops the minimum is the carrier, so a -12 dBFS signal read `0 dB over noise`
-/// (`docs/plans/app.md`, APP-3). The band's median is not raised by a steady carrier, because a
-/// carrier occupies a few bins of the band and the median ignores them.
+/// The floor is the band's, not the channel's: a channel's own running minimum on a carrier that
+/// never stops is the carrier, so a -12 dBFS signal would read `0 dB over noise`. The band's median
+/// is not raised by a steady carrier, because a carrier occupies a few bins of the band and the
+/// median ignores them.
 /// Unchecked Sendable: the analyzer and row belong to the DSP thread; other threads touch only the atomics.
 package final class BandFloor: @unchecked Sendable {
     /// Bins in the transform the floor is read from. The density does not depend on the count

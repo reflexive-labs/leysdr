@@ -37,10 +37,10 @@ actor DecodeRunner {
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
     private let log: Logger
 
-    /// The record sequence: 1-based and contiguous per job, so it continues from what a kept
-    /// job's store already holds when the job is resumed after a restart (DEC-11).
+    /// The record sequence: 1-based and contiguous per job, so it continues from what a kept job's
+    /// store already holds when the job is resumed after a restart.
     private var seq: UInt64
-    /// Record count and last-record time, for the detail it publishes while RUNNING (DEC-23).
+    /// Record count and last-record time, for the detail it publishes while RUNNING.
     private var liveness = DecodeLiveness()
     private var rssiDBFS = Double.nan
     private var snrDB = Double.nan
@@ -119,7 +119,8 @@ actor DecodeRunner {
             let status = await runPlugin()
             if Task.isCancelled || stopped { break }
             restarts += 1
-            // A coverage gap the job reports. The transcript's own Gap list arrives with D.15.
+            // A coverage gap the job reports. A transcript's own Gap list arrives with the watch
+            // job, which is not built yet (docs/plans/build-order.md).
             await onStatus(.degraded, "the decoder exited (status \(status)); restarting in \(Int(wait)) s (restart \(restarts))")
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, Self.maxRestartSeconds)
@@ -231,8 +232,8 @@ actor DecodeRunner {
 
     // MARK: Stamping
 
-    /// The daemon's own fields (DEC-1): a record id, the job, the channel, the sequence and the
-    /// levels the engine measured. A plugin's values for these are overwritten.
+    /// The daemon's own fields: a record id, the job, the channel, the sequence and the levels the
+    /// engine measured. A plugin's values for these are overwritten.
     private func emit(_ incoming: Leyline_V1_DecodeRecord) async {
         var rec = incoming
         if rec.protocol.isEmpty { rec.protocol = installed.manifest.name }

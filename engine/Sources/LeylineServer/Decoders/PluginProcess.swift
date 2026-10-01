@@ -106,7 +106,7 @@ enum PluginWrite {
 struct PluginStalled: Error {}
 
 /// Writes a varint-delimited message to a non-blocking file descriptor, giving up rather than
-/// blocking the caller for ever on a plugin that has wedged (docs/plans/decoders.md, DEC-16).
+/// blocking the caller for ever on a plugin that has wedged.
 ///
 /// The frame is atomic on the wire or it is dropped: if the pipe cannot take its first byte the
 /// whole frame is dropped and reported (`droppedFull`); once a byte has gone the frame must finish
@@ -152,12 +152,12 @@ final class PluginProcess: @unchecked Sendable {
     private let recordsContinuation: AsyncStream<Leyline_V1_DecodeRecord>.Continuation
     private let exitContinuation: AsyncStream<Int32>.Continuation
     /// The write end of the plugin's stdin as a raw descriptor: nil before `start` and after
-    /// `stop`. A write holds the lock for its duration, so `stop` cannot close the descriptor
-    /// under a frame in flight, and `stop` empties it first, so a frame that arrives afterwards
-    /// is a drop rather than a call on the closed handle. The descriptor is cached because
-    /// NSFileHandle raises an Objective-C exception for `fileDescriptor` once it is closed, which
-    /// Swift cannot catch: the runner's drain asking for it a moment after cancel closed the pipe
-    /// took the whole daemon down (docs/plans/decoders.md, DEC-22).
+    /// `stop`. A write holds the lock for its duration, so `stop` cannot close the descriptor under
+    /// a frame in flight, and `stop` empties it first, so a frame that arrives afterwards is a drop
+    /// rather than a call on the closed handle. The descriptor is cached because NSFileHandle
+    /// raises an Objective-C exception for `fileDescriptor` once it is closed, which Swift cannot
+    /// catch: the runner's drain asking for it a moment after cancel closed the pipe would take the
+    /// whole daemon down.
     private let writeFD = Mutex<Int32?>(nil)
 
     /// Records the plugin wrote, in order. Finishes when its stdout closes.
@@ -200,8 +200,8 @@ final class PluginProcess: @unchecked Sendable {
         }
         startReaders()
         // The write end is non-blocking so a plugin that stops reading cannot wedge the runner's
-        // drain task (DEC-16). The descriptor is small and read at once, so a drop there means the
-        // plugin is not reading its input -- treat it as a failure to start.
+        // drain task. The descriptor is small and read at once, so a drop there means the plugin is
+        // not reading its input -- treat it as a failure to start.
         let wfd = inPipe.fileHandleForWriting.fileDescriptor
         let flags = fcntl(wfd, F_GETFL, 0)
         if flags >= 0 { _ = fcntl(wfd, F_SETFL, flags | O_NONBLOCK) }

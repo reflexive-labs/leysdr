@@ -31,8 +31,8 @@ package struct Detection: Hashable, Sendable {
 /// Daemon-owned persistent intents. Respawned from the store on daemon start.
 /// A table of watches, not a workflow engine.
 ///
-/// This is the Milestone D.15 contract (docs/plans/build-order.md) for the watch job; there is no
-/// implementation yet, and the scan job (`ScanRunner`) does not go through it.
+/// The contract for the watch job, which is not built yet (docs/plans/build-order.md); nothing
+/// implements it, and the scan job (`ScanRunner`) does not go through it.
 package protocol JobRunner: AnyObject, Sendable {
     var id: JobID { get }
     func start(context: JobContext) async throws
@@ -41,8 +41,8 @@ package protocol JobRunner: AnyObject, Sendable {
 }
 
 package struct JobContext: Sendable {
-    // Part of the Milestone D.15 contract; empty until a JobRunner conformance exists to fill it
-    // in with the store, the capture allocator (don't-disturb policy lives here), and a telemetry
+    // Part of the watch job's contract; empty until a JobRunner conformance exists to fill it in
+    // with the store, the capture allocator (don't-disturb policy lives here), and a telemetry
     // outlet.
     package init() {}
 }
@@ -78,8 +78,8 @@ package struct GainRequest: Sendable, Hashable {
 }
 
 package enum AllocationRequest: Sendable {
-    /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, from
-    /// D.15, a watch job) asks for this: it needs one demodulated channel from any radio.
+    /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, once
+    /// it is built, a watch job) asks for this: it needs one demodulated channel from any radio.
     /// `deviceID` nil means the allocator picks; `takeOver` retunes a capture somebody is using.
     case channel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode, deviceID: DeviceID?, takeOver: Bool)
     /// The whole capture band around a frequency, as cf32, for an IQ decoder that needs the signal
@@ -163,8 +163,8 @@ package protocol CaptureLease: AnyObject, Sendable {
 
 /// Resources: a plain directory Finder can see, plus a metadata index.
 ///
-/// This is the Milestone D.15 contract (docs/plans/build-order.md); no implementation exists yet, and it
-/// declares the shape jobs will persist their outputs through.
+/// Not built yet (docs/plans/build-order.md): nothing implements it, and it declares the shape jobs
+/// will persist their outputs through.
 package protocol ResourceStore: AnyObject, Sendable {
     func create(kind: ResourceKind, metadata: [String: String]) async throws -> ResourceHandle
     func find(kind: ResourceKind?, matching: [String: String]) async -> [ResourceRecord]

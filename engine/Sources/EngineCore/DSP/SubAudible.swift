@@ -243,9 +243,9 @@ package final class SubAudibleDetector {
         // 100 ms, but NOAA weather radio's synthesised announcer held a vowel inside it for three
         // hops and was named a PL (233.6 Hz, then 241.8) on a station that transmits none; over a
         // whole second it never did. So the estimate must hold for the whole horizon, and so must
-        // the deviation: a transmitter sends its tone at one level, and a voice fundamental's
-        // level rises and falls with every syllable (docs/design/signal-views.md, "Sub-audible
-        // tones"; the numbers are in docs/plans/signal-views.md, SV-13).
+        // the deviation: a transmitter sends its tone at one level, and a voice fundamental's level
+        // rises and falls with every syllable (docs/design/signal-views.md, "Sub-audible tones";
+        // the numbers are on `stabilityHops` and `maxDeviationRatio` below).
         guard recent.count >= Self.stabilityHops else {
             out.reason = "settling: \(recent.count) of \(Self.stabilityHops) hops"
             return out

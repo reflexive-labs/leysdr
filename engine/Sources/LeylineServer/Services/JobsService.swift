@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // leyline.v1.Jobs — scan, monitor, decode and record are implemented; watch and transcripts arrive
-// with the durable job store at D.15. `Resources` is its own file.
+// with the durable job store, which is not built yet (docs/plans/build-order.md). `Resources` is
+// its own file.
 
 import EngineCore
 import Foundation

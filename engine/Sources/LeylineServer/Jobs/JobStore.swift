@@ -6,8 +6,8 @@
 // by design -- persistence follows intent (invariant 8), and nobody typing `ley scan` has declared
 // an intent to keep anything. The one job that has declared it, a decode job started with `keep`,
 // is written to `kept-jobs.json` beside the record store and resumed at the next boot under the
-// same id, its records appending to the same files (DEC-11). The rest of the durable job store
-// (recurring scans, watch jobs, transcripts) arrives at Milestone D.15.
+// same id, its records appending to the same files. The rest of the durable job store (recurring
+// scans, watch jobs, transcripts) is not built yet (docs/plans/build-order.md).
 
 import EngineCore
 import Foundation
@@ -76,7 +76,7 @@ actor JobStore {
         self.recordings = recordings
     }
 
-    // MARK: Kept jobs across a restart (DEC-11)
+    // MARK: Kept jobs across a restart
 
     /// One kept decode job as the file holds it: enough to start it again as the same job.
     struct KeptJob: Codable, Sendable {

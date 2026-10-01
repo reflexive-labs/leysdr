@@ -164,10 +164,10 @@ final class ChannelTests: XCTestCase {
         await capture.stop()
     }
 
-    /// FU-2: mode and bandwidth writes on an OUT_OF_CAPTURE channel are stored, not rejected; the
-    /// channel stays out at its absolute frequency and the rebuild on re-entry uses the stored config.
-    /// An offset write while out is still validated against the capture (and can bring it back in).
-    /// A stored write must still respect the offset-independent bound, or re-entry would fail later.
+    /// Mode and bandwidth writes on an OUT_OF_CAPTURE channel are stored, not rejected; the channel
+    /// stays out at its absolute frequency and the rebuild on re-entry uses the stored config. An
+    /// offset write while out is still validated against the capture (and can bring it back in). A
+    /// stored write must still respect the offset-independent bound, or re-entry would fail later.
     func testUpdateWhileOutOfCaptureRejectsBandwidthWiderThanCapture() async throws {
         let rate: UInt64 = 2_400_000
         let capture = DefaultCaptureEngine(device: BurstDevice(blocks: 0), centerHz: 100_000_000, sampleRate: rate)
@@ -439,9 +439,9 @@ final class ChannelTests: XCTestCase {
 
     /// `snrDB` is the channel's power over the band's floor at the channel's width -- the number
     /// the Mac app's "over noise" and `ley tune`'s auto squelch compute from a spectrum row -- and
-    /// not over the channel's own running minimum, which on `nfm_tone`'s continuous carrier was the
-    /// carrier itself and read about 0 dB (`docs/plans/app.md`, APP-3, 2026-09-19). The fixture's
-    /// sidecar records what floor the generator spread under the tone, so the expected number is
+    /// not over the channel's own running minimum, which on `nfm_tone`'s continuous carrier is the
+    /// carrier itself and would read about 0 dB. The fixture's sidecar records what floor the
+    /// generator spread under the tone, so the expected number is
     /// `power - (noise + 10·log10(bandwidth / rate))`, to the 0.17 dB the median-of-a-Hann-row
     /// estimate is known to sit high (`DSPSpectrumTests.testBandFloorIsTheRowMedianAsADensity`).
     func testMeterSNRIsPowerOverTheBandFloorAtTheChannelWidth() async throws {

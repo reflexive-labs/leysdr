@@ -246,10 +246,9 @@ final class RecordingJobTests: XCTestCase {
     // MARK: The gain
 
     /// `ley record --gain 20` sends a level with no element, which is the device's first stage
-    /// (`common.proto`, `GainWrite`). Until 2026-09-24 the record path passed the empty element to
-    /// the radio and dropped its refusal, so a real radio kept whatever gain it had
-    /// (plans/app.md, M2-10); the synthetic device refuses any element but TUNER, as a real
-    /// driver does.
+    /// (`common.proto`, `GainWrite`). A record path that passed the empty element to the radio and
+    /// dropped its refusal would leave a real radio at whatever gain it had; the synthetic device
+    /// refuses any element but TUNER, as a real driver does.
     func testTheGainAskedForReachesTheRadio() async throws {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
