@@ -230,6 +230,7 @@ func prepPlaybackDevice(t *testing.T, sock string, c *leyline.Client) []string {
 // --json and exits 0 hands a script unparseable text with no way to tell that
 // anything went wrong.
 func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
+	t.Parallel()
 	for _, c := range jsonVerbs {
 		t.Run(c.path, func(t *testing.T) {
 			sock := testutil.SocketPath(t, "gone.sock")

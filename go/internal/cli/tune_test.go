@@ -21,6 +21,7 @@ import (
 )
 
 func TestTunePersistent(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "tune", "146.52M", "--no-audio", "--persistent")
 	if err != nil {
@@ -93,6 +94,7 @@ func TestTunePersistent(t *testing.T) {
 // With nothing else listening, an out-of-span tune retunes the capture as
 // before and reports it.
 func TestTuneRetunesIdleCapture(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	st, _ := c.State(t.Context())
 	if _, err := c.Control.CreateCapture(t.Context(), &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 101_100_000}); err != nil {
@@ -110,6 +112,7 @@ func TestTuneRetunesIdleCapture(t *testing.T) {
 
 // --gain is applied to the capture after it exists and shown in the banner.
 func TestTuneGain(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent", "--gain", "30")
 	st, _ := c.State(t.Context())
@@ -182,6 +185,7 @@ func liveTune(t *testing.T, sock string, want string, args ...string) (string, s
 }
 
 func TestTuneLifecycle(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	stdout, errOut := liveTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio", "--squelch", "-40")
 	// The banner is stdout's and the meter is stderr's (docs/dev/cli-style.md 3):
@@ -212,6 +216,7 @@ func TestTuneLifecycle(t *testing.T) {
 }
 
 func TestTuneJSONMeter(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	// Wait for the first meter line, then cancel: a fixed deadline can fire during setup on a
 	// loaded machine and turn the run into DEADLINE_EXCEEDED.
@@ -238,6 +243,7 @@ func TestTuneJSONMeter(t *testing.T) {
 // The fake's spectrum is a -100 dB floor (±3 dB) so the auto threshold is
 // deterministic: -100 + 10·log10(12.5 kHz / (2.4 MHz / 2048)) + 10 ≈ -80.
 func TestTuneAutoSquelch(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	// The banner is printed once the squelch write is confirmed, so the state has it by then.
 	stdout, stderr, cancel, done := startTune(t, sock, "Squelch auto", "tune", "146.52", "--no-audio")
@@ -263,6 +269,7 @@ func TestTuneAutoSquelch(t *testing.T) {
 }
 
 func TestTuneModePrecedence(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	cases := []struct {
 		args       []string
@@ -324,6 +331,7 @@ func TestTuneModePrecedence(t *testing.T) {
 }
 
 func TestTunePresetsAndErrors(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "tune", "NOAA", "--no-audio", "--persistent")
 	st, err := c.State(t.Context())
@@ -383,6 +391,7 @@ func TestTunePresetsAndErrors(t *testing.T) {
 }
 
 func TestTuneNoDevice(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
 	_, _, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio")
 	if err == nil {
@@ -419,6 +428,7 @@ func TestMeterLine(t *testing.T) {
 // run prints prose or NDJSON, and the threshold it measured is announced on
 // stderr like every other decision.
 func TestTuneJSONMeasuresSquelch(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "--json", "tune", "146.52M", "--no-audio", "--persistent")
 	if err != nil {
@@ -444,6 +454,7 @@ func TestTuneJSONMeasuresSquelch(t *testing.T) {
 // The CTCSS line, end to end: an NFM channel on a carrier that sends a tone gets sub-audible
 // telemetry from the daemon, and tune prints the tone once rather than on every heartbeat.
 func TestTuneShowsTheTone(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	stdout, errOut := liveTune(t, sock, "PL", "tune", "145.23", "--no-audio", "--squelch", "-45")
 	out := stdout + errOut
@@ -461,6 +472,7 @@ func TestTuneShowsTheTone(t *testing.T) {
 // The DCS line, end to end: a carrier the fake sends DCS 023 on gets one line naming the code in
 // three octal digits, and no PL line, because a DCS lock suppresses the CTCSS claim.
 func TestTuneShowsTheDCSCode(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{
 		MeterInterval: 20 * time.Millisecond,
 		DCS:           map[uint64]fakedaemon.DCSCode{146_940_000: {Code: 23}},
@@ -481,6 +493,7 @@ func TestTuneShowsTheDCSCode(t *testing.T) {
 // A frequency that carries no tone prints no tone line: a channel that never had one must not
 // report the absence.
 func TestTuneSaysNothingWithoutATone(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	// The detector still reports, so this waits for its answer rather than for a silence that
 	// would also pass if nothing were looking: what it says is "looked, found nothing".
@@ -496,6 +509,7 @@ func TestTuneSaysNothingWithoutATone(t *testing.T) {
 // Whether a channel is listening for a tone is part of its state, not a client-side guess: NFM is
 // the only mode CTCSS is sent under, so that is the mode the daemon turns the detector on for.
 func TestChannelSaysWhetherItListensForATone(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	mustRun(t, sock, "tune", "146.6", "--no-audio", "--persistent", "--mode", "am")
@@ -523,6 +537,7 @@ func TestChannelSaysWhetherItListensForATone(t *testing.T) {
 // with several, where "gain 8.0 dB" once read as the whole of a HackRF's gain (plans/app.md,
 // M2-10). A stage the radio does not have is the daemon's refusal, with the stages it has.
 func TestTuneGainSetsEachStageNamed(t *testing.T) {
+	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()
 	sock, _ := harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
 	out, errOut, err := run(t, t.Context(), sock, "tune", "462.5625", "--device", hackrf.DeviceId, "--no-audio", "--persistent", "--squelch", "off", "--gain", "lna=16,VGA=4")

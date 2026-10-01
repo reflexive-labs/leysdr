@@ -20,6 +20,7 @@ import (
 // The registry table leads with the name, because the name is what `ley decode` is given, and
 // says where the daemon looked on stderr, where it cannot reach a pipe.
 func TestDecodersTableAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "decoders")
 	if err != nil {
@@ -92,6 +93,7 @@ func TestDecodePrintsRecords(t *testing.T) {
 // A decoder nobody installed is a plain sentence with the next command, and the daemon's code
 // in brackets, as every error line is.
 func TestDecodeUnknownDecoder(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, _, err := run(t, t.Context(), sock, "decode", "nosuch")
 	if exitCode(err) != 1 || err == nil {

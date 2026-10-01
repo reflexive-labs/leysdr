@@ -44,6 +44,7 @@ func mustLabels(t *testing.T, sock, labelsPath string, args ...string) string {
 // removes it -- all against a temp store, because labels are user data in the client (docs/design/
 // decoders.md, "The state boundary").
 func TestLabelRoundTrips(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 
@@ -78,6 +79,7 @@ func TestLabelRoundTrips(t *testing.T) {
 // TestDevicesSeenListsAndCounts: the registry is one row per transmitter the kept records heard,
 // with a count that grows as the fake emits (a record every RecordInterval), newest first.
 func TestDevicesSeenListsAndCounts(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 
@@ -117,6 +119,7 @@ func TestDevicesSeenListsAndCounts(t *testing.T) {
 // time passes, a window shorter than the gap shows the transmitters, and one hour of quiet shows
 // none, because they were all heard within the hour.
 func TestDevicesSeenQuietSince(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 	job := keptJob(t, sock, c, 6*fakedaemon.RecordInterval)
@@ -140,6 +143,7 @@ func TestDevicesSeenQuietSince(t *testing.T) {
 // TestDevicesSeenShowsLabels: a labelled transmitter shows the name in the registry, the join the
 // verb makes between the fold and the labels store.
 func TestDevicesSeenShowsLabels(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 	keptJob(t, sock, c, 6*fakedaemon.RecordInterval)
@@ -211,6 +215,7 @@ func TestTrackResolvesAnAlias(t *testing.T) {
 
 // The decoders table shows the friendly names beside the canonical one, so an alias is discoverable.
 func TestDecodersTableShowsAliases(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "decoders")
 	if !strings.Contains(out, "aprs") || !strings.Contains(out, "packets") {

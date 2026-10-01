@@ -116,6 +116,7 @@ func TestMonitorReportSparklineFitsAndStrips(t *testing.T) {
 // does, so the on-air slices from a real watch separate a carrier held down from
 // one that keys now and then.
 func TestMonitorActivityFromTheDaemon(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out := mustRun(t, sock, "--json", "monitor", "gmrs-462", "--for", "1s")
 	slices := map[string][]float64{}

@@ -29,6 +29,7 @@ const (
 )
 
 func TestScanTable(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
 	if err != nil {
@@ -76,6 +77,7 @@ func TestScanNamesTheUnconfirmed(t *testing.T) {
 // SEEN is the evidence a reader needs to tell a carrier from a burst, and it is never used to
 // hide a row -- an intermittent signal is exactly what somebody might be scanning for.
 func TestScanShowsTheEvidence(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "scan", "145M..147M")
 	if !strings.Contains(out, "/") {
@@ -107,6 +109,7 @@ func TestScanShowsTheEvidence(t *testing.T) {
 }
 
 func TestScanJSONIsTheScanMessageAlone(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "--json", "scan", "145M..147M")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -139,6 +142,7 @@ func TestScanJSONIsTheScanMessageAlone(t *testing.T) {
 }
 
 func TestScanSortsBySNR(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	byFreq := mustRun(t, sock, "scan", "145M..147M")
 	bySNR := mustRun(t, sock, "scan", "145M..147M", "--sort", "snr")
@@ -151,6 +155,7 @@ func TestScanSortsBySNR(t *testing.T) {
 }
 
 func TestScanMinSNRHides(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	all := mustRun(t, sock, "scan", "160M..163M")
 	if !strings.Contains(all, "162.400 MHz") {
@@ -180,6 +185,7 @@ func TestScanMinSNRHides(t *testing.T) {
 
 // A band is named with --band because "2m" is 2 MHz everywhere a frequency is accepted.
 func TestScanBandFlag(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustSay(t, sock, "scan", "--band", "2m")
 	if !strings.Contains(out, "144.000 MHz to 148.000 MHz") {
@@ -192,6 +198,7 @@ func TestScanBandFlag(t *testing.T) {
 
 // The daemon's refusal is a sentence with a way forward, not a code.
 func TestScanReportsWhoHasTheRadio(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
@@ -235,6 +242,7 @@ func TestScanReportsWhoHasTheRadio(t *testing.T) {
 
 // Strip-to-plain: the styled screen must differ from the plain one in ink alone.
 func TestScanStripsToPlain(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	plain := mustSay(t, sock, "--color", "never", "scan", "145M..147M")
 	inked := mustSay(t, sock, "--color", "always", "scan", "145M..147M")
@@ -471,6 +479,7 @@ func waitForSweep(t *testing.T, c *leyline.Client, cancel context.CancelFunc, do
 // known gain can be compared. A gain that is not a gain is a usage error before
 // anything is sent; an element the radio lacks fails the job with the daemon's code.
 func TestScanRunsAtTheGainAskedFor(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	js := mustRun(t, sock, "--json", "scan", "145M..147M", "--gain", "30")
 	var scan struct {
@@ -509,6 +518,7 @@ var oneStageGain = regexp.MustCompile(`, gain \d+(\.\d)? dB\n`)
 // the summary names every stage the sweep ran at with a switch as on or off. A stage the radio
 // does not have fails the sweep with the ones it has (plans/v1-release.md, R-23).
 func TestScanPinsEveryStageNamed(t *testing.T) {
+	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()
 	sock, _ := harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
 	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "lna=0,VGA=20,amp=11")
@@ -527,6 +537,7 @@ func TestScanPinsEveryStageNamed(t *testing.T) {
 // Two scans are comparable only if taken at the same gain. The sweep pins the tuner for its
 // duration and reports where, so two scans of a band can be read against each other.
 func TestScanSaysWhatGainItRanAt(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
 	if err != nil {
@@ -581,6 +592,7 @@ func TestScanSaysWhatGainItRanAt(t *testing.T) {
 // one tuning point and so no neighbouring step to cover the hole, which is where this happens:
 // the daemon refuses with BLIND_SPOT rather than reporting an empty band as a quiet one.
 func TestScanRefusesTheBlindSpot(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	dir := t.TempDir()
 	iq := filepath.Join(dir, "tone.cf32")
@@ -610,6 +622,7 @@ func TestScanRefusesTheBlindSpot(t *testing.T) {
 // both halves and the 5 MHz between them, so a repeater's transmit is found whichever half it
 // sits in and however it is paired. A half answers to its own name.
 func TestScanResolvesABandName(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, errOut, err := run(t, t.Context(), sock, "scan", "gmrs")
 	if err != nil {

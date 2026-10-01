@@ -170,6 +170,7 @@ func structuredField(t *testing.T, res *mcp.CallToolResult, key string, m proto.
 
 // MCP-1: an MCP client lists the server's tools, and the list is the table.
 func TestMCPListsTheToolTable(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res, err := h.cs.ListTools(t.Context(), nil)
 	if err != nil {
@@ -223,6 +224,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 // MCP-1: the server's daemon connection is the shared client library's, with
 // the adapter's identity: what it creates is attributed to kind "mcp".
 func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "tune", map[string]any{"frequency": "146.52"})
 	var ch leylinev1.Channel
@@ -244,6 +246,7 @@ func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
 
 // MCP-2: list_devices and get_state return exactly what the verbs print.
 func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	var got, want leylinev1.ListDevicesResponse
 	structured(t, h.must(t, "list_devices", nil), &got)
@@ -271,6 +274,7 @@ func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
 // and says how to insist; take_over moves it. The refusal is made before
 // anything is written, so the daemon's state is untouched by it.
 func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	listening(t, h.client)
 	before, _ := h.client.State(t.Context())
@@ -334,6 +338,7 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 
 // MCP-3: scan returns the Scan the verb prints, with the fake's detections.
 func TestMCPScanReturnsTheDetections(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "scan", map[string]any{"range": "145M..147M"})
 	var scan leylinev1.Scan
@@ -423,6 +428,7 @@ func TestMCPListenSummary(t *testing.T) {
 // MCP-3 and MCP-6: snapshot returns the `ley spectrum --json` row and a PNG
 // whose plot is one pixel per negotiated bin.
 func TestMCPSnapshot(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "snapshot", map[string]any{"frequency": "146.52", "bins": 256, "include_bins": true})
 	raw := resultJSON(res)
@@ -566,6 +572,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 // front, which is how an agent learns that the daemon it is talking to is
 // not the one it started with.
 func TestMCPDaemonLogs(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	log := filepath.Join(t.TempDir(), "leylined.log")
 	line := func(n int, msg string) string {
@@ -606,6 +613,7 @@ func TestMCPDaemonLogs(t *testing.T) {
 // An empty page cannot tell a quiet band from a decoder that never stored, so
 // the text says which it was from the job list.
 func TestMCPQueryRecordsExplainsAnEmptyPage(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	text := resultText(h.must(t, "query_records", map[string]any{"protocol": "aprs"}))
 	if !strings.Contains(text, "no kept decode job for aprs has run") {
@@ -869,6 +877,7 @@ func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
 
 // daemon_logs keeps the daemon's own lines and counts the driver's.
 func TestMCPDaemonLogsLeavesTheDriverOut(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	log := filepath.Join(t.TempDir(), "leylined.log")
 	body := "2026-09-17T10:00:00+0000 info leyline.daemon: [LeylineDaemon] listening\n" +
@@ -892,6 +901,7 @@ func TestMCPDaemonLogsLeavesTheDriverOut(t *testing.T) {
 // scan's min_snr trims the returned Scan as `ley scan --min-snr` trims its
 // rows, and the whole sweep stays readable as its ley://scans resource.
 func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	var whole leylinev1.Scan
 	structured(t, h.must(t, "scan", map[string]any{"range": "145M..147M"}), &whole)
@@ -929,6 +939,7 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 // A band wider than the radio captures is shown in part, and the text says
 // how much. The fake's radio captures 2.4 MHz at most; the FM band is 20.
 func TestMCPSnapshotSaysHowMuchOfABandItCovers(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "snapshot", map[string]any{"band": "fm", "no_image": true})
 	text := resultText(res)

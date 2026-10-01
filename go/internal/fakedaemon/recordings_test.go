@@ -58,6 +58,7 @@ func record(t *testing.T, c *leyline.Client, cfg *leylinev1.RecordConfig) *leyli
 // A part recorded while the capture's CaptureLevel is over the clipping floor carries
 // clipped_ms; one recorded on a clean radio leaves the key out of the manifest.
 func TestARecordingWhileClippingSaysForHowLong(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var clean atomic.Bool
 	c, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, Clipping: func(string) (uint64, uint64, float64) {
@@ -89,6 +90,7 @@ func TestARecordingWhileClippingSaysForHowLong(t *testing.T) {
 // A gated recording whose squelch never opens writes no part: the fake discards it as the
 // daemon does, the job ends COMPLETED saying nothing was heard, and the URI finds nothing.
 func TestARecordingThatHeardNothingIsDiscarded(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// The squelch opens an hour in: never, for a test.
 	c, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, RecordGateAt: []int64{3_600_000}})

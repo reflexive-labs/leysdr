@@ -17,6 +17,7 @@ import (
 // rejected, and take effect when the capture retunes back over the channel.
 // Only the offset-independent bound (0 < bandwidth <= capture rate) is checked.
 func TestStoredWritesWhileOutOfCapture(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -119,6 +120,7 @@ func gainOf(t *testing.T, c *leyline.Client, capID, element string) *leylinev1.G
 // the level the client last set by hand; an element nothing has ever set lands mid-range rather
 // than at the minimum, which would deafen the radio.
 func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -162,6 +164,7 @@ func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
 // A GainWrite with neither a level nor an auto flag says nothing: the element exists, so the
 // refusal is about the argument's shape rather than the name.
 func TestGainWriteNeedsAValue(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -211,6 +214,7 @@ func TestGainWriteNeedsAValue(t *testing.T) {
 // A write that names no element lands on the first the device lists, the rule the contract states
 // and the daemon applies; the confirmed state comes back under that element's name.
 func TestGainWriteWithAnEmptyElementIsTheFirst(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)

@@ -16,6 +16,7 @@ import (
 // channel, streams the documented audio rows and removes both on exit;
 // stdout carries the rows alone (the stream note is stderr prose).
 func TestListenRowsAndTeardown(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "listen", "146.52M", "--count", "3")
 	if err != nil {
@@ -55,6 +56,7 @@ func TestListenRowsAndTeardown(t *testing.T) {
 // TestListenBinFrames: --format bin writes the raw PCM frames and nothing
 // else, so the byte count is a whole number of S16 samples.
 func TestListenBinFrames(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	one, errOut, err := run(t, t.Context(), sock, "listen", "noaa", "--format", "bin", "--count", "1")
 	if err != nil {
@@ -86,6 +88,7 @@ func TestListenBinFrames(t *testing.T) {
 // TestListenExistingChannel: a channel id taps what someone else made and
 // leaves it running; the tune flags are refused there.
 func TestListenExistingChannel(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52M", "--no-audio", "--persistent")
 	st, err := c.State(t.Context())
@@ -111,6 +114,7 @@ func TestListenExistingChannel(t *testing.T) {
 // TestListenUsage: the argument is required and --format is checked before
 // anything is sent to the daemon.
 func TestListenUsage(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, tc := range []struct {
 		args []string
@@ -149,6 +153,7 @@ func (d *shortDisk) Write(p []byte) (int, error) {
 // be the command's error -- a script that trusts the exit status would
 // otherwise keep a truncated file.
 func TestListenReportsAWriteFailureOnTheLastRow(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	// Rows one and two are flushed inside the loop and land; the third is
 	// still buffered when the loop returns, so its deferred flush is the

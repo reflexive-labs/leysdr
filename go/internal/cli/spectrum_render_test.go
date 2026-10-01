@@ -256,6 +256,7 @@ func TestSpectrumEmptyRow(t *testing.T) {
 // Machine output stays out of styling's reach whatever the flags say, and
 // binary records refuse to go to a terminal at all.
 func TestSpectrumAndFFTMachineOutput(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 	for _, args := range [][]string{

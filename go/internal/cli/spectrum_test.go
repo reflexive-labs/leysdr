@@ -18,6 +18,7 @@ import (
 // The fake daemon renders a -100 dB floor with a -40 dB peak at every channel
 // offset, so a channel at the capture centre gives a known loudest bin.
 func TestSpectrumRenderAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 
@@ -110,6 +111,7 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 }
 
 func TestSpectrumWatchCountAndCapture(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	// No capture and no frequency: a usage error that shows the fix.
@@ -168,6 +170,7 @@ func TestSpectrumWatchCountAndCapture(t *testing.T) {
 // the radio supports (with a note on stderr); an existing capture at a
 // different width is refused with exit 2 rather than ignored.
 func TestSpectrumSpan(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	out, errOut, err := run(t, ctx, sock, "--json", "spectrum", "101.1", "--span", "200k", "--bins", "256")
@@ -218,6 +221,7 @@ func TestSpectrumSpan(t *testing.T) {
 // enough gets the chart in a box with its levels coloured, and the same run
 // piped is the bare lines a script already reads.
 func TestSpectrumFrameOnATerminal(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 	app := ttyApp(sock)
@@ -277,6 +281,7 @@ func framed(screen string) bool {
 // frequency other than the one that was asked for. spectrum prints the
 // capture's centre on stderr and says what it covers.
 func TestSpectrumSaysWhenTheCaptureIsOffCentre(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st, err := c.State(ctx)

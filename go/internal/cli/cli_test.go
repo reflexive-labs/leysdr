@@ -94,6 +94,7 @@ func mustRun(t *testing.T, sock string, args ...string) string {
 }
 
 func TestDevicesTableAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "devices")
 	// MODEL leads and STATE follows it: the ids and serials are behind --wide.
@@ -227,6 +228,7 @@ func TestGainsStringUnknownTable(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "state", "--wide")
 	// The fake reports leylined's default cap and holds no recordings.
@@ -296,6 +298,7 @@ func listening(t *testing.T, c *leyline.Client) {
 }
 
 func TestExitCodesUsage(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	dir := t.TempDir()
 	iq := filepath.Join(dir, "tone.cf32")
@@ -419,6 +422,7 @@ func TestExitCodeNotRunning(t *testing.T) {
 }
 
 func TestDevicesEmptyChecklist(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
 	out, _, err := runApp(t, ttyApp(sock), "devices")
 	if err != nil || !strings.Contains(out, "rtl_test") || !strings.Contains(out, "ley daemon logs") {
@@ -435,6 +439,7 @@ func TestDevicesEmptyChecklist(t *testing.T) {
 }
 
 func TestOrientationPerState(t *testing.T) {
+	t.Parallel()
 	dead := testutil.SocketPath(t, "nobody.sock")
 	out, _, err := runApp(t, ttyApp(dead))
 	if err != nil || !strings.Contains(out, "Daemon    not running") || !strings.Contains(out, "ley daemon start") {
@@ -562,6 +567,7 @@ func TestPickDeviceSkipsExternallyHeld(t *testing.T) {
 // A radio on another machine is daemon state a client drives: attach adds it, detach removes it
 // and the daemon forgets it, so detach must not refuse a driver it did not attach itself.
 func TestDetachRemoteRadio(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
 	ctx := t.Context()
 	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))

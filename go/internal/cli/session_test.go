@@ -80,6 +80,7 @@ func startTune(t *testing.T, sock, want string, args ...string) (out, errOut *sy
 // one stderr line, not "ley: EOF" and exit 1; the teardown that then fails
 // says so and names the recovery.
 func TestTuneDaemonClosesStreams(t *testing.T) {
+	t.Parallel()
 	sock, _, stop := harnessStop(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	_, errOut, cancel, done := startTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio")
 	defer cancel()
@@ -105,6 +106,7 @@ func TestTuneDaemonClosesStreams(t *testing.T) {
 // A channel another client adds to this run's capture while it is live
 // keeps the capture alive at teardown; the run says so.
 func TestTeardownKeepsSharedCapture(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	_, errOut, cancel, done := startTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio")
 	ctx := t.Context()
@@ -136,6 +138,7 @@ func TestTeardownKeepsSharedCapture(t *testing.T) {
 // squelch the daemon rejects fails the tune and tears down what tune created
 // rather than listening with the wrong squelch.
 func TestTuneSquelchRejected(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, errOut, err := run(t, t.Context(), sock, "tune", "146.52", "--no-audio", "--squelch", "-1000")
 	if exitCode(err) != 2 || !strings.Contains(err.Error(), "-200 dBFS") {

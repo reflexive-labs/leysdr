@@ -174,6 +174,7 @@ func TestWatchNoFilterMatchesEverything(t *testing.T) {
 
 // A --where token with no operator is a usage error before the daemon is touched.
 func TestWatchBadWhere(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, _, err := run(t, t.Context(), sock, "watch", "aprs", "--where", "device_id")
 	if exitCode(err) != 2 {

@@ -16,6 +16,7 @@ import (
 // The registry answers with the one manifest it has, the directories it looked in, and the
 // retention it applies -- the three things `ley decoders` prints.
 func TestListDecoders(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	resp, err := c.ListDecoders(t.Context())
 	if err != nil {
@@ -39,6 +40,7 @@ func TestListDecoders(t *testing.T) {
 // A decoder nobody installed is DECODER_NOT_FOUND, the stable code `ley decode` turns into the
 // line telling the reader to run `ley decoders`.
 func TestStartDecodeUnknownDecoder(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	_, err := c.StartDecode(t.Context(), &leylinev1.DecodeConfig{Decoder: "nosuch"})
 	if leyline.Code(err) != leyline.CodeDecoderNotFound {

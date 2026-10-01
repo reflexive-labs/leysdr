@@ -296,6 +296,7 @@ func TestWaveformStaysInsideTheWidth(t *testing.T) {
 // Against the daemon: the clip draws what the fake's channel carries, says
 // what it is drawing, and counts the seconds back from the playhead.
 func TestWaveformDrawsTheDaemonsAudio(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "waveform", "145.23", "--seconds", "2", "--count", "12")
 	if err != nil {
@@ -320,6 +321,7 @@ func TestWaveformDrawsTheDaemonsAudio(t *testing.T) {
 // --json is one object per column as it completes, and the columns are the
 // picture's own slices: no samples, and a level for each one.
 func TestWaveformJSONRows(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "--json", "waveform", "145.23", "--tap", "demod", "--seconds", "2", "--count", "8")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -366,6 +368,7 @@ func TestWaveformJSONRows(t *testing.T) {
 // Every flag that takes a word or a range says what it accepts, and says it
 // before anything reaches the daemon.
 func TestWaveformUsageErrors(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, tc := range []struct {
 		args []string

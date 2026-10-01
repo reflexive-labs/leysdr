@@ -32,6 +32,7 @@ func startSweep(t *testing.T, c *leyline.Client) string {
 }
 
 func TestJobsListsAFinishedSweep(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "scan", "145M..147M")
 
@@ -51,6 +52,7 @@ func TestJobsListsAFinishedSweep(t *testing.T) {
 }
 
 func TestJobsJSONIsTheListJobsResponse(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "scan", "145M..147M")
 
@@ -80,6 +82,7 @@ func TestJobsJSONIsTheListJobsResponse(t *testing.T) {
 }
 
 func TestJobsWithNothingRunning(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "jobs")
 	if !strings.Contains(out, "no jobs") {
@@ -92,6 +95,7 @@ func TestJobsWithNothingRunning(t *testing.T) {
 
 // The point of the verb: a sweep started somewhere else can be seen and stopped from here.
 func TestJobsCancelStopsARunningSweep(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{PresenceGrace: 30 * time.Second})
 	id := startSweep(t, c)
 
@@ -119,6 +123,7 @@ func TestJobsCancelStopsARunningSweep(t *testing.T) {
 }
 
 func TestJobsCancelNamesTheWayOut(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	// Nothing has ever run: the hint is the verb that starts a job, not an empty list.
 	_, _, err := run(t, t.Context(), sock, "jobs", "cancel", "1")

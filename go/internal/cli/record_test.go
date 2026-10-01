@@ -35,6 +35,7 @@ func recordHarness(t *testing.T, gateAt ...int64) (string, string) {
 // A recording is a job whose output is a resource: the banner states the decisions, the URI is
 // on stdout for a script, and the files are where the daemon says they are.
 func TestRecordWritesAResourceAndSaysWhereItIs(t *testing.T) {
+	t.Parallel()
 	sock, dir := recordHarness(t)
 	out, errOut, err := run(t, t.Context(), sock, "record", "146.52", "--for", "400ms")
 	if err != nil {
@@ -80,6 +81,7 @@ func TestRecordWritesAResourceAndSaysWhereItIs(t *testing.T) {
 // ley recordings lists what was written, show prints the manifest and path composes into a
 // shell command. All three take an id prefix.
 func TestRecordingsListShowAndPath(t *testing.T) {
+	t.Parallel()
 	sock, dir := recordHarness(t)
 	empty := mustRun(t, sock, "recordings")
 	if !strings.Contains(empty, "no recordings") || !strings.Contains(empty, "ley record") {
@@ -140,6 +142,7 @@ func TestRecordingsListShowAndPath(t *testing.T) {
 // A gated recording writes one part per exchange and states the gaps between them, rather than
 // editing the silence out of one long file.
 func TestRecordGateWritesOnePartPerExchange(t *testing.T) {
+	t.Parallel()
 	// The fake's squelch opens at 100 ms, closes at 250, opens at 400, closes at 600.
 	sock, dir := recordHarness(t, 100, 250, 400, 600)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--gate", "squelch", "--for", "900ms"))
@@ -165,6 +168,7 @@ func TestRecordGateWritesOnePartPerExchange(t *testing.T) {
 
 // --detach hands a script the job id and the URI and leaves the job running.
 func TestRecordDetachLeavesTheJobRunning(t *testing.T) {
+	t.Parallel()
 	sock, _ := recordHarness(t)
 	out := mustRun(t, sock, "record", "146.52", "--detach")
 	lines := strings.Fields(strings.TrimSpace(out))
@@ -190,6 +194,7 @@ func TestRecordDetachLeavesTheJobRunning(t *testing.T) {
 // demodulator already produced, so there is no signal left in it to tune: play hands it to the
 // machine's own player instead, and --json hands a script the path.
 func TestPlayOnAnAudioRecording(t *testing.T) {
+	t.Parallel()
 	sock, _ := recordHarness(t)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "300ms"))
 	jobID, _, _ := leyline.ParseRecordingURI(uri)
@@ -232,6 +237,7 @@ func TestPlayOnAnAudioRecording(t *testing.T) {
 // ley play follows the position from the event stream alone: the daemon publishes the playback
 // four times a second while it plays, and the tombstone ends the command.
 func TestPlayFollowsThePositionOnTheEventPlane(t *testing.T) {
+	t.Parallel()
 	sock, _ := recordHarness(t)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "2s"))
 	_, errOut, err := run(t, t.Context(), sock, "play", uri)
@@ -282,6 +288,7 @@ func TestDeletingARecordingEndsItsPlay(t *testing.T) {
 // A daemon with no audio device -- a headless one, which is usually the one on this machine --
 // leaves the file to the machine's own player rather than refusing.
 func TestPlayFallsBackToTheLocalPlayer(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	sock, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, NoSystemAudio: true})
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "300ms"))
@@ -341,6 +348,7 @@ func runWithEnv(t *testing.T, sock string, env map[string]string, args ...string
 // --audio puts this terminal's speakers on the channel the recording is writing from, so what is
 // heard is what is going into the file rather than a second demodulator's idea of it.
 func TestRecordAudioPlaysWhatIsBeingRecorded(t *testing.T) {
+	t.Parallel()
 	sock, _ := recordHarness(t)
 	out, errOut, err := run(t, t.Context(), sock, "record", "146.52", "--for", "500ms", "--listen")
 	if err != nil {
@@ -373,6 +381,7 @@ func TestRecordAudioPlaysWhatIsBeingRecorded(t *testing.T) {
 // (docs/plans/user-stories.md), so `--audio` is accepted as the default record already writes
 // rather than failing with "unknown flag". Passing both is a usage error.
 func TestRecordAudioIsTheDefaultSpelledOut(t *testing.T) {
+	t.Parallel()
 	sock, dir := recordHarness(t)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--audio", "--for", "300ms"))
 	jobID, _, ok := leyline.ParseRecordingURI(uri)
@@ -395,6 +404,7 @@ func TestRecordAudioIsTheDefaultSpelledOut(t *testing.T) {
 // A retune over a running recording is warned about, not silently done: the daemon degrades the
 // job and logs the gap, and ley asks first.
 func TestTuneOverARunningRecordingIsRefusedUntilRetune(t *testing.T) {
+	t.Parallel()
 	sock, _ := recordHarness(t)
 	out := mustRun(t, sock, "record", "146.52", "--detach")
 	jobID := strings.Fields(strings.TrimSpace(out))[0]
@@ -414,6 +424,7 @@ func TestTuneOverARunningRecordingIsRefusedUntilRetune(t *testing.T) {
 // and recordings draw is rendered twice, once plain and once inked, and stripping the inked one
 // must give back the plain one byte for byte.
 func TestRecordScreensStyleIsSGROnly(t *testing.T) {
+	t.Parallel()
 	sock, _ := recordHarness(t, 100, 250, 400, 600)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--gate", "squelch", "--for", "700ms"))
 	jobID, _, _ := leyline.ParseRecordingURI(uri)
@@ -511,6 +522,7 @@ func runStyled(t *testing.T, sock string, color bool, args ...string) (string, s
 // the names go to the daemon as typed, and the banner lists every stage the take started at
 // (plans/app.md, M2-10). A stage the radio does not have fails the job with the ones it does.
 func TestRecordGainSetsEachStageNamed(t *testing.T) {
+	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()
 	dir := t.TempDir()
 	sock, c := harness(t, fakedaemon.Options{RecordingsDir: dir, ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
@@ -579,6 +591,7 @@ func runWithStdin(t *testing.T, sock, input string, args ...string) (string, str
 // ley recordings delete asks on a terminal, naming the recording, and goes on a y; anything else
 // keeps it. The prose is on stderr and stdout is empty, or the DeletedResource under --json.
 func TestRecordingsDeleteConfirmsThenDeletes(t *testing.T) {
+	t.Parallel()
 	sock, dir := recordHarness(t)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "462.5625", "--for", "300ms"))
 	jobID, _, _ := leyline.ParseRecordingURI(uri)
@@ -621,6 +634,7 @@ func TestRecordingsDeleteConfirmsThenDeletes(t *testing.T) {
 // --yes skips the question, is required when stdin is not a terminal, and --json prints the
 // DeletedResource on stdout.
 func TestRecordingsDeleteYesAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, dir := recordHarness(t)
 	uri := strings.TrimSpace(mustRun(t, sock, "record", "146.52", "--for", "300ms"))
 	jobID, _, _ := leyline.ParseRecordingURI(uri)
@@ -653,6 +667,7 @@ func TestRecordingsDeleteYesAndJSON(t *testing.T) {
 
 // A running recording is refused with the daemon's sentence and the command that stops it.
 func TestRecordingsDeleteRefusesARunningRecording(t *testing.T) {
+	t.Parallel()
 	sock, dir := recordHarness(t)
 	fields := strings.Fields(mustRun(t, sock, "record", "146.52", "--detach"))
 	jobID := fields[0]
@@ -678,6 +693,7 @@ func TestRecordingsDeleteRefusesARunningRecording(t *testing.T) {
 // one sentence, prints no URI (there is nothing at it) and exits 0, because the recording did
 // what it was asked.
 func TestRecordThatHearsNothingSaysSo(t *testing.T) {
+	t.Parallel()
 	// The fake's squelch opens an hour in: never, for a test.
 	sock, dir := recordHarness(t, 3_600_000)
 	out, errOut, err := run(t, t.Context(), sock, "record", "146.52", "--gate", "squelch", "--for", "400ms")
@@ -698,6 +714,7 @@ func TestRecordThatHearsNothingSaysSo(t *testing.T) {
 // The part table gains a CLIP column only when a part clipped, with the clipped time from the
 // manifest's clipped_ms.
 func TestRecordingsShowClipsOnlyWhenAPartClipped(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var clean atomic.Bool
 	sock, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, Clipping: func(string) (uint64, uint64, float64) {

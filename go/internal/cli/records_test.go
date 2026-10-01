@@ -34,6 +34,7 @@ func keptJob(t *testing.T, _ string, c *leyline.Client, wait time.Duration) *ley
 // The table is newest first with the summary on the right, and an empty store says what puts
 // something in it rather than printing a bare header.
 func TestRecordsTableAndFilters(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	empty := mustRun(t, sock, "records")
 	if !strings.Contains(empty, "no records") || !strings.Contains(empty, "--job") {
@@ -78,6 +79,7 @@ func TestRecordsTableAndFilters(t *testing.T) {
 // TestRecordsSinceUsesAnchors: --since is answered through the capture's anchors, so a window
 // narrower than the job's lifetime returns the newest records and not the older ones.
 func TestRecordsSinceUsesAnchors(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	keptJob(t, sock, c, 8*fakedaemon.RecordInterval)
 
@@ -115,6 +117,7 @@ func recordPage(t *testing.T, sock string, args ...string) *leylinev1.RecordPage
 // Durations, points and distances are read the way a person writes them, and a value with no
 // unit is refused rather than guessed at.
 func TestRecordsInputParsing(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		in   string
 		want time.Duration

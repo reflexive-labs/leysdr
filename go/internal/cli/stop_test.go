@@ -12,6 +12,7 @@ import (
 )
 
 func TestStopChannelAndAll(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	state := func() *leylinev1.GetStateResponse {
 		st, err := c.State(t.Context())
@@ -92,6 +93,7 @@ func TestStopChannelAndAll(t *testing.T) {
 // TestStopJSON: under --json stop prints the daemon's Empty answer ({}) and
 // nothing when there was nothing to do; the exit status carries success.
 func TestStopJSON(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	// Idle: no object to echo, no prose on stdout, exit 0.
 	for _, args := range [][]string{{"--json", "stop", "--all"}, {"--json", "stop", "all", "--device", "1"}} {

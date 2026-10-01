@@ -81,6 +81,7 @@ func TestAttachFileDeviceValidation(t *testing.T) {
 // last sample and reports the device DISCONNECTED and the capture CAPTURE_DETACHED,
 // the way the daemon does when a FilePlaybackDevice hits EOF.
 func TestFileDeviceEOFDetaches(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	const rate, samples = 100_000, 15_000 // 150 ms of playback

@@ -126,6 +126,7 @@ func TestTransmissionOmitsUnmeasuredValues(t *testing.T) {
 // power swells through the threshold, so both edges happen within a few
 // hundred milliseconds at this meter interval.
 func TestTuneReportsAFinishedTransmission(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	stdout, errOut := liveTune(t, sock, "transmission", "tune", "146.52", "--no-audio", "--squelch", "-50")
 	if !strings.Contains(errOut, "transmission") {

@@ -190,6 +190,7 @@ func TestFmtSeconds(t *testing.T) {
 // chart would mean the counts never reached the display, which is the failure this cannot see
 // from the renderer's own tests.
 func TestPhosphorAgainstDaemon(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "phosphor", "146.52", "--count", "2", "--half-life", "5", "--width", "60")
 	if !strings.Contains(out, "over the last 5 s") {
@@ -218,6 +219,7 @@ func TestPhosphorAgainstDaemon(t *testing.T) {
 // per redraw, with the grid the daemon sent carried whole so a consumer can
 // re-derive every cell the chart shades.
 func TestPhosphorJSONFrames(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, _, err := run(t, t.Context(), sock, "--json", "phosphor", "146.52", "--count", "2", "--half-life", "5", "--bins", "64", "--levels", "16")
 	if err != nil {

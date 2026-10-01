@@ -19,6 +19,7 @@ import (
 )
 
 func TestSetParams(t *testing.T) {
+	t.Parallel()
 	// WriteAwaitsWatcher: the fake holds each write until this session's
 	// WatchEvents stream is registered, so the WriteRejected asserted below
 	// cannot be emitted before the CLI is listening.
@@ -151,6 +152,7 @@ func TestSetParams(t *testing.T) {
 }
 
 func TestFFTJSONAndBin(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	if _, _, err := run(t, t.Context(), sock, "fft", "--count", "1"); err == nil || !strings.Contains(err.Error(), "--freq") {
 		t.Fatalf("expected --freq requirement, got %v", err)
@@ -190,6 +192,7 @@ func TestFFTJSONAndBin(t *testing.T) {
 }
 
 func TestSetNoArgsAndTargetRule(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	// Nothing playing: the same next-step error as a write.
 	if _, _, err := run(t, t.Context(), sock, "set"); err == nil || !strings.Contains(err.Error(), "ley tune 146.52") {
@@ -238,6 +241,7 @@ func TestSetNoArgsAndTargetRule(t *testing.T) {
 }
 
 func TestSetSquelchAuto(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	out := mustRun(t, sock, "set", "squelch", "auto")
@@ -259,6 +263,7 @@ func TestSetSquelchAuto(t *testing.T) {
 }
 
 func TestSetParameterErrors(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	// Unknown parameter: listed before any daemon or target lookup (dead socket).
 	dead := testutil.SocketPath(t, "dead.sock")
@@ -318,6 +323,7 @@ func TestSetParameterErrors(t *testing.T) {
 
 // The negative-number matrix for the DisableFlagParsing workaround.
 func TestSetNegativeNumbers(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	for i, args := range [][]string{
@@ -346,6 +352,7 @@ func TestSetNegativeNumbers(t *testing.T) {
 // nothing else -- a gap the daemon fabricated on a schedule would tell every
 // consumer of this stream that time had jumped when it had not.
 func TestFFTRowsArriveUngapped(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "fft", "--format", "json", "--count", "55", "--bins", "256", "--rate", "30", "--freq", "100M")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -403,6 +410,7 @@ func TestParseNegativeSafe(t *testing.T) {
 // refuses a wider one rather than filtering it narrower than it reports. The way through is the
 // mode, and the refusal says so.
 func TestSetBandwidthBeyondTheNarrowLimit(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	mustRun(t, sock, "tune", "146.52", "--no-audio", "--persistent")
 	_, _, err := run(t, t.Context(), sock, "set", "bw", "100k")
@@ -433,6 +441,7 @@ func TestSetBandwidthBeyondTheNarrowLimit(t *testing.T) {
 // and never repeat. Two rows sharing an index would put the second one back in
 // time for anything that plots or seeks by sample position.
 func TestFFTRowsCarryTheirOwnPosition(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "fft", "--format", "json", "--count", "4", "--bins", "256", "--rate", "30", "--freq", "100M")
 	var prev FFTRow

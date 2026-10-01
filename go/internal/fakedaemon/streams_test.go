@@ -34,6 +34,7 @@ func setupCaptureChannel(t *testing.T, c *leyline.Client) (*leylinev1.Capture, *
 }
 
 func TestWriteParams(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
@@ -89,6 +90,7 @@ func TestWriteParams(t *testing.T) {
 }
 
 func TestFFTStream(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
@@ -144,6 +146,7 @@ func TestFFTStream(t *testing.T) {
 }
 
 func TestAudioStream(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	_, ch := setupCaptureChannel(t, c)
@@ -184,6 +187,7 @@ func TestAudioStream(t *testing.T) {
 }
 
 func TestIQStreamContract(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
@@ -281,6 +285,7 @@ func TestPresenceReaping(t *testing.T) {
 }
 
 func TestFileDevice(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -312,6 +317,7 @@ func TestFileDevice(t *testing.T) {
 // for. Err is repeatable, because one goroutine may drain frames while another
 // asks why the stream ended.
 func TestSubscribeLeavesTheRequestAloneAndErrIsRepeatable(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
@@ -401,6 +407,7 @@ func TestStreamHasOneReaderAtATime(t *testing.T) {
 // the snap is false for a NaN, so the write would otherwise be reported applied at the first entry
 // in the table -- 0 dB on this radio, the lowest gain.
 func TestGainWriteMustBeFinite(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, _ := setupCaptureChannel(t, c)
@@ -498,6 +505,7 @@ func TestGapMarksWhatWasLost(t *testing.T) {
 // is the client's to state, and the answers it does make (bins off the ladder, level count, decay,
 // frame rate) are the ones a reader decodes the payload with.
 func TestPersistenceNegotiation(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -587,6 +595,7 @@ func sumCounts(h []uint16) int {
 // the looks the descriptor states, and a max reads higher than a snapshot of the same band --
 // which is why a view hunting bursts asks for one.
 func TestFFTAccumulation(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -782,6 +791,7 @@ func firstAudioFrame(t *testing.T, sub *leyline.Subscription) []float64 {
 }
 
 func TestAudioTaps(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -842,6 +852,7 @@ func TestAudioTaps(t *testing.T) {
 }
 
 func TestAudioTapRefusals(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
@@ -875,6 +886,7 @@ func TestAudioTapRefusals(t *testing.T) {
 }
 
 func TestAudioSpectrumStream(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)
@@ -955,6 +967,7 @@ func binLevel(t *testing.T, row []float64, hz, binHz float64) float64 {
 }
 
 func TestAudioSpectrumRefusals(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	cp, ch := setupCaptureChannel(t, c)
@@ -1033,6 +1046,7 @@ func TestAudioSpectrumRefusals(t *testing.T) {
 // view has to hard-code a deviation: it follows an NFM channel's bandwidth, is
 // broadcast's 75 kHz on WFM, and is 0 where the samples are amplitude.
 func TestAudioDescriptorFullScaleDeviation(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
 	ctx := t.Context()
 	st := mustState(t, c)

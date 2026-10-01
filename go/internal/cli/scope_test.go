@@ -252,6 +252,7 @@ func TestScopeFullScaleHz(t *testing.T) {
 // sub-audible detector reports, and the DC offset of the demod tap read as a
 // tuning error. The view measures neither.
 func TestScopeDemodHeaderCarriesTheDaemonsTone(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
 	if err != nil {
@@ -276,6 +277,7 @@ func TestScopeDemodHeaderCarriesTheDaemonsTone(t *testing.T) {
 // A DCS code goes in the header as the code, in place of the PL a CTCSS
 // carrier shows.
 func TestScopeDemodHeaderCarriesADCSCode(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{DCS: map[uint64]fakedaemon.DCSCode{145_230_000: {Code: 754}}})
 	out, errOut, err := run(t, t.Context(), sock, "scope", "145.23", "--tap", "demod", "--count", "12")
 	if err != nil {
@@ -289,6 +291,7 @@ func TestScopeDemodHeaderCarriesADCSCode(t *testing.T) {
 // The audio tap is what the speakers get: the same channel, with neither the
 // sub-audible tone nor the offset the demod tap carries.
 func TestScopeAudioTapHasNoTuningError(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "scope", "145.23", "--count", "3")
 	if !strings.Contains(out, "tap audio") {
@@ -302,6 +305,7 @@ func TestScopeAudioTapHasNoTuningError(t *testing.T) {
 // A raw-IQ channel runs no detector, so the daemon refuses the demod tap and
 // the sentence a person reads is the daemon's own.
 func TestScopeDemodTapRefusedOnRawIQ(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, _, err := run(t, t.Context(), sock, "scope", "146.52", "--mode", "raw", "--tap", "demod", "--count", "1")
 	if exitCode(err) != 1 {
@@ -319,6 +323,7 @@ func TestScopeDemodTapRefusedOnRawIQ(t *testing.T) {
 // listen --format json`, and a row here that carried them would be a second,
 // slower way to say the same thing.
 func TestScopeJSONRows(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "--json", "scope", "145.23", "--tap", "demod", "--count", "12")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -364,6 +369,7 @@ func TestScopeJSONRows(t *testing.T) {
 // Every flag that takes a word or a range says what it accepts, and says it
 // before anything reaches the daemon.
 func TestScopeUsageErrors(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, tc := range []struct {
 		args []string
@@ -638,6 +644,7 @@ func scopeDrawnRows(rows []string) int {
 // gutter names it at the top and the bottom, and the JSON row carries it, so a
 // picture and a row drawn from the same frame mean the same thing.
 func TestScopePinnedScaleNamesItself(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "scope", "145.23", "--scale", "0.2", "--count", "3")
 	for _, want := range []string{"scale ±0.2", "+0.2", "-0.2"} {
@@ -668,6 +675,7 @@ func TestScopePinnedScaleNamesItself(t *testing.T) {
 // reporting a tone, which reads as "the tone is there but my voice is not".
 // The view says which it is, on the tap the squelch silences and nowhere else.
 func TestScopeSaysTheSquelchIsClosed(t *testing.T) {
+	t.Parallel()
 	const note = "squelch closed: the audio tap is muted;"
 	sock, _ := harness(t, fakedaemon.Options{})
 	// The fake's synthetic power never reaches -20 dBFS, so this squelch is
