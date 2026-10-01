@@ -33,12 +33,12 @@ next person will break the rule. The reason is usually one clause.
 | Use `--retune` to move the capture. | `tune` refuses to retune a capture other channels ride on, because moving it would silence them; `--retune` says you meant to. |
 | Clients should not ping on every data frame. | The daemon drops a connection that sends more than 200 control frames in 30 s, so a client that pings on every data frame loses every busy stream after about a second. |
 
-**Say what does not exist yet.** Name what is not implemented and the milestone it waits on. A
-reader who hits an undocumented gap stops trusting the docs.
+**Say what does not exist yet.** Name what is not implemented and what to use instead; a page
+may link the plan that tracks it. A reader who hits an undocumented gap stops trusting the docs.
 
 | avoid | prefer |
 |---|---|
-| Recording from the app is coming soon. | The Mac app cannot record yet: use `ley record` (E.5). |
+| Recording from the app is coming soon. | The Mac app cannot record yet: use `ley record`. |
 | The waterfall shows LoRa packets. | The waterfall is the right instrument, and ours cannot resolve the signal: a symbol is shorter than a row. |
 
 **Numbers are measured, and say where.** Every number in a design doc was measured before it was
@@ -81,6 +81,20 @@ USB transfer queue) rather than a metaphor for it. Specifically:
 - Prefer the precise verb over "says" and "names": prints, shows, specifies, lists, returns.
 - A sentence that needs two reads is two sentences in normal word order.
 
+**Say what is true and why; do not narrate history.** Documents and comments describe the
+system as it is. They do not name "the owner", date an internal decision, cite an internal plan
+item id (`APP-5`, `M2-6`, `R-23`, `D.15`, `SV-7`, `DEC-1`, `MCP-1`), or recount review rounds and
+"the second run". This holds for `reference/`, `guide/`, `design/` and `dev/` pages, `README.md`,
+`CONTRIBUTING.md`, `SECURITY.md`, code comments and help texts; `CHANGELOG.md` entries stay
+factual. History belongs in commit messages, `decisions/` and `plans/`, which exist to keep it. A
+date that belongs to a measurement ("a real handheld on a date") is a fact about the number, not
+history, and stays.
+
+| avoid | prefer |
+|---|---|
+| The owner decided on 2026-09-17 that the cap is 20 GiB (R-21). | The cap is 20 GiB, a guess until a day of real use measures it. |
+| The second run showed the hang was too short, so APP-5 raised it. | The hang is 5 s: a simplex exchange pauses longer than the squelch's 500 ms tail. |
+
 **Open with the reader's question.** A section's first sentence names what it answers:
 "`ley spectrum` answers *what is on the air now*. Three things it cannot answer:". A design doc's
 Context section is the question that prompted it.
@@ -92,9 +106,10 @@ in the sentence where it appears; `ley help glossary` is the reference.
 
 | term | means | not |
 |---|---|---|
-| **Leyline** | the product | "the system" |
+| **Leyline SDR**, **Leyline** | the product: the full name on first mention in a page, "Leyline" after | "the system" |
+| **`leyline`** | the wordmark in the logo, always lower case | |
 | **the app** | the Mac app, `app/`: a client like `ley` | "the GUI", "the frontend" |
-| **`leysdr`** | the repository and module path | |
+| **`leysdr`** | the repository (github.com/reflexive-labs/leysdr) and module path | |
 | **`ley`** | the command-line client, one Go binary | "the CLI" is fine in dev docs; never "the tool" |
 | **`leylined`**, **the daemon** | the background process that owns the radio | "the server", "the backend" |
 | **the engine** | the Swift package inside the daemon that does the signal processing (`EngineCore`) | use "the daemon" for behaviour a client sees, "the engine" for the code |
@@ -125,7 +140,7 @@ in the sentence where it appears; `ley help glossary` is the reference.
 | **recording** | an IQ file that came from a radio | |
 | **sample time**, **anchor** | the timebase every frame carries, and the one wall-clock mapping per capture | "timestamp" |
 | **invariant** | one of the thirteen rules in `AGENTS.md` | "principle", "guideline" |
-| **milestone**, **spike**, **decision**, **work item** | A.1 to E.7; S1 to S3; D2; SV-8, R-4, DEC-2, APP-4 | |
+| **milestone**, **spike**, **decision**, **work item** | A.1 to E.7; S1 to S3; D2; SV-8, R-4, DEC-2, APP-4 (used in `plans/` and `decisions/` only) | |
 
 Capitalise Leyline, RTL-SDR, the modes (NFM, WFM, AM, USB, LSB, CW), CTCSS, macOS, Homebrew,
 Xcode, GitHub. Do not capitalise daemon, capture, channel, sink, squelch, spectrum, waterfall,
@@ -155,18 +170,20 @@ item ids, so the file is kept and never rewritten.
 
 The root files have fixed jobs: `README.md` is a new reader's first page and its "Where things
 stand" section must agree with `plans/build-order.md` (the release checklist checks);
-`CONTRIBUTING.md` is the short version of how to work here; `SECURITY.md` says what the daemon
+`CONTRIBUTING.md` is how a person builds, tests and proposes a change; `SECURITY.md` says what the daemon
 trusts; `CHANGELOG.md` is dated sections of what changed for a user; `AGENTS.md` is the
 invariants, written as instructions to an agent and used as the review checklist, and
-`CLAUDE.md` only points to it.
+`CLAUDE.md` only points to it. `AGENTS.local.md`, when it exists, holds one machine's notes and
+is never committed.
 
 ## Page shape
 
 - **Title.** A guide or reference page is a noun phrase: "Installing Leyline", "`ley` reference".
   A design doc is `# Design: <subject>`, a plan `# Plan: <subject>`, a decision `# <id>: <subject>`.
-- **Status line.** Design, plan and decision docs open with `Status: draft` /
-  `decided <date>` / `implemented <date>`, and name their companions: "Companion to
-  `data-planes.md`, which owns the plane split this builds on."
+- **Status line.** Design and plan docs open with `Status: draft`, `partial` or `implemented`;
+  a decision opens with `Status: decided <date>`. Each names its companions: "Companion to
+  `data-planes.md`, which owns the plane split this builds on." A plan may date its items; a
+  design doc carries no dates beyond its measurements.
 - **Headings** in sentence case, short, never skipping a level. Number sections only when the
   order is the point, as the guide does.
 - **Paragraphs** wrap at about 100 columns. One idea per paragraph; a paragraph that needs a
@@ -212,14 +229,18 @@ about behaviour: `engine: NFM full scale follows the channel's bandwidth`, not
 The body says why, in prose; the tests say what. Every commit is signed off (`git commit -s`).
 
 A code comment says why, and cites the document that owns the rule by path and heading; the code
-says what. A comment that describes behaviour the code does not have is a bug (the v1 review
-found several), so a comment changes in the same commit as the code it describes.
+says what. It cites code by symbol name, never by `file:line`, because line numbers go stale. It
+follows "Say what is true and why; do not narrate history" above: no dates, no plan item ids, no
+"the owner". A comment that describes behaviour the code does not have is a bug, so a comment
+changes in the same commit as the code it describes.
 
 ## Before a documentation change lands
 
 - The page is in the directory for its reader, and [`docs/README.md`](README.md) lists it if it is
   new, moved or retired.
-- What is not implemented is named, with its milestone.
+- What is not implemented is named, with what to use instead.
+- Nothing narrates history: no "the owner", no internal decision dates, no plan item ids outside
+  `plans/` and `decisions/`.
 - Every transcript came from a run, and the page says against what.
 - Every number says where it was measured.
 - Every `docs/` path in the repository still resolves (`grep -rn 'docs/' --include='*.md'
